@@ -1,0 +1,8 @@
+Let me parse what the user is saying. They're describing a tool they want to build. Previously (implied context) there was a Rust version — "we don't go with rust this time" — so they want a different language. They want a tool that:
+
+1. They write minimal few sentences (a brain dump / quick note)
+2. An agent captures it, puts it in place, tracks the relevant JSONL from whatever tool they were using (Claude Code sessions? JSONL session logs), and compacts it
+3. The agent asks if they want to elaborate on some question it found helpful to note — and if so, asks with numbered options (1 2 3...), not forcing long-form answers unless they want
+4. Context switching is the core problem: they have 100 things to do, some in progress, always want to start something new
+5. They switch between 5 CLIs with 5 projects
+6. They answer user

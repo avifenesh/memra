@@ -1,0 +1,1506 @@
+//! Constrained decoding (OpenAI `response_format`): JSON-mode + JSON-schema grammars.
+//!
+//! llguidance (the vLLM/SGLang/llama.cpp guided-decoding engine) compiles the schema into a
+//! token-level grammar; each decode step computes the set of vocab tokens the grammar can
+//! consume and bans everything else (-inf on the host logits row) BEFORE the sampler runs.
+//! The accepted token then advances the grammar state.
+//!
+//! ISOLATION CONTRACT (the serve-tools convention): a request WITHOUT `response_format`
+//! builds no factory, no matcher, and takes zero new branches — every hook below is behind
+//! `Option`s that stay `None`. Unconstrained serving is byte-identical to pre-lane behavior
+//! (proved by the A/B gate in research/constrained-20260803/).
+//!
+//! FULL path (lane/constrained-full, 2026-08-03 — v1's host-only seams closed):
+//!   - the packed mask (SimpleVob words) H2Ds per step into a stable per-session device
+//!     buffer; `mask_logits_f32` bans on device BEFORE the device sampler — constrained
+//!     rows ride the same device-sample/lean-logits tick as everyone else.
+//!   - constrained greedy sessions graph-promote (in-graph mask node, stable pointer,
+//!     contents re-uploaded per step) and spec-decode (verify-side grammar truncation +
+//!     masked-argmax cut slot; SpecGrammar below adapts the engine's SpecConstraint hook).
+//!   - fallback sampler configs (penalties/top-k/top-p/min-p) and MEMRA_CONSTRAIN_HOST=1
+//!     (the rollback oracle) keep the v1 host masked-copy sample.
+//!     Receipts: research/constrained-full-20260803/ (battery + three-way perf + gates).
+
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use llguidance::api::TopLevelGrammar;
+use llguidance::toktrie::{SimpleVob, TokEnv, TokRxInfo, TokTrie, TokenId, TokenizerEnv};
+use llguidance::{Matcher, ParserFactory};
+use memra_tokenizer::Tokenizer;
+
+/// What the HTTP layer parsed out of `response_format` — carried on the worker `Request`.
+#[derive(Debug, Clone)]
+pub enum GrammarSpec {
+    /// `{"type":"json_object"}` — any JSON object (schema `{"type":"object"}`).
+    JsonObject,
+    /// `{"type":"json_schema","json_schema":{"schema":{...}}}` — the client's schema.
+    JsonSchema(serde_json::Value),
+}
+
+/// Pre-admit JSON-schema envelope. The HTTP body limit is intentionally much larger because it
+/// also carries messages; a schema gets its own bound before any llguidance work is scheduled.
+/// `MAX_SCHEMA_DEPTH` counts raw JSON container levels (not semantic `$ref` expansion), while
+/// `MAX_SCHEMA_NODES` is a coarse count of JSON values. These retain room for OpenAI-compatible
+/// schemas while bounding the CPU and allocation work handed to the compiler.
+pub const MAX_SCHEMA_BYTES: usize = 512 * 1024;
+pub const MAX_SCHEMA_DEPTH: usize = 64;
+pub const MAX_SCHEMA_NODES: usize = 32 * 1024;
+
+/// A constraint compile is request-scoped: expiry fails that request, never the scheduler.
+/// One bounded queue exists per loaded model, so tenants cannot create unbounded compile work.
+pub const CONSTRAINT_COMPILE_TIMEOUT: Duration = Duration::from_secs(5);
+const CONSTRAINT_COMPILE_QUEUE: usize = 8;
+/// Four outstanding workers tolerate isolated late compiles while bounding retained full-vocab
+/// factories and thread stacks. The compiler stays fail-closed only while the cap is outstanding.
+pub(crate) const CONSTRAINT_ABANDONED_WORKER_CAP: usize = 4;
+
+pub(crate) enum ConstraintCompileFailure {
+    Invalid(String),
+    Internal(String),
+    TimedOut,
+    AbandonedWorkerLimit,
+}
+
+pub(crate) struct ConstraintCompileResult {
+    pub id: u64,
+    pub spec: GrammarSpec,
+    pub finished_at: Instant,
+    pub result: Result<SessionConstraint, ConstraintCompileFailure>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConstraintSubmitError {
+    Busy,
+    Closed,
+    AbandonedWorkerLimit,
+}
+
+struct ConstraintCompileJob {
+    id: u64,
+    spec: GrammarSpec,
+    deadline: Instant,
+}
+
+/// Per-model constraint compiler supervisor. Each compile runs on a disposable worker while the
+/// supervisor enforces the request deadline. Successful workers return their lazily initialized
+/// `ConstraintFactory` for reuse; an overrun is detached and the next job gets fresh compiler
+/// state, so one pathological grammar cannot wedge the model's bounded queue.
+pub(crate) struct ConstraintCompiler {
+    tx: std::sync::mpsc::SyncSender<ConstraintCompileJob>,
+    abandoned_workers: Arc<AbandonedWorkers>,
+}
+
+struct AbandonedWorkers {
+    model: String,
+    workers: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>>,
+    fail_closed: Arc<std::sync::atomic::AtomicBool>,
+}
+
+fn reap_finished_workers(workers: &mut Vec<std::thread::JoinHandle<()>>) {
+    let mut index = 0;
+    while index < workers.len() {
+        if workers[index].is_finished() {
+            // Dropping a handle whose worker already finished never waits. In particular, the
+            // serving-thread rearm path must not join even briefly while admitting a request.
+            drop(workers.swap_remove(index));
+        } else {
+            index += 1;
+        }
+    }
+}
+
+impl AbandonedWorkers {
+    fn new(model: &str) -> Self {
+        Self {
+            model: model.to_string(),
+            workers: std::sync::Mutex::new(Vec::new()),
+            fail_closed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    fn is_fail_closed(&self) -> bool {
+        self.fail_closed.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn update_latch(&self, outstanding: usize) {
+        let fail_closed = outstanding >= CONSTRAINT_ABANDONED_WORKER_CAP;
+        if self
+            .fail_closed
+            .swap(fail_closed, std::sync::atomic::Ordering::AcqRel)
+            == fail_closed
+        {
+            return;
+        }
+        if fail_closed {
+            eprintln!(
+                "[constraint] model {:?}: compiler fail-closed ({} abandoned workers \
+                 outstanding; cap {})",
+                self.model, outstanding, CONSTRAINT_ABANDONED_WORKER_CAP,
+            );
+        } else {
+            eprintln!(
+                "[constraint] model {:?}: compiler rearmed ({} abandoned workers outstanding; \
+                 cap {})",
+                self.model, outstanding, CONSTRAINT_ABANDONED_WORKER_CAP,
+            );
+        }
+    }
+
+    fn reap(&self) {
+        let mut workers = self
+            .workers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        reap_finished_workers(&mut workers);
+        self.update_latch(workers.len());
+    }
+
+    fn try_reap(&self) {
+        let mut workers = match self.workers.try_lock() {
+            Ok(workers) => workers,
+            Err(std::sync::TryLockError::WouldBlock) => return,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+        };
+        reap_finished_workers(&mut workers);
+        self.update_latch(workers.len());
+    }
+
+    fn retain(&self, worker: std::thread::JoinHandle<()>) {
+        let mut workers = self
+            .workers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        workers.push(worker);
+        reap_finished_workers(&mut workers);
+        self.update_latch(workers.len());
+    }
+}
+
+impl ConstraintCompiler {
+    pub fn spawn(
+        model: &str,
+        tok: Arc<Tokenizer>,
+        result_tx: std::sync::mpsc::Sender<ConstraintCompileResult>,
+        metrics: &crate::worker::SharedMetrics,
+    ) -> Result<Self, String> {
+        let compiler = Self::spawn_with(model, result_tx, move || {
+            let tok = Arc::clone(&tok);
+            let mut factory: Option<Result<ConstraintFactory, String>> = None;
+            move |spec: &GrammarSpec| {
+                let factory = factory.get_or_insert_with(|| ConstraintFactory::new(&tok));
+                let factory = match factory {
+                    Ok(factory) => factory,
+                    Err(err) => return Err(format!("constrained decoding: {err}")),
+                };
+                let constraint = factory.matcher(spec);
+                if let Some(err) = constraint.error() {
+                    return Err(format!("response_format: {err}"));
+                }
+                Ok(constraint)
+            }
+        })?;
+        if let Ok(mut metrics) = metrics.lock() {
+            metrics.constraint_compiler_fail_closed.insert(
+                model.to_string(),
+                Arc::clone(&compiler.abandoned_workers.fail_closed),
+            );
+        }
+        Ok(compiler)
+    }
+
+    fn spawn_with<M, F>(
+        model: &str,
+        result_tx: std::sync::mpsc::Sender<ConstraintCompileResult>,
+        make_compile: M,
+    ) -> Result<Self, String>
+    where
+        M: Fn() -> F + Send + 'static,
+        F: FnMut(&GrammarSpec) -> Result<SessionConstraint, String> + Send + 'static,
+    {
+        let (tx, rx) =
+            std::sync::mpsc::sync_channel::<ConstraintCompileJob>(CONSTRAINT_COMPILE_QUEUE);
+        let abandoned_workers = Arc::new(AbandonedWorkers::new(model));
+        let supervisor_abandoned_workers = Arc::clone(&abandoned_workers);
+        let supervisor_name = format!("memra-constraint-{model}");
+        let worker_name = format!("memra-constraint-run-{model}");
+        std::thread::Builder::new()
+            .name(supervisor_name)
+            .spawn(move || {
+                let mut compile = make_compile();
+                while let Ok(job) = rx.recv() {
+                    // Requests can expire while waiting behind one running compile. Never spend
+                    // CPU on a queued job whose client has already received a timeout.
+                    if Instant::now() >= job.deadline {
+                        continue;
+                    }
+                    supervisor_abandoned_workers.reap();
+                    if supervisor_abandoned_workers.is_fail_closed() {
+                        let _ = result_tx.send(ConstraintCompileResult {
+                            id: job.id,
+                            spec: job.spec,
+                            finished_at: Instant::now(),
+                            result: Err(ConstraintCompileFailure::AbandonedWorkerLimit),
+                        });
+                        continue;
+                    }
+                    // Keep a fresh, lazy compiler in reserve before handing the warmed one to a
+                    // disposable worker. On success the warmed state comes back; on timeout or
+                    // panic the reserve handles the next queued request without joining the
+                    // runaway thread.
+                    let job_compile = std::mem::replace(&mut compile, make_compile());
+                    let compile_spec = job.spec.clone();
+                    let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+                    let spawned =
+                        std::thread::Builder::new()
+                            .name(worker_name.clone())
+                            .spawn(move || {
+                                let mut job_compile = job_compile;
+                                let outcome =
+                                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                        job_compile(&compile_spec)
+                                    }));
+                                let finished_at = Instant::now();
+                                let (job_compile, result) = match outcome {
+                                    Ok(result) => (
+                                        Some(job_compile),
+                                        result.map_err(ConstraintCompileFailure::Invalid),
+                                    ),
+                                    Err(payload) => {
+                                        let message = payload
+                                            .downcast_ref::<String>()
+                                            .cloned()
+                                            .or_else(|| {
+                                                payload
+                                                    .downcast_ref::<&str>()
+                                                    .map(|s| s.to_string())
+                                            })
+                                            .unwrap_or_else(|| "non-string panic payload".into());
+                                        (
+                                            None,
+                                            Err(ConstraintCompileFailure::Internal(format!(
+                                                "response_format compiler panicked: {message}"
+                                            ))),
+                                        )
+                                    }
+                                };
+                                let _ = done_tx.send((job_compile, finished_at, result));
+                            });
+                    let worker = match spawned {
+                        Ok(worker) => worker,
+                        Err(err) => {
+                            let _ = result_tx.send(ConstraintCompileResult {
+                                id: job.id,
+                                spec: job.spec,
+                                finished_at: Instant::now(),
+                                result: Err(ConstraintCompileFailure::Internal(format!(
+                                    "spawn response_format compiler worker: {err}"
+                                ))),
+                            });
+                            continue;
+                        }
+                    };
+
+                    let wait = job.deadline.saturating_duration_since(Instant::now());
+                    match done_rx.recv_timeout(wait) {
+                        Ok((returned, finished_at, result)) => {
+                            let _ = worker.join();
+                            if let Some(returned) = returned {
+                                compile = returned;
+                            }
+                            let _ = result_tx.send(ConstraintCompileResult {
+                                id: job.id,
+                                spec: job.spec,
+                                finished_at,
+                                result,
+                            });
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            supervisor_abandoned_workers.retain(worker);
+                            let _ = result_tx.send(ConstraintCompileResult {
+                                id: job.id,
+                                spec: job.spec,
+                                finished_at: Instant::now(),
+                                result: Err(ConstraintCompileFailure::TimedOut),
+                            });
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                            let _ = worker.join();
+                            let _ = result_tx.send(ConstraintCompileResult {
+                                id: job.id,
+                                spec: job.spec,
+                                finished_at: Instant::now(),
+                                result: Err(ConstraintCompileFailure::Internal(
+                                    "response_format compiler worker disconnected".into(),
+                                )),
+                            });
+                        }
+                    }
+                }
+            })
+            .map_err(|err| format!("spawn constraint compiler for model {model:?}: {err}"))?;
+        Ok(Self {
+            tx,
+            abandoned_workers,
+        })
+    }
+
+    pub fn try_submit(
+        &self,
+        id: u64,
+        spec: GrammarSpec,
+        deadline: Instant,
+    ) -> Result<(), ConstraintSubmitError> {
+        if self.abandoned_workers.is_fail_closed() {
+            // The supervisor may be blocked in recv() while every runaway finishes. Reap only
+            // handles already reported finished; if its mutex is busy, keep failing closed and
+            // let the next submit retry rather than blocking the serving thread.
+            self.abandoned_workers.try_reap();
+            if self.abandoned_workers.is_fail_closed() {
+                return Err(ConstraintSubmitError::AbandonedWorkerLimit);
+            }
+        }
+        match self
+            .tx
+            .try_send(ConstraintCompileJob { id, spec, deadline })
+        {
+            Ok(()) => Ok(()),
+            Err(std::sync::mpsc::TrySendError::Full(_)) => Err(ConstraintSubmitError::Busy),
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                Err(ConstraintSubmitError::Closed)
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn spawn_for_test<M, F>(
+        result_tx: std::sync::mpsc::Sender<ConstraintCompileResult>,
+        make_compile: M,
+    ) -> Self
+    where
+        M: Fn() -> F + Send + 'static,
+        F: FnMut(&GrammarSpec) -> Result<SessionConstraint, String> + Send + 'static,
+    {
+        Self::spawn_with("test", result_tx, make_compile).unwrap()
+    }
+}
+
+fn validate_json_schema(schema: &serde_json::Value) -> Result<(), String> {
+    let mut stack = vec![(schema, 1usize)];
+    let mut nodes = 0usize;
+    while let Some((value, depth)) = stack.pop() {
+        if depth > MAX_SCHEMA_DEPTH {
+            return Err(format!(
+                "response_format.json_schema.schema exceeds the maximum nesting depth of \
+                 {MAX_SCHEMA_DEPTH}"
+            ));
+        }
+        nodes += 1;
+        if nodes > MAX_SCHEMA_NODES {
+            return Err(format!(
+                "response_format.json_schema.schema exceeds the maximum complexity of \
+                 {MAX_SCHEMA_NODES} JSON values"
+            ));
+        }
+        match value {
+            serde_json::Value::Array(values) => {
+                if nodes
+                    .saturating_add(stack.len())
+                    .saturating_add(values.len())
+                    > MAX_SCHEMA_NODES
+                {
+                    return Err(format!(
+                        "response_format.json_schema.schema exceeds the maximum complexity of \
+                         {MAX_SCHEMA_NODES} JSON values"
+                    ));
+                }
+                stack.extend(values.iter().map(|value| (value, depth + 1)));
+            }
+            serde_json::Value::Object(values) => {
+                if nodes
+                    .saturating_add(stack.len())
+                    .saturating_add(values.len())
+                    > MAX_SCHEMA_NODES
+                {
+                    return Err(format!(
+                        "response_format.json_schema.schema exceeds the maximum complexity of \
+                         {MAX_SCHEMA_NODES} JSON values"
+                    ));
+                }
+                stack.extend(values.values().map(|value| (value, depth + 1)));
+            }
+            _ => {}
+        }
+    }
+
+    let bytes = serde_json::to_vec(schema)
+        .map_err(|err| format!("response_format.json_schema.schema is not serializable: {err}"))?
+        .len();
+    if bytes > MAX_SCHEMA_BYTES {
+        return Err(format!(
+            "response_format.json_schema.schema is {bytes} bytes; maximum is \
+             {MAX_SCHEMA_BYTES} bytes"
+        ));
+    }
+    Ok(())
+}
+
+/// Parse the OpenAI `response_format` value. `None`/`{"type":"text"}` = unconstrained.
+/// Unknown types / malformed bodies are loud errors (the honesty-gate policy: clean 400s,
+/// never silent downgrades).
+pub fn parse_response_format(v: Option<&serde_json::Value>) -> Result<Option<GrammarSpec>, String> {
+    let Some(v) = v else { return Ok(None) };
+    let ty = v
+        .get("type")
+        .and_then(|t| t.as_str())
+        .ok_or("response_format.type must be a string")?;
+    match ty {
+        "text" => Ok(None),
+        "json_object" => Ok(Some(GrammarSpec::JsonObject)),
+        "json_schema" => {
+            let js = v
+                .get("json_schema")
+                .ok_or("response_format.json_schema is required for type json_schema")?;
+            if !js.is_object() {
+                return Err("response_format.json_schema must be an object".into());
+            }
+            // OpenAI nests the schema under json_schema.schema; some clients send the
+            // schema directly under json_schema. Accept both (the vLLM convention).
+            let schema = js.get("schema").unwrap_or(js);
+            validate_json_schema(schema)?;
+            Ok(Some(GrammarSpec::JsonSchema(schema.clone())))
+        }
+        other => Err(format!(
+            "response_format type {other:?} is not supported \
+                              (text | json_object | json_schema)"
+        )),
+    }
+}
+
+/// The token-vocabulary bridge: memra's Tokenizer vocab rendered as a llguidance TokTrie.
+/// Declared NON-canonical (`tokenize_is_canonical = false`) so llguidance never fast-forwards
+/// tokens it tokenized itself — every token the model emits is validated through the mask,
+/// which is exactly the per-step contract the worker enforces.
+struct MemraTokEnv {
+    trie: TokTrie,
+}
+
+impl TokenizerEnv for MemraTokEnv {
+    fn tok_trie(&self) -> &TokTrie {
+        &self.trie
+    }
+    fn tokenize_bytes(&self, s: &[u8]) -> Vec<TokenId> {
+        // mask-only integration (non-canonical): greedy trie walk is sufficient — this is
+        // never used to force tokens into the stream.
+        self.trie.greedy_tokenize(s)
+    }
+    fn tokenize_is_canonical(&self) -> bool {
+        false
+    }
+}
+
+/// Per-model grammar factory: the TokTrie build (one pass over the vocab) + llguidance's
+/// slicer preprocessing happen ONCE, lazily on the first constrained request against the
+/// model, then every request compiles only its own schema.
+pub struct ConstraintFactory {
+    factory: ParserFactory,
+}
+
+impl ConstraintFactory {
+    pub fn new(tok: &Tokenizer) -> Result<Self, String> {
+        let n = tok.vocab_size();
+        let mut words: Vec<Vec<u8>> = Vec::with_capacity(n);
+        for id in 0..n as u32 {
+            if tok.token_is_control(id) {
+                // control/protocol tokens: llguidance special-token marker form — never
+                // matchable as literal grammar bytes (a JSON string must not be able to
+                // smuggle <|im_start|>).
+                let mut w = vec![TokTrie::SPECIAL_TOKEN_MARKER];
+                w.extend_from_slice(format!("[{id}]").as_bytes());
+                words.push(w);
+            } else {
+                words.push(tok.decode_bytes_special(&[id], true));
+            }
+        }
+        let info = TokRxInfo::new(n as u32, tok.eos_id());
+        let trie = TokTrie::from(&info, &words);
+        let env: TokEnv = Arc::new(MemraTokEnv { trie });
+        let mut factory =
+            ParserFactory::new_simple(&env).map_err(|e| format!("constraint factory: {e}"))?;
+        factory.quiet();
+        Ok(Self { factory })
+    }
+
+    /// Compile one request's grammar. Compile errors (bad schema) surface via
+    /// `SessionConstraint::error()` at admit — a clean client error, not a worker panic.
+    pub fn matcher(&self, spec: &GrammarSpec) -> SessionConstraint {
+        let schema = match spec {
+            GrammarSpec::JsonObject => serde_json::json!({"type": "object"}),
+            GrammarSpec::JsonSchema(s) => s.clone(),
+        };
+        let grammar = TopLevelGrammar::from_json_schema(schema);
+        SessionConstraint::new(Matcher::new(self.factory.create_parser(grammar)))
+    }
+}
+
+/// -inf every vocab token the grammar cannot consume. Logits rows longer than the tokenizer
+/// vocab (padded lm_head) get their tail banned too — padding ids are never decodable.
+pub fn apply_mask(mask: &SimpleVob, logits: &mut [f32]) {
+    let n = logits.len();
+    mask.iter_unset_entries(|i| {
+        if i < n {
+            logits[i] = f32::NEG_INFINITY;
+        }
+    });
+    if mask.len() < n {
+        for l in &mut logits[mask.len()..] {
+            *l = f32::NEG_INFINITY;
+        }
+    }
+}
+
+/// POST-THINK phase gate (lane/step37-postthink-grammar, 2026-08-30): two-phase constrained
+/// decoding for chat templates that force-open a think channel with no `enable_thinking`
+/// switch (the step35 dialect — its `<think>\n` generation tail is unconditional).
+///
+/// Phase 1 (think): generation runs UNCONSTRAINED, exactly as the model was trained — the
+/// mask is all-allow EXCEPT the request's end-of-generation set, so the model cannot end
+/// the response inside the think channel (the receipted step37 EOS-inside-think quirk:
+/// finish=stop with `content: ""` and the whole answer in `reasoning`).
+///
+/// Phase transition: the detector matches the template contract's think-close TOKEN-ID
+/// sequence (derived from the model's tokenizer at load — never string matching on decoded
+/// text) with a rolling KMP walk over the emitted stream. When the full close sequence has
+/// been consumed, the gate closes and the grammar owns every mask/consume from there,
+/// starting at its initial state (the matcher is untouched during phase 1 by construction).
+///
+/// Forced close (`MEMRA_POSTTHINK_CEILING`, 0 = off): past the ceiling the mask collapses
+/// to exactly the next unmatched close token, so the sampler is FORCED to walk the close
+/// sequence and the grammar engages — the guard against a think that never closes. Rides
+/// the same mask seam as everything else, so it works identically on the host, batched
+/// device, and graph paths.
+///
+/// The gate lives INSIDE SessionConstraint so every existing mask/consume call site (host
+/// masked sample, batched device mask staging, graph promotion + per-step re-upload) takes
+/// the phase behavior without a new branch. Post-think sessions never ride spec (the
+/// admission conjunction gates them plain), so `clone_matcher`/SpecGrammar never observe an
+/// open gate.
+pub struct PostThinkGate {
+    /// think-close token-id sequence (template contract; step37-NVFP4: `[128799]`, the
+    /// tokenizer's single added `</think>` token).
+    close: Vec<u32>,
+    /// KMP failure function over `close` — a diverging partial match rewinds to the longest
+    /// proper prefix that is also a suffix instead of resetting to zero.
+    fail: Vec<usize>,
+    /// tokens of `close` currently matched (rolling state over the emitted stream).
+    matched: usize,
+    /// phase-1 mask: all-allow minus the request's end-of-generation ids. Constant until
+    /// the ceiling fires; cloned per step (the packed words H2D verbatim, same shape the
+    /// grammar masks take).
+    think_mask: SimpleVob,
+    /// tokens emitted inside the think channel (phase-1 `consume` count).
+    pub think_tokens: u64,
+    /// forced-close ceiling in think tokens; 0 = off (the request's max_tokens bounds the
+    /// whole completion exactly as today).
+    ceiling: u64,
+    /// think closed — grammar owns generation from here.
+    closed: bool,
+    /// receipt: the ceiling forced the close (vs the model closing on its own).
+    pub forced_close: bool,
+}
+
+impl PostThinkGate {
+    pub fn new(close: Vec<u32>, eos: &[u32], n_vocab: usize, ceiling: u64) -> Result<Self, String> {
+        if close.is_empty() {
+            return Err("post-think gate armed with an empty think-close sequence".into());
+        }
+        if let Some(&bad) = close.iter().find(|&&t| t as usize >= n_vocab) {
+            return Err(format!(
+                "think-close token {bad} is outside the vocabulary ({n_vocab})"
+            ));
+        }
+        // KMP failure function: fail[i] = length of the longest proper prefix of
+        // close[..=i] that is also a suffix of it.
+        let mut fail = vec![0usize; close.len()];
+        for i in 1..close.len() {
+            let mut k = fail[i - 1];
+            while k > 0 && close[i] != close[k] {
+                k = fail[k - 1];
+            }
+            if close[i] == close[k] {
+                k += 1;
+            }
+            fail[i] = k;
+        }
+        let mut think_mask = SimpleVob::alloc_ones(n_vocab);
+        for &id in eos {
+            if (id as usize) < n_vocab {
+                think_mask.disallow_token(id);
+            }
+        }
+        if think_mask.num_set() == 0 {
+            return Err("post-think phase-1 mask is empty (eos set covers the vocabulary)".into());
+        }
+        Ok(Self {
+            close,
+            fail,
+            matched: 0,
+            think_mask,
+            think_tokens: 0,
+            ceiling,
+            closed: false,
+            forced_close: false,
+        })
+    }
+
+    fn open(&self) -> bool {
+        !self.closed
+    }
+
+    /// Phase-1 mask for the current step. Past the ceiling it collapses to exactly the
+    /// next unmatched close token (the forced walk); otherwise the constant
+    /// all-allow-minus-eos mask.
+    fn mask(&mut self) -> SimpleVob {
+        if self.ceiling > 0 && self.think_tokens >= self.ceiling {
+            self.forced_close = true;
+            let mut m = SimpleVob::alloc(self.think_mask.len());
+            m.allow_token(self.close[self.matched]);
+            return m;
+        }
+        self.think_mask.clone()
+    }
+
+    /// Advance the close detector with an emitted token. Returns true when this token
+    /// completed the close sequence (the grammar owns the NEXT step).
+    fn advance(&mut self, tok: u32) -> bool {
+        self.think_tokens += 1;
+        while self.matched > 0 && self.close[self.matched] != tok {
+            self.matched = self.fail[self.matched - 1];
+        }
+        if self.close[self.matched] == tok {
+            self.matched += 1;
+        }
+        if self.matched == self.close.len() {
+            self.closed = true;
+        }
+        self.closed
+    }
+}
+
+/// Per-session grammar state + the mask-cost meter (the perf receipt: steps and total
+/// mask-compute time are logged at finish).
+pub struct SessionConstraint {
+    m: Matcher,
+    /// post-think phase gate; None = the grammar owns generation from token 1 (every
+    /// pre-lane request shape, byte-identical by construction).
+    gate: Option<PostThinkGate>,
+    pub steps: u64,
+    pub mask_ns: u128,
+    /// draft-side masking receipt (lane/draft-mask): speculative clones + their wall, and the
+    /// draft-position masks computed on the cloned state.
+    pub spec_clones: u64,
+    pub spec_ns: u128,
+    pub draft_masks: u64,
+    pub draft_mask_ns: u128,
+}
+
+impl SessionConstraint {
+    pub fn new(m: Matcher) -> Self {
+        Self {
+            m,
+            gate: None,
+            steps: 0,
+            mask_ns: 0,
+            spec_clones: 0,
+            spec_ns: 0,
+            draft_masks: 0,
+            draft_mask_ns: 0,
+        }
+    }
+
+    /// Arm the post-think phase gate (admission, think-forced templates only). The grammar
+    /// then engages only after the think-close token sequence has been emitted; until then
+    /// phase-1 masks allow everything except `eos`.
+    pub fn arm_postthink(
+        &mut self,
+        close: Vec<u32>,
+        eos: &[u32],
+        n_vocab: usize,
+        ceiling: u64,
+    ) -> Result<(), String> {
+        self.gate = Some(PostThinkGate::new(close, eos, n_vocab, ceiling)?);
+        Ok(())
+    }
+
+    /// Post-think receipt for the finish log: (think tokens, closed, forced by ceiling).
+    /// None = the gate was never armed (grammar-from-token-1 session).
+    pub fn postthink_receipt(&self) -> Option<(u64, bool, bool)> {
+        self.gate
+            .as_ref()
+            .map(|g| (g.think_tokens, g.closed, g.forced_close))
+    }
+
+    /// Grammar-compile / parser error (checked once at admit).
+    pub fn error(&self) -> Option<String> {
+        self.m.get_error()
+    }
+
+    /// Compute the current token mask (timed — the mask-cost receipt). When the grammar
+    /// has finished, the mask collapses to EOS-only — the normal Eos stop fires. The
+    /// packed form (`SimpleVob::as_slice`) is what the device path H2Ds verbatim.
+    /// With an OPEN post-think gate the mask is the phase-1 mask instead (all-allow minus
+    /// eos; forced close token past the ceiling) — the grammar is untouched until the
+    /// think channel closes.
+    pub fn compute_mask(&mut self) -> Result<SimpleVob, String> {
+        let t0 = std::time::Instant::now();
+        if let Some(gate) = self.gate.as_mut()
+            && gate.open()
+        {
+            let mask = gate.mask();
+            self.steps += 1;
+            self.mask_ns += t0.elapsed().as_nanos();
+            return Ok(mask);
+        }
+        let mask = self.m.compute_mask_or_eos().map_err(|e| e.to_string())?;
+        self.steps += 1;
+        self.mask_ns += t0.elapsed().as_nanos();
+        Ok(mask)
+    }
+
+    /// Compute the current token mask and apply it to `logits` (the HOST path: fallback
+    /// sampler configs + the MEMRA_CONSTRAIN_HOST=1 oracle).
+    pub fn mask_logits(&mut self, logits: &mut [f32]) -> Result<(), String> {
+        let mask = self.compute_mask()?;
+        apply_mask(&mask, logits);
+        Ok(())
+    }
+
+    /// Advance the grammar with the accepted token. Cannot legitimately fail (the token
+    /// was sampled from this state's own mask) — an error here is a loud session stop.
+    /// With an OPEN post-think gate the token advances the close DETECTOR instead — think
+    /// tokens (including the close sequence itself) are never fed to the grammar, so phase 2
+    /// starts at the grammar's initial state.
+    pub fn consume(&mut self, tok: u32) -> Result<(), String> {
+        if let Some(gate) = self.gate.as_mut()
+            && gate.open()
+        {
+            gate.advance(tok);
+            return Ok(());
+        }
+        self.m.consume_token(tok).map_err(|e| e.to_string())
+    }
+
+    /// SPECULATIVE CLONE of the committed grammar state (draft-side masking): llguidance's
+    /// Matcher is Clone, so a draft chain walks a throwaway copy and the real state stays
+    /// pinned at the last EMITTED token. Cost is metered separately (`spec_ns`) — one clone
+    /// per spec round, never on the plain path. Post-think sessions never spec (admission
+    /// gates them plain), so this is only ever called with the gate closed or absent.
+    pub fn clone_matcher(&mut self) -> Matcher {
+        let t0 = std::time::Instant::now();
+        let m = self.m.clone();
+        self.spec_clones += 1;
+        self.spec_ns += t0.elapsed().as_nanos();
+        m
+    }
+}
+
+/// SpecConstraint adapter (constrained x spec-decode, 2026-08-03): SessionConstraint behind
+/// the engine's grammar hook, with a per-state CACHED mask — the verify walk probes
+/// `is_allowed` once per accepted token and the mask only changes on `consume`, so each
+/// grammar state computes its mask exactly once (the same 0.02-0.06 ms/step cost as plain
+/// constrained decode). EOS is never consumed (the plain path's EOS-before-consume ordering):
+/// a finished grammar collapses its mask to EOS-only, so post-EOS drafts truncate naturally.
+///
+/// DRAFT-SIDE MASKING (lane/draft-mask, 2026-08-04, default ON — MEMRA_DRAFT_MASK=0 reverts):
+/// `draft_begin` clones the matcher into `spec` and each draft position's mask is computed on
+/// that CLONE, advanced by the PROPOSED token. The real matcher is untouched until `consume`
+/// (an emitted token), so verify-side truncation remains the correctness backstop and the
+/// emitted stream is byte-identical with masking on or off — masking only changes which
+/// tokens get proposed. The clone is dropped at the next `draft_begin`/`consume`.
+pub struct SpecGrammar<'a> {
+    c: &'a mut SessionConstraint,
+    eos: u32,
+    cur: Option<SimpleVob>,
+    /// speculative (draft-chain) matcher: a clone of `c`'s state at chain start.
+    spec: Option<Matcher>,
+    on: bool,
+}
+
+/// MEMRA_POSTTHINK_CEILING=<tokens>: forced-close guard for post-think constrained
+/// sessions — past this many think tokens the phase-1 mask collapses to the think-close
+/// sequence and the grammar engages. 0 / unset = OFF (default by design: the request's
+/// max_tokens bounds the whole completion exactly as today, and length-inside-think stays
+/// an honest, receipted finish face; a fixed default ceiling either clips real thinks —
+/// step37 agentic thinks routinely exceed 1024 tokens — or never fires). Invalid values
+/// warn once and stay off, never silently become a different number.
+pub fn postthink_ceiling() -> u64 {
+    static CEILING: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *CEILING.get_or_init(|| match std::env::var("MEMRA_POSTTHINK_CEILING") {
+        Ok(v) => match v.parse::<u64>() {
+            Ok(n) => n,
+            Err(_) => {
+                eprintln!(
+                    "[postthink] WARN: MEMRA_POSTTHINK_CEILING={v:?} is not a non-negative \
+                     integer; ceiling stays off"
+                );
+                0
+            }
+        },
+        Err(_) => 0,
+    })
+}
+
+/// MEMRA_DRAFT_MASK=0 turns draft-side grammar masking off (the rollback seam / A-B arm).
+pub fn draft_mask_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("MEMRA_DRAFT_MASK")
+            .map(|v| v != "0")
+            .unwrap_or(true)
+    })
+}
+
+impl<'a> SpecGrammar<'a> {
+    pub fn new(c: &'a mut SessionConstraint, eos: u32) -> Self {
+        Self {
+            c,
+            eos,
+            cur: None,
+            spec: None,
+            on: draft_mask_on(),
+        }
+    }
+    fn cur_mask(&mut self) -> Result<&SimpleVob, String> {
+        if self.cur.is_none() {
+            self.cur = Some(self.c.compute_mask()?);
+        }
+        Ok(self.cur.as_ref().unwrap())
+    }
+}
+
+impl memra_engine::spec::SpecConstraint for SpecGrammar<'_> {
+    fn mask_logits(&mut self, logits: &mut [f32]) -> Result<(), String> {
+        let mask = self.cur_mask()?;
+        apply_mask(mask, logits);
+        Ok(())
+    }
+    fn mask_words(&mut self) -> Result<Vec<u32>, String> {
+        Ok(self.cur_mask()?.as_slice().to_vec())
+    }
+    fn is_allowed(&mut self, tok: u32) -> Result<bool, String> {
+        let mask = self.cur_mask()?;
+        // ids past the mask (padded lm_head tail) are banned; EOS defers to the mask
+        // (a finished grammar's mask is EOS-only, an unfinished one usually bans it).
+        Ok((tok as usize) < mask.len() && mask.is_allowed(tok))
+    }
+    fn consume(&mut self, tok: u32) -> Result<(), String> {
+        // the speculative chain is dead as soon as the real state moves.
+        self.spec = None;
+        if tok == self.eos {
+            return Ok(()); // EOS ends the stream — never fed to the grammar (plain-path order)
+        }
+        self.c.consume(tok)?;
+        self.cur = None;
+        Ok(())
+    }
+
+    fn draft_mask_enabled(&self) -> bool {
+        self.on
+    }
+
+    fn draft_begin(&mut self) -> Result<(), String> {
+        if !self.on {
+            self.spec = None;
+            return Ok(());
+        }
+        self.spec = Some(self.c.clone_matcher());
+        Ok(())
+    }
+
+    fn draft_mask_words(&mut self) -> Result<Option<Vec<u32>>, String> {
+        if !self.on {
+            return Ok(None);
+        }
+        // position 0 of the chain shares the committed state's mask — reuse the cached one
+        // (`cur`) instead of recomputing on the clone; identical set, zero mask cost.
+        let Some(spec) = self.spec.as_mut() else {
+            return Ok(None);
+        };
+        let t0 = std::time::Instant::now();
+        let mask = spec.compute_mask_or_eos().map_err(|e| e.to_string())?;
+        self.c.draft_masks += 1;
+        self.c.draft_mask_ns += t0.elapsed().as_nanos();
+        Ok(Some(mask.as_slice().to_vec()))
+    }
+
+    fn draft_advance(&mut self, tok: u32) -> Result<bool, String> {
+        if !self.on {
+            return Ok(false);
+        }
+        let Some(spec) = self.spec.as_mut() else {
+            return Ok(false);
+        };
+        if tok == self.eos {
+            return Ok(false); // EOS proposed: the chain ends here (plain-path EOS order)
+        }
+        // A masked draft is legal by construction; a token from a slot the mask could not
+        // reach (p-min break, trimmed-vocab miss) simply ends the speculative chain — the
+        // proposal still rides verify, where truncation arbitrates.
+        match spec.consume_token(tok) {
+            Ok(()) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use llguidance::toktrie::ApproximateTokEnv;
+
+    #[test]
+    fn parse_response_format_forms() {
+        // absent / text = unconstrained (the no-op contract).
+        assert!(parse_response_format(None).unwrap().is_none());
+        let text = serde_json::json!({"type": "text"});
+        assert!(parse_response_format(Some(&text)).unwrap().is_none());
+        // json_object
+        let jo = serde_json::json!({"type": "json_object"});
+        assert!(matches!(
+            parse_response_format(Some(&jo)).unwrap(),
+            Some(GrammarSpec::JsonObject)
+        ));
+        // OpenAI nested form
+        let js = serde_json::json!({"type": "json_schema", "json_schema": {
+            "name": "x", "schema": {"type": "object", "required": ["a"]}}});
+        match parse_response_format(Some(&js)).unwrap() {
+            Some(GrammarSpec::JsonSchema(s)) => assert_eq!(s["required"][0], "a"),
+            other => panic!("wrong parse: {other:?}"),
+        }
+        // direct-schema form (vLLM convention)
+        let js2 = serde_json::json!({"type": "json_schema",
+                                     "json_schema": {"type": "object"}});
+        match parse_response_format(Some(&js2)).unwrap() {
+            Some(GrammarSpec::JsonSchema(s)) => assert_eq!(s["type"], "object"),
+            other => panic!("wrong parse: {other:?}"),
+        }
+        // loud errors: unknown type, missing schema, malformed.
+        let bad = serde_json::json!({"type": "yaml"});
+        assert!(parse_response_format(Some(&bad)).is_err());
+        let bad2 = serde_json::json!({"type": "json_schema"});
+        assert!(parse_response_format(Some(&bad2)).is_err());
+        let bad3 = serde_json::json!({"type": 3});
+        assert!(parse_response_format(Some(&bad3)).is_err());
+    }
+
+    #[test]
+    fn json_schema_bounds_fail_before_compile() {
+        let mut deep = serde_json::json!({"type": "string"});
+        for _ in 0..(MAX_SCHEMA_DEPTH / 2 + 1) {
+            deep = serde_json::json!({"allOf": [deep]});
+        }
+        let response_format = serde_json::json!({
+            "type": "json_schema",
+            "json_schema": {"schema": deep},
+        });
+        let err = parse_response_format(Some(&response_format)).unwrap_err();
+        assert!(err.contains("maximum nesting depth"), "{err}");
+
+        let wide = serde_json::Value::Array(vec![serde_json::Value::Null; MAX_SCHEMA_NODES]);
+        let response_format = serde_json::json!({
+            "type": "json_schema",
+            "json_schema": {"schema": wide},
+        });
+        let err = parse_response_format(Some(&response_format)).unwrap_err();
+        assert!(err.contains("maximum complexity"), "{err}");
+
+        let response_format = serde_json::json!({
+            "type": "json_schema",
+            "json_schema": {"schema": {"description": "x".repeat(MAX_SCHEMA_BYTES)}},
+        });
+        let err = parse_response_format(Some(&response_format)).unwrap_err();
+        assert!(err.contains("bytes; maximum"), "{err}");
+    }
+
+    #[test]
+    fn compiler_abandons_runaway_job_and_drains_next_job() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let release_rx = Arc::new(std::sync::Mutex::new(release_rx));
+        let compiler = ConstraintCompiler::spawn_for_test(result_tx, move || {
+            let calls = Arc::clone(&calls);
+            let started_tx = started_tx.clone();
+            let release_rx = Arc::clone(&release_rx);
+            move |_| {
+                let call = calls.fetch_add(1, Ordering::SeqCst) + 1;
+                if call == 1 {
+                    let _ = started_tx.send(());
+                    let _ = release_rx.lock().unwrap().recv();
+                }
+                Err(format!("test compile call {call}"))
+            }
+        });
+
+        compiler
+            .try_submit(
+                1,
+                GrammarSpec::JsonObject,
+                Instant::now() + Duration::from_millis(100),
+            )
+            .unwrap();
+        started_rx
+            .recv_timeout(Duration::from_millis(100))
+            .expect("runaway compile did not start");
+        compiler
+            .try_submit(
+                2,
+                GrammarSpec::JsonObject,
+                Instant::now() + Duration::from_secs(1),
+            )
+            .unwrap();
+
+        let wait_until = Instant::now() + Duration::from_secs(1);
+        let mut first_timed_out = false;
+        let second = loop {
+            let remaining = wait_until.saturating_duration_since(Instant::now());
+            let done = result_rx
+                .recv_timeout(remaining)
+                .expect("fresh compile did not drain while the first worker was stuck");
+            if done.id == 1 {
+                first_timed_out = matches!(done.result, Err(ConstraintCompileFailure::TimedOut),);
+                continue;
+            }
+            if done.id == 2 {
+                break done;
+            }
+        };
+        assert!(first_timed_out, "runaway compile did not report a timeout");
+        assert!(matches!(
+            second.result,
+            Err(ConstraintCompileFailure::Invalid(_))
+        ));
+
+        release_tx.send(()).unwrap();
+    }
+
+    #[test]
+    fn compiler_refuses_at_cap_then_rearms_after_runaways_finish() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        let release = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let compiler = ConstraintCompiler::spawn_for_test(result_tx, {
+            let calls = Arc::clone(&calls);
+            let release = Arc::clone(&release);
+            move || {
+                let calls = Arc::clone(&calls);
+                let release = Arc::clone(&release);
+                let started_tx = started_tx.clone();
+                let finished_tx = finished_tx.clone();
+                move |_| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    let _ = started_tx.send(());
+                    let (released, wake) = &*release;
+                    let mut released = released.lock().unwrap();
+                    while !*released {
+                        released = wake.wait(released).unwrap();
+                    }
+                    let _ = finished_tx.send(());
+                    Err("deliberately runaway test compile".into())
+                }
+            }
+        });
+
+        for id in 0..CONSTRAINT_ABANDONED_WORKER_CAP as u64 {
+            compiler
+                .try_submit(
+                    id,
+                    GrammarSpec::JsonObject,
+                    Instant::now() + Duration::from_millis(100),
+                )
+                .unwrap();
+            started_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("runaway compile did not start");
+            let done = result_rx
+                .recv_timeout(Duration::from_millis(250))
+                .expect("runaway compile did not time out");
+            assert_eq!(done.id, id);
+            assert!(matches!(
+                done.result,
+                Err(ConstraintCompileFailure::TimedOut)
+            ));
+        }
+
+        let refusal = compiler.try_submit(
+            CONSTRAINT_ABANDONED_WORKER_CAP as u64,
+            GrammarSpec::JsonObject,
+            Instant::now() + Duration::from_secs(1),
+        );
+        if refusal.is_ok() {
+            started_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("uncapped fifth compile did not start");
+        }
+
+        let (released, wake) = &*release;
+        *released.lock().unwrap() = true;
+        wake.notify_all();
+        let spawned = calls.load(Ordering::SeqCst);
+        for _ in 0..spawned {
+            finished_rx
+                .recv_timeout(Duration::from_secs(1))
+                .expect("runaway test worker did not exit");
+        }
+        assert_eq!(spawned, CONSTRAINT_ABANDONED_WORKER_CAP);
+        assert_eq!(
+            refusal,
+            Err(ConstraintSubmitError::AbandonedWorkerLimit),
+            "compile past the abandoned-worker cap was not refused",
+        );
+        assert!(compiler.abandoned_workers.is_fail_closed());
+
+        let recovery_id = CONSTRAINT_ABANDONED_WORKER_CAP as u64 + 1;
+        let rearm_deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            match compiler.try_submit(
+                recovery_id,
+                GrammarSpec::JsonObject,
+                Instant::now() + Duration::from_secs(1),
+            ) {
+                Ok(()) => break,
+                Err(ConstraintSubmitError::AbandonedWorkerLimit)
+                    if Instant::now() < rearm_deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                other => panic!("compiler did not rearm after runaways finished: {other:?}"),
+            }
+        }
+        started_rx
+            .recv_timeout(Duration::from_millis(100))
+            .expect("rearmed compile did not start");
+        let recovered = result_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("rearmed compile did not finish");
+        assert_eq!(recovered.id, recovery_id);
+        assert!(matches!(
+            recovered.result,
+            Err(ConstraintCompileFailure::Invalid(_)),
+        ));
+        assert!(!compiler.abandoned_workers.is_fail_closed());
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            CONSTRAINT_ABANDONED_WORKER_CAP + 1
+        );
+    }
+
+    #[test]
+    fn apply_mask_bans_unset_and_padding_tail() {
+        let mut vob = SimpleVob::alloc(8);
+        vob.allow_token(2);
+        vob.allow_token(5);
+        // logits longer than the mask: the padded tail must be banned too.
+        let mut logits = vec![1.0f32; 10];
+        apply_mask(&vob, &mut logits);
+        for (i, &l) in logits.iter().enumerate() {
+            if i == 2 || i == 5 {
+                assert_eq!(l, 1.0, "allowed token {i} must be untouched");
+            } else {
+                assert_eq!(l, f32::NEG_INFINITY, "banned token {i} must be -inf");
+            }
+        }
+    }
+
+    /// schema -> mask -> forced token sequence: greedy-walk the grammar (always take the
+    /// lowest allowed token) and assert the emitted bytes parse as JSON AND satisfy the
+    /// schema's required key. Uses llguidance's byte-level test env — the machinery under
+    /// test is grammar/mask/consume, identical to the serve path.
+    #[test]
+    fn schema_mask_forced_sequence() {
+        let env = ApproximateTokEnv::single_byte_env();
+        let factory = ParserFactory::new_simple(&env).unwrap();
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {"a": {"type": "integer"}},
+            "required": ["a"],
+            "additionalProperties": false
+        });
+        let mut m = Matcher::new(factory.create_parser(TopLevelGrammar::from_json_schema(schema)));
+        assert!(m.get_error().is_none(), "{:?}", m.get_error());
+        let eos = env.tok_trie().eos_token();
+        let mut out: Vec<u8> = Vec::new();
+        for _ in 0..256 {
+            let mask = m.compute_mask_or_eos().unwrap();
+            // the serve-path invariant: something is always allowed (worst case EOS).
+            assert!(mask.num_set() > 0, "empty mask");
+            // lowest allowed NON-whitespace token (JSON grammars allow unbounded
+            // whitespace — a pure lowest-token walk would emit tabs forever).
+            let mut pick: Option<u32> = None;
+            mask.iter_set_entries(|i| {
+                let ws = matches!(i as u8, b'\t' | b'\n' | b'\r' | b' ') && i < 128;
+                if !ws && pick.is_none() {
+                    pick = Some(i as u32);
+                }
+            });
+            let t = pick.expect("only whitespace allowed — walker stuck");
+            if t == eos {
+                break;
+            }
+            m.consume_token(t).unwrap();
+            out.extend_from_slice(env.tok_trie().token(t));
+        }
+        let text = String::from_utf8(out).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("forced output is not JSON: {e}: {text:?}"));
+        assert!(v.is_object(), "not an object: {text:?}");
+        // the walk picks '-' before digits, producing -0 — a valid JSON-schema integer
+        // (serde parses it as f64; schema-wise -0 == 0). Number-with-zero-fraction is
+        // exactly the draft-2020 "integer" definition.
+        let a = v
+            .get("a")
+            .unwrap_or_else(|| panic!("required key missing: {text:?}"));
+        assert!(
+            a.as_f64().is_some_and(|f| f.fract() == 0.0),
+            "required integer key not an integer: {text:?}"
+        );
+    }
+
+    /// DRAFT-SIDE MASKING (lane/draft-mask): the speculative clone must (a) hand out the same
+    /// legal set as the committed state at chain position 0, (b) advance INDEPENDENTLY of the
+    /// real matcher across the chain, (c) mask out a token the grammar cannot take at that
+    /// position, and (d) leave the real state exactly where it was (the byte-identity
+    /// precondition — only `consume` may move it).
+    #[test]
+    fn speculative_clone_masks_illegal_draft_and_leaves_real_state() {
+        use memra_engine::spec::SpecConstraint;
+        let env = ApproximateTokEnv::single_byte_env();
+        let factory = ParserFactory::new_simple(&env).unwrap();
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {"a": {"type": "integer"}},
+            "required": ["a"],
+            "additionalProperties": false
+        });
+        let mut sc = SessionConstraint::new(Matcher::new(
+            factory.create_parser(TopLevelGrammar::from_json_schema(schema)),
+        ));
+        assert!(sc.error().is_none());
+        let eos = env.tok_trie().eos_token();
+        let mut g = SpecGrammar::new(&mut sc, eos);
+        assert!(g.on, "draft masking must default ON");
+
+        // chain start: clone. Position 0 of this grammar can only take '{' (or whitespace).
+        g.draft_begin().unwrap();
+        let w0 = g
+            .draft_mask_words()
+            .unwrap()
+            .expect("draft mask must be present when ON");
+        let allowed = |words: &[u32], t: u32| -> bool {
+            let w = (t >> 5) as usize;
+            w < words.len() && (words[w] >> (t & 31)) & 1 == 1
+        };
+        assert!(
+            allowed(&w0, b'{' as u32),
+            "'{{' must be legal at draft pos 0"
+        );
+        assert!(
+            !allowed(&w0, b'x' as u32),
+            "'x' must be MASKED at draft pos 0"
+        );
+        assert!(
+            !allowed(&w0, b'a' as u32),
+            "bare 'a' (unquoted key) must be masked at pos 0"
+        );
+
+        // propose the legal token: the clone advances, the REAL state must not.
+        assert!(
+            g.draft_advance(b'{' as u32).unwrap(),
+            "legal draft must extend the chain"
+        );
+        let w1 = g.draft_mask_words().unwrap().unwrap();
+        assert!(
+            allowed(&w1, b'"' as u32),
+            "after '{{' a quoted key must be legal"
+        );
+        assert!(
+            !allowed(&w1, b'{' as u32),
+            "a second '{{' must be masked at draft pos 1"
+        );
+        // (d) the real (committed) state is still at position 0 — its own mask is unchanged.
+        let real: Vec<u32> = SpecConstraint::mask_words(&mut g).unwrap();
+        assert_eq!(
+            real, w0,
+            "real matcher moved during a draft chain (byte-identity break)"
+        );
+
+        // an illegal proposal ends the speculative chain instead of erroring out.
+        assert!(
+            !g.draft_advance(b'{' as u32).unwrap(),
+            "illegal draft token must end the chain, not error"
+        );
+        // and the real state STILL has not moved.
+        let real2: Vec<u32> = SpecConstraint::mask_words(&mut g).unwrap();
+        assert_eq!(
+            real2, w0,
+            "real matcher moved after a dead speculative chain"
+        );
+
+        // emitted token -> real state advances; a new chain clones from there.
+        SpecConstraint::consume(&mut g, b'{' as u32).unwrap();
+        g.draft_begin().unwrap();
+        let w2 = g.draft_mask_words().unwrap().unwrap();
+        assert_eq!(
+            w2, w1,
+            "a fresh chain after emitting '{{' must match the pos-1 mask"
+        );
+        assert!(
+            sc.spec_clones >= 2,
+            "clone meter must count each chain start"
+        );
+        assert!(
+            sc.draft_masks >= 3,
+            "draft-mask meter must count each masked position"
+        );
+    }
+
+    fn postthink_constraint(schema: serde_json::Value) -> (SessionConstraint, u32, usize) {
+        let env = ApproximateTokEnv::single_byte_env();
+        let factory = ParserFactory::new_simple(&env).unwrap();
+        let sc = SessionConstraint::new(Matcher::new(
+            factory.create_parser(TopLevelGrammar::from_json_schema(schema)),
+        ));
+        let n_vocab = env.tok_trie().vocab_size();
+        (sc, env.tok_trie().eos_token(), n_vocab)
+    }
+
+    /// POST-THINK phase 1: the mask allows everything EXCEPT the eos set (EOS banned
+    /// inside think — the step37 empty-content quirk fix), the grammar stays untouched
+    /// while arbitrary think tokens are consumed, and after the close sequence the mask
+    /// is the grammar's INITIAL mask.
+    #[test]
+    fn postthink_phase1_bans_eos_and_grammar_engages_at_close() {
+        let (mut sc, eos, n_vocab) = postthink_constraint(serde_json::json!({"type": "object"}));
+        // multi-token close sequence: "</" "think" ">" stand-ins (byte tokens).
+        let close = vec![b'<' as u32, b'/' as u32, b'>' as u32];
+        sc.arm_postthink(close, &[eos, 7], n_vocab, 0).unwrap();
+
+        // the grammar's initial mask, computed on an UNGATED twin (same schema).
+        let (mut twin, _, _) = postthink_constraint(serde_json::json!({"type": "object"}));
+        let initial = twin.compute_mask().unwrap();
+
+        // phase 1 mask: everything allowed but the eos set.
+        let m = sc.compute_mask().unwrap();
+        assert!(!m.is_allowed(eos), "eos must be banned inside think");
+        assert!(!m.is_allowed(7), "every id in the eos set must be banned");
+        assert!(m.is_allowed(b'x' as u32), "think is unconstrained");
+        assert!(
+            m.is_allowed(b'{' as u32),
+            "phase 1 must not clamp to the grammar"
+        );
+
+        // arbitrary think prose — including grammar-illegal tokens — consumes cleanly
+        // and never touches the matcher.
+        for &t in b"deep thought about { and > tokens" {
+            sc.consume(t as u32).unwrap();
+        }
+        // a PARTIAL close match ('<' then divergence) must rewind, not flip the phase.
+        sc.consume(b'<' as u32).unwrap();
+        sc.consume(b'x' as u32).unwrap();
+        let m = sc.compute_mask().unwrap();
+        assert!(
+            m.is_allowed(b'x' as u32),
+            "still phase 1 after partial close"
+        );
+
+        // the full close sequence flips the phase...
+        sc.consume(b'<' as u32).unwrap();
+        sc.consume(b'/' as u32).unwrap();
+        sc.consume(b'>' as u32).unwrap();
+        let (think_tokens, closed, forced) = sc.postthink_receipt().unwrap();
+        assert!(closed, "close sequence must close the gate");
+        assert!(!forced, "model-closed, not ceiling-forced");
+        assert_eq!(think_tokens, 33 + 2 + 3, "every phase-1 token counted");
+        // ...and the next mask is the grammar's INITIAL mask (untouched during think).
+        let m = sc.compute_mask().unwrap();
+        assert_eq!(
+            m.as_slice(),
+            initial.as_slice(),
+            "phase 2 must start at the grammar's initial state"
+        );
+        // phase 2 consume feeds the grammar: a grammar-illegal token now errors.
+        assert!(sc.consume(b'x' as u32).is_err());
+    }
+
+    /// Ceiling: past MEMRA_POSTTHINK_CEILING think tokens the mask collapses to exactly
+    /// the next close token — the forced walk — then the grammar engages.
+    #[test]
+    fn postthink_ceiling_forces_the_close_sequence() {
+        let (mut sc, eos, n_vocab) = postthink_constraint(serde_json::json!({"type": "object"}));
+        let close = vec![b'<' as u32, b'/' as u32];
+        sc.arm_postthink(close.clone(), &[eos], n_vocab, 4).unwrap();
+        for &t in b"abcd" {
+            sc.consume(t as u32).unwrap();
+        }
+        // at the ceiling: only close[0] is allowed.
+        let m = sc.compute_mask().unwrap();
+        assert_eq!(m.num_set(), 1, "forced mask allows exactly one token");
+        assert!(m.is_allowed(close[0]));
+        sc.consume(close[0]).unwrap();
+        let m = sc.compute_mask().unwrap();
+        assert_eq!(m.num_set(), 1);
+        assert!(m.is_allowed(close[1]));
+        sc.consume(close[1]).unwrap();
+        let (_, closed, forced) = sc.postthink_receipt().unwrap();
+        assert!(closed && forced, "ceiling-forced close must be receipted");
+        // grammar owns the next step.
+        let m = sc.compute_mask().unwrap();
+        assert!(m.is_allowed(b'{' as u32));
+        assert!(!m.is_allowed(b'x' as u32));
+    }
+
+    /// KMP detector: a close whose prefix repeats ("aab" over stream "aaab") must match —
+    /// a reset-to-zero detector misses it.
+    #[test]
+    fn postthink_close_detector_handles_overlapping_prefixes() {
+        let (mut sc, eos, n_vocab) = postthink_constraint(serde_json::json!({"type": "object"}));
+        sc.arm_postthink(vec![1, 1, 2], &[eos], n_vocab, 0).unwrap();
+        for t in [1u32, 1, 1, 2] {
+            sc.consume(t).unwrap();
+        }
+        let (_, closed, _) = sc.postthink_receipt().unwrap();
+        assert!(closed, "overlapping-prefix close must be detected");
+    }
+
+    /// Arming refusals: an empty close sequence and out-of-vocab close ids are loud
+    /// errors at admission, never a silently unconstrained session.
+    #[test]
+    fn postthink_arming_is_fail_closed() {
+        let (mut sc, eos, n_vocab) = postthink_constraint(serde_json::json!({"type": "object"}));
+        assert!(sc.arm_postthink(vec![], &[eos], n_vocab, 0).is_err());
+        assert!(
+            sc.arm_postthink(vec![n_vocab as u32 + 1], &[eos], n_vocab, 0)
+                .is_err()
+        );
+    }
+
+    /// A token sampled OUTSIDE the mask must be rejected by consume — the guard the
+    /// worker relies on for its loud-stop path.
+    #[test]
+    fn consume_outside_mask_is_error() {
+        let env = ApproximateTokEnv::single_byte_env();
+        let factory = ParserFactory::new_simple(&env).unwrap();
+        let mut m = Matcher::new(factory.create_parser(TopLevelGrammar::from_json_schema(
+            serde_json::json!({"type": "object"}),
+        )));
+        // 'x' (0x78) cannot start a JSON object.
+        assert!(m.consume_token(b'x' as u32).is_err());
+    }
+}

@@ -1,0 +1,55 @@
+{
+  "template": "official",
+  "request": {
+    "model": "g4",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Ping twice."
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "c1",
+            "function": {
+              "name": "ping",
+              "arguments": "{}"
+            }
+          },
+          {
+            "id": "c2",
+            "function": {
+              "name": "ping",
+              "arguments": "{}"
+            }
+          }
+        ],
+        "tool_responses": [
+          {
+            "name": "ping",
+            "response": 42
+          },
+          {
+            "name": "ping",
+            "response": "pong"
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "ping",
+          "description": "Liveness probe",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      }
+    ]
+  }
+}

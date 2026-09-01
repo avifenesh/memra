@@ -1,0 +1,119 @@
+===== A1BASE =====
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+loader-law Float: WARNING: output.weight loads
+loader-law Float: WARNING: blk.*.kda_q.weight loads
+loader-law Float: WARNING: blk.*.kda_k.weight loads
+loader-law Float: WARNING: blk.*.kda_v.weight loads
+loader-law Float: WARNING: blk.*.kda_f_a.weight loads
+loader-law Float: WARNING: blk.*.kda_f_b.weight loads
+loader-law Float: WARNING: blk.*.kda_g_a.weight loads
+loader-law Float: WARNING: blk.*.kda_g_b.weight loads
+loader-law Float: WARNING: blk.*.kda_b.weight loads
+loader-law Float: WARNING: blk.*.kda_out.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_q_b.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_k.weight loads
+loader-law Float: WARNING: blk.*.indexer.proj.weight loads
+loader-law Float: WARNING: blk.*.indexer.kpool_gate.weight loads
+[moe-cache] snapshot hits=4936575 misses=518721 hit_rate=90.491 staged_bytes=2447632760832 slots=12000
+===== A2PIN =====
+[st-spill] free_pinnable_ram=300378 MiB
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+loader-law Float: WARNING: output.weight loads
+loader-law Float: WARNING: blk.*.kda_q.weight loads
+loader-law Float: WARNING: blk.*.kda_k.weight loads
+loader-law Float: WARNING: blk.*.kda_v.weight loads
+loader-law Float: WARNING: blk.*.kda_f_a.weight loads
+loader-law Float: WARNING: blk.*.kda_f_b.weight loads
+loader-law Float: WARNING: blk.*.kda_g_a.weight loads
+loader-law Float: WARNING: blk.*.kda_g_b.weight loads
+loader-law Float: WARNING: blk.*.kda_b.weight loads
+loader-law Float: WARNING: blk.*.kda_out.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_q_b.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_k.weight loads
+loader-law Float: WARNING: blk.*.indexer.proj.weight loads
+loader-law Float: WARNING: blk.*.indexer.kpool_gate.weight loads
+[moe-cache] snapshot hits=2496465 misses=378351 hit_rate=86.839 staged_bytes=1785284001792 slots=12000
+===== A2LOW =====
+[st-spill] free_pinnable_ram=297589 MiB
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+loader-law Float: WARNING: output.weight loads
+loader-law Float: WARNING: blk.*.kda_q.weight loads
+loader-law Float: WARNING: blk.*.kda_k.weight loads
+loader-law Float: WARNING: blk.*.kda_v.weight loads
+loader-law Float: WARNING: blk.*.kda_f_a.weight loads
+loader-law Float: WARNING: blk.*.kda_f_b.weight loads
+loader-law Float: WARNING: blk.*.kda_g_a.weight loads
+loader-law Float: WARNING: blk.*.kda_g_b.weight loads
+loader-law Float: WARNING: blk.*.kda_b.weight loads
+loader-law Float: WARNING: blk.*.kda_out.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_q_b.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_k.weight loads
+loader-law Float: WARNING: blk.*.indexer.proj.weight loads
+loader-law Float: WARNING: blk.*.indexer.kpool_gate.weight loads
+[moe-cache] snapshot hits=3386145 misses=1137759 hit_rate=74.850 staged_bytes=5368620515328 slots=6000
+===== A3BF16 =====
+[st-spill] free_pinnable_ram=299764 MiB
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+loader-law Float: WARNING: blk.*.kda_f_a.weight loads
+loader-law Float: WARNING: blk.*.kda_f_b.weight loads
+loader-law Float: WARNING: blk.*.kda_g_a.weight loads
+loader-law Float: WARNING: blk.*.kda_g_b.weight loads
+loader-law Float: WARNING: blk.*.kda_b.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_k.weight loads
+loader-law Float: WARNING: blk.*.indexer.proj.weight loads
+loader-law Float: WARNING: blk.*.indexer.kpool_gate.weight loads
+[moe-cache] snapshot hits=4323180 misses=667428 hit_rate=86.626 staged_bytes=3149320421376 slots=12000
+===== A1R =====
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+loader-law Float: WARNING: output.weight loads
+loader-law Float: WARNING: blk.*.kda_q.weight loads
+loader-law Float: WARNING: blk.*.kda_k.weight loads
+loader-law Float: WARNING: blk.*.kda_v.weight loads
+loader-law Float: WARNING: blk.*.kda_f_a.weight loads
+loader-law Float: WARNING: blk.*.kda_f_b.weight loads
+loader-law Float: WARNING: blk.*.kda_g_a.weight loads
+loader-law Float: WARNING: blk.*.kda_g_b.weight loads
+loader-law Float: WARNING: blk.*.kda_b.weight loads
+loader-law Float: WARNING: blk.*.kda_out.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_q_b.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_k.weight loads
+loader-law Float: WARNING: blk.*.indexer.proj.weight loads
+loader-law Float: WARNING: blk.*.indexer.kpool_gate.weight loads
+[moe-cache] snapshot hits=3778716 misses=611124 hit_rate=86.079 staged_bytes=2883644817408 slots=12000
+===== A2R =====
+[st-spill] free_pinnable_ram=299236 MiB
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+loader-law Float: WARNING: output.weight loads
+loader-law Float: WARNING: blk.*.kda_q.weight loads
+loader-law Float: WARNING: blk.*.kda_k.weight loads
+loader-law Float: WARNING: blk.*.kda_v.weight loads
+loader-law Float: WARNING: blk.*.kda_f_a.weight loads
+loader-law Float: WARNING: blk.*.kda_f_b.weight loads
+loader-law Float: WARNING: blk.*.kda_g_a.weight loads
+loader-law Float: WARNING: blk.*.kda_g_b.weight loads
+loader-law Float: WARNING: blk.*.kda_b.weight loads
+loader-law Float: WARNING: blk.*.kda_out.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_q_b.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_k.weight loads
+loader-law Float: WARNING: blk.*.indexer.proj.weight loads
+loader-law Float: WARNING: blk.*.indexer.kpool_gate.weight loads
+[moe-cache] snapshot hits=3687039 misses=589905 hit_rate=86.207 staged_bytes=2783521013760 slots=12000
+===== A4BEST =====
+[st-spill] free_pinnable_ram=299495 MiB
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+loader-law Float: WARNING: blk.*.kda_f_a.weight loads
+loader-law Float: WARNING: blk.*.kda_f_b.weight loads
+loader-law Float: WARNING: blk.*.kda_g_a.weight loads
+loader-law Float: WARNING: blk.*.kda_g_b.weight loads
+loader-law Float: WARNING: blk.*.kda_b.weight loads
+loader-law Float: WARNING: blk.*.indexer.attn_k.weight loads
+loader-law Float: WARNING: blk.*.indexer.proj.weight loads
+loader-law Float: WARNING: blk.*.indexer.kpool_gate.weight loads
+[moe-cache] snapshot hits=4360344 misses=533496 hit_rate=89.099 staged_bytes=2517349957632 slots=14000

@@ -1,0 +1,26 @@
+timestamp=2026-08-12T12:24:53Z
+runtime_source=b671c3e17035d757944439a5345b66d2f442ebe5
+shape=Q27 single server on physical GPU0; GPU1 idle
+model=/opt/scratch/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+label=ab-prefill2048-baseline-r4
+MEMRA_PREFIX_CACHE_MB=4096
+MEMRA_MAX_SESSIONS=96
+MEMRA_DECODE_BATCH_CAP=<unset>
+MEMRA_PREFILL_TICK=<unset>
+MEMRA_TICK_TRACE=0
+concurrency=8,12,16,20,24
+repetitions=1
+b671c3e1 (HEAD) Merge lane/cx-dualpp2 evidence: dual-PP post-review revalidation raw logs (exactness run-spec PASS + origin-main audit); PROGRESS conflict resolved to lane's refreshed blocker-4 record
+09900dca Merge lane/cx-requal: PAIR QUALIFIED on fixed main @ac6ef049b — Q27 SELLABLE (40/40, hit TTFT p95 21.6ms, knee c=12/200% headroom) AND Q35 SELLABLE (40/40, hit TTFT p95 101.2ms, knee c=32/700% headroom), q35bug regression cell PASS 5x both models, cached-token reconciliation exact; both one-pager envelopes published — the two-model offer is live
+70bb2b36 data: record fresh Q27 and Q35 requalification
+a22cd518 chore: record adaptive c48 extension
+3e6bcd8d chore: record adaptive c32 extension
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 595.71.05, 97887 MiB
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 595.71.05, 97887 MiB

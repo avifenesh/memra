@@ -1,0 +1,36 @@
+{
+ "name": "p11-agent-b",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 5547,
+   "completion_tokens": 128,
+   "total_tokens": 5675,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 90.652727282,
+   "spec": {
+    "rounds": 52,
+    "drafted": 260,
+    "accepted": 79,
+    "acceptance_rate": 0.3038461538461538
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "The user is showing me a transcript of what appears to be a work session involving a personal knowledge wiki (\"llm-wiki\" project). Let me piece together what's happening:\n\n1. There's a file read showing `/raw/learning/agent-knowledge/muon-optimizer` content \u2014 a study note about the Muon optimizer vs AdamW, with details about NorMuon, Polar Express, Dion, distributed implementation notes, pitfalls, etc.\n\n2. Two lesson files are shown:\n   - `/raw/learning/ml-research/lessons/day_05.md` \u2014 \"ML Research \u2014 Day 5 of 72\", \""
+    }
+   }
+  ]
+ }
+}

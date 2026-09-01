@@ -1,0 +1,27 @@
+2026-08-11T05:22:15+03:00
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-cx-dspark0/research/dspark0-20260811/match-output-q6.py", line 64, in <module>
+    main()
+  File "/home/avifenesh/projects/wt-cx-dspark0/research/dspark0-20260811/match-output-q6.py", line 26, in main
+    quantized = gguf.quants.quantize(np.ascontiguousarray(head), qtype)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/projects/llama.cpp/gguf-py/gguf/quants.py", line 63, in quantize
+    return q.quantize(data)
+           ^^^^^^^^^^^^^^^^
+  File "/data/projects/llama.cpp/gguf-py/gguf/quants.py", line 195, in quantize
+    return cls.__quantize_array(tensor)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/projects/llama.cpp/gguf-py/gguf/quants.py", line 169, in __quantize_array
+    return _apply_over_grouped_rows(cls.quantize_rows, arr=array, otype=np.uint8, oshape=cls.__shape_to_bytes(array.shape))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/projects/llama.cpp/gguf-py/gguf/quants.py", line 38, in _apply_over_grouped_rows
+    np.concatenate([func(group).ravel() for group in np.array_split(rows, n_groups)], axis=0, out=out)
+                    ^^^^^^^^^^^
+  File "/data/projects/llama.cpp/gguf-py/gguf/quants.py", line 143, in quantize_rows
+    blocks = cls.quantize_blocks(blocks)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/data/projects/llama.cpp/gguf-py/gguf/quants.py", line 130, in quantize_blocks
+    raise NotImplementedError
+NotImplementedError
+stat: cannot stat '/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/dspark0-20260811/converter-q6-full.gguf': No such file or directory (os error 2)
+2026-08-11T05:22:16+03:00

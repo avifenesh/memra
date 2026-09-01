@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me think about this. The user message sets up a big wiki ingestion task with multiple source files to process. I started by listing the wiki structure and reading the first two raw sources. I was mid-way through reading the remaining sources when the turn ends. The user now asks: \"Summarize the state of the work above in one short paragraph.\"\n\nWait, actually the last human turn is just \"Summarize the state of the work above in one short paragraph.\" Hmm. This reads like the user wants a summary of the state of the work so far, one short paragraph. This is a cadence check \u2014 no new",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me think about this. The user message sets up a big wiki ingestion task with multiple source files to process. I started by listing the wiki structure and reading the first two raw sources. I was mid-way through reading the remaining sources when the turn ends. The user now asks: \"Summarize the state of the work above in one short paragraph.\"\n\nWait, actually the last human turn is just \"Summarize the state of the work above in one short paragraph.\" Hmm. This reads like the user wants a summary of the state of the work so far, one short paragraph. This is a cadence check \u2014 no new"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 4626,
+  "completion_tokens": 128,
+  "total_tokens": 4754,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 14.644915891,
+  "spec": {
+   "rounds": 57,
+   "drafted": 171,
+   "accepted": 70,
+   "acceptance_rate": 0.4093567251461988
+  }
+ },
+ "id": "chatcmpl-cbc159210248fae5b1a612f1c1b95fa7",
+ "created": 1788082190,
+ "system_fingerprint": "REDACTED"
+}

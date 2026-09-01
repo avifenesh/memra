@@ -1,0 +1,26 @@
+git_head=fb6e5abf77e1d0f7fe61c491f8d8fc2685a3bd1d
+bin_md5=31e00ec4678840f37bbe7a5076e5b373
+fix_marker=1
+/home/ubuntu/re-lane/cell13.sh: line 50: 78716 Segmentation fault      (core dumped) env $BASE $QUAL MEMRA_NVFP4_BANK_V2=1 MEMRA_CTX=262144 MEMRA_MODELS="step37=/root/models/step37-flash-nvfp4" MEMRA_ADDR=127.0.0.1:$PORT $BIN > $LOG 2>&1
+REFUSE_ARM exit_rc=139
+REFUSE_ARM named_error=1
+REFUSE_ARM says_sel_down8=1
+REFUSE_ARM health_after=000
+REFUSE_ARM tail:
+[mtp-draft] embedded chain: heads=3 blocks=45..=47 scratch=per-head
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[server] FATAL: worker init failed: MEMRA_NVFP4_BANK_V2=1 is refused in serving for step37-class models: the slot-major bank is NOT output-identical to v1 on this path -- at 25 prompt tokens, greedy, the first generated token differs between the arms and the ON arm derails (measured 2026-08-29, research/step37-reasoning-effort-20260829; the door alone reproduces it while the other 23 serving doors together do not). Unset it -- and unset MEMRA_SEL_DOWN8, which requires the v2 banks -- to serve correct text; the flag remains usable in offline diagnostics
+REFUSE_ARM NO_SERVER_LEFT
+SERVE_ARM HEALTH=200
+postfix/mul/r0: pt=25 HIT=True R="Got it, let's calculate 17 times 23. First, 17*20 is 34" C='391'
+postfix/mul/r1: pt=25 HIT=True R="Got it, let's calculate 17 times 23. First, 17*20 is 34" C='391'
+postfix/cap/r0: pt=24 HIT=True R='We need to answer: "What is the capital of France? Repl' C='Paris'
+postfix/cap/r1: pt=24 HIT=True R='We need to answer: "What is the capital of France? Repl' C='Paris'
+postfix/count/r0: pt=27 HIT=True R='We need to answer: "How many days are in a leap year? R' C='366'
+postfix/count/r1: pt=27 HIT=True R='We need to answer: "How many days are in a leap year? R' C='366'
+postfix/word/r0: pt=23 HIT=True R="Got it, let's see. The word is stressed, reverse it. Le" C=''
+postfix/word/r1: pt=23 HIT=True R="Got it, let's see. The word is stressed, reverse it. Le" C=''
+WROTE /home/ubuntu/re-lane/cell13-serve-rows.json
+SERVE_ARM ILLEGAL=0 hash87=0 panic=0
+SERVER_GONE
+CELL13_DONE

@@ -1,0 +1,33 @@
+[server] starting; models config = [("q35", "/opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q35" <- /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.88GB (expert budget 96.29GB) -> RESIDENT
+[worker]   loaded "q35": 41 layers, eos=248046
+[worker] q35: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q35: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 4295MB (4294967296 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[server] worker ready; serving models: ["q35"]
+[admission] "q35": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18468
+[meter] admit id=cmpl-8aa9ae7bc849690f5d8fc3f3d568c98e tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4984 path=plain = 10208 B/token x ctx + 0MB fixed = 51MB
+[spec-k] model="q35" tenant="gscost-activation-q35-q35-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q35" 129MB (observed 179MB at ctx 4928 path=plain)
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 111.0MB / 4295MB, model q35, ns "gscost-activation-q35-q35-hot-0")
+[meter] admit id=cmpl-cccd1b74f703f6ec5f5497c098228bc5 tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4940 path=plain = 10208 B/token x ctx + 129MB fixed = 179MB
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-activation-q35-q35-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a6c6bfd7ea436999119f3ecc112a43cc tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=5436 path=plain = 10208 B/token x ctx + 129MB fixed = 184MB
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-activation-q35-q35-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[graph-census] segment t_kv 4861..=5375 fa_plan mains: 10
+[graph-census] {"CU_GRAPH_NODE_TYPE_KERNEL": 997, "CU_GRAPH_NODE_TYPE_MEMCPY": 30, "CU_GRAPH_NODE_TYPE_MEMSET": 30, "CU_GRAPH_NODE_TYPE_MEM_ALLOC": 1475, "CU_GRAPH_NODE_TYPE_MEM_FREE": 1475}
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

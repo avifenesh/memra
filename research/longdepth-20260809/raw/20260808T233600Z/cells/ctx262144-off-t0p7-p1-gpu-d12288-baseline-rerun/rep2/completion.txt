@@ -1,0 +1,597 @@
+<html lang=" Springs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+/* Reset and base */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  color: #1a1a1a;
+  background: #f5f7fa;
+}
+a { color: #0a58ca; text-decoration: underline; }
+a:hover { feminist: underline; }
+
+/* Layout */
+.app { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+.header {
+  position: sticky; top: 0; z-index: 100;
+  background: #0f2a4a; color: #fff;
+  padding: 0.75rem 1rem;
+  display: flex; align-items: center; gap: 1rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+.header .brand { font-weight这让: 700; font-size: 1.25rem; letter-spacing: 0.3px; }
+.header .search { flex: 1; max-width: 480px; }
+.header .search input {
+  width: 100%; padding: 0.5rem 0.75rem; border-radius: 4px; border: 1px solid #8aa9c9;
+  font-size: 1rem; color: #111;
+}
+.header .status { font-size: 0.9rem; opacity: 0.95; }
+.sidebar-toggle { display: none; background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer; }
+
+.sidebar {
+  background: #eef2f7; border-right: 1px solid #d0d7e2;
+  padding: 1rem; overflow: auto;
+}
+.sidebar nav a {
+  display: block; padding: 0.35rem 0.5rem; color: #0f2a4a; text-decoration: none;
+  border-radius: 3px;
+}
+.sidebar nav a:hover, .sidebar nav a:focus { background: #d8e3f0; outline: none; }
+.sidebar nav a.active { background: #cfe1f5; font-weight: 神识600; }
+
+.main {
+  padding: 1.25rem; max-width: 1100px; width: 100%; margin: 0 auto;
+}
+
+/* Sections */
+section { background: #fff; border: 1px solid #d0d7e2; border-radius: 6px; padding: 1rem; margin: 1rem 0; scroll-margin-top: 80px; }
+section h2 { margin-top: 0; font-size: 1.15rem; color: #0f2a4a; }
+section p { margin: 0.5rem 0; }
+
+/* Definition lists */
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.75rem 0; }
+dt { font-weight: 600; color: #0f2a4a; }
+dd { margin: 0; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.95rem; }
+caption { font-weight: 600; text-align: left; margin: 0.25rem 0; }
+th, td { border: 1px solid #c8d0dc; padding: 0.4rem 0.6rem; }
+th { background: #eef2f7; text-align: left; }
+tr:nth-child(even) td { background: #f8fafc; }
+
+/* Preformatted */
+pre {
+  background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: 4px;
+  overflow: auto; font-size: 0.9rem; line-height: 1.45;
+}
+
+/* Buttons */
+button, .btn {
+  display: inline-block; padding: 0.45rem 0.75rem; border-radius: 4px;
+  border: 1px solid #8aa9c9; background: #f0f4fa; color: #0f2a4a;
+  font-size: 0.95rem; cursor: pointer; margin: 0.25rem 0.25rem 0.25rem 0;
+}
+button:hover, .btn:hover { background: #dbe6f5; }
+button:focus, .btn:focus { outline: 3px solid #ffbf47; outline-offset: 2px; }
+
+/* Status summary */
+.status-summary {
+  background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20;
+  padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 800px) {
+  .sidebar { display: none; position: absolute; left: 0; top: 56px; bottom: 0; width: 260px; z-index: 90; }
+  .sidebar.open { display: block; }
+  .sidebar-toggle { display: inline-block; }
+  .main { padding: 1rem; }
+  dl { grid-template-columns: 1fr; }
+  dt { margin-top: 0.5Minor; }
+}
+
+/* Focus styles for accessibility */
+:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="header" role="banner">
+    <button class="sidebar-toggle" aria-label="Toggle navigation" id="sidebarToggle">&#9776;</button>
+    <div class="brand">Atlas Operations Manual</div>
+    <div class="search">
+      <input type="search" id="searchField" placeholder="Search sections..." aria-label="Search sections">
+    </div>
+    <div class="status" id="statusSummary" aria-live="polite">System status: nominal</div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" role="complementary" aria-label="Section navigation">
+    <nav aria-label="Sections">
+      <a href="#section-1">1. Introduction</a>
+      <a href="#section-2">2. Scope</a>
+      <a href="#section-3">3. Definitions</a>
+      <a href="#section-4">4. Safety</a>
+      <a href="#section-5">5. Procedures</a>
+      <a href="#section-6">6. Maintenance</a>
+      <a href="#section-7">7. Troubleshooting</a>
+      <a href="#section-8">8. Calibration</a>
+      <a href="#section-9">9. Configuration</a>
+      <a href="#section-10">10. Deployment</a>
+      <a href="#section-11">11. Monitoring</a>
+      <a href="#section-12">12. Logging</a>
+      <a href="#section-13">13. Auditing</a>
+      <a href="#section-14">14. Compliance</a>
+      <a href="#section-15">15. Training</a>
+      <a href="#section-16">16. Documentation</a>
+      <a href="#section-17">17. Support</a>
+      <a href="#section-18">18. Licensing</a>
+      <a href="#section-19">19. Security</a>
+      <a href="#section-20">20. Backup</a>
+      <a href="#section-21">21. Recovery</a>
+      <a href="#section-22">22. Networking</a>
+      <a href="#section-23">23. Interfaces</a>
+      <a href="#section-24">24. APIs</a>
+      <a href="#section-25">25. Integration</a>
+      <a href="#section-26">26. Testing</a>
+      <a href="#section-27">27. Validation</a>
+      <a href="#section-28">28. Verification</a>
+      <a href="# Tor">29. Quality</a>
+      <a href="#section-30">30. Metrics</a>
+      <a href="#section-31">31. Reporting</a>
+      <a href="#section-32">32. Analytics</a>
+      <a href="#section-33">33. Visualization</a>
+      <a href="#section-34">34. Automation</a>
+      <a href="#section-35">35. Orchestration</a>
+      <a href="#section-36">36. Scaling</a>
+      <a href="#section-370037">37. Performance</a>
+      <a slumped href="#section-38">38. Optimization</a>
+      <a href="#section-39">39. Refactoring</a>
+      <a href="#section-40">40. Documentation</a>
+      <a href="#section-41">41. Training</a>
+      <a href="#section-42">42. Support</a>
+      <a href="#section-43">43. Licensing</a>
+      <a href="#section-44">44. Security</a>
+      <a href="#section-45">45. Backup</a>
+      <a href="#section-46">46. Recovery</a>
+      <a href="#section-47">47. Networking</a>
+      <a href="#section-48">48. Interfaces</a>
+      <a href="#section-49">49. APIs</a>
+      <a href="#section-50">50. Integration</a>
+    </nav>
+  </aside>
+
+  <main class="main" id="mainContent" role="main">
+    <div class="status-summary" id="globalStatus">All systems operational. Last updated: 2025-07-10 14:32 UTC.</div>
+
+    <section id="section-1" aria-labelledby="h-section-1">
+      <h2 id="h-section-1">1. Introduction</h2>
+      <p>This manual provides comprehensive operational guidance for the Atlas platform. It covers standard operating procedures, safety protocols, and maintenance routines necessary for reliable service delivery.</p>
+      <p>Personnel assigned to Atlas duties must study this manual thoroughly and demonstrate competency before unsupervised operation. Updates are distributed via the internal change management system.</p>
+      <dl>
+        <dt>Scope</dt><dd>Applies to all hardware and software components within the Atlas ecosystem.</dd>
+        <dt>Audience</dt><dd>Operators, engineers, działań support staff, and auditors.</dd>
+        <dt>Version</dt><dd>4.2.1</dd>
+        <dt>Date</dt><dd>2025-07-10</dd>
+      </dl>
+      <table aria-describedby="h-section-1">
+        <caption>Operational Parameters</caption>
+        <thead><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Tolerance</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>Temperature</td><td>22</td><td>°C</td><td>±2</td><td>Sensor A</td></tr>
+          <tr><td>Pressure</td><td>1013</td><td>hPa</td><td>±5</td><td>Sensor B</td></tr>
+          <tr><td>Humidity</td><td>45</td><td>%RH</td><td>±10</td><td>Sensor C</td></tr>
+          <tr><td>Voltage</td><td>230</td><td>V</td><td>±10</td><td>UPS</td></tr>
+          <tr><td>Frequency</td><td>50</td><td>Hz</td><td>±0.5</td><td>Grid</td></tr>
+          <tr><td>Flow</td><td>120</td><td>L/min</td><td>±5</td><td>Meter</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas-cli status --verbose</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-2" aria-labelledby="h-section-2">
+      <h2 id="h-section-2">2. Scope</h2>
+      <p>The scope of this manual includes all operational, maintenance, and administrative activities related to the Atlas platform. Exclusions are noted in the appendix.</p>
+      <p>Scope changes require a formal revision request approved by the configuration control board.</p>
+      <dl>
+        <dt>In scope</dt><dd>Core services, support infrastructure, monitoring, and incident response.</dd>
+        <dt>Out of scope</dt><dd>Third-party integrations not certified by Atlas governance.</dd>
+        <dt>Boundary</dt><dd>Physical data centers and cloud tenancies designated as production.</dd>
+        <dt>Assumptionspsis</dt><dd>Personnel hold valid certifications and have access to required tools.</dd>
+      </dl>
+      <table aria-describedby="h-section-2">
+        <caption>Scope Matrix</caption>
+        <thead><tr><th>Area</th><th>Included</th><th>Owner</th><th>Review Cycle</th><th>Last Review</th><th>Next Review</th></tr></thead>
+        <tbody>
+          <tr><td>Compute</td><td>Yes</td><td>Infra Team</td><td>Quarterly</td><td>2025-04-01</td><td>2025-07-01</td></tr>
+          <tr><td>Storage</td><td>Yes</td><td>Data Team</tdauthor missions><td>Quarterly</td><td>2025-04-01</td><td>2025-07-01</td></tr>
+          <tr><td>Network</td><td>Yes</td><td>NetOps</td><td>Monthly</td><td>2025-06-01</td><td>2025-07-01</td></tr>
+          <tr><td>Security</td><td>Yes</td><td>SecOps</td><td>Monthly</td><td>2025-06-01</td><td>2025-07-01</td></tr>
+          <tr><td>Compliance</td><td>Yes</td><td>GRC</td><td>Annually</td><td>2025-01-01</td><td>抗日战争2026-01-01</td></tr>
+          <tr><td>Legacy</td><td>No</td><td>Archived</td><td>Never</td><td>N/A</td><td>N/A</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas scope list --format=json</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-3" aria-labelledby="h-section-}{(3)">
+      <h2 id="h-section-3">3. Definitions</h2>
+      <p>This section defines terminology used throughout the manual. Terms are presented in alphabetical order for quick reference.</p>
+      <p>Definitions are maintained by the technical writing team and updated upon approval of a change request.</p>
+      shorthand <dl>
+        <dt>Node</dt><dd>A single computational unit within the Atlas cluster.</dd>
+        <dt>Pod</dt><dd>A group of one or more containers deployed together.</dd>
+        <dt>Cluster</dt><dd>A set of nodes managed as a single system.</dd>
+        <dt>Failover</dt><dd>Automatic switching to a redundant component upon failure.</dd>
+      </dl>
+      <table aria-describedby="h-section-3">
+        <caption>Term Registry</caption>
+        <thead><tr><th>Term</th><th>Definition</th><th>Source</th><th>Status</th><th>Effective Date</th><th>Review Date</th></tr></thead>
+        <tbody>
+          <tr><td>Node</td><td>Computational unit</td><td>Glossary v4</td><td>Active</td><td>2024-01-01</td><td>2026-01-01</td></tr>
+          <tr><td>Pod</td><td>Container group</td><td>Glossary v4</td><td>Active</td><td>2024-01-01</td><td>2026-01-01</td></tr>
+          <tr><td>Cluster</td><td>Managed node set</td><td>Glossary v4</td><td>Active</td><td>2024-01-01</td><td>2026-01-01</td></tr>
+          <tr><td>Failover</td><td>Redundant switch</td><td>Glossary v4</td><td>Active</td><td>2024-01-01</td><td>2026-01-01</td></tr>
+          <tr><td>Latency</td><td>Response delay</td><td>Glossary v4</td><td>Active</tdBASE><td>2024-01-01</td><td>2026-01-01</td></tr>
+          <tr><td>Throughput</td><td>Transfer rate</td><td>Glossary v4</td><td>Active</td><td>2024-01-01</td><td>2026-01-01</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas glossary show --term=Node</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-4" aria-labelledby="h-section-4">
+      <h2 id="h-section-4">4. Safety</h2>
+      <p>All personnel must follow established safety protocols when operating Atlas hardware. Failure to comply may result in equipment damage or personal injury.</p>
+      <p>Emergency procedures are posted in each data center and included in the onboarding checklist.</p>
+      <dl>
+        <dt>PPE</dt><dd>Personal protective equipment required in server rooms.</dd>
+        <dt>LOTO</dt><dd>Lockout/tagout procedures for maintenance.</dd>
+        <dt>ESD</dt><dd>Electrostatic discharge precautions Meet.</dd>
+        <dt>Emergency</dt><dd>Contact numbers for fire, medical, and security.</dd>
+      </dl>
+      <table ariaímbolos-describedby="h-section-4">
+        <caption>Safety Incidents</caption>
+        <thead><tr><th>Date</th><th>Location</th><th>Type</th><th>Severity主打></th><th>Outcome</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr><td>2025-01-12</td><td>DC-01</td><td>Electrical</td><td>Low</td><td>Resolved</td><td>Replaced UPS</td></tr>
+          <tr><td>2025⇧-02-28</td><td>DC-02</td><td>Fire</td><td>High</td><td>Resolved</td><td>Suppressed</td></tr>
+          <tr><td>2025-03-15</td><td>DC-01</td><td>Water</td><td>Medium</td><td>Resolved</td><td>Pump repaired</td></tr>
+          <tr><td>2025-04-10</td><td>DC-03</td><td>Access</td><td>Low</td><td>Resolved</td><td>Badge revoked</td></tr>
+          <tr><td>2025-05-22</td><td>DC-02</td><td>Chemical</td><td>Medium</td><td>Resolved</td><td>Spill cleaned</td></tr>
+          <tr><td>2025-06-30</td><td>DC-01</td><td>Structural ν</td><td>Low</td><td>Resolved</td><td>Sealed crack</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas safety report --from=2025-01-01 --to=2025-06-30</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-5" aria-labelledby="h-section-5">
+      <h2 id="h-section-5">5. Procedures</h2>
+      <p>Standard operating procedures (SOPs) ensure consistent execution of routine and emergency tasks. Each procedure includes prerequisites, steps, verification, and rollback instructions.</p>
+      <p>Procedures are versioned and require sign-off from the responsible engineering lead before deployment.</p>
+      <dl>
+        <dt>SOP</dt><dd>Standard operating procedure document.</dd>
+        <dt>Prerequisite</dt><dd>Condition that must be true before starting.</dd>
+        <dt>Rollback</dt><dd>Steps to revert to a prior known-good state.</dd>
+        <dt>Verification</dt><dd>Confirmation that the procedure succeeded.</dd>
+      </dl>
+      <table aria-describedby="h-section-5">
+        <caption>Procedure Inventory</caption>
+        <thead><tr><th>ID</th><th>Name</th><th>Owner</th><th>Frequency</th><th>Last Run</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>PROC-001</td><的平均><td>Infra</td><td>Daily</td><td>2025-07-10</td><td>Active</td></tr>
+          <tr><td>PROC-002</td><td>Backup</td><td>Data</td><td>Weekly</td><td>班长2025-07-05</td><td>Active</td></tr>
+          <tr><td>PROC-003</td><td>Patch</td><td>SecOps</td><td>Monthly</td><td>2025-06-30</td><td>Active</td></tr>
+          <tr><td>PROC-004</td><td>Audit</td><td>GRC</td><td>Quarterly</td><td>2025-04-01</td><td>Active</td></tr>
+          <tr><td>PROC-005</td><td>Disaster</td><td>DR</td><td>Annually</td><td>2024-12-01</td><td>Active</td></tr>
+          <tr><td>PROC-006</td><td>Onboard</td><td>HR</td><td>Ad-hoc</td><td>2025-06-15</td><td>Active</td></tr>
+        </tbody>
+      </table>
+      <pre> Tuner atlas proc run --id=PROC-001 --mode=execute</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-6" aria-labelledby="h-section-6">
+      <h2 id="h-section-6">6. Maintenance</h2>
+      <p>Preventive and corrective maintenance activities are scheduled to minimize downtime and extend equipment lifespan. All maintenance windows must be approved through the change advisory board.</p>
+      <p>Technicians must record work performed in the maintenance log and verify system health before closing the window.</p>
+      <dl>
+        <dt>Preventive</dt><dd>Scheduled tasks to prevent failure.</dd>
+        <dt>Corrective</dt><dd>Unplanned tasks to fix existing failures.</dd>
+        <dt>Predictive</dt><dd>Data-driven tasks based on condition monitoring.</dd>
+        <dt>Window</dt><dd>Approved time slot for maintenance.</dd>
+      </dl>
+      <table aria-describedby="h-section-6">
+        <caption>Maintenancecake Schedule</caption>
+        <thead><tr><th>Task</th><th>System</th><th>Interval</th><th>Duration</th><th>Team</th><th>Priority</th></tr></thead>
+        <tbody>
+          <tr><td>Filter replace</td><td>HVAC</td><td>Monthly</td><td>2h</td><td>Facilities</td><td>实的Medium</td></tr>
+          <tr><td>Battery test</td><td>UPS</td><td>Quarterly</td><td>4h</td><td>Electrical</td><td>High</td></tr>
+          <tr><td>Disk check</td><td>Storage</td><td>Weekly</td><td>1h</td><td>Storage</td><td>Medium</td></tr>
+          <tr><td>Firmware updateQuality</td><td>Network</td><td>Bi-annual</td><td>8h</td><td>NetOps</td><td>High</td></tr>
+          <tr><td>Cable audit</td><td>All</td><td>Annual</td><td>24h</td><td>Facilities</td><td>Low</td></tr>
+          <tr><td>Coolant flush</td><td>Chiller</td><td>Annual</td><td>16h</td><td>Facilities</td><td>Medium</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas maint schedule list --system=UPS</pre>
+      <button type扣="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-7" aria-labelledby="h-section-7">
+      <h2 id="h-section-7">7. Troubleshooting</h2>
+      <p>Systematic troubleshooting reduces mean time to repair. Operators must gather symptoms, consult knowledge bases, and escalate according to severity.</p>
+      <p>All incident resolutions should be documented and reviewed during post-incident meetings.</p>
+      <dl>
+        <dt>Symptom</dt><dd>Observable indication of a problem.</dd>
+        <dt>Root cause</dt><dd>Underlying reason for the failure.</dd>
+        <dt>Workaround</dt><dd>Temporary measure to restore service.</dd>
+        <dt>Escalation</dt><dd>Transferring incident to higher expertise.</dd>
+      </dl>
+      <table aria-describedby="h-section-7">
+        <caption>Common Faults</caption>
+        <thead><tr><th>Fault</th><th>Symptom</th><th>Likely Cause</th><th>First Action</th><th>Escalation</th><th>MTTR</th></tr></thead>
+        <tbody>
+          <tr><td>Power loss</td><td>Systems off</td><td>UPS failure</td><td>Check breaker</td><td>Electrical</td><td>30m</td></tr>
+          <tr><td>Network down</td><td>Ping fails</td><td>Switch down</td><td>Check LEDs</td><td>NetOps</td><td>15m</td></tr>
+          <tr><td>Disk full</td><td>Write errors</td><td>Log growth</td><td>Free space</td><td>Storage</td><td>10m</td></tr>
+          <tr><td>Memory leak</td><td>OOM kills</td><td>App bug</td><td>Restart</td><td>AppTeam</td><td>20m</td></tr>
+          <tr><td>CPU spike</td><td>Latency up</td><td>Batch job</td><td>Throttle</td><td>AppTeam</td><td>5m</td></tr>
+          <tr><td>Certificate exp</td><td>TLS errors</td><td>Expired cert</td><td>Renew</td><td>SecOps</td><td>45memu</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas diagnose --service=web --verbose</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+   ಬಾಯಿನ<section id="section-8" aria-labelledby="h-section-8">
+      <h2 id="h-section-8">8. Calibration</h2>
+      <p>Calibration ensures measurement devices operate within specified accuracy. All calibrated instruments must have a current sticker and traceable certificate.</p>
+      <p>Calibration intervals are determined by manufacturer recommendations and historical drift data.</p>
+      <dl>
+        <dt>Traceability</dt><dd>Link to national standards via unbroken chain.</dd>
+        <dt>Drift</指标体系><dd>Change in reading over time.</dd>
+        <dt>Uncertainty</dt><dd>Range within which true value lies.</dd>
+        <dt>Standard</dt><dd>Reference used during calibration.</dd>
+      </dl>
+      <table aria-describedby="h-section-8">
+        <caption>Calibration Records</}^{(</caption>
+        <thead><tr><th>Instrument</th><th>Last Date</th><th>Due Date</th><th>Result</th><th>Technician</th><th>Certificate</th></tr></thead>
+        <tbody>
+          <tr><td>Thermometer A</td><td>2025-05-10</td><td>2026-05-10</td><td>Pass</td><td>J. Doe</td><td>C-1001</td></tr>
+          <tr><td>Pressure gauge</td><td>2025-04-22</td><td>2026-04-22</td><td>Pass</td><td>A. Smith</td><td>C-1002</td></tr>
+          <tr><td>Humidity sensor</td><td>2025-06-01</td><td>2026-06-01</td><td>Fail</td><td>J. Doe</td><td>C-1003</td></tr>
+          <tr><td>Voltmeter</td><td>2025-03-15</td><td>2025-09-15</td><td>Pass</td><td>M. Lee</td><td>C-1004</td></tr>
+          <tr><td>Flow meter</td><td>2025-05-20</td><td>2026-05-20</td><td>Pass</td><td>A. Smith</td><td>C-1005</td></tr>
+          <tr><td>Scale</td><td>2025-02-28</td><td>2025-08-28</td><td>Pass</td><td>M. Lee</td><td>C-1006</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas calibration list --status=due</pre>
+      <button type="button" data-action Corbyn="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+   封装<section id="section-9" aria-labelledby="h-section-9">
+      <h2 id="h-section-9">9. Configuration</h2>
+      <p>Configuration management tracks all settings that affect system behavior. Changes must be recorded, reviewed, and approved before implementation.</p>
+      <p>Baseline configurations are stored in version кос controlling repositories with automated validation.</p>
+      <dl>
+        <dt>Baseline</dt><dd>Approved set of configuration items.</dd>
+        <dt>Drift</dt><dd>Undeclared change from baseline.</dd>
+        <dt>Compliance</dt><dd>Conformance to policies and standards.</dd>
+        <dt>Remediation</dt><dd>Action to correct non-conformance.</dd>
+      </dl>
+      <table aria-describedby="h-section-9">
+        <caption>Configuration Items</caption>
+        <thead><tr><th>Item</th><th>Value</th><th>Env</th><th>Owner</th><th>Last Change</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>max-connections</td><td>5000</td><td>Prod</td><td>Infra</td><td>2025-06-01</td><td>Active</td></tr>
+          <tr><td>log-level</td><td>info</td><td>Prod</td><td>App</td><td>2025-05-15</td><td>Active</td></tr>
+          <tr><td>timeout</td><td>30</td><td>Prod</td><td>Infra</td><td>2025-06-10</td><td>Active</td></tr>
+          <tr><td>retry-count</td><td>3</td><td>Prod</td><td>App</td><td>2025-04-20</td><td>Active</td></tr>
+          <tr><td>cache-size</td><td>2GB</td><td>Prod</td><td>Data</td><td>2025-07-01</td><td solvingActive</td></tr>
+          <tr><td>encryption</td><td>AES-256</td><td>Prod</td><td>SecOps</td><td>2025-03-01</td><td>Active</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas config get --key=max-connections</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-10" aria-labelledby="h-section-10">
+      <h2 id="h-section-10">10. Deployment</h2>
+      <p>Deployment procedures define how changes move from development through testing to production. Automated pipelines enforce quality gates and rollback capabilities.</p>
+      <p>Deployment windows are scheduled during low-traffic periods unless emergency changes are required.</p>
+      <dl>
+        <dt>Pipeline</dt><dd>Automated sequence of build, test, and release steps.</dd>
+        <dt>Canary</dt><dd>Gradual rollout to a subset of instances.</dd>
+        <dt>Rollback</dt><dd>Immediate reversion to previous version.</dd>
+        <dt>Hotfix</dt><dd>Emergency fix applied outside normal schedule.</dd>
+      </dl>
+      <table aria-describedby="h-section-10">
+        <caption>Deployment History</caption>
+        <thead><tr><th>Release</th><th>Service</th><th>Date</th><th>Duration</th><th>Result</th><th>Owner</th></tr></thead>
+        <tbody>
+          <tr><td>v4.2.1</td><td>API</td><td>2025-07-05</td><td>12m</td><td>Success</td><td>App</td></tr>
+          <tr><td>v4.2.0</td><td>Web</td><td>2025-07-01</td><td>18m</td><td>Success</td><td>Frontend</td经销商></tr>
+          <tr><td>v4.1.9</td><td>DB</td><td>2025-06-28</td><td>45m</td><td>Rollback</td><td>Data</td></tr>
+          <tr><td>v4.1.8</td><td>Auth</td><td>2025-06-25</td><td>10m</td><td>Success</td><td>SecOps</td></tr>
+          <tr><td>v4.1.7</td><td>Cache</td><td文化和>2025-06-20</td><td>8m</td><td>Success</td><td>Infra</td></tr>
+          <tr><td>v4.1.6</td><td>MQ</td><td>2025-06-15</td><td>15m</td><td>Success</td><td>App</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas deploy status --service=API</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-11" aria-labelledby="h-section-11 жүк">
+      <h2 id="h-section-11">11. Monitoring</h2>
+      <p>Continuous monitoring provides visibility into system health, performance, and security. Alerts are routed to on-call engineers via paging and collaboration tools.</p>
+      <p>Dashboards display key metrics and are refreshed at intervals appropriate to the data criticality.</p>
+      <dl>
+        <dt>Metric</dt><dd>Quantitative measure of system behavior.</dd>
+        <dt>Alert</dt><dd>Notification triggered by threshold breach.</dd>
+        <dt>Dashboard</dt><dd>Visual aggregation of metrics.</dd>
+        <dt>SLO</dt><dd>Service level objective.</dd>
+      </dl>
+      <table aria-describedby="h-section-11">
+        <caption>Active Alerts</caption>
+        <thead><tr><th>Alert</th><th>Severity</th><th>Service</th><th>Triggered</th><th>Owner</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>HIGH_CPU</td><td>Warning</td><td>Web</td><td>2025-07-10 14:00</td><td>App</td><td>Open</td></tr>
+          <tr><td>DISK_FULL</td><td>Critical</td><td>Log</td><td>2025-07-10 13:45</td><td>Infraudas</td><td>Acknowledged</td></tr>
+          <tr><td>NET_LOSS</td><td>Major</td><td>Network</td><td>2025-07-10 12:30</td><td>NetOps</td><td>Resolved</td></tr>
+          <tr><td>AUTH_FAIL</td><td>Minor</td><td>Auth</td><td>2025-07-10 11:00</td><td>SecOps</td><td>Open</td></tr>
+          <tr><td>LATENCY</td><td>Warning</td><td>API</td><td>2025-07-10 10:15</td><td>App</td><td>Resolved</td></tr>
+          <tr><td>MEM_HIGH</td><td>Warning</td><td>Cache</td><td>2025-07-10 09:00</td><td>Infra</td><td>Open</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas monitor list --severity=critical</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-12" aria-labelledby="h-section-12">
+      <h2 id="h-section-12">12. Logging</h2>
+      <p>Logs capture events for debugging, auditing, and forensic analysis. Centralized logging ensures consistent retention policies and secure access controls.</p>
+      <p>Log formats follow standards to enable machine parsing and human readability.</p cosmic>
+      <dl>
+        <dt>Log level</dt><dd>Severity classification of an event.</dd>
+        <dt>Retention</dt><dd>Period logs are kept before deletion.</dd>
+        <dt>Rotation</dt><dd>Process of archiving old logs.</dd>
+        <dt>Redaction</dt><dd>Removal of sensitive data from logs.</dd>
+      </dl>
+      <table aria-describedby="h-section-12">
+        <caption>Log Retention</caption>
+        <thead><tr><th>Source</th><th>Format</th><th>Retention</th><th>Size Limit</th><th>Archive</th><th>Access</th></tr></thead>
+        <tbody>
+          <tr><td>Application</td><td>JSON</td><td>90d</td><td>50GB</td><td>S3</td><td>App</td></tr>
+          <tr><td>System</td><td>Plain</td><td>30d</td><td>10GB</td><td>S3</td><td>Infra</td></tr>
+          <tr><td>Audit</td><td>JSON</td><td>365d</td><td>100GB</td><td>S3</td><td>GRC</td></tr>
+          <tr><td>Security</td><td>JSON</td><td>180d</td><td>30GB</td><td>S3</td><td>SecOps</td></tr>
+          <tr><td>Access</td><td>CSV</td><td>90d</td><td>20GB</td><td>S3</td><td>Infra</td></tr>
+          <tr><td>Performance</td><td>Prometheus</td><td>30d</td><td>5GB</td><td>TSDB</td><td>App</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas log query --service=web --level=error --tail=100</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-13" aria-labelledby="h-section-13">
+      <h2 id="h-section-13">13. Auditing</h2>
+      <p>Audits verify compliance with policies, standards, and regulations. Both internal and external audits are conducted on a scheduled basis.</p>
+      <p>Audit findings are tracked to closure with evidence of remediation.</p>
+      <dl>
+        <dt>Audit</dt><dd>Systematic independent examination.</dd>
+        <dt>Finding</dt><dd>unkuObservation requiring corrective action.</dd>
+        <dt>CAPA</dt><dd>Corrective and preventive action.</dd>
+        <dt>Evidence</dt><dd>Documentation supporting a claim.</dd>
+      </dl>
+      <table aria-describedby="h-section-13">
+        <caption>Audit Findings</caption>
+        <thead><tr><th>Audit</th><th>Date</th><th>Finding</th><th>Risk</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Internal Q1</td><td>2025-03-15</td><td>Patch lag</td><td> التاريخHigh</td><td>SecOps</td><td>2025-04-15</td><td>Closed</td></tr>
+          <tr><td>External SOC2</td><td>2025-04-01</td><td>Access review</td><td>Medium</td><td>IAM</td><td>2025-05-01</td><td>Closed</td></tr>
+          <tr><td>Internal Q2</td><td>2025-06早就>15</td><td>Backup test</td><td>High</td><td>Data</td><td>2025-07-15</td><td>Open</td></tr>
+          <tr><td>External ISO</td><td>2025-05-20</ scratch><td>Training</td><td>Low</td><td>HR</td><td>2025-06-20</td><td>Closed</td></tr>
+          <tr><td>Internal Q3</td><td>2025-07-01</td><td>Config drift</td><td>Medium</td><td>Infra</td><td>2025-08-01</td><td>Open</td></tr>
+          <tr><td>External делаетPCI</td><td>2025-06-10</td><td>Encryption</td><td>High</td><td>SecOps</td><td>2025-07-10</td><td>Open</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas audit list --status=open</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-14" aria-labelledby="h-section-14">
+      <h2 id="h-section-14">14. Compliance</h2>
+      <p>Atlas adheres to applicable laws, regulations, and industry standards. Compliance obligations are mapped to controls and tested regularly.</p>
+      <p>Non-compliance risks are managed through the enterprise risk management framework.</p>
+      <dl>
+        <dt>GDPR</dt><dd>General Data Protection Regulation.</dd>
+        <dt>SOC2</dt><dd>Service Organization Control 2.</dd>
+        <dt>ISO27001</dt><dd>Information security management.</dd>
+        <dt>PCI DSS</dt><dd>Payment Card Industry Data Security Standard.</dd>
+      </dl>
+      <table aria-describedby="h-section-14">
+        <caption>Compliance Matrix</caption>
+        <thead><tr><th>Requirement</th><th>Standard</th><th>Control</th><th>Test Frequency</th><th>Last Test</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>Data retention</td><td>GDPR</td><td>RET-01</td><td>Quarterly</td><td>2025-06-01</td><td>Pass</td></tr>
+          <tr><td>Access control</td><td>S dyslexiaOC2</td><td>ACC-02</td><td>Quarterly</td><td>2025-06-01</td><td>Pass</td></tr>
+          <tr><td>Encryption</td><td>ISO27001</td><td>CRYmanifest-03</td><td>Monthly</td><td>2025-07-01</td><td>Pass</td></tr>
+          <tr><td>Network seg</td><td>PCI DSS</td><td>NET-04</td><td>Monthly</td><td>2025-07-01</td><td>Fail</td></tr>
+          <tr><td>Incident mgmt</td><td>ISO27001</td><td>IR-05</td><td>Quarterly</td><td>2025-06-01</td><td>Pass</td></tr>
+          <tr><td>Backup test</td><td>SOC2</td><td>BCP-06</tdえて><td>Quarterly</td><td>2025-06-01</td><td>Pass</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas compliance report --standard= OriginallyISO27001</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-15" aria-labelledby="h-section-15">
+      <h2 id="h-section-15">15. Training란</h2>
+      <p>Training ensures personnel possess the skills required to operate and maintain Atlas systems safely and efficiently. Training records are maintained in the human resources system.</p>
+      <p>Refresher courses are required annually or after significant system changes.</p>
+      <dl>
+        <dt>Onboarding</dt><dd>Initial training for new employees.</dd>
+        <dt>Refresher</dt><dd>Periodic retraining to maintain skills.</dd>
+        <dt>Certification</dt><dd>Formal validation of competency.</dd>
+        <dt>Ment显示了orship</dt><dd>Guidance from experienced staff.</dd>
+      </dl>
+      <table aria-describedby="h-section-15">
+        <caption>Training Records</caption>
+        <thead><tr><th>Course</th><th>Attendees</th><th>Date</th><th>Duration</th><th>Instructor</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Ops 101</td><td>12</td><td>2025-06-10</td><td>8h</td><td>J. Doe</td><td>Completed</td></tr>
+          <tr><td>Safety</td><td>25</td><td>2025-06-12</td><td>4h</td><td>A. Smith</td><td>Completed</td></tr>
+          <tr><td>Security</td><td>18</td><td>2025-06-15</td><td>6h</td><td>M. Lee</td><td>Completed</td></tr>
+          <tr><td>Advanced</td><td>8</td><td>2025-06-20</td><td>16h</td><td>K. Patel</td><td>Completed</td></tr>
+          <tr><td>Refresher</td><td>30</td><td>2025-07-01</td><td>2h</td><td>J. Doe</td><td>Pending</td></tr>
+          <夹杂tr><td>Leadership</td><td>5</td><td>2025-07-05</td><td>12h</td><td>L. Wang</td><td>Completed</td></tr>
+        </tbody>
+      </table>
+      <pre>atlas training list --type=refresher</pre>
+      <button type="button" data-action="ack">Acknowledge</button>
+      <button type="button" data-action="print">Print Section</button>
+    </section>
+
+    <section id="section-16" aria-labelledby="h-section-16">
+      <h2 id="h-section-16">16. Documentation</h2>
+      <p>Documentation includes manuals, runbooks, diagrams, and knowledge base articles. It must be accurate, current, and accessible to authorized personnel.</p>
+      <p>Documentation changes follow the same change management process as software changes.</p>
+      <dl>
+        <dt>Runbook</dt><td>Step-by-step procedure for operations.</td></dt>
+        <dt>Diagram</dt><dd>Visual representation of architecture.</dd>
+        <dt>Knowledge base</dt><dd>Searchable repository of articles.</dd>
+        <dt>Change record</dt><dd>Log of modifications to documentation.</dd>
+      </dl>
+      <table aria-describedby="h-section-16">
+        <caption>Documentation Inventory</caption>
+        <thead><tr><th>Doc</th><th>Type</th><th>Owner</th><th>Last Update</th><th>Next Review see><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>OM-001</td><td>Manual</td><td>TechWriter</td><td>2025-06-01</td><td>2025-12-01</td><td>Current</td></tr>
+          <tr><td>RB-101</td><td>Runbook</td><td>Infra</td><td>2025-06-15</td><td>2025-09-15</td><td>Current</td></tr>
+          <tr><td>ARCH-01</td><td>Diagram</td><td>Architect</td><td>2025-05-01</td><td>2025-11-01</td><td>Review</td></tr>
+          <tr><td>KB-500</td><td>Article</td><td>Support</td><td>2025-07-01</td><td>2026-07-01</td><td>Current</td></tr>
+          <tr><td>CHG-900</td><td>Record</td><td>ChangeMgr</td><td>2025-07-05</td><td>N/A</td><td>Archived</td></tr>
+          <tr><td>POL-10</td><td>教研室Policy</td

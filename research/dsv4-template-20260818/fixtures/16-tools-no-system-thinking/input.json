@@ -1,0 +1,40 @@
+{
+  "turns": [
+    {
+      "role": "user",
+      "content": "Weather in Oslo?"
+    }
+  ],
+  "think": "thinking",
+  "reasoning_effort": null,
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a specific location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city name"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "celsius",
+                "fahrenheit"
+              ],
+              "description": "Temperature unit"
+            }
+          },
+          "required": [
+            "location"
+          ]
+        }
+      }
+    }
+  ],
+  "add_generation_prompt": true
+}

@@ -1,0 +1,29 @@
+arm=FON3
+mode=flip-on
+boot_nonce=bv3-FON3-1788212332-7215
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-afc681b1a
+bin_md5=e7242c8e4fd012dfb2d721242463d74a
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=afc681b1adb97be67c312782e83591e17e71f2df
+git_log_1=afc681b1a step37 bank v3: down8 rides ON by default, coupled with the slot-major layout it cannot arm without
+server_pid=63507
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-afc681b1a
+environ_nonce=bv3-FON3-1788212332-7215
+environ_mode=flip-on
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-FON3.txt (41 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2325 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=flip-on (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+--- engagement (flip-on) ---
+[nvfp4-bank] layout=slot-major source=default-on tp=2 experts=288 in_f=4096 out_f=1280
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel_v2 slot_major=true in_f=4096 out_f=640 nsb=128 row_bytes=2304
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel_v2 slot_major=true in_f=640 out_f=4096 nsb=20 row_bytes=360
+[nvfp4-sweep] down8=false door=true door_source=default-on device_routed=false slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] down8=true door=true door_source=default-on device_routed=true slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] gu_fused=false door=false slot_major=true geometry_match=true in_f=4096 out_f=640 n_sel=8
+ENGAGE_OK   flip-on :: [nvfp4-bank] layout=slot-major source=default-on
+ENGAGE_OK   flip-on :: down8=true door=true door_source=default-on
+ENGAGE_OK   flip-on :: slot_major=true
+ENGAGE_OK   flip-on :: [nvfp4-sel]
+ENGAGEMENT VERIFIED arm=FON3 mode=flip-on (4 required facts)

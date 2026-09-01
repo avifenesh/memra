@@ -1,0 +1,38 @@
+{
+ "name": "p05-code",
+ "arm": "greedy",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": [
+   "temperature"
+  ]
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 192,
+   "completion_tokens": 128,
+   "total_tokens": 320,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 22.487413169,
+   "spec": {
+    "rounds": 61,
+    "drafted": 305,
+    "accepted": 69,
+    "acceptance_rate": 0.2262295081967213
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "Let me parse what the user is saying. They're describing updates to their skills/preferences profile \u2014 this sounds like they maintain some kind of memory/profile system (possibly CLAUDE.md, a memory file, or similar) that I should help them update. They're telling me:\n\n1. **Inference work is full** \u2014 no need for more inference work/projects.\n2. **memra** (BW24 successor) is a replacement for llama \u2014 works on Blackwell B50 series (they wrote \"bw 50 series\" \u2014 probably GB200/B200/RTX 50 series? Actually \"bw 50\" likely means"
+    }
+   }
+  ]
+ }
+}

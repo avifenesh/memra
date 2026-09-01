@@ -1,0 +1,19 @@
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+loaded qwen35moe (40 layers); steps=64 reps=3 batches=[9, 10, 11, 12, 13, 14, 15, 16] primary_dev=0
+B=9: aggregate 683.6 tok/s, per-seq 76.0 tok/s (median of 3)
+B=10: aggregate 451.7 tok/s, per-seq 45.2 tok/s (median of 3)
+B=11: aggregate 479.1 tok/s, per-seq 43.6 tok/s (median of 3)
+B=12: aggregate 478.7 tok/s, per-seq 39.9 tok/s (median of 3)
+B=13: aggregate 496.2 tok/s, per-seq 38.2 tok/s (median of 3)
+B=14: aggregate 497.3 tok/s, per-seq 35.5 tok/s (median of 3)
+B=15: aggregate 504.1 tok/s, per-seq 33.6 tok/s (median of 3)
+B=16: aggregate 494.6 tok/s, per-seq 30.9 tok/s (median of 3)
+scale B=9: 1.00x aggregate vs B=1
+scale B=10: 0.66x aggregate vs B=1
+scale B=11: 0.70x aggregate vs B=1
+scale B=12: 0.70x aggregate vs B=1
+scale B=13: 0.73x aggregate vs B=1
+scale B=14: 0.73x aggregate vs B=1
+scale B=15: 0.74x aggregate vs B=1
+scale B=16: 0.72x aggregate vs B=1
+[host-sample] n_vocab=248320 greedy argmax 286 us/row | temp0.7 sample 1115 us/row | x B=16 rows/tick = 4.58 ms (greedy) / 17.84 ms (temp) [sink 19438102]

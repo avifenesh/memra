@@ -1,0 +1,50 @@
+config: 43 trunk + 1 MTP layers, hidden 4096, 256 experts (6 active, 3 hash-routed layers), scoring sqrtsoftplus, hc_mult 4 (sinkhorn 20 iters), index_topk 512
+derived splits: 41 compressor layers, 21 indexer layers (from compress_ratios)
+hf_quant_config.json: NVFP4/group-16 declared on all 43 trunk expert banks; mtp.* excluded (MXFP4) — matches census
+opened 135235 tensors across shards
+census: 135235 expected | missing 0 | extra 0 | mismatched 0
+
+== quantized samples (decoded to F32) ==
+  layers.20.ffn.experts.7.w1 [weight]: n=8388608 min=-0.187500 max=0.375000 mean=-1.474703e-5 absmean=1.857272e-2 zerofrac=0.1139 nan=0 inf=0
+  layers.20.ffn.experts.7.w2 [weight]: n=8388608 min=-0.500000 max=0.500000 mean=4.962087e-6 absmean=1.939139e-2 zerofrac=0.1182 nan=0 inf=0
+  layers.20.ffn.experts.7.w3 [weight]: n=8388608 min=-0.375000 max=0.375000 mean=-5.543465e-6 absmean=1.945392e-2 zerofrac=0.1154 nan=0 inf=0
+  layers.0.ffn.experts.0.w1 [weight]: n=8388608 min=-0.187500 max=0.125000 mean=4.812144e-6 absmean=1.937224e-2 zerofrac=0.1169 nan=0 inf=0
+  layers.42.ffn.experts.255.w3 [weight]: n=8388608 min=-0.125000 max=0.187500 mean=-1.220498e-6 absmean=2.253023e-2 zerofrac=0.1105 nan=0 inf=0
+  layers.20.attn.wq_a [weight]: n=4194304 min=-0.140625 max=0.140625 mean=-2.024720e-5 absmean=2.170059e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.20.attn.wo_b [weight]: n=33554432 min=-0.250000 max=0.281250 mean=-6.187481e-6 absmean=2.095476e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.2.attn.indexer.wq_b [weight]: n=8388608 min=-1.375000 max=1.250000 mean=8.769478e-5 absmean=6.165748e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.20.ffn.shared_experts.w2 [weight]: n=8388608 min=-1.125000 max=1.625000 mean=-2.739964e-6 absmean=1.514529e-2 zerofrac=0.0000 nan=0 inf=0
+  mtp.0.e_proj [weight]: n=16777216 min=-0.312500 max=0.312500 mean=1.076336e-5 absmean=2.002015e-2 zerofrac=0.0000 nan=0 inf=0
+  mtp.0.ffn.experts.7.w1 [weight]: n=8388608 min=-0.125000 max=0.187500 mean=-6.384263e-5 absmean=1.987947e-2 zerofrac=0.1154 nan=0 inf=0
+  mtp.0.ffn.experts.7.w2 [weight]: n=8388608 min=-0.500000 max=0.500000 mean=-9.160955e-6 absmean=2.130371e-2 zerofrac=0.1135 nan=0 inf=0
+
+== BF16 / F32 samples ==
+  embed.weight [weight]: n=529530880 min=-2.375000 max=2.375000 mean=1.445387e-4 absmean=9.089936e-2 zerofrac=0.0000 nan=0 inf=0
+  head.weight [weight]: n=529530880 min=-3.062500 max=4.125000 mean=1.323788e-4 absmean=1.408394e-1 zerofrac=0.0000 nan=0 inf=0
+  norm.weight [norm]: n=4096 min=-0.011414 max=0.554688 mean=3.081253e-1 absmean=3.081308e-1 zerofrac=0.0000 nan=0 inf=0
+  layers.20.attn_norm.weight [norm]: n=4096 min=0.045166 max=0.804688 mean=6.863296e-2 absmean=6.863296e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.20.attn.q_norm.weight [norm]: n=1024 min=0.061523 max=0.100098 mean=6.810927e-2 absmean=6.810927e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.2.attn.compressor.norm.weight [norm]: n=512 min=-0.127930 max=1.242188 mean=8.330173e-1 absmean=8.335623e-1 zerofrac=0.0000 nan=0 inf=0
+  mtp.0.enorm.weight [norm]: n=4096 min=0.037842 max=0.075684 mean=5.725449e-2 absmean=5.725449e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.20.ffn.gate.weight [weight]: n=1048576 min=-0.251953 max=0.236328 mean=1.198004e-5 absmean=2.830146e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.2.attn.compressor.wkv.weight [weight]: n=4194304 min=-0.172852 max=0.160156 mean=4.206154e-6 absmean=1.894220e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.2.attn.compressor.ape [aux]: n=4096 min=-1.611148 max=0.672450 mean=-1.005336e-1 absmean=2.225101e-1 zerofrac=0.0000 nan=0 inf=0
+  layers.3.attn.compressor.wkv.weight [weight]: n=2097152 min=-0.314453 max=0.316406 mean=-1.014522e-5 absmean=1.839809e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.3.attn.compressor.ape [aux]: n=65536 min=-0.601964 max=0.546603 mean=2.662212e-5 absmean=2.608227e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.20.hc_attn_fn [aux]: n=393216 min=-1.055027 max=0.757514 mean=-6.018972e-5 absmean=3.375801e-2 zerofrac=0.0000 nan=0 inf=0
+  layers.20.hc_attn_base [aux]: n=24 min=-38.832130 max=3.251917 mean=-4.612653e0 absmean=5.662789e0 zerofrac=0.0000 nan=0 inf=0
+  layers.20.hc_ffn_scale [aux]: n=3 min=0.090188 max=0.314815 mean=1.721716e-1 absmean=1.721716e-1 zerofrac=0.0000 nan=0 inf=0
+  hc_head_fn [aux]: n=65536 min=-0.060462 max=0.064450 mean=7.546657e-6 absmean=1.517718e-3 zerofrac=0.0000 nan=0 inf=0
+  layers.0.attn.attn_sink [aux]: n=64 min=-1.279133 max=1.626585 mean=4.981719e-1 absmean=6.450294e-1 zerofrac=0.0000 nan=0 inf=0
+  layers.3.ffn.gate.bias [aux]: n=256 min=8.396082 max=9.018783 mean=8.988759e0 absmean=8.988759e0 zerofrac=0.0000 nan=0 inf=0
+
+tid2eid layer0: range [0, 255], 0 out of [0, 256)
+
+  layers.20.ffn.experts.7.w1: scale_2=2.4414063e-4, 524288 scales, non-pow2 0, pair-mismatch 0, zero 0
+  layers.20.ffn.experts.7.w2: scale_2=4.8828125e-4, 524288 scales, non-pow2 0, pair-mismatch 0, zero 0
+  layers.20.ffn.experts.7.w3: scale_2=2.4414063e-4, 524288 scales, non-pow2 0, pair-mismatch 0, zero 0
+  layers.0.ffn.experts.0.w1: scale_2=1.2207031e-4, 524288 scales, non-pow2 0, pair-mismatch 0, zero 0
+  layers.42.ffn.experts.255.w3: scale_2=1.2207031e-4, 524288 scales, non-pow2 0, pair-mismatch 0, zero 0
+
+elapsed: 8.0s
+CENSUS GATE: PASS (135235 tensors verified, 0 failures)

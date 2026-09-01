@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-fc988791826c9eb6662ee38facac53a0",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 1859,
+    "completion_tokens": 256,
+    "total_tokens": 2115,
+    "prompt_tokens_details": {
+      "cached_tokens": 1710
+    },
+    "elapsed_s": 1.937176543
+  },
+  "text": "The user wants me to add a comparison drawer that allows comparing speculative vs default (plain) measurements. This should be a new interactive panel that shows side-by-side or toggleable comparison of the two inference modes.\n\nI need to:\n1. Add a new drawer/panel for comparison\n2. Include toggle or switch between spec-on and spec-off modes\n3. Show relevant metrics for both modes\n4. Make it accessible with keyboard navigation\n5. Keep the existing functionality intact\n\nLet me create a complete HTML document with this new feature integrated.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-tertiary: #334155;\n      --text-primary: #f1f5f9;\n      --text-secondary: #94a3b"
+}

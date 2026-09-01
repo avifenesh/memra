@@ -1,0 +1,86 @@
+{
+  "anchor_sampling": {
+    "actual_records": 1789,
+    "deficient_records": 3,
+    "max_per_pair": 4,
+    "maximum_records": 1792,
+    "min_per_pair": 1,
+    "pairs_below_requested": 1,
+    "requested_per_pair": 4
+  },
+  "categories": {
+    "chat": 112,
+    "code": 112,
+    "if": 112,
+    "math": 112
+  },
+  "chunks": 7,
+  "end": 448,
+  "format": "memra-dspark-corpus-summary-v2",
+  "label": "smoke",
+  "manifest_fingerprint": "e8876ef0299d76a1838f782c56a0c34cbcfaf922feffda7252f978c7be03c418",
+  "manifests": [
+    {
+      "chunk": "smoke-00000-00064",
+      "sha256": "bd2135c3b83d21f97f12b8fedc4a8e847b47eb336bed05133080170f2c510f1b"
+    },
+    {
+      "chunk": "smoke-00064-00128",
+      "sha256": "eeb9cc87d03d9a6fa0af9bc1aae9986078994d08ba73baf83d271e9135d6f0ec"
+    },
+    {
+      "chunk": "smoke-00128-00192",
+      "sha256": "0ba56059ebb0966c82412e286a542445c26634764c582afe6315f83f99487805"
+    },
+    {
+      "chunk": "smoke-00192-00256",
+      "sha256": "6fa769fc888b3f8085464dcba7fbd6c526067d454af91b0b3c2fc90ec204e294"
+    },
+    {
+      "chunk": "smoke-00256-00320",
+      "sha256": "924abe06929383ba3d42352d27590434b7bb5708c7c500cb8a921aeffa243c1b"
+    },
+    {
+      "chunk": "smoke-00320-00384",
+      "sha256": "8f1adc138709938800233e6a2fd9507dcb0e00c1d8ea3396eea5244ad4f82ce5"
+    },
+    {
+      "chunk": "smoke-00384-00448",
+      "sha256": "507fd044196cda832f18f87c300f8ded3d04655ad4e0814a3a45b60851f2cce2"
+    }
+  ],
+  "modes": {
+    "nothink": 224,
+    "think": 224
+  },
+  "pairs": 448,
+  "prompt_tokens": {
+    "max": 2953,
+    "min": 16,
+    "p50": 73,
+    "p95": 538,
+    "total": 63171
+  },
+  "records": 1789,
+  "response_tokens": {
+    "max": 512,
+    "max_new_512_count": 326,
+    "min": 5,
+    "p50": 512,
+    "p95": 512,
+    "total": 203248
+  },
+  "skipped_short_pairs": 0,
+  "splits": {
+    "heldout": 23,
+    "train": 425
+  },
+  "start": 0,
+  "validation": {
+    "max_logit_probability_ratio_error": 9.598196157867278e-07,
+    "max_probability_mass_error": 3.5114078977827035e-08,
+    "sampled_token_top64_rate": 0.9996646171045277,
+    "tail_mass_max": 0.06595248728990555,
+    "tail_mass_mean": 0.0001428601544271113
+  }
+}

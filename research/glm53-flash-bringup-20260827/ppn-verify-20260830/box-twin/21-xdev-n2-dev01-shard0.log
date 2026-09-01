@@ -1,0 +1,45 @@
+glm5-spec-ppn-gate config: stages=2 streams=per-stage overlap=1(double-buffered) devices=0,1 splits=default(even) shard=OFF(bring-up placement)
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=1.175
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: dev0 (MEMRA_PP_SHARD=0 bring-up placement))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152 elapsed_ms=16.885
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 101.28GB (expert budget 99.28GB) -> RESIDENT
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+hc topology: streams=4 collapse=Mean
+stage fence: [0, 2, 4]; Recurrent(KDA) on stages [0, 1], LatentKvCache(MLA+kpool) on stages [0, 1]
+[phase] references: door OFF
+[moe-grouped-prefill] flag=on t=24 il=1 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[phase] arm W0: door ON, plain ppN decode re-pin
+glm5-spec-ppn gate PASS [W0 plain-ppn-decode]: 8 rows bit-identical vs door-OFF (n_vocab=32)
+[phase] arm W1: door ON, verify walk (ppN twin)
+glm5-spec-ppn gate PASS [W1 verify-walk]: 8 verify rows bit-identical to plain decode under the split (and to plain ppN decode via W0)
+[phase] arm A: door ON, accept-j rollback battery
+glm5-spec-ppn gate PASS [A accept-j=0]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=1]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=2]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=3]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=4]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=5]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=6]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=7]: 12 continue steps bit-identical
+[phase] arm E: door ON, e2e spec-vs-plain tapes
+glm5-spec-ppn gate PASS [E natural K=1]: tape identical to door-OFF plain greedy (0/19 accepted)
+glm5-spec-ppn gate PASS [E natural K=2]: tape identical to door-OFF plain greedy (0/38 accepted)
+glm5-spec-ppn gate PASS [E natural K=3]: tape identical to door-OFF plain greedy (0/57 accepted)
+glm5-spec-ppn gate PASS [E natural K=4]: tape identical to door-OFF plain greedy (0/76 accepted)
+glm5-spec-ppn gate PASS [E natural K=5]: tape identical to door-OFF plain greedy (0/95 accepted)
+glm5-spec-ppn gate PASS [E natural K=6]: tape identical to door-OFF plain greedy (0/114 accepted)
+glm5-spec-ppn gate PASS [E natural K=7]: tape identical to door-OFF plain greedy (0/133 accepted)
+glm5-spec-ppn gate PASS [E forced-accept K=3]: tape identical, 15/15 accepted (full-accept path exercised)
+glm5-spec-ppn gate PASS [E forced-accept K=7]: tape identical, 17/21 accepted (full-accept path exercised)
+glm5-spec-ppn gate PASS [E forced-rejection sweep K=7]: every partial-keep rollback cycled, tape identical (14/42)
+[phase] arm R1: RED stale-KDA state
+glm5-spec-ppn gate PASS [R1 stale-KDA RED]: bites — 383 differing logits across the continuation
+[phase] arm R2: RED pool-key clamp
+glm5-spec-ppn gate PASS [R2 pool-key RED]: bites by name — layer 1: DSA k-pool selection failed: resident k-pool key plane claims 8 finished pools but the cache holds only 6 complete pools before this call (25 rows / pool 4) — a rewind reduced the latent length without clamping index_pools_ready
+[phase] arm R3: RED rollback disabled
+glm5-spec-ppn gate PASS [R3 rollback-disabled RED]: bites — loop failed loudly: layer 1: latent cache overflow — 59 + 1 rows exceeds capacity 59
+==========================================================
+glm5-spec-ppn gate: ALL ARMS PASS (P=24 N=20 K=7, fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=0,1 splits=default(even) shard=OFF(bring-up placement))
+exit=0

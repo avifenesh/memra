@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what the user is asking. They have some kind of agentic system \u2014 sounds like they're building an automated agent pipeline (maybe with Claude Code, or some agent framework with scheduled agents that \"wake up\" at certain hours). Let me reconstruct the full system from their message:\n\nCurrent state (inferred):\n- There's an \"hourly researcher\" agent that apparently creates/updates a digest or a \"paper\" (a research paper/page).\n- There's an hourly schedule where agents wake up at certain times.\n- At 10 (or \"at 22 evening and 22 morning\"? They wrote \"at ",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what the user is asking. They have some kind of agentic system \u2014 sounds like they're building an automated agent pipeline (maybe with Claude Code, or some agent framework with scheduled agents that \"wake up\" at certain hours). Let me reconstruct the full system from their message:\n\nCurrent state (inferred):\n- There's an \"hourly researcher\" agent that apparently creates/updates a digest or a \"paper\" (a research paper/page).\n- There's an hourly schedule where agents wake up at certain times.\n- At 10 (or \"at 22 evening and 22 morning\"? They wrote \"at "
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 289,
+  "completion_tokens": 128,
+  "total_tokens": 417,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 7.763356518,
+  "spec": {
+   "rounds": 67,
+   "drafted": 201,
+   "accepted": 62,
+   "acceptance_rate": 0.30845771144278605
+  }
+ },
+ "id": "chatcmpl-3b6c6ac4806b0710194cdb5843f5ea4a",
+ "created": 1788081631,
+ "system_fingerprint": "REDACTED"
+}

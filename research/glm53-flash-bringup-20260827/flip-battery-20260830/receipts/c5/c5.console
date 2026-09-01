@@ -1,0 +1,154 @@
+######## C5 BOOT tau0.3 ########
+[fb] no pidfile, nothing to stop
+[fb] launched pid=76161 boot=c5-tau0.3 nonce=bb6ad0de-db5d-43f5-9dff-a9c48bb5ca1b
+[fb] READY after 40s
+[fb] GATES GREEN boot=c5-tau0.3
+confidence-gate boot receipt:
+  (no confidence-gate boot line)
+[sample] ok=True wall=3.3s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[cell greedy k=3] d00-code wall=5.1s spec={'rounds': 46, 'drafted': 136, 'accepted': 81, 'acceptance_rate': 0.5955882352941176} err=None
+[cell greedy k=3] d01-code wall=6.6s spec={'rounds': 59, 'drafted': 175, 'accepted': 71, 'acceptance_rate': 0.4057142857142857} err=None
+[cell greedy k=3] d02-code wall=5.2s spec={'rounds': 43, 'drafted': 129, 'accepted': 85, 'acceptance_rate': 0.6589147286821705} err=None
+[cell greedy k=3] d03-code wall=5.9s spec={'rounds': 52, 'drafted': 148, 'accepted': 76, 'acceptance_rate': 0.5135135135135135} err=None
+[cell greedy k=3] d04-code wall=5.0s spec={'rounds': 42, 'drafted': 125, 'accepted': 88, 'acceptance_rate': 0.704} err=None
+[cell greedy k=3] d05-code wall=5.1s spec={'rounds': 47, 'drafted': 134, 'accepted': 82, 'acceptance_rate': 0.6119402985074627} err=None
+[cell greedy k=3] d06-prose wall=3.8s spec={'rounds': 35, 'drafted': 101, 'accepted': 92, 'acceptance_rate': 0.9108910891089109} err=None
+[cell greedy k=3] d07-prose wall=4.9s spec={'rounds': 43, 'drafted': 129, 'accepted': 87, 'acceptance_rate': 0.6744186046511628} err=None
+[cell greedy k=3] d08-prose wall=4.6s spec={'rounds': 41, 'drafted': 122, 'accepted': 88, 'acceptance_rate': 0.7213114754098361} err=None
+[cell greedy k=3] d09-prose wall=5.2s spec={'rounds': 48, 'drafted': 138, 'accepted': 80, 'acceptance_rate': 0.5797101449275363} err=None
+[cell greedy k=3] l3-WARM wall=4.6s spec={'rounds': 39, 'drafted': 116, 'accepted': 89, 'acceptance_rate': 0.7672413793103449} err=None
+[cell greedy k=3] l3-A4630 wall=9.3s spec={'rounds': 52, 'drafted': 156, 'accepted': 77, 'acceptance_rate': 0.4935897435897436} err=None
+[cell greedy k=3] l3-B5550 wall=9.2s spec={'rounds': 49, 'drafted': 141, 'accepted': 78, 'acceptance_rate': 0.5531914893617021} err=None
+[cell greedy k=3] l3-C6470 wall=9.0s spec={'rounds': 43, 'drafted': 126, 'accepted': 87, 'acceptance_rate': 0.6904761904761905} err=None
+[cell] done rows=14 errors=0
+[timed] d00-code ttft=1.634 tok/s=30.4 spec={'rounds': 91, 'drafted': 271, 'accepted': 164, 'acceptance_rate': 0.6051660516605166} err=None
+[timed] d01-code ttft=1.826 tok/s=27.8 spec={'rounds': 100, 'drafted': 296, 'accepted': 157, 'acceptance_rate': 0.5304054054054054} err=None
+[timed] d02-code ttft=1.59 tok/s=28.1 spec={'rounds': 99, 'drafted': 264, 'accepted': 159, 'acceptance_rate': 0.6022727272727273} err=None
+[timed] d03-code ttft=1.603 tok/s=27.8 spec={'rounds': 97, 'drafted': 279, 'accepted': 161, 'acceptance_rate': 0.5770609318996416} err=None
+[timed] d04-code ttft=1.789 tok/s=33.9 spec={'rounds': 74, 'drafted': 221, 'accepted': 158, 'acceptance_rate': 0.7149321266968326} err=None
+[timed] d05-code ttft=1.449 tok/s=32.5 spec={'rounds': 86, 'drafted': 251, 'accepted': 170, 'acceptance_rate': 0.6772908366533864} err=None
+[timed] d06-prose ttft=1.354 tok/s=34.9 spec={'rounds': 81, 'drafted': 236, 'accepted': 176, 'acceptance_rate': 0.7457627118644068} err=None
+[timed] d07-prose ttft=1.849 tok/s=34.0 spec={'rounds': 84, 'drafted': 252, 'accepted': 172, 'acceptance_rate': 0.6825396825396826} err=None
+[timed] d08-prose ttft=1.507 tok/s=33.1 spec={'rounds': 84, 'drafted': 249, 'accepted': 174, 'acceptance_rate': 0.6987951807228916} err=None
+[timed] d09-prose ttft=1.564 tok/s=31.9 spec={'rounds': 90, 'drafted': 261, 'accepted': 168, 'acceptance_rate': 0.6436781609195402} err=None
+[timed l3] l3-WARM ttft=1.714 tok/s=39.0 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.604 tok/s=25.6 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.795 tok/s=24.8 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.686 tok/s=26.7 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.747 err=None
+[timed deep] l3-A4630 ttft=4.595 err=None
+[timed vendor] d04-code tok/s=30.6 spec={'rounds': 66, 'drafted': 187, 'accepted': 111, 'acceptance_rate': 0.5935828877005348} err=None
+engagement: glm5spec=65 acc=179
+C5_tau0.3_EXIT=0
+######## C5 BOOT tau0.5 ########
+[fb] SIGTERM pid=76161 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=76519 boot=c5-tau0.5 nonce=e5532073-b51e-4355-8970-0c773040cf5d
+[fb] READY after 38s
+[fb] GATES GREEN boot=c5-tau0.5
+confidence-gate boot receipt:
+  (no confidence-gate boot line)
+[sample] ok=True wall=3.1s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[cell greedy k=3] d00-code wall=4.9s spec={'rounds': 48, 'drafted': 121, 'accepted': 79, 'acceptance_rate': 0.6528925619834711} err=None
+[cell greedy k=3] d01-code wall=6.1s spec={'rounds': 60, 'drafted': 152, 'accepted': 70, 'acceptance_rate': 0.4605263157894737} err=None
+[cell greedy k=3] d02-code wall=5.0s spec={'rounds': 43, 'drafted': 121, 'accepted': 85, 'acceptance_rate': 0.7024793388429752} err=None
+[cell greedy k=3] d03-code wall=5.6s spec={'rounds': 53, 'drafted': 134, 'accepted': 75, 'acceptance_rate': 0.5597014925373134} err=None
+[cell greedy k=3] d04-code wall=4.9s spec={'rounds': 44, 'drafted': 118, 'accepted': 86, 'acceptance_rate': 0.7288135593220338} err=None
+[cell greedy k=3] d05-code wall=4.7s spec={'rounds': 48, 'drafted': 116, 'accepted': 81, 'acceptance_rate': 0.6982758620689655} err=None
+[cell greedy k=3] d06-prose wall=3.9s spec={'rounds': 36, 'drafted': 101, 'accepted': 91, 'acceptance_rate': 0.900990099009901} err=None
+[cell greedy k=3] d07-prose wall=4.8s spec={'rounds': 43, 'drafted': 123, 'accepted': 87, 'acceptance_rate': 0.7073170731707317} err=None
+[cell greedy k=3] d08-prose wall=4.6s spec={'rounds': 42, 'drafted': 121, 'accepted': 87, 'acceptance_rate': 0.71900826446281} err=None
+[cell greedy k=3] d09-prose wall=4.8s spec={'rounds': 48, 'drafted': 124, 'accepted': 80, 'acceptance_rate': 0.6451612903225806} err=None
+[cell greedy k=3] l3-WARM wall=4.5s spec={'rounds': 39, 'drafted': 109, 'accepted': 89, 'acceptance_rate': 0.8165137614678899} err=None
+[cell greedy k=3] l3-A4630 wall=8.9s spec={'rounds': 55, 'drafted': 136, 'accepted': 74, 'acceptance_rate': 0.5441176470588235} err=None
+[cell greedy k=3] l3-B5550 wall=9.0s spec={'rounds': 50, 'drafted': 132, 'accepted': 77, 'acceptance_rate': 0.5833333333333334} err=None
+[cell greedy k=3] l3-C6470 wall=8.9s spec={'rounds': 46, 'drafted': 118, 'accepted': 84, 'acceptance_rate': 0.711864406779661} err=None
+[cell] done rows=14 errors=0
+[timed] d00-code ttft=1.581 tok/s=32.6 spec={'rounds': 93, 'drafted': 241, 'accepted': 162, 'acceptance_rate': 0.6721991701244814} err=None
+[timed] d01-code ttft=1.714 tok/s=29.2 spec={'rounds': 101, 'drafted': 270, 'accepted': 156, 'acceptance_rate': 0.5777777777777777} err=None
+[timed] d02-code ttft=1.571 tok/s=30.1 spec={'rounds': 101, 'drafted': 235, 'accepted': 154, 'acceptance_rate': 0.6553191489361702} err=None
+[timed] d03-code ttft=1.536 tok/s=29.0 spec={'rounds': 99, 'drafted': 257, 'accepted': 159, 'acceptance_rate': 0.6186770428015564} err=None
+[timed] d04-code ttft=1.677 tok/s=33.9 spec={'rounds': 76, 'drafted': 213, 'accepted': 156, 'acceptance_rate': 0.7323943661971831} err=None
+[timed] d05-code ttft=1.294 tok/s=34.1 spec={'rounds': 87, 'drafted': 226, 'accepted': 169, 'acceptance_rate': 0.7477876106194691} err=None
+[timed] d06-prose ttft=1.391 tok/s=36.6 spec={'rounds': 83, 'drafted': 219, 'accepted': 174, 'acceptance_rate': 0.7945205479452054} err=None
+[timed] d07-prose ttft=1.76 tok/s=34.5 spec={'rounds': 85, 'drafted': 241, 'accepted': 171, 'acceptance_rate': 0.7095435684647303} err=None
+[timed] d08-prose ttft=1.509 tok/s=33.4 spec={'rounds': 87, 'drafted': 241, 'accepted': 171, 'acceptance_rate': 0.7095435684647303} err=None
+[timed] d09-prose ttft=1.52 tok/s=33.6 spec={'rounds': 91, 'drafted': 239, 'accepted': 167, 'acceptance_rate': 0.698744769874477} err=None
+[timed l3] l3-WARM ttft=1.6 tok/s=39.2 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.395 tok/s=26.5 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.689 tok/s=25.5 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.763 tok/s=27.4 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.635 err=None
+[timed deep] l3-A4630 ttft=4.397 err=None
+[timed vendor] d04-code tok/s=33.7 spec={'rounds': 76, 'drafted': 193, 'accepted': 143, 'acceptance_rate': 0.7409326424870466} err=None
+engagement: glm5spec=65 acc=180
+C5_tau0.5_EXIT=0
+######## C5 BOOT tau0.7 ########
+[fb] SIGTERM pid=76519 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=76837 boot=c5-tau0.7 nonce=06d5f178-5d07-470e-9be2-79c31b5e0831
+[fb] READY after 38s
+[fb] GATES GREEN boot=c5-tau0.7
+confidence-gate boot receipt:
+  (no confidence-gate boot line)
+[sample] ok=True wall=3.1s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[cell greedy k=3] d00-code wall=4.8s spec={'rounds': 50, 'drafted': 112, 'accepted': 77, 'acceptance_rate': 0.6875} err=None
+[cell greedy k=3] d01-code wall=5.5s spec={'rounds': 61, 'drafted': 125, 'accepted': 69, 'acceptance_rate': 0.552} err=None
+[cell greedy k=3] d02-code wall=4.9s spec={'rounds': 48, 'drafted': 110, 'accepted': 80, 'acceptance_rate': 0.7272727272727273} err=None
+[cell greedy k=3] d03-code wall=5.4s spec={'rounds': 55, 'drafted': 122, 'accepted': 73, 'acceptance_rate': 0.5983606557377049} err=None
+[cell greedy k=3] d04-code wall=4.8s spec={'rounds': 48, 'drafted': 106, 'accepted': 80, 'acceptance_rate': 0.7547169811320755} err=None
+[cell greedy k=3] d05-code wall=4.5s spec={'rounds': 51, 'drafted': 101, 'accepted': 78, 'acceptance_rate': 0.7722772277227723} err=None
+[cell greedy k=3] d06-prose wall=3.8s spec={'rounds': 37, 'drafted': 97, 'accepted': 90, 'acceptance_rate': 0.9278350515463918} err=None
+[cell greedy k=3] d07-prose wall=4.5s spec={'rounds': 43, 'drafted': 112, 'accepted': 87, 'acceptance_rate': 0.7767857142857143} err=None
+[cell greedy k=3] d08-prose wall=4.6s spec={'rounds': 45, 'drafted': 113, 'accepted': 84, 'acceptance_rate': 0.7433628318584071} err=None
+[cell greedy k=3] d09-prose wall=4.5s spec={'rounds': 49, 'drafted': 107, 'accepted': 79, 'acceptance_rate': 0.7383177570093458} err=None
+[cell greedy k=3] l3-WARM wall=4.4s spec={'rounds': 40, 'drafted': 105, 'accepted': 88, 'acceptance_rate': 0.8380952380952381} err=None
+[cell greedy k=3] l3-A4630 wall=8.4s spec={'rounds': 57, 'drafted': 113, 'accepted': 70, 'acceptance_rate': 0.6194690265486725} err=None
+[cell greedy k=3] l3-B5550 wall=8.3s spec={'rounds': 51, 'drafted': 107, 'accepted': 76, 'acceptance_rate': 0.7102803738317757} err=None
+[cell greedy k=3] l3-C6470 wall=9.0s spec={'rounds': 48, 'drafted': 117, 'accepted': 82, 'acceptance_rate': 0.7008547008547008} err=None
+[cell] done rows=14 errors=0
+[timed] d00-code ttft=1.551 tok/s=33.7 spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d01-code ttft=1.576 tok/s=31.3 spec={'rounds': 103, 'drafted': 235, 'accepted': 152, 'acceptance_rate': 0.6468085106382979} err=None
+[timed] d02-code ttft=1.599 tok/s=30.7 spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[timed] d03-code ttft=1.479 tok/s=29.7 spec={'rounds': 105, 'drafted': 236, 'accepted': 153, 'acceptance_rate': 0.6483050847457628} err=None
+[timed] d04-code ttft=1.597 tok/s=33.8 spec={'rounds': 81, 'drafted': 202, 'accepted': 151, 'acceptance_rate': 0.7475247524752475} err=None
+[timed] d05-code ttft=1.262 tok/s=35.4 spec={'rounds': 91, 'drafted': 206, 'accepted': 165, 'acceptance_rate': 0.8009708737864077} err=None
+[timed] d06-prose ttft=1.28 tok/s=37.3 spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[timed] d07-prose ttft=1.646 tok/s=36.4 spec={'rounds': 88, 'drafted': 215, 'accepted': 168, 'acceptance_rate': 0.7813953488372093} err=None
+[timed] d08-prose ttft=1.499 tok/s=33.7 spec={'rounds': 93, 'drafted': 227, 'accepted': 165, 'acceptance_rate': 0.7268722466960352} err=None
+[timed] d09-prose ttft=1.488 tok/s=35.9 spec={'rounds': 96, 'drafted': 208, 'accepted': 162, 'acceptance_rate': 0.7788461538461539} err=None
+[timed l3] l3-WARM ttft=1.592 tok/s=39.8 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.176 tok/s=27.7 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.39 tok/s=27.0 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.883 tok/s=28.3 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.625 err=None
+[timed deep] l3-A4630 ttft=4.177 err=None
+[timed vendor] d04-code tok/s=33.3 spec={'rounds': 95, 'drafted': 213, 'accepted': 160, 'acceptance_rate': 0.7511737089201878} err=None
+engagement: glm5spec=65 acc=181
+C5_tau0.7_EXIT=0
+[fb] SIGTERM pid=76837 exe=/root/memra/target/release/memra-server
+[fb] stopped
+=== TAU CROSS-IDENTITY (greedy tapes must not move) ===
+[compare] /root/out-flip2/c5/tau0.3 vs /root/out-flip2/c5/tau0.5: shared=14 identical=14 diverged=0
+[compare] /root/out-flip2/c5/tau0.5 vs /root/out-flip2/c5/tau0.7: shared=14 identical=14 diverged=0
+=== ACCEPTANCE TABLE ===
+cell                         mode     class      n  acc/cyc  tok/cyc  accrate
+tau0.3                       greedy   ALL       14    1.817    2.817    0.619
+tau0.3                       greedy   agentic    6    1.671    2.671    0.570
+tau0.3                       greedy   l3deep     4    1.809    2.809    0.614
+tau0.3                       greedy   prose      4    2.078    3.078    0.708
+tau0.5                       greedy   ALL       14    1.748    2.748    0.663
+tau0.5                       greedy   agentic    6    1.608    2.608    0.625
+tau0.5                       greedy   l3deep     4    1.705    2.705    0.655
+tau0.5                       greedy   prose      4    2.041    3.041    0.736
+tau0.7                       greedy   ALL       14    1.630    2.630    0.719
+tau0.7                       greedy   agentic    6    1.460    2.460    0.676
+tau0.7                       greedy   l3deep     4    1.612    2.612    0.715
+tau0.7                       greedy   prose      4    1.954    2.954    0.793
+=== DRAFTED/ROUND ===
+tau0.3: rounds=639 drafted=1876 accepted=1161 drafted/round=2.936 acc/round=1.817 accrate=0.619
+tau0.5: rounds=655 drafted=1726 accepted=1145 drafted/round=2.635 acc/round=1.748 accrate=0.663
+tau0.7: rounds=683 drafted=1547 accepted=1113 drafted/round=2.265 acc/round=1.630 accrate=0.719
+=== LOOP-LAW SCREEN (c5 tapes) ===
+[loop-law] screened=84 flagged=0
+C5_ALL_DONE rc=0

@@ -1,0 +1,12 @@
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.87GB (expert budget 94.95GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.74GB (expert budget 94.82GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+Capture range started in the application.
+Capture range ended in the application.
+Generating '/tmp/nsys-report-6074.qdstrm'
+[1/1] [0%                          ] decode.nsys-repProcessing events...
+[1/1] [0%                          ] decode.nsys-rep[1/1] [14%                         ] decode.nsys-rep[1/1] [11%                         ] decode.nsys-rep[1/1] [9%                          ] decode.nsys-rep[1/1] [=17%                        ] decode.nsys-rep[1/1] [=15%                        ] decode.nsys-rep[1/1] [13%                         ] decode.nsys-rep[1/1] [11%                         ] decode.nsys-rep[1/1] [10%                         ] decode.nsys-rep[1/1] [9%                          ] decode.nsys-rep[1/1] [8%                          ] decode.nsys-rep[1/1] [12%                         ] decode.nsys-rep[1/1] [=16%                        ] decode.nsys-rep[1/1] [==21%                       ] decode.nsys-rep[1/1] [====25%                     ] decode.nsys-rep[1/1] [=====29%                    ] decode.nsys-rep[1/1] [======33%                   ] decode.nsys-rep[1/1] [=======37%                  ] decode.nsys-rep[1/1] [========41%                 ] decode.nsys-rep[1/1] [=========45%                ] decode.nsys-rep[1/1] [==========49%               ] decode.nsys-rep[1/1] [===========50%              ] decode.nsys-rep[1/1] [========================100%] decode.nsys-rep[1/1] [========================100%] decode.nsys-rep
+serving decode window @d512: 32 tokens in 0.301s = 106.3 tok/s (9403.0 us/tok) final_token=245
+Generated:
+	/opt/scratch/nvme/ncuspike-20260811/nsys/decode.nsys-rep

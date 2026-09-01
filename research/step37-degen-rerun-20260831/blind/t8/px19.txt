@@ -1,0 +1,44 @@
+finish=length content_nonempty=False
+---
+Got it, let's tackle this GitHub issue step by step. First, let's understand the problem: the JetBrains Marketplace listing for the Agnix plugin has two broken links: the Documentation link 404s, and the Source Code link points to a stale repo URL.
+
+First, I need to outline the investigation steps first, right? First, let's confirm the issue exists by checking the current Marketplace listing for Agnix, then check the existing repo structure to find the correct URLs.
+
+First, investigation phase:
+1. First, verify the broken links: Go to the JetBrains Marketplace page for Agnix, click the Documentation link to confirm it returns 404, click Source Code to confirm it points to the old stale repo URL.
+2. Check the current Agnix repository (the one linked in the issue, https://github.com/agent-sh/agnix) to find the correct documentation URL (likely the GitHub Pages site, or the README/docs folder, or a dedicated docs repo) and confirm the correct source code URL is the current agnix repo itself.
+3. Check if there's a dedicated docs site: Look for a `gh-pages` branch, or a `docs` folder, or a separate docs repo under the agent-sh organization. Wait, the issue is from agent-sh/agnix, so first check that repo's README for the correct docs link, check if there's a GitHub Pages site enabled for the repo.
+
+Next, triage: This is not a question, it's a clear bug with broken links in the Marketplace listing, so we need to implement a fix. The fix will involve updating the plugin's metadata that's uploaded to the JetBrains Marketplace, right? Because the Marketplace listing pulls from the plugin's `plugin.xml` or the `gradle.properties` (if it's a Gradle-based IntelliJ plugin) or the `pom.xml` (if Maven) that defines the marketplace metadata.
+
+Wait, right, for JetBrains Marketplace plugins, the documentation and source code links are usually defined in the plugin's build configuration, or in the `plugin.xml` manifest, or in the `gradle.properties` if using the JetBrains plugin Gradle plugin. So first, we need to find where these links are defined in the Agnix repo.
+
+Then, implementation steps:
+1. Create a new branch from main, e.g., `fix/marketplace-broken-links`
+2. Locate the file that defines the Marketplace metadata: For a typical IntelliJ plugin built with Gradle, this is either in `build.gradle.kts` (or `build.gradle`) under the `jetbrains { marketplace { ... } }` block, or in `src/main/resources/META-INF/plugin.xml` under the `<idea-plugin>` tags with `<vendor>` and `<url>`? Wait no, the Marketplace specific fields (documentation, source code, issue tracker) are usually set in the Gradle build script when using the `org.jetbrains.intellij` plugin, or in the `plugin.xml` with specific tags? Wait no, let me confirm: When you publish a plugin to JetBrains Marketplace, the metadata (name, description, documentation URL, source code URL, etc.) is either pulled from the `plugin.xml` or from the build configuration if you're using the JetBrains publishing plugin. Alternatively, some repos have a `marketplace.json` or define it in the CI/CD pipeline that uploads the plugin to the Marketplace.
+
+Wait, let's check the Agnix repo structure first (hypothetically, since I can't access it directly, but based on standard IntelliJ plugin structure):
+- First, check `build.gradle.kts` for the `jetbrains` block:
+  ```kotlin
+  jetbrains {
+    marketplace {
+      publicationName = "Agnix"
+      description = "Agnix: Agent orchestration plugin for JetBrains IDEs"
+      documentationUrl = "https://agent-sh.github.io/agnix/" // This is probably the broken 404 link right now
+      sourceCodeUrl = "https://github.com/agent-sh/old-agnix-repo" // This is the stale URL
+      // other fields like vendor, tags, etc.
+    }
+  }
+  ```
+- Or, if the links are in `plugin.xml`:
+  ```xml
+  <idea-plugin>
+    <name>Agnix</name>
+    <vendor>agent-sh</vendor>
+    <url>https://agent-sh.github.io/agnix/</url> <!-- documentation URL -->
+    <idea-version since-build="231" />
+    <description>...</description>
+    <!-- Source code link is usually set in the Marketplace publish config, not plugin.xml -->
+  </idea-plugin>
+  ```
+- Also, check if there's a GitHub Pages site for the repo: If the repo has a `gh-pages`

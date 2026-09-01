@@ -1,0 +1,33 @@
+[moe] resident-experts decision (dev0): experts 35.08GB + trunk 2.71GB vs free 100.75GB (expert budget 96.04GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 191 tensors
+loaded qwen35moe (41 layers, nextn=1)
+prompt tokens: [55]
+
+[generate]   31 tok in 0.216s = 143.43 tok/s (gen-only; this run's prime 0.006s)
+  tokens: [30205, 445, 6182, 64, 198, 55, 30205, 445, 6182, 64, 369, 8093, 13997, 234088, 5075, 39778, 536, 85, 273, 211197, 6231, 23539, 401, 185849, 5075, 401, 338, 5347, 186669, 2664, 318, 47]
+
+[generate_spec K=1] 32 tok in 0.481s = 64.45 tok/s (0.45x vs generate; this run's prime 0.006s)
+  acceptance: 4/27 = 14.8%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 32 tok in 0.585s = 52.95 tok/s (0.37x vs generate; this run's prime 0.006s)
+  acceptance: 4/54 = 7.4%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=3] 32 tok in 0.745s = 41.61 tok/s (0.29x vs generate; this run's prime 0.006s)
+  acceptance: 4/81 = 4.9%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 32 tok in 0.905s = 34.25 tok/s (0.24x vs generate; this run's prime 0.006s)
+  acceptance: 4/108 = 3.7%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 32 tok in 1.060s = 29.23 tok/s (0.20x vs generate; this run's prime 0.006s)
+  acceptance: 4/135 = 3.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=6] 32 tok in 1.217s = 25.47 tok/s (0.18x vs generate; this run's prime 0.006s)
+  acceptance: 4/162 = 2.5%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 32 tok in 1.369s = 22.64 tok/s (0.16x vs generate; this run's prime 0.006s)
+  acceptance: 4/189 = 2.1%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 32 tok in 1.532s = 20.24 tok/s (0.14x vs generate; this run's prime 0.006s)
+  acceptance: 4/216 = 1.9%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

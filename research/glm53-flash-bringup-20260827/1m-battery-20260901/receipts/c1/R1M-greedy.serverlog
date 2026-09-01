@@ -1,0 +1,3 @@
+[meter] admit id=chatcmpl-febce9176c78a7c205f9f4e44f3852c3 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 1035357 prompt tokens; model zai/glm-5.3-flash)

@@ -1,0 +1,36 @@
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.746
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=639.263
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 layers); steps=16 batch=1
+pp mode: batched stage-split exactness battery over 45 layers; stages=2 fence=[0, 22, 45] devices=0,1 splits=default(even) shard=per-stage streams=per-stage
+pp mode: batches=[1, 4, 8] steps=16 reps=2 (split arm)
+pp mode: B=1 fast path inapplicable for Step35 (live correctness default = batched; batched reference pinned)
+dual pp negative PASS: decode_step_batch_dual: refused: PP boundary is single-slot; set MEMRA_PP_OVERLAP=1 so both alternating boundary slots are prepared before dual-active decode
+dual pp host-bounce negative PASS: decode_step_batch_dual: refused: MEMRA_PP_HOST_BOUNCE=1 is unvalidated for dual-active decode; disable MEMRA_DUAL_PP or use peer transport
+-- B=1: reference recorded (16 steps x 1 rows x 128896 f32, door OFF over the sharded placement)
+pp gate PASS [split B=1 rep0]: 2062336 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [split B=1 rep1]: 2062336 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [unsplit@ppncache B=1]: 2062336 f32 logits BIT-IDENTICAL (0 differing bits)
+[step35-batch] first B>1 batched step35 walk: B=4 layers=[0,45)
+-- B=4: reference recorded (16 steps x 4 rows x 128896 f32, door OFF over the sharded placement)
+[dual-pp] dual-active PP-2 decode engaged (naked default since 2026-08-11; two waves)
+pp gate PASS [split B=4 rep0]: 8249344 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=4 rep0]: DUAL_PP_OVERLAPS +16
+pp gate PASS [split B=4 rep1]: 8249344 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=4 rep1]: DUAL_PP_OVERLAPS +16
+pp gate PASS [unsplit@ppncache B=4]: 8249344 f32 logits BIT-IDENTICAL (0 differing bits)
+-- B=8: reference recorded (16 steps x 8 rows x 128896 f32, door OFF over the sharded placement)
+pp gate PASS [split B=8 rep0]: 16498688 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=8 rep0]: DUAL_PP_OVERLAPS +16
+pp gate PASS [split B=8 rep1]: 16498688 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=8 rep1]: DUAL_PP_OVERLAPS +16
+pp gate PASS [unsplit@ppncache B=8]: 16498688 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate: b1-stagefast arm N/A for Step35 (correctness default is batched at every width)
+pp gate PASS [epilogue B=8]: last-stage device sampling + lean park
+pp mode verdict: 0 failing arm(s); stages=2 fence=[0, 22, 45] devices=0,1 splits=default(even) shard=per-stage streams=per-stage
+ALL GREEN: batched PP-2 stage-split exactness battery

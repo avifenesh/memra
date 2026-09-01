@@ -1,0 +1,199 @@
+=== kpolicy gate 20260808T181143Z ===
+host=<private-host-redacted> commit=d1cea0757c171fb9af1bfd0f0440b59ca316152c
+=== release build ===
+warning: memra-engine@0.72.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.72.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.08s
+warning: memra-engine@0.72.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.72.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.02s
+GPU lock acquired 2026-08-08T18:12:01Z
+=== run-spec exactness ===
+=== run: /home/ubuntu/cx-kpolicy-gates-d1cea075/run-spec.log ===
+command: env -u MEMRA_PP_STAGES -u MEMRA_PP_DEVICES -u MEMRA_SPEC_K CUDA_VISIBLE_DEVICES=0 MEMRA_QWEN_DC=0 MEMRA_MTP_DRAFT=/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf MEMRA_SPEC_TEMP=0 MEMRA_NGEN=64 /home/ubuntu/cx-kpolicy-target/release/run-spec /scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf 55
+[mtp-draft] loading external MTP draft: /scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (33 layers, nextn=1)
+prompt tokens: [55]
+
+[generate]   63 tok in 0.324s = 194.63 tok/s (gen-only; this run's prime 0.004s)
+  tokens: [268, 43159, 220, 18, 13, 15, 220, 95726, 98858, 97152, 112625, 98432, 10992, 271, 107680, 3709, 97237, 96094, 96876, 55, 268, 43159, 220, 18, 13, 15, 95726, 98858, 97152, 98432, 1710, 99924, 95930, 101920, 97434, 55, 268, 43159, 100751, 99518, 1710, 55, 268, 43159, 110345, 116594, 120932, 101694, 3709, 98135, 96056, 95932, 103962, 1710, 18, 13, 15, 99507, 97433, 98128, 99439, 97238, 97015, 101833]
+
+[generate_spec K=1] 64 tok in 0.369s = 170.72 tok/s (0.88x vs generate; this run's prime 0.004s)
+  acceptance: 15/48 = 31.2%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=2] 64 tok in 0.314s = 200.40 tok/s (1.03x vs generate; this run's prime 0.004s)
+  acceptance: 20/86 = 23.3%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=3] 64 tok in 0.341s = 184.92 tok/s (0.95x vs generate; this run's prime 0.004s)
+  acceptance: 22/123 = 17.9%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=4] 64 tok in 0.388s = 162.40 tok/s (0.83x vs generate; this run's prime 0.004s)
+  acceptance: 23/160 = 14.4%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=5] 64 tok in 0.433s = 145.40 tok/s (0.75x vs generate; this run's prime 0.004s)
+  acceptance: 23/200 = 11.5%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=6] 64 tok in 0.477s = 132.14 tok/s (0.68x vs generate; this run's prime 0.004s)
+  acceptance: 23/240 = 9.6%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=7] 64 tok in 0.541s = 116.41 tok/s (0.60x vs generate; this run's prime 0.004s)
+  acceptance: 23/280 = 8.2%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=8] 64 tok in 0.607s = 103.81 tok/s (0.53x vs generate; this run's prime 0.004s)
+  acceptance: 23/320 = 7.2%   self-consistency: PASS (identical to generate)
+
+=== SELF-CONSISTENCY PASS ===
+PASS: run-spec K=1..8
+=== automatic prompt/cache table ===
+=== server: policy-table ===
+command: env -u CUDA_VISIBLE_DEVICES -u MEMRA_PP_STAGES -u MEMRA_PP_DEVICES -u MEMRA_PP_SHARD -u MEMRA_SERVE_SPEC -u MEMRA_SPEC_GATE -u MEMRA_SPEC_GATE_LOW -u MEMRA_SPEC_GATE_HIGH -u MEMRA_SPEC_K -u MEMRA_API_KEY -u MEMRA_API_KEYS CUDA_VISIBLE_DEVICES=0 MEMRA_MODELS=q9=/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf+/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf MEMRA_ADDR=127.0.0.1:8147 MEMRA_COMPAT=openai MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=8 MEMRA_REUSE_POOL=4 /home/ubuntu/cx-kpolicy-target/release/memra-server
+=== run: /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-short-client.log ===
+command: python3 research/kpolicy-20260808/measure_client.py --base http://127.0.0.1:8147 --model q9 --class cold-short --prompt /home/ubuntu/cx-kpolicy-47da3098/research/e2e/prompts/p1-code-short.txt --k 3 --rep 1 --max-tokens 128 --out /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-points.jsonl --raw-dir /home/ubuntu/cx-kpolicy-gates-d1cea075/responses
+{"acceptance_rate": 0.7235772357723578, "cache_salt": "kpolicy-q9-cold-short-k3-r1", "cached_tokens": 0, "class": "cold-short", "completion_tokens": 131, "k": 3, "label": "q9-cold-short-k3-r1", "model": "q9", "net_tok_s": 295.17954518805055, "prompt_tokens": 28, "raw_response": "/home/ubuntu/cx-kpolicy-gates-d1cea075/responses/q9-cold-short-k3-r1.json", "rep": 1, "server_elapsed_s": 0.424747654, "server_tok_s": 308.41841918684264, "setup_completion_tokens": null, "setup_prompt_tokens": null, "setup_wall_s": null, "spec": {"acceptance_rate": 0.7235772357723578, "accepted": 89, "drafted": 123, "rounds": 41}, "text_sha256": "27c6f8ab6e247ec6967c9960ba34377b7a3b1a2f0eea00a4162cd37190aa3ac0", "ts": "2026-08-08T18:12:09Z", "wall_s": 0.4437976890185382}
+PASS: policy-short response selected K=3
+=== run: /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-cold-long-client.log ===
+command: python3 research/kpolicy-20260808/measure_client.py --base http://127.0.0.1:8147 --model q9 --class cold-long --prompt /home/ubuntu/cx-kpolicy-47da3098/research/e2e/prompts/p3-agentic-long-v3.txt --k 3 --rep 1 --max-tokens 128 --out /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-points.jsonl --raw-dir /home/ubuntu/cx-kpolicy-gates-d1cea075/responses
+{"acceptance_rate": 0.5869565217391305, "cache_salt": "kpolicy-q9-cold-long-k3-r1", "cached_tokens": 0, "class": "cold-long", "completion_tokens": 128, "k": 3, "label": "q9-cold-long-k3-r1", "model": "q9", "net_tok_s": 139.7473824126704, "prompt_tokens": 5411, "raw_response": "/home/ubuntu/cx-kpolicy-gates-d1cea075/responses/q9-cold-long-k3-r1.json", "rep": 1, "server_elapsed_s": 0.886916032, "server_tok_s": 144.32031374081643, "setup_completion_tokens": null, "setup_prompt_tokens": null, "setup_wall_s": null, "spec": {"acceptance_rate": 0.5869565217391305, "accepted": 81, "drafted": 138, "rounds": 46}, "text_sha256": "7dda5f07814d499e7f6406beac83e9a58a4fbe46e5524432ac57643d2ae25da3", "ts": "2026-08-08T18:12:10Z", "wall_s": 0.915938443999039}
+PASS: policy-cold-long response selected K=3
+=== run: /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-cached-long-client.log ===
+command: python3 research/kpolicy-20260808/measure_client.py --base http://127.0.0.1:8147 --model q9 --class cached-long --prompt /home/ubuntu/cx-kpolicy-47da3098/research/e2e/prompts/p3-agentic-long-v3.txt --k 2 --rep 1 --max-tokens 128 --out /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-points.jsonl --raw-dir /home/ubuntu/cx-kpolicy-gates-d1cea075/responses
+{"acceptance_rate": 0.5932203389830508, "cache_salt": "kpolicy-q9-cached-long-k2-r1", "cached_tokens": 5478, "class": "cached-long", "completion_tokens": 130, "k": 2, "label": "q9-cached-long-k2-r1", "model": "q9", "net_tok_s": 287.4325588135212, "prompt_tokens": 5497, "raw_response": "/home/ubuntu/cx-kpolicy-gates-d1cea075/responses/q9-cached-long-k2-r1.json", "rep": 1, "server_elapsed_s": 0.436845122, "server_tok_s": 297.5883063654766, "setup_completion_tokens": 67, "setup_prompt_tokens": 5411, "setup_wall_s": 0.7364397379860748, "spec": {"acceptance_rate": 0.5932203389830508, "accepted": 70, "drafted": 118, "rounds": 59}, "text_sha256": "7232f533e3fab270c65b93f3c300b27cc12d224a3e7f6ede799a6d5d8adf7df6", "ts": "2026-08-08T18:12:12Z", "wall_s": 0.452280008001253}
+PASS: policy-cached-long response selected K=2
+PASS: policy log K=3 source=cold-short
+PASS: policy log K=3 source=cold-long
+PASS: policy log K=2 source=cached-long
+=== PP-2 placement row ===
+=== server: policy-pp2 ===
+command: env -u CUDA_VISIBLE_DEVICES -u MEMRA_PP_STAGES -u MEMRA_PP_DEVICES -u MEMRA_PP_SHARD -u MEMRA_SERVE_SPEC -u MEMRA_SPEC_GATE -u MEMRA_SPEC_GATE_LOW -u MEMRA_SPEC_GATE_HIGH -u MEMRA_SPEC_K -u MEMRA_API_KEY -u MEMRA_API_KEYS MEMRA_PP_STAGES=2 MEMRA_PP_DEVICES=0\,1 MEMRA_MODELS=q9=/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf+/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf MEMRA_ADDR=127.0.0.1:8147 MEMRA_COMPAT=openai MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=8 MEMRA_REUSE_POOL=4 /home/ubuntu/cx-kpolicy-target/release/memra-server
+=== run: /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-pp2-short-client.log ===
+command: python3 research/kpolicy-20260808/measure_client.py --base http://127.0.0.1:8147 --model q9 --class cold-short --prompt /home/ubuntu/cx-kpolicy-47da3098/research/e2e/prompts/p1-code-short.txt --k 0 --rep 1 --max-tokens 128 --out /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-points.jsonl --raw-dir /home/ubuntu/cx-kpolicy-gates-d1cea075/responses
+{"acceptance_rate": null, "cache_salt": "kpolicy-q9-cold-short-k0-r1", "cached_tokens": 0, "class": "cold-short", "completion_tokens": 128, "k": 0, "label": "q9-cold-short-k0-r1", "model": "q9", "net_tok_s": 177.33292384946503, "prompt_tokens": 28, "raw_response": "/home/ubuntu/cx-kpolicy-gates-d1cea075/responses/q9-cold-short-k0-r1.json", "rep": 1, "server_elapsed_s": 0.702229006, "server_tok_s": 182.27672013878617, "setup_completion_tokens": null, "setup_prompt_tokens": null, "setup_wall_s": null, "spec": null, "text_sha256": "810458c4bbe9448844ee763a03a8ee19e57dc0ef3ac4c84e00af42eaee5dd8fb", "ts": "2026-08-08T18:12:21Z", "wall_s": 0.7218061780149583}
+PASS: policy-pp2-short response selected K=0
+PASS: PP-2 resolves to K=0
+PASS: PP-2 automatic row stayed plain
+=== operator pin precedence ===
+=== server: policy-pin-pp2 ===
+command: env -u CUDA_VISIBLE_DEVICES -u MEMRA_PP_STAGES -u MEMRA_PP_DEVICES -u MEMRA_PP_SHARD -u MEMRA_SERVE_SPEC -u MEMRA_SPEC_GATE -u MEMRA_SPEC_GATE_LOW -u MEMRA_SPEC_GATE_HIGH -u MEMRA_SPEC_K -u MEMRA_API_KEY -u MEMRA_API_KEYS MEMRA_PP_STAGES=2 MEMRA_PP_DEVICES=0\,1 MEMRA_SPEC_K=3 MEMRA_MODELS=q9=/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf+/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf MEMRA_ADDR=127.0.0.1:8147 MEMRA_COMPAT=openai MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=8 MEMRA_REUSE_POOL=4 /home/ubuntu/cx-kpolicy-target/release/memra-server
+=== run: /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-pin-pp2-short-client.log ===
+command: python3 research/kpolicy-20260808/measure_client.py --base http://127.0.0.1:8147 --model q9 --class cold-short --prompt /home/ubuntu/cx-kpolicy-47da3098/research/e2e/prompts/p1-code-short.txt --k 3 --rep 1 --max-tokens 128 --out /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-points.jsonl --raw-dir /home/ubuntu/cx-kpolicy-gates-d1cea075/responses
+{"acceptance_rate": 0.7235772357723578, "cache_salt": "kpolicy-q9-cold-short-k3-r1", "cached_tokens": 0, "class": "cold-short", "completion_tokens": 131, "k": 3, "label": "q9-cold-short-k3-r1", "model": "q9", "net_tok_s": 186.92869134152292, "prompt_tokens": 28, "raw_response": "/home/ubuntu/cx-kpolicy-gates-d1cea075/responses/q9-cold-short-k3-r1.json", "rep": 1, "server_elapsed_s": 0.681132023, "server_tok_s": 192.3268846221902, "setup_completion_tokens": null, "setup_prompt_tokens": null, "setup_wall_s": null, "spec": {"acceptance_rate": 0.7235772357723578, "accepted": 89, "drafted": 123, "rounds": 41}, "text_sha256": "27c6f8ab6e247ec6967c9960ba34377b7a3b1a2f0eea00a4162cd37190aa3ac0", "ts": "2026-08-08T18:12:31Z", "wall_s": 0.7008019959903322}
+PASS: policy-pin-pp2-short response selected K=3
+PASS: MEMRA_SPEC_K pin overrides PP-2 automatic K=0
+=== #89 single-card crossover ===
+=== server: policy-c4 ===
+command: env -u CUDA_VISIBLE_DEVICES -u MEMRA_PP_STAGES -u MEMRA_PP_DEVICES -u MEMRA_PP_SHARD -u MEMRA_SERVE_SPEC -u MEMRA_SPEC_GATE -u MEMRA_SPEC_GATE_LOW -u MEMRA_SPEC_GATE_HIGH -u MEMRA_SPEC_K -u MEMRA_API_KEY -u MEMRA_API_KEYS CUDA_VISIBLE_DEVICES=0 MEMRA_MODELS=q9=/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf+/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf MEMRA_ADDR=127.0.0.1:8147 MEMRA_COMPAT=openai MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=8 MEMRA_REUSE_POOL=4 /home/ubuntu/cx-kpolicy-target/release/memra-server
+=== run: /home/ubuntu/cx-kpolicy-gates-d1cea075/policy-c4-load.log ===
+command: python3 tools/load-serve.py --base http://127.0.0.1:8147 --model q9 --concurrency 4 --requests 4 --max-tokens 256 --greedy --warmup 0 --label policy-c4 --out /home/ubuntu/cx-kpolicy-gates-d1cea075/load-points.jsonl
+{"ts": "2026-08-08T18:12:39+0000", "label": "policy-c4", "base": "http://127.0.0.1:8147", "concurrency": 4, "requests": 4, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 256, "greedy": true, "wall_s": 2.057329034025315, "n_ok": 4, "n_shed": 0, "n_err": 0, "completion_tokens_total": 1024, "prompt_tokens_total": 904, "agg_tok_s": 497.73273164597737, "req_per_s": 1.944268482992099, "lat_p50_s": 2.0560816549987067, "lat_p95_s": 2.0563755850016605, "lat_mean_s": 2.004422726749908, "lat_max_s": 2.0563755850016605, "errors_sample": []}
+PASS: policy-c4 load completed
+PASS: c=4 first wave admitted positive-K requests
+PASS: c=4 overflow arrivals resolved to K=0
+PASS: c=4 live-session demotion preserved
+=== served acceptance gate ===
+=== run: /home/ubuntu/cx-kpolicy-gates-d1cea075/accept-gate.log ===
+command: env -u MEMRA_SPEC_K -u MEMRA_PP_STAGES -u MEMRA_PP_DEVICES CUDA_VISIBLE_DEVICES=0 MEMRA_ACCEPT_CELLS_TSV=/home/ubuntu/cx-kpolicy-gates-d1cea075/accept-cells-box1.tsv MEMRA_ACCEPT_LOGDIR=/home/ubuntu/cx-kpolicy-gates-d1cea075/accept MEMRA_ACCEPT_PORT=8317 tools/accept-gate.sh
+== accept-gate: served-spec acceptance + long-text assertion ==
+   cells: q27-p1 (smoke tier; --full for the matrix)
+   arm env: MEMRA_MMQ_F8F4=unset
+   logs: /home/ubuntu/cx-kpolicy-gates-d1cea075/accept
+-- server: Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf + draft-daily-owntrim-nvfp4head-q4blk.gguf K=3 ctx=8192
+   up in 8s
+  q27-p1: PASS (rounds=42 drafted=126 accepted=85 accept=0.6746, 128 tok text sha-identical)
+
+accept-gate: 1 pass, 0 fail, 0 unpinned, 0 skip
+PASS: accept-gate
+=== repository serve-smoke ===
+=== run: /home/ubuntu/cx-kpolicy-gates-d1cea075/serve-smoke.log ===
+command: env -u MEMRA_SPEC_K -u MEMRA_PP_STAGES -u MEMRA_PP_DEVICES -u MEMRA_SERVE_SPEC -u MEMRA_SPEC_GATE -u MEMRA_SPEC_GATE_LOW -u MEMRA_SPEC_GATE_HIGH CUDA_VISIBLE_DEVICES=0 tools/serve-smoke.sh /scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf /scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf
+== serve-smoke: plain serving ==
+  ok: /models lists the model
+  ok: chat non-stream (text + usage + finish_reason)
+  ok: chat stream (SSE chunks + [DONE])
+  ok: /v1/completions
+  ok: greedy determinism (2 runs identical)
+  ok: 3 concurrent chats
+  ok: long generation (>=100 tok)
+== serve-smoke: cache-metering exactness ==
+  ok: A fanout cached_tokens == [0] + [256]x4
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  ok: cached_tokens_in == 1024
+  ok: computed_tokens_in == prompt - cached
+  ok: cache_hit_token_ratio matches arithmetic
+  ok: prefix_cache_hits == N-1
+  ok: prefix_cache_misses == 2 (one A leader + cross-salt B)
+  ok: prefix_cache_inserts == 2 (shared A prefix + B seed)
+  ok: prefix_cache_hit_tokens == 1024
+  ok: lcp_histogram: 6 probes total
+  ok: lcp_histogram: 2 cold probes in bucket [0]
+  ok: lcp_histogram: 4 probes in K's bucket (edge 256)
+  ok: tick-seg [64,512) window carries the shared-prefix probes
+  ok: tenants[meter-A] split exact
+  ok: tenants[meter-B] split exact (0 cached)
+  ok: economics revenue_multiplier == 2.6842 (factor 1.0)
+cache-meter-gate: 0 failed
+  ok: cache-metering accounting exact (per-request + /metrics + economics)
+== serve-smoke: spec serving (draft attached) ==
+  ok: spec == plain greedy text (serving exactness)
+== serve-smoke: sampled truncation matrix (spec server) ==
+  (immune baseline: untruncated t0.8 seed=7, bangs=0)
+  ok: trunc top_k=40 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc top_p=0.95 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc min_p=0.05 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc llama-default k40+p0.95+m0.05 (reproducible, bangs=0 <= baseline 0)
+== serve-smoke: session-affinity resume exactness ==
+  ok: affinity resume is deterministic across servers (4 rewritten turns)
+  ok: replay arm resumed too (3 rewind(s))
+  ok: affinity fired (3 rewind(s) on a rewritten history)
+  ok: no failed rewinds
+== serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+serve-smoke: 0 failed
+PASS: tools/serve-smoke.sh
+GPU lock released 2026-08-08T18:13:14Z
+# K-policy gate summary
+
+- Host: <private-host-redacted>
+- Commit: d1cea0757c171fb9af1bfd0f0440b59ca316152c
+- Script-detected failures: 0
+
+## Policy decisions
+policy-c4-server.log:[spec-k] model="q9" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+policy-c4-server.log:[spec-k] model="q9" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+policy-c4-server.log:[spec-k] model="q9" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+policy-c4-server.log:[spec-k] model="q9" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+policy-pin-pp2-server.log:[spec-k] model="q9" tenant="kpolicy-q9-cold-short-k3-r1" K=3 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=pp2-cross-device
+policy-pp2-server.log:[spec-k] model="q9" tenant="kpolicy-q9-cold-short-k0-r1" K=0 source=pp2-placement prompt=28 cached=0 lcp=0 active=1 placement=pp2-cross-device
+policy-table-server.log:[spec-k] model="q9" tenant="kpolicy-q9-cold-short-k3-r1" K=3 source=cold-short prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+policy-table-server.log:[spec-k] model="q9" tenant="kpolicy-q9-cold-long-k3-r1" K=3 source=cold-long prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+policy-table-server.log:[spec-k] model="q9" tenant="kpolicy-q9-cached-long-k2-r1" K=3 source=cold-long prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+policy-table-server.log:[spec-k] model="q9" tenant="kpolicy-q9-cached-long-k2-r1" K=2 source=cached-long prompt=5497 cached=5478 lcp=0 active=1 placement=single-or-non-pp2
+
+## Gate verdicts
+PASS: run-spec K=1..8
+PASS: policy-short response selected K=3
+PASS: policy-cold-long response selected K=3
+PASS: policy-cached-long response selected K=2
+PASS: policy log K=3 source=cold-short
+PASS: policy log K=3 source=cold-long
+PASS: policy log K=2 source=cached-long
+PASS: policy-pp2-short response selected K=0
+PASS: PP-2 resolves to K=0
+PASS: PP-2 automatic row stayed plain
+PASS: policy-pin-pp2-short response selected K=3
+PASS: MEMRA_SPEC_K pin overrides PP-2 automatic K=0
+PASS: policy-c4 load completed
+PASS: c=4 first wave admitted positive-K requests
+PASS: c=4 overflow arrivals resolved to K=0
+PASS: c=4 live-session demotion preserved
+accept-gate: 1 pass, 0 fail, 0 unpinned, 0 skip
+PASS: accept-gate
+serve-smoke: 0 failed
+PASS: tools/serve-smoke.sh
+KPOLICY_GATES_DONE failures=0

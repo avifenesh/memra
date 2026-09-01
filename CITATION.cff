@@ -1,0 +1,38 @@
+# Citation metadata. GitHub reads this file and renders a "Cite this repository"
+# button, and it is what a paper or a blog post copies instead of inventing a
+# reference. It exists because measurements published here are meant to be cited and
+# re-run: the boards in docs/PERFORMANCE.md carry their protocol so that someone
+# else can contradict them.
+#
+# Keep `version` and `date-released` on the current tag. They are the two fields that
+# rot, and a citation pointing at a version that never existed is worse than none.
+cff-version: 1.2.0
+message: If you use memra or cite its measurements, please cite it as below.
+type: software
+title: 'memra: a Rust + CUDA inference engine with per-device tuned defaults'
+abstract: >-
+  An inference engine for RTX Blackwell workstation and consumer cards, written in
+  Rust and CUDA. A mechanism that wins on one supported card and loses on the other
+  becomes a per-device default keyed on the device rather than a compromise applied
+  to both, so an untuned command runs at that card's measured best. Speculative,
+  CUDA-graphed and batched serving are each gated byte-identical to plain decode, per
+  request, and the drafter proposes over a frequency-ranked 32,768-token subset while
+  verification runs the target's full vocabulary.
+authors:
+  - given-names: Avi
+    family-names: Fenesh
+    alias: avifenesh
+version: 0.108.0
+date-released: '2026-08-23'
+license: MIT
+repository-code: https://github.com/avifenesh/memra
+url: https://github.com/avifenesh/memra
+keywords:
+  - inference engine
+  - speculative decoding
+  - quantization
+  - NVFP4
+  - CUDA
+  - Blackwell
+  - GGUF
+  - safetensors

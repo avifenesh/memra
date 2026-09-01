@@ -1,0 +1,13 @@
+03:34:19 === GRAPH-SESSION CO-RESIDENT SQUEEZE RUN h7 (bin=lane) ===
+03:34:19 boot bin=/home/ubuntu/guard-bins/memra-server-lane-d6701001e md5=5966cee7fc8bf780f48e3cff75fbb8dd extra='MEMRA_SERVE_SPEC=0 MEMRA_SERVE_GS=1' log=serve-gsA-h7.log
+03:34:29 HEALTH=200 pid=1053899
+03:34:29 boot B bin=/home/ubuntu/guard-bins/memra-server-lane-d6701001e (storm stack, port 18913)
+03:34:39 B HEALTH=200 pid=1054241
+03:34:41 phase1 clean: A/B suspended=0/0 free=67037MB
+03:34:53 pre-ballast holding: free=12444MB; B storm starts
+03:35:08 B crossing ground-truth observed (t=2s)
+03:35:08 A graph-session suspension observed (t=2s)
+03:35:18 A alive: yes ; B alive: yes ; A refusals: 16 ; A step-FAILED lines: 8
+03:36:48 dmesg[gs2-h7]: 0 fault line(s)
+03:36:48 VERDICT h7: A_gsession_suspended=1 A_refusals=16 A_stepfail=8 B_suspended=44 fired_at=t=2s recovery=OK:408 aliveA=yes dmesg_faults=0
+03:36:48 RUN h7: PASS

@@ -1,0 +1,16 @@
+active research is a good one. i would like to replace the digest with twice a day researched thing. add this as the mcp for search plus an md file per 12 hours that the hourly researcher first read, then reason about, and then perform a research about the topic to make it deeper. at least another 3 sourcess, update the page. at 22 evening and 22 morning the agent that wake up is a research summary agent, it wake up, it has a different prompt which direct him to read it deeply, validate the clames online, and then create research summary for me. then remove the paper and send the content to me. The agent of 23 is calling tool that take a RANDOM topic from my list of interest, dig into it and find subtopic that worth researching, and create the new paper with the topic and opener. i know it might sound a bit complex, but do it step by step.
+{
+  "mcpServers": {
+    "web-search": {
+      "args": [
+        "open-websearch@latest"
+      ],
+      "command": "npx",
+      "env": {
+        "MODE": "stdio",
+        "DEFAULT_SEARCH_ENGINE": "duckduckgo",
+        "ALLOWED_SEARCH_ENGINES": "duckduckgo,bing,exa"
+      }
+    }
+  }
+}

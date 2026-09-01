@@ -1,0 +1,25 @@
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+setup_start=2026-08-10T16:41:32Z
+From https://github.com/avifenesh/memra
+ * branch                  restructure/public-split -> FETCH_HEAD
+   019428e217..dc77de733c  restructure/public-split -> origin/restructure/public-split
+stopping_pid=16734
+Switched to a new branch 'lane/cx-27bab'
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Tue_Dec_16_07:23:41_PM_PST_2025
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+warning: memra-engine@0.74.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.74.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.74.0 (/workspace/memra/crates/memra-server)
+   Compiling memra-engine v0.74.0 (/workspace/memra/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 20.29s
+setup_end=2026-08-10T16:42:06Z
+## lane/cx-27bab
+commit=dc77de733c1615da8a3c93788ee221032ec3fd2d
+subject=Merge lane/specmech: c=2 stage-resident spec pipeline increment 1 — HOLD, and the receipt KILLS the increment-2 branch too. Pipelined c=2 N=5 median 53.691 tok/s: +0.27% over serial spec, -53.26% vs plain. The phase decomposition closes the pricing question: even an OPTIMISTIC schedule hiding every draft/readback/commit ms under the opposite session's verify projects only 55.195 tok/s (-51.95% vs plain) — the missing gain is in VERIFY ISSUE ITSELF (whole-PP-body serialization), not the primary-engine tail. Any future attempt needs boundary-level release after stage-0 TX (mid-body), a different mechanism with its own exactness re-proof. MEMRA_SPEC_PIPE stays experimental opt-in, default OFF; K=0 PP-2 policy unchanged; exactness gate PASS, c=1 fallback PASS, admission matrix deliberately narrow with serial fallback everywhere else. KEEPER shipped en route: fix(server) join GPU worker on graceful shutdown — SIGTERM drain didn't join the GPU worker thread (the deploy restart-race class seen twice on Vast), regression retained. Spec program conclusion: PP-2 decode spec is closed at the schedule level (specpp2 + this); remaining PP-2 spec paths per the landscape survey = DSpark-style confidence-scheduled verify + trained-head acceptance (single-card SKUs keep their 2.3x).
+de9c201d27993275b1448f778e6942bbaca5e902864e867090366c5fe13087e8  target/release/memra-server
+0, 0 MiB, 97248 MiB, 24, P8
+1, 0 MiB, 97248 MiB, 24, P8

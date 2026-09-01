@@ -1,0 +1,62 @@
+{
+  "template": "official",
+  "request": {
+    "model": "g4",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Sort these."
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "c1",
+            "function": {
+              "name": "shell",
+              "arguments": "{\"zeta\": \"z\", \"Alpha\": \"A\", \"beta\": 2, \"alPha2\": true}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "done",
+        "tool_call_id": "c1"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "shell",
+          "description": "Runs a shell command and returns its output",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The command to execute"
+              },
+              "timeout_ms": {
+                "type": "number",
+                "description": "Timeout in milliseconds",
+                "nullable": true
+              },
+              "with_escalated_permissions": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

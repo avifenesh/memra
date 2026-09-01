@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "/home/ubuntu/memra-cx-longdepth/research/longdepth-20260809/detect.py", line 492, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/ubuntu/memra-cx-longdepth/research/longdepth-20260809/detect.py", line 477, in main
+    result = run_analysis(
+             ^^^^^^^^^^^^^
+  File "/home/ubuntu/memra-cx-longdepth/research/longdepth-20260809/detect.py", line 396, in run_analysis
+    summary, spans = token_spans(
+                     ^^^^^^^^^^^^
+  File "/home/ubuntu/memra-cx-longdepth/research/longdepth-20260809/detect.py", line 345, in token_spans
+    run = subprocess.run(command, capture_output=True, text=True, check=True)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/home/ubuntu/memra-cx-longdepth/target/release/tok_span', '/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf', '/home/ubuntu/memra-cx-longdepth/research/longdepth-20260809/raw/20260808T223925Z/cells/ctx262144-on-t0p7-d12288/rep2/tokens.txt', '/home/ubuntu/memra-cx-longdepth/research/longdepth-20260809/raw/20260808T223925Z/cells/ctx262144-on-t0p7-d12288/rep2/completion.txt', '6642', '11105']' returned non-zero exit status 1.

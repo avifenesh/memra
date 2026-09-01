@@ -1,0 +1,89 @@
+[server] starting; models config = [("gate", "/opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "gate" <- /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[worker]   loaded "gate": 65 layers, eos=248046
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[server] worker ready; serving models: ["gate"]
+[prefix-cache] on: budget 17180MB (17179869184 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18086
+[meter] admit id=cmpl-1f7086fea266bb097454115a26c241cb tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=4984 path=plain = 31552 B/token x ctx + 0MB fixed = 157MB
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 463MB at ctx 4928 path=plain)
+[prefix-cache] insert probation (seed): 4860 tokens, 301.2MB (resident 301.2MB / 17180MB, model gate, ns "gate-off-p3")
+[meter] admit id=cmpl-b0c1e812cd32a4768b37bd6349920616 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-a82b89f5605c1a696514bf1ea6276f69 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=5048 path=plain = 31552 B/token x ctx + 308MB fixed = 467MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[meter] admit id=cmpl-3e8a9749d4bb55031e39ce94d29471d7 tenant=default lane=interactive model="gate"
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=eligibility-fallback prompt=4924 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-1ffb548a6ccd9223a3e6f3b70df37c66 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-21c50366244a53224ba131ee143acb8c tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-a5621d7db193db562d67eb3ad06733a3 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-091cc08f358588855cc908be9c0ba769 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-a332c4cbe049b84642b30f82c507a88c tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-5d46f7848bc9fc37f0fb9d728f619dcd tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-51a570752a65077ade6d6a50cc2bddc8 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-92d8d80f7f3e4b7da403a972fb5fc1bb tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-318364d699c5286bc457ca136bca1e1f tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-45366ca7aea61ad892df00e919990b98 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-e225c83e50882956881e3d32dff1feca tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-e97a45deb2e5771daeefdce74446ace3 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-7b4266cd86a2636953eb8060209316ec tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=eligibility-fallback prompt=4924 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="gate-off-p3-miss10" K=0 source=concurrency prompt=4924 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=14 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 4924 prompt tokens; model gate)
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="gate-off-p3" K=0 source=concurrency prompt=4924 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4924 tokens, 303.1MB (resident 604.3MB / 17180MB, model gate, ns "gate-off-p3-miss10")
+[meter] admit id=chatcmpl-e764b42fb605aaaaa758fc4025dc41d9 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=127 path=plain = 31552 B/token x ctx + 308MB fixed = 312MB
+[spec-k] model="gate" tenant="anchor-off-p3" K=0 source=eligibility-fallback prompt=15 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,91 @@
+condition=same cells=20 stamp=20260810T023039Z lock_acquired=2026-08-10T02:31:13Z
+host=<private-host-redacted>
+source_commit=188154299064a42b67fc8eb1f41757cf6237300d
+binary_sha256=e7e6515e9f47030a7137ba9fdf7c40d43f0764d02699b38959f134ee0ace65b3
+qos_sha256=6c9e7386e3304deb6b625db1e7bd5089b3f0cf4844c198b17d7173e5c0082e9d
+golden_sha256=21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de
+## lane/cx-grouped
+?? research/grouped-serve-20260810/raw/
+artifact=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-06 12:39:44.670328147 +0000
+artifact=/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-06 12:37:13.136888212 +0000
+cell=same-cell-01 boot_start=2026-08-10T02:31:13Z
+{"actual_start_offsets_ms": [0.029, 0.222, 0.422, 0.606, 0.776, 0.949, 1.119, 1.374], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-01", "latency_p50_s": 7.435493, "latency_p99_s": 7.435912, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.273779, "ttft_p99_s": 4.274603, "wall_s": 7.436352}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-01 probe_rc=86 boot_done=2026-08-10T02:31:58Z
+cell=same-cell-02 boot_start=2026-08-10T02:31:58Z
+{"actual_start_offsets_ms": [0.031, 0.243, 0.436, 0.627, 0.85, 1.035, 1.211, 1.494], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-02", "latency_p50_s": 7.446788, "latency_p99_s": 7.447869, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.283602, "ttft_p99_s": 4.285095, "wall_s": 7.448003}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-02 probe_rc=86 boot_done=2026-08-10T02:32:42Z
+cell=same-cell-03 boot_start=2026-08-10T02:32:42Z
+{"actual_start_offsets_ms": [0.031, 0.456, 0.241, 0.672, 0.858, 1.062, 1.248, 1.497], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-03", "latency_p50_s": 7.451147, "latency_p99_s": 7.451676, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.284836, "ttft_p99_s": 4.28537, "wall_s": 7.452183}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-03 probe_rc=86 boot_done=2026-08-10T02:33:28Z
+cell=same-cell-04 boot_start=2026-08-10T02:33:28Z
+{"actual_start_offsets_ms": [0.031, 0.236, 0.422, 0.639, 0.838, 1.016, 1.186, 1.423], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-04", "latency_p50_s": 7.429901, "latency_p99_s": 7.430563, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.265708, "ttft_p99_s": 4.266983, "wall_s": 7.430912}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-04 probe_rc=86 boot_done=2026-08-10T02:34:12Z
+cell=same-cell-05 boot_start=2026-08-10T02:34:12Z
+{"actual_start_offsets_ms": [0.033, 0.28, 0.497, 0.691, 0.877, 1.067, 1.235, 1.508], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-05", "latency_p50_s": 7.431054, "latency_p99_s": 7.432116, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.272234, "ttft_p99_s": 4.273256, "wall_s": 7.432516}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-05 probe_rc=86 boot_done=2026-08-10T02:34:57Z
+cell=same-cell-06 boot_start=2026-08-10T02:34:57Z
+{"actual_start_offsets_ms": [0.031, 0.242, 0.456, 0.649, 0.838, 1.026, 1.221, 1.473], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-06", "latency_p50_s": 7.435874, "latency_p99_s": 7.436642, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.276902, "ttft_p99_s": 4.277261, "wall_s": 7.436945}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-06 probe_rc=86 boot_done=2026-08-10T02:35:42Z
+cell=same-cell-07 boot_start=2026-08-10T02:35:42Z
+{"actual_start_offsets_ms": [0.032, 0.243, 0.447, 0.661, 0.892, 1.094, 1.271, 1.52], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-07", "latency_p50_s": 7.443159, "latency_p99_s": 7.444183, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.280647, "ttft_p99_s": 4.281374, "wall_s": 7.444469}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-07 probe_rc=86 boot_done=2026-08-10T02:36:26Z
+cell=same-cell-08 boot_start=2026-08-10T02:36:26Z
+{"actual_start_offsets_ms": [0.029, 0.223, 0.416, 0.609, 0.788, 0.958, 1.126, 1.474], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-08", "latency_p50_s": 7.446, "latency_p99_s": 7.447103, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.278789, "ttft_p99_s": 4.279704, "wall_s": 7.447191}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-08 probe_rc=86 boot_done=2026-08-10T02:37:11Z
+cell=same-cell-09 boot_start=2026-08-10T02:37:11Z
+{"actual_start_offsets_ms": [0.033, 0.244, 0.44, 0.644, 0.829, 1.032, 1.225, 1.498], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-09", "latency_p50_s": 7.462161, "latency_p99_s": 7.463226, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.299842, "ttft_p99_s": 4.301344, "wall_s": 7.463337}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-09 probe_rc=86 boot_done=2026-08-10T02:37:56Z
+cell=same-cell-10 boot_start=2026-08-10T02:37:56Z
+{"actual_start_offsets_ms": [0.031, 0.237, 0.434, 0.622, 0.818, 1.009, 1.188, 1.522], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-10", "latency_p50_s": 7.431759, "latency_p99_s": 7.432856, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.270938, "ttft_p99_s": 4.272307, "wall_s": 7.432972}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-10 probe_rc=86 boot_done=2026-08-10T02:38:40Z
+cell=same-cell-11 boot_start=2026-08-10T02:38:40Z
+{"actual_start_offsets_ms": [0.03, 0.226, 0.415, 0.598, 0.778, 0.95, 1.121, 1.361], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-11", "latency_p50_s": 7.430516, "latency_p99_s": 7.431152, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.271613, "ttft_p99_s": 4.272072, "wall_s": 7.431454}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-11 probe_rc=86 boot_done=2026-08-10T02:39:25Z
+cell=same-cell-12 boot_start=2026-08-10T02:39:25Z
+{"actual_start_offsets_ms": [0.029, 0.227, 0.415, 0.605, 0.778, 0.954, 1.421, 1.126], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-12", "latency_p50_s": 7.45438, "latency_p99_s": 7.455437, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.294659, "ttft_p99_s": 4.296272, "wall_s": 7.455622}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-12 probe_rc=86 boot_done=2026-08-10T02:40:09Z
+cell=same-cell-13 boot_start=2026-08-10T02:40:09Z
+{"actual_start_offsets_ms": [0.028, 0.249, 0.446, 0.638, 0.836, 1.027, 1.228, 1.534], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-13", "latency_p50_s": 7.435844, "latency_p99_s": 7.436717, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.277075, "ttft_p99_s": 4.277725, "wall_s": 7.436858}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-13 probe_rc=86 boot_done=2026-08-10T02:40:54Z
+cell=same-cell-14 boot_start=2026-08-10T02:40:54Z
+{"actual_start_offsets_ms": [0.033, 0.249, 0.46, 0.655, 0.869, 1.055, 1.238, 1.508], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-14", "latency_p50_s": 7.458988, "latency_p99_s": 7.459563, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.298337, "ttft_p99_s": 4.299053, "wall_s": 7.460072}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-14 probe_rc=86 boot_done=2026-08-10T02:41:39Z
+cell=same-cell-15 boot_start=2026-08-10T02:41:39Z
+{"actual_start_offsets_ms": [0.03, 0.231, 0.461, 0.649, 0.823, 1.003, 1.176, 1.415], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-15", "latency_p50_s": 7.457113, "latency_p99_s": 7.458192, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.295918, "ttft_p99_s": 4.29706, "wall_s": 7.458391}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-15 probe_rc=86 boot_done=2026-08-10T02:42:23Z
+cell=same-cell-16 boot_start=2026-08-10T02:42:23Z
+{"actual_start_offsets_ms": [0.034, 0.264, 0.475, 0.677, 0.87, 1.107, 1.308, 1.566], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-16", "latency_p50_s": 7.455249, "latency_p99_s": 7.456136, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.297853, "ttft_p99_s": 4.299002, "wall_s": 7.456353}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-16 probe_rc=86 boot_done=2026-08-10T02:43:08Z
+cell=same-cell-17 boot_start=2026-08-10T02:43:08Z
+{"actual_start_offsets_ms": [0.03, 0.241, 0.428, 0.606, 0.778, 0.957, 1.131, 1.378], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-17", "latency_p50_s": 7.441033, "latency_p99_s": 7.44217, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.279172, "ttft_p99_s": 4.280224, "wall_s": 7.442258}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-17 probe_rc=86 boot_done=2026-08-10T02:43:53Z
+cell=same-cell-18 boot_start=2026-08-10T02:43:53Z
+{"actual_start_offsets_ms": [0.029, 0.237, 0.471, 0.649, 0.823, 1.028, 1.235, 1.479], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-18", "latency_p50_s": 7.437958, "latency_p99_s": 7.438846, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.272557, "ttft_p99_s": 4.273483, "wall_s": 7.439124}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-18 probe_rc=86 boot_done=2026-08-10T02:44:37Z
+cell=same-cell-19 boot_start=2026-08-10T02:44:37Z
+{"actual_start_offsets_ms": [0.03, 0.264, 0.512, 0.693, 0.879, 1.048, 1.22, 1.456], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-19", "latency_p50_s": 7.447198, "latency_p99_s": 7.447667, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.285385, "ttft_p99_s": 4.285953, "wall_s": 7.448344}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-19 probe_rc=86 boot_done=2026-08-10T02:45:23Z
+cell=same-cell-20 boot_start=2026-08-10T02:45:23Z
+{"actual_start_offsets_ms": [0.03, 0.228, 0.42, 0.596, 0.804, 1.011, 1.195, 1.481], "errors": [], "exactness": "mismatch", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 1, "golden_matches": 7, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 7, "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 1}, "label": "same-cell-20", "latency_p50_s": 7.453649, "latency_p99_s": 7.454446, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 4.280842, "ttft_p99_s": 4.281724, "wall_s": 7.45475}
+P0 exactness failure: 1/8 diverged
+cell=same-cell-20 probe_rc=86 boot_done=2026-08-10T02:46:07Z
+condition=same completed_cells=20 divergent_cells=20 block_done=2026-08-10T02:46:07Z

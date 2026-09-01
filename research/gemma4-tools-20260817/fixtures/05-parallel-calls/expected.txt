@@ -1,0 +1,6 @@
+<|turn>system
+<|tool>declaration:get_weather{description:<|"|>Get current weather for a location<|"|>,parameters:{properties:{location:{description:<|"|>City name<|"|>,type:<|"|>STRING<|"|>},unit:{enum:[<|"|>celsius<|"|>,<|"|>fahrenheit<|"|>],type:<|"|>STRING<|"|>}},required:[<|"|>location<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+Compare Paris and Oslo weather.<turn|>
+<|turn>model
+<|tool_call>call:get_weather{location:<|"|>Paris<|"|>}<tool_call|><|tool_call>call:get_weather{location:<|"|>Oslo<|"|>}<tool_call|><|tool_response>response:get_weather{value:<|"|>21C clear<|"|>}<tool_response|><|tool_response>response:get_weather{value:<|"|>9C rain<|"|>}<tool_response|>

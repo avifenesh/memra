@@ -1,0 +1,385 @@
+[package]
+name = "memra-engine"
+description = "From-scratch CUDA LLM inference engine for NVIDIA RTX 50-series (sm_120a) and Hopper (sm_90a) - custom kernels, no frameworks"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shared crates.io browse metadata; see the note in the workspace manifest.
+categories.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[dependencies]
+memra-sampling = { workspace = true }
+memra-validate = { workspace = true }
+memra-kv = { workspace = true }
+memra-gguf = { workspace = true }
+memra-runtime = { workspace = true }
+memra-tokenizer = { workspace = true }
+memra-reference = { workspace = true }
+cudarc = { version = "0.19", default-features = false, features = ["std", "cuda-13010", "dynamic-loading", "driver", "cublas", "cublaslt", "nvrtc"] }
+memmap2 = "0.9"
+libc = "0.2"
+# dsv4 lane-4 gate receipts: logits-bin sha256 (same version the memra-gguf gates use)
+sha2 = "0.10"
+# vision input lane: image decode + resize for the Qwen3.8 ViT preprocessor
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
+base64 = "0.22"
+
+[[bin]]
+name = "dsv4-gpu-gate"
+path = "src/bin/dsv4_gpu_gate.rs"
+
+[[bin]]
+name = "dsv4-native-gemm-gate"
+path = "src/bin/dsv4_native_gemm_gate.rs"
+
+[[bin]]
+name = "dsv4-gpu-greedy"
+path = "src/bin/dsv4_gpu_greedy.rs"
+
+[[bin]]
+name = "dsv4-gpu-decode-gate"
+path = "src/bin/dsv4_gpu_decode_gate.rs"
+
+[[bin]]
+name = "dsv4-gpu-tf-gate"
+path = "src/bin/dsv4_gpu_tf_gate.rs"
+
+[[bin]]
+name = "dsv4-gpu-dspark-gate"
+path = "src/bin/dsv4_gpu_dspark_gate.rs"
+
+[[bin]]
+name = "dsv4-gpu-sampled-gate"
+path = "src/bin/dsv4_gpu_sampled_gate.rs"
+
+[[bin]]
+name = "dsv4-drafted-corpus"
+path = "src/bin/dsv4_drafted_corpus.rs"
+
+[[bin]]
+name = "dsv4-decode-probe"
+path = "src/bin/dsv4_decode_probe.rs"
+
+[[bin]]
+name = "dsv4-decode-bench"
+path = "src/bin/dsv4_decode_bench.rs"
+
+[[bin]]
+name = "dsv4-hc-grid-gate"
+path = "src/bin/dsv4_hc_grid_gate.rs"
+
+[[bin]]
+name = "gemma-gate"
+path = "src/bin/gemma_gate.rs"
+
+[[bin]]
+name = "gemma-spec-session-gate"
+path = "src/bin/gemma_spec_session_gate.rs"
+
+[[bin]]
+name = "prime-graph-gate"
+path = "src/bin/prime_graph_gate.rs"
+
+[[bin]]
+name = "prime-graph-smoke"
+path = "src/bin/prime_graph_smoke.rs"
+
+[[bin]]
+name = "prime-batch-gate"
+path = "src/bin/prime_batch_gate.rs"
+
+[[bin]]
+name = "prime-gate"
+path = "src/bin/prime_gate.rs"
+
+[[bin]]
+name = "concat-prime-probe"
+path = "src/bin/concat_prime_probe.rs"
+
+[[bin]]
+name = "iso-gap-probe"
+path = "src/bin/iso_gap_probe.rs"
+
+[[bin]]
+name = "k27div-probe"
+path = "src/bin/k27div_probe.rs"
+
+[[bin]]
+name = "argmax-margin-probe"
+path = "src/bin/argmax_margin_probe.rs"
+
+[[bin]]
+name = "kernel-check"
+path = "src/bin/kernel_check.rs"
+
+[[bin]]
+name = "router-batch-bench"
+path = "src/bin/router_batch_bench.rs"
+
+[[bin]]
+name = "mvq-msweep"
+path = "src/bin/mvq_msweep.rs"
+
+[[bin]]
+name = "fa-sanitize"
+path = "src/bin/fa_sanitize.rs"
+
+[[bin]]
+name = "kv-fmt-bench"
+path = "src/bin/kv_fmt_bench.rs"
+
+[[bin]]
+name = "fa-hd128-check"
+path = "src/bin/fa_hd128_check.rs"
+
+[[bin]]
+name = "quant-kv-f32-check"
+path = "src/bin/quant_kv_f32_check.rs"
+
+[[bin]]
+name = "run-dense"
+path = "src/bin/run_dense.rs"
+
+[[bin]]
+name = "run-hybrid"
+path = "src/bin/run_hybrid.rs"
+
+[[bin]]
+name = "run-safetensors"
+path = "src/bin/run_safetensors.rs"
+
+[[bin]]
+name = "st-vs-gguf"
+path = "src/bin/st_vs_gguf.rs"
+
+[[bin]]
+name = "frspec-owngen"
+path = "src/bin/frspec_owngen.rs"
+
+[[bin]]
+name = "dspark-generate"
+path = "src/bin/dspark_generate.rs"
+
+[[bin]]
+name = "dspark-extract"
+path = "src/bin/dspark_extract.rs"
+
+[[bin]]
+name = "dspark-export-shared"
+path = "src/bin/dspark_export_shared.rs"
+
+[[bin]]
+name = "run-gen"
+path = "src/bin/run_gen.rs"
+
+[[bin]]
+name = "run-spec"
+path = "src/bin/run_spec.rs"
+
+[[bin]]
+name = "glm5-card3-probe"
+path = "src/bin/glm5_card3_probe.rs"
+
+[[bin]]
+name = "glm5-tp2-box-probe"
+path = "src/bin/glm5_tp2_box_probe.rs"
+
+[[bin]]
+name = "spec-econ"
+path = "src/bin/spec_econ.rs"
+
+[[bin]]
+name = "replay-acceptance"
+path = "src/bin/replay_acceptance.rs"
+
+[[bin]]
+name = "run-eagle"
+path = "src/bin/run_eagle.rs"
+
+
+[[bin]]
+name = "decode-bench"
+path = "src/bin/decode_bench.rs"
+
+[[bin]]
+name = "argmax-gate"
+path = "src/bin/argmax_gate.rs"
+
+[[bin]]
+name = "w4a4-gate"
+path = "src/bin/w4a4_gate.rs"
+
+[[bin]]
+name = "moe-devq8-check"
+path = "src/bin/moe_devq8_check.rs"
+
+[[bin]]
+name = "decode-dc-gate"
+path = "src/bin/decode_dc_gate.rs"
+
+[[bin]]
+name = "graph-decode-gate"
+path = "src/bin/graph_decode_gate.rs"
+
+[[bin]]
+name = "cutlass-smoke"
+path = "src/bin/cutlass_smoke.rs"
+
+[[bin]]
+name = "cutlass-gemv-bench"
+path = "src/bin/cutlass_gemv_bench.rs"
+
+[[bin]]
+name = "decode-kernel-census"
+path = "src/bin/decode_kernel_census.rs"
+
+[[bin]]
+name = "moe-sk-repro"
+path = "src/bin/moe_sk_repro.rs"
+
+[[bin]]
+name = "moe-tp2-repro"
+path = "src/bin/moe_tp2_repro.rs"
+
+[[bin]]
+name = "nvfp4-bank-oracle"
+path = "src/bin/nvfp4_bank_oracle.rs"
+
+[[bin]]
+name = "launch-econ"
+path = "src/bin/launch_econ.rs"
+
+[[bin]]
+name = "gdn-bench"
+path = "src/bin/gdn_bench.rs"
+
+[[bin]]
+name = "verify-probe"
+path = "src/bin/verify_probe.rs"
+
+[[bin]]
+name = "verify-mscale"
+path = "src/bin/verify_mscale.rs"
+
+[[bin]]
+name = "depth-profile"
+path = "src/bin/depth_profile.rs"
+
+[[bin]]
+name = "decode-window-profile"
+path = "src/bin/decode_window_profile.rs"
+
+[[bin]]
+name = "session-gate"
+path = "src/bin/session_gate.rs"
+
+[[bin]]
+name = "spec-serve-gate"
+path = "src/bin/spec_serve_gate.rs"
+
+[[bin]]
+name = "optipipe-gate"
+path = "src/bin/optipipe_gate.rs"
+
+[[bin]]
+name = "target-efficiency"
+path = "src/bin/target_efficiency.rs"
+
+[[bin]]
+name = "session-bench"
+path = "src/bin/session_bench.rs"
+
+[[bin]]
+name = "fa-ab-bench"
+path = "src/bin/fa_ab_bench.rs"
+
+[[bin]]
+name = "frspec-rank"
+path = "src/bin/frspec_rank.rs"
+
+[[bin]]
+name = "decode-batch-gate"
+path = "src/bin/decode_batch_gate.rs"
+
+[[bin]]
+name = "decode-batch-bench"
+path = "src/bin/decode_batch_bench.rs"
+
+[[bin]]
+name = "graph-session-gate"
+path = "src/bin/graph_session_gate.rs"
+
+[[bin]]
+name = "graph-allocfree-probe"
+path = "src/bin/graph_allocfree_probe.rs"
+
+[[bin]]
+name = "graph-warmup-stress"
+path = "src/bin/graph_warmup_stress.rs"
+
+[[bin]]
+name = "pp2-gate"
+path = "src/bin/pp2_gate.rs"
+
+[[bin]]
+name = "pp-transport-smoke"
+path = "src/bin/pp_transport_smoke.rs"
+
+[[bin]]
+name = "ppn-gate"
+path = "src/bin/ppn_gate.rs"
+
+[[bin]]
+name = "glm5-hyper-ppn-gate"
+path = "src/bin/glm5_hyper_ppn_gate.rs"
+
+[[bin]]
+name = "glm5-spec-ppn-gate"
+path = "src/bin/glm5_spec_ppn_gate.rs"
+
+[[bin]]
+name = "glm5-hyper-batch-gate"
+path = "src/bin/glm5_hyper_batch_gate.rs"
+
+[[bin]]
+name = "glm5-tp-gate"
+path = "src/bin/glm5_tp_gate.rs"
+
+[[bin]]
+name = "ppn-bench"
+path = "src/bin/ppn_bench.rs"
+
+[[bin]]
+name = "clc-mmq-bench"
+path = "src/bin/clc_mmq_bench.rs"
+
+[[bin]]
+name = "spec-st-probe"
+path = "src/bin/spec_st_probe.rs"
+
+[[bin]]
+name = "plainbatch-margin-probe"
+path = "src/bin/plainbatch_margin_probe.rs"
+
+[[bin]]
+name = "accprobe-bench"
+path = "src/bin/accprobe_bench.rs"
+
+[[bin]]
+name = "gemv-e4m3-bench"
+path = "src/bin/gemv_e4m3_bench.rs"
+
+[[bin]]
+name = "vision-gate"
+path = "src/bin/vision_gate.rs"
+
+[[bin]]
+name = "fused2-pin"
+path = "src/bin/fused2_pin.rs"
+
+[[bin]]
+name = "gguf-census"
+path = "src/bin/gguf_census.rs"

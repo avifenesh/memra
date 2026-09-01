@@ -1,0 +1,53 @@
+[server] starting; models config = [("ornith15", "/home/ubuntu/models/ornith15/publish/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "ornith15" <- /home/ubuntu/models/ornith15/publish/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+[worker]   loaded "ornith15": 41 layers, eos=248046
+[worker] ornith15: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] ornith15: decode wave cap 8; scheduler tick cap 8
+[server] worker ready; serving models: ["ornith15"]
+[prefix-cache] on: budget 284MB (283770880 B, derived: 2 x 141885440 B max entry for model "ornith15" at MEMRA_CTX=8192, requested 283770880 B; boot driver free 81486479360 B, post-reserve clamp 79875866624 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "ornith15": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:8199
+[meter] admit id=chatcmpl-d941cd80f1ee74e4ce1a932b196b612a tenant=default lane=interactive model="ornith15"
+[admission] request cost: model="ornith15" ctx=359 path=spec = 11136 B/token x ctx + 0MB fixed = 4MB
+[spec-k] model="ornith15" tenant="" K=3 source=cold-short prompt=39 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="ornith15" 129MB (observed 132MB at ctx 303 path=spec)
+[spec-acc] ctx=39 burst=16/48 cum=16/48=0.333
+[spec-acc] ctx=72 burst=14/54 cum=30/102=0.294
+[spec-acc] ctx=105 burst=14/51 cum=44/153=0.288
+[spec-acc] ctx=137 burst=13/57 cum=57/210=0.271
+[spec-acc] ctx=170 burst=14/51 cum=71/261=0.272
+[spec-acc] ctx=202 burst=11/60 cum=82/321=0.255
+[spec-acc] ctx=234 burst=12/60 cum=94/381=0.247
+[spec-acc] ctx=267 burst=11/51 cum=105/432=0.243
+[meter] admit id=chatcmpl-9305983c07bae4bd919c481bcc3f8490 tenant=default lane=interactive model="ornith15"
+[admission] request cost: model="ornith15" ctx=359 path=spec = 11136 B/token x ctx + 129MB fixed = 133MB
+[worker] spec-affinity: declined (empty suffix; 1 parked, 39 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=3 source=cold-short prompt=39 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=39 burst=16/48 cum=16/48=0.333
+[spec-acc] ctx=72 burst=14/54 cum=30/102=0.294
+[spec-acc] ctx=105 burst=14/51 cum=44/153=0.288
+[spec-acc] ctx=137 burst=13/57 cum=57/210=0.271
+[spec-acc] ctx=170 burst=14/51 cum=71/261=0.272
+[spec-acc] ctx=202 burst=11/60 cum=82/321=0.255
+[spec-acc] ctx=234 burst=12/60 cum=94/381=0.247
+[spec-acc] ctx=267 burst=11/51 cum=105/432=0.243
+[meter] admit id=chatcmpl-ad31c117e39b0e7d2555f18c76db7361 tenant=default lane=interactive model="ornith15"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 39 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=3 source=cold-short prompt=39 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=39 burst=16/48 cum=16/48=0.333
+[spec-acc] ctx=72 burst=14/54 cum=30/102=0.294
+[spec-acc] ctx=105 burst=14/51 cum=44/153=0.288
+[spec-acc] ctx=137 burst=13/57 cum=57/210=0.271
+[spec-acc] ctx=170 burst=14/51 cum=71/261=0.272
+[spec-acc] ctx=202 burst=11/60 cum=82/321=0.255
+[spec-acc] ctx=234 burst=12/60 cum=94/381=0.247
+[spec-acc] ctx=267 burst=11/51 cum=105/432=0.243
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

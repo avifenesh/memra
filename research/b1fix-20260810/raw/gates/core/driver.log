@@ -1,0 +1,25 @@
+lock_acquired=2026-08-10T05:20:55Z head=2ef6d75cbf9ff7a09f685bcc1fc54b84bb8f81fb
+0, 26, 30.59 W, 600.00 W, 180 MHz, 0 MiB
+1, 27, 29.42 W, 600.00 W, 180 MHz, 0 MiB
+G1 kernel-check start
+kernel_check_rc=0
+ALL GREEN: kernels match CPU reference.
+G2 decode-batch-gate start
+decode_batch_gate_rc=0
+pp gate PASS [split B=1 rep0]: 3093504 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [split B=1 rep1]: 3093504 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [unsplit@ppncache B=1]: 3093504 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [split B=2 rep0]: 6187008 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [split B=2 rep1]: 6187008 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [unsplit@ppncache B=2]: 6187008 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [split B=4 rep0]: 12374016 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [split B=4 rep1]: 12374016 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [unsplit@ppncache B=4]: 12374016 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [split B=8 rep0]: 24748032 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [split B=8 rep1]: 24748032 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [unsplit@ppncache B=8]: 24748032 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate: b1-stagefast arm N/A for Step35 (correctness default is batched at every width)
+pp mode verdict: 0 failing arm(s); stages=2 fence=[0, 22, 45] devices=0,1 splits=default(even) shard=per-stage streams=per-stage
+0, 40, 98.02 W, 600.00 W, 2392 MHz, 0 MiB
+1, 40, 97.39 W, 600.00 W, 2317 MHz, 0 MiB
+lock_released=2026-08-10T05:25:16Z

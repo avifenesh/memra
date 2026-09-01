@@ -1,0 +1,51 @@
+[server] starting; models config = [("gate", "/home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "gate" <- /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[worker]   loaded "gate": 65 layers, eos=248046
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18094
+[meter] admit id=chatcmpl-743d12248d770d13f552cf8e0c15d8b8 tenant=default lane=interactive model="gate"
+[worker] gate: DSPARK SPEC route armed (drafter attached; greedy/unconstrained/text-only/solo-admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[prefix-cache] on: budget 800MB (800325632 B, derived: 2 x 400162816 B max entry for model "gate" at MEMRA_CTX=8192, requested 800325632 B; boot driver free 85011791872 B, post-reserve clamp 83401179136 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[admission] request cost: model="gate" ctx=189 path=spec = 33408 B/token x ctx + 0MB fixed = 6MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=29 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[dspark-acc] ctx=29 burst=7/57 cum=7/57=0.123
+[dspark-acc] ctx=62 burst=11/47 cum=18/104=0.173
+[dspark-acc] ctx=94 burst=9/47 cum=27/151=0.179
+[meter] admit id=chatcmpl-54923bbc4aeefe6d27a94a64ee298b73 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=186 path=spec = 33408 B/token x ctx + 0MB fixed = 6MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=26 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[dspark-acc] ctx=26 burst=7/57 cum=7/57=0.123
+[dspark-acc] ctx=58 burst=7/52 cum=14/109=0.128
+[dspark-acc] ctx=90 burst=10/48 cum=24/157=0.153
+[meter] admit id=chatcmpl-00cc8d2c8a35d4c3fe68114466d2b433 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=187 path=spec = 33408 B/token x ctx + 0MB fixed = 6MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=27 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[dspark-acc] ctx=27 burst=9/52 cum=9/52=0.173
+[dspark-acc] ctx=59 burst=15/42 cum=24/94=0.255
+[dspark-acc] ctx=91 burst=9/49 cum=33/143=0.231
+[meter] admit id=chatcmpl-7bbfb1afe22f474603b1d4790391e070 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=189 path=spec = 33408 B/token x ctx + 0MB fixed = 6MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=29 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 312MB at ctx 133 path=plain)
+[meter] admit id=chatcmpl-a37a2fa0e4a43c78a104622ac5b39905 tenant=default lane=interactive model="gate"
+[meter] admit id=chatcmpl-c6e7bca7f78651720631a85e0af23bdd tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=187 path=spec = 33408 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 27 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=27 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[dspark-acc] ctx=27 burst=9/52 cum=9/52=0.173
+[admission] request cost: model="gate" ctx=186 path=spec = 33408 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 26 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=26 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[dspark-acc] ctx=59 burst=15/42 cum=24/94=0.255
+[dspark-acc] ctx=91 burst=9/49 cum=33/143=0.231
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,23 @@
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling memra-validate v0.74.0 (/home/avifenesh/projects/wt-cx-hostbounce/crates/memra-validate)
+   Compiling memra-sampling v0.74.0 (/home/avifenesh/projects/wt-cx-hostbounce/crates/memra-sampling)
+warning: memra-engine@0.74.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.74.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling libloading v0.9.0
+   Compiling cudarc v0.19.8
+   Compiling memmap2 v0.9.11
+   Compiling memra-gguf v0.74.0 (/home/avifenesh/projects/wt-cx-hostbounce/crates/memra-gguf)
+   Compiling memra-tokenizer v0.74.0 (/home/avifenesh/projects/wt-cx-hostbounce/crates/memra-tokenizer)
+   Compiling memra-runtime v0.74.0 (/home/avifenesh/projects/wt-cx-hostbounce/crates/memra-runtime)
+   Compiling memra-kv v0.74.0 (/home/avifenesh/projects/wt-cx-hostbounce/crates/memra-kv)
+   Compiling memra-engine v0.74.0 (/home/avifenesh/projects/wt-cx-hostbounce/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.10s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-5deaaf271242076b)
+
+running 3 tests
+test pp::host_bounce_tests::host_bounce_capacity_rejects_invalid_or_overflowing_geometry ... ok
+test pp::host_bounce_tests::step37_geometry_sizes_each_slot_from_the_prime_cap ... ok
+test pp::host_bounce_tests::transport_selection_keeps_peer_default_and_bounces_only_cross_device ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 52 filtered out; finished in 0.00s

@@ -1,0 +1,8 @@
+--- [glm5-acc] acceptance lines for this request ---
+--- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
+--- error census (must be 0) ---
+2
+--- errors, if any ---
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 36694MB -> 36740MB
+[admit-oom] VRAM reject: model="zai/glm-5.3-flash" ctx=1035677 has no attainable admission headroom (available 36740MB) — HTTP 429

@@ -1,0 +1,12 @@
+SERVER_EXACT_START 2026-08-11T01:45:29Z source=64ddfa5cdd9fb4cf77faf59824ad26309041d3ae
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 26, P8
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 27, P8
+warning: memra-engine@0.75.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.75.0 (/home/ubuntu/memra-opti2/crates/memra-engine)
+   Compiling memra-server v0.75.0 (/home/ubuntu/memra-opti2/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 26.90s
+{"actual_start_offsets_ms": [0.028], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "controller-q0", "latency_p50_s": 1.968161, "latency_p99_s": 1.968161, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.581915, "ttft_p99_s": 0.581915, "wall_s": 1.968251}
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 32, P0
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 32, P0
+SERVER_EXACT_PASS 2026-08-11T01:46:40Z

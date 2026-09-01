@@ -1,0 +1,52 @@
+ANON=nx13 TURN=8 CHARS=1661 FINISH=length REPEAT60=1
+======================================================================
+### Step-by-Step Handling of GitHub Issue #1099
+
+#### 1. Investigation & Triage
+First, verify the broken links and root cause:
+```bash
+# Check if the repository exists
+curl -I https://github.com/agent-sh/agnix
+# Check if the issue page loads
+curl -I https://github.com/agent-sh/agnix/issues/1099
+# Check the documentation link (replace with actual stale URL from issue)
+curl -I https://github.com/agent-sh/agnix/blob/main/README.md
+```
+
+**Likely root causes**:
+- Repository renamed/moved (e.g., `agnix` → `agnix-core` or `agent-sh` → `jetbrains`)
+- Documentation relocated to a separate repo (e.g., `agnix-docs`)
+- Marketplace listing caches old URLs
+
+**Triage conclusion**: This is a **bug** (broken links), not a question. Proceed to fix.
+
+---
+
+#### 2. Fix Implementation (Branch Workflow)
+```bash
+# Clone the repo (if not already)
+git clone https://github.com/agent-sh/agnix.git
+cd agnix
+
+# Create a fix branch from main
+git checkout -b fix-broken-links-1099
+
+# Update broken links in relevant files (example: README.md)
+# Replace stale URLs with correct ones:
+# - Source Code: https://github.com/agent-sh/agnix (if repo still exists)
+# - Docs: https://github.com/agent-sh/agnix/wiki or https://agnix.jetbrains.com/docs
+
+# Stage, commit, and push
+git add README.md marketplace-listing.yaml  # adjust filenames as needed
+git commit -m "fix: update stale documentation and source code links (issue #1099)"
+git push origin fix-broken-links-1099
+```
+
+Then, open a Pull Request on GitHub targeting `main` branch, referencing `#1099`.
+
+---
+
+#### 3. Summary for Issue Thread
+Post this comment on `https://github.com/agent-sh/agnix/issues/1099`:
+
+> **Fixed in PR #\<

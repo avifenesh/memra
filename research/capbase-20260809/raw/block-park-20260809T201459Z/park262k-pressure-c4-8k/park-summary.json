@@ -1,0 +1,33 @@
+{
+  "n": 1,
+  "thermal_regime": "continuous one-second nvidia-smi sampling under one exclusive lock",
+  "parked_entries_after_park": 1,
+  "reclaim_events": [],
+  "vram_defer_lines": [],
+  "burst_ok": 4,
+  "burst_n": 4,
+  "service_order": [
+    {
+      "index": 2,
+      "ttfb_s": 1.218
+    },
+    {
+      "index": 0,
+      "ttfb_s": 1.271
+    },
+    {
+      "index": 1,
+      "ttfb_s": 1.271
+    },
+    {
+      "index": 3,
+      "ttfb_s": 1.271
+    }
+  ],
+  "ttfb_span_s": 0.053,
+  "captured_failure_lines": [],
+  "failures": [
+    "reclaim-on-defer did not evict the parked session"
+  ],
+  "verdict": "FAIL"
+}

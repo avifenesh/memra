@@ -1,0 +1,31 @@
+bucket               gpu_ms   launches launch/tok gpu_share
+moe                  1028.5      19569      101.9     36.4%
+bf16-mmv              701.7      10878       56.7     24.9%
+mla+indexer           399.6      22782      118.7     14.2%
+cublas-f32            214.7     127124      662.1      7.6%
+mhc-sites             205.4      27158      141.4      7.3%
+other                 153.6      27353      142.5      5.4%
+kda-scan+conv          68.1      34272      178.5      2.4%
+kda-proj               26.5      24888      129.6      0.9%
+rms-norm               24.6      10333       53.8      0.9%
+TOTAL                2822.7     304357     1585.2
+
+cuda-api families (host side: the allocs+syncs bucket):
+  cuMemcpyHtoDAsync_v2                  10629.5 ms       3066 calls     16.0/tok
+  cuMemAllocAsync                        1067.5 ms     278014 calls   1448.0/tok
+  cuStreamSynchronize                     852.1 ms        844 calls      4.4/tok
+  cudaLaunchKernel                        643.7 ms     162636 calls    847.1/tok
+  cuMemcpyDtoDAsync_v2                    442.4 ms     109021 calls    567.8/tok
+  cuMemcpyDtoHAsync_v2                    425.3 ms        763 calls      4.0/tok
+  cuLaunchKernel                          326.5 ms     104304 calls    543.2/tok
+  cuMemFreeAsync                          161.9 ms     275828 calls   1436.6/tok
+  cuLaunchKernelEx                        129.5 ms      37417 calls    194.9/tok
+  cuMemsetD8Async                          21.9 ms       3066 calls     16.0/tok
+  cuStreamWaitEvent                         1.6 ms        557 calls      2.9/tok
+  cuMemAlloc_v2                             1.5 ms          8 calls      0.0/tok
+  cuMemcpyPeerAsync                         1.3 ms        168 calls      0.9/tok
+  cuMemFree_v2                              1.0 ms          8 calls      0.0/tok
+  cudaMemsetAsync                           0.3 ms        170 calls      0.9/tok
+  cuCtxSynchronize                          0.1 ms         12 calls      0.1/tok
+  cuMemcpyHtoD_v2                           0.1 ms          8 calls      0.0/tok
+  cuMemcpyDtoH_v2                           0.0 ms          4 calls      0.0/tok

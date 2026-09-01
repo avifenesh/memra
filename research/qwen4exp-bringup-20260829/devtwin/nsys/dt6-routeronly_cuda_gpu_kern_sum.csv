@@ -1,0 +1,22 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+21.2,6608289,130,50833.0,49904.0,49152,62496,3288.4,qmatvec_bf16w_multi4_f32
+17.1,5338561,610,8751.7,3968.0,3520,27872,9299.8,qmatvec_bf16w_f32
+17.1,5329762,480,11103.7,11136.0,10752,11456,105.0,qwen4exp_route_topk_f32
+12.6,3913696,260,15052.7,14960.0,13728,16640,700.3,hc_diet_stage1_f32
+10.0,3104384,120,25869.9,26176.0,22688,28832,1756.6,sdpa_naive_mask_f32
+7.8,2431585,260,9352.3,9312.0,8416,10272,422.7,hc_diet_stage3_f32
+5.8,1798093,170,10577.0,6976.0,6496,20352,5784.6,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+3.0,934715,360,2596.4,2015.0,1696,4607,999.1,rms_norm_f32_v2
+1.0,308320,240,1284.7,1264.0,1056,1696,220.1,rope_neox_f32
+0.9,286144,260,1100.6,1120.0,992,1344,81.3,hc_diet_stage2_f32
+0.6,195322,120,1627.7,1631.0,1535,1792,35.6,q_gate_split_f32
+0.6,176992,160,1106.2,1120.0,928,1376,91.1,mul_f32
+0.5,154016,50,3080.3,3072.0,2976,3360,73.7,dwconv_causal_f32
+0.5,140545,130,1081.1,1056.0,1056,1472,51.5,hc_write_planes_f32
+0.4,129696,120,1080.8,1088.0,1056,1280,28.3,sigmoid_f32
+0.3,94880,40,2372.0,2272.0,2208,2656,163.7,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)8, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+0.3,80864,10,8086.4,8080.0,7936,8320,114.9,gdn_scan_step_f32
+0.1,44288,40,1107.2,1120.0,1088,1120,15.9,add_scaled_rows_f32
+0.1,38240,40,956.0,928.0,896,1184,75.4,axpy_f32
+0.1,18688,10,1868.8,1856.0,1824,1952,45.8,rms_sigmul_f32
+0.0,13568,10,1356.8,1312.0,1312,1600,89.5,gdn_glog_f32

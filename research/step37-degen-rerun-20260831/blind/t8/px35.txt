@@ -1,0 +1,27 @@
+finish=length content_nonempty=False
+---
+Got it, let's tackle this GitHub bug. First, I need to follow the steps: investigate the issue, triage if it's a question, implement fixes on a branch if needed, then summarize.
+
+First, let's start with triage. The issue is a bug, not a question: two links in the JetBrains Marketplace listing for Agnix are broken: docs link 404s, source code points to a stale repo URL. So first, confirm it's a valid bug, no questions asked.
+
+Next, investigation steps:
+1. First, check the current Agnix JetBrains Marketplace listing (wait, but since I can't browse live, I'll reference the standard structure for JetBrains plugin listings, which pull metadata from the plugin's repository `plugin.xml` or `gradle.properties` for JetBrains plugins, or the marketplace entry config if it's manually set, but usually for open source plugins it's auto-populated from repo metadata unless overridden).
+2. First, the stale source code link: that's almost always set in the plugin's build configuration (for Gradle-based JetBrains plugins, it's the `url` field in the `plugin.xml` or the `projectUrl` in `gradle.properties`, or the `repository` field in the plugin's manifest). The stale URL is probably an old repo URL, like maybe a previous org name or old repo path.
+3. The 404 docs link: that's either the `documentation` link in the marketplace listing config, or the `url` field pointing to docs, or a relative link that's broken, or the docs were moved to a new path (like from `/docs` to `/wiki`, or a new docs site like `docs.agnix.dev`).
+
+Then, implementation steps on a branch:
+First, create a fix branch, e.g. `fix/jetbrains-marketplace-links-1099` off main.
+1. First, locate the source of the marketplace metadata:
+   - For a typical JetBrains plugin (Gradle-based), check `src/main/resources/META-INF/plugin.xml` for the `<idea-plugin>` manifest fields:
+     - `<name>`: Agnix
+     - `<url>`: This is usually the source code / project homepage link, which is the stale one. Update this to the current canonical repo URL, e.g. `https://github.com/agent-sh/agnix` (assuming that's the current repo, since the issue is from that org).
+     - `<vendor>`: Correct vendor info, no change needed here.
+   - Also check `gradle.properties` for `projectUrl` or `pluginUrl` fields that might override the manifest, update those to match.
+2. Fix the documentation link:
+   - The JetBrains Marketplace has a separate "Documentation" link field that can be set either in the plugin manifest (some plugins use `<documentation>` tag, but more commonly it's set in the JetBrains Marketplace listing UI, but if it's auto-populated from the repo, it's probably pointing to an old docs path. Wait, no—if the docs are hosted in the repo's wiki, or a `docs/` folder, or a separate docs site:
+     - If the docs were moved from `https://github.com/agent-sh/agnix/wiki` to `https://docs.agnix.dev`, update the documentation link in the marketplace listing config (if the repo has a `.github/marketplace.yml` or similar, but more likely, for JetBrains plugins, you can set the documentation link in the `plugin.xml` with a `<documentation>` tag, or update it via the JetBrains Marketplace portal if it's a manual entry. Wait, but since we're implementing code changes, the repo-side fix is to update the manifest fields that populate the marketplace links.
+   - Also, check if there's a `README.md` link that's broken, but no, the issue is specifically the marketplace listing links.
+3. Also, add a validation step in the CI pipeline to check that the links in the plugin manifest are valid (no 404s) on PRs, to prevent this from happening again. That's a nice hardening step.
+4. Then, test the changes: build the plugin, verify that the generated plugin manifest has the correct URLs, then push the branch, open a PR against main, reference the issue #1099 in the PR description.
+
+Wait, also, need to make sure we don't break anything. Let's confirm: the stale source code link is probably an old URL like `https://github.com/old-org/agnix-legacy` or similar, so updating it to the current `https://github.com/agent-sh/agnix` fixes that. The 404 docs link is probably pointing to an old path like `https://agent-sh.github.io/agnix/docs` which was moved to `https://docs

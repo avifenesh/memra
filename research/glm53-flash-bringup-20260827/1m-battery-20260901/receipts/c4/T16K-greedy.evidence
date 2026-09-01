@@ -1,0 +1,18 @@
+--- [glm5-acc] acceptance lines for this request ---
+[glm5-acc] ctx=15766 burst=17/29 cum=17/29=0.586
+[glm5-acc] ctx=15798 burst=18/30 cum=35/59=0.593
+[glm5-acc] ctx=15831 burst=22/31 cum=57/90=0.633
+[glm5-acc] ctx=15866 burst=15/24 cum=72/114=0.632
+--- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
+[glm5-phase] rounds=14 k=3 total=2082.72ms | draft=191.01 verify=1886.88 accept=0.52 roll=2.92 maint=1.39 | per-round ms: draft=13.643 verify=134.777 accept=0.037 roll=0.209 maint=0.099 total=148.766
+[glm5-phase-v] rounds=14 k=3 | per-round ms: vkda=45.885 (scan=0.368) vmla=12.312 vrest=76.580 (vffn=64.852)
+[glm5-phase] rounds=15 k=3 total=1742.46ms | draft=85.63 verify=1651.77 accept=0.58 roll=2.94 maint=1.55 | per-round ms: draft=5.709 verify=110.118 accept=0.039 roll=0.196 maint=0.103 total=116.164
+[glm5-phase-v] rounds=15 k=3 | per-round ms: vkda=44.852 (scan=0.365) vmla=12.194 vrest=53.072 (vffn=41.566)
+[glm5-phase] rounds=13 k=3 total=1621.92ms | draft=74.20 verify=1543.28 accept=0.50 roll=2.48 maint=1.47 | per-round ms: draft=5.707 verify=118.714 accept=0.039 roll=0.190 maint=0.113 total=124.763
+[glm5-phase-v] rounds=13 k=3 | per-round ms: vkda=50.297 (scan=0.378) vmla=12.802 vrest=55.614 (vffn=43.297)
+[glm5-phase] rounds=13 k=3 total=1359.28ms | draft=74.18 verify=1280.92 accept=0.46 roll=2.43 maint=1.29 | per-round ms: draft=5.706 verify=98.532 accept=0.035 roll=0.187 maint=0.099 total=104.560
+[glm5-phase-v] rounds=13 k=3 | per-round ms: vkda=42.657 (scan=0.359) vmla=11.876 vrest=43.999 (vffn=32.860)
+--- error census (must be 0) ---
+0
+--- errors, if any ---
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB

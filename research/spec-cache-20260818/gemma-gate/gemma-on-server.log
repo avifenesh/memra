@@ -1,0 +1,36 @@
+[server] starting; models config = [("gate", "/data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "gate" <- /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q8rp] split-plane decode mirrors built: 1 tensors
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[worker]   loaded "gate": 48 layers, eos=1
+[worker] gate: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false gemma_think=true ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[worker] gate: decode wave cap 8; scheduler tick cap 8
+[worker] gate: BATCHED DECODE (gemma4 dense arm, default-on; MEMRA_GEMMA4_BATCH=0 = eager kill switch): batched decode chunks; monolithic prefill, no graph promotion, no prime batching (eager-only for every non-decode entry point)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18099
+[worker] gate: GEMMA SPEC route armed (K=5, assistant drafter attached; greedy/unconstrained/text-only/solo-admission; MEMRA_GEMMA4_SPEC=0 = off)
+[prefix-cache] on: budget 2567MB (2566914048 B, derived: 2 x 1283457024 B max entry for model "gate" at MEMRA_CTX=8192, requested 2566914048 B; boot driver free 14281277440 B, post-reserve clamp 12670664704 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 156672 B/token, spec 156672 B/token; fixed residual learns from effective-free deltas
+[meter] admit id=cmpl-53ed32666221f0ef9c4383947f72956f tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=219 path=plain = 156672 B/token x ctx + 0MB fixed = 34MB
+[admission] fixed residual high-water: model="gate" 0MB (observed 26MB at ctx 163 path=plain)
+[prefix-cache] insert probation (seed): 107 tokens, 16.8MB (resident 16.8MB / 2567MB, model gate)
+[meter] admit id=cmpl-8a712794a9c035b23afe3eeea02839cf tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=232 path=plain = 156672 B/token x ctx + 0MB fixed = 36MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 120 prompt tokens; model gate)
+[prefix-cache] hit: 107 of 120 prompt tokens from cache (model gate)
+[gspec-acc] ctx=120 burst=18/74 cum=18/74=0.243
+[gspec-acc] ctx=156 burst=10/10 cum=28/84=0.333
+[meter] admit id=cmpl-59a1a8bd8c5fc550aa3381a33ec018dd tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=219 path=plain = 156672 B/token x ctx + 0MB fixed = 34MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 107 prompt tokens; model gate)
+[prefix-cache] hit: 107 of 107 prompt tokens from cache (model gate)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

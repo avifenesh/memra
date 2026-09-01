@@ -1,0 +1,38 @@
+# probe-vision-ppn.py refusal-path verification — 2026-09-01T13:10:36Z, tree 6b13441e5
+# Every path EXECUTED, on the rig, before the window (the loud-loader patch's own discipline:
+# its first draft had a bug only execution found). No GPU, no server, no box needed.
+# fixtures: darklanes wt-glm5-launch .../window-20260901/vision-serving-shape
+
+[fixtures] /home/avifenesh/projects/darklanes/wt-glm5-launch/research/glm5-serving-launch-20260901/window-20260901/vision-serving-shape (explicit) — 5 pinned, shapes asserted, codes=['ZK5465', 'QV4655', 'XR0818']
+
+==============================================================================
+PROCEEDS             good fixture dir (explicit)
+REFUSED              missing dir (explicit)
+                       REFUSE: fixture directory not found at '/nonexistent/vision-fixtures' (VISION_FIXTURES/--fixtures). The can't-hallucinate claim rests on the card3 cel
+REFUSED              missing dir (DEFAULT path — must say it was a default)
+                       REFUSE: fixture directory not found at '/nonexistent/default-vision-fixtures' (the DEFAULT path — pass --fixtures/VISION_FIXTURES explicitly). The can
+REFUSED              one fixture missing
+                       REFUSE: fixture '/tmp/tmpxc55tx24/21-neg-video-url.json' is missing (the battery needs all 5: ['10-cant-hallucinate-greedy', '11-cant-hallucinate-samp
+REFUSED              sha256 drift
+                       REFUSE: fixture '/tmp/tmpthnyvw86/10-cant-hallucinate-greedy.json' sha256 64e8dbe45c72eb68ad11c1644c8f8b9f88f62c38ffa63537e8ccae890c5c3db3 != pinned 7
+REFUSED              not readable json
+                       REFUSE: fixture '/tmp/tmp6f2xsqw4/20-neg-literal-placeholder.json' is not readable json: JSONDecodeError: Expecting property name enclosed in double q
+REFUSED              no 'request' key (prints the actual top-level keys)
+                       REFUSE: fixture '/tmp/tmp6f2xsqw4/20-neg-literal-placeholder.json' has no 'request' key (top-level: ['prompt']); the banked shape is {"request": {...}
+REFUSED              can't-hallucinate arm with no image part
+                       REFUSE: fixture '10-cant-hallucinate-greedy' carries NO image_url part (parts: []) — the can't-hallucinate arm would be a text question with a memoriz
+REFUSED              greedy arm that is not greedy
+                       REFUSE: fixture '10-cant-hallucinate-greedy' is not greedy (temperature=0.7); greedy is the INSTRUMENT arm and must be byte-deterministic
+REFUSED              vendor-default arm carrying sampling params
+                       REFUSE: fixture '11-cant-hallucinate-sampled-vendor-default' carries sampling params ['temperature', 'top_p'] — then it is not the VENDOR-DEFAULT shap
+REFUSED              video arm with no video part
+                       REFUSE: fixture '21-neg-video-url' carries no video_url part (parts: ['image_url'])
+REFUSED              text-only placeholder arm carrying an image
+                       REFUSE: fixture '20-neg-literal-placeholder' must be TEXT-ONLY (parts: ['image_url'])
+PROCEEDS             banked fixture 10-cant-hallucinate-greedy satisfies its shape contract
+PROCEEDS             banked fixture 11-cant-hallucinate-sampled-vendor-default satisfies its shape contract
+PROCEEDS             banked fixture 20-neg-literal-placeholder satisfies its shape contract
+PROCEEDS             banked fixture 21-neg-video-url satisfies its shape contract
+PROCEEDS             banked fixture 23-neg-fakedpad-with-image satisfies its shape contract
+==============================================================================
+17 paths executed; every refusal fired with a named reason and every banked fixture satisfies its own contract.

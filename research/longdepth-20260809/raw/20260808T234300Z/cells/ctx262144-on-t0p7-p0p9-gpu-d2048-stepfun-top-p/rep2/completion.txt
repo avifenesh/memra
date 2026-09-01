@@ -1,0 +1,72 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+:root{--bg:#f4f6f8;--surface:#ffffff;--text:#1a1a1a;--muted:#5a6573;--accent:#005f99;--accent2:#003b5c;--border:#d1d5db;--focus:#ffbf47;--success:#2d7d46;--warn:#b35900;--danger:#a61b1b;--shadow:0 1px 3px rgba(0,0,0,0.08)}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.55}
+header{position:sticky;top:0;z-index:100;background:var(--accent2);color:#fff;padding:0.75rem 1rem;display:flex;align-items:center;gap:1rem;box-shadow:var(--shadow)}
+header h1{font-size:1.25rem;margin:0;white-space:nowrap}
+header .search{margin-left:auto;display:flex;gap:.5rem;align-items:center}
+header input{width:220px;padding:.45rem .6rem;border:1px solid #fff3;border-radius:.3rem;background:#fff2;color:#fff}
+header input::placeholder{color:#fffc}
+header button{background:#fff;color:var(--accent2);border:0;padding:.45rem .7rem;border-radius:.3rem;cursor:pointer;font-weight:600}
+header button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:260px;background:var(--surface);border-right:1px solid var(--border);padding:1rem;overflow:auto;transform:translateX(-100%);transition:transform .25s ease;z-index:90}
+.sidebar.open{transform:translateX(0)}
+.sidebar h2{font-size:1rem;margin:.5rem 0 .25rem}
+.sidebar a{display:block;padding:.25rem .5rem;color:var(--accent);text-decoration:none;border-radius:.25rem}
+.sidebar a:hover,.sidebar a:focus{background:#e6f2ff;outline:none}
+main{margin-left:0;padding:1rem;max-width:1100px}
+@media(min-width:900px){.sidebar{transform:translateX(0)}main{margin-left:280px}}
+.status{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin:1rem 0}
+.status .card{background:var(--surface);border:1px solid var(--border);border-radius:.5rem;padding:.75rem;box-shadow:var(--shadow)}
+.status .card .label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.status .card .value{font-size:1.4rem;font-weight:700;margin-top:.25rem}
+section{background:var(--surface);border:1px solid var(--border);border-radius:.5rem;padding:1rem;margin:1rem 0;box-shadow:var(--shadow)}
+section h2{margin-top:0;font-size:1.1rem;color:var(--accent2)}
+section p{margin:.5rem 0}
+section dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.5rem 1rem;margin:.75rem 0}
+section dt{font-weight:600;color:var(--accent2)}
+section dd{margin:0;color:var(--text)}
+table{width:100%;border-collapse:collapse;margin:.75rem 0;font-size:.95rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left}
+th{background:#eef2f7;font-weight:600}
+tr:nth-child(even){background:#fafbfc}
+pre{background:#0f1724;color:#e6edf3;padding:.75rem;border-radius:.4rem;overflow:auto;font-size:.9rem}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+.actions{display:flex;gap:.5rem;margin-top:.5rem}
+button{padding:.45rem .75rem;border:0;border-radius:.3rem;background:var(--accent);color:#fff;cursor:pointer}
+button.secondary{background:#6b7280}
+button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.toast{position:fixed;bottom:1rem;right:1rem;background:#111827;color:#fff;padding:.6rem .9rem;border-radius:.4rem;opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;pointer-events:none;z-index:200}
+.toast.show{opacity:1;transform:translateY(0)}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:1rem;top:1rem;background:#fff;padding:.5rem;border:1px solid var(--border);z-index:200}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header>
+<button id="menuBtn" aria-label="Toggle sidebar">&#9776;</button>
+<h1>Atlas Operations Manual</h1>
+<div class="search">
+<input id="searchInput" type="search" placeholder="Search sections..." aria-label="Search sections">
+<button id="searchBtn">Search</button>
+</div>
+</header>
+<aside class="sidebar" id="sidebar" aria-label="Section index">
+<h2>Index</h2>
+<nav id="toc"></nav>
+</aside>
+<main id="main">
+<div class="status" role="region" aria-label="Status summary">
+<div class="card"><div class="label">Sections</div><div class="value">400+</div></div>
+<div class="card"><div class="label">Uptime</div><div class="value">99.97%</div></div>
+<div class="card"><div class="label">Alerts</div><div class="value">0</div></div>
+<div class="card"><div class="label">Version</div><div class="value">2.4.1</div></div>
+</div>
+<section id="s1"><h2>1. System Overview</h2><p>The Atlas platform provides centralized orchestration for distributed services. It exposes REST endpoints, gRPC services, and a webhook delivery layer for event propagation across environments.</p><p>Operators must maintain strict separation between production and staging namespaces. All changes require peer review and automated pipeline validation before merge.</p><dl><dt>Architecture</dt><dd>Microservice mesh with API gateway</dd><dt>Runtime</dt><dd>Containerized Kubernetes clusters</dd><dt>Data store</dt><dd>PostgreSQL with read replicas</dd><dt>Observability</dt><dd>OpenTelemetry traces and metrics</dd></dl><table><tr><th>Component</th><th>Status</th><th>Owner</th><th>Last audit</th><th>Criticality</th><th>Notes</th></tr><tr><td>Gateway</td><td>Healthy</td><td>Platform</td><td>2024-06-01</td><td>High</td><td>Rate limits active</td></tr><tr><td>Auth</td><td>Healthy</td><td>Identity</td><td>2024-05-28</td><td>High</td><td>MFA enforced</td></tr><tr><td>Billing</td><td>Degraded</td><td>Finance</td><td>2024-06-02</td><td>Medium</td><td>Queue backlog</td></tr><tr><td>Search</td><td>Healthy</td><td>Data</td><td>2024-06-03</td><td>Medium</td><td>Index lag 2m</td></tr><tr><td>Notify</td><td>Healthy</td><td>Messaging</td><td>2024-06-01</td><td>Low</td><td>Retry policy updated</td></tr><tr><td>Archive</td><td>Maintenance</td><td>Storage</td><td>2024-06-04</td><td>Low</

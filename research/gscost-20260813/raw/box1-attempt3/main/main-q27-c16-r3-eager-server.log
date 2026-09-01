@@ -1,0 +1,120 @@
+[server] starting; models config = [("q27", "/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27" <- /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q27: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 4295MB (4294967296 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[server] worker ready; serving models: ["q27"]
+[admission] "q27": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18468
+[meter] admit id=chatcmpl-6dd2f2b7d4f1b3260fc20d8aaa8e13ec tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=252 path=plain = 31552 B/token x ctx + 0MB fixed = 8MB
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=eligibility-fallback prompt=172 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q27" 308MB (observed 314MB at ctx 196 path=plain)
+[prefix-cache] insert probation (seed): 172 tokens, 162.0MB (resident 162.0MB / 4295MB, model q27, ns "gscost-main-q27-c16-r3-eager")
+[meter] admit id=chatcmpl-a8f04a07b4b0e46915b30a3305f286f3 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-3452fa7b9e80de50560d7e7ee27a645f tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-d338c12892ae6782a342b407f5266c03 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-7138b4ea174a97ca40ef6dbc57522f55 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=252 path=plain = 31552 B/token x ctx + 308MB fixed = 316MB
+[meter] admit id=chatcmpl-4f9db1b4487d22bee667ce9774a46f1a tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-6d20a2d5c4a7cf67ef0c22799d576c3a tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-9b2454234c1418b254f50566761ae59e tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-73c30903adb33f5f44d5d777489ebac6 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-de912ee11b346472273074a30c21218e tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-6e4fa4585f7dcc4ad03f5e650c0b815f tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-3e9772695119dd7c5d89b27e24e3a62b tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-7ca55ba52fe8a628427c81c68293aef2 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-ac174d34ccda079beb72402e08834fce tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-2573ac69098df7fe56bd7e3aa9bfe35b tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-e6a8d424027a9cbdcb0a6ccf5d9b0a05 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-a18572e31e0022232fcc198c9dde0d7c tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=eligibility-fallback prompt=172 cached=172 lcp=172 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=eligibility-fallback prompt=172 cached=172 lcp=172 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=16 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-894fbf8c97a0f55e86feaf03a37570a7 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-fa5a1ee01b5d0d5b53b2ca445cbe6adc tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-91fda91e76bfcc97107438641461a720 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-b37c6b64e1d27825016c1f5aff0e7809 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-29400458df74eec1d1261709f7d3ccc3 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-374fb74b7424caf5ccd6b64b66d94a0b tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-1814b3f33595fd7b4501d5d6d4217695 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-dd9017e34d23a78c25932df9ea3099a9 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-f95b37ad213474d8cd474165c4bb2e4c tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-5c0279e15d64195c9b24ec90d677c4d0 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-7b67f50a5c7f23c550c93afba032551e tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-6612a9dae7c1fc42381113a7ed90419d tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-e14ce82abbc72683d4ac5aa41dcee2df tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=748 path=plain = 31552 B/token x ctx + 308MB fixed = 331MB
+[meter] admit id=chatcmpl-be7e2e7a62468ec12d8b4d701f24bb07 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-f06d02762127d92fcf7649ad9dd8afe7 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-8ffc32f1a88225290f1f27b0aaa33041 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=eligibility-fallback prompt=172 cached=172 lcp=172 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=eligibility-fallback prompt=172 cached=172 lcp=172 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="gscost-main-q27-c16-r3-eager" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=16 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

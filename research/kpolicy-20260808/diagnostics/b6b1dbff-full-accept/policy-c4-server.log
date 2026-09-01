@@ -1,0 +1,31 @@
+[server] starting; models config = [("q9", "/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q9" <- /scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q9: regime draft attached (/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q9": 33 layers, eos=248046
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] q9: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:8147
+[meter] admit id=chatcmpl-895b1a04c90fb6e0d7825c8e56b60112 tenant=default lane=interactive model="q9"
+[meter] admit id=chatcmpl-be84413437f40c12fa6567547b9b0ffc tenant=default lane=interactive model="q9"
+[meter] admit id=chatcmpl-b58f023189dd0f57cc7e46d2771bd84a tenant=default lane=interactive model="q9"
+[meter] admit id=chatcmpl-fb611a1c859aab96cb8d508513aa00a0 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q9" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q9": 201MB (admission gate = 2x)
+[spec-k] model="q9" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q9" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-gate] demoted session to batched decode: 4 active >= HIGH=4 (model q9, committed 227, generated 1)
+[spec-acc] ctx=226 burst=24/24 cum=24/24=1.000
+[prefix-cache] insert (in-batch fanout): 226 tokens, 56.0MB (resident 56.0MB / 268MB, model q9)
+[prefix-dedup] B=2 prefix=226 saved=226 hash=850081215038abe5 in 38.7ms retained=true (model q9)
+[spec-gate] demoted session to batched decode: 4 active >= HIGH=4 (model q9, committed 259, generated 33)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

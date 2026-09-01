@@ -1,0 +1,705 @@
+//! FFI declarations for the DeepSeek-V4-Flash GPU kernels (cu/dsv4_gpu.cu, lane 4).
+//!
+//! House pattern (mmq_ffi kind): C-ABI host launchers in the libmemra_mmq.a static lib,
+//! returning 0 ok / 10000+cudaError / 20000+heuristic / 30000+matmul / 4000x contract
+//! bands; the stream rides as `*mut c_void` (`stream.cu_stream()`).
+
+use std::os::raw::c_void;
+
+unsafe extern "C" {
+    // iteration-5 F-itemisation instrument (see dsv4_gpu.rs Dsv4Phase).
+    pub fn memra_dsv4_nvtx_push(name: *const std::os::raw::c_char) -> i32;
+    pub fn memra_dsv4_nvtx_pop() -> i32;
+    pub fn memra_dsv4_nvfp4_deq_bf16(
+        w: *const c_void,
+        sc: *const c_void,
+        scale2: f32,
+        rows: i32,
+        cols: i32,
+        out: *mut c_void,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_mxfp4_deq_bf16(
+        w: *const c_void,
+        sc: *const c_void,
+        rows: i32,
+        cols: i32,
+        out: *mut c_void,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_cvt_bf16(x: *const f32, o: *mut c_void, n: i64, stream: *mut c_void) -> i32;
+    pub fn memra_dsv4_embed_rows(
+        table_bf16: *const c_void,
+        ids: *const i32,
+        out: *mut f32,
+        n_ids: i32,
+        ncols: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_gather_bf16(
+        x: *const c_void,
+        idx: *const i32,
+        out: *mut c_void,
+        g: i32,
+        d: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_scatter_add(
+        y: *mut f32,
+        contrib: *const f32,
+        idx: *const i32,
+        g: i32,
+        d: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_add_inplace(y: *mut f32, x: *const f32, n: i64, stream: *mut c_void) -> i32;
+    pub fn memra_dsv4_take_cols(
+        src: *const f32,
+        dst: *mut f32,
+        s: i32,
+        n: i32,
+        stride: i64,
+        col_off: i64,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_place_cols(
+        src: *const f32,
+        dst: *mut f32,
+        s: i32,
+        n: i32,
+        stride: i64,
+        col_off: i64,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_repeat_hc(
+        e: *const f32,
+        h: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// iteration-5: row-blocked twin of `memra_dsv4_dots_f32`. Same arithmetic, same
+    /// reduction tree, same order -- only the block geometry differs, so it is bit-identical.
+    pub fn memra_dsv4_dots_f32_rowblk(
+        x: *const f32,
+        w: *const c_void,
+        w_is_bf16: i32,
+        y: *mut f32,
+        s: i32,
+        k: i32,
+        n: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_dots_f32(
+        x: *const f32,
+        w: *const c_void,
+        w_is_bf16: i32,
+        y: *mut f32,
+        s: i32,
+        k: i32,
+        n: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_dots_f32acc(
+        x: *const f32,
+        w: *const c_void,
+        w_is_bf16: i32,
+        y: *mut f32,
+        s: i32,
+        k: i32,
+        n: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_gemm_bf16(
+        w_bf16: *const c_void,
+        x_bf16: *const c_void,
+        y_f32: *mut f32,
+        m: i32,
+        n: i32,
+        k: i32,
+        dev: i32,
+        ws: *mut c_void,
+        ws_bytes: usize,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_rmsnorm(
+        x: *const f32,
+        w: *const f32,
+        dst: *mut f32,
+        rows: i32,
+        ncols: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_rope(
+        x: *mut f32,
+        n_pos: i32,
+        n_vec: i32,
+        dim: i32,
+        rd: i32,
+        cs: *const f32,
+        positions: *const i32,
+        inverse: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_headrms(x: *mut f32, rows: i32, d: i32, eps: f32, stream: *mut c_void)
+    -> i32;
+    pub fn memra_dsv4_act_quant(
+        x: *mut f32,
+        rows: i32,
+        stride: i64,
+        prefix_len: i32,
+        block: i32,
+        clamp_only: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_fp4_act_quant(
+        x: *mut f32,
+        rows: i32,
+        stride: i64,
+        len: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_hadamard(
+        x: *mut f32,
+        rows: i32,
+        d: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_compressor_pool(
+        kv: *const f32,
+        score: *const f32,
+        ape: *const f32,
+        out: *mut f32,
+        nb: i32,
+        ratio: i32,
+        d: i32,
+        latent: i32,
+        overlap: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_indexer_score(
+        q: *const f32,
+        ckv: *const f32,
+        w: *const f32,
+        wscale: f32,
+        score: *mut f32,
+        s: i32,
+        heads: i32,
+        hd: i32,
+        nb: i32,
+        ratio: i32,
+        lim0: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_sink_attn(
+        q: *const f32,
+        kv: *const f32,
+        idxs: *const i32,
+        sink: *const f32,
+        o: *mut f32,
+        s: i32,
+        heads: i32,
+        hd: i32,
+        slots: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_rowsq_scale(
+        x: *const f32,
+        mixes: *mut f32,
+        s: i32,
+        w: i32,
+        rows: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_hc_collapse(
+        x: *const f32,
+        pre: *const f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_hc_post(
+        f: *const f32,
+        residual: *const f32,
+        post: *const f32,
+        comb: *const f32,
+        out: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_act_quant_fp8(
+        x: *const f32,
+        codes: *mut c_void,
+        scales: *mut f32,
+        rows: i32,
+        kdim: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_fp4_gemm(
+        a_codes: *const c_void,
+        a_scales: *const f32,
+        w: *const c_void,
+        wsc: *const c_void,
+        scale2: f32,
+        kind: i32,
+        out: *mut f32,
+        g: i32,
+        n: i32,
+        kdim: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_gather_rows_u8(
+        x: *const c_void,
+        idx: *const i32,
+        out: *mut c_void,
+        g: i32,
+        row_bytes: i64,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_swiglu(
+        gate: *const f32,
+        up: *const f32,
+        dst: *mut f32,
+        rows: i32,
+        inter: i32,
+        limit: f32,
+        wrow: *const f32,
+        stream: *mut c_void,
+    ) -> i32;
+    // ---- lane 8: device-resident decode step (RECEIPTS.md "Lane 8")
+    pub fn memra_dsv4_rope_at(
+        x: *mut f32,
+        n_vec: i32,
+        dim: i32,
+        rd: i32,
+        cs: *const f32,
+        pos: i32,
+        inverse: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_hc_sinkhorn(
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        hc: i32,
+        iters: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_hc_head_pre(
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        hc: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_route(
+        raw: *const f32,
+        bias: *const f32,
+        tid2eid: *const i32,
+        tok: *const i32,
+        ne: i32,
+        topk: i32,
+        route_scale: f32,
+        sel: *mut i32,
+        selw: *mut f32,
+        order: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_fp4_gemm_sel(
+        a_codes: *const c_void,
+        a_scales: *const f32,
+        w_base: *const c_void,
+        sc_base: *const c_void,
+        s2: *const f32,
+        sel: *const i32,
+        proj: i32,
+        a_stride_rows: i32,
+        kind: i32,
+        out: *mut f32,
+        slots: i32,
+        n: i32,
+        kdim: i32,
+        wstride: i64,
+        sstride: i64,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_combine_rows(
+        contrib: *const f32,
+        order: *const i32,
+        topk: i32,
+        y: *mut f32,
+        d: i64,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_build_idx(
+        idx: *mut i32,
+        pos: i32,
+        win: i32,
+        nb: i32,
+        cap: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_topk_idx(
+        score: *const f32,
+        nb: i32,
+        kk: i32,
+        win: i32,
+        idx_out: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
+    /// iteration-5: `dst[0..cols) = src[idx[slot] * cols ..]`, the index read on the
+    /// DEVICE so the DSpark markov chain needs no host round trip between steps.
+    pub fn memra_dsv4_gather_row_by_idx(
+        src: *const f32,
+        idx: *const i32,
+        slot: i32,
+        dst: *mut f32,
+        cols: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_gemv_bf16(
+        w_bf16: *const c_void,
+        x_bf16: *const c_void,
+        y: *mut f32,
+        n: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// iteration-5 FP8 dense arm: as-stored e4m3 codes + host-decoded f32 block scales
+    /// (exact pow2). BIT-IDENTICAL to memra_dsv4_gemv_bf16 over the dequant slab by
+    /// construction (same value, same accumulation order — see cu header note).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8(
+        w_codes: *const c_void,
+        sc_f32: *const f32,
+        sc_cols: i32,
+        x_bf16: *const c_void,
+        y: *mut f32,
+        n: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_sink_attn_dec(
+        q: *const f32,
+        kv: *const f32,
+        idxs: *const i32,
+        sink: *const f32,
+        scores: *mut f32,
+        evals: *mut f32,
+        den: *mut f64,
+        o: *mut f32,
+        heads: i32,
+        hd: i32,
+        slots: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+
+    // ── 0731 re-gate extension rung (MEMRA_DSV4_DOTS_ARM=f32x): f32-accumulation twins
+    // of the remaining device-path f64 chains. Same signatures as their f64 twins except
+    // sink dec's `den`, which rides a FLOAT view of the caller's f64 workspace (written
+    // and read within the one entry point). f64 kernels untouched.
+    pub fn memra_dsv4_rmsnorm_f32acc(
+        x: *const f32,
+        w: *const f32,
+        dst: *mut f32,
+        rows: i32,
+        ncols: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_headrms_f32acc(
+        x: *mut f32,
+        rows: i32,
+        d: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_rowsq_scale_f32acc(
+        x: *const f32,
+        mixes: *mut f32,
+        s: i32,
+        w: i32,
+        rows: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_indexer_score_f32acc(
+        q: *const f32,
+        ckv: *const f32,
+        w: *const f32,
+        wscale: f32,
+        score: *mut f32,
+        s: i32,
+        heads: i32,
+        hd: i32,
+        nb: i32,
+        ratio: i32,
+        lim0: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_sink_attn_dec_f32acc(
+        q: *const f32,
+        kv: *const f32,
+        idxs: *const i32,
+        sink: *const f32,
+        scores: *mut f32,
+        evals: *mut f32,
+        den: *mut f32,
+        o: *mut f32,
+        heads: i32,
+        hd: i32,
+        slots: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    // iteration 3 (GPU DSpark drafter path)
+    pub fn memra_dsv4_hc_mean(
+        h: *const f32,
+        out: *mut f32,
+        s: i32,
+        hc: i32,
+        hidden: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Model-entry stream expand, the inverse of `memra_dsv4_hc_mean`. Added for the
+    /// glm5_next trunk (crate::hyper), which drives the whole hc kernel family.
+    pub fn memra_dsv4_hc_expand(
+        e: *const f32,
+        out: *mut f32,
+        s: i32,
+        hc: i32,
+        hidden: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_build_idx_redirect(
+        idx: *mut i32,
+        pos: i32,
+        win: i32,
+        nb: i32,
+        cap: i32,
+        pos0: i32,
+        trans_base: i32,
+        stream: *mut c_void,
+    ) -> i32;
+
+    // ---- iteration 3, rung 4: batched T=k+1 verify twins. Every entry is BIT-EXACT
+    // against `m`/`nq` sequential single-position calls of its pinned twin (the design
+    // law in cu/dsv4_gpu.cu's batched section): the added dimension only hoists the
+    // WEIGHT load, never reorders an accumulation.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_bf16_m(
+        w_bf16: *const c_void,
+        x_bf16: *const c_void,
+        y: *mut f32,
+        m: i32,
+        n: i32,
+        k: i32,
+        xstride: i32,
+        ystride: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// FP8 dense arm, batched twin (see memra_dsv4_gemv_fp8).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8_m(
+        w_codes: *const c_void,
+        sc_f32: *const f32,
+        sc_cols: i32,
+        x_bf16: *const c_void,
+        y: *mut f32,
+        m: i32,
+        n: i32,
+        k: i32,
+        xstride: i32,
+        ystride: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_dots_f32_mrow(
+        x: *const f32,
+        w: *const c_void,
+        w_is_bf16: i32,
+        y: *mut f32,
+        s: i32,
+        k: i32,
+        n: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_dots_f32acc_mrow(
+        x: *const f32,
+        w: *const c_void,
+        w_is_bf16: i32,
+        y: *mut f32,
+        s: i32,
+        k: i32,
+        n: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_hc_sinkhorn_m(
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        s: i32,
+        hc: i32,
+        iters: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Fused hc pre-chain: rowsq_scale + Sinkhorn (bit-preserving stationarity exit) +
+    /// collapse, one launch per (site, token). `niters` is nullable — per-token executed
+    /// Sinkhorn iteration counts, the gate's convergence receipt. Bit-identical to the
+    /// three-kernel chain (hc_fused_pre_gpu.rs); host seam MEMRA_HC_FUSED_PRE.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_hc_pre_fused(
+        x: *const f32,
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        eps: f32,
+        niters: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_hc_head_pre_m(
+        mixes: *const f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        s: i32,
+        hc: i32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_route_m(
+        raw: *const f32,
+        bias: *const f32,
+        tid2eid: *const i32,
+        tok: *const i32,
+        s: i32,
+        ne: i32,
+        topk: i32,
+        route_scale: f32,
+        sel: *mut i32,
+        selw: *mut f32,
+        order: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_fp4_gemm_sel_g(
+        a_codes: *const c_void,
+        a_scales: *const f32,
+        w_base: *const c_void,
+        sc_base: *const c_void,
+        s2: *const f32,
+        sel: *const i32,
+        proj: i32,
+        a_stride_rows: i32,
+        kind: i32,
+        out: *mut f32,
+        slots: i32,
+        n: i32,
+        kdim: i32,
+        wstride: i64,
+        sstride: i64,
+        a_group: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_combine_rows_m(
+        contrib: *const f32,
+        order: *const i32,
+        topk: i32,
+        y: *mut f32,
+        d: i64,
+        s: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_sink_attn_dec_mq(
+        q: *const f32,
+        kv: *const f32,
+        idxs: *const i32,
+        sink: *const f32,
+        scores: *mut f32,
+        evals: *mut f32,
+        den: *mut f64,
+        o: *mut f32,
+        nq: i32,
+        heads: i32,
+        hd: i32,
+        slots: i32,
+        idx_stride: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_sink_attn_dec_mq_f32acc(
+        q: *const f32,
+        kv: *const f32,
+        idxs: *const i32,
+        sink: *const f32,
+        scores: *mut f32,
+        evals: *mut f32,
+        den: *mut f32,
+        o: *mut f32,
+        nq: i32,
+        heads: i32,
+        hd: i32,
+        slots: i32,
+        idx_stride: i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_scatter_rows(
+        src: *const f32,
+        dst: *mut f32,
+        dst_rows: *const i32,
+        n: i32,
+        d: i32,
+        stream: *mut c_void,
+    ) -> i32;
+}
+
+/// rc -> Err with the kernel name (refuse loudly, house style).
+pub fn ck(name: &str, rc: i32) -> Result<(), String> {
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(format!("dsv4 kernel {name} failed rc={rc}"))
+    }
+}

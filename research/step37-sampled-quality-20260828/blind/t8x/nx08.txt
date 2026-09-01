@@ -1,0 +1,40 @@
+ANON=nx08 TURN=8 CHARS=4581 FINISH=length REPEAT60=1
+======================================================================
+Got it, let's tackle this. First, the user is asking me to handle a GitHub task related to a bug in JetBrains Marketplace, specifically issue 1099, which involves a 404 error on documentation links, stale repository URLs, etc. Wait, first, let's parse the user's request correctly. The user wrote: "Take care of this GitHub task: [Bug] JetBrains Marketplace listing. Documentation link returns 404, Source Code link references stale repository URL — https://github.com/agent-sh/agnix/issues/1099. Investigate, handle it, answer the triage, implement on a branch, fix code if needed, summarize what you did."
+
+First, I need to outline the steps I would take to handle this GitHub issue, since I can't directly access the GitHub repo or make changes, but I can provide a structured plan, triage assessment, proposed fixes, and summary of actions.
+
+First, let's start with triage: First, I would access the issue at https://github.com/agent-sh/agnix/issues/1099 to understand the exact problem. The issue title says: JetBrains Marketplace listing has a documentation link that returns 404, and the Source Code link references a stale repository URL.
+
+First, triage steps:
+1. Reproduce the issue: Go to the JetBrains Marketplace listing for the plugin (assuming it's the agnix plugin from agent-sh/agnix repo), click the Documentation link to confirm it returns 404, click the Source Code link to confirm it points to a stale/old URL.
+2. Investigate root cause: Check the plugin's repository configuration (likely in the plugin's build configuration, e.g., plugin.xml, or the GitHub repository's settings, or the JetBrains Marketplace listing settings). The stale source code URL is probably because the repository was moved or renamed, and the old URL wasn't updated. The 404 documentation link is likely because the docs were moved, deleted, or the URL in the listing is wrong.
+3. Determine fix scope: This is a low-severity bug (broken links in the marketplace listing, no impact on plugin functionality), but it affects user experience and credibility.
+
+Next, proposed fixes:
+1. Fix the Source Code link: Update the source code URL in the JetBrains Marketplace listing to point to the current, correct repository URL (e.g., if the repo was moved from agent-sh/agnix to a new org, update it to the new URL).
+2. Fix the Documentation link: Update the documentation URL to point to the correct, live documentation location (e.g., if docs are now hosted on GitHub Pages at a new URL, or in the repo's wiki, update the link accordingly).
+3. If the links are configured in the plugin's repository (e.g., in the README, plugin.xml, or GitHub repository description), update those as well to ensure consistency.
+
+Then, implementation steps:
+1. Create a new branch from main (e.g., fix/marketplace-links-1099) to make the changes.
+2. Update the relevant configuration files (e.g., plugin.xml, README.md, or marketplace listing settings) with the correct URLs.
+3. Test the links locally (or via a link checker) to confirm they resolve correctly.
+4. Commit the changes with a clear commit message (e.g., "fix: update stale marketplace links for issue #1099").
+5. Open a pull request against main, reference issue #1099, and request review.
+6. Once approved, merge the PR, and update the JetBrains Marketplace listing if needed (if the links are managed outside the repo, e.g., in the JetBrains Marketplace dashboard).
+
+Then, summary of actions:
+- Investigated issue #1099: confirmed broken documentation link (404) and stale source code URL in JetBrains Marketplace listing.
+- Identified root cause: outdated URLs in the plugin's marketplace configuration and repository metadata.
+- Created a fix branch, updated all relevant links to point to current, live resources.
+- Verified links resolve correctly, opened a PR, and merged after review.
+- Updated the JetBrains Marketplace listing with the new URLs to resolve the issue.
+
+Wait, but the user also mentioned "answer the triage"—so triage assessment would be: Severity: Low (no functional impact, only broken links), Priority: Medium (affects user experience, should be fixed in next release), Status: Ready for fix.
+
+Also, the user said "implement on a branch, fix code if needed"—so if the code has hardcoded URLs (unlikely, but possible), fix those too. For example, if the plugin's about page has hardcoded old URLs, update those.
+
+Also, need to make sure that the fix is concrete: specify exactly which files are changed, what the old URLs were, what the new URLs are.
+
+Wait, but since I don't have access to the actual repo, I should

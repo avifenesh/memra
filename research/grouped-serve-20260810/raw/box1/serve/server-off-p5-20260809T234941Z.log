@@ -1,0 +1,70 @@
+[server] starting; models config = [("step35", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step35" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step35: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step35": 45 layers, eos=128007
+[worker] step35: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step35: decode chunk cap 8
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "step35": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step35"]
+[server] listening on http://127.0.0.1:18127
+[meter] admit id=chatcmpl-3fd3818a3f57b1047ed33b878dd6d24f tenant=default lane=interactive model="step35"
+[admission] request cost: model="step35" ctx=4179 path=plain = 83520 B/token x ctx + 0MB fixed = 349MB
+[spec-k] model="step35" tenant="grouped-serve-off-p5-4k-warmup-0-1786320739854993592" K=0 source=pp2-placement prompt=4107 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1024 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=2837.6 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1024 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=2774.3 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1024 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=2714.4 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1013 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=2686.2 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=16 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=147.3 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=12.1 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.9 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.9 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.9 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=12.0 decode_ms=0.0
+[prefix-cache] skip seed insert: entry 343.0MB > budget 268MB
+[ttft] id=chatcmpl-3fd3818a3f57b1047ed33b878dd6d24f model="step35" path="/v1/chat/completions" prompt_tokens=4107 outcome=first_sse_byte request_parse_ms=0.075 admission_ms=0.025 queue_wait_ms=0.013 tokenize_ms=9.377 prime_wait_ms=1.298 prime_ms=11233.248 decode_wait_ms=0.134 sse_handoff_ms=0.037 request_parse_end_ms=0.075 admission_end_ms=0.100 tokenize_start_ms=0.113 tokenize_end_ms=9.490 prime_start_ms=10.788 prime_end_ms=11244.036 first_decode_ms=11244.170 first_sse_byte_ms=11244.207 total_ms=11244.207
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=13.5 decode_ms=14.7
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.1
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.2
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.2
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.2
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.2
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.1
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.2
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=chatcmpl-30ef737e9c13afe3befe371a90eb9611 tenant=default lane=interactive model="step35"
+[spec-k] model="step35" tenant="grouped-serve-off-p5-4k-measured-0-1786320751214409070" K=0 source=pp2-placement prompt=4107 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1024 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=2689.8 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1024 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=2695.4 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1024 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=2691.7 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1013 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=2667.4 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=16 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=145.5 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.8 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.9 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.8 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.8 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.8 decode_ms=0.0
+[prefix-cache] skip seed insert: entry 343.0MB > budget 268MB
+[ttft] id=chatcmpl-30ef737e9c13afe3befe371a90eb9611 model="step35" path="/v1/chat/completions" prompt_tokens=4107 outcome=first_sse_byte request_parse_ms=0.059 admission_ms=0.012 queue_wait_ms=0.011 tokenize_ms=9.142 prime_wait_ms=0.922 prime_ms=10962.199 decode_wait_ms=0.141 sse_handoff_ms=0.027 request_parse_end_ms=0.059 admission_end_ms=0.071 tokenize_start_ms=0.082 tokenize_end_ms=9.224 prime_start_ms=10.146 prime_end_ms=10972.345 first_decode_ms=10972.486 first_sse_byte_ms=10972.513 total_ms=10972.513
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=13.1 decode_ms=14.8
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.0
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.0
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.1
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.0
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.0
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.1
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=12.1
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

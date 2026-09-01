@@ -1,0 +1,36 @@
+{
+ "name": "p08-prose",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 225,
+   "completion_tokens": 128,
+   "total_tokens": 353,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 22.216002337,
+   "spec": {
+    "rounds": 50,
+    "drafted": 250,
+    "accepted": 77,
+    "acceptance_rate": 0.308
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "Let me parse this request. The user has pasted what looks like error output from some tool called \"Atrium\" \u2014 a re-entry agent system. The errors show:\n\n1. `nvidia/z-ai/glm-5.2: Command failed: opencode run --pure --dir /home/avifenesh/.config/atrium/reentry-agent --model nvidia/z-ai/glm-5.2 --agent reentry-status --format json --title atrium-reentry-auto Prepare the Atrium Re-entry status from the JSON evidence piped after this message. Return only the strict JSON object described"
+    }
+   }
+  ]
+ }
+}

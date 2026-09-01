@@ -1,0 +1,28 @@
+commit=fee291f73cbebbf562928ffaa68ba923b2450030
+0cb88b54b2d6063301a0833c291745140232fbc06fd73519c9c1b33a815dee95  target/release/memra-server
+52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de  /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+b2cec2af426aa3d5e8bdd2bc9cee2b26278358e4efc59598d7f5ab3ec36bc045  /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf
+== plain ==
+== spec ==
+== text diff ==
+MISMATCH
+--- research/specfix-20260809/raw/token-before/plain-text.txt	2026-08-09 17:23:57.794849337 +0300
++++ research/specfix-20260809/raw/token-before/spec-text.txt	2026-08-09 17:24:00.637842547 +0300
+@@ -2,8 +2,8 @@
+ 
+ 1.  **Analyze the Request:**
+     *   Topic: Mutex (Mutual Exclusion).
+-    *   Constraint: in *one sentence*.
++    *   Constraint: it in *one sentence*.
+ 
+ 2.  **Define Mutex:**
+     *   What is it? A synchronization primitive.
+-    *   What does it
++    *   What does
+== native token receipt ==
+TOKEN_IDS_MISMATCH
+--- research/specfix-20260809/raw/token-before/plain-tokens.json	2026-08-09 17:23:58.148848491 +0300
++++ research/specfix-20260809/raw/token-before/spec-tokens.json	2026-08-09 17:24:00.960841776 +0300
+@@ -1 +1 @@
+-[90700,8340,25,271,16,13,220,2972,2014,53983,279,5952,64700,198,262,348,256,31819,25,63979,318,49708,899,1326,8686,553,198,262,348,256,42794,25,303,348,588,11316,19315,271,17,13,220,2972,34167,63979,64700,198,262,348,256,3437,369,424,30,357,55968,26699,13,198,262,348,256,3437,1503,424]
++[90700,8340,25,271,16,13,220,2972,2014,53983,279,5952,64700,198,262,348,256,31819,25,63979,318,49708,899,1326,8686,553,198,262,348,256,42794,25,424,303,348,588,11316,19315,271,17,13,220,2972,34167,63979,64700,198,262,348,256,3437,369,424,30,357,55968,26699,13,198,262,348,256,3437,1503]

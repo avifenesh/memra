@@ -1,0 +1,43 @@
+{
+  "acceptance_identity": "1 - TVD = 1 - 0.5*L1",
+  "batch_size": 32,
+  "code_commit": "468ac177",
+  "corpus_fingerprint": "48c8b59f1beb85bae80099052f789183fbf4f7c67fcaf691d93b5990e9a00cb7",
+  "cuda_runtime": "12.8",
+  "epochs": 5,
+  "format": "memra-dspark-pilot-train-v1",
+  "gpu": "NVIDIA L40S",
+  "heldout_records": 424,
+  "learning_rate": 0.0003,
+  "max_grad_norm": 1.0,
+  "model": {
+    "block_size": 5,
+    "d_model": 4096,
+    "draft_vocab": 32768,
+    "ffn_dim": 8192,
+    "head_dim": 256,
+    "initializer_range": 0.02,
+    "markov_rank": 256,
+    "n_heads": 16,
+    "n_kv_heads": 4,
+    "n_layers": 2,
+    "partial_rotary_factor": 0.25,
+    "rms_eps": 1e-06,
+    "rope_theta": 10000000.0,
+    "target_vocab": 248320
+  },
+  "objective": "0.1 CE + 0.9 TVD + 1.0 confidence BCE; exp(-position/5)",
+  "pair_range": [
+    0,
+    2000
+  ],
+  "seed": 20260811,
+  "shared_manifest_sha256": "38c5601ff84385aa533453613bd2d58fc674710efb6e4f4ffa772100d1478836",
+  "shared_path": "/home/ubuntu/dspark2/artifacts/pilot-02000/shared",
+  "teacher_temperature": 0.7,
+  "torch": "2.11.0+cu128",
+  "total_steps": 1175,
+  "train_records": 7516,
+  "trainable_parameters": 318801153,
+  "warmup_ratio": 0.04
+}

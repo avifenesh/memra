@@ -1,0 +1,64 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+:root{--bg:#f4f6f8;--surface:#fff;--text:#1a1a1a;--muted:#555;--accent:#005f73;--accent2:#0a9396;--border:#dbe3e8;--focus:#e76f51;--shadow:0 2px 8px rgba(0,0,0,0.08)}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.55}
+a{color:var(--accent);text-decoration:underline}
+a:focus,button:focus,input:focus,select:focus,textarea:focus{outline:3px solid var(--focus);outline-offset:2px}
+header{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom:1px solid var(--border);padding:0.75rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;box-shadow:var(--shadow)}
+.brand{font-weight:700;font-size:1.25rem;color:var(--accent)}
+.search{margin-left:auto;display:flex;gap:.5rem}
+.search input{padding:.5rem .75rem;border:1px solid var(--border);border-radius:.375rem;min-width:220px}
+.search button{padding:.5rem .75rem;background:var(--accent);color:#fff;border:none;border-radius:.375rem;cursor:pointer}
+.layout{display:grid;grid-template-columns:260px 1fr;gap:1rem;padding:1rem;max-width:1400px;margin:0 auto}
+.sidebar{position:sticky;top:4.5rem;align-self:start;background:var(--surface);border:1px solid var(--border);border-radius:.5rem;padding:.75rem;max-height:calc(100vh - 6rem);overflow:auto}
+.sidebar nav a{display:block;padding:.35rem .5rem;color:var(--text);text-decoration:none;border-radius:.25rem}
+.sidebar nav a:hover,.sidebar nav a:focus{background:var(--bg);color:var(--accent)}
+.status{background:var(--surface);border:1px solid var(--border);border-radius:.5rem;padding:.75rem 1rem;margin-bottom:1rem;display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center}
+.status .metric{font-weight:600}
+main{background:var(--surface);border:1px solid var(--border);border-radius:.5rem;padding:1.25rem}
+section{padding:1rem 0;border-bottom:1px solid var(--border)}
+section:last-child{border-bottom:none}
+h2{font-size:1.15rem;color:var(--accent);margin-bottom:.5rem}
+p{margin-bottom:.6rem}
+dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.5rem 1rem;margin:.75rem 0}
+dt{font-weight:600;color:var(--accent2)}
+dd{margin-left:0;color:var(--muted)}
+table{width:100%;border-collapse:collapse;margin:.75rem 0;font-size:.95rem}
+th,td{border:1px solid var(--border);padding:.45rem .6rem;text-align:left}
+th{background:var(--bg);font-weight:600}
+pre{background:#0d1b2a;color:#e0e6ed;padding:.75rem;border-radius:.375rem;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9rem}
+.actions{display:flex;gap:.5rem;margin-top:.5rem}
+button{padding:.45rem .75rem;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:.375rem;cursor:pointer}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.danger{background:#9b2226;color:#fff;border-color:#9b2226}
+.toast{position:fixed;bottom:1rem;right:1rem;background:#001219;color:#fff;padding:.6rem 1rem;border-radius:.375rem;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+@media(max-width:800px){.layout{grid-template-columns:1fr}.sidebar{display:none}header{flex-direction:column;align-items:stretch}.search{margin-left:0}}
+</style>
+</head>
+<body>
+<header>
+<div class="brand">Atlas Operations Manual</div>
+<div class="search">
+<input type="search" id="search" placeholder="Search sections..." aria-label="Search sections">
+<button id="searchBtn" type="button">Search</button>
+</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Section navigation">
+<nav id="toc"></nav>
+</aside>
+<div class="status" aria-live="polite">
+<div class="metric">Total Sections: <span id="total">400</span></div>
+<div class="metric">Appendix Tables: <span id="appendixCount">0</span></div>
+<div class="metric">Status: <span id="statusText">Ready</span></div>
+</div>
+<main id="content">
+<section id="sec1"><h2>1. Introduction</h2><p>This manual documents operational procedures for the Atlas platform. It covers configuration, monitoring, troubleshooting, and safety protocols. Read this document before performing any maintenance tasks.</p><p>All personnel must follow the steps in the order presented. Deviations require written approval from the operations lead. Keep this document accessible at all times.</p><dl><dt>Scope</dt><dd>Platform-wide operational guidance</dd><dt>Audience</dt><dd>Engineers, operators, auditors</dd><dt>Version</dt><dd>4.2.1</dd><dt>Updated</dt><dd>2025-10-12</dd></dl><table><tr><th>ID</th><th>Component</th><th>Status</th><th>Owner</th><th>Review Date</th><th>Notes</th></tr><tr><td>A1</td><td>Core API</td><td>Stable</td><td>S. Rao</td><td>2025-11-01</td><td>None</td></tr><tr><td>A2</td><td>Ingestion</td><td>Active</td><td>M. Chen</td><td>2025-11-15</td><td>Pending scaling</td></tr><tr><td>A3</td><td>Storage</td><td>Degraded</td><td>J. Park</td><td>2025-10-20</td><td>Disk IOPS</td></tr><tr><td>A4</td><td>Auth</td><td>Stable</td><td>L. Gomez</td><td>2025-12-01</td><td>MFA rollout</td></tr><tr><td>A5</td><td>Monitoring</td><td>Active</td><td>T. Ali</td><td>2025-10-30</td><td>Alerts tuned</td></tr><tr><td>A6</td><td>Backup</td><td>Stable</td><td>R. Singh</td><td>2025-11-05</td><td>Daily snapshots</td></tr></table><pre>atlas-cli status --all --verbose</pre><div class="actions"><button class="primary" type="button">Acknowledge</button><button type="button">Print</button></div></section>
+<section id="sec2"><h2>2. Safety Protocols</h2><p>Safety is the highest priority. Always wear required personal protective equipment when entering data centers. Follow lockout-tagout procedures before touching hardware.</p><p>Report incidents immediately using the incident form. Do not attempt repairs beyond your certification level. Emergency contacts are posted near each equipment rack.</p><dl><dt>PPE</dt><dd>Required in all server rooms</dd><dt>LOTO</dt><dd>Mandatory for power work</dd><dt>Reporting</dt><dd>Within 15 minutes</dd><dt>Escalation</dt><dd>On-call manager</dd></dl><table><tr><th>ID</th><th>Hazard

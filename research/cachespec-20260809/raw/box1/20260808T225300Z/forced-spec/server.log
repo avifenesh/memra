@@ -1,0 +1,978 @@
+[server] starting; models config = [("step", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy disabled by MEMRA_SPEC_GATE=0: always-spec
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step": 45 layers, eos=128007
+[worker] step: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml")
+[worker] step: decode chunk cap 8
+[prefix-cache] on: budget 2147MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["step"]
+[server] listening on http://127.0.0.1:18129
+[meter] admit id=cmpl-0486fe6bfb6de0c4f38862dc9159512b tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=6150 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[worker] observed session VRAM cost for "step": 11677MB (admission gate = 2x)
+[ttft] id=cmpl-0486fe6bfb6de0c4f38862dc9159512b model="step" path="/v1/completions" prompt_tokens=6150 outcome=first_sse_byte request_parse_ms=0.088 admission_ms=0.025 queue_wait_ms=0.039 tokenize_ms=13.361 prime_wait_ms=36.751 prime_ms=9017.655 decode_wait_ms=0.000 sse_handoff_ms=0.037 request_parse_end_ms=0.088 admission_end_ms=0.113 tokenize_start_ms=0.152 tokenize_end_ms=13.513 prime_start_ms=50.264 prime_end_ms=9067.919 first_decode_ms=9067.919 first_sse_byte_ms=9067.956 total_ms=9067.956
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 5/14=0.357 1/14=0.071] total=17/42=0.405 tok_per_round=2.214
+[spec-acc] ctx=6150 burst=17/42 cum=17/42=0.405
+[spec-stats] rounds=13 full_accept=3 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 7/13=0.538 3/13=0.231] total=22/39=0.564 tok_per_round=2.692
+[spec-acc] ctx=6182 burst=22/39 cum=39/81=0.481
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 4/12=0.333] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=6217 burst=22/36 cum=61/117=0.521
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 7/13=0.538 2/13=0.154] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=6251 burst=20/39 cum=81/156=0.519
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 6/15=0.400 1/15=0.067] total=19/45=0.422 tok_per_round=2.267
+[spec-acc] ctx=6284 burst=19/45 cum=100/201=0.498
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[14/14=1.000 4/14=0.286 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=6318 burst=19/42 cum=119/243=0.490
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 6/14=0.429 1/14=0.071] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=6351 burst=20/42 cum=139/285=0.488
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[12/16=0.750 6/16=0.375 0/16=0.000] total=18/48=0.375 tok_per_round=2.125
+[spec-acc] ctx=6385 burst=18/48 cum=157/333=0.471
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 7/12=0.583 3/12=0.250] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=6419 burst=21/36 cum=178/369=0.482
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 9/12=0.750 1/12=0.083] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=6452 burst=22/36 cum=200/405=0.494
+[spec-stats] rounds=13 full_accept=0 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 7/13=0.538 0/13=0.000] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=6486 burst=19/39 cum=219/444=0.493
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 5/15=0.333 2/15=0.133] total=19/45=0.422 tok_per_round=2.267
+[spec-acc] ctx=6518 burst=19/45 cum=238/489=0.487
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 7/12=0.583 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=6552 burst=20/36 cum=258/525=0.491
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 6/14=0.429 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=6584 burst=19/42 cum=277/567=0.489
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 5/15=0.333 1/15=0.067] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=6617 burst=18/45 cum=295/612=0.482
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[13/16=0.812 5/16=0.312 0/16=0.000] total=18/48=0.375 tok_per_round=2.125
+[spec-acc] ctx=6650 burst=18/48 cum=313/660=0.474
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[12/16=0.750 5/16=0.312 0/16=0.000] total=17/48=0.354 tok_per_round=2.062
+[spec-acc] ctx=6684 burst=17/48 cum=330/708=0.466
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 6/14=0.429 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=6717 burst=19/42 cum=349/750=0.465
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 3/15=0.200 2/15=0.133] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=6750 burst=17/45 cum=366/795=0.460
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 4/15=0.267 1/15=0.067] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=6782 burst=17/45 cum=383/840=0.456
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 4/14=0.286 2/14=0.143] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=6814 burst=18/42 cum=401/882=0.455
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 3/11=0.273] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=6846 burst=21/33 cum=422/915=0.461
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 4/14=0.286 2/14=0.143] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=6878 burst=19/42 cum=441/957=0.461
+[spec-stats] rounds=2 full_accept=1 len_hist=[0, 0, 0, 2] per_slot=[2/2=1.000 2/2=1.000 1/2=0.500] total=5/6=0.833 tok_per_round=3.500
+[spec-acc] ctx=6911 burst=5/6 cum=446/963=0.463
+[meter] admit id=cmpl-32d8ed98e9a501db8130a7a55de97825 tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 6148 of checkpoint 6150; 1 parked, 6948 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=6948 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-32d8ed98e9a501db8130a7a55de97825 model="step" path="/v1/completions" prompt_tokens=6948 outcome=first_sse_byte request_parse_ms=0.087 admission_ms=0.014 queue_wait_ms=0.019 tokenize_ms=15.128 prime_wait_ms=36.956 prime_ms=9998.238 decode_wait_ms=0.000 sse_handoff_ms=0.027 request_parse_end_ms=0.087 admission_end_ms=0.101 tokenize_start_ms=0.120 tokenize_end_ms=15.248 prime_start_ms=52.204 prime_end_ms=10050.442 first_decode_ms=10050.442 first_sse_byte_ms=10050.469 total_ms=10050.469
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 6/11=0.545 3/11=0.273] total=20/33=0.606 tok_per_round=2.818
+[spec-acc] ctx=6948 burst=20/33 cum=20/33=0.606
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 5/15=0.333 2/15=0.133] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=6980 burst=18/45 cum=38/78=0.487
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 9/12=0.750 1/12=0.083] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=7013 burst=21/36 cum=59/114=0.518
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 4/15=0.267 2/15=0.133] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=7046 burst=17/45 cum=76/159=0.478
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 5/13=0.385 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=7078 burst=19/39 cum=95/198=0.480
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[13/15=0.867 4/15=0.267 0/15=0.000] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=7110 burst=17/45 cum=112/243=0.461
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 6/15=0.400 1/15=0.067] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=7142 burst=18/45 cum=130/288=0.451
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[13/15=0.867 3/15=0.200 1/15=0.067] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=7175 burst=17/45 cum=147/333=0.441
+[spec-stats] rounds=16 full_accept=2 len_hist=[0, 0, 0, 16] per_slot=[10/16=0.625 4/16=0.250 2/16=0.125] total=16/48=0.333 tok_per_round=2.000
+[spec-acc] ctx=7207 burst=16/48 cum=163/381=0.428
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=7239 burst=19/42 cum=182/423=0.430
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 6/15=0.400 1/15=0.067] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=7272 burst=17/45 cum=199/468=0.425
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 6/12=0.500 4/12=0.333] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=7304 burst=21/36 cum=220/504=0.437
+[spec-stats] rounds=11 full_accept=1 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 1/11=0.091] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=7337 burst=21/33 cum=241/537=0.449
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=7369 burst=23/33 cum=264/570=0.463
+[spec-stats] rounds=13 full_accept=4 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 5/13=0.385 4/13=0.308] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=7403 burst=20/39 cum=284/609=0.466
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 2/12=0.167] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=7436 burst=20/36 cum=304/645=0.471
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 2/12=0.167] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=7468 burst=21/36 cum=325/681=0.477
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 7/13=0.538 2/13=0.154] total=21/39=0.538 tok_per_round=2.615
+[spec-acc] ctx=7501 burst=21/39 cum=346/720=0.481
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 9/12=0.750 2/12=0.167] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=7535 burst=22/36 cum=368/756=0.487
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=7569 burst=23/33 cum=391/789=0.496
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 7/13=0.538 1/13=0.077] total=21/39=0.538 tok_per_round=2.615
+[spec-acc] ctx=7603 burst=21/39 cum=412/828=0.498
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=7637 burst=21/33 cum=433/861=0.503
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 2/12=0.167] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=7669 burst=21/36 cum=454/897=0.506
+[spec-stats] rounds=5 full_accept=0 len_hist=[0, 0, 0, 5] per_slot=[5/5=1.000 4/5=0.800 0/5=0.000] total=9/15=0.600 tok_per_round=2.800
+[spec-acc] ctx=7702 burst=9/15 cum=463/912=0.508
+[meter] admit id=cmpl-6bd14c956ea857a2d48fb0a9a3b00c28 tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 6148 of checkpoint 6150; 2 parked, 7371 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=7371 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-6bd14c956ea857a2d48fb0a9a3b00c28 model="step" path="/v1/completions" prompt_tokens=7371 outcome=first_sse_byte request_parse_ms=0.083 admission_ms=0.016 queue_wait_ms=0.018 tokenize_ms=15.791 prime_wait_ms=37.676 prime_ms=10565.824 decode_wait_ms=0.000 sse_handoff_ms=0.028 request_parse_end_ms=0.083 admission_end_ms=0.099 tokenize_start_ms=0.117 tokenize_end_ms=15.908 prime_start_ms=53.584 prime_end_ms=10619.408 first_decode_ms=10619.408 first_sse_byte_ms=10619.436 total_ms=10619.436
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 2/14=0.143] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=7371 burst=20/42 cum=20/42=0.476
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[12/16=0.750 5/16=0.312 0/16=0.000] total=17/48=0.354 tok_per_round=2.062
+[spec-acc] ctx=7406 burst=17/48 cum=37/90=0.411
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 6/14=0.429 1/14=0.071] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=7439 burst=18/42 cum=55/132=0.417
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 5/14=0.357 2/14=0.143] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=7471 burst=18/42 cum=73/174=0.420
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=7503 burst=20/36 cum=93/210=0.443
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[11/16=0.688 5/16=0.312 1/16=0.062] total=17/48=0.354 tok_per_round=2.062
+[spec-acc] ctx=7535 burst=17/48 cum=110/258=0.426
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 4/10=0.400] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=7568 burst=23/30 cum=133/288=0.462
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 5/10=0.500] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=7601 burst=23/30 cum=156/318=0.491
+[spec-stats] rounds=13 full_accept=4 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 6/13=0.462 4/13=0.308] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=7634 burst=20/39 cum=176/357=0.493
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 7/13=0.538 1/13=0.077] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=7667 burst=19/39 cum=195/396=0.492
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[10/11=0.909 9/11=0.818 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=7699 burst=23/33 cum=218/429=0.508
+[spec-stats] rounds=19 full_accept=1 len_hist=[0, 0, 0, 19] per_slot=[10/19=0.526 4/19=0.211 1/19=0.053] total=15/57=0.263 tok_per_round=1.789
+[spec-acc] ctx=7733 burst=15/57 cum=233/486=0.479
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 7/10=0.700 5/10=0.500] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=7767 burst=22/30 cum=255/516=0.494
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[9/15=0.600 6/15=0.400 2/15=0.133] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=7799 burst=17/45 cum=272/561=0.485
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 8/12=0.667 3/12=0.250] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=7831 burst=22/36 cum=294/597=0.492
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 8/12=0.667 3/12=0.250] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=7865 burst=21/36 cum=315/633=0.498
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 5/15=0.333 1/15=0.067] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=7898 burst=17/45 cum=332/678=0.490
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 5/15=0.333 1/15=0.067] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=7930 burst=18/45 cum=350/723=0.484
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 7/13=0.538 1/13=0.077] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=7963 burst=19/39 cum=369/762=0.484
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[10/11=0.909 7/11=0.636 4/11=0.364] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=7995 burst=21/33 cum=390/795=0.491
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 3/12=0.250] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=8027 burst=22/36 cum=412/831=0.496
+[spec-stats] rounds=13 full_accept=4 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 5/13=0.385 4/13=0.308] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=8061 burst=19/39 cum=431/870=0.495
+[spec-stats] rounds=18 full_accept=0 len_hist=[0, 0, 0, 18] per_slot=[12/18=0.667 2/18=0.111 0/18=0.000] total=14/54=0.259 tok_per_round=1.778
+[spec-acc] ctx=8093 burst=14/54 cum=445/924=0.482
+[spec-stats] rounds=7 full_accept=1 len_hist=[0, 0, 0, 7] per_slot=[5/7=0.714 2/7=0.286 1/7=0.143] total=8/21=0.381 tok_per_round=2.143
+[spec-acc] ctx=8125 burst=8/21 cum=453/945=0.479
+[meter] admit id=cmpl-2ee2f2fd773d0d6ab4e57548629f72b2 tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 6946 of checkpoint 6948; 2 parked, 8173 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=8173 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-2ee2f2fd773d0d6ab4e57548629f72b2 model="step" path="/v1/completions" prompt_tokens=8173 outcome=first_sse_byte request_parse_ms=0.062 admission_ms=0.018 queue_wait_ms=0.020 tokenize_ms=17.343 prime_wait_ms=7.650 prime_ms=11729.311 decode_wait_ms=0.000 sse_handoff_ms=0.025 request_parse_end_ms=0.062 admission_end_ms=0.080 tokenize_start_ms=0.100 tokenize_end_ms=17.443 prime_start_ms=25.093 prime_end_ms=11754.404 first_decode_ms=11754.404 first_sse_byte_ms=11754.429 total_ms=11754.429
+[spec-stats] rounds=13 full_accept=3 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 5/13=0.385 3/13=0.231] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=8173 burst=20/39 cum=20/39=0.513
+[spec-stats] rounds=11 full_accept=5 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 5/11=0.455] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=8207 burst=23/33 cum=43/72=0.597
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=8241 burst=20/36 cum=63/108=0.583
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 6/14=0.429 1/14=0.071] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=8273 burst=20/42 cum=83/150=0.553
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 3/11=0.273] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=8307 burst=23/33 cum=106/183=0.579
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 7/12=0.583 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=8341 burst=20/36 cum=126/219=0.575
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[13/16=0.812 2/16=0.125 1/16=0.062] total=16/48=0.333 tok_per_round=2.000
+[spec-acc] ctx=8373 burst=16/48 cum=142/267=0.532
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 5/15=0.333 2/15=0.133] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=8405 burst=17/45 cum=159/312=0.510
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 6/14=0.429 1/14=0.071] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=8437 burst=18/42 cum=177/354=0.500
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[13/15=0.867 4/15=0.267 1/15=0.067] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=8469 burst=18/45 cum=195/399=0.489
+[spec-stats] rounds=13 full_accept=3 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 5/13=0.385 3/13=0.231] total=21/39=0.538 tok_per_round=2.615
+[spec-acc] ctx=8502 burst=21/39 cum=216/438=0.493
+[spec-stats] rounds=17 full_accept=0 len_hist=[0, 0, 0, 17] per_slot=[12/17=0.706 3/17=0.176 0/17=0.000] total=15/51=0.294 tok_per_round=1.882
+[spec-acc] ctx=8536 burst=15/51 cum=231/489=0.472
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[13/15=0.867 5/15=0.333 2/15=0.133] total=20/45=0.444 tok_per_round=2.333
+[spec-acc] ctx=8568 burst=20/45 cum=251/534=0.470
+[spec-stats] rounds=15 full_accept=3 len_hist=[0, 0, 0, 15] per_slot=[9/15=0.600 6/15=0.400 3/15=0.200] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=8603 burst=18/45 cum=269/579=0.465
+[spec-stats] rounds=13 full_accept=3 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 4/13=0.308 3/13=0.231] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=8636 burst=19/39 cum=288/618=0.466
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=8668 burst=23/33 cum=311/651=0.478
+[spec-stats] rounds=14 full_accept=4 len_hist=[0, 0, 0, 14] per_slot=[8/14=0.571 6/14=0.429 4/14=0.286] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=8702 burst=18/42 cum=329/693=0.475
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[14/15=0.933 3/15=0.200 0/15=0.000] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=8734 burst=17/45 cum=346/738=0.469
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 6/15=0.400 2/15=0.133] total=19/45=0.422 tok_per_round=2.267
+[spec-acc] ctx=8766 burst=19/45 cum=365/783=0.466
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 1/12=0.083] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=8800 burst=21/36 cum=386/819=0.471
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 7/13=0.538 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=8833 burst=19/39 cum=405/858=0.472
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 2/12=0.167] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=8865 burst=20/36 cum=425/894=0.475
+[spec-stats] rounds=19 full_accept=0 len_hist=[0, 0, 0, 19] per_slot=[13/19=0.684 2/19=0.105 0/19=0.000] total=15/57=0.263 tok_per_round=1.789
+[spec-acc] ctx=8897 burst=15/57 cum=440/951=0.463
+[spec-stats] rounds=5 full_accept=0 len_hist=[0, 0, 0, 5] per_slot=[4/5=0.800 1/5=0.200 0/5=0.000] total=5/15=0.333 tok_per_round=2.000
+[spec-acc] ctx=8931 burst=5/15 cum=445/966=0.461
+[meter] admit id=cmpl-f6515aee582f11dbfe638ab5e0d2a1d5 tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 7369 of checkpoint 7371; 2 parked, 8972 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=8972 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-f6515aee582f11dbfe638ab5e0d2a1d5 model="step" path="/v1/completions" prompt_tokens=8972 outcome=first_sse_byte request_parse_ms=0.088 admission_ms=0.012 queue_wait_ms=0.018 tokenize_ms=19.305 prime_wait_ms=7.627 prime_ms=12902.883 decode_wait_ms=0.001 sse_handoff_ms=0.033 request_parse_end_ms=0.088 admission_end_ms=0.100 tokenize_start_ms=0.118 tokenize_end_ms=19.423 prime_start_ms=27.050 prime_end_ms=12929.933 first_decode_ms=12929.934 first_sse_byte_ms=12929.967 total_ms=12929.967
+[spec-stats] rounds=10 full_accept=2 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 2/10=0.200] total=21/30=0.700 tok_per_round=3.100
+[spec-acc] ctx=8972 burst=21/30 cum=21/30=0.700
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=9004 burst=21/33 cum=42/63=0.667
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 9/12=0.750 1/12=0.083] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=9036 burst=22/36 cum=64/99=0.646
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 7/13=0.538 1/13=0.077] total=21/39=0.538 tok_per_round=2.615
+[spec-acc] ctx=9070 burst=21/39 cum=85/138=0.616
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=9104 burst=23/33 cum=108/171=0.632
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 10/10=1.000 4/10=0.400] total=24/30=0.800 tok_per_round=3.400
+[spec-acc] ctx=9138 burst=24/30 cum=132/201=0.657
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[10/11=0.909 8/11=0.727 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=9172 burst=22/33 cum=154/234=0.658
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 6/13=0.462 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=9205 burst=19/39 cum=173/273=0.634
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 4/15=0.267 2/15=0.133] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=9237 burst=17/45 cum=190/318=0.597
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 2/14=0.143] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=9269 burst=20/42 cum=210/360=0.583
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 6/15=0.400 0/15=0.000] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=9303 burst=17/45 cum=227/405=0.560
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 5/14=0.357 2/14=0.143] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=9335 burst=18/42 cum=245/447=0.548
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[11/16=0.688 4/16=0.250 1/16=0.062] total=16/48=0.333 tok_per_round=2.000
+[spec-acc] ctx=9367 burst=16/48 cum=261/495=0.527
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=9399 burst=19/42 cum=280/537=0.521
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 5/13=0.385 2/13=0.154] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=9432 burst=20/39 cum=300/576=0.521
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=9465 burst=22/33 cum=322/609=0.529
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 6/12=0.500 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=9498 burst=20/36 cum=342/645=0.530
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 5/14=0.357 2/14=0.143] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=9530 burst=18/42 cum=360/687=0.524
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 3/14=0.214 2/14=0.143] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=9562 burst=18/42 cum=378/729=0.519
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 2/12=0.167] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=9594 burst=21/36 cum=399/765=0.522
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=9627 burst=21/33 cum=420/798=0.526
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 1/12=0.083] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=9659 burst=21/36 cum=441/834=0.529
+[spec-stats] rounds=10 full_accept=3 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 3/10=0.300] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=9692 burst=22/30 cum=463/864=0.536
+[spec-stats] rounds=5 full_accept=3 len_hist=[0, 0, 0, 5] per_slot=[5/5=1.000 4/5=0.800 3/5=0.600] total=12/15=0.800 tok_per_round=3.400
+[spec-acc] ctx=9724 burst=12/15 cum=475/879=0.540
+[meter] admit id=cmpl-6f0e4769f8b8c7e02c1fcfaf23c1c8c8 tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 8171 of checkpoint 8173; 2 parked, 9125 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=9125 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-6f0e4769f8b8c7e02c1fcfaf23c1c8c8 model="step" path="/v1/completions" prompt_tokens=9125 outcome=first_sse_byte request_parse_ms=0.087 admission_ms=0.016 queue_wait_ms=0.022 tokenize_ms=19.668 prime_wait_ms=7.658 prime_ms=13146.542 decode_wait_ms=0.000 sse_handoff_ms=0.032 request_parse_end_ms=0.087 admission_end_ms=0.103 tokenize_start_ms=0.125 tokenize_end_ms=19.793 prime_start_ms=27.451 prime_end_ms=13173.993 first_decode_ms=13173.993 first_sse_byte_ms=13174.025 total_ms=13174.025
+[spec-stats] rounds=12 full_accept=0 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 0/12=0.000] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=9125 burst=20/36 cum=20/36=0.556
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 3/12=0.250] total=23/36=0.639 tok_per_round=2.917
+[spec-acc] ctx=9158 burst=23/36 cum=43/72=0.597
+[spec-stats] rounds=14 full_accept=0 len_hist=[0, 0, 0, 14] per_slot=[14/14=1.000 6/14=0.429 0/14=0.000] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=9193 burst=20/42 cum=63/114=0.553
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 2/12=0.167] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=9227 burst=21/36 cum=84/150=0.560
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 4/10=0.400] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=9260 burst=23/30 cum=107/180=0.594
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 5/10=0.500] total=24/30=0.800 tok_per_round=3.400
+[spec-acc] ctx=9293 burst=24/30 cum=131/210=0.624
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 2/12=0.167] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=9327 burst=21/36 cum=152/246=0.618
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[13/16=0.812 4/16=0.250 0/16=0.000] total=17/48=0.354 tok_per_round=2.062
+[spec-acc] ctx=9360 burst=17/48 cum=169/294=0.575
+[spec-stats] rounds=17 full_accept=0 len_hist=[0, 0, 0, 17] per_slot=[12/17=0.706 3/17=0.176 0/17=0.000] total=15/51=0.294 tok_per_round=1.882
+[spec-acc] ctx=9393 burst=15/51 cum=184/345=0.533
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 6/15=0.400 1/15=0.067] total=19/45=0.422 tok_per_round=2.267
+[spec-acc] ctx=9425 burst=19/45 cum=203/390=0.521
+[spec-stats] rounds=14 full_accept=3 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 5/14=0.357 3/14=0.214] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=9459 burst=19/42 cum=222/432=0.514
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 5/15=0.333 1/15=0.067] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=9492 burst=18/45 cum=240/477=0.503
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[14/15=0.933 3/15=0.200 1/15=0.067] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=9525 burst=18/45 cum=258/522=0.494
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=9558 burst=22/30 cum=280/552=0.507
+[spec-stats] rounds=11 full_accept=5 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 5/11=0.455] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=9590 burst=23/33 cum=303/585=0.518
+[spec-stats] rounds=14 full_accept=0 len_hist=[0, 0, 0, 14] per_slot=[14/14=1.000 6/14=0.429 0/14=0.000] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=9624 burst=20/42 cum=323/627=0.515
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 5/12=0.417 4/12=0.333] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=9658 burst=21/36 cum=344/663=0.519
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 6/13=0.462 1/13=0.077] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=9691 burst=20/39 cum=364/702=0.519
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 3/11=0.273] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=9724 burst=23/33 cum=387/735=0.527
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 3/12=0.250] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=9758 burst=21/36 cum=408/771=0.529
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 4/15=0.267 2/15=0.133] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=9791 burst=18/45 cum=426/816=0.522
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 3/12=0.250] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=9824 burst=22/36 cum=448/852=0.526
+[spec-stats] rounds=17 full_accept=2 len_hist=[0, 0, 0, 17] per_slot=[11/17=0.647 5/17=0.294 2/17=0.118] total=18/51=0.353 tok_per_round=2.059
+[spec-acc] ctx=9858 burst=18/51 cum=466/903=0.516
+[meter] admit id=cmpl-7e637b65eda09ba2bc6dbf76f51d281f tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 8970 of checkpoint 8972; 2 parked, 9921 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=9921 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-7e637b65eda09ba2bc6dbf76f51d281f model="step" path="/v1/completions" prompt_tokens=9921 outcome=first_sse_byte request_parse_ms=0.069 admission_ms=0.018 queue_wait_ms=0.021 tokenize_ms=21.869 prime_wait_ms=7.679 prime_ms=14236.845 decode_wait_ms=0.000 sse_handoff_ms=0.024 request_parse_end_ms=0.069 admission_end_ms=0.087 tokenize_start_ms=0.108 tokenize_end_ms=21.977 prime_start_ms=29.656 prime_end_ms=14266.501 first_decode_ms=14266.501 first_sse_byte_ms=14266.525 total_ms=14266.525
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 2/12=0.167] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=9921 burst=22/36 cum=22/36=0.611
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 4/12=0.333] total=23/36=0.639 tok_per_round=2.917
+[spec-acc] ctx=9956 burst=23/36 cum=45/72=0.625
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 9/12=0.750 2/12=0.167] total=23/36=0.639 tok_per_round=2.917
+[spec-acc] ctx=9991 burst=23/36 cum=68/108=0.630
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 3/12=0.250] total=23/36=0.639 tok_per_round=2.917
+[spec-acc] ctx=10026 burst=23/36 cum=91/144=0.632
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=10061 burst=21/33 cum=112/177=0.633
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 4/10=0.400] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=10093 burst=23/30 cum=135/207=0.652
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 3/11=0.273] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=10126 burst=22/33 cum=157/240=0.654
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[12/16=0.750 6/16=0.375 0/16=0.000] total=18/48=0.375 tok_per_round=2.125
+[spec-acc] ctx=10159 burst=18/48 cum=175/288=0.608
+[spec-stats] rounds=17 full_accept=0 len_hist=[0, 0, 0, 17] per_slot=[10/17=0.588 5/17=0.294 0/17=0.000] total=15/51=0.294 tok_per_round=1.882
+[spec-acc] ctx=10193 burst=15/51 cum=190/339=0.560
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 7/12=0.583 4/12=0.333] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=10225 burst=21/36 cum=211/375=0.563
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=10258 burst=19/42 cum=230/417=0.552
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[13/16=0.812 2/16=0.125 1/16=0.062] total=16/48=0.333 tok_per_round=2.000
+[spec-acc] ctx=10291 burst=16/48 cum=246/465=0.529
+[spec-stats] rounds=10 full_accept=3 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 3/10=0.300] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=10323 burst=22/30 cum=268/495=0.541
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 5/10=0.500] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=10355 burst=23/30 cum=291/525=0.554
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 3/12=0.250] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=10388 burst=21/36 cum=312/561=0.556
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 5/12=0.417 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=10421 burst=20/36 cum=332/597=0.556
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 3/11=0.273] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=10453 burst=21/33 cum=353/630=0.560
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[10/11=0.909 8/11=0.727 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=10485 burst=22/33 cum=375/663=0.566
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=10518 burst=22/30 cum=397/693=0.573
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 5/14=0.357 1/14=0.071] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=10550 burst=18/42 cum=415/735=0.565
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 7/14=0.500 1/14=0.071] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=10582 burst=18/42 cum=433/777=0.557
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 5/14=0.357 2/14=0.143] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=10614 burst=19/42 cum=452/819=0.552
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 6/13=0.462 1/13=0.077] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=10647 burst=20/39 cum=472/858=0.550
+[spec-stats] rounds=5 full_accept=0 len_hist=[0, 0, 0, 5] per_slot=[3/5=0.600 1/5=0.200 0/5=0.000] total=4/15=0.267 tok_per_round=1.800
+[spec-acc] ctx=10680 burst=4/15 cum=476/873=0.545
+[meter] admit id=cmpl-407839963d238064dcdc6e064fb2f9dc tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 9123 of checkpoint 9125; 2 parked, 10725 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=10725 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-407839963d238064dcdc6e064fb2f9dc model="step" path="/v1/completions" prompt_tokens=10725 outcome=first_sse_byte request_parse_ms=0.089 admission_ms=0.015 queue_wait_ms=0.018 tokenize_ms=23.337 prime_wait_ms=7.646 prime_ms=15335.414 decode_wait_ms=0.000 sse_handoff_ms=0.025 request_parse_end_ms=0.089 admission_end_ms=0.104 tokenize_start_ms=0.122 tokenize_end_ms=23.459 prime_start_ms=31.105 prime_end_ms=15366.519 first_decode_ms=15366.519 first_sse_byte_ms=15366.544 total_ms=15366.544
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 2/11=0.182] total=20/33=0.606 tok_per_round=2.818
+[spec-acc] ctx=10725 burst=20/33 cum=20/33=0.606
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 4/10=0.400] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=10757 burst=23/30 cum=43/63=0.683
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 2/12=0.167] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=10790 burst=22/36 cum=65/99=0.657
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 7/13=0.538 2/13=0.154] total=22/39=0.564 tok_per_round=2.692
+[spec-acc] ctx=10824 burst=22/39 cum=87/138=0.630
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 5/13=0.385 2/13=0.154] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=10859 burst=20/39 cum=107/177=0.605
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=10892 burst=23/33 cum=130/210=0.619
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 2/11=0.182] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=10926 burst=22/33 cum=152/243=0.626
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 5/10=0.500] total=24/30=0.800 tok_per_round=3.400
+[spec-acc] ctx=10959 burst=24/30 cum=176/273=0.645
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 6/12=0.500 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=10993 burst=20/36 cum=196/309=0.634
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 6/15=0.400 2/15=0.133] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=11025 burst=18/45 cum=214/354=0.605
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 6/15=0.400 2/15=0.133] total=19/45=0.422 tok_per_round=2.267
+[spec-acc] ctx=11058 burst=19/45 cum=233/399=0.584
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 7/12=0.583 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=11092 burst=20/36 cum=253/435=0.582
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[11/16=0.688 5/16=0.312 0/16=0.000] total=16/48=0.333 tok_per_round=2.000
+[spec-acc] ctx=11124 burst=16/48 cum=269/483=0.557
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=11156 burst=19/42 cum=288/525=0.549
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[13/16=0.812 3/16=0.188 1/16=0.062] total=17/48=0.354 tok_per_round=2.062
+[spec-acc] ctx=11189 burst=17/48 cum=305/573=0.532
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 5/13=0.385 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=11222 burst=19/39 cum=324/612=0.529
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=11254 burst=20/36 cum=344/648=0.531
+[spec-stats] rounds=10 full_accept=6 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 6/10=0.600] total=25/30=0.833 tok_per_round=3.500
+[spec-acc] ctx=11286 burst=25/30 cum=369/678=0.544
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 5/10=0.500] total=24/30=0.800 tok_per_round=3.400
+[spec-acc] ctx=11321 burst=24/30 cum=393/708=0.555
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 3/11=0.273] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=11355 burst=22/33 cum=415/741=0.560
+[spec-stats] rounds=13 full_accept=3 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 5/13=0.385 3/13=0.231] total=21/39=0.538 tok_per_round=2.615
+[spec-acc] ctx=11388 burst=21/39 cum=436/780=0.559
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 2/12=0.167] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=11422 burst=20/36 cum=456/816=0.559
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 7/13=0.538 2/13=0.154] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=11454 burst=20/39 cum=476/855=0.557
+[spec-stats] rounds=3 full_accept=0 len_hist=[0, 0, 0, 3] per_slot=[3/3=1.000 2/3=0.667 0/3=0.000] total=5/9=0.556 tok_per_round=2.667
+[spec-acc] ctx=11487 burst=5/9 cum=481/864=0.557
+[meter] admit id=cmpl-81b567570007a0850699533c0476f92b tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 9919 of checkpoint 9921; 2 parked, 11524 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=11524 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-81b567570007a0850699533c0476f92b model="step" path="/v1/completions" prompt_tokens=11524 outcome=first_sse_byte request_parse_ms=0.067 admission_ms=0.014 queue_wait_ms=0.019 tokenize_ms=25.293 prime_wait_ms=7.596 prime_ms=16444.118 decode_wait_ms=0.001 sse_handoff_ms=0.027 request_parse_end_ms=0.067 admission_end_ms=0.081 tokenize_start_ms=0.100 tokenize_end_ms=25.393 prime_start_ms=32.989 prime_end_ms=16477.107 first_decode_ms=16477.108 first_sse_byte_ms=16477.135 total_ms=16477.135
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 2/12=0.167] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=11524 burst=22/36 cum=22/36=0.611
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 3/11=0.273] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=11559 burst=21/33 cum=43/69=0.623
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=11591 burst=21/33 cum=64/102=0.627
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 7/13=0.538 2/13=0.154] total=22/39=0.564 tok_per_round=2.692
+[spec-acc] ctx=11623 burst=22/39 cum=86/141=0.610
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=11658 burst=22/33 cum=108/174=0.621
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=11691 burst=22/30 cum=130/204=0.637
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 4/11=0.364] total=24/33=0.727 tok_per_round=3.182
+[spec-acc] ctx=11723 burst=24/33 cum=154/237=0.650
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=11758 burst=22/30 cum=176/267=0.659
+[spec-stats] rounds=11 full_accept=5 len_hist=[0, 0, 0, 11] per_slot=[10/11=0.909 8/11=0.727 5/11=0.455] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=11790 burst=23/33 cum=199/300=0.663
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 7/13=0.538 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=11824 burst=19/39 cum=218/339=0.643
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 6/13=0.462 1/13=0.077] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=11856 burst=20/39 cum=238/378=0.630
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 4/15=0.267 1/15=0.067] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=11889 burst=17/45 cum=255/423=0.603
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 4/15=0.267 2/15=0.133] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=11921 burst=18/45 cum=273/468=0.583
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[11/16=0.688 5/16=0.312 0/16=0.000] total=16/48=0.333 tok_per_round=2.000
+[spec-acc] ctx=11954 burst=16/48 cum=289/516=0.560
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 5/12=0.417 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=11986 burst=20/36 cum=309/552=0.560
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 6/14=0.429 1/14=0.071] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=12018 burst=18/42 cum=327/594=0.551
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 5/13=0.385 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=12050 burst=19/39 cum=346/633=0.547
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 2/14=0.143] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=12082 burst=20/42 cum=366/675=0.542
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=12116 burst=20/36 cum=386/711=0.543
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 4/11=0.364] total=24/33=0.727 tok_per_round=3.182
+[spec-acc] ctx=12148 burst=24/33 cum=410/744=0.551
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 7/12=0.583 2/12=0.167] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=12183 burst=20/36 cum=430/780=0.551
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 9/12=0.750 2/12=0.167] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=12215 burst=22/36 cum=452/816=0.554
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 5/15=0.333 2/15=0.133] total=19/45=0.422 tok_per_round=2.267
+[spec-acc] ctx=12249 burst=19/45 cum=471/861=0.547
+[spec-stats] rounds=4 full_accept=0 len_hist=[0, 0, 0, 4] per_slot=[4/4=1.000 1/4=0.250 0/4=0.000] total=5/12=0.417 tok_per_round=2.250
+[spec-acc] ctx=12283 burst=5/12 cum=476/873=0.545
+[meter] admit id=cmpl-2b9786b93dcdc0aeee46a8e942f6a46e tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 10723 of checkpoint 10725; 2 parked, 12324 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=12324 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-2b9786b93dcdc0aeee46a8e942f6a46e model="step" path="/v1/completions" prompt_tokens=12324 outcome=first_sse_byte request_parse_ms=0.097 admission_ms=0.015 queue_wait_ms=0.022 tokenize_ms=27.352 prime_wait_ms=7.664 prime_ms=17621.635 decode_wait_ms=0.000 sse_handoff_ms=0.037 request_parse_end_ms=0.097 admission_end_ms=0.112 tokenize_start_ms=0.134 tokenize_end_ms=27.486 prime_start_ms=35.150 prime_end_ms=17656.785 first_decode_ms=17656.785 first_sse_byte_ms=17656.822 total_ms=17656.822
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 2/11=0.182] total=20/33=0.606 tok_per_round=2.818
+[spec-acc] ctx=12324 burst=20/33 cum=20/33=0.606
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 2/12=0.167] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=12356 burst=20/36 cum=40/69=0.580
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 2/12=0.167] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=12388 burst=22/36 cum=62/105=0.590
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 7/13=0.538 1/13=0.077] total=21/39=0.538 tok_per_round=2.615
+[spec-acc] ctx=12422 burst=21/39 cum=83/144=0.576
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 9/12=0.750 1/12=0.083] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=12456 burst=22/36 cum=105/180=0.583
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=12490 burst=23/33 cum=128/213=0.601
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 3/11=0.273] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=12524 burst=22/33 cum=150/246=0.610
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 2/12=0.167] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=12557 burst=20/36 cum=170/282=0.603
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 2/11=0.182] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=12589 burst=22/33 cum=192/315=0.610
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=12622 burst=22/33 cum=214/348=0.615
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 6/14=0.429 2/14=0.143] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=12655 burst=20/42 cum=234/390=0.600
+[spec-stats] rounds=17 full_accept=0 len_hist=[0, 0, 0, 17] per_slot=[11/17=0.647 5/17=0.294 0/17=0.000] total=16/51=0.314 tok_per_round=1.941
+[spec-acc] ctx=12689 burst=16/51 cum=250/441=0.567
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 5/14=0.357 1/14=0.071] total=18/42=0.429 tok_per_round=2.286
+[spec-acc] ctx=12722 burst=18/42 cum=268/483=0.555
+[spec-stats] rounds=15 full_accept=3 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 5/15=0.333 3/15=0.200] total=20/45=0.444 tok_per_round=2.333
+[spec-acc] ctx=12754 burst=20/45 cum=288/528=0.545
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 6/13=0.462 2/13=0.154] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=12789 burst=20/39 cum=308/567=0.543
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 6/12=0.500 3/12=0.250] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=12822 burst=20/36 cum=328/603=0.544
+[spec-stats] rounds=12 full_accept=5 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 7/12=0.583 5/12=0.417] total=23/36=0.639 tok_per_round=2.917
+[spec-acc] ctx=12854 burst=23/36 cum=351/639=0.549
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 6/13=0.462 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=12889 burst=19/39 cum=370/678=0.546
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 6/15=0.400 0/15=0.000] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=12921 burst=17/45 cum=387/723=0.535
+[spec-stats] rounds=17 full_accept=0 len_hist=[0, 0, 0, 17] per_slot=[11/17=0.647 4/17=0.235 0/17=0.000] total=15/51=0.294 tok_per_round=1.882
+[spec-acc] ctx=12953 burst=15/51 cum=402/774=0.519
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 7/14=0.500 2/14=0.143] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=12985 burst=20/42 cum=422/816=0.517
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 6/13=0.462 1/13=0.077] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=13019 burst=20/39 cum=442/855=0.517
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[13/15=0.867 4/15=0.267 0/15=0.000] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=13052 burst=17/45 cum=459/900=0.510
+[spec-stats] rounds=3 full_accept=0 len_hist=[0, 0, 0, 3] per_slot=[3/3=1.000 2/3=0.667 0/3=0.000] total=5/9=0.556 tok_per_round=2.667
+[spec-acc] ctx=13084 burst=5/9 cum=464/909=0.510
+[meter] admit id=cmpl-f4f7f2ca4ec0089f1fd73ad8c9f19a1d tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 11522 of checkpoint 11524; 2 parked, 13121 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=13121 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-f4f7f2ca4ec0089f1fd73ad8c9f19a1d model="step" path="/v1/completions" prompt_tokens=13121 outcome=first_sse_byte request_parse_ms=0.075 admission_ms=0.017 queue_wait_ms=0.018 tokenize_ms=29.270 prime_wait_ms=7.685 prime_ms=18708.664 decode_wait_ms=0.001 sse_handoff_ms=0.027 request_parse_end_ms=0.075 admission_end_ms=0.092 tokenize_start_ms=0.110 tokenize_end_ms=29.380 prime_start_ms=37.065 prime_end_ms=18745.729 first_decode_ms=18745.730 first_sse_byte_ms=18745.757 total_ms=18745.757
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 2/11=0.182] total=20/33=0.606 tok_per_round=2.818
+[spec-acc] ctx=13121 burst=20/33 cum=20/33=0.606
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 4/12=0.333] total=23/36=0.639 tok_per_round=2.917
+[spec-acc] ctx=13153 burst=23/36 cum=43/69=0.623
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=13188 burst=20/36 cum=63/105=0.600
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 2/12=0.167] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=13220 burst=21/36 cum=84/141=0.596
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 3/12=0.250] total=23/36=0.639 tok_per_round=2.917
+[spec-acc] ctx=13253 burst=23/36 cum=107/177=0.605
+[spec-stats] rounds=11 full_accept=1 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 10/11=0.909 1/11=0.091] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=13288 burst=22/33 cum=129/210=0.614
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=13321 burst=22/30 cum=151/240=0.629
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 3/11=0.273] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=13353 burst=21/33 cum=172/273=0.630
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 2/11=0.182] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=13385 burst=22/33 cum=194/306=0.634
+[spec-stats] rounds=9 full_accept=6 len_hist=[0, 0, 0, 9] per_slot=[9/9=1.000 8/9=0.889 6/9=0.667] total=23/27=0.852 tok_per_round=3.556
+[spec-acc] ctx=13418 burst=23/27 cum=217/333=0.652
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 6/14=0.429 1/14=0.071] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=13450 burst=20/42 cum=237/375=0.632
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 7/15=0.467 1/15=0.067] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=13484 burst=18/45 cum=255/420=0.607
+[spec-stats] rounds=14 full_accept=3 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 7/14=0.500 3/14=0.214] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=13517 burst=20/42 cum=275/462=0.595
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 6/13=0.462 2/13=0.154] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=13551 burst=20/39 cum=295/501=0.589
+[spec-stats] rounds=16 full_accept=3 len_hist=[0, 0, 0, 16] per_slot=[9/16=0.562 5/16=0.312 3/16=0.188] total=17/48=0.354 tok_per_round=2.062
+[spec-acc] ctx=13584 burst=17/48 cum=312/549=0.568
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 5/15=0.333 1/15=0.067] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=13617 burst=18/45 cum=330/594=0.556
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 7/14=0.500 1/14=0.071] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=13650 burst=20/42 cum=350/636=0.550
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 6/13=0.462 1/13=0.077] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=13684 burst=20/39 cum=370/675=0.548
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=13717 burst=23/33 cum=393/708=0.555
+[spec-stats] rounds=11 full_accept=5 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 6/11=0.545 5/11=0.455] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=13751 burst=22/33 cum=415/741=0.560
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 1/12=0.083] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=13784 burst=21/36 cum=436/777=0.561
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 6/13=0.462 1/13=0.077] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=13817 burst=19/39 cum=455/816=0.558
+[spec-stats] rounds=19 full_accept=1 len_hist=[0, 0, 0, 19] per_slot=[10/19=0.526 4/19=0.211 1/19=0.053] total=15/57=0.263 tok_per_round=1.789
+[spec-acc] ctx=13849 burst=15/57 cum=470/873=0.538
+[spec-stats] rounds=2 full_accept=0 len_hist=[0, 0, 0, 2] per_slot=[2/2=1.000 2/2=1.000 0/2=0.000] total=4/6=0.667 tok_per_round=3.000
+[spec-acc] ctx=13883 burst=4/6 cum=474/879=0.539
+[meter] admit id=cmpl-d5fcc766d2ce1bf91d83ef6cc2134082 tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 12322 of checkpoint 12324; 2 parked, 13918 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=13918 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-d5fcc766d2ce1bf91d83ef6cc2134082 model="step" path="/v1/completions" prompt_tokens=13918 outcome=first_sse_byte request_parse_ms=0.104 admission_ms=0.014 queue_wait_ms=0.020 tokenize_ms=31.749 prime_wait_ms=7.654 prime_ms=19820.105 decode_wait_ms=0.000 sse_handoff_ms=0.035 request_parse_end_ms=0.104 admission_end_ms=0.118 tokenize_start_ms=0.138 tokenize_end_ms=31.887 prime_start_ms=39.541 prime_end_ms=19859.646 first_decode_ms=19859.646 first_sse_byte_ms=19859.681 total_ms=19859.681
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 2/11=0.182] total=20/33=0.606 tok_per_round=2.818
+[spec-acc] ctx=13918 burst=20/33 cum=20/33=0.606
+[spec-stats] rounds=11 full_accept=5 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 6/11=0.545 5/11=0.455] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=13950 burst=22/33 cum=42/66=0.636
+[spec-stats] rounds=13 full_accept=0 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 7/13=0.538 0/13=0.000] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=13983 burst=20/39 cum=62/105=0.590
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 2/12=0.167] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=14016 burst=22/36 cum=84/141=0.596
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 3/11=0.273] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=14050 burst=22/33 cum=106/174=0.609
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=14083 burst=20/36 cum=126/210=0.600
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=14115 burst=21/33 cum=147/243=0.605
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=14147 burst=22/33 cum=169/276=0.612
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=14180 burst=21/33 cum=190/309=0.615
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=14212 burst=22/30 cum=212/339=0.625
+[spec-stats] rounds=14 full_accept=3 len_hist=[0, 0, 0, 14] per_slot=[9/14=0.643 7/14=0.500 3/14=0.214] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=14244 burst=19/42 cum=231/381=0.606
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[13/15=0.867 4/15=0.267 0/15=0.000] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=14277 burst=17/45 cum=248/426=0.582
+[spec-stats] rounds=17 full_accept=1 len_hist=[0, 0, 0, 17] per_slot=[11/17=0.647 4/17=0.235 1/17=0.059] total=16/51=0.314 tok_per_round=1.941
+[spec-acc] ctx=14309 burst=16/51 cum=264/477=0.553
+[spec-stats] rounds=18 full_accept=0 len_hist=[0, 0, 0, 18] per_slot=[10/18=0.556 5/18=0.278 0/18=0.000] total=15/54=0.278 tok_per_round=1.833
+[spec-acc] ctx=14342 burst=15/54 cum=279/531=0.525
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[14/14=1.000 4/14=0.286 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=14375 burst=19/42 cum=298/573=0.520
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 3/12=0.250] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=14408 burst=22/36 cum=320/609=0.525
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 4/11=0.364] total=24/33=0.727 tok_per_round=3.182
+[spec-acc] ctx=14442 burst=24/33 cum=344/642=0.536
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=14477 burst=22/33 cum=366/675=0.542
+[spec-stats] rounds=19 full_accept=1 len_hist=[0, 0, 0, 19] per_slot=[10/19=0.526 2/19=0.105 1/19=0.053] total=13/57=0.228 tok_per_round=1.684
+[spec-acc] ctx=14510 burst=13/57 cum=379/732=0.518
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[12/16=0.750 3/16=0.188 1/16=0.062] total=16/48=0.333 tok_per_round=2.000
+[spec-acc] ctx=14542 burst=16/48 cum=395/780=0.506
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 8/13=0.615 2/13=0.154] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=14574 burst=20/39 cum=415/819=0.507
+[spec-stats] rounds=16 full_accept=2 len_hist=[0, 0, 0, 16] per_slot=[12/16=0.750 3/16=0.188 2/16=0.125] total=17/48=0.354 tok_per_round=2.062
+[spec-acc] ctx=14607 burst=17/48 cum=432/867=0.498
+[spec-stats] rounds=17 full_accept=0 len_hist=[0, 0, 0, 17] per_slot=[12/17=0.706 3/17=0.176 0/17=0.000] total=15/51=0.294 tok_per_round=1.882
+[spec-acc] ctx=14640 burst=15/51 cum=447/918=0.487
+[spec-stats] rounds=6 full_accept=0 len_hist=[0, 0, 0, 6] per_slot=[6/6=1.000 3/6=0.500 0/6=0.000] total=9/18=0.500 tok_per_round=2.500
+[spec-acc] ctx=14672 burst=9/18 cum=456/936=0.487
+[meter] admit id=cmpl-89fc9b7765d6113af72b4542fed5082c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-db5daaf99e7e7944010b508e167c8277 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-92678e9a42c185e3dd3463147d4ef682 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-9b34735b603481b0069670ae132ebe3a tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 13119 of checkpoint 13121; 2 parked, 14712 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=14712 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[admit-oom] VRAM defer: 1 active, effective free 7204MB (driver + 1113MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 93981MB; parked spec sessions 2; plain reuse 0; queue 0]
+[ttft] id=cmpl-89fc9b7765d6113af72b4542fed5082c model="step" path="/v1/completions" prompt_tokens=14712 outcome=first_sse_byte request_parse_ms=0.081 admission_ms=0.016 queue_wait_ms=0.020 tokenize_ms=33.439 prime_wait_ms=7.686 prime_ms=20929.949 decode_wait_ms=0.000 sse_handoff_ms=0.020 request_parse_end_ms=0.081 admission_end_ms=0.097 tokenize_start_ms=0.117 tokenize_end_ms=33.556 prime_start_ms=41.242 prime_end_ms=20971.191 first_decode_ms=20971.191 first_sse_byte_ms=20971.211 total_ms=20971.211
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0, 0, 0] per_slot=[0/0 0/0 0/0] total=0/0=0.000 tok_per_round=0.000
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=14713 burst=19/42 cum=19/42=0.452
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 2/12=0.167] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=14747 burst=20/36 cum=39/78=0.500
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 1/12=0.083] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=14779 burst=21/36 cum=60/114=0.526
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 3/12=0.250] total=23/36=0.639 tok_per_round=2.917
+[spec-acc] ctx=14812 burst=23/36 cum=83/150=0.553
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 10/11=0.909 3/11=0.273] total=24/33=0.727 tok_per_round=3.182
+[spec-acc] ctx=14847 burst=24/33 cum=107/183=0.585
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=11 full_accept=1 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 1/11=0.091] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=14882 burst=21/33 cum=128/216=0.593
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=14914 burst=21/33 cum=149/249=0.598
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=14946 burst=22/33 cum=171/282=0.606
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=14979 burst=21/33 cum=192/315=0.610
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=15011 burst=22/33 cum=214/348=0.615
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=15044 burst=22/30 cum=236/378=0.624
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=14 full_accept=0 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 6/14=0.429 0/14=0.000] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=15076 burst=19/42 cum=255/420=0.607
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 7/14=0.500 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=15109 burst=19/42 cum=274/462=0.593
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[13/15=0.867 5/15=0.333 0/15=0.000] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=15142 burst=18/45 cum=292/507=0.576
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 1/12=0.083] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=15175 burst=21/36 cum=313/543=0.576
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 6/13=0.462 1/13=0.077] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=15208 burst=20/39 cum=333/582=0.572
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=15241 burst=22/30 cum=355/612=0.580
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 3/11=0.273] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=15273 burst=23/33 cum=378/645=0.586
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=10 full_accept=6 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 7/10=0.700 6/10=0.600] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=15307 burst=23/30 cum=401/675=0.594
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 4/10=0.400] total=22/30=0.733 tok_per_round=3.200
+[spec-acc] ctx=15340 burst=22/30 cum=423/705=0.600
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 8/12=0.667 2/12=0.167] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=15372 burst=21/36 cum=444/741=0.599
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 5/15=0.333 2/15=0.133] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=15405 burst=17/45 cum=461/786=0.587
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=13 full_accept=0 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 6/13=0.462 0/13=0.000] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=15437 burst=19/39 cum=480/825=0.582
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-stats] rounds=4 full_accept=0 len_hist=[0, 0, 0, 4] per_slot=[4/4=1.000 3/4=0.750 0/4=0.000] total=7/12=0.583 tok_per_round=2.750
+[spec-acc] ctx=15469 burst=7/12 cum=487/837=0.582
+[worker] spec-affinity: declined (history diverged at 13916 of checkpoint 13918; 2 parked, 14711 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=14711 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[ttft] id=cmpl-db5daaf99e7e7944010b508e167c8277 model="step" path="/v1/completions" prompt_tokens=14711 outcome=first_sse_byte request_parse_ms=0.079 admission_ms=0.012 queue_wait_ms=31494.668 tokenize_ms=32.741 prime_wait_ms=7.697 prime_ms=20911.295 decode_wait_ms=0.000 sse_handoff_ms=0.028 request_parse_end_ms=0.079 admission_end_ms=0.091 tokenize_start_ms=31494.759 tokenize_end_ms=31527.500 prime_start_ms=31535.197 prime_end_ms=52446.492 first_decode_ms=52446.492 first_sse_byte_ms=52446.520 total_ms=52446.520
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 6/12=0.500 3/12=0.250] total=19/36=0.528 tok_per_round=2.583
+[spec-acc] ctx=14711 burst=19/36 cum=19/36=0.528
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 8/13=0.615 2/13=0.154] total=21/39=0.538 tok_per_round=2.615
+[spec-acc] ctx=14743 burst=21/39 cum=40/75=0.533
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=13 full_accept=3 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 8/13=0.615 3/13=0.231] total=22/39=0.564 tok_per_round=2.692
+[spec-acc] ctx=14777 burst=22/39 cum=62/114=0.544
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=14812 burst=19/42 cum=81/156=0.519
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[11/16=0.688 5/16=0.312 0/16=0.000] total=16/48=0.333 tok_per_round=2.000
+[spec-acc] ctx=14845 burst=16/48 cum=97/204=0.475
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=16 full_accept=1 len_hist=[0, 0, 0, 16] per_slot=[11/16=0.688 6/16=0.375 1/16=0.062] total=18/48=0.375 tok_per_round=2.125
+[spec-acc] ctx=14877 burst=18/48 cum=115/252=0.456
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[11/15=0.733 5/15=0.333 2/15=0.133] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=14911 burst=18/45 cum=133/297=0.448
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 5/15=0.333 2/15=0.133] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=14944 burst=17/45 cum=150/342=0.439
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[10/15=0.667 6/15=0.400 1/15=0.067] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=14976 burst=17/45 cum=167/387=0.432
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[13/15=0.867 5/15=0.333 1/15=0.067] total=19/45=0.422 tok_per_round=2.267
+[spec-acc] ctx=15008 burst=19/45 cum=186/432=0.431
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 8/13=0.615 1/13=0.077] total=21/39=0.538 tok_per_round=2.615
+[spec-acc] ctx=15042 burst=21/39 cum=207/471=0.439
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=16 full_accept=2 len_hist=[0, 0, 0, 16] per_slot=[12/16=0.750 4/16=0.250 2/16=0.125] total=18/48=0.375 tok_per_round=2.125
+[spec-acc] ctx=15076 burst=18/48 cum=225/519=0.434
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=15 full_accept=2 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 4/15=0.267 2/15=0.133] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=15110 burst=18/45 cum=243/564=0.431
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 3/12=0.250] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=15143 burst=21/36 cum=264/600=0.440
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 7/14=0.500 2/14=0.143] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=15176 burst=20/42 cum=284/642=0.442
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 6/13=0.462 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=15210 burst=19/39 cum=303/681=0.445
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=10 full_accept=4 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 4/10=0.400] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=15242 burst=23/30 cum=326/711=0.459
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 8/12=0.667 1/12=0.083] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=15275 burst=21/36 cum=347/747=0.465
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[13/15=0.867 5/15=0.333 0/15=0.000] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=15308 burst=18/45 cum=365/792=0.461
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 7/13=0.538 1/13=0.077] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=15341 burst=19/39 cum=384/831=0.462
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=13 full_accept=3 len_hist=[0, 0, 0, 13] per_slot=[10/13=0.769 7/13=0.538 3/13=0.231] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=15373 burst=20/39 cum=404/870=0.464
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=15406 burst=21/33 cum=425/903=0.471
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 8/13=0.615 1/13=0.077] total=22/39=0.564 tok_per_round=2.692
+[spec-acc] ctx=15438 burst=22/39 cum=447/942=0.475
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 1]
+[spec-stats] rounds=3 full_accept=0 len_hist=[0, 0, 0, 3] per_slot=[3/3=1.000 1/3=0.333 0/3=0.000] total=4/9=0.444 tok_per_round=2.333
+[spec-acc] ctx=15473 burst=4/9 cum=451/951=0.474
+[worker] spec-affinity: declined (history diverged at 14690 of checkpoint 14712; 2 parked, 14710 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=14710 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[ttft] id=cmpl-92678e9a42c185e3dd3463147d4ef682 model="step" path="/v1/completions" prompt_tokens=14710 outcome=first_sse_byte request_parse_ms=0.168 admission_ms=0.011 queue_wait_ms=64418.793 tokenize_ms=33.713 prime_wait_ms=7.720 prime_ms=20913.304 decode_wait_ms=0.000 sse_handoff_ms=0.021 request_parse_end_ms=0.168 admission_end_ms=0.179 tokenize_start_ms=64418.972 tokenize_end_ms=64452.685 prime_start_ms=64460.405 prime_end_ms=85373.709 first_decode_ms=85373.709 first_sse_byte_ms=85373.730 total_ms=85373.730
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 8/12=0.667 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=14710 burst=20/36 cum=20/36=0.556
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 8/13=0.615 1/13=0.077] total=22/39=0.564 tok_per_round=2.692
+[spec-acc] ctx=14743 burst=22/39 cum=42/75=0.560
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=13 full_accept=0 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 7/13=0.538 0/13=0.000] total=20/39=0.513 tok_per_round=2.538
+[spec-acc] ctx=14778 burst=20/39 cum=62/114=0.544
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=14811 burst=20/36 cum=82/150=0.547
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 4/11=0.364] total=24/33=0.727 tok_per_round=3.182
+[spec-acc] ctx=14843 burst=24/33 cum=106/183=0.579
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=11 full_accept=1 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 1/11=0.091] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=14878 burst=21/33 cum=127/216=0.588
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 2/11=0.182] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=14910 burst=21/33 cum=148/249=0.594
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 3/12=0.250] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=14942 burst=21/36 cum=169/285=0.593
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=11 full_accept=1 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 1/11=0.091] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=14975 burst=21/33 cum=190/318=0.597
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=15007 burst=22/33 cum=212/351=0.604
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 5/10=0.500] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=15040 burst=23/30 cum=235/381=0.617
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 5/14=0.357 2/14=0.143] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=15073 burst=19/42 cum=254/423=0.600
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 8/12=0.667 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=15106 burst=20/36 cum=274/459=0.597
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=16 full_accept=0 len_hist=[0, 0, 0, 16] per_slot=[13/16=0.812 5/16=0.312 0/16=0.000] total=18/48=0.375 tok_per_round=2.125
+[spec-acc] ctx=15138 burst=18/48 cum=292/507=0.576
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=18 full_accept=0 len_hist=[0, 0, 0, 18] per_slot=[10/18=0.556 5/18=0.278 0/18=0.000] total=15/54=0.278 tok_per_round=1.833
+[spec-acc] ctx=15172 burst=15/54 cum=307/561=0.547
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=17 full_accept=0 len_hist=[0, 0, 0, 17] per_slot=[12/17=0.706 3/17=0.176 0/17=0.000] total=15/51=0.294 tok_per_round=1.882
+[spec-acc] ctx=15205 burst=15/51 cum=322/612=0.526
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 6/14=0.429 2/14=0.143] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=15237 burst=20/42 cum=342/654=0.523
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 3/12=0.250] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=15271 burst=21/36 cum=363/690=0.526
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 7/12=0.583 3/12=0.250] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=15304 burst=21/36 cum=384/726=0.529
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=10 full_accept=6 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 6/10=0.600] total=24/30=0.800 tok_per_round=3.400
+[spec-acc] ctx=15337 burst=24/30 cum=408/756=0.540
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=10 full_accept=6 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 6/10=0.600] total=24/30=0.800 tok_per_round=3.400
+[spec-acc] ctx=15371 burst=24/30 cum=432/786=0.550
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=18 full_accept=2 len_hist=[0, 0, 0, 18] per_slot=[10/18=0.556 4/18=0.222 2/18=0.111] total=16/54=0.296 tok_per_round=1.889
+[spec-acc] ctx=15405 burst=16/54 cum=448/840=0.533
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 5/14=0.357 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=15439 burst=19/42 cum=467/882=0.529
+[admit-oom] VRAM defer: 1 active, effective free 7166MB (driver + 1108MB pool-cached) < cost 11677MB + reserve 1611MB — queueing (FIFO) [pool res 95127MB used 94019MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-stats] rounds=3 full_accept=0 len_hist=[0, 0, 0, 3] per_slot=[2/3=0.667 1/3=0.333 0/3=0.000] total=3/9=0.333 tok_per_round=2.000
+[spec-acc] ctx=15472 burst=3/9 cum=470/891=0.527
+[worker] spec-affinity: declined (history diverged at 14690 of checkpoint 14711; 2 parked, 14713 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=14713 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-9b34735b603481b0069670ae132ebe3a model="step" path="/v1/completions" prompt_tokens=14713 outcome=first_sse_byte request_parse_ms=0.135 admission_ms=0.011 queue_wait_ms=96551.513 tokenize_ms=32.989 prime_wait_ms=7.645 prime_ms=20938.127 decode_wait_ms=0.000 sse_handoff_ms=0.021 request_parse_end_ms=0.135 admission_end_ms=0.146 tokenize_start_ms=96551.659 tokenize_end_ms=96584.648 prime_start_ms=96592.293 prime_end_ms=117530.420 first_decode_ms=117530.420 first_sse_byte_ms=117530.441 total_ms=117530.441
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 6/13=0.462 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=14713 burst=19/39 cum=19/39=0.487
+[spec-stats] rounds=13 full_accept=0 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 6/13=0.462 0/13=0.000] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=14746 burst=19/39 cum=38/78=0.487
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=14778 burst=20/36 cum=58/114=0.509
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 2/12=0.167] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=14810 burst=21/36 cum=79/150=0.527
+[spec-stats] rounds=11 full_accept=1 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 10/11=0.909 1/11=0.091] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=14843 burst=22/33 cum=101/183=0.552
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 3/11=0.273] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=14876 burst=23/33 cum=124/216=0.574
+[spec-stats] rounds=11 full_accept=2 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 2/11=0.182] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=14910 burst=22/33 cum=146/249=0.586
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 1/12=0.083] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=14943 burst=20/36 cum=166/285=0.582
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 3/11=0.273] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=14975 burst=21/33 cum=187/318=0.588
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 3/11=0.273] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=15007 burst=22/33 cum=209/351=0.595
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=15040 burst=22/33 cum=231/384=0.602
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 5/15=0.333 1/15=0.067] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=15073 burst=18/45 cum=249/429=0.580
+[spec-stats] rounds=13 full_accept=2 len_hist=[0, 0, 0, 13] per_slot=[11/13=0.846 6/13=0.462 2/13=0.154] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=15106 burst=19/39 cum=268/468=0.573
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 7/14=0.500 1/14=0.071] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=15138 burst=20/42 cum=288/510=0.565
+[spec-stats] rounds=12 full_accept=1 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 9/12=0.750 1/12=0.083] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=15172 burst=22/36 cum=310/546=0.568
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 5/14=0.357 2/14=0.143] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=15206 burst=19/42 cum=329/588=0.560
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=15239 burst=23/33 cum=352/621=0.567
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 5/10=0.500] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=15273 burst=23/30 cum=375/651=0.576
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 3/11=0.273] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=15306 burst=21/33 cum=396/684=0.579
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 5/10=0.500] total=24/30=0.800 tok_per_round=3.400
+[spec-acc] ctx=15338 burst=24/30 cum=420/714=0.588
+[spec-stats] rounds=14 full_accept=0 len_hist=[0, 0, 0, 14] per_slot=[13/14=0.929 7/14=0.500 0/14=0.000] total=20/42=0.476 tok_per_round=2.429
+[spec-acc] ctx=15372 burst=20/42 cum=440/756=0.582
+[spec-stats] rounds=15 full_accept=1 len_hist=[0, 0, 0, 15] per_slot=[14/15=0.933 4/15=0.267 1/15=0.067] total=19/45=0.422 tok_per_round=2.267
+[spec-acc] ctx=15406 burst=19/45 cum=459/801=0.573
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[14/15=0.933 3/15=0.200 0/15=0.000] total=17/45=0.378 tok_per_round=2.133
+[spec-acc] ctx=15440 burst=17/45 cum=476/846=0.563
+[spec-stats] rounds=4 full_accept=0 len_hist=[0, 0, 0, 4] per_slot=[4/4=1.000 1/4=0.250 0/4=0.000] total=5/12=0.417 tok_per_round=2.250
+[spec-acc] ctx=15472 burst=5/12 cum=481/858=0.561
+[meter] admit id=cmpl-4500a11817deb4511c68d9e8b0ee8bc6 tenant=default lane=interactive model="step"
+[worker] spec-affinity: declined (history diverged at 14689 of checkpoint 14710; 2 parked, 14716 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=3 source=cold-long prompt=14716 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-4500a11817deb4511c68d9e8b0ee8bc6 model="step" path="/v1/completions" prompt_tokens=14716 outcome=first_sse_byte request_parse_ms=0.144 admission_ms=0.015 queue_wait_ms=0.018 tokenize_ms=33.389 prime_wait_ms=7.634 prime_ms=20911.712 decode_wait_ms=0.000 sse_handoff_ms=0.029 request_parse_end_ms=0.144 admission_end_ms=0.159 tokenize_start_ms=0.177 tokenize_end_ms=33.566 prime_start_ms=41.200 prime_end_ms=20952.912 first_decode_ms=20952.912 first_sse_byte_ms=20952.941 total_ms=20952.941
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 7/12=0.583 2/12=0.167] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=14716 burst=20/36 cum=20/36=0.556
+[spec-stats] rounds=14 full_accept=2 len_hist=[0, 0, 0, 14] per_slot=[11/14=0.786 6/14=0.429 2/14=0.143] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=14749 burst=19/42 cum=39/78=0.500
+[spec-stats] rounds=12 full_accept=4 len_hist=[0, 0, 0, 12] per_slot=[10/12=0.833 6/12=0.500 4/12=0.333] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=14782 burst=20/36 cum=59/114=0.518
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 3/11=0.273] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=14814 burst=23/33 cum=82/147=0.558
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 3/11=0.273] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=14848 burst=22/33 cum=104/180=0.578
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 3/11=0.273] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=14881 burst=22/33 cum=126/213=0.592
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 7/12=0.583 2/12=0.167] total=21/36=0.583 tok_per_round=2.750
+[spec-acc] ctx=14914 burst=21/36 cum=147/249=0.590
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 9/11=0.818 4/11=0.364] total=24/33=0.727 tok_per_round=3.182
+[spec-acc] ctx=14947 burst=24/33 cum=171/282=0.606
+[spec-stats] rounds=10 full_accept=3 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 10/10=1.000 3/10=0.300] total=23/30=0.767 tok_per_round=3.300
+[spec-acc] ctx=14982 burst=23/30 cum=194/312=0.622
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 4/11=0.364] total=22/33=0.667 tok_per_round=3.000
+[spec-acc] ctx=15015 burst=22/33 cum=216/345=0.626
+[spec-stats] rounds=13 full_accept=1 len_hist=[0, 0, 0, 13] per_slot=[13/13=1.000 7/13=0.538 1/13=0.077] total=21/39=0.538 tok_per_round=2.615
+[spec-acc] ctx=15048 burst=21/39 cum=237/384=0.617
+[spec-stats] rounds=15 full_accept=0 len_hist=[0, 0, 0, 15] per_slot=[12/15=0.800 6/15=0.400 0/15=0.000] total=18/45=0.400 tok_per_round=2.200
+[spec-acc] ctx=15082 burst=18/45 cum=255/429=0.594
+[spec-stats] rounds=12 full_accept=3 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 8/12=0.667 3/12=0.250] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=15115 burst=22/36 cum=277/465=0.596
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[11/12=0.917 9/12=0.750 2/12=0.167] total=22/36=0.611 tok_per_round=2.833
+[spec-acc] ctx=15149 burst=22/36 cum=299/501=0.597
+[spec-stats] rounds=10 full_accept=6 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 8/10=0.800 6/10=0.600] total=24/30=0.800 tok_per_round=3.400
+[spec-acc] ctx=15183 burst=24/30 cum=323/531=0.608
+[spec-stats] rounds=10 full_accept=5 len_hist=[0, 0, 0, 10] per_slot=[10/10=1.000 9/10=0.900 5/10=0.500] total=24/30=0.800 tok_per_round=3.400
+[spec-acc] ctx=15217 burst=24/30 cum=347/561=0.619
+[spec-stats] rounds=11 full_accept=5 len_hist=[0, 0, 0, 11] per_slot=[10/11=0.909 8/11=0.727 5/11=0.455] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=15251 burst=23/33 cum=370/594=0.623
+[spec-stats] rounds=11 full_accept=3 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 7/11=0.636 3/11=0.273] total=21/33=0.636 tok_per_round=2.909
+[spec-acc] ctx=15285 burst=21/33 cum=391/627=0.624
+[spec-stats] rounds=14 full_accept=1 len_hist=[0, 0, 0, 14] per_slot=[12/14=0.857 6/14=0.429 1/14=0.071] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=15317 burst=19/42 cum=410/669=0.613
+[spec-stats] rounds=12 full_accept=2 len_hist=[0, 0, 0, 12] per_slot=[12/12=1.000 6/12=0.500 2/12=0.167] total=20/36=0.556 tok_per_round=2.667
+[spec-acc] ctx=15350 burst=20/36 cum=430/705=0.610
+[spec-stats] rounds=13 full_accept=0 len_hist=[0, 0, 0, 13] per_slot=[12/13=0.923 7/13=0.538 0/13=0.000] total=19/39=0.487 tok_per_round=2.462
+[spec-acc] ctx=15382 burst=19/39 cum=449/744=0.603
+[spec-stats] rounds=14 full_accept=4 len_hist=[0, 0, 0, 14] per_slot=[10/14=0.714 5/14=0.357 4/14=0.286] total=19/42=0.452 tok_per_round=2.357
+[spec-acc] ctx=15414 burst=19/42 cum=468/786=0.595
+[spec-stats] rounds=11 full_accept=4 len_hist=[0, 0, 0, 11] per_slot=[11/11=1.000 8/11=0.727 4/11=0.364] total=23/33=0.697 tok_per_round=3.091
+[spec-acc] ctx=15447 burst=23/33 cum=491/819=0.600
+[spec-stats] rounds=1 full_accept=0 len_hist=[0, 0, 0, 1] per_slot=[1/1=1.000 1/1=1.000 0/1=0.000] total=2/3=0.667 tok_per_round=3.000
+[spec-acc] ctx=15481 burst=2/3 cum=493/822=0.600
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

@@ -1,0 +1,89 @@
+[server] starting; models config = [("ornith15", "/home/ubuntu/models/ornith15/publish/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "ornith15" <- /home/ubuntu/models/ornith15/publish/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+[worker]   loaded "ornith15": 41 layers, eos=248046
+[worker] ornith15: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] ornith15: decode wave cap 8; scheduler tick cap 8
+[server] worker ready; serving models: ["ornith15"]
+[prefix-cache] on: budget 284MB (283770880 B, derived: 2 x 141885440 B max entry for model "ornith15" at MEMRA_CTX=8192, requested 283770880 B; boot driver free 81486479360 B, post-reserve clamp 79875866624 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "ornith15": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:8199
+[meter] admit id=chatcmpl-2c61dbac12a2b7d098aa68f34101e706 tenant=default lane=interactive model="ornith15"
+[admission] request cost: model="ornith15" ctx=215 path=plain = 10208 B/token x ctx + 0MB fixed = 2MB
+[spec-k] model="ornith15" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="ornith15" 129MB (observed 130MB at ctx 159 path=plain)
+[meter] admit id=chatcmpl-55eff9dbfa6f65aa6c1cca6267cf8bcb tenant=default lane=interactive model="ornith15"
+[admission] request cost: model="ornith15" ctx=215 path=plain = 10208 B/token x ctx + 129MB fixed = 131MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-f07c9633136617c65e3889231509c1e3 tenant=default lane=interactive model="ornith15"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[meter] admit id=chatcmpl-826539b67deac657a015facf248dc273 tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-a7b3bb5368a72aca5520ee4db470b5ca tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-d016ec4fda9d781487f40b3d0abe45e1 tenant=default lane=interactive model="ornith15"
+[spec-k] model="ornith15" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=92 carried=0 partial=0 in 75.8ms
+[meter] admit id=chatcmpl-bc377e73882b4b48526a53543445254b tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-e568949ae95dc26624a80e6975923938 tenant=default lane=interactive model="ornith15"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[meter] admit id=chatcmpl-229bf0f421d976173290509dee472e87 tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-4944a699e361a20775025aeec52cc37b tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-7bb41ea85631f7722884cc101c161686 tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-297241c7f1129a55ccae5c95bb4ddab5 tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-9a0ce7535be26acbabf157720a8f096d tenant=default lane=interactive model="ornith15"
+[spec-k] model="ornith15" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[meter] admit id=chatcmpl-17afc5fe2ac3cd5ad1da2f9777d59efd tenant=default lane=interactive model="ornith15"
+[spec-k] model="ornith15" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[prime-batch] B=6 tokens=138 carried=0 partial=0 in 104.9ms
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-74bb33b72461f05044b9de34be817a59 tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-35105a2d4fa9df92d9cb0752f51757ef tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-84042d7b06ad5254ca01448a89902129 tenant=default lane=interactive model="ornith15"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[meter] admit id=chatcmpl-8e29567e44322c6c1aaee35031323d96 tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-414bd1cf89689163cccae8f073e96eb1 tenant=default lane=interactive model="ornith15"
+[meter] admit id=chatcmpl-6ef6bf81d8f162cada5c22f1f53a9224 tenant=default lane=interactive model="ornith15"
+[spec-k] model="ornith15" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-3658dc685405c85a9d8803579cba847f tenant=default lane=interactive model="ornith15"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[meter] admit id=chatcmpl-a6d4961c1ce0c186e38369676424b6e5 tenant=default lane=interactive model="ornith15"
+[spec-k] model="ornith15" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[prime-batch] B=6 tokens=138 carried=0 partial=0 in 103.7ms
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model ornith15)
+[spec-k] model="ornith15" tenant="" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

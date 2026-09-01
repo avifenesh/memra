@@ -1,0 +1,100 @@
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:14:add_rms_norm fused: res_mismatch=0 norm_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:15:rms_norm_q8_1 fused (nrows=1): q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:16:rms_norm_q8_1 fused (nrows=5): q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:17:add_rms_norm_q8_1 fused: res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:18:add_rms_norm_q8_1 batched (T=2): res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:19:add_rms_norm_q8_1 batched (T=4): res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:20:add_rms_norm_q8_1 batched (T=5): res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:21:add_rms_norm_q8_1 batched (T=8): res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:25:mask_logits_col: mismatch=0 argmax 458==458 OK (byte-identical)
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:26:silu_mul_q8_1 fold: int8_mismatch=0 scale_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:27:silu_mul_q8_1 batched (T=5): int8_mismatch=0 scale_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:28:gated_rmsnorm_q8_1 (T=1): q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:29:gated_rmsnorm_q8_1 (T=5): q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:30:iq fused act+quant [silu in_f=768 n_pairs=33]: byte_mismatch=0/38016 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:31:iq fused act+quant [silu in_f=512 n_pairs=7]: byte_mismatch=0/4032 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:32:iq fused act+quant [gelu in_f=704 n_pairs=29]: byte_mismatch=0/33408 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:35:ssm_conv1d fused: out_mismatch=0 state_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:283:fa_prefill_hd512 bf16-stage T=64: bit-mismatch 0/262144 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:287:fa_prefill_hd512 bf16-stage T=100: bit-mismatch 0/409600 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:393:kv append rows-vs-loop bit-identity (T=7, t0=3): k_mismatch=0 v_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:396:moe sigmoid router vs host oracle (cases=68, near_tie_cases=2, Step t=1..64): idx_mismatch=0 masked_pick=0 tie_mismatch=0 weight_bit_mismatch=0 max_weight_ulp=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:405:attn_head_gate [hd128 nh64 T1] maxdiff=1.19e-7 f16_mismatch=0 per_head_varies=6856/8192 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:406:attn_head_gate [hd128 nh64 T7] maxdiff=1.19e-7 f16_mismatch=0 per_head_varies=49025/57344 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:407:attn_head_gate [hd128 nh96 T1] maxdiff=1.19e-7 f16_mismatch=0 per_head_varies=10413/12288 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:408:attn_head_gate [hd128 nh96 T7] maxdiff=2.38e-7 f16_mismatch=0 per_head_varies=73647/86016 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:409:attn_head_gate dst16=None skip: f32_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:419:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.782
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:421:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:422:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:423:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=600.047
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:458:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.747
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:460:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:461:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:462:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=638.746
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:497:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.746
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:499:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:500:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:501:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=639.263
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:535:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.788
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:537:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:538:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:539:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=697.415
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:563:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.798
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:565:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:566:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:567:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=705.778
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:609:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.685
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:611:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:612:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/driver.log:613:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=646.471
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:12:add_rms_norm fused: res_mismatch=0 norm_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:13:rms_norm_q8_1 fused (nrows=1): q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:14:rms_norm_q8_1 fused (nrows=5): q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:15:add_rms_norm_q8_1 fused: res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:16:add_rms_norm_q8_1 batched (T=2): res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:17:add_rms_norm_q8_1 batched (T=4): res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:18:add_rms_norm_q8_1 batched (T=5): res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:19:add_rms_norm_q8_1 batched (T=8): res_mismatch=0 q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:23:mask_logits_col: mismatch=0 argmax 458==458 OK (byte-identical)
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:24:silu_mul_q8_1 fold: int8_mismatch=0 scale_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:25:silu_mul_q8_1 batched (T=5): int8_mismatch=0 scale_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:26:gated_rmsnorm_q8_1 (T=1): q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:27:gated_rmsnorm_q8_1 (T=5): q_mismatch=0 d_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:28:iq fused act+quant [silu in_f=768 n_pairs=33]: byte_mismatch=0/38016 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:29:iq fused act+quant [silu in_f=512 n_pairs=7]: byte_mismatch=0/4032 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:30:iq fused act+quant [gelu in_f=704 n_pairs=29]: byte_mismatch=0/33408 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:33:ssm_conv1d fused: out_mismatch=0 state_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:281:fa_prefill_hd512 bf16-stage T=64: bit-mismatch 0/262144 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:285:fa_prefill_hd512 bf16-stage T=100: bit-mismatch 0/409600 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:391:kv append rows-vs-loop bit-identity (T=7, t0=3): k_mismatch=0 v_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:394:moe sigmoid router vs host oracle (cases=68, near_tie_cases=2, Step t=1..64): idx_mismatch=0 masked_pick=0 tie_mismatch=0 weight_bit_mismatch=0 max_weight_ulp=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:403:attn_head_gate [hd128 nh64 T1] maxdiff=1.19e-7 f16_mismatch=0 per_head_varies=6856/8192 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:404:attn_head_gate [hd128 nh64 T7] maxdiff=1.19e-7 f16_mismatch=0 per_head_varies=49025/57344 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:405:attn_head_gate [hd128 nh96 T1] maxdiff=1.19e-7 f16_mismatch=0 per_head_varies=10413/12288 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:406:attn_head_gate [hd128 nh96 T7] maxdiff=2.38e-7 f16_mismatch=0 per_head_varies=73647/86016 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/kernel-check.log:407:attn_head_gate dst16=None skip: f32_mismatch=0 OK
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppbatch-dev01.log:1:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.746
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppbatch-dev01.log:3:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppbatch-dev01.log:4:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppbatch-dev01.log:5:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=639.263
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppspec-dev01.log:1:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.782
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppspec-dev01.log:3:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppspec-dev01.log:4:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppspec-dev01.log:5:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=600.047
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppspec-dev10.log:1:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.747
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppspec-dev10.log:3:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppspec-dev10.log:4:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/ppspec-dev10.log:5:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=638.746
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-gen.log:1:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.788
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-gen.log:3:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-gen.log:4:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-gen.log:5:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=697.415
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-spec-dev01.log:1:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.798
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-spec-dev01.log:3:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-spec-dev01.log:4:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-spec-dev01.log:5:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=705.778
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-spec-dev10.log:1:[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.685
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-spec-dev10.log:3:[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-spec-dev10.log:4:[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+/home/ubuntu/memra-cx-specpp2fix/research/specpp2fix-20260812/raw/box1/gates/run-spec-dev10.log:5:[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=646.471

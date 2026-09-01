@@ -1,0 +1,51 @@
+# qwen4exp_real_gate	label=bhost-ab262k	binary_sha256=731c811b7242ec8ada7218b42a14685dfad93f7d882a36172021b9504b91974c	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+# load	716.7s
+# vram	post-load	0, 92691 MiB, 97887 MiB | 1, 89971 MiB, 97887 MiB
+# ladder	state-allocated	0, 92691 MiB, 97887 MiB | 1, 92883 MiB, 97887 MiB
+# ladder-progress	fill=16384	elapsed_s=81.5	0, 92883 MiB, 97887 MiB | 1, 94291 MiB, 97887 MiB
+# ladder-progress	fill=32768	elapsed_s=165.2	0, 92979 MiB, 97887 MiB | 1, 94355 MiB, 97887 MiB
+# ladder-progress	fill=49152	elapsed_s=249.7	0, 93139 MiB, 97887 MiB | 1, 94515 MiB, 97887 MiB
+# ladder-progress	fill=65536	elapsed_s=334.9	0, 93171 MiB, 97887 MiB | 1, 94547 MiB, 97887 MiB
+# ladder-progress	fill=81920	elapsed_s=421.5	0, 93491 MiB, 97887 MiB | 1, 94867 MiB, 97887 MiB
+# ladder-progress	fill=98304	elapsed_s=508.9	0, 93491 MiB, 97887 MiB | 1, 94867 MiB, 97887 MiB
+# ladder-progress	fill=114688	elapsed_s=597.3	0, 93491 MiB, 97887 MiB | 1, 94867 MiB, 97887 MiB
+# ladder-progress	fill=131072	elapsed_s=686.6	0, 93491 MiB, 97887 MiB | 1, 94867 MiB, 97887 MiB
+# ladder-progress	fill=147456	elapsed_s=777.0	0, 595 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=163840	elapsed_s=868.3	0, 595 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=180224	elapsed_s=960.5	0, 595 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=196608	elapsed_s=1054.5	0, 595 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=212992	elapsed_s=1149.6	0, 595 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=229376	elapsed_s=1244.8	0, 94195 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=245760	elapsed_s=1340.8	0, 94387 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=262144	elapsed_s=1437.8	0, 94515 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=60	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=120	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=180	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=240	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=300	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=360	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=420	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=480	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=540	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=600	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=660	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=720	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=780	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=840	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=900	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=960	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=1020	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=1080	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=1140	note=if nested inside an outer flock on this path, this will never return
+# measure-lock-waiting	mode=ex	path=/tmp/q48fn-measure.lock	waited_s=1200	note=if nested inside an outer flock on this path, this will never return
+# ladder-rung	262144	1437.8	1437.8	128	42.5	41.3	41.6	23.50	rounds=5x12 medians=[41.5, 41.4, 41.3, 41.3, 41.3] spread=0.67% (escalated x5)	false	167775	0, 0 MiB, 97887 MiB | 1, 96635 MiB, 97887 MiB	19687,41973,1174,198,309,364,585,303,220,15,486,83,313,198,388,1042,5041,11857,283,7251,20077,15,69,18,17,26,16656,85,5098,198,388,364,492,303,220,15,486,6046,85,313,198,493,413,492,835,585,313,198,646,11857,3681,60,283,281,18,17,476,93778,87970,26,198
+
+# ladder-jitter	rung=262144	arm=rung-default	n=58 mean=42.55 med=41.30 sd=9.017 cv=21.19% p99=110.61 max=110.61 outliers_1.5x=1
+# ladder-ab	rung=262144	seam=plecache	arm=off	median_ms=41.38	tok_per_s=24.17	reps=3	medians=[41.31, 41.38, 41.42]	spread=0.28%	n=48 mean=41.34 med=41.36 sd=0.151 cv=0.37% p99=41.70 max=41.70 outliers_1.5x=0
+# ladder-ab	rung=262144	seam=plecache	arm=on	median_ms=28.30	tok_per_s=35.34	reps=3	medians=[28.25, 28.3, 28.3]	spread=0.17%	n=48 mean=28.28 med=28.29 sd=0.044 cv=0.16% p99=28.38 max=28.38 outliers_1.5x=0
+# ladder-ab-verdict	rung=262144	seam=plecache	off_ms=41.38	on_ms=28.30	speedup=1.4620x	delta_pct=31.60%	reps_per_arm=3	host_probe=true	vol_cs=80	nonvol_cs=17	threads=4	launch_cpu_migrations=0	launch_cpus_seen=1
+# ladder-ab-restore	seam=plecache	arm=off
+# ladder receipt: /home/ubuntu/realgate/kvq2/ladder-bhost-ab262k.tsv

@@ -1,0 +1,9 @@
+chunk=16: first divergent row Some((0, 113, 3.1851232e-7)), 200/200 rows differ, worst abs 3.815e-6
+chunk=32: first divergent row Some((0, 117, 5.066395e-7)), 200/200 rows differ, worst abs 2.027e-6
+chunk=128: first divergent row Some((0, 111, 4.172325e-7)), 200/200 rows differ, worst abs 2.027e-6
+chunk=16: logits differ 0/32, stack differ 0/8192, finite 32/32, first4 [-4.958224, -1.7636025, 0.75369936, 3.5332103]
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.29s
+linear m=32 vs m=200: 9601/12288 bits differ, worst 3.815e-6
+linear m=128 vs m=200: 0/49152 bits differ, worst 0.000e0
+linear m=199 vs m=200: 0/76416 bits differ, worst 0.000e0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s

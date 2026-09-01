@@ -1,0 +1,68 @@
+Aug 12 08:30:02 <private-host-redacted> systemd[1]: Starting caddy.service - Caddy...
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: caddy.HomeDir=/var/lib/caddy
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: caddy.AppDataDir=/var/lib/caddy/.local/share/caddy
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: caddy.AppConfigDir=/var/lib/caddy/.config/caddy
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: caddy.ConfigAutosavePath=/var/lib/caddy/.config/caddy/autosave.json
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: caddy.Version=v2.11.4 h1:XKxkMTgNSizEvKG6QHue6cAsFOteU2qA61w2tKkCWi0=
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: runtime.GOOS=linux
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: runtime.GOARCH=amd64
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: runtime.Compiler=gc
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: runtime.NumCPU=16
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: runtime.GOMAXPROCS=16
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: runtime.Version=go1.26.3
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: os.Getwd=/
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: LANG=C.UTF-8
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: NOTIFY_SOCKET=/run/systemd/notify
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: USER=caddy
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: LOGNAME=caddy
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: HOME=/var/lib/caddy
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: INVOCATION_ID=ad6158df58114f3f9a8597a2f84a4f24
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: JOURNAL_STREAM=9:52660369
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: SYSTEMD_EXEC_PID=2634065
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: MEMORY_PRESSURE_WATCH=/sys/fs/cgroup/system.slice/caddy.service/memory.pressure
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: MEMORY_PRESSURE_WRITE=c29tZSAyMDAwMDAgMjAwMDAwMAA=
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9680502,"msg":"maxprocs: Leaving GOMAXPROCS=16: CPU quota undefined"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9680638,"msg":"GOMEMLIMIT is updated","GOMEMLIMIT":29775649996,"previous":9223372036854775807}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.968067,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9680693,"msg":"adapted config to JSON","adapter":"caddyfile"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"warn","ts":1786523402.9680707,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/etc/caddy/Caddyfile","line":4}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9685168,"logger":"admin","msg":"admin endpoint started","address":"localhost:2019","enforce_origin":false,"origins":["//localhost:2019","//[::1]:2019","//127.0.0.1:2019"]}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.968618,"logger":"http.auto_https","msg":"server is listening only on the HTTPS port but has no TLS connection policies; adding one to enable TLS","server_name":"srv0","https_port":443}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9686315,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.968776,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0x2efcd934fd00"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"warn","ts":1786523402.9688,"logger":"http","msg":"HTTP/2 skipped because it requires TLS","network":"tcp","addr":":80"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"warn","ts":1786523402.968804,"logger":"http","msg":"HTTP/3 skipped because it requires TLS","network":"tcp","addr":":80"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.968806,"logger":"http.log","msg":"server running","name":"remaining_auto_https_redirects","protocols":["h1","h2","h3"]}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9688215,"logger":"http","msg":"enabling HTTP/3 listener","addr":":443"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.968936,"logger":"http.log","msg":"server running","name":"srv0","protocols":["h1","h2","h3"]}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9689407,"logger":"http","msg":"enabling automatic TLS certificate management","domains":["<relay-host>"]}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9690974,"msg":"autosaved config (load with --resume flag)","file":"/var/lib/caddy/.config/caddy/autosave.json"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9691293,"msg":"serving initial configuration"}
+Aug 12 08:30:02 <private-host-redacted> systemd[1]: Started caddy.service - Caddy.
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.974709,"logger":"tls","msg":"storage cleaning happened too recently; skipping for now","storage":"FileStorage:/var/lib/caddy/.local/share/caddy","instance":"513fa60f-fe5e-46ea-8756-518a3ff0b0f5","try_again":1786609802.9747052,"try_again_in":86399.999999434}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.974796,"logger":"tls","msg":"finished cleaning storage units"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9756756,"logger":"tls.obtain","msg":"acquiring lock","identifier":"<relay-host>"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9789476,"logger":"tls.obtain","msg":"lock acquired","identifier":"<relay-host>"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9790354,"logger":"tls.obtain","msg":"obtaining certificate","identifier":"<relay-host>"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.979446,"logger":"http","msg":"creating new account because no account for configured email is known to us","email":"","ca":"https://acme-v02.api.letsencrypt.org/directory","error":"open /var/lib/caddy/.local/share/caddy/acme/acme-v02.api.letsencrypt.org-directory/users/default/default.json: no such file or directory"}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.979472,"logger":"http","msg":"ACME account has empty status; registering account with ACME server","contact":[],"location":""}
+Aug 12 08:30:02 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523402.9829385,"logger":"http","msg":"creating new account because no account for configured email is known to us","email":"","ca":"https://acme-v02.api.letsencrypt.org/directory","error":"open /var/lib/caddy/.local/share/caddy/acme/acme-v02.api.letsencrypt.org-directory/users/default/default.json: no such file or directory"}
+Aug 12 08:30:03 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523403.2485394,"logger":"http","msg":"new ACME account registered","contact":[],"status":"valid"}
+Aug 12 08:30:03 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523403.2570553,"logger":"http","msg":"waiting on internal rate limiter","identifiers":["<relay-host>"],"ca":"https://acme-v02.api.letsencrypt.org/directory","account":""}
+Aug 12 08:30:03 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523403.2570827,"logger":"http","msg":"done waiting on internal rate limiter","identifiers":["<relay-host>"],"ca":"https://acme-v02.api.letsencrypt.org/directory","account":""}
+Aug 12 08:30:03 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523403.257113,"logger":"http","msg":"using ACME account","account_id":"https://acme-v02.api.letsencrypt.org/acme/acct/3623481801","account_contact":[]}
+Aug 12 08:30:03 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523403.436756,"logger":"http.acme_client","msg":"trying to solve challenge","identifier":"<relay-host>","challenge_type":"tls-alpn-01","ca":"https://acme-v02.api.letsencrypt.org/directory"}
+Aug 12 08:30:03 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523403.602922,"logger":"tls","msg":"served key authentication certificate","server_name":"<relay-host>","challenge":"tls-alpn-01","remote":"23.178.112.107:57679","distributed":false}
+Aug 12 08:30:03 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523403.656006,"logger":"tls","msg":"served key authentication certificate","server_name":"<relay-host>","challenge":"tls-alpn-01","remote":"52.88.229.0:51594","distributed":false}
+Aug 12 08:30:03 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523403.8703182,"logger":"tls","msg":"served key authentication certificate","server_name":"<relay-host>","challenge":"tls-alpn-01","remote":"3.129.69.215:33298","distributed":false}
+Aug 12 08:30:03 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523403.9821362,"logger":"tls","msg":"served key authentication certificate","server_name":"<relay-host>","challenge":"tls-alpn-01","remote":"16.192.78.120:47596","distributed":false}
+Aug 12 08:30:04 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523404.0535698,"logger":"tls","msg":"served key authentication certificate","server_name":"<relay-host>","challenge":"tls-alpn-01","remote":"13.212.247.3:54532","distributed":false}
+Aug 12 08:30:04 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523404.6411846,"logger":"http.acme_client","msg":"authorization finalized","identifier":"<relay-host>","authz_status":"valid"}
+Aug 12 08:30:04 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523404.641219,"logger":"http.acme_client","msg":"validations succeeded; finalizing order","order":"https://acme-v02.api.letsencrypt.org/acme/order/3623481801/543989402161"}
+Aug 12 08:30:05 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523405.6726668,"logger":"http.acme_client","msg":"got renewal info","names":["<relay-host>"],"window_start":1791627338,"window_end":1791782788,"selected_time":1791743823,"recheck_after":1786546381.6726565,"explanation_url":""}
+Aug 12 08:30:05 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523405.7619727,"logger":"http.acme_client","msg":"got renewal info","names":["<relay-host>"],"window_start":1791627338,"window_end":1791782788,"selected_time":1791745013,"recheck_after":1786547104.7619648,"explanation_url":""}
+Aug 12 08:30:05 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523405.865972,"logger":"http.acme_client","msg":"got renewal info","names":["<relay-host>"],"window_start":1791627338,"window_end":1791782788,"selected_time":1791679481,"recheck_after":1786547750.8659632,"explanation_url":""}
+Aug 12 08:30:05 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523405.866035,"logger":"http.acme_client","msg":"successfully downloaded available certificate chains","count":3,"first_url":"https://acme-v02.api.letsencrypt.org/acme/cert/05449110d41918edeed00f6e3e9f3754bb2c"}
+Aug 12 08:30:05 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523405.8799198,"logger":"tls.obtain","msg":"certificate obtained successfully","identifier":"<relay-host>","issuer":"acme-v02.api.letsencrypt.org-directory"}
+Aug 12 08:30:05 <private-host-redacted> caddy[2634065]: {"level":"info","ts":1786523405.8800473,"logger":"tls.obtain","msg":"releasing lock","identifier":"<relay-host>"}

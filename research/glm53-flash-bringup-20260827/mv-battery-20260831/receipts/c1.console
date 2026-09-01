@@ -1,0 +1,59 @@
+######## C1 BOOT nodoors ########
+[mv] no pidfile, nothing to stop
+[mv] launched pid=143403 boot=c1-nodoors nonce=eb975638-bae1-4617-a4bd-1a2c19383fe9
+[mv] READY after 41s
+[mv] GATES GREEN boot=c1-nodoors
+[sample] ok=True wall=2.1s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+door=bf16-tcols-wide(T) expected=0 lines=0
+door=bf16-tcols-x1(X) expected=0 lines=0
+door=moe-vrows-pack(M) expected=0 lines=0
+door=topk-shards(K) expected=0 lines=0
+door=glm5-verify-ws(W) expected=0 lines=0
+door=verify-walk-batched expected=1 lines=1
+door=verify-walk-per-row expected=0 lines=0
+door=verify-walk-moe-pairs expected=1 lines=1
+door=glm5-vrows expected=1 lines=1
+[mv] DOORS GREEN boot=c1-nodoors
+[cell greedy k=3] d00-code wall=5.2s spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[cell greedy k=3] d02-code wall=5.8s spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[cell greedy k=3] d06-prose wall=4.7s spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[cell greedy k=3] l3-A4630 wall=8.4s spec={'rounds': 101, 'drafted': 222, 'accepted': 156, 'acceptance_rate': 0.7027027027027027} err=None
+[cell] done rows=4 errors=0
+C1_nodoors_EXIT=0
+######## C1 BOOT doors ########
+[mv] SIGTERM pid=143403 exe=/root/memra-mv/target/release/memra-server
+[mv] stopped
+[mv] launched pid=143732 boot=c1-doors nonce=4ee2a769-0639-472b-8d9d-3c858f49047d
+[mv] READY after 40s
+[mv] GATES GREEN boot=c1-doors
+[sample] ok=True wall=1.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+door=bf16-tcols-wide(T) expected=1 lines=1
+door=bf16-tcols-x1(X) expected=1 lines=1
+door=moe-vrows-pack(M) expected=1 lines=1
+door=topk-shards(K) expected=1 lines=1
+door=glm5-verify-ws(W) expected=1 lines=1
+door=verify-walk-batched expected=1 lines=1
+door=verify-walk-per-row expected=0 lines=0
+door=verify-walk-moe-pairs expected=1 lines=1
+door=glm5-vrows expected=1 lines=1
+[bf16-tcols-wide] engaged: t=7 in_f=4096 out_f=154880 rides the weight-once tcols class (MEMRA_BF16_TCOLS_WIDE=1)
+[bf16-tcols-x1] engaged: one-row-per-block tcols grid (MEMRA_BF16_TCOLS_X1=1)
+[moe-vrows-pack] engaged: 4-warp blocks on the verify-rows MoE pair (MEMRA_MOE_VROWS_PACK=1)
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[mv] DOORS GREEN boot=c1-doors
+[cell greedy k=3] d00-code wall=4.7s spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[cell greedy k=3] d02-code wall=5.2s spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[cell greedy k=3] d06-prose wall=4.2s spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[cell greedy k=3] l3-A4630 wall=7.8s spec={'rounds': 101, 'drafted': 222, 'accepted': 156, 'acceptance_rate': 0.7027027027027027} err=None
+[cell] done rows=4 errors=0
+C1_doors_EXIT=0
+=== C1 IDENTITY doors vs nodoors (STOP bar) ===
+[compare] /root/out-mv/c1/nodoors vs /root/out-mv/c1/doors: shared=4 identical=4 diverged=0
+engagement[nodoors]: glm5spec=12 acc=34
+engagement[doors]: glm5spec=12 acc=34
+[mv] SIGTERM pid=143732 exe=/root/memra-mv/target/release/memra-server
+[mv] stopped
+=== LOOP-LAW SCREEN (all c1 tapes) ===
+[loop-law] screened=8 flagged=0
+C1_DONE rc=0

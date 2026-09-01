@@ -1,0 +1,68 @@
+Fri Aug 28 13:58:44 UTC 2026
+##############################################################################
+Q1a  STREAMING tools, GREEDY (temperature 0) — is the STREAM PARSER wired?
+##############################################################################
+  status=200 finish='tool_calls' tool_calls={"0": {"id": "call_0acaa39fa4e08df2", "name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}} 
+  content=''
+  usage={'prompt_tokens': 183, 'completion_tokens': 12, 'total_tokens': 195, 'prompt_tokens_details': {'cached_tokens': 0}, 'elapsed_s': 4.474163265}
+  => STREAMING TOOL PARSER WIRED
+
+##############################################################################
+Q1b  NON-STREAMING tools, GREEDY — the same body, the other transport
+##############################################################################
+  status=200 finish='stop' tool_calls=[]
+  content="It's currently 18°C in Paris."
+
+##############################################################################
+Q1c  TOOL-CALL RATE: bare default (top_p unset -> 1.0) vs vendor top_p 0.95
+     Same prompt, same tools, 8 reps each. VENDOR generation_config.json says
+     temperature 1.0 / top_p 0.95; the glm5 model pack declares sampling_defaults: None,
+     so an omitting client is served top_p 1.0 (unfiltered 154,880-way tail).
+##############################################################################
+    bare-default rep0: tool_called=False finish='stop' content="It's currently 15°C (59°F) in Paris."
+    bare-default rep1: tool_called=False finish='stop' content="It's currently 18°C in Paris."
+    bare-default rep2: tool_called=False finish='stop' content="It's currently raining in Paris."
+    bare-default rep3: tool_called=False finish='length' content='<tool_call><tool_call><tool_call><tool_call><tool_call><tool_call><too'
+    bare-default rep4: tool_called=False finish='length' content='<tool_call><tool_call><tool_call><tool_call> ```<tool_call> ```<tool_c'
+    bare-default rep5: tool_called=False finish='stop' content="It's currently 18°C in Paris."
+    bare-default rep6: tool_called=False finish='stop' content="It's currently cloudy in Paris."
+    bare-default rep7: tool_called=False finish='stop' content="It's currently sunny in Paris."
+  == bare-default: 0/8 requests called the tool
+    vendor-top_p-0.95 rep0: tool_called=False finish='stop' content="It's currently 18°C in Paris."
+    vendor-top_p-0.95 rep1: tool_called=False finish='stop' content="It's currently partly cloudy in Paris."
+    vendor-top_p-0.95 rep2: tool_called=False finish='stop' content="</think>It's currently about 58°F (cloudy) in Paris."
+    vendor-top_p-0.95 rep3: tool_called=False finish='length' content='<tool_call><tool_call><tool_call><tool_call><tool_call><tool_call><too'
+    vendor-top_p-0.95 rep4: tool_called=False finish='stop' content="It's currently cloudy in Paris."
+    vendor-top_p-0.95 rep5: tool_called=False finish='stop' content="It's currently 21°C in Paris."
+    vendor-top_p-0.95 rep6: tool_called=False finish='length' content='<tool_call><tool_call><tool_call><tool_call><tool_call><tool_call><too'
+    vendor-top_p-0.95 rep7: tool_called=False finish='stop' content='The weather is currently sunny.'
+  == vendor-top_p-0.95: 0/8 requests called the tool
+
+##############################################################################
+Q2  EFFORT LADDER, GREEDY: do the rendered bytes actually change per level?
+    Greedy makes the OUTPUT a byte oracle; prompt_tokens + cached_tokens read the
+    RENDERED PROMPT. Both together decide it, rather than a cache counter alone.
+##############################################################################
+  effort=    None: status=200 prompt_tokens=22 reasoning_chars=859 sha=b1ac34989bc5b0d7
+  effort=     low: status=200 prompt_tokens=22 reasoning_chars=0 sha=cb7e22c9675f3ecb
+  effort=  medium: status=200 prompt_tokens=22 reasoning_chars=0 sha=cb7e22c9675f3ecb
+  effort=    high: status=200 prompt_tokens=22 reasoning_chars=37 sha=89a77f8fef0f4574
+  effort=     max: status=200 prompt_tokens=22 reasoning_chars=859 sha=b1ac34989bc5b0d7
+  shas: {'omitted': 'b1ac34989bc5b0d7', 'low': 'cb7e22c9675f3ecb', 'medium': 'cb7e22c9675f3ecb', 'high': '89a77f8fef0f4574', 'max': 'b1ac34989bc5b0d7'}
+  prompt_tokens: {'omitted': 22, 'low': 22, 'medium': 22, 'high': 22, 'max': 22}
+  => 3 distinct greedy outputs across 5 effort settings
+  => omitted == low ? False
+  => medium == low ? True  (commit says medium clamps DOWN to Low)
+  => max == high ?   False
+
+##############################################################################
+Q3  ADMISSION BOUNDARY at MEMRA_CTX=8192 (caps advertise context_length 1048576)
+##############################################################################
+  x  1200 (  54000 chars): status=500 prompt_tokens=None err='prefill error: layer 3: DSA k-pool selection failed: indexer tail ring lapped: 5120 rows cannot cover pools from row 0 t'
+  x  2400 ( 108000 chars): status=500 prompt_tokens=None err='prefill error: layer 3: DSA k-pool selection failed: indexer tail ring lapped: 5120 rows cannot cover pools from row 0 t'
+  x  4800 ( 216000 chars): status=503 prompt_tokens=None err='prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")'
+  x  9600 ( 432000 chars): status=500 prompt_tokens=None err='prefill error: DriverError(CUDA_ERROR_INVALID_VALUE, "invalid argument")'
+  x 19200 ( 864000 chars): status=500 prompt_tokens=None err='prefill error: DriverError(CUDA_ERROR_INVALID_VALUE, "invalid argument")'
+
+FOLLOWUPDONE
+Fri Aug 28 14:00:41 UTC 2026

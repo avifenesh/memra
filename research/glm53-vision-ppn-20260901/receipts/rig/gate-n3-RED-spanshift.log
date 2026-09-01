@@ -1,0 +1,76 @@
+glm5-hyper-ppn-gate config: stages=3 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage
+[loader-law] WARNING: token_embd.weight loads as 2D Float ne=[128, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_gate.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_a.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_b.weight loads as 2D Float ne=[16, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_kv_a_mqa.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_output.weight loads as 2D Float ne=[32, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.76GB (expert budget 22.76GB) -> RESIDENT
+[loader-law] WARNING: blk.*.ffn_gate_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down_shexp.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+stage fence: [0, 1, 2, 4] over 4 layers
+state placement: Recurrent(KDA) layers on stages [0, 2], LatentKvCache(MLA+kpool) layers on stages [1, 2]
+[phase] reference A: door OFF, step-by-step decode over the whole sequence
+[phase] reference C: door OFF, stateless prefill (forward / forward_last)
+[phase] reference B: door OFF, prime + decode continuation
+prime schedule: 1 call(s) for P=6 (MEMRA_PRIME_CHUNK=None)
+glm5-hyper-ppn-gate RED ARM: MEMRA_GLM5V_GATE_RED=span-shift — every overlay span moved +1; this run MUST fail
+[phase] reference D: door OFF, substituted-token prime + decode (overlay truth)
+[phase] arm 5a: door OFF, serial overlay splice
+[overlay-serial] MISMATCH step 0 (overlay prime last row): 32/32 logits differ, first @[0] ref=-1.1234643 pp=0.4552615
+[overlay-serial] MISMATCH step 1 (decode after overlay prime): 32/32 logits differ, first @[0] ref=0.6136224 pp=0.8679676
+[overlay-serial] MISMATCH step 2 (decode after overlay prime): 32/32 logits differ, first @[0] ref=-2.9085712 pp=-2.3793712
+[overlay-serial] MISMATCH step 3 (decode after overlay prime): 32/32 logits differ, first @[0] ref=-2.5501914 pp=-2.5244782
+[overlay-serial] MISMATCH step 4 (decode after overlay prime): 32/32 logits differ, first @[0] ref=-2.0281677 pp=-1.9219446
+[phase] arm 1: door ON, decode-serial split walk
+[decode-serial] greedy tape MATCH: 14 tokens, fnv1a=0xa7972b1e01ff1f76
+[phase] arm 2: door ON, prime-twin split walk
+[prime-twin] greedy tape MATCH: 8 tokens, fnv1a=0x50ad4c8f01bf7247
+[phase] arm 3: door ON, prefill-twin split walk
+glm5-hyper-ppn-gate NOTE: pipelined arm skipped — `decode_step_h_ppn_deferred` calls refuse_hyper(), so deferred readback is not wired for the mHC residual. This gate covers the serial split walk only; do not cite it for the pipelined arm.
+[phase] arm 5b: door ON, monolithic overlay splice
+[overlay-ppn] MISMATCH step 0 (overlay prime last row): 32/32 logits differ, first @[0] ref=-1.1234643 pp=0.4552615
+[overlay-ppn] MISMATCH step 1 (decode after overlay prime): 32/32 logits differ, first @[0] ref=0.6136224 pp=0.8679676
+[overlay-ppn] MISMATCH step 2 (decode after overlay prime): 32/32 logits differ, first @[0] ref=-2.9085712 pp=-2.3793712
+[overlay-ppn] MISMATCH step 3 (decode after overlay prime): 32/32 logits differ, first @[0] ref=-2.5501914 pp=-2.5244782
+[overlay-ppn] MISMATCH step 4 (decode after overlay prime): 32/32 logits differ, first @[0] ref=-2.0281677 pp=-1.9219446
+[phase] arm 5c: door ON, two-call windowed overlay splice
+[overlay-ppn-windowed] MISMATCH step 0 (windowed overlay prime last row): 32/32 logits differ, first @[0] ref=-1.1234643 pp=0.4552615
+[overlay-ppn-windowed] MISMATCH step 1 (decode after windowed prime): 32/32 logits differ, first @[0] ref=0.6136224 pp=0.8679676
+[overlay-ppn-windowed] MISMATCH step 2 (decode after windowed prime): 32/32 logits differ, first @[0] ref=-2.9085712 pp=-2.3793712
+[overlay-ppn-windowed] MISMATCH step 3 (decode after windowed prime): 32/32 logits differ, first @[0] ref=-2.5501914 pp=-2.5244782
+[overlay-ppn-windowed] MISMATCH step 4 (decode after windowed prime): 32/32 logits differ, first @[0] ref=-2.0281677 pp=-1.9219446
+[phase] arm 5d: door ON, PUBLISHED overlay, monolithic splice
+[vision] overlay published to the intake engine: dev0 -> dev0 rows=3 elems=384 MiB=0.00 mode=Force
+glm5-hyper-ppn-gate overlay publication: 1 performed, rows resident dev0 (intake dev0)
+[overlay-ppn-published] MISMATCH step 0 (published overlay prime last row): 32/32 logits differ, first @[0] ref=-1.1234643 pp=0.4552615
+[overlay-ppn-published] MISMATCH step 1 (decode after published overlay prime): 32/32 logits differ, first @[0] ref=0.6136224 pp=0.8679676
+[overlay-ppn-published] MISMATCH step 2 (decode after published overlay prime): 32/32 logits differ, first @[0] ref=-2.9085712 pp=-2.3793712
+[overlay-ppn-published] MISMATCH step 3 (decode after published overlay prime): 32/32 logits differ, first @[0] ref=-2.5501914 pp=-2.5244782
+[overlay-ppn-published] MISMATCH step 4 (decode after published overlay prime): 32/32 logits differ, first @[0] ref=-2.0281677 pp=-1.9219446
+[phase] arm 5e: door ON, PUBLISHED overlay, two-call windowed splice
+[overlay-ppn-published-windowed] MISMATCH step 0 (published windowed overlay prime last row): 32/32 logits differ, first @[0] ref=-1.1234643 pp=0.4552615
+[overlay-ppn-published-windowed] MISMATCH step 1 (decode after published windowed prime): 32/32 logits differ, first @[0] ref=0.6136224 pp=0.8679676
+[overlay-ppn-published-windowed] MISMATCH step 2 (decode after published windowed prime): 32/32 logits differ, first @[0] ref=-2.9085712 pp=-2.3793712
+[overlay-ppn-published-windowed] MISMATCH step 3 (decode after published windowed prime): 32/32 logits differ, first @[0] ref=-2.5501914 pp=-2.5244782
+[overlay-ppn-published-windowed] MISMATCH step 4 (decode after published windowed prime): 32/32 logits differ, first @[0] ref=-2.0281677 pp=-1.9219446
+glm5-hyper-ppn gate PASS [decode-serial]: 14 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 4]; stages=3 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prime-twin]: 10 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 4]; stages=3 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prefill-twin]: 2 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 4]; stages=3 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate FAIL [overlay-serial]: 9/9 comparisons mismatched (first @ step 0 idx 0: ref=-1.1234643 pp=0.4552615); this arm carries no greedy tape (stateless walk) (fence=[0, 1, 2, 4]; stages=3 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate FAIL [overlay-ppn]: 9/9 comparisons mismatched (first @ step 0 idx 0: ref=-1.1234643 pp=0.4552615); this arm carries no greedy tape (stateless walk) (fence=[0, 1, 2, 4]; stages=3 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate FAIL [overlay-ppn-windowed]: 9/9 comparisons mismatched (first @ step 0 idx 0: ref=-1.1234643 pp=0.4552615); this arm carries no greedy tape (stateless walk) (fence=[0, 1, 2, 4]; stages=3 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate FAIL [overlay-ppn-published]: 9/9 comparisons mismatched (first @ step 0 idx 0: ref=-1.1234643 pp=0.4552615); this arm carries no greedy tape (stateless walk) (fence=[0, 1, 2, 4]; stages=3 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate FAIL [overlay-ppn-published-windowed]: 9/9 comparisons mismatched (first @ step 0 idx 0: ref=-1.1234643 pp=0.4552615); this arm carries no greedy tape (stateless walk) (fence=[0, 1, 2, 4]; stages=3 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)

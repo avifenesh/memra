@@ -1,0 +1,312 @@
+[server] starting; models config = [("stress", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "stress" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] stress: regime draft attached (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "stress": 33 layers, eos=248046
+[worker] stress: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] stress: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "stress": plain 16704 B/token, spec 18560 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["stress"]
+[server] listening on http://127.0.0.1:8179
+[meter] admit id=chatcmpl-35910e6279418e1a028b2234e7af63d2 tenant=default lane=interactive model="stress"
+[admission] request cost: model="stress" ctx=8192 path=spec = 18560 B/token x ctx + 0MB fixed = 152MB
+[spec-k] model="stress" tenant="" K=3 source=cold-short prompt=54 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="stress" 103MB (observed 255MB at ctx 8192 path=spec)
+[meter] admit id=chatcmpl-3ed5257093839df1607526b5ffa73dba tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-a4775f235b5c5237c769616d4ab556b2 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-1a4e74d6ce9f207a672f3c66444c7543 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-553273e12ca93400e5a57ae2c1dc1d50 tenant=default lane=interactive model="stress"
+[admission] request cost: model="stress" ctx=8192 path=spec = 18560 B/token x ctx + 103MB fixed = 255MB
+[spec-k] model="stress" tenant="" K=3 source=cold-short prompt=56 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[admission] request cost: model="stress" ctx=8192 path=plain = 16704 B/token x ctx + 103MB fixed = 240MB
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=52 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-f1427573febe9a725f9b3a2ba405f016 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-3c33c6ab3bc3b02410238e5a66082211 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-c753ee4ccdc2738254dd446f49b5d6ac tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-461949a817ed6be2dcd00fef8307b677 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-32c0422edf248af46ee5b6765c32c28d tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-b024dfbce1513a2edd54dff6bea9f50d tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-4fcfa9503872cbb267820f6f86c3b5b9 tenant=default lane=interactive model="stress"
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=43 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-e64ffaee765b61e0c05aea0022af0d4e tenant=default lane=interactive model="stress"
+[spec-acc] ctx=56 burst=3/3 cum=3/3=1.000
+[meter] admit id=chatcmpl-cd4e3ca2b043425e28735152bbdf0957 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-4d67e22531ca9833dd2fe78eea59e32b tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-c6cde9b1493086099111fcbf99c3938e tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-bbdd153d6cf5e0858025135adf567659 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-bf7a1bffbdd0f1aa4ff25c19f835ad64 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-34ffeba39f4582cf8a9d658dedb99f7b tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-3779c2bff459b1216c8dea6e15e76735 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-1b88595ffdf3e3c94e02978d30c2d670 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-36563e1a36696ceb472a651793d5e073 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-769d117bcca044047d39a87ebf17895b tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-a71049c3b643508df558615202d4596c tenant=default lane=interactive model="stress"
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=13 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=15 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=17 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=18 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=19 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=20 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=21 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=22 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=23 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=24 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-3a0e27ed66be3e2cb3067f9676a0ffa9 tenant=default lane=interactive model="stress"
+[spec-acc] ctx=61 burst=3/3 cum=6/6=1.000
+[meter] admit id=chatcmpl-d3063211d66d1ad2ea50bdd92b0bd8ac tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-7d62ea2908c6dfbe30a810cdbe459e60 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-acbeb92ff864f04ae5121495fef92cd8 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-77ea72e61b2af88b33e0e46e2f119e27 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-30fe92d537bfae1ce0297f0339bf9ce3 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-d9b6b7cc3cc954395e7f32b1a9cab962 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-642a62aa4d71ce2a194775df25e814fb tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-bfcb78e7ef390330cba7a0499302e95b tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-ee699d886c77ac8338eaf4ceac39c199 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-b8fa43c1224caff8abb8acf4dd1a15cf tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-7a4e84708b453f3e54680cdb81271b41 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-3b38762573fbd2ed4d916b9904190a37 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-43de40eb277947d6636ab8c0a896eb55 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-369e5e68f2c8aa2678b554f4d8318c05 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-fa5bd6e3c7da9794723d89a7327ee148 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-4eed187bcbee65115cca4df87b61409c tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-e4096a32506f2a14cda60210da40e8c0 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-c959aa800f9db7458559ac6a9d878e23 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-556a60dcec6c8ecdab0b722660f140d3 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-7c8c56f3aa44009b71135ad63d9bcc4d tenant=default lane=interactive model="stress"
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=25 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=26 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=27 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=28 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=29 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=30 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=31 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=32 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=33 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=34 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=35 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=36 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=37 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=38 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=39 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=40 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=41 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=42 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=43 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=44 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=45 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-165eac1941295d2ab3b70ce2e2a37a4b tenant=default lane=interactive model="stress"
+[spec-acc] ctx=66 burst=3/3 cum=9/9=1.000
+[meter] admit id=chatcmpl-e8843af6620f97761e6a2976687202e5 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-715bdfc6b0a10d74c6419bea517cf1ce tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-9fa1e1892aa384e557578e12eb6f49be tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-71409d80024ee1da4c5bd816ed3850f3 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-6420b8d8af59ec682f96b355d7e403c4 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-c33e6ccbcb4e7aab7c3332f965bad0c7 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-dd81b4db73056660d24bb8efa4962ade tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-e320c6babac8fec69e781ed90b03ef5e tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-80f326e06c9049ab0f6d11961d807965 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-d04f858aa18a55eaa61ae14c7eec78d5 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-fc57af4d7ce7fbf45c3217c48e907246 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-372dfe55eec2e7b835fedf42b599fc40 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-8518d35c7d0bf1a504c834a35c7aaa89 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-b02a5e8d2c8c1ef97543f26f956660d0 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-1c2ab6539f0cf84ae69a20e832523a79 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-8f6bbcbe814f19aad7a93fecd6a7813f tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-5f7c9b81fd32e04a8d3068df3a95eab2 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-3263d0928537497bae1fb62db055e133 tenant=default lane=interactive model="stress"
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=46 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=47 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=48 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=49 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=50 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=51 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=52 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=53 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=54 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=55 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=56 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=57 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=58 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=59 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=60 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=61 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=62 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 62 active, effective free 1732MB (driver + 8MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 22951MB used 22943MB; parked spec sessions 0; plain reuse 0; queue 1]
+[spec-acc] ctx=71 burst=24/30 cum=33/39=0.846
+[spec-acc] ctx=60 burst=24/24 cum=24/24=1.000
+[admit-oom] VRAM defer: 62 active, effective free 834MB (driver + 18MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23857MB used 23839MB; parked spec sessions 0; plain reuse 0; queue 1]
+[spec-acc] ctx=106 burst=21/30 cum=54/69=0.783
+[spec-acc] ctx=93 burst=21/30 cum=45/54=0.833
+[admit-oom] VRAM defer: 62 active, effective free 831MB (driver + 82MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23924MB used 23842MB; parked spec sessions 0; plain reuse 0; queue 1]
+[spec-acc] ctx=138 burst=15/48 cum=69/117=0.590
+[spec-acc] ctx=125 burst=22/33 cum=67/87=0.770
+[admit-oom] VRAM defer: 62 active, effective free 824MB (driver + 75MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23924MB used 23849MB; parked spec sessions 0; plain reuse 0; queue 1]
+[spec-acc] ctx=170 burst=23/33 cum=92/150=0.613
+[spec-acc] ctx=159 burst=20/33 cum=87/120=0.725
+[admit-oom] VRAM defer: 62 active, effective free 812MB (driver + 63MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23924MB used 23861MB; parked spec sessions 0; plain reuse 0; queue 1]
+[spec-acc] ctx=205 burst=19/45 cum=111/195=0.569
+[spec-acc] ctx=191 burst=22/36 cum=109/156=0.699
+[admit-oom] VRAM defer: 62 active, effective free 791MB (driver + 76MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23958MB used 23882MB; parked spec sessions 0; plain reuse 0; queue 1]
+[spec-acc] ctx=240 burst=20/33 cum=131/228=0.575
+[spec-acc] ctx=226 burst=16/36 cum=125/192=0.651
+[admit-oom] reclaim-on-defer: evicted 0 plain + 1 spec parked sessions (global LRU); effective free 770MB -> 1080MB
+[admit-oom] VRAM defer: 61 active, effective free 1080MB (driver + 398MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23593MB; parked spec sessions 0; plain reuse 0; queue 1]
+[spec-acc] ctx=272 burst=3/3 cum=134/231=0.580
+[admit-oom] reclaim-on-defer: evicted 0 plain + 1 spec parked sessions (global LRU); effective free 1080MB -> 1392MB
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1392MB (driver + 710MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23281MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 60 active, effective free 1383MB (driver + 702MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 23290MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] reclaim-on-defer: evicted 1 plain + 0 spec parked sessions (global LRU); effective free 1383MB -> 1677MB
+[admit-oom] VRAM defer: 59 active, effective free 1677MB (driver + 995MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 22996MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 59 active, effective free 1677MB (driver + 995MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 22996MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-oom] reclaim-on-defer: evicted 1 plain + 0 spec parked sessions (global LRU); effective free 1677MB -> 1970MB
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=59 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 59 active, effective free 1731MB (driver + 1049MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 22942MB; parked spec sessions 0; plain reuse 0; queue 0]
+[admit-oom] VRAM defer: 59 active, effective free 1678MB (driver + 996MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 22995MB; parked spec sessions 0; plain reuse 0; queue 0]
+[admit-oom] VRAM defer: 59 active, effective free 1678MB (driver + 996MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 22995MB; parked spec sessions 0; plain reuse 0; queue 0]
+[admit-oom] VRAM defer: 59 active, effective free 1678MB (driver + 996MB pool-cached) < cost 240MB + reserve 1611MB — queueing (FIFO) [pool res 23991MB used 22995MB; parked spec sessions 0; plain reuse 0; queue 0]
+[admit-oom] reclaim-on-defer: evicted 1 plain + 0 spec parked sessions (global LRU); effective free 1678MB -> 1971MB
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=59 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

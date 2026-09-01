@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is asking me to resume and complete an \"independent audit\" that was apparently in progress. They reference \"prior shell calls\" that were cancelled, and they mention the original prompt requested a structured audit report with PASS/FAIL, exact field map, ranked defects, deliberate blanks, and concrete corrections.\n\nHowever, I have no prior context in this conversation. This is the first message in the conversation. There's no original prompt visible to me, no files mentioned by path, no working directory information, no prior audit work to resume.\n\nThe user says \"Your prior shell calls were cancelled only because permission mode was wrong\" \u2014 but",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is asking me to resume and complete an \"independent audit\" that was apparently in progress. They reference \"prior shell calls\" that were cancelled, and they mention the original prompt requested a structured audit report with PASS/FAIL, exact field map, ranked defects, deliberate blanks, and concrete corrections.\n\nHowever, I have no prior context in this conversation. This is the first message in the conversation. There's no original prompt visible to me, no files mentioned by path, no working directory information, no prior audit work to resume.\n\nThe user says \"Your prior shell calls were cancelled only because permission mode was wrong\" \u2014 but"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 140,
+  "completion_tokens": 128,
+  "total_tokens": 268,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 5.718264287,
+  "spec": {
+   "rounds": 53,
+   "drafted": 159,
+   "accepted": 75,
+   "acceptance_rate": 0.4716981132075472
+  }
+ },
+ "id": "chatcmpl-b03f2a40b91d3f5095e6d8c3518c5f55",
+ "created": 1788082178,
+ "system_fingerprint": "REDACTED"
+}

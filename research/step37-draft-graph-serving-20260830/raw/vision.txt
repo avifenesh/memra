@@ -1,0 +1,25 @@
+date=2026-08-30T08:48:39+00:00 server_md5=4f1ed7c4dd8a3aaaf2571dffb5c25e51
+arm-identity: pid=125729 VERIFIED
+GATE img-single-640: PASS http=200 answer='red triangle on purple' truth=red triangle on purple
+GATE usage-171-per-image: PASS delta=171 (img=214, plain=43)
+GATE img-tiled-1600x900: PASS http=200 answer='black triangle on red' truth=black triangle on red
+GATE usage-670-tiled: PASS delta=670
+GATE img-multi: FAIL http=200 answer='1. Green circle on light gray background.\n2. Orange square on purple background.' truth1=green circle on white truth2=orange square on purple
+GATE usage-multi-342: PASS prompt_tokens=388 (>= 2x171 floor)
+GATE img-mid-conversation: PASS http=200 answer='green triangle on yellow' truth=green triangle on yellow
+GATE faked-pads-400: PASS http=400 body={"error": {"message": "prompt carries 2 step image pad run(s) but the request's units need 1 \u2014 literal pad tokens in message text are not allowed", "type":
+GATE http-url-400: PASS http=400
+GATE video-400: PASS http=400
+GATE text-on-vision-binary: PASS http=200 answer='101, 103, 107'
+E2E FAIL (1 failing: ['img-multi'])
+--- [spec-k] attribution (whole boot) ---
+  [spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+  [spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=214 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+  [spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=43 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+  [spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=713 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+  [spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=388 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+  [spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=234 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+  [spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=26 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+--- counters ---
+warn=1 chain_receipts=1 illegal=0 s87=0 panic=0
+VISION-CELL-DONE 2026-08-30T08:53:13+00:00

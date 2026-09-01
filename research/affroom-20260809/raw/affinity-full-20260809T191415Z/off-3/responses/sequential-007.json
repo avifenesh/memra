@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-a587a67ed16247a976b6d62b95492e22",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 2034,
+    "completion_tokens": 256,
+    "total_tokens": 2290,
+    "prompt_tokens_details": {
+      "cached_tokens": 746
+    },
+    "elapsed_s": 2.144879786
+  },
+  "text": "The user wants me to add a pool-residency section with driver-free, reserved, used, and cached byte gauges to the dashboard. I need to continue building on the existing dashboard structure while adding this new section.\n\nLet me create a complete HTML document with all the previous features plus this new pool-residency section. I'll need to:\n1. Keep all previous functionality (sticky inspector, cache-tier legend, admission-pressure strip, incident timeline, keyboard navigation, comparison drawer)\n2. Add the pool-residency section with 4 gauges\n3. Ensure it's responsive and accessible\n4. Keep everything in one self-contained HTML file\n\nLet me build this incrementally, making sure to preserve all previous work.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-terti"
+}

@@ -1,0 +1,80 @@
+{
+  "schema": "memra.eagerpar.perf-summary.v1",
+  "stamp": "ab-n5-20260810",
+  "host": "<private-host-redacted>",
+  "rig": "box1 cloud pair, 2x RTX PRO 6000 Blackwell Server Edition",
+  "thermal_regime": {
+    "description": "Fresh server process per arm; five paired rounds with alternating arm order and no artificial cooldown",
+    "snapshot_temperature_c_min": 26,
+    "snapshot_temperature_c_max": 36
+  },
+  "serve_shape": {
+    "pp_stages": 2,
+    "pp_devices": "0,1",
+    "ctx": 262144,
+    "moe_grouped": true,
+    "prefill_tick": 2048,
+    "decode_chunk_cap": 8,
+    "spec_enabled": false
+  },
+  "provenance": {
+    "candidate_source": "711fbcaaef54491d22488a84d40b7fc35e5a58dd",
+    "candidate_binary_sha256": "43ad098d46bb26d644ba0b742d92f3f014d9287ac72e8a0edb8ebf9dac3ba608",
+    "current_source": "2ef6d75cbf9ff7a09f685bcc1fc54b84bb8f81fb",
+    "current_binary_sha256": "6a7c2046eb3197773def91baf012abd629e0b0ced239ec2d38016c93be5ca7e5",
+    "current_binary_matches_b1fix_receipt": true
+  },
+  "order": [
+    ["current-r01", "candidate-r01"],
+    ["candidate-r02", "current-r02"],
+    ["current-r03", "candidate-r03"],
+    ["candidate-r04", "current-r04"],
+    ["current-r05", "candidate-r05"]
+  ],
+  "metric_definitions": {
+    "c1_sustained_tok_s": "Per request: (completion_tokens - 1) / (latency_s - ttft_s); N=5 median",
+    "c2_c4_aggregate_tok_s": "Point aggregate completion_tokens_total / wall_s; N=5 median",
+    "short_ttft_ms": "Eight-token request point ttft_p50_s; N=5 median"
+  },
+  "current": {
+    "c1_sustained_tok_s": [81.593329, 81.711839, 81.352957, 81.399039, 81.471666],
+    "c1_median_tok_s": 81.471666,
+    "c2_aggregate_tok_s": [114.134618, 114.165796, 113.654341, 113.693709, 113.545561],
+    "c2_median_tok_s": 113.693709,
+    "c4_aggregate_tok_s": [139.789116, 139.651552, 138.590101, 139.478667, 139.218661],
+    "c4_median_tok_s": 139.478667,
+    "short_ttft_ms": [70.069253, 69.865263, 70.350674, 70.297399, 70.298198],
+    "short_ttft_median_ms": 70.297399
+  },
+  "candidate": {
+    "c1_sustained_tok_s": [85.423087, 85.447330, 84.527520, 84.835291, 85.041315],
+    "c1_median_tok_s": 85.041315,
+    "c2_aggregate_tok_s": [120.102748, 120.757468, 118.697013, 119.870088, 119.942808],
+    "c2_median_tok_s": 119.942808,
+    "c4_aggregate_tok_s": [145.541842, 145.277186, 144.359354, 144.664780, 144.652116],
+    "c4_median_tok_s": 144.664780,
+    "short_ttft_ms": [67.505261, 67.843624, 68.560728, 67.811777, 67.887718],
+    "short_ttft_median_ms": 67.843624
+  },
+  "deltas_pct": {
+    "c1_sustained": 4.381461,
+    "c2_aggregate": 5.496433,
+    "c4_aggregate": 3.718212,
+    "short_ttft": -3.490563
+  },
+  "paired_c1_deltas_pct": [4.693715, 4.571543, 3.902209, 4.221490, 4.381461],
+  "prior_b1fix": {
+    "eager_median_tok_s": 85.423,
+    "fixed_median_tok_s": 81.399,
+    "candidate_recovery_pct_of_gap": 90.514783,
+    "candidate_vs_prior_eager_pct": -0.446818
+  },
+  "receipt": {
+    "points": 40,
+    "request_rows": 80,
+    "request_errors": 0,
+    "point_errors": 0,
+    "short_completions": 0,
+    "driver_receipt_check": "PASS"
+  }
+}

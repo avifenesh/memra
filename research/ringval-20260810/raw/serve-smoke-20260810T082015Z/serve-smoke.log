@@ -1,0 +1,49 @@
+== serve-smoke: plain serving ==
+  ok: /models lists the model
+  ok: chat non-stream (text + usage + finish_reason)
+  ok: chat stream (SSE chunks + [DONE])
+  ok: /v1/completions
+  ok: greedy determinism (2 runs identical)
+  ok: 3 concurrent chats
+  ok: long generation (>=100 tok)
+== serve-smoke: cache-metering exactness ==
+  FAIL: A fanout cached_tokens == [0] + [256]x4 — got [0, 0, 0, 0, 0]
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  FAIL: cached_tokens_in == 1024 — got 0
+  FAIL: computed_tokens_in == prompt - cached — got 1632
+  FAIL: cache_hit_token_ratio matches arithmetic — got 0.0
+  FAIL: prefix_cache_hits == N-1 — got 0
+  FAIL: prefix_cache_misses == 2 (one A leader + cross-salt B) — got 0
+  FAIL: prefix_cache_inserts == 2 (shared A prefix + B seed) — got 0
+  FAIL: prefix_cache_hit_tokens == 1024 — got 0
+  FAIL: lcp_histogram: 6 probes total — got 0
+  FAIL: lcp_histogram: 2 cold probes in bucket [0] — got [0]
+  FAIL: lcp_histogram: 4 probes in K's bucket (edge 256) — got 0
+  FAIL: tick-seg [64,512) window carries the shared-prefix probes — got 0
+  FAIL: tenants[meter-A] split exact — got {'prompt_tokens_in': 1360, 'cached_tokens_in': 0, 'cache_hit_token_ratio': 0.0}
+  ok: tenants[meter-B] split exact (0 cached)
+  FAIL: economics revenue_multiplier == 2.6842 (factor 1.0) — got 1.0
+cache-meter-gate: 14 failed
+  FAIL: cache-metering gate
+== serve-smoke: spec serving (draft attached) ==
+  ok: spec == plain greedy text (serving exactness)
+== serve-smoke: sampled truncation matrix (spec server) ==
+  (immune baseline: untruncated t0.8 seed=7, bangs=0)
+  ok: trunc top_k=40 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc top_p=0.95 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc min_p=0.05 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc llama-default k40+p0.95+m0.05 (reproducible, bangs=0 <= baseline 0)
+== serve-smoke: session-affinity resume exactness ==
+  ok: affinity resume is deterministic across servers (4 rewritten turns)
+  ok: replay arm resumed too (3 rewind(s))
+  ok: affinity fired (3 rewind(s) on a rewritten history)
+  ok: no failed rewinds
+== serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+serve-smoke: 1 failed

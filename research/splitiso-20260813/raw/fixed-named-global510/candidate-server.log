@@ -1,0 +1,37 @@
+[server] starting; models config = [("g12", "/opt/scratch/nvme/cx-lcprestore/models/gemma-4-12b-it-qat-q4_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "g12" <- /opt/scratch/nvme/cx-lcprestore/models/gemma-4-12b-it-qat-q4_0.gguf
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[worker]   loaded "g12": 48 layers, eos=1
+[worker] g12: template caps tools=false think=false think_switch=true chat_ok=true effort_levels=false gemma_think=true ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[worker] g12: decode wave cap 8; scheduler tick cap 8
+[worker] g12: EAGER-ONLY serving (gemma4 class — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[prefix-cache] on: budget 8590MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens, immediate partial restore=on (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[server] worker ready; serving models: ["g12"]
+[admission] "g12": plain 172032 B/token, spec 172032 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18832
+[meter] admit id=cmpl-0366b895d2dbecdc6c2532c408c13782 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[admission] fixed residual high-water: model="g12" 0MB (observed 848MB at ctx 4928 path=plain)
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=19b076e3e0ffe6e3333f0a955de46bc6fee79725913d4b241fe292eb043f4496 boundary_logits_sha256=5f1049fbb5371b1d48bfd65e481d3d852c16c13e5639ca379faf3c6a179cc459
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 836.1MB / 8590MB, model g12, ns "cx-splitiso-map-510-r1")
+[meter] admit id=cmpl-1eecc2a77fa3509aacd8c533c5d01717 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=source why=immediate-partial split=510 entry_pos=4860 state_sha256=30d111e8e4c3ffe06ec0d7826cda40e75770afcace6faaa510e4affae82b9e81 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=510 cache_pos=510 state_sha256=30d111e8e4c3ffe06ec0d7826cda40e75770afcace6faaa510e4affae82b9e81 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 510 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-510-r1") — priming suffix 4350 only
+[meter] admit id=cmpl-3947eaa63b45be712b6e83fbc31b1289 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=35527493188b1a1ebdf914f423fa728583bc6b108dc88f4cd040d3879b2b9b9b boundary_logits_sha256=ed5dfff4a0b7ce8fc2940ebc2a17498435327be68cd040e483b72e47eebc8571
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 1672.2MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-510-r1")
+[meter] admit id=cmpl-719188efd30315549c4b9e0ecb2cc703 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=634 path=plain = 172032 B/token x ctx + 0MB fixed = 109MB
+[prefix-cache-split-state] role=snapshot why=seed split=510 entry_pos=510 state_sha256=3ad72b274d56af0652261d7f315979ae2176480134bf6ffb1258190396a1c28b boundary_logits_sha256=5058bd3f0013f65077c085a6865bdcfdfb0b11ad77c9f86b7d90243b14269f92
+[prefix-cache] insert (seed): 510 tokens, 87.7MB (resident 1759.9MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-510-r1")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

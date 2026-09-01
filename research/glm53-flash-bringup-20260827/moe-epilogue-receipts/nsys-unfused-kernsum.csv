@@ -1,0 +1,35 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+25.1,988954,801,1234.6,1216.0,1184,1568,30.1,qmatvec_expert_q8
+17.0,669179,44,15208.6,14976.0,14752,24960,1510.9,dsv4_hc_sinkhorn_m_kernel
+9.8,385536,356,1083.0,1088.0,1056,1888,46.1,quantize_q8_1
+6.8,268989,289,930.8,928.0,896,992,16.3,swiglu_preclamped_mul_scaled_f32
+6.0,237407,267,889.2,896.0,864,928,15.0,axpy_f32
+5.9,234110,176,1330.2,1312.0,1248,2400,136.1,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)5, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+2.8,109792,91,1206.5,1184.0,1088,2240,158.4,"void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)"
+2.4,95360,44,2167.3,2112.0,2048,3744,254.4,dsv4_rowsq_scale_kernel
+2.4,94176,22,4280.7,1184.0,1120,29376,8177.7,memra_kda_scan_s128
+2.1,81024,27,3000.9,2944.0,2656,4896,395.8,void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_tn_align1>(T1::Params)
+2.0,79008,55,1436.5,1440.0,1376,1856,61.5,rms_norm_f32_v2
+1.5,60735,45,1349.7,1344.0,1280,1504,46.9,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+1.5,59744,28,2133.7,2080.0,2048,3616,291.1,"void gemv2T_kernel_val<int, int, float, float, float, float, (int)128, (int)16, (int)2, (int)2, (bool)0, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13, T6, T6)"
+1.3,49855,36,1384.9,1376.0,1344,1440,22.5,memra_kda_conv_silu_decode_f32
+1.3,49664,44,1128.7,1120.0,1088,1280,51.4,dsv4_hc_post_kernel
+1.2,48096,44,1093.1,1088.0,1056,1120,16.8,l2_norm_f32
+1.2,46112,24,1921.3,1632.0,1504,4896,766.6,"void gemmSN_TN_kernel<float, (int)128, (int)16, (int)2, (int)4, (int)4, (int)4, (bool)0, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(cublasGemmSmallNParams<T9, T10, T11, T1>)"
+1.2,45728,24,1905.3,1696.0,1504,3040,510.0,"void gemmSN_TN_kernel<float, (int)128, (int)16, (int)2, (int)4, (int)8, (int)9, (bool)0, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(cublasGemmSmallNParams<T9, T10, T11, T1>)"
+1.1,41631,23,1810.0,1632.0,1472,2752,437.3,"void gemmSN_TN_kernel<float, (int)128, (int)16, (int)2, (int)4, (int)6, (int)7, (bool)0, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(cublasGemmSmallNParams<T9, T10, T11, T1>)"
+1.0,40729,44,925.7,928.0,896,1216,48.0,dsv4_hc_collapse_kernel
+1.0,38590,30,1286.3,1280.0,1152,1376,60.9,memra_kda_conv_ring_roll_f32
+0.8,32670,11,2970.0,3007.0,2816,3040,71.4,moe_router_sigmoid_topk_f32
+0.8,30720,30,1024.0,1024.0,960,1152,49.0,memra_kda_conv_silu_f32
+0.7,27903,22,1268.3,1280.0,1248,1312,21.0,memra_kda_gated_rmsnorm_f32
+0.5,21248,22,965.8,960.0,928,992,18.8,memra_kda_gate_f32
+0.5,21088,22,958.5,960.0,928,992,18.4,sigmoid_f32
+0.4,16608,14,1186.3,1184.0,1152,1216,19.7,"void dot_kernel<float, (int)128, (int)0, cublasDotParams<cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>>(T4)"
+0.4,16128,14,1152.0,1152.0,1120,1184,12.6,"void reduce_1Block_kernel<float, (int)128, (int)7, cublasGemvTensorStridedBatched<float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(const T1 *, T1, T4, int, const T1 *, T1, T5, T6, cublasPointerMode_t, cublasLtEpilogue_t, cublasGemvTensorStridedBatched<const biasType<T6::value_type, T1>::type>)"
+0.3,11168,11,1015.3,1024.0,960,1056,25.2,dsv4_hc_mean_kernel
+0.3,10592,11,962.9,928.0,896,1056,56.3,add_scaled_rows_f32
+0.3,10336,11,939.6,896.0,864,1440,167.1,dsv4_hc_expand_kernel
+0.2,9344,9,1038.2,1024.0,1024,1056,16.9,router_gemv_f32_w8
+0.2,6048,2,3024.0,3024.0,3008,3040,22.6,router_gemv_f32_w8_batch
+0.1,5312,5,1062.4,1056.0,1024,1088,26.8,embed_gather_u32_t

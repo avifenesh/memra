@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=nvfp4	binary_sha256=b872401cd15f9b846c69f08ae7dd8095247e40746005f772f19bc32f38f00f32	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ab-moe: fresh state + probe prefill per arm, 4 warmup steps excluded per arm
+rep	arm	steps	mean_ms	median_ms	tok_per_s
+0	per_expert	40	78.00	77.99	12.82
+0	sel_grouped	40	40.84	40.84	24.49
+1	per_expert	40	78.12	78.12	12.80
+1	sel_grouped	40	40.79	40.78	24.52
+2	per_expert	40	78.16	78.16	12.79
+2	sel_grouped	40	40.89	40.88	24.46
+3	per_expert	40	78.15	78.13	12.80
+3	sel_grouped	40	41.05	41.03	24.36
+4	per_expert	40	78.09	77.98	12.81
+4	sel_grouped	40	41.01	41.01	24.38
+# arm per_expert	mean_of_means_ms=78.10	min=78.00	max=78.16	tok_per_s=12.80
+# arm sel_grouped	mean_of_means_ms=40.91	min=40.79	max=41.05	tok_per_s=24.44
+# rep0_arm_chain_first_divergence	-1
+# rep0_per_expert	198,760,1156,682,3106,728,264,1575,20654,93530,2319,471,328,760,3841,13477,37550,33075,888,279,15217,5388,1149,1061,11316,5435,1396,6321,314,279,6163,26887,506,3140,2957,13,1049,579,16138,1429
+# rep0_sel_grouped	198,760,1156,682,3106,728,264,1575,20654,93530,2319,471,328,760,3841,13477,37550,33075,888,279,15217,5388,1149,1061,11316,5435,1396,6321,314,279,6163,26887,506,3140,2957,13,1049,579,16138,1429

@@ -1,0 +1,167 @@
+[server] starting; models config = [("q35", "/opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q35" <- /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.88GB (expert budget 96.29GB) -> RESIDENT
+[worker]   loaded "q35": 41 layers, eos=248046
+[worker] q35: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q35: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 4295MB (4294967296 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[server] worker ready; serving models: ["q35"]
+[admission] "q35": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18468
+[meter] admit id=chatcmpl-ad829e1d710138a81e29cc9eb98de28c tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=93 path=plain = 10208 B/token x ctx + 0MB fixed = 1MB
+[spec-k] model="q35" tenant="mixed/mixed-q35-c40-r4-eager-warmup-q0-1786605485258282156" K=0 source=eligibility-fallback prompt=13 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q35" 129MB (observed 129MB at ctx 37 path=plain)
+[meter] admit id=cmpl-29aec1adb8d344fc190d211a91e17f88 tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4984 path=plain = 10208 B/token x ctx + 129MB fixed = 180MB
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 111.0MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-hot-0")
+[meter] admit id=cmpl-d65513ba3089c233cf898a5f2d444342 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 221.9MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-hot-1")
+[meter] admit id=cmpl-93231c44885ece79d7d4f3ed61549273 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 332.9MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-hot-2")
+[meter] admit id=cmpl-c49f7972a10c694f8ec323d43faee0ef tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 443.9MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-hot-3")
+[meter] admit id=cmpl-d743b3095224bacbe177bf87357b5f0c tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 554.8MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-hot-4")
+[meter] admit id=cmpl-3335a2e6d95f36c15f16a482fde3b87f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 665.8MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-hot-5")
+[meter] admit id=cmpl-9ab024e26a5a4f6867191e0496b8df00 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 776.8MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-hot-6")
+[meter] admit id=cmpl-4115a9b7fa71587b3d7466a64655701a tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 887.7MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-hot-7")
+[meter] admit id=cmpl-fb4329755434bea072158e97d590128f tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-7e2bb8b3c08367164311aa5ed5bbd44e tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e7753332572133e09f223289478df78b tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-9900e50b8df25d660cfd531d8ffcae9b tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-128628141c08c1f3113bd1419a4f37fa tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e98945af8884b9883ae552938a0d6172 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-ceb11ddd72443ec8b5a337d4042517bf tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-ec04843f7a98b731698b262ee93611a5 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-99d109f958dc3988447c7b62fa6da72b tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e02a1c2e41c06ee4b442971206894abe tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-dc6cbf68781012d25417f215316f343b tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a97e88d6d3d9439bbda68097b6f568f8 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-bfbbc4f84572449df0fdff0a11e91a98 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-fa84eba84d2fe314903b20258e95f41d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-cad39d12d477564fffee5739f22fe087 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-409ec1628de9f1d4796dcbffe147cb6d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-9d8935d0dcefc539976a96ab674c262b tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-7a99a7d83feff721a4c4a5fb272aac32 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-988ab7fbacbc35614ff0c62bc667ebbc tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-525259593c84719d34dce704f7949347 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-963562a092eaa50ff8b608f9cb5feba0 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-53887568e0ae569d25fe6a4577a69f49 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-8e0f752dcade08c96e699a402284b54d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-b80b5f399d8427086a323e6292ddade5 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-b8f19c43af6e38fafc51c54e25bae50e tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-eed61b1c3d9c827a7f5ad9f4f385ef05 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-c9a72821143962478fd4898fb25aea08 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-d70fdd868f0630b2ccfd12e5a5494026 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-1c53c23687fdb47abc2e57f74cb7c3ce tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e51433a69cdf05e3e2a883dfffbb7751 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-9a0bbd09731a5da30660e27aecf52c2d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-7e9ce7d6e889c8078734259aee5bef67 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-c7a41735687e356704be11552a0e0f94 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-06e5785f091b7365908676c211203a21 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a12a56c4a62c6d07b049b930025370ab tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e66b7dc7cc328ebeb2e445f71986542d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e3c454867f465ccbf6a0a20c59c13167 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-067f74ba4426173447172f35975d0886 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-d62ba5ab1fe9b56fe536841cd1259ef3 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a51a16f33250d2473e815fe1012d691c tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-mixed90-r4-c40-i36" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=17 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=18 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=19 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=20 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=21 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=22 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=23 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=24 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=25 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-mixed90-r4-c40-i28" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=26 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=27 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=28 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=29 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=30 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-mixed90-r4-c40-i21" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=31 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=32 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-mixed90-r4-c40-i4" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=33 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=34 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=35 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=36 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=37 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=38 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=39 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="gscost-mixed-q35-c40-r4-eager-q35-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=40 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 998.7MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-mixed90-r4-c40-i36")
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 1109.6MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-mixed90-r4-c40-i28")
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 1220.6MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-mixed90-r4-c40-i21")
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 1331.6MB / 4295MB, model q35, ns "gscost-mixed-q35-c40-r4-eager-q35-mixed90-r4-c40-i4")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

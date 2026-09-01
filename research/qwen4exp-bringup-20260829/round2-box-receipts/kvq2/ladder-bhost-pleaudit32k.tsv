@@ -1,0 +1,8 @@
+# qwen4exp_real_gate	label=bhost-pleaudit32k	binary_sha256=b8fcb3771024dff4ba2c48b124bde637dcec56f77092f46003eed418bfa8492e	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel,plecache
+# ladder	rungs=[32768]	chunk=2048	decode=60	kv_dev1=false	spec=None	ids=1150000	cap=32934
+# vram	pre-ladder	0, 94867 MiB, 97887 MiB | 1, 89971 MiB, 97887 MiB
+rung	prefill_seg_s	prefill_cum_s	chunks	decode_warm_mean_ms	decode_median_ms	decode_p90_ms	tok_per_s	timing_rounds	looped	host_rss_mib	vram	continuation_ids
+32768	165.4	165.4	16	26.0	25.8	25.9	38.46	rounds=3x20 medians=[25.8, 25.8, 25.8] spread=0.13%	false	167813	0, 94867 MiB, 97887 MiB | 1, 91963 MiB, 97887 MiB	37481,13,198,8556,41479,8705,19,15,1393,1748,25,21609,11,580,25,21609,8,1411,10985,33682,23,29,313,198,262,1042,16159,283,580,593,220,18,17,26,198,262,1042,5041,288,283,7251,20077,15,84,23,26,82251,348,16159,348,220,16,23,5098,198,262,364,427,303,220,15
+# ladder-jitter	rung=32768	arm=rung-default	n=58 mean=26.00 med=25.79 sd=1.548 cv=5.95% p99=37.68 max=37.68 outliers_1.5x=0

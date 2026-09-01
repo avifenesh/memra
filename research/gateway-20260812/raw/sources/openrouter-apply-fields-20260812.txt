@@ -1,0 +1,22 @@
+source=research/gateway-20260812/raw/sources/openrouter-apply-form-20260812.json
+source_sha256=c1030d86900e7ff0db35f880786c6af981d4e595b5ee1be090be8f08daa4240c
+portal_id=244648951
+form_guid=e2fa81df-6179-4e3c-aefc-e9b8c5f9f20c
+submit_text=Submit Application
+visible_fields=15
+required_fields=15
+01	Company Name	required=true	type=text	description=	options=
+02	Website	required=true	type=text	description=	options=
+03	Your Email	required=true	type=text	description=Please use your company's email. We will invite this email into a Slack Connect channel.	options=
+04	Display Name	required=true	type=text	description=The name that will be shown to users on OpenRouter (e.g., "Acme AI").	options=
+05	Desired Slug	required=true	type=text	description=The URL-friendly identifier for your provider (e.g., "acme"). Lowercase letters, numbers, and hyphens only.	options=
+06	Distinguishing Features	required=true	type=checkbox	description=Select all that apply to your offering.	options=Low Latency | High Throughput | Unique Models | Low Pricing | Unique Infrastructure | Decentralized | Strategic Partnership
+07	Extra Details	required=true	type=textarea	description=Please elaborate on what makes you a great inference provider. Include anything not covered above — hardware, caching, architecture, volume discounts, rate limits, etc.	options=
+08	URL to /models API	required=true	type=text	description=You must publish a /models endpoint that returns up-to-date information about your available models.	options=
+09	API Base URL	required=true	type=text	description=The base URL for your inference API (e.g., the root endpoint for chat completions).	options=
+10	URL to Privacy Policy	required=true	type=text	description=	options=
+11	URL to Terms of Service	required=true	type=text	description=	options=
+12	Data Policy	required=true	type=textarea	description=Do you have a training policy for prompts and completions? If you're logging prompts, how long do you store them?	options=
+13	Supported Output Modalities	required=true	type=checkbox	description=Select all output modalities your models support.	options=Text | Image | Audio | Video | Embeddings | Rerank | TTS
+14	Inference Location	required=true	type=text	description=Country codes where you serve inference (e.g., US, EU, SG).	options=
+15	HQ Location	required=true	type=text	description=Where is your company headquartered?	options=

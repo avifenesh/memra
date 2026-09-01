@@ -1,0 +1,47 @@
+[auth] keyring loaded: 1 key(s) from /etc/memra/keys.toml
+[server] starting; models config = [("step35", "/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "step35" <- /workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.97GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.81GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step35: regime draft attached (/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step35": 45 layers, eos=128007
+[worker] step35: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step35: decode chunk cap 8
+[admission] "step35": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step35"]
+[server] listening on http://127.0.0.1:8010
+[meter] admit id=cmpl-7bf382373e15a24b89bfa87f7d02719b tenant=default lane=interactive model="step35"
+[admission] request cost: model="step35" ctx=42985 path=plain = 83520 B/token x ctx + 0MB fixed = 3590MB
+[spec-k] model="step35" tenant="t:default" K=0 source=operator-pin prompt=10153 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-7bf382373e15a24b89bfa87f7d02719b model="step35" path="/v1/completions" prompt_tokens=10153 outcome=ended_without_sse request_parse_ms=0.150 admission_ms=0.058 queue_wait_ms=0.016 tokenize_ms=18.416 prime_wait_ms=17.920 prime_ms=16335.446 decode_wait_ms=0.097 sse_handoff_ms=na request_parse_end_ms=0.150 admission_end_ms=0.208 tokenize_start_ms=0.224 tokenize_end_ms=18.640 prime_start_ms=36.560 prime_end_ms=16372.006 first_decode_ms=16372.103 first_sse_byte_ms=na total_ms=16372.103
+[meter] admit id=cmpl-2cde2549540fc1cab454836ffcf5cdc8 tenant=default lane=interactive model="step35"
+[admission] request cost: model="step35" ctx=43023 path=plain = 83520 B/token x ctx + 0MB fixed = 3593MB
+[worker] plain-affinity: grew parked cache 42929 -> 43023 rows (request-owned need)
+[worker] plain-affinity: rewound to 10147 of 10191 prompt tokens (priming 44 suffix; model step35)
+[worker] kv-reuse: 10147 of 10191 prompt tokens resumed (model step35)
+[spec-k] model="step35" tenant="t:default" K=0 source=operator-pin prompt=10191 cached=10147 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-2cde2549540fc1cab454836ffcf5cdc8 model="step35" path="/v1/completions" prompt_tokens=10191 outcome=ended_without_sse request_parse_ms=0.145 admission_ms=0.039 queue_wait_ms=0.010 tokenize_ms=18.647 prime_wait_ms=10.938 prime_ms=229.054 decode_wait_ms=0.101 sse_handoff_ms=na request_parse_end_ms=0.145 admission_end_ms=0.184 tokenize_start_ms=0.194 tokenize_end_ms=18.841 prime_start_ms=29.779 prime_end_ms=258.833 first_decode_ms=258.934 first_sse_byte_ms=na total_ms=258.934
+[meter] admit id=cmpl-ac04af557671f15111ab344908a60bb6 tenant=default lane=interactive model="step35"
+[admission] request cost: model="step35" ctx=43064 path=plain = 83520 B/token x ctx + 0MB fixed = 3597MB
+[worker] plain-affinity: grew parked cache 43023 -> 43064 rows (request-owned need)
+[worker] plain-affinity: rewound to 10185 of 10232 prompt tokens (priming 47 suffix; model step35)
+[worker] kv-reuse: 10185 of 10232 prompt tokens resumed (model step35)
+[spec-k] model="step35" tenant="t:default" K=0 source=operator-pin prompt=10232 cached=10185 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-ac04af557671f15111ab344908a60bb6 model="step35" path="/v1/completions" prompt_tokens=10232 outcome=ended_without_sse request_parse_ms=0.073 admission_ms=0.030 queue_wait_ms=0.011 tokenize_ms=18.771 prime_wait_ms=2.449 prime_ms=234.295 decode_wait_ms=0.097 sse_handoff_ms=na request_parse_end_ms=0.073 admission_end_ms=0.103 tokenize_start_ms=0.114 tokenize_end_ms=18.885 prime_start_ms=21.334 prime_end_ms=255.629 first_decode_ms=255.726 first_sse_byte_ms=na total_ms=255.726
+[meter] admit id=cmpl-6e6a8505935a0dc2d7ab061076aefe36 tenant=default lane=interactive model="step35"
+[admission] request cost: model="step35" ctx=49602 path=plain = 83520 B/token x ctx + 0MB fixed = 4143MB
+[worker] plain-affinity: grew parked cache 43064 -> 49602 rows (request-owned need)
+[worker] plain-affinity: rewound to 10226 of 16770 prompt tokens (priming 6544 suffix; model step35)
+[worker] kv-reuse: 10226 of 16770 prompt tokens resumed (model step35)
+[spec-k] model="step35" tenant="t:default" K=0 source=operator-pin prompt=16770 cached=10226 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-6e6a8505935a0dc2d7ab061076aefe36 model="step35" path="/v1/completions" prompt_tokens=16770 outcome=ended_without_sse request_parse_ms=0.137 admission_ms=0.030 queue_wait_ms=0.010 tokenize_ms=30.143 prime_wait_ms=3.530 prime_ms=10965.658 decode_wait_ms=0.100 sse_handoff_ms=na request_parse_end_ms=0.137 admission_end_ms=0.167 tokenize_start_ms=0.177 tokenize_end_ms=30.320 prime_start_ms=33.850 prime_end_ms=10999.508 first_decode_ms=10999.608 first_sse_byte_ms=na total_ms=10999.608
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

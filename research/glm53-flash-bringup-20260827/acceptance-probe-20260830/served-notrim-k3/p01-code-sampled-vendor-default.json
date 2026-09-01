@@ -1,0 +1,47 @@
+{
+ "name": "p01-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "object": "chat.completion",
+  "model": "zai/glm-5.3-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning": "Let me parse what the user is asking for. They seem to be building some kind of autonomous agent system with scheduled agents waking up at different times. This sounds like it could be a system with cron-scheduled agents \u2014 possibly they're using something like \"agent\" schedules, maybe Claude-based agents running on a schedule (like Anthropic's scheduled tasks, or some framework like LangGraph/AutoGen, or maybe they're building on something like \"claude-code\" agents with cron jobs).\n\nFrom context clues:\n- \"active research is a good one\" \u2014 referring to a previous concept of an active research agent\n- \"replace the",
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "Let me parse what the user is asking for. They seem to be building some kind of autonomous agent system with scheduled agents waking up at different times. This sounds like it could be a system with cron-scheduled agents \u2014 possibly they're using something like \"agent\" schedules, maybe Claude-based agents running on a schedule (like Anthropic's scheduled tasks, or some framework like LangGraph/AutoGen, or maybe they're building on something like \"claude-code\" agents with cron jobs).\n\nFrom context clues:\n- \"active research is a good one\" \u2014 referring to a previous concept of an active research agent\n- \"replace the"
+      }
+     ]
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 289,
+   "completion_tokens": 128,
+   "total_tokens": 417,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 18.320913067,
+   "spec": {
+    "rounds": 57,
+    "drafted": 171,
+    "accepted": 70,
+    "acceptance_rate": 0.4093567251461988
+   }
+  },
+  "id": "chatcmpl-0180c96a94573a01b73ac9da231e253d",
+  "created": 1788067591
+ }
+}

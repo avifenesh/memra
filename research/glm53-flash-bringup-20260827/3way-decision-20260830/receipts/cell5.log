@@ -1,0 +1,76 @@
+######## C5 BOOT plain ########
+[3w] no pidfile, nothing to stop
+[3w] launched pid=62556 boot=c5-plain nonce=54b6d1f2-1cb0-441c-9683-17f776c038e4
+[3w] READY after 32s
+[3w] GATES GREEN boot=c5-plain
+[sample] ok=True wall=2.5s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+--- c=1 reference on the same boot ---
+[conc] d00-code ttft=0.361 tok/s=35.5 spec=None err=None
+[conc] n=1 wall=7.6s total_tokens=256 aggregate_tok_s=33.8
+--- c=4 mixed pool ---
+[conc] d00-code ttft=0.426 tok/s=7.7 spec=None err=None
+[conc] d06-prose ttft=3.413 tok/s=8.4 spec=None err=None
+[conc] d03-code ttft=3.44 tok/s=8.4 spec=None err=None
+[conc] l3-A4630 ttft=3.467 tok/s=8.4 spec=None err=None
+[conc] n=4 wall=33.7s total_tokens=1024 aggregate_tok_s=30.4
+--- K policy / shed receipts ---
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+--- per-request admission lines (route + K + wave) ---
+engagement: glm5spec=0 acc=0
+C5_plain_EXIT=0
+######## C5 BOOT dfl-nopin ########
+[3w] SIGTERM pid=62556 exe=/root/memra/target/release/memra-server
+[3w] stopped
+[3w] launched pid=62864 boot=c5-dfl-nopin nonce=8ea3669e-b1ca-489d-9bfb-97a0e3a9a295
+[3w] READY after 41s
+[3w] GATES GREEN boot=c5-dfl-nopin
+[sample] ok=True wall=3.4s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+--- c=1 reference on the same boot ---
+[conc] d00-code ttft=1.627 tok/s=30.3 spec={'rounds': 91, 'drafted': 273, 'accepted': 164, 'acceptance_rate': 0.6007326007326007} err=None
+[conc] n=1 wall=10.1s total_tokens=256 aggregate_tok_s=25.5
+--- c=4 mixed pool ---
+[conc] d00-code ttft=0.41 tok/s=7.7 spec=None err=None
+[conc] d06-prose ttft=3.402 tok/s=8.5 spec=None err=None
+[conc] d03-code ttft=3.428 tok/s=8.5 spec=None err=None
+[conc] l3-A4630 ttft=3.456 tok/s=8.5 spec=None err=None
+[conc] n=4 wall=33.6s total_tokens=1024 aggregate_tok_s=30.5
+--- K policy / shed receipts ---
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+--- per-request admission lines (route + K + wave) ---
+engagement: glm5spec=7 acc=10
+C5_dfl-nopin_EXIT=0
+######## C5 BOOT dfl-k3pin ########
+[3w] SIGTERM pid=62864 exe=/root/memra/target/release/memra-server
+[3w] stopped
+[3w] launched pid=63207 boot=c5-dfl-k3pin nonce=e51216ec-adac-4a71-a92e-3b072830d1b6
+[3w] READY after 40s
+[3w] GATES GREEN boot=c5-dfl-k3pin
+[sample] ok=True wall=3.4s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+--- c=1 reference on the same boot ---
+[conc] d00-code ttft=1.627 tok/s=30.3 spec={'rounds': 91, 'drafted': 273, 'accepted': 164, 'acceptance_rate': 0.6007326007326007} err=None
+[conc] n=1 wall=10.1s total_tokens=256 aggregate_tok_s=25.5
+--- c=4 mixed pool ---
+[conc] d00-code ttft=3.14 tok/s=6.4 spec={'rounds': 91, 'drafted': 273, 'accepted': 164, 'acceptance_rate': 0.6007326007326007} err=None
+[conc] d06-prose ttft=1.514 tok/s=7.0 spec={'rounds': 81, 'drafted': 243, 'accepted': 176, 'acceptance_rate': 0.7242798353909465} err=None
+[conc] d03-code ttft=4.677 tok/s=6.5 spec={'rounds': 96, 'drafted': 288, 'accepted': 162, 'acceptance_rate': 0.5625} err=None
+[conc] l3-A4630 ttft=9.283 tok/s=7.2 spec={'rounds': 93, 'drafted': 279, 'accepted': 164, 'acceptance_rate': 0.5878136200716846} err=None
+[conc] n=4 wall=44.6s total_tokens=1024 aggregate_tok_s=23.0
+--- K policy / shed receipts ---
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+--- per-request admission lines (route + K + wave) ---
+engagement: glm5spec=7 acc=42
+C5_dfl-k3pin_EXIT=0
+[3w] SIGTERM pid=63207 exe=/root/memra/target/release/memra-server
+[3w] stopped
+=== LOOP-LAW SCREEN ===
+[loop-law] screened=12 flagged=0
+=== AGGREGATE COMPARISON ===
+dfl-k3pin    c=1 wall=10.1s tokens=  256 agg_tok_s=  25.5 spec_rows=1/1 per_row_tok_s=[30.3]
+dfl-k3pin    c=4 wall=44.6s tokens= 1024 agg_tok_s=  23.0 spec_rows=4/4 per_row_tok_s=[6.4, 7.0, 6.5, 7.2]
+dfl-nopin    c=1 wall=10.1s tokens=  256 agg_tok_s=  25.5 spec_rows=1/1 per_row_tok_s=[30.3]
+dfl-nopin    c=4 wall=33.6s tokens= 1024 agg_tok_s=  30.5 spec_rows=0/4 per_row_tok_s=[7.7, 8.5, 8.5, 8.5]
+plain        c=1 wall=7.6s tokens=  256 agg_tok_s=  33.8 spec_rows=0/1 per_row_tok_s=[35.5]
+plain        c=4 wall=33.7s tokens= 1024 agg_tok_s=  30.4 spec_rows=0/4 per_row_tok_s=[7.7, 8.4, 8.4, 8.4]
+C5_ALL_DONE

@@ -1,0 +1,60 @@
+{
+  "schema": "memra.slrutarget.traffic-model.v1",
+  "date": "2026-08-13",
+  "runtime_base": "7624b4f5fd914f4909056ae794f5229fbd14b21b",
+  "runtime_tag": "v0.82.0",
+  "cachesize_source": "f5657142ee586cb1a6ea23c857265d9e597a67e6",
+  "entry_bytes": {
+    "q27": 301215744,
+    "q35": 110964480
+  },
+  "budgets_mib": [4096, 49152],
+  "budget_labels": {
+    "4096": "production",
+    "49152": "highest tested cache-size arm; no committed cache-size recommendation exists"
+  },
+  "protected_pct": 80,
+  "primary": {
+    "requests": 1000,
+    "logical_sessions": 8,
+    "variants": {
+      "q27": "one Q27 entry per logical session",
+      "q35": "one Q35 entry per logical session",
+      "paired": "one Q27 and one Q35 entry per logical session; request count split 50:50 across models"
+    },
+    "returning_fraction": 0.9,
+    "zipf_alpha": 1.0,
+    "seeds": {
+      "start": 3407,
+      "count": 30
+    },
+    "rationale": "two waves of sold c=4 sessions; returning conversation and agent sessions interleaved with unique one-hit traffic"
+  },
+  "sensitivity": {
+    "logical_sessions": [4, 8, 16, 32, 64, 96],
+    "variants": ["q27", "q35", "paired"],
+    "returning_fractions": [1.0, 0.9, 0.75, 0.5],
+    "zipf_alpha": [0.8, 1.0, 1.2],
+    "seeds": {
+      "start": 3407,
+      "count": 30
+    }
+  },
+  "controls": [
+    "stationary cyclic working sets around cache and protected capacities",
+    "phased hot-set turnover with disjoint old and new returning sets"
+  ],
+  "acceptance": {
+    "primary_total_hit_rate_delta_min_pp": 0.0,
+    "primary_returning_hit_rate_delta_min_pp": 0.0,
+    "post_first_hit_scan_caused_misses": 0,
+    "cold_scan_hits": 0,
+    "accounting_overflow": 0,
+    "commercial_gate": "largest clean concurrent cache-hit sessions per card within Q27 22 ms and Q35 11 ms hit-TTFT p95; dollars/day requires the completed target-rig capacity reduction"
+  },
+  "estimate_labels": [
+    "hot-set size",
+    "Zipf exponent",
+    "reuse-distance distribution induced by the shuffled mix"
+  ]
+}

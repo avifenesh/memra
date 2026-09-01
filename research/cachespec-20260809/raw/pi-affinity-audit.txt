@@ -1,0 +1,36 @@
+Pi session-affinity audit
+captured_utc=2026-08-08T22:50:04Z
+
+Installed command/version:
+  /home/avifenesh/.nvm/versions/node/v26.6.0/bin/pi
+  0.83.0
+
+Package identity:
+  name=@earendil-works/pi-coding-agent
+  version=0.83.0
+  dependency @earendil-works/pi-ai=^0.83.0
+
+SHA256:
+  e02deae1cec07035807436c1864c88342e2f7d49050d03b858a3719f0c7aedbf  package.json
+  e5122e013f472c77b55d805cd91daff47f2a29bf68c7be0c94f904af9b8591bd  pi-ai/dist/api/openai-completions.js
+  d13c0d08b2ba8d9140286968479220343164fd34c01d6a7ad530fffe2fffe2bb  ~/.pi/agent/models.json
+
+Relevant installed client source (openai-completions.js):
+  127: const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
+  488: if (sessionId && compat.sendSessionAffinityHeaders) {
+  489:   if (compat.sessionAffinityFormat === "openrouter") {
+  490:     headers["x-session-id"] = sessionId;
+  1186: sendSessionAffinityHeaders: false,
+  1223: sendSessionAffinityHeaders: model.compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
+
+Sanitized local-memra provider facts from ~/.pi/agent/models.json:
+  api=openai-completions
+  baseUrl=http://127.0.0.1:8002/v1
+  compat keys:
+    maxTokensField
+    supportsDeveloperRole
+    supportsReasoningEffort
+    supportsUsageInStreaming
+
+There is no sendSessionAffinityHeaders or sessionAffinityFormat override. No secret value
+is included in this receipt.

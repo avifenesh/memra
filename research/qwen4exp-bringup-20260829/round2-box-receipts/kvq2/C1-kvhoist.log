@@ -1,0 +1,30 @@
+# qwen4exp_real_gate	label=C1-kvhoist	binary_sha256=e9e8a67d94f5324a22596cda3e9a8a06653fd03fac09c79a62063873cf23c2b6	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# vram	post-engine	0, 93858 MiB, 97887 MiB | 1, 94515 MiB, 97887 MiB
+# load	501.0s
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder	state-allocated	0, 91507 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=16384	elapsed_s=83.8	0, 93474 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=32768	elapsed_s=169.8	0, 93570 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-rung	32768	169.8	169.8	16	26.5	26.2	26.2	37.69	rounds=3x12 medians=[26.2, 26.2, 26.2] spread=0.19%	false	166315	0, 93612 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB	37481,13,198,8556,41479,8705,19,15,1393,1748,25,21609,11,580,25,21609,8,1411,10985,33682,23,29,313,198,262,1042,16159,283,580,593,220,18,17,26,198,262,1042
+
+# ladder-jitter	rung=32768	arm=rung-default	n=34 mean=26.53 med=26.17 sd=2.092 cv=7.89% p99=38.55 max=38.55 outliers_1.5x=0
+# ladder-ab	rung=32768	seam=kvhoist	arm=off	median_ms=26.16	tok_per_s=38.22	reps=3	medians=[26.15, 26.16, 26.16]	spread=0.05%	n=48 mean=26.16 med=26.16 sd=0.031 cv=0.12% p99=26.25 max=26.25 outliers_1.5x=0
+# ladder-ab	rung=32768	seam=kvhoist	arm=on	median_ms=25.44	tok_per_s=39.31	reps=3	medians=[25.43, 25.45, 25.44]	spread=0.07%	n=48 mean=25.44 med=25.44 sd=0.032 cv=0.12% p99=25.55 max=25.55 outliers_1.5x=0
+# ladder-ab-verdict	rung=32768	seam=kvhoist	off_ms=26.16	on_ms=25.44	speedup=1.0284x	delta_pct=2.76%	reps_per_arm=3	host_probe=false	vol_cs=57	nonvol_cs=9	threads=4	launch_cpu_migrations=0	launch_cpus_seen=0
+# ladder-ab-restore	seam=kvhoist	arm=off
+# ladder-progress	fill=49296	elapsed_s=86.7	0, 93181 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=65680	elapsed_s=174.5	0, 93533 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=82064	elapsed_s=261.4	0, 93533 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=98448	elapsed_s=348.5	0, 93533 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=114832	elapsed_s=436.6	0, 93533 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=131072	elapsed_s=524.8	0, 93533 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-rung	131072	524.8	694.6	48	33.1	32.1	32.2	30.20	rounds=3x12 medians=[32.1, 32.1, 32.1] spread=0.16%	false	166317	0, 94013 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB	198,388,328,74614,1500,4535,2984,4881,27376,440,3817,1698,487,198,388,1500,6333,478,220,16,198,309,847,198,309,641,17583,13039,198,285,333,198,285,13139,2470,5136,1264
+
+# ladder-jitter	rung=131072	arm=rung-default	n=34 mean=33.11 med=32.10 sd=5.742 cv=17.34% p99=66.09 max=66.09 outliers_1.5x=1
+# ladder-ab	rung=131072	seam=kvhoist	arm=off	median_ms=32.11	tok_per_s=31.14	reps=3	medians=[32.11, 32.16, 32.11]	spread=0.14%	n=48 mean=32.11 med=32.11 sd=0.056 cv=0.18% p99=32.26 max=32.26 outliers_1.5x=0
+# ladder-ab	rung=131072	seam=kvhoist	arm=on	median_ms=31.40	tok_per_s=31.85	reps=3	medians=[31.41, 31.4, 31.4]	spread=0.05%	n=48 mean=31.41 med=31.40 sd=0.050 cv=0.16% p99=31.52 max=31.52 outliers_1.5x=0
+# ladder-ab-verdict	rung=131072	seam=kvhoist	off_ms=32.11	on_ms=31.40	speedup=1.0226x	delta_pct=2.21%	reps_per_arm=3	host_probe=false	vol_cs=70	nonvol_cs=14	threads=4	launch_cpu_migrations=0	launch_cpus_seen=0
+# ladder-ab-restore	seam=kvhoist	arm=off
+# ladder receipt: /home/ubuntu/realgate/kvq2/ladder-C1-kvhoist.tsv

@@ -1,0 +1,475 @@
+[server] starting; models config = [("q27", "/opt/scratch/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27" <- /opt/scratch/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q27: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 4295MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q27"]
+[admission] "q27": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18427
+[meter] admit id=cmpl-ba8eba6c6d6b99bf1cf7b2c09d63a22f tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4984 path=plain = 31552 B/token x ctx + 0MB fixed = 157MB
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q27" 308MB (observed 463MB at ctx 4928 path=plain)
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 301.2MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0")
+[meter] admit id=cmpl-b8515ed8544c3d5f159c5ad0b77e9dd8 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4984 path=plain = 31552 B/token x ctx + 308MB fixed = 465MB
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 602.4MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1")
+[meter] admit id=cmpl-cd1403a5a9abc2fc96c0243bd2963007 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 903.6MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2")
+[meter] admit id=cmpl-25b6f418d8fa568a72012d3f1876a8cd tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1204.9MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3")
+[meter] admit id=cmpl-951f83125cbfc478b9455275afa7e1a9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1506.1MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4")
+[meter] admit id=cmpl-4e8b23773c37bf2132724c08acbe0697 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1807.3MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5")
+[meter] admit id=cmpl-e6f61b30e3fd26a7b647540086840df9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2108.5MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6")
+[meter] admit id=cmpl-98c75f91698e90ac4515466650e7c5f4 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2409.7MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7")
+[meter] admit id=cmpl-2202ce6949b6598bf0dad925f1096eea tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-67a11f8070316277f5e17bd88baf816c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e15dc5929381a056d64ace97cfda50c3 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-05e5df3f67449aed375f78503bddee9e tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-88a2371046af6a65fb95ccf22239238b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-2fc935f2ed13925d8c5a510ee9e5dff1 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b6fe578c84d9ab2fd3f31ac771a78b24 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-37b80d95a41f8117b77e7d65863ff5b1 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-bb88193ed6c1ec2858e57ec169dcffc1 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-396f19f2aa3bcc5ab22f69c560949d1d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c16-i8" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-77da67ab31fe806fd4e588bc2e4a0c72 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c6f2896980453baa3599356ea844c4e4 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5f7ef528332cb9eeced54aed90ad4602 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e84fd6430f9902c148adfd9bd7fef930 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-3e2b992e7989c47135c9082a38c90f57 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c8465216762715767a986d30aba2f2cd tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c16-i3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2710.9MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c16-i8")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3012.2MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c16-i3")
+[meter] admit id=cmpl-54edda0450f4d90f55f25319d626464c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-2aefc90792f63c52b909b06ed484ea82 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-100d8781b416f6129f82770bf9abd05a tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b13f48967a2f05b7f0f292559180525b tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[meter] admit id=cmpl-9ed7e59712ca530faecb5046a1728567 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a42bc893a93f6a814756162204e86ab9 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ca94091c9c8918f7ab665fef62b30c87 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-fbb974e7a93617812765fa2a05c1b880 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-6d10dea7252e5f3949d04bda124c4ced tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b06fb9bdbf538002eb546751f45c3ad7 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f78fc3f2a19bedf1c4aaa4731d7143d5 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a90e657f03c5f309754f64f005d7ab43 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-42bc8f5599d9ce0097264aeb9a13f9d8 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e1685d9472b2f5a9b2d5fa6f08fd6203 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5473980c39fdac2be86e3bf11b48b64e tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-820f7b0886f5e456158648649646424b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e7c0c15c0010e0b5c49c717ec20b8986 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-7b1d8bd5f742a57c19d36d1cdf9bc5f1 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-65e389b067188efb22ef4f20656be330 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d27a30f7c2504f9b7762bb3a64b9b5b2 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-242c96032da0a2a45506cc743887c22d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-feab0118028f8482af7af233d16574df tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f5d1d9cc782cb6a1524dbdda1a28b877 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-12dff328a3a1c0dcaa5434cebb0ac1d3 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-aa278bd3442ed5b4806ca9d57acd6e9d tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-54175008be405a1852bf7f3ec1216387 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-97893c7bb0ae256600641fe306a932e1 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-154535df843028ba0893c0fc6cf25c4d tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5b0f311ee9cf0e1ed260dacf951c0859 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-883f86280b3564567c35a0d17cf235e0 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f1bd9c6d3e401b1fb18d8566e810ebae tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-665dda209753f8b03d4ea9e493cbf577 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c20-i1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c20-i12" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=17 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=18 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=19 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=20 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3313.4MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c20-i1")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3614.6MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c20-i12")
+[meter] admit id=cmpl-2357743bc3e68e0983e0a604e5cac72b tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-fab128dcd2a09866cb7cbe3a6c4eee44 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-aecbd7ea4c2a1c2650c6afa2187726b0 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-962714b5405b8c8deb6067ecd009dc2d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-3a852acebb3be7ddad374c1a7bf0a255 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c58591132624c9372434266d22d3df65 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e2c1ffaacdb97f5ce1a05eebdfce691d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7aea6784641f232d0d87c1902f25525e tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5ff8d761ba06c942683fc204228c6afb tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5631f7ae1eb2e842d5c40d407b01a3f1 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-78ee4b5b6a592d37e33cae7a814507e5 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8068eae7b1da7ec29944cf180e21e443 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-2849e7a97863fa153064ef2e02f9e13b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6ee8d06e7f11e9a5d60e45661a8a838f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1ce8c3ef64f4844f6b676e1a9417edec tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-59408bbc2efff58994d56d4c58dd68a9 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1fb9ea3527a393ce1d4f68dd617c770c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f923636ad0f69f1f89427e92d98427cf tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f6d9dc50d298e80741a5ffc6290688a5 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-09728751e5b321f309d3971cdd5b2123 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d120c592b0c7fa546c91604923e2676d tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6b9062174478312542745994a20fca3f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-ee435933ced775809c0a16818b1827a5 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-87ee0c056e833a69735ef423c5b841cf tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-514440e3b2c93184992727105a2c9ede tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e488af799c3fb33e6e5d7170cbae9a44 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-a9d1679b549be10fb0efe16d72187314 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-ecb3f465cbf0997a9a594c78c463847e tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6eb7587c4aaf0d3961421ccb11f7006a tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b40be9ca434512b92cc83b00c06e54ea tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-9a8b39546b6d63675fbb5e280307745f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-27cf8541f281c4d23ee32739600da21e tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c24-i10" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c24-i19" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=17 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c24-i18" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=18 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=19 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=20 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=21 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=22 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=23 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=24 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3915.8MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c24-i10")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4217.0MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c24-i19")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c24-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c16-i8")
+[meter] admit id=cmpl-1337e0c5ad62d0738be4db719014c54b tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=24 placement=single-or-non-pp2
+[meter] admit id=cmpl-c044c2be00081226b0d22db99187735b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-38be1564645e57c170579a6187be664c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-0829ecbddd063aa37618e227d00cedc8 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-9f042a0e15b925e63c76c56b766415f2 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5ba2da9987b254f2b0e1d22a686653d2 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[meter] admit id=cmpl-1c349cab8a700019361024c604e10f7a tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-fa0deef5b5c1b95a4c7729f7e1803e29 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d143cd574e8f0995c8f7eb4a045a7895 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f4419915607284777e91e8f643e1db38 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-bced071cf1aa4e4fd06c8d7a0c64519a tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a784d501cfcf19f3d7ce8938c87b561d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ec41f7767ccd84f749423aeb899a7fcf tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-590b2079274e4c1a82df4fbc99ada01a tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ea28a75b46785dd5a0d3f2d7805ba855 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-df4f798c13f8e421cf11e6e8bf0c98ce tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-759e7c5d01e17801718b75b908111d66 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1e39e6c99e691283182dd331d4e8be59 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-061545661cc0932d13c69acaf11ce379 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5b81305c2d7010c4d8806d019e79565e tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1d61e18b99a3bf0c91149742cf699b03 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-fd159028a5037741031bd08635a70ddb tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-98d3ace58b23368927210e6ef7937946 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-edbc0fb664fe9e5b7ae947126f5bd05c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-141f00c826434b9fdf7d5f429b2ffdf3 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-64bac9ee213df3ec1a4332b73b73a18f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-67e2874e8c5b439718213c5dcde4959c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6ef6db484321e64cb33e0237c9e4e40a tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-3073180f02c23b588847bb038ea258bf tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-41787f696bd6a03e3d2490331d92f8c4 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-e9c09e19a35c81e43a4fc3afc369b024 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c8-i16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-7ba82449c62bf9756bd6b03d0067a69d tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e44896ca7e4d6ef7326646ecfdbb0c59 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-63562faa6cecb4e29db9e23f952ffbf6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c8-i18" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c8-i16")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c16-i3")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c8-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c20-i1")
+[meter] admit id=cmpl-0cebb58f8712120663daf41dca70687b tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e453255b914830ce8b31e361257a332a tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9510c6fbca8aff3c37a3836960d17b11 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-031b59a16f0ad18b757b7f402a4396ec tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b1e7f72cf984f85424e70fc547ce98ed tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-cc0a797d67fbb08416e6723ef8c889e7 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-17ed6a253f03a332dcbf2747a9205ac8 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-59f295c3f594196cbda1b4ffc5d1c8db tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c89ba10f7ee7e773557d29fa18cae920 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-0299f29127611d72c092f493675ab0ad tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-ec844c0ee833b35133d8d0692bc5e219 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-7f278c9606b571697b6fb442fc4398da tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d7df815e192ab81062edb75cf6e767e6 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-248d2f737f09c5bac14414dd4dd854d5 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-fa81f2d74bc55fcba9ede2c6e3b81778 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c832ba076e9d4605a7a5264c1e5ef3cf tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8829356db8fde0b4033a080ccbf479e2 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b684be4fe643204863f96dc3dcc2bfe2 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-835745ea270b0e740ae4277ae9fb18da tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-2a95726fd7896d424d494f5ad720e656 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c12-i0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c12-i0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c20-i12")
+[meter] admit id=cmpl-f82e6303f13a7927e1a887ef2c77d606 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[meter] admit id=cmpl-4be6642475425f71c914cfa05b6f2fc7 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-dfe60065951b9b729451e30af467872d tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-851dd12736231b2dff2d4fdbc953ceba tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-60b574f643b0f9d35c02752f818b16f7 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-415496ec976dcb11a813bf790f3c5005 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5234b47280e623aece47fb4895e76f16 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-184f39ca4a3e5aeaefc61a7d7f24d3af tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c12-i17" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-kneeraise-ab-prefill2048-baseline-r3-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c12-i17")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-kneeraise-ab-prefill2048-baseline-r3-q27-mixed90-r3-c24-i10")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

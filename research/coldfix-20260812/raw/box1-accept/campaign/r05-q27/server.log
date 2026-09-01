@@ -1,0 +1,1366 @@
+[server] starting; models config = [("q27", "/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27" <- /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q27: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 4295MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "q27": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q27"]
+[server] listening on http://127.0.0.1:18427
+[meter] admit id=cmpl-0efd7750bd9b41848feb6df1cbff9a02 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4984 path=plain = 31552 B/token x ctx + 0MB fixed = 157MB
+[meter] admit id=cmpl-5edf045f8f102ad2f52a93ae4e9e9660 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-cd18f37e5c59b1822dfb3bd87251d507 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-fdecf12ba564adaaf36945c5dc84c428 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-3ea2865fcfcd5923944947453ed108d7 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-91d7261316dfe9a55b27ecd18230e05d tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-17865ed29b0ff281a289ed85084e9fbc tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c5af2d8c2408e5d774bf0bae7143b439 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d99056d9a48d2326b64c2c1f9a9152bc tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c1f16db67c868c5a94162e5bf74e882b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b0b0aec3637aeacdf979b7f170d2c013 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-feb26e88c345d36437aeb50cbd6e1ad0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q27" 308MB (observed 463MB at ctx 4928 path=plain)
+[admission] request cost: model="q27" ctx=4984 path=plain = 31552 B/token x ctx + 308MB fixed = 465MB
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i9" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i4" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i8" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i10" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i7" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[prime-batch] B=6 tokens=6144 carried=0 partial=6 in 1658.4ms
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 529.9ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1610.7ms
+[prime-batch] B=6 tokens=6144 carried=2 partial=6 in 1586.8ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1651.2ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1623.1ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1691.0ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1664.0ms
+[prime-batch] B=6 tokens=4584 carried=6 partial=0 in 1314.4ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 301.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 602.4MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i9")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 903.6MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i4")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1204.9MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i8")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1506.1MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i3")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1807.3MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i11")
+[prime-batch] B=6 tokens=5624 carried=6 partial=4 in 1558.9ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2108.5MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i10")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2409.7MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i7")
+[prime-batch] B=4 tokens=3056 carried=4 partial=0 in 894.3ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2710.9MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i1")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3012.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i0")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3313.4MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i6")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3614.6MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i5")
+[meter] admit id=cmpl-c693d7fbe883c4cc06b5f18ab7d338bf tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-efc015f8153fdd0b4b29dc8b7256ea47 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8188c9ef7996983b8eda10143767f4cf tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-27e94dd4e6b26766f7f7397fced7024f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6628fa01a36ebf394e1f9ba2070e03f6 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-24a0444a50588552f5e070170c0f5b55 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-9d2d9977a3b69dab6b1bc0067d9aae6b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5aca731f55496b890e5b2ff5211762e4 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i14" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i19" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i15" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i12" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i13" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i17" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c12-i18" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[prime-batch] B=6 tokens=6144 carried=1 partial=6 in 1579.7ms
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 529.9ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1618.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 544.2ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1657.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 558.0ms
+[prime-batch] B=6 tokens=5884 carried=6 partial=5 in 1614.5ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3915.8MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i16")
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 571.0ms
+[prime-batch] B=6 tokens=4584 carried=6 partial=0 in 1313.8ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4217.0MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i14")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i19")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i15")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i9")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i12")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i4")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i13")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i8")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i17")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i3")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i11")
+[meter] admit id=cmpl-926541426682f2ef1a0dcbd2a3dc8595 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i10")
+[meter] admit id=cmpl-ae47088a41b3c7e1f6a031932298df3d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i7")
+[meter] admit id=cmpl-86b7bf0ad8a4b598240918ec88697e0b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i1")
+[meter] admit id=cmpl-a359e4185177ef8642a8778008459cd7 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i0")
+[meter] admit id=cmpl-6dd3c0b4c94d5b99a3d81bb7194980b9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i6")
+[meter] admit id=cmpl-bfff1de9118e2b03b865c41562881a2c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i5")
+[meter] admit id=cmpl-9d1a436f29cc52665bdf262298b50d75 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i16")
+[meter] admit id=cmpl-8e01646f429439732f323182d77bc511 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i14")
+[meter] admit id=cmpl-14ebad628635226e03f4fdb0d198f139 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-fec276d5c2847fb16ffbde2e5ec41d7d tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-4b046bcf32902d14d5baf9f5ae147404 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-486e49a3a43ec65a410e34156bad5eca tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-0931cd98039054f80a8d1cfbbec02482 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-70c6d595ca7c3ae73a2564dcc4f0821f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-591a65434c70baba652e33788ee3823f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f8562a3decc961a604d579c0ca469f45 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-3f298de6f8b582545c1d8195c38496be tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-a51c3b72fc141b852238cae783ec93fd tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c12-i3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-3ebba5bfc4ec9761207f88f05458ea7f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5c0b9a19d0c6bff5cc30c8dddfa24b9a tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c12-i4" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 530.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 544.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 558.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 570.9ms
+[prime-batch] B=2 tokens=1528 carried=2 partial=0 in 449.0ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c12-i3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i19")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c12-i4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i15")
+[meter] admit id=cmpl-c7cd29d3503ad8c5afc523473858c8c6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[meter] admit id=cmpl-5fea95218aa5acc80e2c87b43866e62f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-ac0744e877524f9dc47311cc2ac7063a tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-4d8eebbdfd28f36a8c8e4cbb93aaa613 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c47e30ef3549ad49ddb1689f72b12804 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-a389b7d0d2551ff165c4048ab6b63cbb tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c3699ee389bf56d1b7192dd3d6af48af tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1f42a296d1516ae418a7b9378874c3aa tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=10 placement=single-or-non-pp2
+[meter] admit id=cmpl-ef9c5f848526b1d08b468125371b955d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-aacc807c861126379d5ab14841bccc08 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e3d1349f01d24c4997aecda92fdf7459 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5525908ed9d4ff65f770db933f9006a7 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-405dd90dcbba11d67ff96012fff98ea9 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-da72581a5dbbd57500595e915692ad41 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a14c36645bfd11423feaa7e0e3881714 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7c1e04b64d55beb82f51faa0f9050ba3 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-866d825be26c2928f0207f91fea404e6 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5714369e0094736fc6254334944bd354 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d9c716b3667b25e2006e65dd96ffacc0 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d50cc53e07d971cb219a216eb6ca14e4 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b3c4516e5ddb4103a8217e8f8240d850 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-4e55be8f507af0becbfc5028696a9dee tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e98af3b9d1ea4139d471547c084bd6b3 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6b295bd828c898e8a438afefa6b5bdc0 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8ec1a77d4d72e27565e388caf99d4e6f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-825b64c718d94d62b052d99f2267bfcb tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-0ac362242135cdfb91e1779bbbc395aa tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-7bb824f087b129e4f6a44ef02521c23a tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6aa6ca2c1777821be7aeeae261145430 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-73b49f89e6fe571f779df1df07c0e94e tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f1a72a3988366997fb842301d90e5d34 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-dd1a41c7bd044e5b47aeaf66b3f789b2 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c16-i6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=10 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c16-i1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 530.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 544.4ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 557.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 571.4ms
+[prime-batch] B=2 tokens=1528 carried=2 partial=0 in 449.0ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c16-i6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i12")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c16-i1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i13")
+[meter] admit id=cmpl-007940d9d0b82ef81582a299e2b9929e tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[meter] admit id=cmpl-1c6a0426ca9bcfd36c7c306c70d0d333 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6203c544066fe151a171e8e92342b26c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-65d7afe1f6155802b28dd84b8e5839d9 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[meter] admit id=cmpl-f57daa4152443360bc19160997996bf5 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-19312dc63588aee98f477dd04e128ca1 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-45b90a1c5dcbaecdf7b8edea55b24abd tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c51d74abf484ff7c175d30d5c62ff82b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-cf0743b564a575763a61aaae8b5c4c61 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-91812f63f84f18b26b91f28ecb578ded tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8ff5d193dbde33ae9b095c1254356c74 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-69052a9acb58a82482d4737b2f449818 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6aeeb834109d8bdaa311b8f274f6ccbb tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f3afd8abe3a6f762e26fd62baa6155e0 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d7481f60b956a852892596bcc46594fa tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-624f9135c9aef69ca38a7ba4866ddaa7 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-40bbb29e9ca1c8981223601858d4ae8e tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-739e6f1a93f9d40932722b1a2f0a1b98 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-9f8eb51661d46c7fd89b2725fe3bc3e5 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-87435c4832c7a29c6421452c27a47539 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i14" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i8" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i9" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i13" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i12" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=13 placement=single-or-non-pp2
+[prime-batch] B=6 tokens=6144 carried=0 partial=6 in 1564.4ms
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i15" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i2" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=15 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i10" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1609.7ms
+[prime-batch] B=6 tokens=6144 carried=1 partial=6 in 1579.6ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1653.0ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1616.6ms
+[prime-batch] B=4 tokens=4096 carried=1 partial=4 in 1055.7ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1692.5ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1657.7ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1079.1ms
+[prime-batch] B=6 tokens=4584 carried=6 partial=0 in 1313.4ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i17")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c12-i18")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c12-i3")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i14")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c12-i4")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c16-i6")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i8")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c16-i1")
+[prime-batch] B=6 tokens=5884 carried=6 partial=5 in 1615.5ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-5")
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1107.3ms
+[prime-batch] B=6 tokens=4584 carried=6 partial=0 in 1314.6ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i9")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-4")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i11")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-3")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i13")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-6")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i12")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-0")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-7")
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 865.3ms
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 658.8ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i15")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-1")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i4")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i10")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i7")
+[meter] admit id=cmpl-732f75fe22f759d109dd73d7901071b3 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-7b7e78aef3c9d1a0e80c3d7c30632c77 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6efe5abc0c5717453e70f1f2f3fecb0f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-a92428e40260d21a06df785a1f4f2eae tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i17" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i18" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c16-i19" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=13 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=4096 carried=0 partial=4 in 1042.4ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1072.5ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1099.8ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1126.9ms
+[prime-batch] B=4 tokens=3056 carried=4 partial=0 in 894.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i16")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i5")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i17")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i14")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i0")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i19")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i8")
+[meter] admit id=cmpl-7587f1476ed94b13fc0922d672ada130 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-4f691a6f71fce871f49280e3840fd954 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e6254f8e9a7d17db21f8c6ba022c9107 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-890fdd6651ce3c72b1f12b76554abc86 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-84411dd870520fbc1bd042bea70de4d5 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8fb18fa461ae6dc44b6873ce2757a9af tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-71405120b468a66bae8f20398641e87c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1240fcae460838d05ff34b46e70ca2a8 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-adc3fcf3a93ebb879b5b189de10e2eb9 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-042613e7f5ed7ddad5186ba14fcfe724 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-9180fe0c23e98a467ef3d6298aaa1704 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8fb29240e78dad86b3f9f0cb6133c75d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i14" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8d3cb0703c2d9a8a44213e07c9895923 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-df1771cc1d9b064232d5c884062b250f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-eb5d9f70b118a586f6fd1325ab0dc3db tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1a0d7427b782761b983a9120ea33c4aa tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1bb2e95c7817caf2acb750c1462e6117 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-12847fb7c2318a7da9498a0996509e0a tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-61245173a6d62b8bcc76297edbbb6b5e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i17" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[meter] admit id=cmpl-fb2de4222fa497d56087e97ca5fa8258 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i19" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i8" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i10" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i7" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[prime-batch] B=6 tokens=6144 carried=0 partial=6 in 1564.1ms
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i12" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=13 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i13" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=15 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i9" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i15" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=17 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i4" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=18 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i18" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=19 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c20-i6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=20 placement=single-or-non-pp2
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1609.7ms
+[prime-batch] B=6 tokens=6144 carried=0 partial=6 in 1565.1ms
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 529.8ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1653.0ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1609.4ms
+[prime-batch] B=6 tokens=6144 carried=2 partial=6 in 1587.2ms
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 529.6ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1694.1ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1651.2ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1624.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 544.0ms
+[prime-batch] B=6 tokens=4584 carried=6 partial=0 in 1314.5ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i14")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i3")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i9")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i17")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i11")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i19")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i13")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i8")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i1")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i10")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i12")
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1690.8ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1664.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 558.0ms
+[prime-batch] B=6 tokens=4584 carried=6 partial=0 in 1313.8ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i6")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i11")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i15")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i10")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i16")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i16")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i17")
+[prime-batch] B=6 tokens=5624 carried=6 partial=4 in 1558.2ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i12")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i18")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c16-i19")
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 571.1ms
+[prime-batch] B=6 tokens=4584 carried=6 partial=0 in 1314.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i13")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i14")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i9")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i15")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i17")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i19")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i8")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i10")
+[meter] admit id=cmpl-9b1f0ca661885d4c295b83c934505f19 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i1")
+[meter] admit id=cmpl-a18556cffd0787650f20618612f328bf tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i11")
+[meter] admit id=cmpl-f471508069f268d47a4c3d480858fec1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i5")
+[meter] admit id=cmpl-2684d5c4c70b4034466253ceeb562af8 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i7")
+[meter] admit id=cmpl-a8270e98209aad9b8d83af026374f52a tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i16")
+[meter] admit id=cmpl-c4eadc024c312be37adfda187f00c050 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i0")
+[meter] admit id=cmpl-89d7a3d4e2bb5512bbc44203cda5aca3 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i12")
+[meter] admit id=cmpl-81d27700963dc46a2aeaf155a8a90f0f tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i3")
+[meter] admit id=cmpl-bf53bc4a74aca4e4a97b767fb0ba876e tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5651ea52b76d8d3913d4bbb69b35d576 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8fc0d116e240f47a3ad23e685916bed6 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-36df9255a4c80320a98317d09b9ac1b6 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-79ecd1cb4197e75e05a0e12b632da92e tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-248fb1725809d5e22815bf51d4a751dc tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f18aa85857ca8e17ade424c87711854c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-cfcf86bb9355065e271d4439d7289c4f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d2703b9566c177f88df45cb7ee666bb4 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-3ac0ea96301b1f921936acb2bb18dca3 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[meter] admit id=cmpl-44858f13a6c59e6d703391fc2bd4acad tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-45c4e3b95921302c78097432fe4e12c8 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c0a0ac2f8b5945669dcf1f62ae7401c0 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-def6e6ade5bf5c5626c74176846dffe6 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-df9427179f388f6b8bfe1c19e51f6527 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-34bfb4f1801b1c2c6612a6e5ed2ea3e4 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d2d463667656a3554b1f4c1ac92bb726 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f328cf7687fee92ac3d733942b414058 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f8632e51a8de730cf3cb3202c2b57a33 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-596a33eaace5805934a710837f43ae40 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c20-i17" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c20-i11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=17 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=18 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=19 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=20 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 530.1ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 544.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 557.7ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 571.4ms
+[prime-batch] B=2 tokens=1528 carried=2 partial=0 in 449.1ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c20-i17")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i13")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c20-i11")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i9")
+[meter] admit id=cmpl-79e6c93b7725b8c737ef422daf6d7c97 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-be39fe5141b1fc851287069a89cb00b6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-14f91730523d7a0ac345d48630105505 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7aeadcca23416746c9dfab3576ef8e56 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-51b23a8be99bd9c8f4e93fee861153aa tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-6eaa350963d7123429d8155ef4be1304 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-dfec4769af0edbd7b87dde29fbe2288b tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-814a9d5ed0b022a2d3f0e669c8c09ce6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-999cae33dde67eb88a3b5c43b8b78f0c tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-64093c0288df75d8dcaffec4690c64cf tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e0b5721b03fa4b52598d8791f5f82a7f tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-aba58995c80a64070a09adbd068b0830 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c1-i3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c1-i3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i15")
+[meter] admit id=cmpl-4fcf43412aac9bc0000340fddf03912e tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ce90620fe1d21e93526fcc0d8518a428 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f79f02bc8a0050261ae982442f789b52 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c5416ccc3ab970221acdfe7566a616c6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-1e8d5ce932f3e0efb9f694b03301f777 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-fa94bcadd76940867ef65068409f7792 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-93ab9ab2d13d3ccdb4db4ac731260430 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e38ae73b11cfba9e4651b36e009aee3d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-cfa333fe3ddbd7b555a297e4b1834915 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c1-i12" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c1-i12")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i4")
+[meter] admit id=cmpl-c88ec535dbf286317feb468d73021a87 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5feb38429be0b292e2c05de16d8fdf15 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5f0aa1afb0d5c3946596a26d704ff484 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-acabc731a7f091ba0cc457b218ea4778 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d71100a0fe35a7b62d60885f780ff1c2 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-16164c20cea4ad845ead3550942e6457 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e2a3acd4ee85d3f739f7d5c8897f4fcb tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-bde54d991959a0004b13aea6ba255d97 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i18")
+[meter] admit id=cmpl-7dc7a04a690e8f348a316098af30581e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c20-i6")
+[meter] admit id=cmpl-9b99cb32fe1187f3ba477f7d3a4c2008 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c20-i17")
+[meter] admit id=cmpl-eee4858ac53f8b5e4f5aa32af986062d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c20-i11")
+[meter] admit id=cmpl-cf878f062304c23c1c8239aaee41c321 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c1-i3")
+[meter] admit id=cmpl-1351b4a7dc0b8269c6ae585558414785 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-2")
+[meter] admit id=cmpl-6759430e11518fd39f740e0d452326c0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c1-i12")
+[meter] admit id=cmpl-3754ec90bba6a968cccb6966ce95c429 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-3")
+[meter] admit id=cmpl-0f8c418454c4d3bd8f1f41525ac2ef26 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i8" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i8")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-4")
+[meter] admit id=cmpl-36c5840c4babedf70ac6753a75f8fed6 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i9" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i9")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-5")
+[meter] admit id=cmpl-f6ab2d63aeff374b610dd9fc55b5c77c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i10" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i10")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-6")
+[meter] admit id=cmpl-7f11b426b521f3a55f1450c03043e53a tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i11" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i11")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-7")
+[meter] admit id=cmpl-812b643fca0f99f13e016be4b21addc4 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i12" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i12")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-0")
+[meter] admit id=cmpl-ad22d0002b2dbdf6312b124a1e8c8ba5 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i13" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i13")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-1")
+[meter] admit id=cmpl-e0cbd5c9cff965f4af58d29ac7ba4994 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i14" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i14")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i0")
+[meter] admit id=cmpl-4f311aad6375f8a5e051fdf859424e92 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i15" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i15")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i1")
+[meter] admit id=cmpl-c3f847c1e2f140bcdb797bb0722bbfd6 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i16" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i16")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i2")
+[meter] admit id=cmpl-818baaeeb56745726e726a2df1a7a48a tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i17" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i17")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i3")
+[meter] admit id=cmpl-89ff41b39c8f9978ee570fc762040b63 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i18" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i4")
+[meter] admit id=cmpl-7a27ae65d011b8853019e4b2e1630d90 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c1-i19" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i19")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i5")
+[meter] admit id=cmpl-f7fa98182566db430c9c96d7d71d97fd tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f5027b166b848b1710e3e4735cb05e72 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 537.4ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 551.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.5ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 499.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i6")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i7")
+[meter] admit id=cmpl-8c7c4ffeec3e9fa4861fd9394eeb0e73 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-39e08e27bd162525a1350673b4c20321 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 538.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 550.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.5ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 500.0ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i8")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i9")
+[meter] admit id=cmpl-de81ce48ce7168b32bcad55ff30bd7c2 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-4f13018f2a3a013d1e047023dea18ad8 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 538.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 551.1ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.8ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 499.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i10")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i11")
+[meter] admit id=cmpl-b4cc9a447432ea49c88c927fa082f466 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-a3193e3c2605758d6e22e5b45839851d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 538.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 551.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.7ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 500.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i12")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i13")
+[meter] admit id=cmpl-caa28a19741d18fb412e4f99a51dae4b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i8" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-7cd8ef295c502ff8e7a8e2f02e9cf324 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i9" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 538.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 550.8ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.1ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 499.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i8")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i14")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i9")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i15")
+[meter] admit id=cmpl-668e1aeae83e02debec5d40049211d3d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i10" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-1849f4b1aff34bb036bfb3d04474b1ae tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i11" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 538.4ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 551.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.6ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 499.9ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i10")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i16")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i11")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i17")
+[meter] admit id=cmpl-79de4fc0a8c231cc4b7262e720079a5c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i12" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-81bc230c9cf21bb8dc6975875738cad9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i13" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 537.9ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 550.7ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.6ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 499.6ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i12")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i18")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i13")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c1-i19")
+[meter] admit id=cmpl-cdc4f70dd3fcbd88fa179072289b46be tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i14" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-bc6d76648744c4c2c8cabec081300b1e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i15" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 538.3ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 551.0ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.9ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 500.0ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i14")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i0")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i15")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i1")
+[meter] admit id=cmpl-2e3682dbfdd3e11e0338ea0c5baa3053 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i16" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-c0d14d29c2ab5f90449af6aefa248819 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i17" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 538.5ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 551.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.6ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 500.2ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i16")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i17")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i3")
+[meter] admit id=cmpl-38c307c0982b33e02ca6e34b60b5d343 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i18" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-5fd154cc5f04f870f251d6d4d12dab8e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c2-i19" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=1 partial=2 in 538.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 550.8ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 564.2ms
+[prime-batch] B=2 tokens=1788 carried=2 partial=1 in 499.1ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i4")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i19")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i5")
+[meter] admit id=cmpl-252e4f0f119f6891bd87c2fa4d54fb5f tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i6")
+[meter] admit id=cmpl-0cbcbfc985ad826a5cad5c649e6b8325 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i7")
+[meter] admit id=cmpl-f8418ea8f2d3a222b1c27f9e680dc0ae tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i8")
+[meter] admit id=cmpl-2fb5c4cf3beae1666406a23e6a427dc6 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i9")
+[meter] admit id=cmpl-be35f11df79490937e0f6f443b5b7056 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i10")
+[meter] admit id=cmpl-e924e300d3825634952c4f3f72ce21c2 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i11")
+[meter] admit id=cmpl-221d494791ad647a5ec15c23a33404a0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i12")
+[meter] admit id=cmpl-2c4abf6663aa8bcb4608ececfacedcfd tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i13")
+[meter] admit id=cmpl-bff0518c3926ad6a39ec164f1b332e04 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-7d76b839a10ba9a45f5e70326d12999c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c2-i0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c2-i0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i14")
+[meter] admit id=cmpl-81b01a4d86cccc087b80b348fcd14756 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-fc914fb49f29182c5dde2d2e909e18f4 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-92f01afe845385225012f0d93bae7fc6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-21de02f30fb853b88f74faf1f5ab0981 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-02a3ac9e0b0f61d12585cae4e59aedb6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-c9765f1eb7b5a80002269112a95f06da tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-87f095bc3870846b942c8b39f02b1140 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-345401df8b160a52d1995fad3a2547c7 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-f05f9bf188e3c4fbe13d5956c358a18b tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-040dfa24a3bcf8517c662791b2b98efb tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-8d0c6cb8b6cd578729310c30e72ddf2d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-04bb2d9bc33909ee52e53afdaf30f201 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-02db9a2a7472dcb4024c78e055a82a57 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-3ecad278a39eb48d9106614cdb008cff tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-d6705e7ef0581d028b4861c9dd350bca tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-e9b559c8fa80d862cbc04afd09376ff5 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-4ea1204d70101a4e61368019b44ef0d6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-664a02cca3c44cbeb3df23a1e510608d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c2-i19" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c2-i19")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i15")
+[meter] admit id=cmpl-2f5c6a77176d48eb6141f32b9bf2b763 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-096c6514edfe3b0dac91e13662a22505 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f4b22cc890d023fa0a4d08cfcd08a8c2 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b1ec80cb4798ce0a10256e50a08003bd tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-1a64ddcc9a28ae460593004ab9f79629 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f2f25c1441cb3753248ca248cf01bd71 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-22e86eb75a3e1e7708ee83b08f134fb1 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9392c975dd31dcee64f7b2a5111b075d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-6716fb7dcc71dbe4333b248c54f39b1a tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-264086b7dfd98e9b1fd14c7d22dd011c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e276442949980128df46f90eb6808628 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c674c013809a3e31e01365d2f8eefecc tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-89ea4986353b6bbbb8ef3209efdb54a8 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-dfd14f7cbb9773f433f106cb5e5560bf tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e3a25f69b73dfcb5f672c6e1411c925e tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b728335416b76a5e34bcced882d55af0 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-2cf7e4985fbdde217f881d9835f0453e tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-0a66efef5c32cc95c1494143b60a5909 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1d04c857ba312da5271f9a55a7fb661b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8b15fb418c7ccc1a032a79653a76133c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c4-i9" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c4-i9")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i16")
+[meter] admit id=cmpl-cf8308ee17b1d7d0ade33d5694132608 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-534221ed0aa9588c8ff1360651c9e25d tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-bd3d2be60661d9f56fa84933cc2f6f8d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-b0d7dd570f4fd3cf85aff3718d96adcb tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-7a6a5b7bd418bdb48a3e5476f43de95b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c4-i16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-4ce25ac1b134fa28e341b2ab2e00b62b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c6203a1d53d4b4c9745a884a16fa966e tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-f76c16671c9ff5c4434b3caf75dc0db6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c4-i16")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i17")
+[meter] admit id=cmpl-6ec891c410de1de8601e992cb08c3beb tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-83f3e5e634c74200fcf5fe04ea434378 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b8a63562cd58e26a895cafcebb8bc547 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-74f74fb800d5d4476db7eca93bb281b2 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i2" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=4096 carried=1 partial=4 in 1054.9ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1079.5ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1106.5ms
+[prime-batch] B=4 tokens=3836 carried=4 partial=3 in 1064.5ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i18")
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 659.0ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c2-i19")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c2-i0")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c2-i19")
+[meter] admit id=cmpl-875f905a768ea3a930b68814a07b55f5 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i4" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-8e94a5d136ce879da6f6a2d62a0847b2 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-a7b9a232ae4c26c07badec111f179194 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f25af48af16a727a12456d17e86d3c5c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i7" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=4096 carried=1 partial=4 in 1054.6ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1080.2ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1106.9ms
+[prime-batch] B=4 tokens=3836 carried=4 partial=3 in 1065.6ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c4-i9")
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 657.6ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-3")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-5")
+[meter] admit id=cmpl-e383ae78bb4fc8d8b1d91392f79e40c4 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i8" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-2852eab0d95e70d309f024fa8c13d629 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-56c8f860357314b418c010ad6008dc60 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-cc3effc828d99c464bf2098cf4330743 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i10" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i9" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=4096 carried=1 partial=4 in 1055.8ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1079.6ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1106.3ms
+[prime-batch] B=4 tokens=3836 carried=4 partial=3 in 1065.5ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i8")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-4")
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 658.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i10")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-6")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i11")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c4-i16")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i9")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-7")
+[meter] admit id=cmpl-92c61d3a8e1c28c858e8bc486ce885a8 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i12" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-80278fa1bb2f2786751187c3508eae22 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-739edbb6a2b2b3a80a0c7aaeeea14daf tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-a13a2961e2aa84ba625e5c61f9dbe4f5 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i14" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i15" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i13" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=4096 carried=1 partial=4 in 1056.0ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1080.1ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1106.9ms
+[prime-batch] B=4 tokens=3836 carried=4 partial=3 in 1065.8ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i12")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-0")
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 658.1ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i14")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-hot-1")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i15")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i1")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i13")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i0")
+[meter] admit id=cmpl-483ab336c8acca2ea032f18534a7f8c9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-c4802c3d399b11720f0f408484758f37 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-ad3c2b0325afe51e6531da8752731691 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1d4260a238e9d3a99191db5c1fa5465e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i18" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i17" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c4-i19" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=4 tokens=4096 carried=1 partial=4 in 1056.0ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1079.8ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1107.0ms
+[prime-batch] B=4 tokens=3836 carried=4 partial=3 in 1065.5ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i16")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i3")
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 658.3ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i17")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i4")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i19")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i5")
+[meter] admit id=cmpl-7187b8805d78608ce697e96c5a0dd13c tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f01e1160ce990cd177710c5d74e97f42 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-60e6726e40115a05e03a5e26c6795c1b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-3217bda1dee7c9f7367eec99e778567a tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b2138731e30144994f7e3bc3941f83a0 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-3c1eb26652574a4d4565e296e6cec472 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-c4315b975ba220c750b4fc78a98888da tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-4370e0cbfab865d70184e69c0cd85bd5 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i2" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i4" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i7" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 529.7ms
+[prime-batch] B=6 tokens=6144 carried=2 partial=6 in 1585.2ms
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 529.6ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1623.5ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 543.7ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1664.1ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 557.7ms
+[prime-batch] B=6 tokens=5624 carried=6 partial=4 in 1556.8ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i6")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i7")
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 571.2ms
+[prime-batch] B=6 tokens=4584 carried=6 partial=0 in 1313.9ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i8")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i10")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i11")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i9")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i12")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i14")
+[meter] admit id=cmpl-67f69e6e3643bc78f3fccef0be9a21dc tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f3c817a5e7e37aae226eff125e05fbd8 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i8" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i9" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-9efee6f8a18cbca4da5e7c4c1c076f07 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-512f9f90c34876d3102a7df27effe825 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-fe67abc3573f27738f7c491c9c803a75 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-dd8bb79d311447a79136c41a6a777ae6 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-855b5476a46de5fa5f91e438b3f61f19 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b4b2acb12b312b8d3bd63c67274918f2 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i10" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i13" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i12" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i15" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i14" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 529.8ms
+[prime-batch] B=6 tokens=6144 carried=2 partial=6 in 1586.5ms
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 529.9ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1622.7ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 543.3ms
+[prime-batch] B=6 tokens=6144 carried=6 partial=6 in 1663.5ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 557.1ms
+[prime-batch] B=6 tokens=5624 carried=6 partial=4 in 1555.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i8")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i15")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i9")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i13")
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 571.1ms
+[prime-batch] B=6 tokens=4584 carried=6 partial=0 in 1314.5ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i11")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i16")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i10")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i18")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i13")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i17")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i12")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c4-i19")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i15")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i1")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i14")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i6")
+[meter] admit id=cmpl-526cfbd36611152dc8fa953275748787 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-2ffab140459ef2a7403b3a183e4aca8b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i17" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-d63110c1244d460c569ad0be8900c2de tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-692fc7b44ed062e866dd197f77643b82 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i18" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-cold-r5-c8-i19" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 530.0ms
+[prime-batch] B=4 tokens=4096 carried=2 partial=4 in 1061.5ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1086.5ms
+[prime-batch] B=4 tokens=4096 carried=4 partial=4 in 1114.7ms
+[prime-batch] B=4 tokens=3576 carried=4 partial=2 in 998.3ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i16")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i5")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i17")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i2")
+[prime-batch] B=2 tokens=1528 carried=2 partial=0 in 449.0ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i3")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i19")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i4")
+[meter] admit id=cmpl-64c4ba8f2fdd95e59bae9e0bb360da54 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i7")
+[meter] admit id=cmpl-85ee268c84e76f75befacebc887b8542 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i0")
+[meter] admit id=cmpl-e5243704b3738bff77785f00f37d55a3 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-2")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i8")
+[meter] admit id=cmpl-f08b8da84563e2a5c38772dfe6a5251c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-3")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i9")
+[meter] admit id=cmpl-eb780cf88ba868429d2154783ffc384a tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-4")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i11")
+[meter] admit id=cmpl-9c513c674866090afe9a24c7d4b46c0a tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-5")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i10")
+[meter] admit id=cmpl-fe74ccf2b4c95964447fdc0e0c7d1fd3 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-6")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i13")
+[meter] admit id=cmpl-189110cda31c02414facf2b26538b54b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-hot-7")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i12")
+[meter] admit id=cmpl-71ae86479e55aeb8e7e655469fcae509 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-9d4f97b96296c30298b151a1377e94ab tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-ea651366197521e6fee2cb6d0ddd59d7 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-0d112378c7626795f294f4a060b9b571 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-01377cd517a47da1ca2392644008c073 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-75aa1b9a3d17cace7e7421910e619624 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-ff340c6857af48580dc8017082fc6d13 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-9590134373cbfedb2134540c999eb27c tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-cea583471a6e9be9fb797ba5b7ec4a4a tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-c5df30e4016c85578d51c1c8ee32130b tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-832a9cedd869cbd9b97581c3157d2b78 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6fa8880eaa119984ff162835893e56b4 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-758f7aea290a24b5381b4bf1d200ead8 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-3f9e1e04f4f67df5c8598449468933d2 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e3f3b70f53b3c2d63db08fe7e178af1e tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-bb08e034c048191c6d6f0010cb540abf tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c8-i15" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c8-i15")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i15")
+[meter] admit id=cmpl-63c7dcbed45ea90574d26ab4729107dd tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-9fb51ded5ae4f04ee299f1ca627b5897 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e95f21281677420003e4b333857e1264 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-7a0abab4ad36ac2d0661db8c8ebc4ef0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-mixed90-r5-c8-i18" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-requal2-q27-r5-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27, ns "cx-requal2-q27-r5-q27-mixed90-r5-c8-i18")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-requal2-q27-r5-q27-cold-r5-c8-i14")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

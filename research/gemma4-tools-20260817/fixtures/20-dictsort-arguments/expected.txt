@@ -1,0 +1,6 @@
+<|turn>system
+<|tool>declaration:shell{description:<|"|>Runs a shell command and returns its output<|"|>,parameters:{properties:{command:{description:<|"|>The command to execute<|"|>,items:{type:<|"|>STRING<|"|>},type:<|"|>ARRAY<|"|>},timeout_ms:{description:<|"|>Timeout in milliseconds<|"|>,nullable:true,type:<|"|>NUMBER<|"|>},with_escalated_permissions:{type:<|"|>BOOLEAN<|"|>}},required:[<|"|>command<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+Sort these.<turn|>
+<|turn>model
+<|tool_call>call:shell{Alpha:<|"|>A<|"|>,alPha2:true,beta:2,zeta:<|"|>z<|"|>}<tool_call|><|tool_response>response:shell{value:<|"|>done<|"|>}<tool_response|>

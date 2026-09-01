@@ -1,0 +1,14 @@
+CAMPAIGN_START ts=2026-08-13T06:13:06Z host=<private-host-redacted>
+source=71682fdbdf4a3616b3ab1794bf4b75607d35dcfd repo=/opt/scratch/nvme/cx-gscost/memra out=/opt/scratch/nvme/cx-gscost/memra/research/gscost-20260813/raw/box1
+71682fdb (HEAD -> lane/cx-gscost, origin/lane/cx-gscost) chore(gscost): clean build driver whitespace
+87fcbd3d data(gscost): pin interleaved box1 campaign
+b7ad7762 data(gscost): start demotion cost lane
+904a5d5f Merge lane/cx-cachemeter: independent verification of the prefix-capture fix (evidence only)
+a5aef5c4 chore: hermes marker
+LOCK_QUEUE_CHECK ts=2026-08-13T06:13:33Z
+GPU_LOCK_ACQUIRED ts=2026-08-13T06:13:33Z pid=1364469
+ACTIVATION_START model=q27 ts=2026-08-13T06:13:34Z
+{"cached_tokens": [0], "completion_tokens_total": 16, "concurrency": 1, "decode_window_s": 0.20593370695132762, "decode_window_tok_s": 72.83897435763271, "finish_reasons": ["length"], "kind": "summary", "label": "activation/activation-q27-warmup", "max_tokens": 16, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [13], "shape": "warmup", "started_utc": "2026-08-13T06:13:41Z", "total_window_tok_s": 40.7695798387349, "ttft_max_s": 0.18638751097023487, "ttft_min_s": 0.18638751097023487, "ttft_p50_s": 0.18638751097023487, "wall_s": 0.3924494700040668}
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.524075530935079, "decode_window_tok_s": 78.32527345476022, "finish_reasons": ["length"], "kind": "summary", "label": "activation-q27", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-13T06:13:41Z", "total_window_tok_s": 76.24121723974683, "ttft_max_s": 0.191295083030127, "ttft_min_s": 0.191295083030127, "ttft_p50_s": 0.191295083030127, "wall_s": 6.715527617954649}
+FAIL: q27 EAGER activation probe did not capture a GraphSession
+CAMPAIGN_EXIT rc=1 ts=2026-08-13T06:13:49Z

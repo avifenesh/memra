@@ -1,0 +1,30 @@
+[server] starting; models config = [("q27", "/scratch-models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", Some("/scratch-models/draft-daily-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q27" <- /scratch-models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q27: regime draft attached (/scratch-models/draft-daily-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] q27: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q27"]
+[server] listening on http://127.0.0.1:8143
+[meter] admit id=cmpl-7340ec57993c57e273b255bd382ffa28 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="kpolicy-q27-cold-short-k0-r91" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q27": 336MB (admission gate = 2x)
+[meter] admit id=cmpl-e5ebdb15174712ad79bf8e719f0bc16d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="kpolicy-q27-cold-short-k0-r1" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d9707247aedc641de8bde076b0b891dd tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="kpolicy-q27-cold-long-k0-r1" K=0 source=operator-pin prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] skip seed insert: entry 317.6MB > budget 268MB
+[meter] admit id=cmpl-f671bdccff5636a17daabfaac9edcef0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="kpolicy-q27-cached-long-k0-r1" K=0 source=operator-pin prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] skip seed insert: entry 317.6MB > budget 268MB
+[meter] admit id=cmpl-5d082c79a614e955a93b453192cf9919 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="kpolicy-q27-cached-long-k0-r1" K=0 source=operator-pin prompt=5493 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] skip seed insert: entry 320.0MB > budget 268MB
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

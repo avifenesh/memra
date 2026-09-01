@@ -1,0 +1,322 @@
+[sbab] arm=even mode=timed prompts=/root/out-struct/prompts-decode run=t4v extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-struct/target/release/glm5-tp2-box-probe map=/root/out-struct/maps/agentic-t1-coactivation.json
+d4b2eb26a1d4939349327e6fc3bf81d3a0530f0ab4e2e99646f3f486e1089207  /root/memra-struct/target/release/glm5-tp2-box-probe
+[tp2-probe] mode=timed max_new=256 logit_steps=8 sampled=true seed=20260831 temp=1 top_p=0.95 eos=[154820, 154827, 154829] MEMRA_GLM5_TP=Some("all@0,1") MEMRA_PP_STAGES=None MEMRA_MOE_RESIDENT=Some("0") MEMRA_MOE_SLOTS=Some("16") MEMRA_BF16_MMV=Some("1") GATE_RED=None
+[tp2-probe] GPU0: NVIDIA RTX PRO 6000 Blackwell Workstation Edition
+[glm5-tp-preflight] armed ranks=2 devices=[0, 1] layers=45 kda_shard=34 mla_shard=11 moe_ep=42 kda_heads_per_rank=32 mla_heads_per_rank=32 experts_per_rank=144 transport=host-canonical weights_loaded=false performance_claim=false
+[bf16-mmv] RESIDENT output.weight ne=[4096, 154880] n=634388480 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_b.weight loads as 2D Float ne=[4096, 64] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[bf16-mmv] RESIDENT blk.0.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[glm5-tp-kda] head shard armed: heads_per_rank=32 head_dim=128 wo=column-over-gather transport=host-canonical performance_claim=false
+[bf16-mmv] RESIDENT blk.1.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.3.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk3-gate: 1296 MiB in 0.1s (21520 MiB/s)
+[slab-populate] blk3-up: 1296 MiB in 0.1s (21705 MiB/s)
+[slab-populate] blk3-down: 1296 MiB in 0.1s (21668 MiB/s)
+[glm5-tp-mla] head shard armed: heads_per_rank=32 kv_rank=512 latent=replicated indexer=replicated wo=column-over-gather transport=host-canonical performance_claim=false
+[glm5-tp-ep] expert-parallel armed: experts rank0=144 rank1=144 ownership=even-split router=root combine=slot-ordered-fmaf transport=host-canonical performance_claim=false
+[bf16-mmv] RESIDENT blk.4.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk4-gate: 1296 MiB in 0.1s (21644 MiB/s)
+[slab-populate] blk4-up: 1296 MiB in 0.1s (21723 MiB/s)
+[slab-populate] blk4-down: 1296 MiB in 0.1s (21750 MiB/s)
+[bf16-mmv] RESIDENT blk.5.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk5-gate: 1296 MiB in 0.1s (21672 MiB/s)
+[slab-populate] blk5-up: 1296 MiB in 0.1s (21763 MiB/s)
+[slab-populate] blk5-down: 1296 MiB in 0.1s (21756 MiB/s)
+[bf16-mmv] RESIDENT blk.6.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk6-gate: 1296 MiB in 0.1s (21039 MiB/s)
+[slab-populate] blk6-up: 1296 MiB in 0.1s (22694 MiB/s)
+[slab-populate] blk6-down: 1296 MiB in 0.1s (21553 MiB/s)
+[bf16-mmv] RESIDENT blk.7.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk7-gate: 1296 MiB in 0.1s (19874 MiB/s)
+[slab-populate] blk7-up: 1296 MiB in 0.1s (20420 MiB/s)
+[slab-populate] blk7-down: 1296 MiB in 0.1s (20247 MiB/s)
+[bf16-mmv] RESIDENT blk.8.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk8-gate: 1296 MiB in 0.1s (20205 MiB/s)
+[slab-populate] blk8-up: 1296 MiB in 0.1s (20084 MiB/s)
+[slab-populate] blk8-down: 1296 MiB in 0.1s (20255 MiB/s)
+[bf16-mmv] RESIDENT blk.9.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk9-gate: 1296 MiB in 0.1s (19651 MiB/s)
+[slab-populate] blk9-up: 1296 MiB in 0.1s (20251 MiB/s)
+[slab-populate] blk9-down: 1296 MiB in 0.1s (19683 MiB/s)
+[bf16-mmv] RESIDENT blk.10.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk10-gate: 1296 MiB in 0.1s (24694 MiB/s)
+[slab-populate] blk10-up: 1296 MiB in 0.1s (25289 MiB/s)
+[slab-populate] blk10-down: 1296 MiB in 0.1s (25299 MiB/s)
+[bf16-mmv] RESIDENT blk.11.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk11-gate: 1296 MiB in 0.1s (24342 MiB/s)
+[slab-populate] blk11-up: 1296 MiB in 0.1s (25351 MiB/s)
+[slab-populate] blk11-down: 1296 MiB in 0.1s (25312 MiB/s)
+[bf16-mmv] RESIDENT blk.12.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk12-gate: 1296 MiB in 0.1s (24826 MiB/s)
+[slab-populate] blk12-up: 1296 MiB in 0.1s (25203 MiB/s)
+[slab-populate] blk12-down: 1296 MiB in 0.1s (25184 MiB/s)
+[bf16-mmv] RESIDENT blk.13.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk13-gate: 1296 MiB in 0.1s (25009 MiB/s)
+[slab-populate] blk13-up: 1296 MiB in 0.1s (25359 MiB/s)
+[slab-populate] blk13-down: 1296 MiB in 0.1s (25331 MiB/s)
+[bf16-mmv] RESIDENT blk.14.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk14-gate: 1296 MiB in 0.1s (24912 MiB/s)
+[slab-populate] blk14-up: 1296 MiB in 0.1s (25252 MiB/s)
+[slab-populate] blk14-down: 1296 MiB in 0.1s (25305 MiB/s)
+[bf16-mmv] RESIDENT blk.15.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk15-gate: 1296 MiB in 0.1s (21358 MiB/s)
+[slab-populate] blk15-up: 1296 MiB in 0.1s (21432 MiB/s)
+[slab-populate] blk15-down: 1296 MiB in 0.1s (21452 MiB/s)
+[bf16-mmv] RESIDENT blk.16.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk16-gate: 1296 MiB in 0.1s (21475 MiB/s)
+[slab-populate] blk16-up: 1296 MiB in 0.1s (21349 MiB/s)
+[slab-populate] blk16-down: 1296 MiB in 0.1s (21028 MiB/s)
+[bf16-mmv] RESIDENT blk.17.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk17-gate: 1296 MiB in 0.1s (21421 MiB/s)
+[slab-populate] blk17-up: 1296 MiB in 0.1s (21453 MiB/s)
+[slab-populate] blk17-down: 1296 MiB in 0.1s (21515 MiB/s)
+[bf16-mmv] RESIDENT blk.18.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk18-gate: 1296 MiB in 0.1s (21278 MiB/s)
+[slab-populate] blk18-up: 1296 MiB in 0.1s (21491 MiB/s)
+[slab-populate] blk18-down: 1296 MiB in 0.1s (21478 MiB/s)
+[bf16-mmv] RESIDENT blk.19.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk19-gate: 1296 MiB in 0.1s (21384 MiB/s)
+[slab-populate] blk19-up: 1296 MiB in 0.1s (21513 MiB/s)
+[slab-populate] blk19-down: 1296 MiB in 0.1s (21378 MiB/s)
+[bf16-mmv] RESIDENT blk.20.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk20-gate: 1296 MiB in 0.1s (22395 MiB/s)
+[slab-populate] blk20-up: 1296 MiB in 0.1s (22431 MiB/s)
+[slab-populate] blk20-down: 1296 MiB in 0.1s (22480 MiB/s)
+[bf16-mmv] RESIDENT blk.21.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk21-gate: 1296 MiB in 0.1s (21977 MiB/s)
+[slab-populate] blk21-up: 1296 MiB in 0.1s (21992 MiB/s)
+[slab-populate] blk21-down: 1296 MiB in 0.1s (22027 MiB/s)
+[bf16-mmv] RESIDENT blk.22.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk22-gate: 1296 MiB in 0.1s (21534 MiB/s)
+[slab-populate] blk22-up: 1296 MiB in 0.1s (21552 MiB/s)
+[slab-populate] blk22-down: 1296 MiB in 0.1s (21575 MiB/s)
+[bf16-mmv] RESIDENT blk.23.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk23-gate: 1296 MiB in 0.1s (21972 MiB/s)
+[slab-populate] blk23-up: 1296 MiB in 0.1s (22106 MiB/s)
+[slab-populate] blk23-down: 1296 MiB in 0.1s (22104 MiB/s)
+[bf16-mmv] RESIDENT blk.24.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk24-gate: 1296 MiB in 0.1s (22004 MiB/s)
+[slab-populate] blk24-up: 1296 MiB in 0.1s (22013 MiB/s)
+[slab-populate] blk24-down: 1296 MiB in 0.1s (22078 MiB/s)
+[bf16-mmv] RESIDENT blk.25.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk25-gate: 1296 MiB in 0.1s (21959 MiB/s)
+[slab-populate] blk25-up: 1296 MiB in 0.1s (22095 MiB/s)
+[slab-populate] blk25-down: 1296 MiB in 0.1s (22050 MiB/s)
+[bf16-mmv] RESIDENT blk.26.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk26-gate: 1296 MiB in 0.1s (22335 MiB/s)
+[slab-populate] blk26-up: 1296 MiB in 0.1s (22386 MiB/s)
+[slab-populate] blk26-down: 1296 MiB in 0.1s (22459 MiB/s)
+[bf16-mmv] RESIDENT blk.27.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk27-gate: 1296 MiB in 0.1s (22283 MiB/s)
+[slab-populate] blk27-up: 1296 MiB in 0.1s (22359 MiB/s)
+[slab-populate] blk27-down: 1296 MiB in 0.1s (22407 MiB/s)
+[bf16-mmv] RESIDENT blk.28.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk28-gate: 1296 MiB in 0.1s (22419 MiB/s)
+[slab-populate] blk28-up: 1296 MiB in 0.1s (22367 MiB/s)
+[slab-populate] blk28-down: 1296 MiB in 0.1s (22413 MiB/s)
+[bf16-mmv] RESIDENT blk.29.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk29-gate: 1296 MiB in 0.1s (22430 MiB/s)
+[slab-populate] blk29-up: 1296 MiB in 0.1s (22434 MiB/s)
+[slab-populate] blk29-down: 1296 MiB in 0.1s (22393 MiB/s)
+[bf16-mmv] RESIDENT blk.30.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk30-gate: 1296 MiB in 0.1s (22538 MiB/s)
+[slab-populate] blk30-up: 1296 MiB in 0.1s (22568 MiB/s)
+[slab-populate] blk30-down: 1296 MiB in 0.1s (22630 MiB/s)
+[bf16-mmv] RESIDENT blk.31.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk31-gate: 1296 MiB in 0.1s (20398 MiB/s)
+[slab-populate] blk31-up: 1296 MiB in 0.1s (21383 MiB/s)
+[slab-populate] blk31-down: 1296 MiB in 0.1s (21464 MiB/s)
+[bf16-mmv] RESIDENT blk.32.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk32-gate: 1296 MiB in 0.1s (19506 MiB/s)
+[slab-populate] blk32-up: 1296 MiB in 0.1s (19530 MiB/s)
+[slab-populate] blk32-down: 1296 MiB in 0.1s (19491 MiB/s)
+[bf16-mmv] RESIDENT blk.33.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk33-gate: 1296 MiB in 0.1s (19417 MiB/s)
+[slab-populate] blk33-up: 1296 MiB in 0.1s (19455 MiB/s)
+[slab-populate] blk33-down: 1296 MiB in 0.1s (19572 MiB/s)
+[bf16-mmv] RESIDENT blk.34.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk34-gate: 1296 MiB in 0.1s (19542 MiB/s)
+[slab-populate] blk34-up: 1296 MiB in 0.1s (19571 MiB/s)
+[slab-populate] blk34-down: 1296 MiB in 0.1s (19470 MiB/s)
+[bf16-mmv] RESIDENT blk.35.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk35-gate: 1296 MiB in 0.1s (20623 MiB/s)
+[slab-populate] blk35-up: 1296 MiB in 0.1s (20484 MiB/s)
+[slab-populate] blk35-down: 1296 MiB in 0.1s (19545 MiB/s)
+[bf16-mmv] RESIDENT blk.36.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk36-gate: 1296 MiB in 0.1s (19544 MiB/s)
+[slab-populate] blk36-up: 1296 MiB in 0.1s (19564 MiB/s)
+[slab-populate] blk36-down: 1296 MiB in 0.1s (19548 MiB/s)
+[bf16-mmv] RESIDENT blk.37.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk37-gate: 1296 MiB in 0.1s (22406 MiB/s)
+[slab-populate] blk37-up: 1296 MiB in 0.1s (22485 MiB/s)
+[slab-populate] blk37-down: 1296 MiB in 0.1s (22584 MiB/s)
+[bf16-mmv] RESIDENT blk.38.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk38-gate: 1296 MiB in 0.1s (22376 MiB/s)
+[slab-populate] blk38-up: 1296 MiB in 0.1s (22482 MiB/s)
+[slab-populate] blk38-down: 1296 MiB in 0.1s (22456 MiB/s)
+[bf16-mmv] RESIDENT blk.39.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk39-gate: 1296 MiB in 0.1s (22391 MiB/s)
+[slab-populate] blk39-up: 1296 MiB in 0.1s (22515 MiB/s)
+[slab-populate] blk39-down: 1296 MiB in 0.1s (22574 MiB/s)
+[bf16-mmv] RESIDENT blk.40.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk40-gate: 1296 MiB in 0.1s (22412 MiB/s)
+[slab-populate] blk40-up: 1296 MiB in 0.1s (22510 MiB/s)
+[slab-populate] blk40-down: 1296 MiB in 0.1s (22473 MiB/s)
+[bf16-mmv] RESIDENT blk.41.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk41-gate: 1296 MiB in 0.1s (22429 MiB/s)
+[slab-populate] blk41-up: 1296 MiB in 0.1s (22510 MiB/s)
+[slab-populate] blk41-down: 1296 MiB in 0.1s (22478 MiB/s)
+[bf16-mmv] RESIDENT blk.42.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk42-gate: 1296 MiB in 0.1s (23926 MiB/s)
+[slab-populate] blk42-up: 1296 MiB in 0.1s (25617 MiB/s)
+[slab-populate] blk42-down: 1296 MiB in 0.1s (25703 MiB/s)
+[bf16-mmv] RESIDENT blk.43.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk43-gate: 1296 MiB in 0.1s (24375 MiB/s)
+[slab-populate] blk43-up: 1296 MiB in 0.1s (25258 MiB/s)
+[slab-populate] blk43-down: 1296 MiB in 0.1s (25355 MiB/s)
+[bf16-mmv] RESIDENT blk.44.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk44-gate: 1296 MiB in 0.1s (24529 MiB/s)
+[slab-populate] blk44-up: 1296 MiB in 0.1s (25605 MiB/s)
+[slab-populate] blk44-down: 1296 MiB in 0.1s (25557 MiB/s)
+[tp2-probe] loaded in 41.0s: n_layer=46 n_embd=4096 n_vocab=154880 mtp_loaded=false
+[tp2-probe] vram-post-load dev-root: free=6.67 GiB / total=94.97 GiB
+[tp2-probe] d00-code: 987 chars -> 239 tokens
+[bf16-tc] flag=off (MEMRA_PP_BF16; engagement is the per-shape ENGAGED line + the dispatch counter)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=239, t_kv=239, nh=32, width=239); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":4.4139,"ttft_s":4.4617,"gen_wall_s":11.2324,"decode_tok_s":22.702,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":4.1176,"ttft_s":4.1621,"gen_wall_s":11.2920,"decode_tok_s":22.582,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+[tp2-probe] d01-code: 1135 chars -> 289 tokens
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":4.9412,"ttft_s":4.9857,"gen_wall_s":11.3065,"decode_tok_s":22.553,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+[tp2-probe] d02-code: 2049 chars -> 563 tokens
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":11.5269,"ttft_s":11.5719,"gen_wall_s":11.5181,"decode_tok_s":22.139,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+[tp2-probe] d03-code: 1634 chars -> 453 tokens
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":8.0380,"ttft_s":8.0825,"gen_wall_s":11.3837,"decode_tok_s":22.401,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+[tp2-probe] d04-code: 2108 chars -> 520 tokens
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":10.5679,"ttft_s":10.6124,"gen_wall_s":7.7267,"decode_tok_s":22.261,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+[tp2-probe] d05-code: 785 chars -> 192 tokens
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":3.3328,"ttft_s":3.3765,"gen_wall_s":11.2334,"decode_tok_s":22.700,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+[tp2-probe] d06-prose: 505 chars -> 131 tokens
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.2675,"ttft_s":2.3114,"gen_wall_s":11.1518,"decode_tok_s":22.866,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+[tp2-probe] d07-prose: 1097 chars -> 281 tokens
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":4.8107,"ttft_s":4.8554,"gen_wall_s":11.3093,"decode_tok_s":22.548,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+[tp2-probe] d08-prose: 809 chars -> 225 tokens
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":3.8443,"ttft_s":3.8890,"gen_wall_s":11.3141,"decode_tok_s":22.538,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+[tp2-probe] d09-prose: 677 chars -> 140 tokens
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.4445,"ttft_s":2.4886,"gen_wall_s":11.2267,"decode_tok_s":22.714,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+[tp2-probe] ep-peer-slot-dispatches=1012568
+[tp2-probe] done: /root/out-struct/even-timed-t4v/rows.jsonl
+0, 1 MiB
+1, 1 MiB
+2, 1 MiB
+3, 1 MiB
+[sbab] rc=0 arm=even mode=timed run=t4v ep-peer-slot-dispatches=1012568

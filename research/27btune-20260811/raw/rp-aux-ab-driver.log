@@ -1,0 +1,192 @@
+lock-request 2026-08-11T01:36:17Z wait=1200s
+capture-start 2026-08-11T01:36:17Z
+tree f444c0658209cc33b8506ebadbcc881fe0a1b7d0
+binary-sha256 9266c1bbbf62e3ca89739fa0ed299e74d04f16dbf4710337cf3b91aba35929c3
+model-sha256 d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517
+draft-sha256 b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581
+contract K=3 NGEN=64 CHAT=1 prompt=6e00d76296069277dc7717115f977aedcab502b610c95a042c63c30eefdb86b2 order=A,B,B,A,A,B,B,A,A,B
+[gpu 2026-08-11T01:36:41Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P8, 54, 9.48 W, 180 MHz, 405 MHz, 157 MiB, 24463 MiB, 0 %
+=== rep=1 arm=A label=base start=2026-08-11T01:36:41Z ===
+[gpu 2026-08-11T01:36:41Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P8, 54, 9.48 W, 180 MHz, 405 MHz, 157 MiB, 24463 MiB, 0 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.359s = 46.37 tok/s (gen-only; this run's prime 0.098s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.650s = 96.89 tok/s (2.09x vs generate; this run's prime 0.100s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=1 arm=A label=base end=2026-08-11T01:36:50Z rc=0 ===
+=== rep=1 arm=B label=auxdual start=2026-08-11T01:36:50Z ===
+[gpu 2026-08-11T01:36:50Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 67, 168.22 W, 1912 MHz, 14001 MHz, 157 MiB, 24463 MiB, 100 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.360s = 46.32 tok/s (gen-only; this run's prime 0.098s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.645s = 97.63 tok/s (2.11x vs generate; this run's prime 0.100s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=1 arm=B label=auxdual end=2026-08-11T01:36:58Z rc=0 ===
+=== rep=2 arm=B label=auxdual start=2026-08-11T01:36:58Z ===
+[gpu 2026-08-11T01:36:58Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 69, 169.70 W, 1815 MHz, 14001 MHz, 157 MiB, 24463 MiB, 100 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.362s = 46.26 tok/s (gen-only; this run's prime 0.099s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.647s = 97.44 tok/s (2.11x vs generate; this run's prime 0.100s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=2 arm=B label=auxdual end=2026-08-11T01:37:06Z rc=0 ===
+=== rep=2 arm=A label=base start=2026-08-11T01:37:06Z ===
+[gpu 2026-08-11T01:37:06Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 64, 138.11 W, 1695 MHz, 14001 MHz, 157 MiB, 24463 MiB, 14 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.362s = 46.25 tok/s (gen-only; this run's prime 0.099s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.655s = 96.22 tok/s (2.08x vs generate; this run's prime 0.101s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=2 arm=A label=base end=2026-08-11T01:37:14Z rc=0 ===
+=== rep=3 arm=A label=base start=2026-08-11T01:37:14Z ===
+[gpu 2026-08-11T01:37:14Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 72, 164.07 W, 1905 MHz, 14001 MHz, 157 MiB, 24463 MiB, 66 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.363s = 46.24 tok/s (gen-only; this run's prime 0.099s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.656s = 95.98 tok/s (2.08x vs generate; this run's prime 0.101s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=3 arm=A label=base end=2026-08-11T01:37:23Z rc=0 ===
+=== rep=3 arm=B label=auxdual start=2026-08-11T01:37:23Z ===
+[gpu 2026-08-11T01:37:23Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 71, 160.60 W, 1890 MHz, 14001 MHz, 157 MiB, 24463 MiB, 44 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.364s = 46.19 tok/s (gen-only; this run's prime 0.099s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.650s = 96.98 tok/s (2.10x vs generate; this run's prime 0.101s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=3 arm=B label=auxdual end=2026-08-11T01:37:31Z rc=0 ===
+=== rep=4 arm=B label=auxdual start=2026-08-11T01:37:31Z ===
+[gpu 2026-08-11T01:37:31Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 74, 169.33 W, 1837 MHz, 14001 MHz, 157 MiB, 24463 MiB, 100 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.365s = 46.16 tok/s (gen-only; this run's prime 0.100s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.649s = 97.08 tok/s (2.10x vs generate; this run's prime 0.102s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=4 arm=B label=auxdual end=2026-08-11T01:37:39Z rc=0 ===
+=== rep=4 arm=A label=base start=2026-08-11T01:37:39Z ===
+[gpu 2026-08-11T01:37:39Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 75, 169.43 W, 1800 MHz, 14001 MHz, 157 MiB, 24463 MiB, 100 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.365s = 46.15 tok/s (gen-only; this run's prime 0.100s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.658s = 95.81 tok/s (2.08x vs generate; this run's prime 0.102s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=4 arm=A label=base end=2026-08-11T01:37:48Z rc=0 ===
+=== rep=5 arm=A label=base start=2026-08-11T01:37:48Z ===
+[gpu 2026-08-11T01:37:48Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 76, 169.04 W, 1807 MHz, 14001 MHz, 157 MiB, 24463 MiB, 100 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.365s = 46.14 tok/s (gen-only; this run's prime 0.100s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.657s = 95.85 tok/s (2.08x vs generate; this run's prime 0.102s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=5 arm=A label=base end=2026-08-11T01:37:56Z rc=0 ===
+=== rep=5 arm=B label=auxdual start=2026-08-11T01:37:56Z ===
+[gpu 2026-08-11T01:37:56Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 76, 168.69 W, 1845 MHz, 14001 MHz, 157 MiB, 24463 MiB, 100 %
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.367s = 46.10 tok/s (gen-only; this run's prime 0.100s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.650s = 96.94 tok/s (2.10x vs generate; this run's prime 0.102s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== rep=5 arm=B label=auxdual end=2026-08-11T01:38:04Z rc=0 ===
+[gpu 2026-08-11T01:38:04Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, P0, 71, 146.19 W, 1755 MHz, 14001 MHz, 157 MiB, 24463 MiB, 0 %
+capture-end 2026-08-11T01:38:04Z

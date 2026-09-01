@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "/home/ubuntu/dspark2/code/dspark_data.py", line 110, in __init__
+    chunk = CorpusChunk(path)
+            ^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/dspark2/code/dspark_data.py", line 33, in __init__
+    raise ValueError(f"{path} lacks .remote-verified")
+ValueError: /home/ubuntu/dspark2/corpus/chunks/pilot-00000-00064 lacks .remote-verified

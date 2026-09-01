@@ -1,0 +1,36 @@
+{
+ "name": "p02-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 563,
+   "completion_tokens": 128,
+   "total_tokens": 691,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 28.333858212,
+   "spec": {
+    "rounds": 59,
+    "drafted": 295,
+    "accepted": 68,
+    "acceptance_rate": 0.2305084745762712
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "Let me start by exploring the main repository structure.<tool_call>Bash-0425248242cd903c2b1c2bexec /home/av",
+     "reasoning": "Let me start by exploring the repository structure and understanding what this \"memra engine\" is about.\n\nI need to:\n1. Look at the main repo at /home/avifenesh/projects/bw24\n2. Check the worktrees\n3. Read the prior report to avoid duplicates\n4. Look for security, performance, new build ideas, docs misalignments, and web research opportunities\n\nLet me begin with the main repo structure."
+    }
+   }
+  ]
+ }
+}

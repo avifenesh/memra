@@ -1,0 +1,143 @@
+{
+  "requests_compared": 17,
+  "exactness_ok": false,
+  "budget_ok": true,
+  "max_tokens": 256,
+  "plain_affinity_rewinds": 11,
+  "slope_on_ms_per_uncached_tok": 0.063,
+  "slope_off_ms_per_uncached_tok": 0.2267,
+  "slope_on_r2": 0.62598,
+  "slope_off_r2": 0.98812,
+  "late_turn_mean_ttft_on_s": 0.097,
+  "late_turn_mean_ttft_off_s": 0.2787,
+  "learning_turns": 2,
+  "ttft_by_turn": {
+    "on": [
+      {
+        "turn": 0,
+        "ttft_s": 0.24284,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.12348,
+        "cached": 743
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.095893,
+        "cached": 1027
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.094689,
+        "cached": 1204
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.095424,
+        "cached": 1363
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.096288,
+        "cached": 1547
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.094489,
+        "cached": 1710
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.09713,
+        "cached": 1854
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.098982,
+        "cached": 2029
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.097442,
+        "cached": 2246
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.100462,
+        "cached": 2396
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.099192,
+        "cached": 2609
+      }
+    ],
+    "off": [
+      {
+        "turn": 0,
+        "ttft_s": 0.2193,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.24809,
+        "cached": 0
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.10942,
+        "cached": 746
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.128777,
+        "cached": 746
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.180074,
+        "cached": 746
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.217184,
+        "cached": 746
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.26291,
+        "cached": 746
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.3063,
+        "cached": 746
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.331696,
+        "cached": 746
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.355724,
+        "cached": 746
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.40663,
+        "cached": 746
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.487999,
+        "cached": 746
+      }
+    ]
+  },
+  "failures": [
+    "EXACTNESS: 11 request(s) diverged byte-for-byte between affinity on/off \u2014 [{'request': ['burst', 2, 14], 'on_sha': '3cf171ec251c977562da4475af9ddbaa21d72952603aaf6907fc4604297b6aba', 'off_sha': 'd72c0e4d17466eaeccdacfcf79cacdb5753154d87531ffde154246a39c6fd748', 'on_chars': 965, 'off_chars': 980}, {'request': ['postburst', 0, 16], 'on_sha': '5f315fdb13e21343c6faea096653a614833e20e1329865cef3d3be7fd2f3a98b', 'off_sha': '958bc3ac0b7308e04bcaf07e0240c294bb89bccd3b70ecbbb67cce154847e807', 'on_chars': 1151, 'off_chars': 1292}, {'request': ['sequential', 1, 1], 'on_sha': '0de6901f23b06bc99b5634e248643e5888d9b3c9f0fec4b2ac9537086d779013', 'off_sha': 'fa8be660e4a5ef301837ac683283617aaf5cea90210ae38dbf03c5c650ac86ee', 'on_chars': 901, 'off_chars': 967}]"
+  ]
+}

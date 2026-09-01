@@ -1,0 +1,648 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;color:#1a1a1a;background:#f5f7fa;display:flex;flex-direction:column;min-height:100vh}
+a{color:#0b5cff;text-decoration:none}
+a:focus,a:hover{text-decoration:underline}
+header{position:sticky;top:0;z-index:100;background:#0f172a;color:#fff;padding:0.75rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+header h1{font-size:1.25rem;font-weight:700;letter-spacing:0.02em}
+header .search{display:flex;align-items:center;gap:0.5rem}
+header input[type="search"]{padding:0.45rem 0.6rem;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#f1f5f9;min-width:220px}
+header button{background:#0b5cff;color:#fff;border:none;padding:0.45rem 0.7rem;border-radius:4px;cursor:pointer;font-weight:600}
+header button:focus{outline:2px solid #93c5fd;outline-offset:2px}
+.layout{display:flex;flex:1}
+.sidebar{width:260px;background:#fff;border-right:1px solid #e2e8f0;padding:1rem;position:sticky;top:56px;height:calc(100vh - 56px);overflow:auto}
+.sidebar nav ul{list-style:none}
+.sidebar nav li{margin:0.25rem 0}
+.sidebar nav a{display:block;padding:0.35rem 0.5rem;border-radius:4px;color:#334155}
+.sidebar nav a:focus,.sidebar nav a:hover{background:#eef2ff;text-decoration:none}
+.sidebar nav a.active{background:#e0e7ff;color:#1e40af;font-weight:600}
+main{flex:1;padding:1.5rem;max-width:1200px}
+section{margin-bottom:2.5rem;padding:1.25rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.03)}
+section h2{font-size:1.15rem;margin-bottom:0.5rem;color:#0f172a}
+section p{margin:0.35rem 0;color:#334155}
+section dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.5rem 1rem;margin:0.75rem 0}
+section dt{font-weight:600;color:#0f172a}
+section dd{color:#475569}
+section table{width:100%;border-collapse:collapse;margin:0.75rem 0;font-size:0.95rem}
+section table caption{font-weight:600;text-align:left;margin-bottom:0.4rem}
+section th,section td{border:1px solid #cbd5e1;padding:0.4rem 0.6rem;text-align:left}
+section th{background:#f8fafc;font-weight:600}
+section tr:nth-child(even){background:#f8fafc}
+section pre{background:#0f172a;color:#e2e8f0;padding:0.75rem;border-radius:6px;overflow:auto;font-size:0.9rem;line-height:1.4}
+section .actions{display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap}
+section button{padding:0.45rem 0.75rem;border:none;border-radius:4px;cursor:pointer;font-weight:600;background:#0f172a;color:#fff}
+section button:focus{outline:2px solid #0b5cff;outline-offset:2px}
+section button.secondary{background:#fff;color:#0f172a;border:1px solid #cbd5e1}
+.status{padding:0.5rem 0.75rem;border-radius:6px;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;margin-bottom:1rem;display:inline-flex;align-items:center;gap:0.5rem}
+.status::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981}
+.toast{position:fixed;bottom:1rem;right:1rem;background:#0f172a;color:#fff;padding:0.6rem 0.9rem;border-radius:6px;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+.appendix table{font-size:0.9rem}
+.appendix th{background:#f1f5f9}
+@media (max-width:800px){
+  .layout{flex-direction:column}
+  .sidebar{width:100%;height:auto;position:static;border-right:none;border-bottom:1px solid #e2e8f0}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Atlas Operations Manual</h1>
+<div class="search">
+<input type="search" id="search" placeholder="Search sections..." aria-label="Search sections">
+<button id="clearSearch">Clear</button>
+</div>
+<div class="status" id="systemStatus">System nominal</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Section navigation">
+<nav>
+<ul id="toc"></ul>
+</nav>
+</aside>
+<main id="content">
+<section id="s1">
+<h2>1. Introduction</h2>
+<p>This manual describes operational procedures for the Atlas platform. It is intended for engineers, operators, and auditors who require precise guidance.</p>
+<p>All numbered sections must be reviewed in order. Deviations require documented approval from the operations lead.</p>
+<dl>
+<dt>Scope</dt><dd>Core platform operations and maintenance</dd>
+<dt導演</dt><dd>Operations Director</dd>
+<dt>Revision</dt><dd>2025-06-01</dd>
+<dt>Classification</dt><dd>Internal Use</dd>
+</dl>
+<table>
+<caption>Revision history</caption>
+<thead><tr><th>Rev</th><th>Date</th><th>Author</th><th>Notes</th><th>Approved</th><th>Pages</th></tr></thead>
+<tbody>
+<tr><td>1.0</td><td>2025-06-01</td><td>A. Smith</td><td>Initial release</td><td>Yes</td><td>400</td></tr>
+<tr><td>1.1</td><td>2025-07-15</td><td>B. Jones</td><td>Clarified safety</td><td>Yes</td><td>405</td></tr>
+<tr><td>1.2</td><td>2025-08-20</td><td>C. Lee</td><td>Updated commands</td><td>Pending</td><td>410</td></tr>
+<tr><td>1.3</td><td>2025-09-10</td><td>D. Patel</td><td>Appendix added</td><td>Pending</td><td>420</td></tr>
+<tr><td>1.4</td><td>2025-10-01</td><td>E. Kim</td><td>Formatting</td><td>Pending</td><td>430</td></tr>
+<tr><td>1.5</td><td>2025-10-30</td><td>F. Garcia</td><td>Review complete</td><td>Pending</td><td>440</td></tr>
+</tbody>
+</table>
+<pre>atlas intro --read --verbose</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s2">
+<h2>2. Purpose</h2>
+<p>The Atlas platform centralizes telemetry, workflow orchestration, and compliance reporting. This manual ensures consistent execution across sites.</p>
+<p>Readers should verify they are using the correct edition before applying procedures.</p>
+<dl>
+<dt>Objective</dt><dd>Unified operations</dd>
+<dt>Stakeholders</dt><dd>Engineering, Safety, QA</dd>
+<dt>Frequency</dt><dd>Continuous</dd>
+<dt>Metrics</dt><dd>Uptime, error rate, latency</dd>
+</dl>
+<table>
+<caption>Purpose metrics</caption>
+<thead><tr><th>Metric</th><th>Target</th><th>Current</th><th>Owner</th><th>Source</th><th>Alert</th></tr></thead>
+<tbody>
+<tr><td>Uptime</td><td>99.95%</td><td>99.97%</td><td>Ops</td><td>Monitoring</td><td>Email</td></tr>
+<tr><td>Latency</td><td>&lt;200ms</td><td>180ms</td><td>Network</td><td>APM</td><td>Page</td></tr>
+<tr><td>Errors</td><td>&lt;0.1%</td><td>0.08% Proper</td><td>QA</td><td>Logs</td><td>Ticket</td></tr>
+<tr><td>Backlog</td><td>&lt;50</td><td>42</td><td>Product</td><td>Jira</td><td>Slack</td></tr>
+<tr><td>Compliance</td><td>100%</td><td>100%</td><td>Legal</td><td>Audit</td><td>Report</td></tr>
+<tr><td>Training</td><td>Monthly</td><td>Monthly</td><td>HR</td><td>LMS</td><td>None</td></tr>
+</tbody>
+</table>
+<pre>atlas purpose --list-metrics</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s3">
+<h2>3. Scope</h2>
+<p>This manual covers configuration, deployment, monitoring, incident response, and decommissioning. Out-of-scope items are listed in Appendix C.</p>
+<p>Each subsection defines responsibilities and required artifacts.</p>
+<dl>
+<dt>In scope</dt><dd>All production clusters</dd>
+<dt>Out of scope</dt><dd>Experimental labs</dd>
+<dt>Interface</dt><dd>CLI, API, UI</dd>
+<dt>Change control</dt><dd>RFC process</dd>
+</dl>
+<table>
+<caption>Scope boundaries</caption>
+<thead><tr><th>Area</th><th>Included</th><th>Excluded</th><th>Owner</th><th>Review cadence</th><th>Last review</th></tr></thead>
+<tbody>
+<tr><td>Compute</td><td>Yes</td><td>No</td><td>Infra</td><td>Quarterly</td><td>2025-09-01</td></tr>
+的直接<tr><td>Network</td><td>Yes</_prefix><td>No</td><td>Net</td><td>Monthly</td><td>2025-10-01</td></tr>
+<tr><td>Storage</td><td>Yes</td><td>No</td><td>Data</td><td>Quarterly</td><td>2025-09-15</td></tr>
+<tr><td>Security</td><td>Yes</td><td>No</td><td>SecOps</td><td>Monthly</td><td>2025-10-05</td></tr>
+<tr><td>Compliance</td><td>Yes</td><td>No</td><td>Legal</td><td>Annually</td><td>2025-01-10</td></tr>
+<tr><td>Training</td><td>Yes</td><td>No</td><td>HR</td><td>Monthly</td><td>2025-10-12</td></tr>
+</tbody>
+</table>
+<pre>atlas scope --define</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s4">
+<h2>4. Definitions</h2>
+<p>Key terms used throughout this manual are defined here to ensure consistent interpretation.</p>
+<p>Terms are sorted alphabetically and cross-referenced where applicable.</p>
+<dl>
+<dt>Cluster</dt><dd>A set of nodes managed as one</dd>
+<dt>Node</dt><dd>Individual host machine</dd>
+<dt>Pod</dt><dd>Smallest deployable unit</dd>
+<dt>Service</dt><dd>Network endpoint abstraction</dd>
+</dl>
+<table>
+<caption>Definitions index</caption>
+<thead><tr><th>Term</th><th>Definition</th><th>Source</th><th>Context</th><th>Example</th><th>Version</th></tr></thead>
+<tbody>
+<tr><td>Cluster</td><td>Group of nodes</td><td>K8s</td><td>Architecture</td><td>prod-01</td><td>v1.28</td></tr>
+<tr><td>Node</td><td>Host machine</td><td>K8s</td><td>Infrastructure</td><td>10.0.0.1</td><td>v1.28</td></tr>
+<tr><td>Pod</td><td>Deployable unit</td><td>K8s</td><td分钟左右Workload</td><td>api-7f9c</td><td>v1.28</td></tr>
+<tr><td>Service</td><td>Network abstraction</td><td>K8s</td><td>Networking</td><td>api-svc</td><td>v1.28</td></tr>
+<tr><td>Namespace</td><td>Virtual cluster</td><td>K8s</td><td>Multi-tenant</td><td>default</td><td>v1.28</td></tr>
+<tr><td>ConfigMap</td><td>Configuration data</td><td>K8s</td><td>Config</td><td>app-config</td><td>v1.28</td></tr>
+</tbody>
+</table>
+<pre>atlas terms --list</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s5">
+<h2>5. System Overview</h2>
+<p>The Atlas system comprises control plane, data plane, and auxiliary services. Each layer has defined SLAs and redundancy requirements.</p>
+<p>Diagrams are maintained in the engineering wiki and versioned alongside code.</p>
+<抬起头dl>
+<dt>Control plane</dt><dd>Management and scheduling</dd>
+<dt>Data plane</dt><dd>Workload execution</dd>
+<dt>Auxiliary</dt><dd>Monitoring, logging, backup</dd>
+<dt>Redundancy</dt><dd>Multi-zone deployment</dd>
+</dl>
+<table>
+<caption>System components</caption>
+<thead><tr><th>Component</th><th>Role</th><th>Replicas</th><th>Criticality</th><th>Uptime SLA</th><th>Owner</th></tr></thead>
+<tbody>
+<tr><td>API Server</td><td>Entry point</td><td>3</td><td>High</td><td>99.99%</td><td>Platform</td></tr>
+<tr><td>etcd</td><td>State store</td><td>3</td><td>Critical</td><td>99.999%</td><td>Storage</td></tr>
+<tr><td>Scheduler</td><td>Pod placement</td><td>1</td><td>High</td><td>99.9%</td><td>Platform</td></tr>
+<tr><td>Controller</td><td>Reconciliation</td><td>1</td><td>High</td><td>99.9%</td><td>Platform</td></tr>
+<tr><td>Proxy</td><td>Network routing</td><td>Per node</td><td>Medium</td><td>99.9%</td><td>Network</td></tr>
+<tr><td>Ingress</td><td>External access</td><td>2</td><td>High</td><td>99.95%</td><td>Network</td></tr>
+</tbody>
+</table>
+<pre>atlas overview --components</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+sterdam</section>
+<section id="s6">
+<h2>6. Architecture</h2>
+<p>Architecture follows a layered model with clear separation of concerns. Communication between layers uses authenticated gRPC and REST.</p>
+<p>All services expose health and readiness endpoints on port 8080.</p>
+<dl>
+<dt>Layer</dt><dd>Logical grouping</dd>
+<dt>Boundary</dt><dd>API contract</dd>
+<dt>Protocol</dt><dd>gRPC, HTTPS</dd>
+<dt>Port</dt><dd>8080, 9090</dd>
+</dl>
+<table>
+<caption>Layer inventory</caption>
+<thead><tr><th>Layer</th><th>Services</th><th>Ports</th><th>Auth</th><th>Logging</th><th>Monitoring</th></tr></thead>
+<tbody>
+<tr><td>Edge</td><td>Gateway</td><td>443</td><td>OAuth2</td><td>JSON</td><td>Prometheus</td></tr>
+<tr><td>Service</td><td>Business APIs</td><td>8080</td><td>mTLS</td><td>JSON</td><td>Prometheus</td></tr>
+<tr><td>Data</td><td>Database</td><td>5432</td><td>mTLS</td><td>Slow query</td><td>pgwatch</td></tr>
+<tr><td>Cache</td><td>Redis</td><td>6379</td><td>Password</td><td>Command log</td><td>Redis exporter</td></tr>
+<tr><td>Queue</td><td>Kafka</td><td>9092</td><td>SASL</td><td>Audit</td><td>JMX</td></tr>
+<tr><td>Batch</td><td>Spark</td><td>4040</td><td>Kerberos</td><td>YARN</td><td>Ganglia</td></tr>
+</tbody>
+</table>
+<pre>atlas arch --list-layers</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s7">
+<h2>7. Deployment Model</h2>
+<p>Deployments use immutable infrastructure with blue-green promotion. Canary releases are mandatory for changes exceeding 5% traffic impact.</p>
+<p>All artifacts are signed and stored in the internal registry.</p>
+<dl>
+<dt>Strategy</dt><dd>Blue-green with canary</dd>
+<dt>Registry</dt><dd>Internal Harbor</dd>
+<dt>Signing</dt><dd>Cosign</dd>
+<dt>Approval</dt><dd>Two engineers</dd>
+</dl>
+<table>
+<caption>Deployment stages</caption>
+<thead><tr><th>Stage</th><th>Duration</th><th>Success criteria</th><th>Rollback trigger</th><th>Owner</th><th>Tooling</th></tr></thead>
+<tbody>
+<tr><td>Build</td><td>10m</td><td>Tests pass</td><td>Fail</td><td>CI</td><td>GitHub Actions</td></tr>
+<tr><td>Staging</td><td>30m</td><td>Smoke pass</td><td>Error rate &gt;1%</td><td>QA</td><td>Argo</td></tr>
+<tr><td>Canary</td><td>15m</td><td>Latency stable</td><td>Latency &gt;250ms</td><td>Ops</td><td>Istio</td></tr>
+<tr><td>Production</td><td>1h</td><td>SLO met</td><td>SLO breach</td><td>Ops</td><td>Argo</td></tr>
+<tr><td>Validation</td><td>24h</td><td>No alerts</td><td>Alert fired</td><td>SRE</td><td>PagerDuty</td></tr>
+<tr><td>Cleanup</td><td>1d</td><td>Artifacts pruned</td><td>N/A</td><td>Infra</td><td>Cron</td></tr>
+</tbody>
+</table>
+<pre>atlas deploy --strategy blue-green</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s8">
+<h2>8. Configuration Management</h2>
+<p>Configuration is stored in versioned YAML files and applied via GitOps. Secrets are managed in HashiCorp Vault with dynamic leases.</p>
+<p>Changes require PR review and automated validation.</p>
+<dl>
+<dt>Store</dt><dd>Git repository</dd>
+<dt>Secret backend</dt><dd>HashiCorp Vault</dd>
+<dt>Validation</dt><dd>JSON Schema</dd>
+<dt>Audit</dt><dd>Immutable log</dd>
+</dl>
+<table>
+<caption>Configuration items</caption>
+<thead><tr><th>Item</th><th>Format</th><th>Location</th><th>Rotation</th><th>Owner</th><th>Encryption</th></tr></thead>
+<tbody>
+<tr><td>API keys</td><td>YAML</td><td>Vault</td><td>90 days</td><td>Security</td><td>AES-256</td></tr>
+<tr><td>TLS certs</td><td>PEM</td><td>Vault</td><td>30 days</td><td>Security</td><td>RSA-4096</td></tr>
+<tr><td>DB credentials</td><td>YAML</td><td>Vault</td><td>60 days</td><td>DBA</td><td>AES-256</td></tr>
+<tr><td>Feature flags</td><td>JSON</td><td>Config repo</td><td>On change</td><td>Product</td><td>None</td></tr>
+<tr><td>Env vars</td><td>YAML</td><td>Config repo</td><td>On change</td><td>DevOps</td><td>None</td></tr>
+<tr><td>Policies</td><td>Rego</td><td>OPA repo</td><td>Quarterly</td><td>Security</td><td>Signed</td></tr>
+</tbody>
+</table>
+<pre>atlas config --validate --strict</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s9">
+<h2>9. Access Control</h2>
+<p>Access follows least privilege with role-based permissions. All actions are logged and reviewed monthly.</p>
+<p>Multi-factor authentication is required for privileged operations.</p>
+<dl>
+<dt>Model</dt><dd>RBAC</dd>
+<dt>MFA</dt><dd>TOTP mandatory</dd>
+<dt>Review</dt><dd>Monthly</dd>
+<dt>Audit</dt><dd>SIEM integration</dd>
+</dl>
+<table>
+<caption>Role matrix</caption>
+<thead><tr><th>Role</th><th>Read</th><th>Write</th><th>Delete</th><th>Admin</th><th>MFA</th><th>Review</th></tr></thead>
+<tbody>
+<tr><td>Viewer</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>No</td><td>Quarterly</td></tr>
+<tr><td>Editor</td><td>Yes</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>Monthly</td></tr>
+<tr><td>Admin</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Monthly</td></tr>
+<tr><td>Auditor</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>Yes</td><td>Quarterly</td></tr>
+<tr><td>Operator</td><td>Yes</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>Monthly</td></tr>
+<tr><td>Root</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Weekly</td></tr>
+</tbody>
+</table>
+<pre>atlas auth --list-roles</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s10">
+<h2>10. Incident Response</h2>
+<p>Incidents are classified by severity and handled through defined runbooks. Communication follows a cascading alert policy.</p>
+<p>Postmortems are required for severity 1 and 2 incidents within 48 hours.</p>
+<dl>
+<dt>Severity 1</dt><dd>Total outage</dd>
+<dt>Severity 2</dt><dd>Partial outage</dd>
+<dt>Severity 3</dt><dd>Degraded</dd>
+<dt>Severity 4</dt><dd>Minor</dd>
+</dl>
+<table>
+<caption>Severity matrix</caption>
+<thead><tr><th>Severity</th><th>Impact</th><th>Response time</th><th>Escalation</th><th>Communication</th><th>Postmortem</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Critical</td><td>15m</td><td>VP Eng</td><td>All hands</td><td>Yes</td></tr>
+<tr><td>2</td><td>High</td><td>30m</td><td>Director</td><td>Team leads</td><td>Yes</td></tr>
+<tr><td>3</td><td>Medium</td><td>2h</td><td>Manager</td><td>Slack</td><td>Optional</td></tr>
+<tr><td>4</td><信件><td>Low</td><td>4h</td><td>Lead</td><td>Ticket</td><td>No</td></tr>
+<tr><td>5</td><td>Info</td><td>24h</td><td>None</td><td>Log</td><td>No</td></tr>
+<tr><td>6</td><td>Planned</td><td>1 week</td><td>PM</td><td>Calendar</td><td>No</td></tr>
+</tbody>
+</table>
+ grouping<pre>atlas incident --classify --id 1234</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s11">
+<h2>11. Monitoring</h2>
+<p>Monitoring uses Prometheus for metrics, Loki for logs, and Grafana for dashboards. Alerts route through Alertmanager to PagerDuty.</p>
+<p>All services emit RED metrics: Rate, Errors, Duration.</p>
+<dl>
+<dt>Metrics</dt><dd>Prometheus</dd>
+<dt>Logs</dt><dd>Loki</dd>
+<dt>Dashboards</dt><dd>Grafana</dd>
+<dt>Alerts</dt><dd>Alertmanager</dd>
+</dl>
+<table>
+<caption>Monitoring stack</caption>
+<thead><tr><th>Component</th><th>Port</th><th>Retention</th><th>Resolution</th><th>Storage</th><th>Access</th></tr></thead>
+<tbody>
+<tr><td>Prometheus</td><td>9090</td><td>15 days</td><td>15s</td><td>Local SSD</td><td>Read-only</td></tr>
+<tr><td>Loki</td><td>3100</td><td>30 days</td><td>1m</td><td>S3</td><td>Query</td></tr>
+<tr><td>Grafana</td><td>3000</td><td>N/A</td><td>N/A</td><td>Config</td><td>UI/API</td></tr>
+<tr><td>Alertmanager</td><td>9093</td><td>5 days</td><td>N/A</td><td>Memory</td><td>UI/API</td></tr>
+<tr><td>Node exporter</td><td>9100</td><td>15 days</td><td>15s</td><td>Prometheus</td><td>Scrape</td></tr>
+<tr><td>cAdvisor</td><td>8080</td><td>15 days</td><td>15s</td><td>Prometheus</td><td>Scrape</td></tr>
+</tbody>
+</table>
+<pre>atlas monitor --check --all</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s12">
+<h2>12. Logging</h2>
+<p>Logs are structured JSON with mandatory fields: timestamp, service, level, message, trace_id. Centralized collection uses Fluent Bit.</p>
+<p>Log access is audited and restricted by role.</p>
+<dl>
+<dt>Format</dt><dd>JSON</dd>
+<dt>Collector</dt><dd>Fluent Bit</dd>
+<dt>Retention</dt><dd>30 days</dd>
+<dt>Access</dt><td>RBAC</td>
+</dl>
+<table>
+<caption>Log levels</caption>
+<客运专线<thead><tr><th>Level</th><th>Value</th><th>Use</th><th>Volume</th><th>Retention</th><th>Alert</th></tr></thead>
+<tbody>
+<tr><td>error</td><td>3</td><td>Failures</td><td>Low</td><td>90 days</td><td>Yes</td></tr>
+<tr><td>warn</td><td>4</td><td>Potential issues</td><td>Medium</td><td>30 days</td><td>Optional</td></tr>
+<tr><td>info</td><td>6</td><td>General</td><td>High</td><td>15 days</td><td>No</td></tr>
+<tr><td>debug</td><td>7</td><td>Development</td><td>Very high</td><td>7 days</td><td>No</td></tr>
+<tr><td>trace</td><td>7</td><td>Verbose</td><td>Very high</td><td>3 days</td><tdermanent No</td></tr>
+<tr><td>fatal</td><td>2</td><td>Unrecoverable</td><td>Low</td><td>180 days</td><td>Yes</td></tr>
+</tbody>
+</table>
+<pre>atlas logs --tail --service api</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s13">
+<h2>13. Backup and Recovery</h2>
+<p>Backups run daily with weekly offsite copies. Recovery time objective is 4 hours; recovery point objective is 15 deben minutes.</p>
+<p>Backup integrity is verified weekly using checksums.</p>
+<dl>
+<dt>Frequency</dt><dd>Daily</dd>
+<dt>RTO</dt><dd>4 hours</dd>
+<dt>RPO</dt><dd>15 minutes</dd>
+<dt>Storage</dt><dd>S3 with Glacier</dd>
+</dl>
+<table>
+<caption>Backup schedule</caption>
+<thead><tr><th>Dataset</th><th>Frequency</th><th>Retention</th><th>Encryption</th><th>Verification</th><th>Owner</th></tr></thead>
+<tbody>
+<tr><td>PostgreSQL</td><td>Hourly</td><td>30 days</td><td>AES-256</td><td>Daily</td><td>DBA</td></tr>
+<tr><td>etcd</td><td>Every 6h</td><td>90 days</td><td>AES-256</td><td>Weekly</td><td>Platform</td></tr>
+<tr><td>Object store</td><td>Daily</td><td>1 year</td><td>Server-side</td><td>Weekly</td><td>Storage</td></tr>
+<tr><td>Config repo</td><td>Continuous</td><td>Indefinite</td><td>TLS</td><td>On push</td><td>DevOps</td></tr>
+<tr><td>Secrets</td><td>Real-time</td><td>1 year</td><td>Vault seal</td><td>Monthly</td><td>Security</td></tr>
+<tr><td>Images</td><td>Daily</td><td>6 months</td><td>Signed</td><td>On scan</td><td>Infra</td></tr>
+</tbody>
+</table>
+<pre>atlas backup --verify --all</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s14">
+<h2>14. Security</h2>
+<p>Security controls include network policies, pod security standards, image scanning, and runtime threat detection.</p>
+<p>Vulnerabilities must be patched within SLA based on severity.</p>
+<dl>
+<dt>Policy engine</dt><dd>OPA Gatekeeper</dd>
+<dt>Scanning</dt><dd>Trivy</dd>
+<dt>Runtime</dt><dd>Falco</dd>
+<dt>SLA</dt><dd>Critical 7 days</dd>
+</dl>
+<table>
+<caption>Vulnerability SLA</caption>
+<thead><tr><th>Severity</th><th>SLA</th><th>Scan freq</th><th>Auto-remediate</th><th>Reporting</th><th>Owner</th></tr></thead>
+<tbody>
+<tr><td>Critical</td><td>7 days</td><td>Daily</td><td>Yes</td><td>Daily</td><td>Security</td></tr>
+<tr><td>High</td><td>30 days</td><td>Weekly</td><td>No</td><.password>Weekly</td><td>Security عام</td></tr>
+<tr><td>Medium</td><td>90 days</td><td>Monthly</td><td>No</td><td>Monthly</td><td>DevOps</td></tr>
+<tr><td>Low</td><td>180 days</td><td>Quarterly</td><td>No</td><td>Quarterly</td><td>DevOps</td></tr>
+<tr><td>Negligible</td><td>365 days</td><td>Annually</td><td>No</td><td>Annually</td><td>DevOps</td></tr>
+<tr><td>Experimental</td><td>Best effort</td><td>On demand</td><td>No</td><td>On demand</td><td>Research</td></tr>
+</tbody>
+</table>
+<pre>atlas security --scan --critical</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s15">
+<h2>15. Change Management</h2>
+<p>All changes require a Request for Change (RFC) with risk assessment, rollback plan, and approval from the change advisory board.</p>
+<p>Emergency changes follow an expedited process with post-change review.</p>
+<dl>
+<dt>RFC</dt><dd>Required for all changes</dd>
+<dt>CAB</dt><dd>Weekly meeting</dd>
+<dt>Emergency</dt><dd>VP approval</dd>
+<dt>Review</dt><dd>Post-change within 24h</dd>
+</dl>
+<table>
+<caption>Change types</caption>
+<thead><tr><th>Type</th><th>Notice</th><th>Approval</th><th>Testing</th><th>Rollback</th><th>Communication</th></tr></thead>
+<tbody>
+<tr><td>Standard</td><td>5 days</td><td>CAB</td><td>Staging</td><td>Automated</td><td>Email</td></tr>
+<tr><td>Normal</td><td>2 days</td><td>Manager</td><td>Staging</td><td>Automated</td><td>Slack</td></tr>
+<tr><td>Emergency</td><td>1 hour</td><td>VP</td><td>Canary</td><td>Manual</td><td>Phone</td></tr>
+<tr><td>Patch</td><td>24 hours</td><td>Lead</td><td>Smoke</td><td>Automated</td><td>Ticket</td></tr>
+<tr><td>Config</td><td>1 day</td><td>Lead</td><td>Validate</td><td>Automated</td><td>Slack</td></tr>
+<tr><td>Data</td><td>4 hours</td><td>DBA</td><td>Backup verify</td><td>Restore</td><td>Email</td></tr>
+</tbody>
+</table>
+<pre>atlas change --submit --type normal</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s16">
+<h2>16. Release Process</h2>
+<p>Releases are cut from the main branch after passing all CI gates. Release notes are generated from commit history and reviewed before publication.</p>
+<p>Hotfixes branch from the latest production tag.</p>
+<dl>
+<dt>Branching</dt><dd>GitFlow</dd>
+<dt>Tagging</dt><dd>Semantic version</dd>
+<dt>Notes</dt><dd>Auto-generated</dd>
+<dt>Hotfix</dt><dd>From prod tag</dd>
+</dl>
+<table>
+<caption>Release checklist</caption>
+<thead><tr><th>Step</th><th>Owner</th><th>Tool</th><th>Duration</th><th>Gate</th><th>Artifact</th></tr></thead>
+<tbody>
+<tr><td>Branch</td><td>Dev</td><td>Git</td><td>5m</td><td>CI pass</td><td>Branch</td></tr>
+<tr><td>Build</td><td>CI</td><td>GitHub Actions</td><td>10m</td><td>Tests pass</td><td>Binary</td></tr>
+<tr><td>Sign</td><td>Release</td><td>Cosign</td><td>2m</td><td>Key available</td><td>Signature</td></tr>
+<tr><td>Publish</td><td>Release</td><td>Harbor</td><td>5m</td><td>Scan pass</td><td>Image</td></tr>
+<tr><td>Deploy</td><td>Ops</td><td>Argo</td><td>15m</td><td>Health check</td><td>Deployment</td></tr>
+<tr><td>Verify</td><td>QA</td><td>Automated</td><td>30m</td><td>SLO met</td><td>Report</td></tr>
+</tbody>
+</table>
+<pre>atlas release --cut --version 1.2.3</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s17">
+<h2>17. Testing Strategy</h2>
+<p>Testing is layered: unit, integration, contract, and end-to-end. Coverage thresholds are enforced in CI.</p>
+<p>Performance tests run nightly on production-like environments.</p>
+<dl>
+<dt>Unit</dt><dd>Jest</dd>
+<dt>Integration</dt><dd>Testcontainers</dd>
+<dt>Contract</dt><dd>Pact</dd>
+<dt>E2E</dt><td>Cypress</td>
+</dl>
+<table>
+<caption>Test coverage</caption>
+<thead><tr><th>Type</th><th>Tool</th><th>Min coverage</th><th>Runtime</th><th>Environment</th><th>Frequency</th></tr></thead>
+<tbody>
+<tr><td>Unit</td><td>Jest</td><td>90%</td><td>&lt;5m</td><td>Local</td><td>On commit</td></tr>
+<tr><td>Integration</td><td>Testcontainers</td><td>80%</td><td>&lt;30m</td><td>CI</td><td>On PR</td></tr>
+<tr><td>Contract</td><td>Pact</td><td>85%</td><td>&lt;10m</td><td>CI</td><td>On PR</td></tr>
+<tr><td>E2E</td><td>Cypress</td><td>N/A</td><td>&lt;1h</td><td>Staging</td><td>Nightly</td></tr>
+<tr><td>Performance</td><td>k6</td><td>SLO</td><td>&lt;2h</td><td>Staging</td><td>Nightly</td></tr>
+<tr><td>Security</td><td>OWASP ZAP</td><td>Pass</td><td>&lt;1h</td><td>CI</td><td>Nightly</td></tr>
+</tbody>
+</table>
+<pre>atlas test --coverage --fail-under 90</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s18">
+<h2>18. Quality Assurance</h2>
+<p>QA owns test planning, defect triage, and release acceptance. Defects are tracked in Jira with severity and priority fields.</p>
+<p>Release acceptance requires passing regression suite on staging.</p>
+<dl>
+<dt>Process</dt><dd>Triage within 24h</dd>
+<dt>Tool</dt><dd>Jira</dd>
+<dt>Regression</dt><dd>Automated</dd>
+<dt>Sign-off</dt><dd>QA lead</dd>
+</dl>
+<table>
+<caption>Defect severity</caption>
+<thead><tr><th>Severity</th><th>Description</th><th>Response</th><th>Target fix</th><th>Escalation</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td>Blocker</td><td>No workaround</td><td>Immediate</td><td>24h</td><td>VP Eng</td><td>Data loss</td></tr>
+<tr><td>Critical</td><td>Major feature broken</td><td>4h</td><td>3 days</td><td>Director</td><td>Login fails</td></tr>
+<tr><td>Major</td><td>Feature impaired</td><td>1 day</td><td>2 weeks</td><td>Manager</td><td>Slow search</td></tr>
+<tr><td>Minor</td><td>Annoying</td><td>3 days</td><td>1 month</td><td>Lead</td><td>UI glitch</td></tr>
+<tr><td>Trivial</td><td>Cosmetic</td><td>1 week</td><td>Next release</td><td>None</td><td>Typo</td></tr>
+<tr><td>Enhancement</td><td>New feature</td><td>Backlog</td><td>Roadmap</td><td>PM</td><td>Add filter</td></tr>
+</tbody>
+</table>
+<pre>atlas qa --defects --severity critical</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s19">
+<h2>19. Performance</h2>
+<p>Performance budgets are defined per service. Exceeding budgets triggers an automatic ticket and investigation.</p>
+<p>Load tests simulate peak traffic plus 20% headroom.</p>
+<dl>
+<dt>Budget</dt><dd>P95 &lt;200ms</dd>
+<dt>Load test</dt><dd>k6</dd>
+<dt>Profiling</dt><dd>pprof</dd>
+<dt>Alert</dt><dd>PagerDuty</dd>
+</dl>
+<table>
+<caption>Performance budgets</caption>
+<thead><tr><th>Service</th><th>P50</th><th>P95</th><th>P99</th><th>Throughput</th><th>Error budget</th></tr></thead>
+<tbody>
+<tr><td>API</td><td>50ms</td><td>200ms</td><td>500ms</td><td>10k RPS</td><td>0.1%</td></tr>
+<tr><td>Web</td><td>100ms</td><td>300ms</td><td>1s</td><td>5k RPS</td><td>0.2%</td></tr>
+<tr><td>Mobile</td><td>150ms</td><td>400ms</td><td>2s</td><td>2k RPS</td><td>0.5%</td></tr>
+<tr><td>Batch</td><td>1s</td><td>5s</td><td>30s</td><td>100 jobs/min</td><td>1%</td></tr>
+<tr><td>Realtime</td><td>20ms</td><td>100ms</td><td>200ms</td><td>50k msg/s</td><td>0.05%</td></tr>
+<tr><td>Admin</td><td>200ms</td><td>600ms</td><td>3s</td><td>500 RPS</td><td>1%</td></tr>
+</tbody>
+</table>
+<pre>atlas perf --load --duration 10m</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s20">
+<h2>20. Capacity Planning</h2>
+<p>Capacity is reviewed quarterly. Forecasting uses linear regression on usage metrics with a 6-month horizon.</p>
+<p>Scaling policies define thresholds for horizontal and vertical scaling.</p>
+<dl>
+<dt>Review cadence</dt><dd>Quarterly</dd>
+<dt>Forecast</dt><dd>6 months</dd>
+<dt>Scaling</dt><dd>HPA/VPA</dd>
+<dt>Buffer</dt><dd>20%</dd>
+</dl>
+<table>
+<caption>Capacity forecast</caption>
+<thead><tr><th>Resource</th><th>Current</th><th>Forecast 6m</th><th>Forecast 12m</th><th>Action threshold</th><th>Owner</th></tr></thead>
+<tbody>
+<tr><td>CPU</td><td>60%</td><td>75%</td><td>90%</td><td>85%</td><td>Infra</td></tr>
+<tr><td>Memory</td><td>70%</td><td>80%</td><td>95%</td><td>90%</td><td>Infra</td></tr>
+<tr><td>Disk</td><td>55%</td><td>65%</td><td>80%</td><td>80%</td><td>Storage</td></tr>
+<tr><td>Network</td><td>40%</td><td>50%</td><td>70%</td><td>70%</td><td>Network</td></tr>
+<tr><td>GPU</td><td>30%</td><td>50%</td><td>80%</td><td>75%</td><td>ML</td></tr>
+<tr><td>Connections</td><td>45%</td><td>60%</td><td>75%</td><td>80%</td><td>Network</td></tr>
+</tbody>
+</table>
+<pre>atlas capacity --forecast --months 6</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s21">
+<h2>21. Cost Management</h2>
+<p>Costs are tracked per service and per team. Budget alerts trigger at 80% and 100% of allocation.</p>
+<p>FinOps reviews occur monthly to optimize spend.</p>
+<dl>
+<dt>Tool</dt><dd>OpenCost</dd>
+<dt>Alert</dt><dd>80%, 100%</dd>
+<dt>Review</dt><dd>Monthly</dd>
+<dt>Optimization</dt><dd>Rightsizing</dd>
+</dl>
+<table>
+<caption>Cost allocation</caption>
+<thead><tr><th>Team</th><th>Budget</th><th>Spend MTD</th><th>Forecast</th><th>Variance</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td>Platform</td><td>$50k</td><td>$48k</td><td>$52k</td><td>+4%</td><td>Review</td></tr>
+<tr><td>Product</td><td>$30k</td><td>$28k</td><td>$31k</td><td>+3%</td><td>Monitor</td></tr>
+<tr><td>Data</td><td>$40k</td><td>$45k</td><td>$55k</td><td>+15%</td><td>Alert</td></tr>
+<tr><td>ML</td><td>$20k</td><td>$18k</td><td>$22k</td><td>+10%</td><td>Review</td></tr>
+<tr><td>Security</td><td>$10k</td><

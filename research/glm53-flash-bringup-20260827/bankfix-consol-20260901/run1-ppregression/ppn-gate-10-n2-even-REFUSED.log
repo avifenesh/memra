@@ -1,0 +1,4 @@
+glm5-spec-ppn-gate config: stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage
+Error: "pipeline placement is unsupported for plan operations [Embedding, RmsNorm, KimiDeltaNet, RecurrentState, RmsNorm, DenseMlp, SwiGluPreClampedActivation, HyperConnections, RmsNorm, LatentMlaAttention, SparseIndex, LatentKvState, RmsNorm, MoeMlp, SigmoidRouter, SharedMlp, SwiGluPreClampedActivation, HyperConnections, RmsNorm, KimiDeltaNet, RecurrentState, RmsNorm, MoeMlp, SigmoidRouter, SharedMlp, SwiGluPreClampedActivation, HyperConnections, RmsNorm, LatentMlaAttention, SparseIndex, LatentKvState, RmsNorm, MoeMlp, SigmoidRouter, SharedMlp, SwiGluPreClampedActivation, HyperConnections, RmsNorm, OutputProjection]; blockers=[KimiDeltaNet, RecurrentState, SwiGluPreClampedActivation, HyperConnections, LatentMlaAttention, SparseIndex, LatentKvState]"
+exit=1
+pass_lines=0 want=23

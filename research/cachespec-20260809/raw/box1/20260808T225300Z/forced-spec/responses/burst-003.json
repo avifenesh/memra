@@ -1,0 +1,20 @@
+{
+  "request_id": "cmpl-9b34735b603481b0069670ae132ebe3a",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 14713,
+    "completion_tokens": 768,
+    "total_tokens": 15481,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 31.694563037,
+    "spec": {
+      "rounds": 286,
+      "drafted": 858,
+      "accepted": 481,
+      "acceptance_rate": 0.5606060606060606
+    }
+  },
+  "text": "The user wants me to continue iterating on the dashboard. They want:\n1. An annotation for a pool-cap eviction during a burst.\n\nI need to output a complete, self-contained HTML document. I should preserve all working behavior from the previous document (Iteration 12), make the requested change, use semantic HTML and accessible labels, and include CSS and JavaScript inline.\n\nSince I don't have the exact previous document content in this conversation thread, I need to reconstruct the full document from my previous responses. Let me recall what I built:\n\nIteration 1: Initial dashboard with all required panels and realistic placeholder rows.\nIteration 2: Added a sticky request inspector that explains TTFT separately from decode time.\nIteration 3: Added an accessible cache-tier legend for continuation, speculative, and prefix reuse.\nIteration 4: Added a compact admission-pressure strip with defer, park, active, and queued values.\nIteration 5: Added a responsive incident timeline and emphasized the first counter correlated with a slope.\nIteration 6: Added keyboard navigation and visible focus treatment throughout the dashboard.\nIteration 7: Added a comparison drawer for spec-default versus spec-off measurements.\nIteration 8: Added a pool-residency section with driver-free, reserved, used, and cached byte gauges.\nIteration 9: Added an eviction-thrash warning state and a short operator remediation checklist.\nIteration 10: Added a print stylesheet that preserves the request receipt as a legible table.\nIteration 11: Added a small sparkline beside every request without introducing external dependencies.\nIteration 12: Finished the dashboard with a concise evidence footer and no marketing language.\n\nNow I need to add:\n1. An annotation for a pool-cap eviction during a burst.\n\nI should create a complete HTML document that includes all previous features plus this new annotation. The annotation should mark a specific event where pool capacity was reached and evictions occurred during a burst of requests.\n\nI'll integrate this into the existing incident timeline or as a separate annotation on the timeline. It should be visually distinct and accessible.\n\nLet me design this:\n- An annotation marker on the timeline (maybe a red flag or exclamation mark)\n- Tooltip or popup explaining the pool-cap eviction event\n- Timestamp and details\n- Accessible with ARIA labels\n- Part of the incident annotations section\n\nI'll add it to the incident timeline and maybe also to the evidence table if relevant.\n\nLet me write the complete HTML now. I'll include all previous features and add the pool-cap eviction annotation.\n\nI need to make sure the code is clean, semantic, and accessible.\n\nLet me structure the HTML:\n1. DOCTYPE and head with meta tags and styles\n2. Body with:\n   - Skip link\n   - Eviction-thrash warning banner\n   - Header\n   - Main grid with all panels\n   - Sticky request inspector\n   - Cache-tier legend\n   - Admission-pressure strip\n   - Responsive incident timeline (with new annotation)\n   - Comparison drawer\n   - Operator remediation checklist\n   - Print stylesheet\n   - Sparklines beside each request\n   - Evidence footer\n   - Pool-cap eviction annotation (integrated into incident timeline)\n\nFor the annotation:\n- I'll add a specific entry in the incident timeline data\n- Visual marker on the timeline (e.g., a red diamond or flag)\n- Tooltip on hover/focus with details: \"Pool-cap eviction during burst at [timestamp]. [N] requests evicted.\"\n- Accessible: `role=\"img\"` with `aria-label`\n\nI'll generate the data in JavaScript to include this annotation.\n\nLet me write the complete document. I'll make it comprehensive but final"
+}

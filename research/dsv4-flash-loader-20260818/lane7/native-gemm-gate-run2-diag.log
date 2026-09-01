@@ -1,0 +1,48 @@
+dsv4-native-gemm-gate | model /home/ubuntu/models/dsv4-flash-nvfp4 | fixtures /home/ubuntu/dsv4-lane2-fixtures/dsv4_fixtures_artifactvariant.json | variant clamp-only | devices [0, 1]
+[load] expert arm: Native
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=38s
+[load] layer 15 -> dev0 done t=51s
+[load] layer 19 -> dev0 done t=64s
+[load] layer 23 -> dev1 done t=77s
+[load] layer 27 -> dev1 done t=90s
+[load] layer 31 -> dev1 done t=102s
+[load] layer 35 -> dev1 done t=115s
+[load] layer 39 -> dev1 done t=128s
+[load] layer 42 -> dev1 done t=138s
+captured moe_x at layers [0, 2, 20, 22, 42, 43] (t=143s)
+
+| tensor | m x n x k | mirror | f64 max-err / bound | rung shift meas (pred med ratio) |
+|---|---|---|---|---|
+| layers.0.experts.0.w1 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 2.19e-5 PASS | 4.059e-2 (med ratio 0.50) |
+| layers.0.experts.0.w3 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 2.18e-5 PASS | 4.568e-2 (med ratio 0.49) |
+  [quant-diff] 1 code diffs, 0 scale diffs; first at [1,1817]: input -2.948801e-6 (bits b645e403), scale 7.812e-3, gpu code 0x80, cpu code 0x00
+| layers.0.experts.0.w2 | 8x4096x2048 | FAIL(quant,gemm-bits-EQUAL) | 4.47e-8 / 4.54e-6 PASS | 2.052e-2 (med ratio 0.50) |
+| layers.2.experts.100.w1 | 8x2048x4096 | BIT-EXACT | 8.94e-8 / 2.95e-5 PASS | 5.215e-2 (med ratio 0.50) |
+| layers.2.experts.100.w3 | 8x2048x4096 | BIT-EXACT | 1.19e-7 / 2.92e-5 PASS | 5.671e-2 (med ratio 0.49) |
+| layers.2.experts.100.w2 | 8x4096x2048 | BIT-EXACT | 4.47e-8 / 3.92e-6 PASS | 2.314e-2 (med ratio 0.51) |
+| layers.20.experts.7.w1 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 5.22e-5 PASS | 9.461e-2 (med ratio 0.48) |
+| layers.20.experts.7.w3 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 3.83e-5 PASS | 9.234e-2 (med ratio 0.48) |
+  [quant-diff] 1 code diffs, 0 scale diffs; first at [0,1231]: input -2.856674e-6 (bits b63fb547), scale 3.906e-3, gpu code 0x80, cpu code 0x00
+| layers.20.experts.7.w2 | 8x4096x2048 | FAIL(quant,gemm-bits-EQUAL) | 1.19e-7 / 1.12e-5 PASS | 5.407e-2 (med ratio 0.47) |
+  [quant-diff] 2 code diffs, 0 scale diffs; first at [4,192]: input -2.654841e-6 (bits b63229d2), scale 3.906e-3, gpu code 0x80, cpu code 0x00
+| layers.22.experts.31.w1 | 8x2048x4096 | FAIL(quant,gemm-bits-EQUAL) | 2.68e-7 / 4.37e-5 PASS | 7.213e-2 (med ratio 0.50) |
+  [quant-diff] 2 code diffs, 0 scale diffs; first at [4,192]: input -2.654841e-6 (bits b63229d2), scale 3.906e-3, gpu code 0x80, cpu code 0x00
+| layers.22.experts.31.w3 | 8x2048x4096 | FAIL(quant,gemm-bits-EQUAL) | 1.79e-7 / 4.38e-5 PASS | 8.494e-2 (med ratio 0.50) |
+  [quant-diff] 1 code diffs, 0 scale diffs; first at [7,854]: input -1.310074e-6 (bits b5afd5cb), scale 1.953e-3, gpu code 0x80, cpu code 0x00
+| layers.22.experts.31.w2 | 8x4096x2048 | FAIL(quant,gemm-bits-EQUAL) | 5.96e-8 / 8.02e-6 PASS | 2.939e-2 (med ratio 0.48) |
+| layers.42.experts.255.w1 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 5.18e-5 PASS | 1.171e-1 (med ratio 0.49) |
+| layers.42.experts.255.w3 | 8x2048x4096 | BIT-EXACT | 2.98e-7 / 6.22e-5 PASS | 1.111e-1 (med ratio 0.50) |
+  [quant-diff] 1 code diffs, 0 scale diffs; first at [1,527]: input -1.022473e-5 (bits b72b8ae4), scale 3.125e-2, gpu code 0x80, cpu code 0x00
+| layers.42.experts.255.w2 | 8x4096x2048 | FAIL(quant,gemm-bits-EQUAL) | 2.38e-7 / 1.66e-5 PASS | 9.554e-2 (med ratio 0.51) |
+| mtp.0.experts.7.w1 | 8x2048x4096 | BIT-EXACT | 2.98e-7 / 1.08e-4 PASS | 1.047e-1 (med ratio 0.50) |
+| mtp.0.experts.7.w3 | 8x2048x4096 | BIT-EXACT | 2.98e-7 / 9.59e-5 PASS | 1.246e-1 (med ratio 0.49) |
+  [quant-diff] 2 code diffs, 0 scale diffs; first at [0,295]: input -7.482045e-6 (bits b6fb0e48), scale 7.812e-3, gpu code 0x80, cpu code 0x00
+| mtp.0.experts.7.w2 | 8x4096x2048 | FAIL(quant,gemm-bits-EQUAL) | 1.19e-7 / 2.47e-5 PASS | 9.037e-2 (med ratio 0.51) |
+| mtp.0.experts.200.w1 | 8x2048x4096 | BIT-EXACT | 4.77e-7 / 2.22e-4 PASS | 1.246e-1 (med ratio 0.48) |
+| mtp.0.experts.200.w3 | 8x2048x4096 | BIT-EXACT | 3.58e-7 / 1.47e-4 PASS | 1.187e-1 (med ratio 0.49) |
+  [quant-diff] 2 code diffs, 0 scale diffs; first at [2,511]: input -1.069555e-6 (bits b58f8da5), scale 7.812e-3, gpu code 0x80, cpu code 0x00
+| mtp.0.experts.200.w2 | 8x4096x2048 | FAIL(quant,gemm-bits-EQUAL) | 1.43e-6 / 1.49e-4 PASS | 7.463e-1 (med ratio 0.50) |
+
+DSV4 NATIVE GEMM GATE: FAIL (3 projections x 7 samples, 8 failures, 175s)

@@ -1,0 +1,53 @@
+[serve-b] SIGTERM pid=20592 exe=/root/memra/target/release/memra-server
+[serve-b] started pid=21039 bin=/root/memra/target/release/memra-server port=18400
+[serve-b] READY after 36s
+##############################################################################
+# C1 raw /v1/completions greedy, p5/p7, rep0 cold + 3 repeats, arm=on
+##############################################################################
+  p5 rep0: sha=ba59f88262cec835 cached=0 prompt=180 finish=length err=None
+  p5 rep1: sha=ba59f88262cec835 cached=180 prompt=180 finish=length err=None
+  p5 rep2: sha=ba59f88262cec835 cached=180 prompt=180 finish=length err=None
+  p5 rep3: sha=ba59f88262cec835 cached=180 prompt=180 finish=length err=None
+  == p5: ONE sha (ba59f88262cec835)
+  p7 rep0: sha=5f92ffbde53efa9e cached=0 prompt=269 finish=length err=None
+  p7 rep1: sha=5f92ffbde53efa9e cached=269 prompt=269 finish=length err=None
+  p7 rep2: sha=5f92ffbde53efa9e cached=269 prompt=269 finish=length err=None
+  p7 rep3: sha=5f92ffbde53efa9e cached=269 prompt=269 finish=length err=None
+  == p7: ONE sha (5f92ffbde53efa9e)
+
+##############################################################################
+# C2 8-turn multiturn twin, larger prompt, sampled, arm=on
+##############################################################################
+  turn0: ttft=1.808s cached=0/1521 completion=183 loop_c=0.057 loop_r=0.0
+  turn1: ttft=15.097s cached=1521/1990 completion=512 loop_c=0.033 loop_r=0.074
+  turn2: ttft=46.126s cached=1521/2928 completion=107 loop_c=0.0 loop_r=0.159
+  turn3: ttft=62.488s cached=1521/3420 completion=512 loop_c=0.028 loop_r=0.203
+  turn4: ttft=Nones cached=None/None completion=None loop_c=0.0 loop_r=0.0
+  turn5: ttft=Nones cached=None/None completion=None loop_c=0.0 loop_r=0.0
+  turn6: ttft=Nones cached=None/None completion=None loop_c=0.0 loop_r=0.0
+  turn7: ttft=Nones cached=None/None completion=None loop_c=0.0 loop_r=0.0
+
+##############################################################################
+# C3 TTFT at depth (cold vs repeat), sampled shape, arm=on
+##############################################################################
+  ~8000 chars (2211 tok): cold ttft=2.77s -> repeat ttft=1.091s cached=2211
+  ~16000 chars (4437 tok): cold ttft=6.179s -> repeat ttft=0.011s cached=4437
+  ~32000 chars (8039 tok): cold ttft=11.213s -> repeat ttft=0.017s cached=8039
+
+##############################################################################
+# BATTERY arm=on: FAIL — 4 violation(s):
+#   C2 turn4: cached_tokens=0 — no warm-turn engagement
+#   C2 turn5: cached_tokens=0 — no warm-turn engagement
+#   C2 turn6: cached_tokens=0 — no warm-turn engagement
+#   C2 turn7: cached_tokens=0 — no warm-turn engagement
+##############################################################################
+BATTERY-EXIT=2
+refusals(0): 0
+engine-errors: 0
+inserts: 6
+0, 56406 MiB
+1, 66966 MiB
+2, 69272 MiB
+3, 80830 MiB
+
+[exited with code 0]

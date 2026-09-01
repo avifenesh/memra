@@ -1,0 +1,51 @@
+LOCK_ACQUIRED ts=2026-08-12T04:16:47Z pid=958044
+## lane/cx-sec9-measure
+ M crates/memra-engine/src/bin/pp_transport_smoke.rs
+ M crates/memra-engine/src/pp.rs
+   Compiling libc v0.2.186
+   Compiling cudarc v0.19.8
+   Compiling cfg-if v1.0.4
+   Compiling memra-engine v0.79.0 (/home/ubuntu/memra-cx-sec9/crates/memra-engine)
+   Compiling memra-validate v0.79.0 (/home/ubuntu/memra-cx-sec9/crates/memra-validate)
+   Compiling memra-sampling v0.79.0 (/home/ubuntu/memra-cx-sec9/crates/memra-sampling)
+   Compiling libloading v0.9.0
+   Compiling memmap2 v0.9.11
+   Compiling memra-gguf v0.79.0 (/home/ubuntu/memra-cx-sec9/crates/memra-gguf)
+   Compiling memra-tokenizer v0.79.0 (/home/ubuntu/memra-cx-sec9/crates/memra-tokenizer)
+   Compiling memra-runtime v0.79.0 (/home/ubuntu/memra-cx-sec9/crates/memra-runtime)
+   Compiling memra-kv v0.79.0 (/home/ubuntu/memra-cx-sec9/crates/memra-kv)
+warning: memra-engine@0.79.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.79.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 3m 26s
+wall_s=206.75 max_rss_kb=1298184 exit=0
+primary device: 1
+devices: 2
+cuDeviceCanAccessPeer(0 -> 1) = 1
+cuDeviceCanAccessPeer(1 -> 0) = 1
+peer-arm copy (cuMemcpyPeerAsync, same-ctx degenerate): bytediff=0 OK
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.669
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=617.281
+Pp2Rt built: cross_device=true
+boundary roundtrip step 0 slot 0: bytediff=0 OK
+boundary roundtrip step 1 slot 1: bytediff=0 OK
+boundary roundtrip step 2 slot 0: bytediff=0 OK
+boundary roundtrip step 3 slot 1: bytediff=0 OK
+[pp] peer byte-integrity probe PASS: label=runtime-idle-1tok bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.724
+[pp] runtime peer byte-integrity re-probe PASS: boundary_copies=8192 interval_copies=8192 rung=1/4 tokens=1 bytes=16384 probe_index=0
+runtime probe serviced after boundary copy 8192
+[pp] peer byte-integrity probe PASS: label=runtime-idle-8tok bytes=131072 copies=2 skipped=0 mismatches=0 elapsed_ms=1.161
+[pp] runtime peer byte-integrity re-probe PASS: boundary_copies=16384 interval_copies=8192 rung=2/4 tokens=8 bytes=131072 probe_index=1
+runtime probe serviced after boundary copy 16384
+[pp] peer byte-integrity probe PASS: label=runtime-idle-16tok bytes=262144 copies=2 skipped=0 mismatches=0 elapsed_ms=1.909
+[pp] runtime peer byte-integrity re-probe PASS: boundary_copies=24576 interval_copies=8192 rung=3/4 tokens=16 bytes=262144 probe_index=2
+runtime probe serviced after boundary copy 24576
+[pp] peer byte-integrity probe PASS: label=runtime-idle-4096tok bytes=67108864 copies=2 skipped=0 mismatches=0 elapsed_ms=431.188
+[pp] runtime peer byte-integrity re-probe PASS: boundary_copies=32768 interval_copies=8192 rung=4/4 tokens=4096 bytes=67108864 probe_index=3
+runtime probe serviced after boundary copy 32768
+runtime probe cycle: serviced=4/4 boundary_copies=32768 runtime_failures=0 OK
+pp-transport-smoke PASS
+wall_s=1.99 max_rss_kb=802720 exit=0
+G7E_RUNTIME_PROBE_CYCLE_PASS ts=2026-08-12T04:20:17Z

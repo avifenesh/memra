@@ -1,0 +1,66 @@
++ source /home/ubuntu/.cargo/env
+++ case ":${PATH}:" in
+++ export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+++ PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ export PATH=/usr/local/cuda-13.2/bin:/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ PATH=/usr/local/cuda-13.2/bin:/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ export MEMRA_CUDA_ARCH=120a CARGO_BUILD_JOBS=40
++ MEMRA_CUDA_ARCH=120a
++ CARGO_BUILD_JOBS=40
++ cd /home/ubuntu/memra-dspark
++ git fetch ../dspark-v0920.bundle lane/dspark-q38-recover
+From ../dspark-v0920.bundle
+ * branch                lane/dspark-q38-recover -> FETCH_HEAD
++ git reset --hard FETCH_HEAD
+HEAD is now at 33854304d serve(dspark): worker route for the qwen-hybrid dspark drafter — DsparkSpecSession bursts (gemma-route pattern), MEMRA_DSPARK_SPEC=1 + MEMRA_DSPARK_DRAFT seam, refuse-on-ambiguity vs MTP/dflash/gemma/pp, solo-admission greedy scope
++ git log --oneline -1
+33854304d serve(dspark): worker route for the qwen-hybrid dspark drafter — DsparkSpecSession bursts (gemma-route pattern), MEMRA_DSPARK_SPEC=1 + MEMRA_DSPARK_DRAFT seam, refuse-on-ambiguity vs MTP/dflash/gemma/pp, solo-admission greedy scope
++ cargo build --release --bin memra-server --bin dspark_q38_gate --bin dspark_q38_parity --bin run-gen
++ tail -2
+warning: `memra-server` (bin "memra-server") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 33.28s
++ cargo test -p memra-server --release
++ tail -2
+test result: ok. 306 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
++ '[' '!' -x /home/ubuntu/oracle-venv/bin/python ']'
++ python3 -m venv /home/ubuntu/oracle-venv
++ /home/ubuntu/oracle-venv/bin/pip -q install --index-url https://download.pytorch.org/whl/cpu torch
++ /home/ubuntu/oracle-venv/bin/pip -q install transformers safetensors numpy
++ git -C /home/ubuntu/SpecForge log -1 '--format=SpecForge rev %H %cs'
+SpecForge rev 2590f48e3a93f69a1e9e63caa23e9f2f9e07c84a 2026-08-18
++ mkdir -p /home/ubuntu/evidence/dspark-oracle
++ /home/ubuntu/oracle-venv/bin/python tools/dspark_q38_oracle.py /home/ubuntu/models/dspark/arm-a-cum1000 /home/ubuntu/evidence/dspark-oracle/oracle.npz /home/ubuntu/SpecForge
+/home/ubuntu/SpecForge/specforge/modeling/draft/llama3_eagle.py:33: UserWarning: flash_attn is not found, falling back to flex_attention. Please install flash_attn if you want to use the flash attention backend.
+  warnings.warn(
+census OK: 62 tensors, zero missing / zero unexpected
+oracle dumped 14 arrays -> /home/ubuntu/evidence/dspark-oracle/oracle.npz (+flat twins in /home/ubuntu/evidence/dspark-oracle)
+  taps: (8, 25600)
+  noise: (7, 5120)
+  base_logits: (6, 248320)
+  anchor: (1,)
+  ctx_features: (8, 5120)
+  layer0_out: (7, 5120)
+  layer1_out: (7, 5120)
+  layer2_out: (7, 5120)
+  layer3_out: (7, 5120)
+  layer4_out: (7, 5120)
+  final: (7, 5120)
+  markov_tokens: (6,)
+  markov_logits: (6, 248320)
+  confidence: (6,)
++ echo '=== parity gate (GPU 1) ==='
+=== parity gate (GPU 1) ===
++ MEMRA_DFLASH_PREC=bf16
++ CUDA_VISIBLE_DEVICES=1
++ target/release/dspark_q38_parity /home/ubuntu/models/dspark/arm-a-cum1000 /home/ubuntu/evidence/dspark-oracle
++ tail -20
+loaded dspark draft: 5 layers, hidden 5120, block 7, taps [4, 16, 28, 40, 52], markov true, confidence true
+ctx_features: maxdiff 9.992e-4 (idx 23379: got 0.6622818 want 0.66328096), rel-to-max 2.234e-4 -> PASS
+final: maxdiff 9.394e-3 (idx 28555: got 0.15190686 want 0.14251268), rel-to-max 1.750e-3 -> PASS
+markov tokens: got [61718, 92576, 4095, 28223, 314, 279] want [61718, 92576, 4095, 28223, 314, 279] -> PASS (EXACT)
+markov logits: maxdiff 9.537e-7 (idx 1578: got 6.0245295 want 6.0245304), rel-to-max 1.110e-7 -> PASS
+confidence: maxdiff 2.146e-6 (idx 1: got -1.824884 want -1.8248819), rel-to-max 8.366e-7 -> PASS
+== dspark_q38_parity: ALL PASS ==
++ echo TRACKA1-DONE
+TRACKA1-DONE

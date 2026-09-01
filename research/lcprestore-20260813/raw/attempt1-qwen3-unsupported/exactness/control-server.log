@@ -1,0 +1,14 @@
+[server] starting; models config = [("dense", "/opt/scratch/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "dense" <- /opt/scratch/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf
+
+thread 'memra-gpu-worker' (1195005) panicked at crates/memra-engine/src/hybrid.rs:1266:9:
+not a hybrid arch
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[server] FATAL: worker init failed: worker died during init
+[worker] PANIC in the GPU worker thread: not a hybrid arch
+[worker] respawn attempt 1/1 in 2s (reloading weights)

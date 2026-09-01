@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-f6148c67eac6743a29fbbb96320547b1",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 2251,
+    "completion_tokens": 256,
+    "total_tokens": 2507,
+    "prompt_tokens_details": {
+      "cached_tokens": 2029
+    },
+    "elapsed_s": 1.9443656169999999
+  },
+  "text": "The user wants me to add an eviction-thrash warning state and a short operator remediation checklist to the dashboard. I need to continue building on the existing HTML structure from the previous iterations, adding these new features while maintaining the responsive design, accessibility, and all previous functionality.\n\nLet me create a complete HTML document that includes:\n1. All previous features (sticky inspector, cache-tier legend, admission-pressure strip, incident timeline, keyboard navigation, comparison drawer, pool-residency section)\n2. New eviction-thrash warning state\n3. Operator remediation checklist\n\nI'll make sure to keep the design consistent with the dark theme and maintain accessibility throughout.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-tertiary: #334155;\n      --text-primary"
+}

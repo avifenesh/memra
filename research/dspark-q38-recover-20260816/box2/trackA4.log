@@ -1,0 +1,65 @@
++ source /home/ubuntu/.cargo/env
+++ case ":${PATH}:" in
+++ export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+++ PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ export PATH=/usr/local/cuda-13.2/bin:/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ PATH=/usr/local/cuda-13.2/bin:/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ export MEMRA_CUDA_ARCH=120a CARGO_BUILD_JOBS=40
++ MEMRA_CUDA_ARCH=120a
++ CARGO_BUILD_JOBS=40
++ QT=/home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
++ DX=/home/ubuntu/models/dspark/arm-a-cum1000
++ cd /home/ubuntu/memra-dspark
++ git fetch ../dspark-v0920.bundle lane/dspark-q38-recover
+From ../dspark-v0920.bundle
+ * branch                lane/dspark-q38-recover -> FETCH_HEAD
++ git reset --hard FETCH_HEAD
+HEAD is now at dbf028040 gate(dspark): smoke fixes — identity/lengths over reasoning+content (think default routes text to reasoning), stop() kills the server not the flock wrapper (solo-window pkill, the mixed-gate lesson)
++ git log --oneline -1
+dbf028040 gate(dspark): smoke fixes — identity/lengths over reasoning+content (think default routes text to reasoning), stop() kills the server not the flock wrapper (solo-window pkill, the mixed-gate lesson)
++ cargo build --release --bin memra-server --bin dspark_q38_gate
++ tail -1
+    Finished `release` profile [optimized] target(s) in 0.10s
++ echo '=== serve-route smoke (GPU 1, solo memra-server window) ==='
+=== serve-route smoke (GPU 1, solo memra-server window) ===
++ rm -rf /home/ubuntu/evidence/dspark-serve-smoke
++ CUDA_VISIBLE_DEVICES=1
++ MEMRA_GPU_LOCK=/tmp/memra-box2-gpu1.lock
++ MEMRA_GATE_PORT=18094
++ bash tools/dspark-serve-smoke.sh /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 target/release/memra-server /home/ubuntu/evidence/dspark-serve-smoke
+== boot 1: dspark route armed ==
+on-r1: spec accepted=27
+on-r2: spec accepted=24
+on-r3: spec accepted=33
+-- sampled scope decline --
+FAIL: sampled request returned no content
+-- concurrent pair (solo-admission coexistence) --
+== boot 2: spec off (plain oracle) ==
+== byte identity ==
+r1 IDENTICAL (2c611af7c239dd96)
+r2 IDENTICAL (e0ae72fcf76dd037)
+r3 IDENTICAL (82773e5a873200a8)
+dspark-serve-smoke: FAILED
++ echo SMOKE-EXIT=1
+SMOKE-EXIT=1
++ echo '=== gemma hit-gate (GPU 1, production pair) ==='
+=== gemma hit-gate (GPU 1, production pair) ===
++ cd /home/ubuntu/memra-speccache
++ rm -rf /home/ubuntu/evidence/gemma-hit-gate
++ CUDA_VISIBLE_DEVICES=1
++ MEMRA_GPU_LOCK=/tmp/memra-box2-gpu1.lock
++ MEMRA_GATE_PORT=18093
++ bash tools/spec-on-cache-hit-gate.sh gemma /home/ubuntu/models/gemma/gemma-4-31B-it-shipQ6K-downQ6K.gguf /home/ubuntu/models/gemma/gemma-4-31B-it-official-Q8_0-MTP.gguf target/release/memra-server /home/ubuntu/evidence/gemma-hit-gate
+== gemma arm: spec-on boot (drafter attached) ==
+  ok: r1 sampled leader is plain + cold
+  ok: r2 hit has cached tokens
+  ok: r2 hit SPEC ENGAGED (accepted > 0)
+  ok: r3 full-cover hit stays PLAIN (documented decline)
+== gemma arm: spec-off twin boot (identity reference) ==
+  ok: r2 spec==plain byte identity
+  ok: r3 spec==plain byte identity
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (gemma)
++ echo GEMMA-HIT-EXIT=0
+GEMMA-HIT-EXIT=0
++ echo TRACKA4-DONE
+TRACKA4-DONE

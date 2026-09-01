@@ -1,0 +1,6 @@
+2026-08-11T03:13:59Z
+453c56f0ae5af8f4dbe8b74577347b824630d7b0
+550214bd878d62bb188c1d010a7dfa8e42cf56aed93e62a3b96dc7d66d46467b  target/release/decode-batch-gate
+/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf 15705920064 bytes
+env: MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1 MEMRA_BATCH_FA=0
+args: --steps 24 --batch B --mode strict; B=1,2,4,8

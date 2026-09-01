@@ -1,0 +1,9 @@
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker]   loaded "step37": 48 layers, eos=128007
+[postthink] step37: think-forced template with a derivable close contract (ids [128799]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] step37: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[step-vision] tower loaded from /root/models/step37-flash-nvfp4 (47 blocks, out_width 4096, f32-resident)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=688 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 3786 masked steps, mask total 6.69 ms (0.002 ms/step)
+[postthink] step37: think tokens 3540, close emitted by the model

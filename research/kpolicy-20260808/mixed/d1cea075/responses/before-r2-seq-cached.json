@@ -1,0 +1,29 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "=== SESSION LOG ===\n$ python serve.py --workers 4\n[worker-2] selector registered fd=11 events=\n[worker-2] accepted conn from 127.0.0.1:52144\nTraceback (most recent recent call last):\n  File \"serve\n=== SESSION LOG ===\n$ python serve.py --workers 4\n[worker-2] selector registered fd=11 events=EVENT_READ\n[worker-\n=== SESSION LOG ===\n$ python serve\n=== SESSION LOG ===\n$ python serve.py --workers 4\n[worker-2]"
+    }
+  ],
+  "created": 1786212856,
+  "id": "cmpl-59358e63c386a22e42f0e40b8d6e213f",
+  "model": "q9",
+  "object": "text_completion",
+  "system_fingerprint": "memra-d43f9e2707e3",
+  "usage": {
+    "completion_tokens": 130,
+    "elapsed_s": 0.408702456,
+    "prompt_tokens": 5490,
+    "prompt_tokens_details": {
+      "cached_tokens": 5478
+    },
+    "spec": {
+      "acceptance_rate": 0.6014492753623188,
+      "accepted": 83,
+      "drafted": 138,
+      "rounds": 46
+    },
+    "total_tokens": 5620
+  }
+}

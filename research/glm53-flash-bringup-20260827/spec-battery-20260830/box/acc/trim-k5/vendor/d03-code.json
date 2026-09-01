@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what's happening here. The user is writing a message that looks like... it's actually formatted like an incident report or a debrief from an AI assistant/agent that was fixing something. Wait \u2014 actually, looking at the framing: \"you crashed\" \u2014 this reads like the user is pasting a report that was generated (possibly by me/another agent instance) about a crashed gateway process. Or the user is reporting TO me that \"you crashed\" and providing the root cause analysis and remediation steps.\n\nActually, re-reading: \"you crashed Root cause\u2122...\" \u2014 this looks like the user pasted a",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what's happening here. The user is writing a message that looks like... it's actually formatted like an incident report or a debrief from an AI assistant/agent that was fixing something. Wait \u2014 actually, looking at the framing: \"you crashed\" \u2014 this reads like the user is pasting a report that was generated (possibly by me/another agent instance) about a crashed gateway process. Or the user is reporting TO me that \"you crashed\" and providing the root cause analysis and remediation steps.\n\nActually, re-reading: \"you crashed Root cause\u2122...\" \u2014 this looks like the user pasted a"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 453,
+  "completion_tokens": 128,
+  "total_tokens": 581,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 9.953918582,
+  "spec": {
+   "rounds": 60,
+   "drafted": 300,
+   "accepted": 68,
+   "acceptance_rate": 0.22666666666666666
+  }
+ },
+ "id": "chatcmpl-d4295f2d9e3367b98153ff18014fe1ae",
+ "created": 1788082649,
+ "system_fingerprint": "REDACTED"
+}

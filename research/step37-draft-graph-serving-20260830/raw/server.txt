@@ -1,0 +1,129 @@
+date=2026-08-30T07:25:05+00:00
+tip=7cfcf73be filtered sampled graph arms: read the in-graph filter stats back per replay
+server md5=4f1ed7c4dd8a3aaaf2571dffb5c25e51
+=== W: WARN both directions (heads=3, serving shape) ===
+cell=W arm=dooroff
+  arm-identity: pid=120521 nonce=w-dooroff-979725283 VERIFIED nograph_in_env=0
+rnd=w arm=dooroff   mode=sampled tok/s_med=99.83 ttft_med=0.365 rows=2 spec_usage=rounds=141,drafted=298,accepted=247 sha=3a13e32fcf270666 notes=none
+rnd=w arm=dooroff   mode=greedy  tok/s_med=105.85 ttft_med=0.412 rows=1 spec_usage=rounds=192,drafted=284,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+    chain_captured_greedy=0 chain_captured_sampled=0
+    first_chain_receipt: 
+    capture_warn=5 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=W arm=dooron
+  arm-identity: pid=120720 nonce=w-dooron-1294422236 VERIFIED nograph_in_env=0
+rnd=w arm=dooron    mode=sampled tok/s_med=104.66 ttft_med=0.366 rows=2 spec_usage=rounds=182,drafted=269,accepted=205 sha=1edb4843c9844771 notes=none
+rnd=w arm=dooron    mode=greedy  tok/s_med=106.17 ttft_med=0.413 rows=1 spec_usage=rounds=192,drafted=284,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=2 chain_captured_sampled=3
+    first_chain_receipt: [mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 14509305614282191259, temp_bits: 1056964608, 
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+=== I: spec-on == spec-off greedy byte gate (curve-0128) ===
+cell=I arm=specon
+rnd=i arm=specon    mode=greedy  tok/s_med=110.30 ttft_med=0.562 rows=1 spec_usage=rounds=335,drafted=634,accepted=495 sha=5cdfe8f292e33df7 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=2 chain_captured_sampled=0
+    first_chain_receipt: [mtp-chain-graph] captured mode=greedy heads=3 interior=3 last=3 masked=0
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=I arm=specoff
+rnd=i arm=specoff   mode=greedy  tok/s_med=106.98 ttft_med=0.562 rows=1 spec_usage=ABSENT sha=5cdfe8f292e33df7 notes=none
+    geom=
+    chain_captured_greedy=0 chain_captured_sampled=0
+    first_chain_receipt: 
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+=== P: perf A/B interleaved x5 (graph vs eager), vendor-default sampled + greedy twin ===
+cell=P rnd=1 arm=graph
+  arm-identity: pid=121388 nonce=p-graph-1-1958714671 VERIFIED nograph_in_env=0
+rnd=1 arm=graph     mode=sampled tok/s_med=103.95 ttft_med=0.400 rows=3 spec_usage=rounds=186,drafted=266,accepted=201 sha=0d1afa06cf6c160f notes=none
+rnd=1 arm=graph     mode=greedy  tok/s_med=106.63 ttft_med=0.265 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=3 chain_captured_sampled=4
+    first_chain_receipt: [mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 7358269213755437990, temp_bits: 1056964608, k
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=P rnd=1 arm=eager
+  arm-identity: pid=121601 nonce=p-eager-1-1406223522 VERIFIED nograph_in_env=1
+rnd=1 arm=eager     mode=sampled tok/s_med=103.76 ttft_med=0.398 rows=3 spec_usage=rounds=137,drafted=285,accepted=251 sha=47416a5e6d53d12b notes=none
+rnd=1 arm=eager     mode=greedy  tok/s_med=106.59 ttft_med=0.261 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=0 chain_captured_sampled=0
+    first_chain_receipt: 
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=P rnd=2 arm=graph
+  arm-identity: pid=121863 nonce=p-graph-2-48086194 VERIFIED nograph_in_env=0
+rnd=2 arm=graph     mode=sampled tok/s_med=103.76 ttft_med=0.400 rows=3 spec_usage=rounds=179,drafted=274,accepted=208 sha=45ab24c670f70764 notes=none
+rnd=2 arm=graph     mode=greedy  tok/s_med=106.94 ttft_med=0.264 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=3 chain_captured_sampled=4
+    first_chain_receipt: [mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 14409085997704023334, temp_bits: 1056964608, 
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=P rnd=2 arm=eager
+  arm-identity: pid=122070 nonce=p-eager-2-2966428727 VERIFIED nograph_in_env=1
+rnd=2 arm=eager     mode=sampled tok/s_med=104.46 ttft_med=0.398 rows=3 spec_usage=rounds=177,drafted=270,accepted=210 sha=9b2e20db6ec697ad notes=none
+rnd=2 arm=eager     mode=greedy  tok/s_med=106.33 ttft_med=0.262 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=0 chain_captured_sampled=0
+    first_chain_receipt: 
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=P rnd=3 arm=graph
+  arm-identity: pid=122342 nonce=p-graph-3-11699173 VERIFIED nograph_in_env=0
+rnd=3 arm=graph     mode=sampled tok/s_med=109.68 ttft_med=0.400 rows=3 spec_usage=rounds=134,drafted=288,accepted=254 sha=9946fff2063f21c1 notes=none
+rnd=3 arm=graph     mode=greedy  tok/s_med=106.53 ttft_med=0.264 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=3 chain_captured_sampled=4
+    first_chain_receipt: [mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4093063293156332398, temp_bits: 1056964608, k
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=P rnd=3 arm=eager
+  arm-identity: pid=122545 nonce=p-eager-3-1105112992 VERIFIED nograph_in_env=1
+rnd=3 arm=eager     mode=sampled tok/s_med=113.62 ttft_med=0.398 rows=3 spec_usage=rounds=195,drafted=267,accepted=193 sha=f8e40359c67f800d notes=none
+rnd=3 arm=eager     mode=greedy  tok/s_med=106.66 ttft_med=0.263 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=0 chain_captured_sampled=0
+    first_chain_receipt: 
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=P rnd=4 arm=graph
+  arm-identity: pid=122752 nonce=p-graph-4-3199931024 VERIFIED nograph_in_env=0
+rnd=4 arm=graph     mode=sampled tok/s_med=102.67 ttft_med=0.400 rows=3 spec_usage=rounds=178,drafted=272,accepted=209 sha=e5765cac5df639ff notes=none
+rnd=4 arm=graph     mode=greedy  tok/s_med=106.81 ttft_med=0.265 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=3 chain_captured_sampled=4
+    first_chain_receipt: [mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 8214708300974058946, temp_bits: 1056964608, k
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=P rnd=4 arm=eager
+  arm-identity: pid=123085 nonce=p-eager-4-2981422816 VERIFIED nograph_in_env=1
+rnd=4 arm=eager     mode=sampled tok/s_med=104.82 ttft_med=0.399 rows=3 spec_usage=rounds=172,drafted=274,accepted=215 sha=bb7fd7ddc1bd22d5 notes=none
+rnd=4 arm=eager     mode=greedy  tok/s_med=106.17 ttft_med=0.262 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=0 chain_captured_sampled=0
+    first_chain_receipt: 
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=P rnd=5 arm=graph
+  arm-identity: pid=123289 nonce=p-graph-5-124885340 VERIFIED nograph_in_env=0
+rnd=5 arm=graph     mode=sampled tok/s_med=102.34 ttft_med=0.401 rows=3 spec_usage=rounds=189,drafted=267,accepted=198 sha=7f2973cabb355e88 notes=none
+rnd=5 arm=graph     mode=greedy  tok/s_med=106.71 ttft_med=0.265 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=3 chain_captured_sampled=4
+    first_chain_receipt: [mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 12009501864322405885, temp_bits: 1056964608, 
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+cell=P rnd=5 arm=eager
+  arm-identity: pid=123496 nonce=p-eager-5-1081010616 VERIFIED nograph_in_env=1
+rnd=5 arm=eager     mode=sampled tok/s_med=101.54 ttft_med=0.398 rows=3 spec_usage=rounds=183,drafted=272,accepted=204 sha=68ee97f304076ee4 notes=none
+rnd=5 arm=eager     mode=greedy  tok/s_med=106.48 ttft_med=0.263 rows=2 spec_usage=rounds=192,drafted=286,accepted=207 sha=2f6a5c073081fb58 notes=none
+    geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+    chain_captured_greedy=0 chain_captured_sampled=0
+    first_chain_receipt: 
+    capture_warn=0 disarm_note=0
+    illegal=0 sentinel87=0 panic=0 skey_q0=0
+SERVER-BATTERY-DONE 2026-08-30T08:11:37+00:00

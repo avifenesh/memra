@@ -1,0 +1,48 @@
+ANON=mx10 TURN=4 CHARS=4100 FINISH=stop REPEAT60=1
+======================================================================
+Got it, let's tackle this step by step. First, I need to clarify a key point first: you mentioned "this repo" but didn't share a link or the repo contents, so I'll first outline the standard, actionable workflow for this task, then note what I'd need from you to proceed with concrete changes, and also cover the verification and summary requirements you specified.
+
+First, let's align on the scope you defined:
+1.  **Arena orchestrator improvements**: Fix real bugs, harden the phase engine (edge cases, timeouts, degraded workers), polish web spectator view
+2.  **Constraints**: Only concrete, reviewable changes (no full rewrites)
+3.  **Verification**: Run existing project tests/build (detect from package.json, Makefile, Cargo.toml, etc.) and fix any breaks from changes
+4.  **Polish**: Remove dead code, fix obvious bugs introduced during changes
+5.  **Deliverable**: Concise summary of final changes
+
+### First, to proceed with concrete, repo-specific changes, I need:
+- A link to the arena orchestrator repo, or the core relevant files (orchestrator core, phase engine, spectator view, build config files like package.json/Makefile/Cargo.toml)
+- If you can't share the full repo, at least share the current code for the 3 target areas (orchestrator, phase engine, spectator view) and your build config
+
+### In the meantime, here's the standard, actionable workflow I will follow once I have the repo, aligned to your requirements:
+---
+#### Step 1: Initial repo audit & bug identification
+1.  First parse build config (package.json/Makefile/Cargo.toml) to identify test/build commands
+2.  Run existing test suite to get a baseline of passing/failing tests
+3.  Audit the 3 target areas for real, non-rewrite bugs:
+    - **Phase engine**: Look for unhandled edge cases (e.g., worker timeout during phase transition, unhandled degraded worker states, race conditions during phase state updates)
+    - **Orchestrator core**: Look for bugs in worker lifecycle management, task scheduling edge cases, error handling for failed worker dispatches
+    - **Web spectator view**: Look for UI bugs, stale data rendering, unhandled API errors for spectator data feeds
+4.  Prioritize bugs that are concrete, fixable without full rewrites (e.g., missing timeout handler, unhandled null state in spectator data, dead code in orchestrator worker cleanup)
+
+#### Step 2: Implement targeted fixes (no rewrites)
+1.  **Phase engine hardening**:
+    - Add timeout handling for phase transitions (e.g., fallback to safe state if phase init takes > configured threshold)
+    - Add explicit handling for degraded worker states (e.g., mark phase as partial if >X% workers are degraded, instead of failing entirely)
+    - Add edge case guards for invalid phase state transitions (e.g., prevent skipping from "init" to "complete" without "running" state)
+2.  **Orchestrator bug fixes**:
+    - Fix real bugs found in audit (e.g., worker cleanup race condition, incorrect task retry logic for failed dispatches)
+    - Remove dead code (e.g., unused worker status flags, obsolete retry logic)
+3.  **Web spectator polish**:
+    - Fix obvious UI bugs (e.g., stale leaderboard data, unhandled loading states for live match feeds)
+    - Add basic error handling for spectator API failures (e.g., show fallback message if live data is unavailable)
+
+#### Step 3: Verification & polish
+1.  Re-run the project's test/build suite after all changes
+2.  Fix any breaks introduced by the changes (e.g., if a phase engine guard breaks existing phase transition tests, adjust the guard to align with expected behavior)
+3.  Final polish pass: Remove any dead code added during fixes, fix obvious bugs introduced during implementation
+
+#### Step 4: Deliver concise summary
+Provide a bulleted summary of all changes, grouped by area (phase engine, orchestrator, spectator view), with notes on what was fixed, why, and verification results (e.g., "All 12 existing tests pass after changes, no new breaks introduced")
+---
+
+If you can share the repo link or relevant code snippets, I can proceed with concrete, repo-specific changes immediately.

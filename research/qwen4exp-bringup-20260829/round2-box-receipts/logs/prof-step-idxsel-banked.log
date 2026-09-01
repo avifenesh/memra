@@ -1,0 +1,8 @@
+=== arm=prof-step-idxsel-banked start=2026-08-31T19:06:08Z ===
+=== cmd: grep -E "^# (prof|section)|^prof|^section" ~/realgate/kvq2/ladder-r2prof-step-idxsel.tsv | head -5 ===
+# profile	rung=100000	steps=1
+# profile	qsa.sdpa	10.3ms	29.7%	calls=12
+# profile	ple.host_ngram_gather	4.9ms	14.1%	calls=1
+# profile	hyper.read	3.2ms	9.3%	calls=96
+# profile	moe.sel_grouped	2.6ms	7.7%	calls=48
+=== arm=prof-step-idxsel-banked rc=0 end=2026-08-31T19:06:09Z ===

@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is asking me to resume and complete an \"independent audit\" \u2014 apparently of some document (PDFs, PNG renders). They reference \"the original prompt\" with specific requirements: PASS/FAIL, exact field map, ranked defects, deliberate blanks, and concrete corrections.\n\nHowever, I have no prior context in this conversation. There's no original prompt visible to me, no file paths, no prior shell calls, no document identified. The user says \"Your prior shell calls were cancelled only because permission mode was wrong\" \u2014 but I have no memory of any prior calls because this is the start of the conversation from my perspective.\n\n",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is asking me to resume and complete an \"independent audit\" \u2014 apparently of some document (PDFs, PNG renders). They reference \"the original prompt\" with specific requirements: PASS/FAIL, exact field map, ranked defects, deliberate blanks, and concrete corrections.\n\nHowever, I have no prior context in this conversation. There's no original prompt visible to me, no file paths, no prior shell calls, no document identified. The user says \"Your prior shell calls were cancelled only because permission mode was wrong\" \u2014 but I have no memory of any prior calls because this is the start of the conversation from my perspective.\n\n"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 140,
+  "completion_tokens": 128,
+  "total_tokens": 268,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.227298622,
+  "spec": {
+   "rounds": 56,
+   "drafted": 168,
+   "accepted": 72,
+   "acceptance_rate": 0.42857142857142855
+  }
+ },
+ "id": "chatcmpl-592ad52732d85457afecfb8d59d55f00",
+ "created": 1788081554,
+ "system_fingerprint": "REDACTED"
+}

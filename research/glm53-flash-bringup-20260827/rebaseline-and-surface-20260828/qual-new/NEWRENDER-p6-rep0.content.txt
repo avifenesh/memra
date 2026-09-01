@@ -1,0 +1,19 @@
+I need to stop and flag something before doing anything: I don't have access to the prior session or the files this instruction refers to. This message says "continue from the edits already made" and "do not restart research," but there's no shared workspace here — I have no memory of a previous session, no regenerated work PDFs, no `outputs/` directory, and no prior edit history.
+
+Here's what I'd need in order to actually do this:
+
+**Assets required:**
+1. The two regenerated work PDFs (or the source files/scripts that produce them) — likely the VAT (821) and Income Tax (5329) drafts
+2. The `work/` directory location and any prior QA notes
+3. Confirmation of which bands are in question (VAT top box, bank details band, property/addressee band, and the two Income Tax pages)
+
+**What I can do once you provide them:**
+- Render both PDFs at 200 DPI (via `pdftoppm -r 200` or similar) page by page
+- Visually inspect the named bands: VAT top, bank, property, and both Income Tax pages — checking for real placement defects (overlapping text, misaligned fields, content outside margins/boxes, clipped lines)
+- Correct only genuine placement defects, and describe each correction precisely
+- Copy to `outputs/tiyuvta-vat-821-draft.pdf` and `outputs/tiyuvta-income-tax-5329-draft.pdf` **only** pages/bands that pass verification
+- Write `work/opus46-qa-report.md` listing the exact checks performed per page/band, with pass/fail and any corrections
+
+**What I will not do** (consistent with your constraints): alter facts or figures, add signatures, produce or present anything as submitted.
+
+To proceed, please upload the two current work PDFs (plus any correction scripts if edits were made programmatically), and I'll run the inspection and QA report as specified.

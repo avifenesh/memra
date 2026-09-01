@@ -1,0 +1,23 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "</think>\n\nThe most critical remaining regression test is a **concurrent registration/unregistration race test** that simulates the exact scenario where a file descriptor is closed and immediately reused by a new socket in a different thread or worker. This test should spawn multiple threads that simultaneously register, unregister, and re-register sockets on the same selector, deliberately forcing FD reuse, and assert that `get_key()` never raises a `KeyError` for a valid, currently registered FD. It must verify that the selector correctly distinguishes between the old closed socket and the new active socket by checking that `get_key()` returns the key with the correct `fileobj"
+    }
+  ],
+  "created": 1786211354,
+  "id": "cmpl-854953e8dc0b83b948a19a251dcca6cb",
+  "model": "q27",
+  "object": "text_completion",
+  "system_fingerprint": "memra-47da3098d8aa",
+  "usage": {
+    "completion_tokens": 128,
+    "elapsed_s": 1.7373370019999999,
+    "prompt_tokens": 5493,
+    "prompt_tokens_details": {
+      "cached_tokens": 5411
+    },
+    "total_tokens": 5621
+  }
+}

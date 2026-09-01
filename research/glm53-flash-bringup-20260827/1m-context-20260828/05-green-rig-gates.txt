@@ -1,0 +1,46 @@
+=== rig 5090 under flock, NVIDIA_TF32_OVERRIDE=0, correctness only, no timing quoted ===
+
+--- glm5_chunked_prime_gpu ---
+test a_chunked_mhc_prime_matches_the_reference_executor ... ok
+test a_chunked_mhc_prime_stays_inside_the_near_tie_band_of_the_monolithic_prime ... ok
+test a_chunked_prime_then_decode_matches_the_reference_executor ... ok
+test the_parity_comparison_has_teeth ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 2.11s
+
+--- glm5_kpool_indexer_gpu ---
+test gpu_a_missing_indexer_tensor_refuses_the_load_by_name ... ok
+test gpu_kpool_attention_matches_the_reference_and_differs_from_dense ... ok
+test gpu_kpool_mutations_change_the_selection_and_the_output ... ok
+test gpu_kpool_prime_then_decode_matches_the_reference ... ok
+test gpu_kpool_radix_selection_is_byte_identical_to_the_reference_kernel ... ok
+test gpu_kpool_resident_pool_keys_match_a_full_rebuild ... ok
+test gpu_kpool_scoring_is_byte_identical_to_the_reference_kernel ... ok
+test gpu_kpool_selection_matches_the_reference ... ok
+test gpu_kpool_tail_ring_mutations_change_the_pool_keys ... ok
+test gpu_kpool_tail_ring_serves_a_whole_monolithic_prime ... ok
+test gpu_kpool_tail_ring_wraps_and_matches_the_flat_plane ... ok
+test gpu_kpool_ties_break_on_the_lowest_pool_index ... ok
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 1.03s
+
+--- hyper_connections_gpu ---
+test a_missing_hc_tensor_is_refused_by_name ... ok
+test hyper_forward_last_matches_the_reference_last_row ... ok
+test hyper_prefill_logits_match_the_reference ... ok
+test hyper_prime_then_decode_matches_a_full_recompute ... ok
+test hyper_two_chunk_prime_then_decode_matches_a_full_recompute ... ok
+test zeroing_an_hc_scale_breaks_the_comparison ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.88s
+
+--- mla_gpu_forward ---
+test gpu_glm_dsa_micro_block_forward_runs ... ok
+test gpu_mla_cached_prime_decode_matches_stateless_forward ... ok
+test gpu_mla_decode_stepwise_parity_vs_cpu_oracle ... ok
+test gpu_mla_prefill_parity_vs_cpu_oracle ... ok
+test gpu_mla_rope_interleaved_matches_cpu ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.86s
+
+--- kda_fixture_gpu (not #[ignore]) ---
+test kda_decode_after_prefill_matches_full_recompute ... ok
+test kda_prefill_matches_reference_across_chunk_boundaries ... ok
+test kda_two_chunk_prime_matches_single_shot ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.33s

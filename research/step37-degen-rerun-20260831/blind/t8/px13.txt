@@ -1,0 +1,35 @@
+finish=length content_nonempty=False
+---
+Got it, let's tackle this GitHub issue step by step. First, I need to understand what the bug is: the JetBrains Marketplace listing for the Agnix plugin has two broken links: the Documentation link 404s, and the Source Code link points to a stale repo URL.
+
+First, let's start with investigation, since I can't directly access the GitHub repo, but I can outline the exact triage, steps to fix, and what I'd do if I had repo access, plus a concrete implementation plan if code changes are needed.
+
+First, triage: this is a bug, not a question, right? The user is reporting broken links in the public Marketplace listing, which affects user experience (people can't find docs or source code for the plugin). It's low severity but high visibility for new users.
+
+First, let's break down the root causes first:
+1. Documentation link 404: Most likely the docs were moved from the old path (e.g., from `agent-sh/agnix/docs` to a dedicated docs site like `agnix.agent.sh/docs` or a separate `agent-sh/agnix-docs` repo, or the path was renamed in the repo).
+2. Stale Source Code link: The plugin's `plugin.xml` (or the Marketplace listing metadata, which is often pulled from the repo's README or plugin descriptor) still points to the old repo URL, maybe the repo was renamed from `agent-sh/agnix` to something else, or moved to a different org, or the link was hardcoded incorrectly.
+
+Next, let's outline the exact steps I'd take, first if I had write access to the repo, then the implementation on a branch:
+
+First, pre-investigation steps (no code changes yet):
+1. Check the current Agnix repo's plugin descriptor file (usually `src/main/resources/META-INF/plugin.xml` for JetBrains plugins) for the `<idea-version>` and `<vendor>` tags, plus any `<url>` tags for documentation and source code.
+2. Check the repo's README.md for any Marketplace-related metadata, and the GitHub repo settings to see if the repo was renamed (e.g., from `agnix` to `agnix-plugin` or moved to a different org like `jetbrains`? No, wait the issue is on agent-sh/agnix, so maybe the source code link was pointing to an old org like `old-org/agnix`).
+3. Check if the documentation is hosted elsewhere: maybe the docs were moved to a GitHub Pages site at `agent-sh.github.io/agnix/` or a separate docs repo, or a dedicated docs platform like GitBook.
+
+Then, triage conclusion: This is a confirmed bug, no clarifying questions needed. The fix requires updating the source code and documentation URLs in the plugin's metadata, and possibly updating the GitHub Marketplace listing if it's not auto-pulled from the repo.
+
+Then, implementation steps on a feature branch:
+1. Create a new branch: `fix/jetbrains-marketplace-broken-links-1099`
+2. First, fix the source code link:
+   - Locate the source code URL in the plugin metadata: either in `plugin.xml` (look for `<url>https://github.com/old-org/agnix</url>` or similar) or in the `build.gradle.kts`/`pom.xml` if the URL is set there for the plugin descriptor.
+   - Update it to the correct current repo URL: `https://github.com/agent-sh/agnix` (assuming that's the correct current URL, if it was renamed, adjust accordingly)
+3. Fix the documentation link:
+   - First confirm the correct documentation URL: if the docs are in the repo's GitHub Pages, it's `https://agent-sh.github.io/agnix/`; if they're in a separate repo, `https://github.com/agent-sh/agnix-docs`; if hosted on a custom domain, `https://docs.agnix.agent.sh`
+   - Update the documentation URL in the same plugin metadata file (usually a `<documentation>` or `<url>` tag with a specific attribute, or the `plugin.xml` has a `<idea-plugin>` tag with a `documentation` attribute)
+4. If the JetBrains Marketplace listing is not auto-updating from the repo metadata (some plugins have manual listing entries), update the Marketplace listing directly in the JetBrains Marketplace developer portal to point to the correct URLs.
+5. Add a test to the CI pipeline to validate that the plugin metadata URLs are reachable (optional but good to prevent regressions: add a step that curls the documentation and source code URLs to ensure they return 2xx/3xx, not 4xx/5xx)
+
+Then, validation steps:
+1. Build the plugin locally to ensure the metadata changes don't break the build
+2. Upload a

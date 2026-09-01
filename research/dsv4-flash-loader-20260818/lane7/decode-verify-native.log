@@ -1,0 +1,26 @@
+dsv4-greedy-verify | model /home/ubuntu/models/dsv4-flash-nvfp4 | variant clamp-only | prompt 32 + gpu tokens 260 = 292
+layer 3 done t=23s
+layer 7 done t=49s
+layer 11 done t=77s
+layer 15 done t=110s
+layer 19 done t=137s
+layer 23 done t=165s
+layer 27 done t=193s
+layer 31 done t=225s
+layer 35 done t=255s
+layer 39 done t=282s
+layer 42 done t=301s
+head: decoding + 260 position logits (t=301s)
+logits done t=306s
+class: NATIVE expert arm — oracle ran the quantized expert GEMMs; disagreements adjudicated in-band vs band = 3·√2·(C_gpu + C_cpu)·|top1|
+  disagreement at position 45 (gpu step 14): cpu argmax 759 vs gpu token 5922 | cpu margin 0.0759 vs band 206.4470 -> in-band
+  disagreement at position 46 (gpu step 15): cpu argmax 11443 vs gpu token 696 | cpu margin 0.0639 vs band 199.6512 -> in-band
+  disagreement at position 78 (gpu step 47): cpu argmax 3841 vs gpu token 5715 | cpu margin 0.1722 vs band 203.5066 -> in-band
+  disagreement at position 79 (gpu step 48): cpu argmax 436 vs gpu token 579 | cpu margin 0.4539 vs band 188.1351 -> in-band
+  disagreement at position 115 (gpu step 84): cpu argmax 14 vs gpu token 418 | cpu margin 0.5264 vs band 193.8858 -> in-band
+  disagreement at position 123 (gpu step 92): cpu argmax 3517 vs gpu token 270 | cpu margin 0.5965 vs band 207.7412 -> in-band
+  disagreement at position 245 (gpu step 214): cpu argmax 5080 vs gpu token 1167 | cpu margin 0.7494 vs band 216.7107 -> in-band
+  disagreement at position 278 (gpu step 247): cpu argmax 21392 vs gpu token 24444 | cpu margin 0.0358 vs band 226.6693 -> in-band
+
+CPU TEACHER-FORCING VERIFY [clamp-only]: 252/260 positions agree | first divergence: position 45 (gpu step 14) | elapsed 309s
+NATIVE-CLASS VERDICT: PASS (8 disagreements, 0 out-of-band)

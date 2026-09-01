@@ -1,0 +1,52 @@
+{
+  "template": "official",
+  "request": {
+    "model": "g4",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Two answers please."
+      },
+      {
+        "role": "assistant",
+        "content": "First answer."
+      },
+      {
+        "role": "assistant",
+        "content": "Second answer."
+      },
+      {
+        "role": "user",
+        "content": "Thanks."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get current weather for a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "City name"
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "celsius",
+                  "fahrenheit"
+                ]
+              }
+            },
+            "required": [
+              "location"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

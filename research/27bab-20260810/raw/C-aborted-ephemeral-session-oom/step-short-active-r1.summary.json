@@ -1,0 +1,228 @@
+{
+  "aggregate_output_tok_s": 13.781518086736133,
+  "base": "http://127.0.0.1:8002",
+  "bos_garbage_count": 0,
+  "completion_tokens": 32,
+  "concurrency": 1,
+  "decode_tok_s_median": 19.50809851752531,
+  "decode_tok_s_values": [
+    19.50809851752531
+  ],
+  "duration_target_s": null,
+  "errors": [],
+  "expected_matches": 1,
+  "expected_sha256": "ff8831822fbe209f6c00687fca83dde8c7a2d2556c11c01799cfc55464ff3b90",
+  "label": "step-short-active-r1",
+  "max_tokens": 32,
+  "metrics_after": {
+    "active_sessions": 0,
+    "admission_session_defers": 0,
+    "admission_vram_defers": 0,
+    "admitted": 5,
+    "cache_hit_token_ratio": 0.0,
+    "cached_tokens_in": 0,
+    "completed": 5,
+    "computed_tokens_in": 231,
+    "continuation_pool_entries": 5,
+    "continuation_pool_evictions": 0,
+    "continuation_pool_hits": 0,
+    "cuda_driver_free_bytes": 42796187648,
+    "cuda_pool_cached_bytes": 47772900,
+    "cuda_pool_reserved_bytes": 58384711680,
+    "cuda_pool_used_bytes": 58336938780,
+    "lcp_histogram": {
+      "counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edges": [
+        0,
+        1,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,
+        2048,
+        4096
+      ]
+    },
+    "plain_affinity_rewinds": 0,
+    "prefix_cache_bytes": 0,
+    "prefix_cache_entries": 0,
+    "prefix_cache_evictions": 0,
+    "prefix_cache_hit_tokens": 0,
+    "prefix_cache_hits": 0,
+    "prefix_cache_inserts": 0,
+    "prefix_cache_misses": 0,
+    "prompt_tokens_in": 231,
+    "queued_requests": 0,
+    "serve_idle_seconds": 0.002,
+    "spec_pool_affinity_rewinds": 0,
+    "spec_pool_entries": 0,
+    "spec_pool_evictions": 0,
+    "spec_pool_hits": 0,
+    "spec_pool_misses": 0,
+    "step_oom_parks": 0,
+    "step_p50_ms": 13.233920097351074,
+    "step_p99_ms": 52.912540435791016,
+    "tenants": {
+      "cx27-sanity-step-forward-idle-post-r1-1786382034259838154-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      },
+      "cx27-sanity-step-initial-1786382027918035432-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      },
+      "cx27-step-decode-idle-r1-1786382030192079189-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 171
+      },
+      "cx27-step-short-active-r1-1786382037246248348-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      },
+      "cx27-step-short-idle-r1-1786382029495982768-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      }
+    },
+    "tokens_out": 384
+  },
+  "metrics_before": {
+    "active_sessions": 0,
+    "admission_session_defers": 0,
+    "admission_vram_defers": 0,
+    "admitted": 4,
+    "cache_hit_token_ratio": 0.0,
+    "cached_tokens_in": 0,
+    "completed": 4,
+    "computed_tokens_in": 216,
+    "continuation_pool_entries": 4,
+    "continuation_pool_evictions": 0,
+    "continuation_pool_hits": 0,
+    "cuda_driver_free_bytes": 42796187648,
+    "cuda_pool_cached_bytes": 50121200,
+    "cuda_pool_reserved_bytes": 58384711680,
+    "cuda_pool_used_bytes": 58334590480,
+    "lcp_histogram": {
+      "counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edges": [
+        0,
+        1,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,
+        2048,
+        4096
+      ]
+    },
+    "plain_affinity_rewinds": 0,
+    "prefix_cache_bytes": 0,
+    "prefix_cache_entries": 0,
+    "prefix_cache_evictions": 0,
+    "prefix_cache_hit_tokens": 0,
+    "prefix_cache_hits": 0,
+    "prefix_cache_inserts": 0,
+    "prefix_cache_misses": 0,
+    "prompt_tokens_in": 216,
+    "queued_requests": 0,
+    "serve_idle_seconds": 2.348,
+    "spec_pool_affinity_rewinds": 0,
+    "spec_pool_entries": 0,
+    "spec_pool_evictions": 0,
+    "spec_pool_hits": 0,
+    "spec_pool_misses": 0,
+    "step_oom_parks": 0,
+    "step_p50_ms": 13.211610794067383,
+    "step_p99_ms": 16.93785858154297,
+    "tenants": {
+      "cx27-sanity-step-forward-idle-post-r1-1786382034259838154-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      },
+      "cx27-sanity-step-initial-1786382027918035432-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      },
+      "cx27-step-decode-idle-r1-1786382030192079189-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 171
+      },
+      "cx27-step-short-idle-r1-1786382029495982768-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      }
+    },
+    "tokens_out": 352
+  },
+  "metrics_expected_completed": 5,
+  "metrics_settled": true,
+  "model": "stepfun/step-3.7-flash",
+  "n": 1,
+  "n_error": 0,
+  "n_ok": 1,
+  "prompt_bytes": 7,
+  "prompt_kind": "sanity",
+  "prompt_sha256": "707b3c25bb5ccddd6fc12555147d3841b0ce137bd465cae17bcbf962d128ca90",
+  "prompt_tokens_observed": [
+    15
+  ],
+  "requested_requests": 1,
+  "spec_metrics_delta": {
+    "acceptance_rate": null,
+    "accepted": 0,
+    "drafted": 0,
+    "rounds": 0
+  },
+  "temperature": 0.0,
+  "text_hash_counts": {
+    "ff8831822fbe209f6c00687fca83dde8c7a2d2556c11c01799cfc55464ff3b90": 1
+  },
+  "text_prefixes": [
+    "Got it, the user just said \"Say OK.\" So I need to respond with OK, right? Wait, make it natural? Let's see, just"
+  ],
+  "ttft_p50_s": 0.7328666662797332,
+  "ttft_p99_s": 0.7328666662797332,
+  "ttft_values_s": [
+    0.7328666662797332
+  ],
+  "wall_s": 2.3219502959400415
+}

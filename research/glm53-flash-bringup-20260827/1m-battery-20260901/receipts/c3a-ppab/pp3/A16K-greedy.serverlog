@@ -1,0 +1,13 @@
+[meter] admit id=chatcmpl-60741e6b438c7d59b3b9cf015700d456 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=15766 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=64, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=4096 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[glm5-acc] ctx=15766 burst=17/29 cum=17/29=0.586
+[glm5-acc] ctx=15798 burst=18/30 cum=35/59=0.593
+[glm5-acc] ctx=15831 burst=22/31 cum=57/90=0.633
+[glm5-acc] ctx=15866 burst=15/24 cum=72/114=0.632

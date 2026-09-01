@@ -1,0 +1,135 @@
+[server] starting; models config = [("step37", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step37" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step37: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step37": 45 layers, eos=128007
+[worker] step37: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step37: decode chunk cap 8
+[admission] "step37": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step37"]
+[server] listening on http://127.0.0.1:18458
+[meter] admit id=chatcmpl-a550b848757bd1b40c710139ac7a57ec tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=299 path=plain = 83520 B/token x ctx + 0MB fixed = 25MB
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-72e302c16890d26548f68bbb9014938c tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-6c7a207ebc13e5fb9bcfdbc37c61ced4 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=1 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[step35-batch] first B>1 batched step35 walk: B=2 layers=[0,22)
+[meter] admit id=chatcmpl-238e31d0e7245d0682bb431e4ea688e1 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-80712154e203a7680deb8150712e908d tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-937f246cf8bae584f7d649ed90a2e09e tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=1 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 171 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 171 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[meter] admit id=chatcmpl-7879eb74778a79374e65182cfdf15d03 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-231b4700a447362e39f0dbd2c95ed82e tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-b0c911c956c6cdc78bb2eecf9517879b tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-6a5cb2fd54dc24450f5bcb0a4e98f70f tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=1 placement=pp2-cross-device
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[meter] admit id=chatcmpl-706973a1de5c8f9ba57c5a38c5125160 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-e42b04e5d63716885ae315b336115539 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-15892bf29e7649fa16255d84bbaafc37 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-f6d0d866869b8c3b6371477d409d5cc6 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-af7084a649e1419702f954ebf7f9e5b1 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[meter] admit id=chatcmpl-89b6a5ce84e83d34c9be1e155665685e tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-aa7e895be523908a022d620a618d866c tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-2b5856aa5a22c39842a9a4ec462e6f7e tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-6ddc6beff8e94014edd94fe251e65677 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-95c27a7a9f5a88f7cdf88afcb930afec tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-b5376869e061881733befac4c7840c74 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[meter] admit id=chatcmpl-b78d1ee8a056a9d08ce02d169b3ff188 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-071441fb1a8496a6fdea1531fefc97c6 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-fcccd4a821ea30695e7a4bf7b10ce4f4 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-1918a31bd4fcb7c1a9d6c5f90e9f99f7 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-a98dd116b01f6bfd88fff067e10ec616 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-2f84a135b16fda54bf9de3b2111e08eb tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-b26fba6d98b267151ba149fc8cc5c396 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=1 placement=pp2-cross-device
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[meter] admit id=chatcmpl-0ccc4a120c4742ad90cf90afeb54d6eb tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-8a407c0795b3b6d7d77402b88cca3dc9 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-4311b51ee63409fc23f09d996d802d32 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-71d9b3ec4a2a77cc0120ba9a40353060 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-18705af34a70e7d176525732a3df8301 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-3228fb6898a27b8acfb3fee2916a96a2 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-f661cb25e7082c00b7b3b21e4b61da1e tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-7e6445a9e9b5d6c575c550ebe8b072c7 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: grew parked cache 243 -> 299 rows (request-owned need)
+[worker] plain-affinity: rewound to 165 of 171 prompt tokens (priming 6 suffix; model step37)
+[worker] kv-reuse: 165 of 171 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=165 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

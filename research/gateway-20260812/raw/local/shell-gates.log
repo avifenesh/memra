@@ -1,0 +1,53 @@
++ bash -n deploy/gateway/capture-manifest.sh
++ bash -n research/gateway-20260812/run-eu-west.sh
++ shellcheck deploy/gateway/capture-manifest.sh research/gateway-20260812/run-eu-west.sh
++ python3 -
+deploy/gateway/probe.py: syntax PASS
+deploy/gateway/test_probe.py: syntax PASS
+deploy/gateway/static/privacy.html: HTML parse PASS
+deploy/gateway/static/retention.html: HTML parse PASS
+deploy/gateway/static/terms.html: HTML parse PASS
+++ mktemp -d /tmp/cx-gateway-capture.XXXXXX
++ smoke_root=/tmp/cx-gateway-capture.KUry9n
++ MEMRA_REPO=/home/avifenesh/projects/wt-cx-gateway
++ MEMRA_SERVER_BIN=/home/avifenesh/projects/wt-cx-gateway/target/release/memra-server
++ MEMRA_GATEWAY_MODEL=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
++ MEMRA_REQUEST_LEDGER=/home/avifenesh/projects/wt-cx-gateway/research/gateway-20260812/raw/local/memra-server-tests.log
++ MEMRA_MODEL_METADATA=/home/avifenesh/projects/wt-cx-gateway/deploy/gateway/q27-models.toml
++ MEMRA_API_KEYS=/tmp/cx-gateway-capture.KUry9n/missing-keyring
++ deploy/gateway/capture-manifest.sh --out /tmp/cx-gateway-capture.KUry9n/out
+manifest captured: /tmp/cx-gateway-capture.KUry9n/out
++ cd /tmp/cx-gateway-capture.KUry9n/out
++ sha256sum -c MANIFEST.sha256
+context.env: OK
+files.tsv: OK
+git-status.txt: OK
+uname.txt: OK
+mounts.txt: OK
+storage.txt: OK
+gpus.csv: OK
+compute-apps.csv: OK
+nvidia-smi.txt: OK
+cuda.txt: OK
+services.txt: OK
+public-dns.txt: OK
+public-ready.headers: OK
+public-ready.json: OK
+public-ready.stderr: OK
+public-probe.txt: OK
++ grep -q curl_exit=22 /tmp/cx-gateway-capture.KUry9n/out/public-probe.txt
++ echo capture_smoke=/tmp/cx-gateway-capture.KUry9n/out
+capture_smoke=/tmp/cx-gateway-capture.KUry9n/out
++ echo PASS
+PASS
++ bash -n research/gateway-20260812/run-eu-west.sh
++ shellcheck research/gateway-20260812/run-eu-west.sh
++ echo thermal reducer numeric-order regression
+thermal reducer numeric-order regression
+samples=4
+temperature_min_c=26
+temperature_max_c=49
+power_min_w=29.76
+power_max_w=455.54
++ echo thermal_reducer=PASS
+thermal_reducer=PASS

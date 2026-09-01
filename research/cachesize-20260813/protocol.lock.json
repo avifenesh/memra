@@ -1,0 +1,44 @@
+{
+  "schema": "memra.cachesize.protocol.v1",
+  "runtime_source": "18885ec479d897a3e8c42b0d408a71fa3edaa708",
+  "runtime_tag": "v0.81.2",
+  "frozen_replay_sha256": "91eac7250e0d268ac6be8cfd1ee64e346d405dc412824dab45f224e9563e1e5b",
+  "frozen_workload_sha256": "85597a0a28ed874f440b4a966c0b43fd3e31b94fe868266de9e299decc208c34",
+  "prompt_ids_sha256_canonical_json": "eba9dff66d4ebf3f40d6db80298ab9c884fa1bb2e1a6d4ca2c7dadd4f21513fb",
+  "prompt_tokens": 4860,
+  "completion_tokens": 60,
+  "entry_probe_prefix_tokens": [4096, 4860, 8192],
+  "entry_probe_ctx": 16384,
+  "working_set_entries": 96,
+  "seed_concurrency": 1,
+  "seed_method": "sequential, matching the frozen sell-gate hot-cache setup; one-token completion because the snapshot is published at prefill completion",
+  "working_set": "96 tenant-isolated cache keys carrying the exact frozen 4860-token prompt identity",
+  "working_set_cycle": "uniform deterministic shuffled permutation without replacement; continue across cells and reshuffle only after all 96 keys have been visited",
+  "working_set_cell_rule": "working keys are distinct within each concurrent cell; when a cell crosses a cycle boundary, deterministically swap duplicate next-cycle keys later within that same permutation",
+  "budget_pairing": "within one model and repetition, every budget receives the identical role order, concurrency order, and working-key permutation; only the cache budget and boot position change",
+  "hit_requests_per_cycle": 9,
+  "miss_requests_per_cycle": 1,
+  "minimum_requests_per_cell": 20,
+  "prefix_cache_mb": [1024, 4096, 8192, 16384, 32768, 49152],
+  "concurrency": {
+    "q27": [4, 5, 6, 7, 8, 12, 16],
+    "q35": [4, 5, 6, 7, 8, 16, 24, 32, 40]
+  },
+  "sold_hit_ttft_p95_ms": {
+    "q27": 22.0,
+    "q35": 11.0
+  },
+  "repetitions": 5,
+  "max_sessions": 96,
+  "serve_ctx": 8192,
+  "owner_supplied_live_observation": {
+    "prefix_cache_mb": 4096,
+    "memory_used_mib": 36880,
+    "memory_total_mib": 97887,
+    "scope": "production arithmetic anchor only; the live serve box is out of scope"
+  },
+  "temperature": 0,
+  "seed": 3407,
+  "thermal_regime": "one uninterrupted /tmp/memra-gpu.lock hold plus /tmp/memra-gpu-1.lock exclusion; physical GPU0 only; GPU1 idle; one model resident at a time; no clock changes or artificial cooldown",
+  "order": "odd repetitions q27 then q35 with ascending budgets; even repetitions q35 then q27 with descending budgets; concurrency order rotates and reverses by repetition"
+}

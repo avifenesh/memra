@@ -1,0 +1,30 @@
+memra c1 TTFT rep0: true-cold14.7k=0.514s warm=0.066s
+memra c1 TTFT rep1: true-cold14.7k=0.495s warm=0.065s
+memra c1 TTFT rep2: true-cold14.7k=0.485s warm=0.066s
+memra c1 longdoc rep0: ttft=0.492s decode=228.7 tok/s ct=512
+memra c1 longdoc rep1: ttft=0.062s decode=202.2 tok/s ct=512
+memra c1 longdoc rep2: ttft=0.061s decode=189.1 tok/s ct=512
+memra c1 short rep0: ttft=0.073s decode=122.2 tok/s ct=512
+memra c1 short rep1: ttft=0.072s decode=118.3 tok/s ct=512
+memra c1 short rep2: ttft=0.073s decode=118.9 tok/s ct=512
+memra C1 DONE
+vllm c1 TTFT rep0: true-cold14.7k=0.322s warm=0.037s
+vllm c1 TTFT rep1: true-cold14.7k=0.127s warm=0.035s
+vllm c1 TTFT rep2: true-cold14.7k=0.126s warm=0.035s
+vllm c1 longdoc rep0: ttft=0.126s decode=289.4 tok/s ct=512
+vllm c1 longdoc rep1: ttft=0.036s decode=275.3 tok/s ct=512
+vllm c1 longdoc rep2: ttft=0.040s decode=275.6 tok/s ct=512
+vllm c1 short rep0: ttft=0.031s decode=277.7 tok/s ct=486
+vllm c1 short rep1: ttft=0.030s decode=277.5 tok/s ct=512
+vllm c1 short rep2: ttft=0.030s decode=277.4 tok/s ct=512
+vllm C1 DONE
+memra-specoff c1 TTFT rep0: true-cold14.7k=0.660s warm=0.061s
+memra-specoff c1 TTFT rep1: true-cold14.7k=0.572s warm=0.061s
+memra-specoff c1 TTFT rep2: true-cold14.7k=0.563s warm=0.061s
+memra-specoff c1 longdoc rep0: ttft=0.575s decode=270.4 tok/s ct=512
+memra-specoff c1 longdoc rep1: ttft=0.059s decode=210.2 tok/s ct=512
+memra-specoff c1 longdoc rep2: ttft=0.059s decode=210.0 tok/s ct=512
+memra-specoff c1 short rep0: ttft=0.057s decode=187.1 tok/s ct=512
+memra-specoff c1 short rep1: ttft=0.057s decode=188.3 tok/s ct=512
+memra-specoff c1 short rep2: ttft=0.058s decode=187.8 tok/s ct=512
+memra-specoff C1 DONE

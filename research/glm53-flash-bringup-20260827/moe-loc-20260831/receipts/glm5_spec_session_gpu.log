@@ -1,0 +1,21 @@
+warning: memra-engine@0.121.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.121.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.121.0 (/home/avifenesh/projects/wt-glm5-moe-loc/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.61s
+     Running tests/glm5_spec_session_gpu.rs (target/debug/deps/glm5_spec_session_gpu-6f15e35e773a76f9)
+
+running 10 tests
+test gpu_confidence_gate_truncates_drafts_never_the_tape ... ok
+test gpu_demote_handoff_continues_byte_identical ... ok
+test gpu_eos_finishes_the_session_and_later_bursts_are_empty ... ok
+test gpu_receipt_log_lines_red_and_green ... ok
+test gpu_sampled_twin_is_deterministic_and_burst_split_invariant ... ok
+test gpu_served_burst_with_rollback_disabled_bites ... ok
+test gpu_served_bursts_forced_rejection_partial_accepts_stay_byte_identical ... ok
+test gpu_served_bursts_greedy_tape_matches_plain_decode_k1_to_7 ... ok
+test gpu_verify_ws_bursts_byte_identical_with_alloc_receipt ... ok
+test helper_emit_glm5_receipts ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.01s
+
+exit=0

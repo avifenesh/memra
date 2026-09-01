@@ -1,0 +1,57 @@
+{
+  "request": {
+    "model": "zai/glm-5.3-flash",
+    "messages": [
+      {
+        "role": "user",
+        "content": "weather in Paris?"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name"
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "c",
+                  "f"
+                ]
+              }
+            },
+            "required": [
+              "city"
+            ]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "search",
+          "description": "Search the web",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "q": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "q"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+[meter] admit id=chatcmpl-0864b91225892a5c8f97ec84da8fb789 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 39044MB -> 39090MB
+[admit-oom] VRAM reject: model="zai/glm-5.3-flash" ctx=1035677 has no attainable admission headroom (available 39090MB) — HTTP 429

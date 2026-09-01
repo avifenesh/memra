@@ -1,0 +1,8 @@
+# Regenerable large fixture binaries (gen_upstream_fixture.py rebuilds them from the
+# pinned shard; meta.json with shapes + sha256s + measured deltas IS committed).
+# det112 (1.9 MB) is committed as the always-available tight pin.
+fixtures/det448x224/*.bin
+fixtures/text448/*.bin
+# regenerable preview whose random pixel bytes trip the public-boundary secret
+# scanner (provider-name pattern inside compressed data) — kept out of git
+fixtures/det448x224.png

@@ -1,0 +1,67 @@
+{
+  "artifact": "Step-3.7-flash-IQ4_XS-00001-of-00003.gguf",
+  "binary_sha256": "6a7c2046eb3197773def91baf012abd629e0b0ced239ec2d38016c93be5ca7e5",
+  "cells": [
+    {
+      "boots": 10,
+      "directory": "matrix/h2-c1",
+      "divergences": 0,
+      "errors": 0,
+      "hash_counts": {
+        "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 10
+      },
+      "label": "c=1",
+      "requests": 10
+    },
+    {
+      "boots": 10,
+      "directory": "matrix/same",
+      "divergences": 0,
+      "errors": 0,
+      "hash_counts": {
+        "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 80
+      },
+      "label": "c=8 barrier",
+      "requests": 80
+    },
+    {
+      "boots": 10,
+      "directory": "matrix/h2-c2",
+      "divergences": 0,
+      "errors": 0,
+      "hash_counts": {
+        "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 20
+      },
+      "label": "c=2",
+      "requests": 20
+    },
+    {
+      "boots": 5,
+      "directory": "matrix/h2-first-late",
+      "divergences": 0,
+      "errors": 0,
+      "hash_counts": {
+        "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 40
+      },
+      "label": "first-late",
+      "requests": 40
+    }
+  ],
+  "expected_completion_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de",
+  "probe_sha256": "6c9e7386e3304deb6b625db1e7bd5089b3f0cf4844c198b17d7173e5c0082e9d",
+  "serve_shape": {
+    "MEMRA_CTX": 262144,
+    "MEMRA_MOE_GROUPED": 1,
+    "MEMRA_PP_DEVICES": "0,1",
+    "MEMRA_PP_STAGES": 2,
+    "MEMRA_PREFILL_TICK": 2048
+  },
+  "source_commit": "6e50efdbaefe7167f6c48309abd6892252220eb8",
+  "totals": {
+    "boots": 35,
+    "divergences": 0,
+    "errors": 0,
+    "requests": 150,
+    "unique_completion_hashes": 1
+  }
+}

@@ -1,0 +1,227 @@
+# Prefill arc: W4A8-FP8 — native-FP4 weights × e4m3 activations via mxf8f6f4 block-scale MMA
+
+Status: DESIGN (2026-07-09). Owner of the exactness/numeric decisions: main thread.
+
+## The gap and why the current path is capped
+
+Prefill trails llama at 0.59–0.78x (README known-gaps; ppmmq lane decomposition). The residual is
+structural: our W4A8 MMQ tile dequants NVFP4 → int8 tiles and rides the plain-int8 MMA class
+(~219 TF measured for plain FP8; int8 same class), while the silicon's block-scaled paths run
+381 TF (mxf8f6f4) and 762 TF (mxf4). The w4a8v2 box arc proved the wall is not occupancy —
+mode-2 halved the throttle with zero throughput change at 16.4% warps-active; the tensor-pipe
+issue class itself is the ceiling. W4A4 (mxf4, 762 TF) inverts the llama gap in-tree
+(1.03–1.06x) but is EXACTNESS-BLOCKED: the e2m1 activation grid (1+1+... ~1.6 effective mantissa
+bits) forks argmax on long prompts (p3 reject ×2, agent-loop 1/8 self-consistency FAIL).
+
+## The middle rung nobody is standing on
+
+`mma.sync.m16n8k32.kind::mxf8f6f4.block_scale..ue8m0` executes on sm_120 (verified,
+sm120-empirical-capabilities.md) and the mxf8f6f4 kind accepts MIXED A/B formats: A = e4m3
+activations, B = e2m1 weights. That buys, over the current int8 path:
+
+1. **Compute class**: 381 vs ~219 TF ceiling (+74% issue-rate headroom where we are pipe-bound).
+2. **No weight-dequant hop**: e2m1 planes feed the MMA natively — the NVFP4→int8 tile decode
+   (register + smem traffic and ALU work inside the mainloop) disappears.
+3. **Half the weight bytes through smem** (4-bit vs 8-bit tiles) — doubles effective k-depth per
+   smem byte, helps the cp.async pipeline (PP_PIPE) run deeper.
+
+Exactness position: e4m3 activations (3 mantissa bits + per-block scale) sit far above the
+W4A4-blocking e2m1 act grid, and the in-tree precedent says this grid class PASSES our gates —
+ST_E4M3 decode + PP_FP8 prefill (e4m3 activations end-to-end) went through the full battery
+green as their own numeric config. This is a NEW NUMERIC CONFIG like FA_V3/ST_E4M3: own argmax
+baseline, full battery in-config, spec self-consistency is the kill-gate.
+
+## The hard part: scale semantics
+
+NVFP4 = e2m1 values + **e4m3 scale per 16 elements**. The mxf8f6f4 block-scale form applies
+**ue8m0 scales (power-of-2) per 32 columns** from the scale operand. Three routes, in preference
+order:
+
+- **R1 — epilogue-applied weight scales, MMA runs unscaled (scale operand = 1.0 encoding).**
+  Split the k-loop so each MMA covers one 16-element NVFP4 scale group per operand row
+  (m16n8k32 spans two groups → accumulate per-instruction into a temp and scale-add into the
+  tile accumulator every k=16 half? — NO: k=32 mixes both halves inside the instruction).
+  Viable only if we pre-fold: see R2.
+- **R2 — fold weight scales into the ACTIVATION quantization per k-block-pair.** Wrong: weight
+  scales vary per (row-block, k-block); activations are shared across all weight rows. Dead.
+- **R3 — requant scale plane e4m3 → ue8m0 (power-of-2)**: loses up to 2^(1/16)…—- real quant
+  error on the scale plane. Same tax family as KQ_NVFP4's asym→sym (measured acceptance tax).
+  Only acceptable if the error lands below the argmax-fork threshold — measurable, probably not
+  free. Fallback, not the plan.
+- **R4 — crack `kind::mxf4nvf4.scale_vec::4X` with e4m3 scale operand** (the NVFP4-native MMA
+  kind). Our first PTX form was rejected ("incorrect instruction type") but CUTLASS SM120 NVFP4
+  kernels prove the silicon path exists (vLLM runs them). mxf4nvf4 is FP4×FP4 (act side would be
+  e2m1 again → W4A4 exactness class) — useful for the blocked speed-mode door, NOT for this arc.
+- **R1' — the actual plan: k16-native MMA.** Use `m16n8k16` (or two-step k16 issue) for the
+  mixed kind if the PTX form allows k=16 for mxf8f6f4 — then each MMA covers exactly ONE NVFP4
+  scale group and the per-group e4m3 weight scale × per-block activation scale folds into a
+  per-fragment FMA on the accumulator between MMAs (registers only, no extra smem). Issue-rate
+  cost of k16 vs k32 must be microbenched — if k16 halves the rate, the win evaporates; if the
+  pipe is issue-slot-bound not k-bound, it holds.
+
+**Probe 0 (before any kernel work): PTX microbench matrix** — {mxf8f6f4 k32 ue8m0, mxf8f6f4 k16
+form if it assembles, epilogue-FMA-per-k16 variant} × {measured TF, correct scale math on a
+synthetic tile vs f64 reference}. The capabilities doc's microbench harness
+(`bw24-probe`) is the vehicle. This decides R1' vs R3 vs abandon in <1 day of work.
+
+### Probe 0 form-matrix results (2026-07-09, compile/assemble level)
+
+| form | verdict |
+|---|---|
+| `m16n8k32 ... .e4m3.e2m1 ... ue8m0` (the mixed form) | **EXECUTES at full 381 TFLOP/s** — zero mixed-form rate penalty — and the full-tile correctness vs f64 is **BIT-EXACT** (maxdiff 0.0, `probe/mixed_f8f4_probe.cu`) |
+| `m16n8k16` mxf8f6f4 (R1' — one NVFP4 scale group per MMA) | **REJECTED** — "Incorrect instruction type for shape m16n8k16". k32-only. R1' dead. |
+| `scale_vec::2X` on mxf8f6f4 (hardware per-16 scales) | **REJECTED** — "Illegal modifier". 1X-only. |
+
+Note (PTX spec, matters for the byte math): mxf8f6f4 requires f4 operands in **8-bit
+containers** — the smem/register byte win over int8 tiles does NOT exist. The wins that remain:
++74% MMA issue ceiling (381 vs ~219 TF) and no in-mainloop dequant ALU. The tile is pipe-bound
+(w4a8v2: 16.4% warps-active, occupancy-invariant), so the issue ceiling is the real lever.
+
+### Probe 0 CLOSED (2026-07-09) — R-A is GO
+
+- Fragment layout = the standard SM80 m16n8k32 8-bit layout (CUTLASS `mma_traits_sm120.hpp`
+  inherits `SM80_16x8x32_S32S8S8S32_TN`; verified bit-exact empirically).
+- e2m1 element placement: **shifted left 2, bits [5:2]** ("middle of the eight-bit container" —
+  CUTLASS `fp4_shift_A/B`; f6/f8 need no shift). The container decodes as a 6-bit bias-1 field;
+  e2m1 codes embed EXACTLY — no value loss.
+- Scale operand: ue8m0 bias 127, per-thread-quad byte selectors behave as documented.
+- CUTLASS also ships a **plain `kind::f8f6f4`** (no block_scale, no scale regs) — R-A applies
+  scales in the epilogue anyway, so the plain form is the cleaner instruction for the tile.
+- Rate: mixed e4m3×e2m1 = 381 TFLOP/s, identical to e4m3×e4m3. The +74% ceiling is real.
+
+### Revised route ladder (replaces R1–R4 above)
+
+- **R-A — mixed e4m3×e2m1, per-32 scale requant, epilogue FMA.** MMA runs with scale=2^0;
+  NVFP4's per-16 e4m3 scales requant to per-32 (shared across the k32 the MMA spans) and apply
+  in the per-block epilogue exactly like the existing q8_1 scale FMA — same tile skeleton as
+  today's W4A8. Weight VALUES stay exact e2m1; the tax is scale GRANULARITY (16→32).
+- **R-B — fold per-16 scales into values → pure e4m3×e4m3** (form already measured 381 TF).
+  round(e2m1 × scale16 → e4m3): values re-round (~2^-4 rel), granularity kept. ST_E4M3
+  precedent says pure-e4m3 weights pass gates on F8-origin lineage; NVFP4-origin fold is a new
+  lineage — gate decides.
+- Order: probe correctness → build R-A (values-exact is the better first bet under the exactness
+  contract) → battery → if scale-granularity forks argmax, try R-B → if both fork, the arc
+  closes NEGATIVE with the JSONL row as the record.
+
+## Ceiling math (what winning looks like)
+
+pp1855 27B ST today: 1341 (NV_W4 decode config) / 1480 (ST_E4M3). llama 27B GGUF: ~1900-2350
+regime-dependent. int8→mxf8f6f4 ceiling factor 1.74x on the MMA mainloop; real GEMM captures
+70-85% → expected +30-50% pp on the pipe-bound models → 27B into the 1750-2200 band = llama
+parity-to-above WITHOUT touching the exactness contract. 9B (0.74x, 4631 vs 6287) → ~1.0x band.
+35B expert MMQ inherits the same tile → compounding with MOE_MMA.
+
+## Order of work
+
+1. Probe 0 (PTX matrix + scale-math correctness vs f64) — bw24-probe, no engine risk.
+2. If R1' holds: mxf8f6f4 MMQ tile as a twin of the existing W4A8 tile (same dispatch shape,
+   `BW24_MMQ_F8F4=1` seam), e4m3 activation-quant kernel (mirror of the q8_1 fold).
+3. Gate battery in-config (argmax + K=1..8 + agent-loop text audit per the new protocol).
+4. A/B vs current W4A8 same-hour; flip default only on clean margin + green gates.
+
+Risks: PTX operand-form fight (time sink — capped by Probe 0), k16 issue-rate cliff, e4m3 act
+grid argmax forks at depth (precedent says no, contract says verify), scale-plane register
+pressure in the mainloop.
+
+## R-A implementation spec (2026-07-09, post-Probe-0 deep-dive on the W4A8 tile)
+
+Twin of `mmq_nvfp4_w4a8.cu` (977 lines; reuse its skeleton verbatim — tiling, cp.async PP_PIPE
+ring, write-back). File: `mmq_nvfp4_f8f4.cu`, seam `BW24_MMQ_F8F4=1` (default OFF until battery).
+
+1. **VRAM law binds**: weights stay packed-nibble resident (4-bit planes). The 8-bit containers
+   exist only in smem tiles, built in-loop by the loader (the CUTLASS-door resident-8bit repack
+   OOMs the 27B — measured, docs/FLAGS.md §5).
+2. **Loader** (`load_tiles_nvfp4_f8f4`, twin of `load_tiles_nvfp4_w4a8`): per 16-group with
+   scales s1,s2 per 32-pair: s32 = max(s1,s2); ratio r_i = s_i/s32 ∈ (0,1].
+   - r == 1 (s_i == s32): pure bit-op — nibble<<2 into byte (the CUTLASS middle placement). No
+     value change, EXACT.
+   - r < 1: recode v' = round_e2m3(kvalue[nibble] × r) via f32 mul + `cvt.rn.satfinite.e2m3x2.f32`
+     (2 vals/cvt, Blackwell FP6 convert). Error ≤ ~2^-4 rel (2 extra mantissa bits vs e2m1).
+   - smem x_tile: 64 bytes/row/blk64 (containers) + 2 f32 per-32 scales; adapt
+     MMQ_MMA_TILE_X_K accordingly. ALU cost rides the 83%-idle warp slots (tile is tensor-pipe
+     bound — w4a8v2).
+3. **Activations**: e4m3 quantize twin of `quantize_q8_1_mmq` — f32 → e4m3 byte
+   (`cvt.rn.satfinite.e4m3x2.f32`) + f32 amax-scale per 32 (D4 layout kept so the epilogue shape
+   is unchanged).
+4. **MMA**: `mma.sync.aligned.kind::f8f6f4.m16n8k32.row.col.f32.e2m1.e4m3.f32` — A=weights
+   (e2m1-in-container), B=acts (e4m3), PLAIN kind (no scale regs; CUTLASS SM120_16x8x32_TN
+   form). f32 accumulator replaces the int32 of the int8 path — epilogue becomes
+   sum_f32 × (s32_w × d_act) FMA, same structure, one fewer convert.
+   k-iter covers 32 (vs 16) — halve the inner-loop trip count, keep MMQ_ITER_K=256.
+5. **Gates**: new kernel-check section (f8f4 tile vs Stage-A f32 oracle, int8-act-class rel
+   tolerance ~3e-2); then run-gen argmax in-config, run-spec K=1..8, agent-loop text audit
+   (PRINT_TEXT), A/B vs W4A8 same-hour, depth axis 3 points. Acceptance parity on the spec
+   configs is the flip-blocker to watch (KQ_NVFP4 precedent).
+6. **Measure r==1 frequency** on real checkpoints first (host-side scan of the scale planes,
+   trivial script) — if adjacent-scale equality is rare AND the recode tax shows up in gates,
+   R-B (whole-plane fold to e4m3, granularity kept) is the fallback; if it's common, R-A rides
+   the fast path most of the time.
+
+Expected: +30-50% pp on 9B/27B dense prefill; 35B expert MMQ inherits after (MOE_MMA twin).
+
+### Route decision (2026-07-09): R-B PRIMARY, R-A fallback
+
+Measured on the real NV-27B ST scale planes (4.19M adjacent per-16 pairs sampled): only **8.5%**
+of pairs share a scale — R-A's exact fast path is rare; 91.5% of values would take the
+cvt-recode anyway, at the same ~2^-4 rounding class as R-B's fold. Given equal rounding cost,
+R-B dominates: per-16 granularity KEPT (no s32 max-fold), no weight-scale smem plane, no pair
+logic in the loader (`byte = cvt.rn.satfinite.e4m3x2.f32(kvalue[nibble] × s16)`), epilogue needs
+only the activation scale, and the MMA is the already-benched e4m3×e4m3 form. Range check:
+v×s16 ≈ original weight magnitude — fits e4m3 (±448) with the sub-2^-9 tail in the same class
+the ST_E4M3 lineage already gates green. R-A remains the fallback if the fold taxes acceptance.
+
+### Piece-2 vec_dot analysis (from w4a8 vec_dot_nvfp4_w4a8_mma, lines 422-497)
+
+- int8 path: k01 loop steps 8 ints (=32 vals), TWO m16n8k16 MMAs per step, epilogue
+  `sum += dB[l%2] * (C0*dA[..k+0] + C1*dA[..k+1])` — per-16 x scales via dA, per-32 y via dB.
+- R-B twin: x_df/dA DELETED (scale folded into e4m3 values). Same k01 structure but ONE
+  m16n8k32 MMA per 8-int step (tile_A_8 = tile<16,8,int> fragment already exists; load_ldmatrix
+  path unchanged — 4 regs A, 2 regs B via load_generic). C becomes tile<16,8,float>
+  (f32 accumulator regs from the MMA directly). Epilogue: `sum += dB[l%2] * C.x[l]`.
+  Half the MMA instructions at the 381-TF class; y-tile side identical to w4a8
+  (block_e4m3_mmq is footprint-compatible with block_q8_1_mmq by design).
+- Loader twin (load_tiles): replace get_int_from_table_16 int8-LUT with
+  f32 kvalue LUT × ue4m3(s16) → cvt_e4m3x2 pairs → x_qs bytes; drop x_df writes; smem row
+  stride shrinks from MMQ_MMA_TILE_X_K_NVFP4 (84) to 64 bytes/row + pad (no scale plane).
+- Still to port: mul_mat_q body (lines ~560-812: xy tiling, need_check arms, PP_PIPE ring),
+  mmq_write_back (drop out_scale? keep — it's the global alpha), host launcher ABI
+  (bw24_mmq_nvfp4_f8f4 entry, mirror w4a8's, plus fold needs the ue4m3->f32 LUT constant).
+
+## THE WALL, MEASURED (2026-07-10, ncu WarpStateStats on the int8 tile)
+
+Warp Cycles/Issued Instruction 3.85; top stall = MATH PIPE THROTTLE, 32.6% of cycles (est.
+speedup 32.6% — approximately the whole remaining llama pp gap). Occupancy 16.67% is a red
+herring (y64 2-CTA arm: -8%); DRAM 7.4%; ilpswap (accumulator-chain theory): -10.5% REFUTED.
+Root imbalance: per k32 the tile issues 2 tensor MMAs vs ~24 FP32 ops (LUT dequant + per-16
+dA/dB scale epilogue) — the FP32 pipe saturates while tensor idles at ~16% of class.
+
+Lever ladder (rebalance FP32:tensor):
+1. Hoisted epilogue products: precompute the 4 dA*dB combos per (n,k01) -> 2 FMAs/l instead of
+   mul+fma+mul (~17% fewer FP32 ops). CHANGES FP add order -> new numeric config, full battery.
+2. int8 m16n8k32 MMA (halve MMA issue + merge epilogues) requires per-32 scales: either requant
+   per-16->per-32 (the KQ asym-tax class — battery decides) or fold scales into values in the
+   int8 domain (impossible losslessly; int8 grid too coarse) — likely blocked, probe cheaply.
+3. Shift dequant ALU off the FP32 pipe: LUT gather is byte-perm (fine); the ue4m3->f32 +
+   FMA-heavy epilogue could partially move to the int domain (scale as int shift when ue8m0-like
+   — NVFP4 scales are e4m3, not power-2: blocked).
+4. The f8f4 tile already rebalances (values folded, epilogue halved) — its +6-12% pp is this
+   lever partially cashed; its 9B acceptance flip blocks GGUF adoption. A GGUF-side f8f4 with
+   the ACCEPTANCE-NEUTRAL property (exact per-16 via R-A' ratio fold, values exact where pairs
+   equal) was measured — the flip is prompt-KV lineage, not fixable in-tile.
+Next concrete step: lever 1 (smallest, bounded, measurable same-day).
+
+### Pipe breakdown (2026-07-10, ncu ComputeWorkloadAnalysis) — ladder update
+
+Tensor (INT) = the HIGHEST-utilized pipe at 59.6% (SM 59.6%, issue slots 51.4%, IPC 2.07);
+FP32/ALU sit below it. The math-pipe throttle stall IS tensor-pipe wait: 8 warps cannot hide
+imma latency at 60% pipe load, and adding warps loses on smem (y64 -8%).
+- Lever 1 (epilogue hoist) KILLED by measurement before implementation: FP32 is not the
+  oversubscribed pipe (and the op-count analysis showed the hoist ~neutral at ne=4 anyway).
+- Lever 2 PROMOTED with a sharper mechanism: k32 imma = 2x FLOP per issued tensor instruction.
+  If the pipe is ISSUE-limited (IPC 2.07 suggests scheduler slots are the currency), halving
+  tensor instruction count at constant FLOPs is worth up to +~50% tensor throughput — the whole
+  gap. Cost: per-16 -> per-32 weight-scale requant at tile load (values re-coded per pair like
+  R-A'; int8 grid re-code error ~lossless for NVFP4-origin values x ratio<=1) + k32 vec_dot.
+  Acceptance risk = the KQ-tax class + the prefill-KV law -> full battery + flip rules decide
+  (per-model adoption if model-signed, like f8f4).
+Next concrete step: k32-imma tile variant behind BW24_MMQ_K32=1, ~60 lines on the w4a8 TU.

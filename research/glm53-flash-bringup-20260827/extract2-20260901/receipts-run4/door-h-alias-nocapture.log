@@ -1,0 +1,46 @@
+warning: memra-engine@0.122.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.122.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running tests/glm5_moe_loc_doors_gpu.rs (target/debug/deps/glm5_moe_loc_doors_gpu-92001ec935a3196d)
+
+running 4 tests
+test dedup_stat_counts_visits_and_distinct_on_planted_overlaps ... instrument S PASS: disjoint / partial / identical unions all counted exactly
+ok
+test gpu_dev_tables_drive_the_pair_to_identical_bytes ... door D pair PASS t=2: 256 outputs bit-identical through device-built tables
+door D pair PASS t=3: 384 outputs bit-identical through device-built tables
+door D pair PASS t=4: 512 outputs bit-identical through device-built tables
+door D pair PASS t=5: 640 outputs bit-identical through device-built tables
+door D pair PASS t=6: 768 outputs bit-identical through device-built tables
+door D pair PASS t=7: 896 outputs bit-identical through device-built tables
+door D pair PASS t=8: 1024 outputs bit-identical through device-built tables
+door D pair RED bites: 512 outputs differ with the macro planes dropped
+ok
+test gpu_dev_tables_match_the_host_table_build_bitwise ... door D tables PASS t=2 (live macros): 48 pointers + 48 scales bit-identical
+door D tables PASS t=2 (no macros): 48 pointers + 48 scales bit-identical
+door D tables PASS t=3 (live macros): 72 pointers + 72 scales bit-identical
+door D tables PASS t=3 (no macros): 72 pointers + 72 scales bit-identical
+door D tables PASS t=4 (live macros): 96 pointers + 96 scales bit-identical
+door D tables PASS t=4 (no macros): 96 pointers + 96 scales bit-identical
+door D tables PASS t=5 (live macros): 120 pointers + 120 scales bit-identical
+door D tables PASS t=5 (no macros): 120 pointers + 120 scales bit-identical
+door D tables PASS t=6 (live macros): 144 pointers + 144 scales bit-identical
+door D tables PASS t=6 (no macros): 144 pointers + 144 scales bit-identical
+door D tables PASS t=7 (live macros): 168 pointers + 168 scales bit-identical
+door D tables PASS t=7 (no macros): 168 pointers + 168 scales bit-identical
+door D tables PASS t=8 (live macros): 192 pointers + 192 scales bit-identical
+door D tables PASS t=8 (no macros): 192 pointers + 192 scales bit-identical
+door D RED 1 (wrong down stride) and RED 2 (dropped macro plane) both bite
+ok
+test gpu_htod_diet_shexp_ones_and_len_mirror_are_bit_identical ... door H shexp PASS nrows=1: 96 outputs bit-identical, non-ones red bites
+door H shexp PASS nrows=2: 192 outputs bit-identical, non-ones red bites
+door H shexp PASS nrows=4: 384 outputs bit-identical, non-ones red bites
+door H shexp PASS nrows=8: 768 outputs bit-identical, non-ones red bites
+door H shexp PASS nrows=15: 1440 outputs bit-identical, non-ones red bites
+door H len_d PASS: both arms land the value, counter anchored ON / flat OFF
+[flag-alias] MEMRA_HTOD_DIET="1" and MEMRA_GLM5_HTOD_DIET="0" disagree — the alias and the general flag name ONE door (unset one); refused rather than silently picking a precedence winner, and the door falls closed to the shipped program
+door H alias PASS: general name engages, disagreeing pair falls closed with the value still landing
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+exit=0

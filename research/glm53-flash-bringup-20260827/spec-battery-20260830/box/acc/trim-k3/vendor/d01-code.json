@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what the user wants. This is a continuation of some prior conversation about an agent system (seems like a personal autonomous agent setup, likely something like OpenClaw/Claude agents with cron schedules, or a \"wake up agent\" system). The user describes:\n\n1. They liked \"active research\" idea.\n2. Replace the digest with a twice-a-day researched thing.\n3. Add the MCP for search (they provided the config for open-websearch MCP).\n4. Add an md file per 12 hours that the \"hourly researcher\" first reads, then reasons about, then performs research on the topic",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what the user wants. This is a continuation of some prior conversation about an agent system (seems like a personal autonomous agent setup, likely something like OpenClaw/Claude agents with cron schedules, or a \"wake up agent\" system). The user describes:\n\n1. They liked \"active research\" idea.\n2. Replace the digest with a twice-a-day researched thing.\n3. Add the MCP for search (they provided the config for open-websearch MCP).\n4. Add an md file per 12 hours that the \"hourly researcher\" first reads, then reasons about, then performs research on the topic"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 289,
+  "completion_tokens": 128,
+  "total_tokens": 417,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.417730257,
+  "spec": {
+   "rounds": 57,
+   "drafted": 171,
+   "accepted": 72,
+   "acceptance_rate": 0.42105263157894735
+  }
+ },
+ "id": "chatcmpl-df18181e441be1b0f7e6eb43d7560b7f",
+ "created": 1788082129,
+ "system_fingerprint": "REDACTED"
+}

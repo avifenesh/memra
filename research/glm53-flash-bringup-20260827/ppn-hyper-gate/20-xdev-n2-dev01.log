@@ -1,0 +1,24 @@
+glm5-hyper-ppn-gate config: stages=2 streams=per-stage overlap=1(double-buffered) devices=0,1 splits=default(even) shard=per-stage
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.751
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152 elapsed_ms=17.026
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 101.29GB (expert budget 99.29GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 0.00GB + trunk 0.00GB vs free 101.29GB (expert budget 99.29GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+stage fence: [0, 2, 4] over 4 layers
+state placement: Recurrent(KDA) layers on stages [0, 1], LatentKvCache(MLA+kpool) layers on stages [0, 1]
+[phase] reference A: door OFF, step-by-step decode over the whole sequence
+[phase] reference C: door OFF, stateless prefill (forward / forward_last)
+[phase] reference B: door OFF, prime + decode continuation
+[phase] arm 1: door ON, decode-serial split walk
+[decode-serial] greedy tape MATCH: 14 tokens, fnv1a=0xa7972b1e01ff1f76
+[phase] arm 2: door ON, prime-twin split walk
+[prime-twin] greedy tape MATCH: 8 tokens, fnv1a=0x50ad4c8f01bf7247
+[phase] arm 3: door ON, prefill-twin split walk
+glm5-hyper-ppn-gate NOTE: pipelined arm skipped — `decode_step_h_ppn_deferred` calls refuse_hyper(), so deferred readback is not wired for the mHC residual. This gate covers the serial split walk only; do not cite it for the pipelined arm.
+glm5-hyper-ppn gate PASS [decode-serial]: 14 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=0,1 splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prime-twin]: 9 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=0,1 splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prefill-twin]: 2 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=0,1 splits=default(even) shard=per-stage)
+exit=0

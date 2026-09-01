@@ -1,0 +1,84 @@
+Generating SQLite file /root/out-mv/c5/mv-census.sqlite from /root/out-mv/c5/mv-census.nsys-rep
+Processing [/root/out-mv/c5/mv-census.sqlite] with [/opt/nvidia/nsight-systems/2026.1.3/target-linux-x64/reports/cuda_gpu_kern_sum.py]... 
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+24.7,695123607,10877,63907.7,50687.0,10400,2167725,153728.4,matvec_bf16_f32acc_x1_tcols
+17.0,479124744,3066,156270.3,182109.0,90686,193214,38384.0,moe_gate_up_preclamp8_q8_rows
+9.1,256964055,126,2039397.3,2054091.5,1479443,2683234,284953.6,"void moe_kq_sktail_kernel<(int)7>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+8.5,240331088,3066,78385.9,89855.0,44063,100607,18798.0,moe_down8_fma_q8_rows
+3.9,109630423,54900,1996.9,2048.0,1216,3648,403.5,"void dot_kernel<float, (int)128, (int)0, cublasDotParams<cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>>(T4)"
+3.6,101041836,6660,15171.4,15168.0,14848,16384,104.2,dsv4_hc_sinkhorn_m_kernel
+3.4,95260304,9180,10376.9,9024.0,5663,36448,6539.2,qmatvec_nvfp4_mmvq_b4_rp
+3.0,85569804,6660,12848.3,12704.0,12352,24640,1156.6,dsv4_rowsq_scale_kernel
+2.5,70485713,803,87778.0,86048.0,62560,116895,14508.7,memra_mla_attn_gathered_kernel
+2.4,67508115,803,84069.9,96159.0,48704,97439,20681.2,memra_mla_decompress_v_kernel
+2.4,67364187,803,83890.6,96063.0,48352,97599,20842.9,memra_mla_absorb_q_kernel
+1.7,47619546,54900,867.4,864.0,799,1216,45.5,"void reduce_1Block_kernel<float, (int)128, (int)7, cublasGemvTensorStridedBatched<float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(const T1 *, T1, T4, int, const T1 *, T1, T5, T6, cublasPointerMode_t, cublasLtEpilogue_t, cublasGemvTensorStridedBatched<const biasType<T6::value_type, T1>::type>)"
+1.5,42766593,16592,2577.5,1920.0,1791,5344,1021.6,"void gemv2T_kernel_val<int, int, float, float, float, float, (int)128, (int)16, (int)2, (int)2, (bool)0, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13, T6, T6)"
+1.4,39940752,73,547133.6,546811.0,540283,555579,3557.3,topk_rows_shard_f32
+1.2,32695333,2628,12441.1,9503.0,7616,30624,6704.2,qmatvec_q4_0_mmvq_b8
+1.0,29178210,3536,8251.8,6432.0,4032,251037,23282.3,memra_kda_scan_s128
+1.0,28837082,2196,13131.6,11488.0,7935,25312,5776.1,qmatvec_nvfp4_mmvq_mr2_rp
+0.9,26653182,365,73022.4,70655.0,40094,95038,11669.7,sdpa_naive_w_lo_f32
+0.9,26481734,24888,1064.0,1056.0,959,1472,59.1,quantize_q8_1
+0.9,24668881,10333,2387.4,2464.0,1184,4416,423.1,rms_norm_f32_v2
+0.8,21798989,730,29861.6,29792.0,27648,33408,855.8,qmatvec_q4_0_mmvq_b8_r2
+0.8,21533776,3021,7128.0,7136.0,5119,13696,1812.7,qmatvec_nvfp4_mmvq_b2_rp
+0.6,16421247,3108,5283.5,5248.0,4992,6784,168.2,moe_router_sigmoid_topk_f32
+0.6,16287720,3066,5312.4,5632.0,3872,7008,737.9,router_gemv_f32_w8
+0.6,15874194,179,88682.6,77695.0,40351,316573,64818.3,"void mul_mat_q_nvfp4_w4a8<(int)128, (int)128, (int)1, (bool)0, (bool)1>(const char *, const char *, const int *, float *, int, int, int, int, int, int, float)"
+0.5,14149500,10608,1333.9,1312.0,1119,2240,198.1,memra_kda_conv_ring_roll_f32
+0.4,12262739,6660,1841.3,1440.0,992,31168,2986.2,dsv4_hc_post_kernel
+0.4,9930673,7548,1315.7,1152.0,1023,9088,778.5,memra_kda_conv_silu_f32
+0.3,9826881,102,96342.0,90255.5,51840,173439,25264.3,"void moe_kq_sk128v_kernel<(int)7, (bool)0>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+0.3,8793269,12410,708.6,672.0,544,1024,68.0,scale_f32
+0.2,6949915,803,8654.9,8640.0,7936,10272,261.8,memra_mla_kpool_score_ref_kernel
+0.2,6813503,102,66799.0,67039.0,60511,77247,3845.4,void cutlass::Kernel2<cutlass_80_tensorop_s16816gemm_bf16_64x256_32x4_tn_align8>(T1::Params)
+0.2,6531202,11,593745.6,593083.0,587675,600121,3860.2,"void memra_mla_kpool_score_tiled_kernel<(int)8, (int)16, (int)8, (int)8, (int)16>(const float *, const float *, const float *, float *, int, int, int, int, int, int, float, float)"
+0.2,6506915,814,7993.8,7968.0,5344,13791,1029.6,memra_mla_kpool_select_kernel
+0.2,6157970,6660,924.6,896.0,767,3808,283.4,dsv4_hc_collapse_kernel
+0.2,5773349,209,27623.7,27423.0,26880,32192,919.8,qmatvec_nvfp4_mmvq_b2_rpr2
+0.2,5270833,5032,1047.5,960.0,799,9824,976.1,l2_norm_f32
+0.2,4355490,2516,1731.1,1600.0,1344,12064,1188.2,memra_kda_gated_rmsnorm_f32
+0.2,4298335,3885,1106.4,959.0,799,15200,1467.8,swiglu_preclamped_mul_scaled_f32
+0.1,3623599,429,8446.6,5824.0,4767,38495,8842.9,qmatvec_q4_0_mmvq_b4
+0.1,3238300,3108,1041.9,992.0,896,4000,323.3,add_scaled_rows_f32
+0.1,3205245,2516,1273.9,1216.0,991,5056,436.3,memra_kda_gate_f32
+0.1,2460201,11,223654.6,223774.0,219838,226686,2161.7,fa_mla_gathered_bf16
+0.1,2195877,45,48797.3,59679.0,13599,61343,20087.2,void cutlass::Kernel2<cutlass_80_tensorop_s16816gemm_bf16_128x128_32x4_tn_align8>(T1::Params)
+0.1,2075112,814,2549.3,2528.0,2400,3008,74.9,layer_norm_bias_f32
+0.1,1996753,2516,793.6,768.0,703,1056,54.3,sigmoid_f32
+0.1,1864625,42,44395.8,44383.5,43680,45312,390.7,router_gemv_f32_w8_batch
+0.1,1798098,693,2594.7,2624.0,2048,3168,263.0,memra_mla_kpool_pool_keys_kernel
+0.1,1681806,1460,1151.9,1119.0,1056,1696,87.8,dflash2_dynconv_f32
+0.1,1561115,73,21385.1,21375.0,21216,21662,96.2,topk_rows_shard_merge_f32
+0.1,1462704,68,21510.4,21504.0,20320,22592,402.4,void cutlass::Kernel2<cutlass_80_simt_sgemm_128x256_8x4_tn_align1>(T1::Params)
+0.0,1396292,209,6680.8,3680.0,3232,37887,9563.9,qmatvec_q4_0_mmvq
+0.0,1312972,1628,806.5,800.0,608,8352,609.7,memra_mla_split_latent_kernel
+0.0,1298641,84,15460.0,15456.0,15040,16224,214.5,scale_rows_f32
+0.0,1160821,90,12898.0,12768.0,12064,15456,528.5,void cutlass::Kernel2<cutlass_80_simt_sgemm_32x128_8x5_tn_align1>(T1::Params)
+0.0,1081462,154,7022.5,4528.0,3936,35872,8367.4,qmatvec_q4_0_mmvq_b2
+0.0,995899,1095,909.5,896.0,832,1728,80.0,rope_neox_f32
+0.0,909747,11,82704.3,60991.0,60671,299516,71908.9,"void mul_mat_q_q4_0<(int)128, (bool)0, (bool)0>(const char *, const char *, const int *, float *, int, int, int, int, int, int)"
+0.0,896250,90,9958.3,9520.0,8384,11968,1040.2,void cutlass::Kernel2<cutlass_80_simt_sgemm_128x64_8x5_tn_align1>(T1::Params)
+0.0,844981,42,20118.6,20112.0,19423,20640,313.2,rows_permute_f32
+0.0,842805,270,3121.5,2928.0,2240,5855,956.9,"void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)"
+0.0,827738,84,9854.0,9856.0,6720,13184,3042.0,"gather_act_f16_kernel(const float *, const int *, __half *, float *, int, int)"
+0.0,814315,730,1115.5,1119.0,1055,1343,42.3,add_f32
+0.0,802264,1,802264.0,802264.0,802264,802264,0.0,matvec_bf16_f32acc_x4_rows
+0.0,704185,55,12803.4,10335.0,1216,25952,9476.8,f32_to_bf16_flat
+0.0,699834,814,859.7,864.0,736,1120,49.4,memra_mla_index_append_ring_kernel
+0.0,677020,814,831.7,832.0,736,1120,43.8,memra_mla_append_latent_kernel
+0.0,533434,244,2186.2,2176.0,1952,2560,110.4,argmax_partial_f32
+0.0,522647,365,1431.9,1408.0,1344,1728,58.3,silu_mul_f32
+0.0,488035,444,1099.2,1056.0,992,3552,274.6,dsv4_hc_mean_kernel
+0.0,411903,179,2301.1,1760.0,1056,6816,1231.0,"quantize_mmq_q8_1_d4_kernel(const float *, void *, long, long, long, int)"
+0.0,408317,11,37119.7,36288.0,35136,45375,2840.5,void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_32x32_64x1_tn_align8>(T1::Params)
+0.0,394651,11,35877.4,35808.0,35391,36575,377.3,void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_64x1_tn_align8>(T1::Params)
+0.0,272638,45,6058.6,6080.0,5344,6528,196.7,void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_tn_align1>(T1::Params)
+0.0,240094,147,1633.3,1600.0,960,2144,284.0,memra_bf16_cvt_kernel
+0.0,233533,42,5560.3,5536.0,5376,6432,163.2,moe_pairs_scatter
+0.0,232256,244,951.9,960.0,864,1216,50.0,argmax_final_f32
+0.0,76862,74,1038.7,928.0,864,8512,886.5,dsv4_hc_expand_kernel
+0.0,13792,2,6896.0,6896.0,1792,12000,7218.1,"quantize_mmq_q8_1_d4_q4_0(const float *, void *, long, long, long, int)"
+0.0,3904,1,3904.0,3904.0,3904,3904,0.0,embed_gather_u32_t
+

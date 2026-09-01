@@ -1,0 +1,46 @@
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 layers); steps=8 batch=1
+pp mode: batched stage-split exactness battery over 45 layers; stages=2 fence=[0, 22, 45] devices=0,1 splits=default(even) shard=per-stage streams=per-stage
+pp mode: batches=[1, 2, 3, 4, 5, 6, 7, 8, 16] steps=8 reps=1 (split arm)
+pp mode: B=1 fast path inapplicable for Step35 (live correctness default = batched; batched reference pinned)
+dual pp negative PASS: decode_step_batch_dual: refused: PP boundary is single-slot; set MEMRA_PP_OVERLAP=1 so both alternating boundary slots are prepared before dual-active decode
+-- B=1: reference recorded (8 steps x 1 rows x 128896 f32, door OFF over the sharded placement)
+pp gate PASS [split B=1 rep0]: 1031168 f32 logits BIT-IDENTICAL (0 differing bits)
+pp gate PASS [unsplit@ppncache B=1]: 1031168 f32 logits BIT-IDENTICAL (0 differing bits)
+[step35-batch] first B>1 batched step35 walk: B=2 layers=[0,45)
+-- B=2: reference recorded (8 steps x 2 rows x 128896 f32, door OFF over the sharded placement)
+[dual-pp] dual-active PP-2 decode engaged (default OFF; two waves)
+pp gate PASS [split B=2 rep0]: 2062336 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=2 rep0]: DUAL_PP_OVERLAPS +8
+pp gate PASS [unsplit@ppncache B=2]: 2062336 f32 logits BIT-IDENTICAL (0 differing bits)
+-- B=3: reference recorded (8 steps x 3 rows x 128896 f32, door OFF over the sharded placement)
+pp gate PASS [split B=3 rep0]: 3093504 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=3 rep0]: DUAL_PP_OVERLAPS +8
+pp gate PASS [unsplit@ppncache B=3]: 3093504 f32 logits BIT-IDENTICAL (0 differing bits)
+-- B=4: reference recorded (8 steps x 4 rows x 128896 f32, door OFF over the sharded placement)
+pp gate PASS [split B=4 rep0]: 4124672 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=4 rep0]: DUAL_PP_OVERLAPS +8
+pp gate PASS [unsplit@ppncache B=4]: 4124672 f32 logits BIT-IDENTICAL (0 differing bits)
+-- B=5: reference recorded (8 steps x 5 rows x 128896 f32, door OFF over the sharded placement)
+pp gate PASS [split B=5 rep0]: 5155840 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=5 rep0]: DUAL_PP_OVERLAPS +8
+pp gate PASS [unsplit@ppncache B=5]: 5155840 f32 logits BIT-IDENTICAL (0 differing bits)
+-- B=6: reference recorded (8 steps x 6 rows x 128896 f32, door OFF over the sharded placement)
+pp gate PASS [split B=6 rep0]: 6187008 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=6 rep0]: DUAL_PP_OVERLAPS +8
+pp gate PASS [unsplit@ppncache B=6]: 6187008 f32 logits BIT-IDENTICAL (0 differing bits)
+-- B=7: reference recorded (8 steps x 7 rows x 128896 f32, door OFF over the sharded placement)
+pp gate PASS [split B=7 rep0]: 7218176 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=7 rep0]: DUAL_PP_OVERLAPS +8
+pp gate PASS [unsplit@ppncache B=7]: 7218176 f32 logits BIT-IDENTICAL (0 differing bits)
+-- B=8: reference recorded (8 steps x 8 rows x 128896 f32, door OFF over the sharded placement)
+pp gate PASS [split B=8 rep0]: 8249344 f32 logits BIT-IDENTICAL (0 differing bits)
+dual pp liveness PASS [B=8 rep0]: DUAL_PP_OVERLAPS +8
+pp gate PASS [unsplit@ppncache B=8]: 8249344 f32 logits BIT-IDENTICAL (0 differing bits)
+
+thread 'main' (601615) panicked at crates/memra-engine/src/decode_batch.rs:538:9:
+decode_step_batch: B=16 > cap 8 with no exact tier — refused. Either B>16 (there is NO exact kernel class above 16: m>16 crosses GEMM/dp4a numeric configs; the serve scheduler chunks wider concurrency into <=16 groups instead), or some matmul in this checkpoint has no bit-exact b16 kernel — run with MEMRA_EXACT16_WHY=1 to see which tensor and qtype refuses
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

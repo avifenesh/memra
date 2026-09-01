@@ -1,0 +1,1370 @@
+[server] starting; models config = [("step37", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[worker] OPTIPIPE increment-2 diagnostic controller armed q_threshold=0.000
+[spec-k] operator pin K=1: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "step37" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step37: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step37": 45 layers, eos=128007
+[worker] step37: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step37: decode chunk cap 8
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "step37": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step37"]
+[server] listening on http://127.0.0.1:8159
+[meter] admit id=chatcmpl-c9b19f19dd8f9bf6780c7d0a64b348ac tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=308 path=spec = 85376 B/token x ctx + 0MB fixed = 26MB
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.268 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.284 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.186 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.223 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.220 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.194 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.209 reconcile=false breaker=false
+[spec-stats] rounds=9 full_accept=6 len_hist=[0, 9] per_slot=[6/9=0.667] total=6/9=0.667 tok_per_round=1.667
+[spec-acc] ctx=228 burst=6/9 cum=6/9=0.667
+[meter] admit id=chatcmpl-8921b942ac54101c065eb084614ba333 tenant=default lane=interactive model="step37"
+[worker] spec-affinity: declined (empty suffix; 1 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.331 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.195 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.231 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.190 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.399 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.123 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.123 reconcile=false breaker=false
+[spec-stats] rounds=9 full_accept=6 len_hist=[0, 9] per_slot=[6/9=0.667] total=6/9=0.667 tok_per_round=1.667
+[spec-acc] ctx=228 burst=6/9 cum=6/9=0.667
+[meter] admit id=chatcmpl-8695e8d48fcf1860f9314d7713dab90c tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-069e4148595af852c41302ed236e27d3 tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=420 path=spec = 85376 B/token x ctx + 0MB fixed = 36MB
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.229 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.226 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.316 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.247 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.214 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.178 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.177 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.058972 threshold=0.000 verify=[260, 201]
+[opti-controller] resolve generation=7 hit=false q=0.058972 expected_pending=260 n_acc=0 bonus=294 resolution_ms=12.141 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.177678 threshold=0.000 verify=[2501, 10531]
+[opti-controller] resolve generation=8 hit=false q=0.177678 expected_pending=2501 n_acc=1 bonus=54186 resolution_ms=12.164 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.060792 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=9 hit=false q=0.060792 expected_pending=223 n_acc=1 bonus=17808 resolution_ms=12.117 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.080911 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=10 hit=false q=0.080911 expected_pending=2501 n_acc=1 bonus=18180 resolution_ms=12.119 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.793211 threshold=0.000 verify=[16, 37157]
+[opti-controller] resolve generation=11 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.156 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.457298 threshold=0.000 verify=[14, 790]
+[opti-controller] resolve generation=12 hit=false q=0.457298 expected_pending=14 n_acc=0 bonus=5978 resolution_ms=12.180 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.700454 threshold=0.000 verify=[28, 223]
+[opti-controller] resolve generation=13 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.162 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.061207 threshold=0.000 verify=[19, 16]
+[opti-controller] resolve generation=14 hit=false q=0.061207 expected_pending=19 n_acc=0 bonus=455 resolution_ms=12.202 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.031203 threshold=0.000 verify=[14, 270]
+[opti-controller] resolve generation=15 hit=false q=0.031203 expected_pending=14 n_acc=0 bonus=50991 resolution_ms=12.226 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.208226 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=16 hit=true q=0.208226 expected_pending=344 n_acc=1 bonus=344 resolution_ms=12.217 reconcile=false breaker=false
+[spec-stats] rounds=19 full_accept=12 len_hist=[0, 19] per_slot=[12/19=0.632] total=12/19=0.632 tok_per_round=1.632
+[spec-acc] ctx=228 burst=12/19 cum=12/19=0.632
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.246 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.271 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.201 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.224 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.166 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.218 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.148 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.058972 threshold=0.000 verify=[260, 201]
+[opti-controller] resolve generation=7 hit=false q=0.058972 expected_pending=260 n_acc=0 bonus=294 resolution_ms=12.209 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.177678 threshold=0.000 verify=[2501, 10531]
+[opti-controller] resolve generation=8 hit=false q=0.177678 expected_pending=2501 n_acc=1 bonus=54186 resolution_ms=12.191 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.060792 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=9 hit=false q=0.060792 expected_pending=223 n_acc=1 bonus=17808 resolution_ms=12.156 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.080911 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=10 hit=false q=0.080911 expected_pending=2501 n_acc=1 bonus=18180 resolution_ms=12.149 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.793211 threshold=0.000 verify=[16, 37157]
+[opti-controller] resolve generation=11 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.187 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.457298 threshold=0.000 verify=[14, 790]
+[opti-controller] resolve generation=12 hit=false q=0.457298 expected_pending=14 n_acc=0 bonus=5978 resolution_ms=12.165 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.700454 threshold=0.000 verify=[28, 223]
+[opti-controller] resolve generation=13 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.132 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.061207 threshold=0.000 verify=[19, 16]
+[opti-controller] resolve generation=14 hit=false q=0.061207 expected_pending=19 n_acc=0 bonus=455 resolution_ms=12.179 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.031203 threshold=0.000 verify=[14, 270]
+[opti-controller] resolve generation=15 hit=false q=0.031203 expected_pending=14 n_acc=0 bonus=50991 resolution_ms=12.151 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.208226 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=16 hit=true q=0.208226 expected_pending=344 n_acc=1 bonus=344 resolution_ms=12.163 reconcile=false breaker=false
+[spec-stats] rounds=19 full_accept=12 len_hist=[0, 19] per_slot=[12/19=0.632] total=12/19=0.632 tok_per_round=1.632
+[spec-acc] ctx=228 burst=12/19 cum=12/19=0.632
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.290830 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=0 hit=false q=0.290830 expected_pending=62027 n_acc=0 bonus=23816 resolution_ms=12.175 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.226387 threshold=0.000 verify=[14, 716]
+[opti-controller] resolve generation=1 hit=false q=0.226387 expected_pending=14 n_acc=1 bonus=4197 resolution_ms=12.199 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.247795 threshold=0.000 verify=[294, 62027]
+[opti-controller] resolve generation=2 hit=false q=0.247795 expected_pending=294 n_acc=0 bonus=24921 resolution_ms=12.135 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.722893 threshold=0.000 verify=[710, 7723]
+[opti-controller] resolve generation=3 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.145 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036249 threshold=0.000 verify=[65, 94932]
+[opti-controller] resolve generation=4 hit=false q=0.036249 expected_pending=65 n_acc=0 bonus=54186 resolution_ms=12.186 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.743226 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=5 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.155 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.747594 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=6 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.236 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.003583 threshold=0.000 verify=[412, 34678]
+[opti-controller] resolve generation=7 hit=false q=0.003583 expected_pending=412 n_acc=1 bonus=19873 resolution_ms=12.271 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.267901 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=8 hit=false q=0.267901 expected_pending=62027 n_acc=1 bonus=25240 resolution_ms=12.217 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.458176 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=9 hit=true q=0.458176 expected_pending=62027 n_acc=1 bonus=62027 resolution_ms=12.241 reconcile=false breaker=false
+[opti-controller] issue generation=10 q=0.055952 threshold=0.000 verify=[716, 13945]
+[opti-controller] resolve generation=10 hit=false q=0.055952 expected_pending=716 n_acc=1 bonus=52636 resolution_ms=12.280 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.691451 threshold=0.000 verify=[305, 716]
+[opti-controller] resolve generation=11 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.209 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.004994 threshold=0.000 verify=[86220, 7302]
+[opti-controller] resolve generation=12 hit=false q=0.004994 expected_pending=86220 n_acc=0 bonus=29553 resolution_ms=12.351 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.096150 threshold=0.000 verify=[4472, 62027]
+[opti-controller] resolve generation=13 hit=false q=0.096150 expected_pending=4472 n_acc=1 bonus=12582 resolution_ms=12.257 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.258727 threshold=0.000 verify=[2195, 4085]
+[opti-controller] resolve generation=14 hit=true q=0.258727 expected_pending=2195 n_acc=1 bonus=2195 resolution_ms=12.289 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018978 threshold=0.000 verify=[20819, 14]
+[opti-controller] resolve generation=15 hit=false q=0.018978 expected_pending=20819 n_acc=0 bonus=16 resolution_ms=12.292 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.460986 threshold=0.000 verify=[14, 223]
+[opti-controller] resolve generation=16 hit=false q=0.460986 expected_pending=14 n_acc=0 bonus=8279 resolution_ms=12.286 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.857581 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=17 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.196 reconcile=false breaker=false
+[opti-controller] issue generation=18 q=0.032618 threshold=0.000 verify=[1257, 14]
+[opti-controller] resolve generation=18 hit=false q=0.032618 expected_pending=1257 n_acc=0 bonus=2899 resolution_ms=12.175 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 21] per_slot=[11/21=0.524] total=11/21=0.524 tok_per_round=1.524
+[spec-acc] ctx=260 burst=11/21 cum=23/40=0.575
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.290830 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=0 hit=false q=0.290830 expected_pending=62027 n_acc=0 bonus=23816 resolution_ms=12.254 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.226387 threshold=0.000 verify=[14, 716]
+[opti-controller] resolve generation=1 hit=false q=0.226387 expected_pending=14 n_acc=1 bonus=4197 resolution_ms=12.153 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.247795 threshold=0.000 verify=[294, 62027]
+[opti-controller] resolve generation=2 hit=false q=0.247795 expected_pending=294 n_acc=0 bonus=24921 resolution_ms=12.181 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.722893 threshold=0.000 verify=[710, 7723]
+[opti-controller] resolve generation=3 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.189 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036249 threshold=0.000 verify=[65, 94932]
+[opti-controller] resolve generation=4 hit=false q=0.036249 expected_pending=65 n_acc=0 bonus=54186 resolution_ms=12.166 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.743226 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=5 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.236 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.747594 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=6 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.203 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.003583 threshold=0.000 verify=[412, 34678]
+[opti-controller] resolve generation=7 hit=false q=0.003583 expected_pending=412 n_acc=1 bonus=19873 resolution_ms=12.124 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.267901 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=8 hit=false q=0.267901 expected_pending=62027 n_acc=1 bonus=25240 resolution_ms=12.046 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.458176 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=9 hit=true q=0.458176 expected_pending=62027 n_acc=1 bonus=62027 resolution_ms=12.183 reconcile=false breaker=false
+[opti-controller] issue generation=10 q=0.055952 threshold=0.000 verify=[716, 13945]
+[opti-controller] resolve generation=10 hit=false q=0.055952 expected_pending=716 n_acc=1 bonus=52636 resolution_ms=12.236 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.691451 threshold=0.000 verify=[305, 716]
+[opti-controller] resolve generation=11 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.257 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.004994 threshold=0.000 verify=[86220, 7302]
+[opti-controller] resolve generation=12 hit=false q=0.004994 expected_pending=86220 n_acc=0 bonus=29553 resolution_ms=12.220 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.096150 threshold=0.000 verify=[4472, 62027]
+[opti-controller] resolve generation=13 hit=false q=0.096150 expected_pending=4472 n_acc=1 bonus=12582 resolution_ms=12.199 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.258727 threshold=0.000 verify=[2195, 4085]
+[opti-controller] resolve generation=14 hit=true q=0.258727 expected_pending=2195 n_acc=1 bonus=2195 resolution_ms=12.197 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018978 threshold=0.000 verify=[20819, 14]
+[opti-controller] resolve generation=15 hit=false q=0.018978 expected_pending=20819 n_acc=0 bonus=16 resolution_ms=12.311 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.460986 threshold=0.000 verify=[14, 223]
+[opti-controller] resolve generation=16 hit=false q=0.460986 expected_pending=14 n_acc=0 bonus=8279 resolution_ms=12.187 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.857581 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=17 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.175 reconcile=false breaker=false
+[opti-controller] issue generation=18 q=0.032618 threshold=0.000 verify=[1257, 14]
+[opti-controller] resolve generation=18 hit=false q=0.032618 expected_pending=1257 n_acc=0 bonus=2899 resolution_ms=12.252 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 21] per_slot=[11/21=0.524] total=11/21=0.524 tok_per_round=1.524
+[spec-acc] ctx=260 burst=11/21 cum=23/40=0.575
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.187672 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=0 hit=false q=0.187672 expected_pending=11055 n_acc=1 bonus=1902 resolution_ms=12.165 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.050459 threshold=0.000 verify=[362, 25244]
+[opti-controller] resolve generation=1 hit=false q=0.050459 expected_pending=362 n_acc=1 bonus=21136 resolution_ms=12.199 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.070769 threshold=0.000 verify=[4511, 270]
+[opti-controller] resolve generation=2 hit=false q=0.070769 expected_pending=4511 n_acc=1 bonus=5784 resolution_ms=12.252 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.031470 threshold=0.000 verify=[1202, 567]
+[opti-controller] resolve generation=3 hit=false q=0.031470 expected_pending=1202 n_acc=1 bonus=4197 resolution_ms=12.355 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.494768 threshold=0.000 verify=[14, 469]
+[opti-controller] resolve generation=4 hit=true q=0.494768 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.237 reconcile=false breaker=false
+[opti-controller] issue generation=5 q=0.036190 threshold=0.000 verify=[2340, 14]
+[opti-controller] resolve generation=5 hit=false q=0.036190 expected_pending=2340 n_acc=0 bonus=7823 resolution_ms=12.116 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.231958 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=6 hit=false q=0.231958 expected_pending=14 n_acc=0 bonus=51274 resolution_ms=12.227 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.632949 threshold=0.000 verify=[305, 270]
+[opti-controller] resolve generation=7 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.167 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.093579 threshold=0.000 verify=[367, 14]
+[opti-controller] resolve generation=8 hit=false q=0.093579 expected_pending=367 n_acc=0 bonus=50027 resolution_ms=12.156 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.108149 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=9 hit=false q=0.108149 expected_pending=270 n_acc=1 bonus=5604 resolution_ms=12.066 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.163887 threshold=0.000 verify=[2645, 305]
+[opti-controller] resolve generation=10 hit=false q=0.163887 expected_pending=2645 n_acc=1 bonus=2192 resolution_ms=12.201 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.357812 threshold=0.000 verify=[9802, 412]
+[opti-controller] resolve generation=11 hit=false q=0.357812 expected_pending=9802 n_acc=0 bonus=15417 resolution_ms=12.238 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.056557 threshold=0.000 verify=[1660, 3862]
+[opti-controller] resolve generation=12 hit=false q=0.056557 expected_pending=1660 n_acc=1 bonus=270 resolution_ms=12.202 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.078642 threshold=0.000 verify=[223, 19]
+[opti-controller] resolve generation=13 hit=false q=0.078642 expected_pending=223 n_acc=1 bonus=107787 resolution_ms=12.146 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.658849 threshold=0.000 verify=[37157, 14]
+[opti-controller] resolve generation=14 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.215 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.988212 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=15 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.264 reconcile=false breaker=false
+[opti-controller] issue generation=16 q=0.046142 threshold=0.000 verify=[2038, 1137]
+[opti-controller] resolve generation=16 hit=false q=0.046142 expected_pending=2038 n_acc=1 bonus=17808 resolution_ms=12.176 reconcile=true breaker=false
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=292 burst=14/18 cum=37/58=0.638
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.187672 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=0 hit=false q=0.187672 expected_pending=11055 n_acc=1 bonus=1902 resolution_ms=12.271 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.050459 threshold=0.000 verify=[362, 25244]
+[opti-controller] resolve generation=1 hit=false q=0.050459 expected_pending=362 n_acc=1 bonus=21136 resolution_ms=12.232 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.070769 threshold=0.000 verify=[4511, 270]
+[opti-controller] resolve generation=2 hit=false q=0.070769 expected_pending=4511 n_acc=1 bonus=5784 resolution_ms=12.236 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.031470 threshold=0.000 verify=[1202, 567]
+[opti-controller] resolve generation=3 hit=false q=0.031470 expected_pending=1202 n_acc=1 bonus=4197 resolution_ms=12.209 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.494768 threshold=0.000 verify=[14, 469]
+[opti-controller] resolve generation=4 hit=true q=0.494768 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.265 reconcile=false breaker=false
+[opti-controller] issue generation=5 q=0.036190 threshold=0.000 verify=[2340, 14]
+[opti-controller] resolve generation=5 hit=false q=0.036190 expected_pending=2340 n_acc=0 bonus=7823 resolution_ms=12.237 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.231958 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=6 hit=false q=0.231958 expected_pending=14 n_acc=0 bonus=51274 resolution_ms=12.246 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.632949 threshold=0.000 verify=[305, 270]
+[opti-controller] resolve generation=7 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.188 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.093579 threshold=0.000 verify=[367, 14]
+[opti-controller] resolve generation=8 hit=false q=0.093579 expected_pending=367 n_acc=0 bonus=50027 resolution_ms=12.182 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.108149 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=9 hit=false q=0.108149 expected_pending=270 n_acc=1 bonus=5604 resolution_ms=12.131 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.163887 threshold=0.000 verify=[2645, 305]
+[opti-controller] resolve generation=10 hit=false q=0.163887 expected_pending=2645 n_acc=1 bonus=2192 resolution_ms=12.192 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.357812 threshold=0.000 verify=[9802, 412]
+[opti-controller] resolve generation=11 hit=false q=0.357812 expected_pending=9802 n_acc=0 bonus=15417 resolution_ms=12.244 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.056557 threshold=0.000 verify=[1660, 3862]
+[opti-controller] resolve generation=12 hit=false q=0.056557 expected_pending=1660 n_acc=1 bonus=270 resolution_ms=12.248 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.078642 threshold=0.000 verify=[223, 19]
+[opti-controller] resolve generation=13 hit=false q=0.078642 expected_pending=223 n_acc=1 bonus=107787 resolution_ms=12.212 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.658849 threshold=0.000 verify=[37157, 14]
+[opti-controller] resolve generation=14 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.211 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.988212 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=15 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.215 reconcile=false breaker=false
+[opti-controller] issue generation=16 q=0.046142 threshold=0.000 verify=[2038, 1137]
+[opti-controller] resolve generation=16 hit=false q=0.046142 expected_pending=2038 n_acc=1 bonus=17808 resolution_ms=12.396 reconcile=true breaker=false
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=292 burst=14/18 cum=37/58=0.638
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.128827 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=0 hit=false q=0.128827 expected_pending=260 n_acc=0 bonus=295 resolution_ms=12.204 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.226586 threshold=0.000 verify=[11055, 14]
+[opti-controller] resolve generation=1 hit=false q=0.226586 expected_pending=11055 n_acc=1 bonus=36136 resolution_ms=12.131 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.204358 threshold=0.000 verify=[1202, 67153]
+[opti-controller] resolve generation=2 hit=false q=0.204358 expected_pending=1202 n_acc=1 bonus=8581 resolution_ms=12.234 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.345839 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=3 hit=false q=0.345839 expected_pending=14 n_acc=0 bonus=55530 resolution_ms=12.201 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.316285 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=4 hit=false q=0.316285 expected_pending=2501 n_acc=1 bonus=7110 resolution_ms=12.195 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.235233 threshold=0.000 verify=[418, 270]
+[opti-controller] resolve generation=5 hit=true q=0.235233 expected_pending=418 n_acc=1 bonus=418 resolution_ms=12.173 reconcile=false breaker=false
+[opti-controller] issue generation=6 q=0.025342 threshold=0.000 verify=[11055, 1347]
+[opti-controller] resolve generation=6 hit=false q=0.025342 expected_pending=11055 n_acc=0 bonus=1119 resolution_ms=12.211 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.013030 threshold=0.000 verify=[10520, 305]
+[opti-controller] resolve generation=7 hit=false q=0.013030 expected_pending=10520 n_acc=0 bonus=5768 resolution_ms=12.161 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.017648 threshold=0.000 verify=[95885, 469]
+[opti-controller] resolve generation=8 hit=false q=0.017648 expected_pending=95885 n_acc=0 bonus=6490 resolution_ms=12.228 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.339251 threshold=0.000 verify=[469, 855]
+[opti-controller] resolve generation=9 hit=true q=0.339251 expected_pending=469 n_acc=1 bonus=469 resolution_ms=12.261 reconcile=false breaker=false
+[opti-controller] issue generation=10 q=0.020826 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=10 hit=false q=0.020826 expected_pending=270 n_acc=0 bonus=612 resolution_ms=12.253 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.124386 threshold=0.000 verify=[62162, 85]
+[opti-controller] resolve generation=11 hit=false q=0.124386 expected_pending=62162 n_acc=1 bonus=93415 resolution_ms=12.137 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.180486 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=12 hit=false q=0.180486 expected_pending=260 n_acc=0 bonus=9764 resolution_ms=12.164 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.529418 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=13 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.180 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.027990 threshold=0.000 verify=[10175, 260]
+[opti-controller] resolve generation=14 hit=false q=0.027990 expected_pending=10175 n_acc=0 bonus=3510 resolution_ms=12.253 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.199826 threshold=0.000 verify=[14, 566]
+[opti-controller] resolve generation=15 hit=false q=0.199826 expected_pending=14 n_acc=1 bonus=16 resolution_ms=12.187 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.843326 threshold=0.000 verify=[14, 362]
+[opti-controller] resolve generation=16 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.186 reconcile=false breaker=false
+[opti-controller] issue generation=17 q=0.018401 threshold=0.000 verify=[778, 10175]
+[opti-controller] resolve generation=17 hit=false q=0.018401 expected_pending=778 n_acc=0 bonus=1635 resolution_ms=12.285 reconcile=true breaker=false
+[opti-controller] issue generation=18 q=0.361199 threshold=0.000 verify=[270, 1353]
+[opti-controller] resolve generation=18 hit=false q=0.361199 expected_pending=270 n_acc=1 bonus=1948 resolution_ms=12.232 reconcile=true breaker=false
+[opti-controller] issue generation=19 q=0.049804 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=19 hit=false q=0.049804 expected_pending=11055 n_acc=1 bonus=2038 resolution_ms=12.276 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=12 len_hist=[0, 21] per_slot=[12/21=0.571] total=12/21=0.571 tok_per_round=1.571
+[spec-acc] ctx=324 burst=12/21 cum=49/79=0.620
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[meter] admit id=chatcmpl-5c91754025da3a815e3fbf2ec8522c3b tenant=default lane=interactive model="step37"
+[opti-controller] issue generation=0 q=0.128827 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=0 hit=false q=0.128827 expected_pending=260 n_acc=0 bonus=295 resolution_ms=12.241 reconcile=true breaker=false
+[spec-stats] rounds=1 full_accept=0 len_hist=[0, 1] per_slot=[0/1=0.000] total=0/1=0.000 tok_per_round=1.000
+[spec-acc] ctx=324 burst=0/1 cum=37/59=0.627
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.308 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.211 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.265 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.195 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.203 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.209 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.145 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.058972 threshold=0.000 verify=[260, 201]
+[opti-controller] resolve generation=7 hit=false q=0.058972 expected_pending=260 n_acc=0 bonus=294 resolution_ms=12.174 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.177678 threshold=0.000 verify=[2501, 10531]
+[opti-controller] resolve generation=8 hit=false q=0.177678 expected_pending=2501 n_acc=1 bonus=54186 resolution_ms=12.146 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.060792 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=9 hit=false q=0.060792 expected_pending=223 n_acc=1 bonus=17808 resolution_ms=12.172 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.080911 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=10 hit=false q=0.080911 expected_pending=2501 n_acc=1 bonus=18180 resolution_ms=12.137 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.793211 threshold=0.000 verify=[16, 37157]
+[opti-controller] resolve generation=11 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.169 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.457298 threshold=0.000 verify=[14, 790]
+[opti-controller] resolve generation=12 hit=false q=0.457298 expected_pending=14 n_acc=0 bonus=5978 resolution_ms=12.223 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.700454 threshold=0.000 verify=[28, 223]
+[opti-controller] resolve generation=13 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.139 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.061207 threshold=0.000 verify=[19, 16]
+[opti-controller] resolve generation=14 hit=false q=0.061207 expected_pending=19 n_acc=0 bonus=455 resolution_ms=12.160 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.031203 threshold=0.000 verify=[14, 270]
+[opti-controller] resolve generation=15 hit=false q=0.031203 expected_pending=14 n_acc=0 bonus=50991 resolution_ms=12.140 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.208226 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=16 hit=true q=0.208226 expected_pending=344 n_acc=1 bonus=344 resolution_ms=12.167 reconcile=false breaker=false
+[spec-stats] rounds=19 full_accept=12 len_hist=[0, 19] per_slot=[12/19=0.632] total=12/19=0.632 tok_per_round=1.632
+[spec-acc] ctx=228 burst=12/19 cum=12/19=0.632
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.226586 threshold=0.000 verify=[11055, 14]
+[opti-controller] resolve generation=0 hit=false q=0.226586 expected_pending=11055 n_acc=1 bonus=36136 resolution_ms=12.282 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.204358 threshold=0.000 verify=[1202, 67153]
+[opti-controller] resolve generation=1 hit=false q=0.204358 expected_pending=1202 n_acc=1 bonus=8581 resolution_ms=12.216 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.345839 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=2 hit=false q=0.345839 expected_pending=14 n_acc=0 bonus=55530 resolution_ms=12.179 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.316285 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=3 hit=false q=0.316285 expected_pending=2501 n_acc=1 bonus=7110 resolution_ms=12.207 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.235233 threshold=0.000 verify=[418, 270]
+[opti-controller] resolve generation=4 hit=true q=0.235233 expected_pending=418 n_acc=1 bonus=418 resolution_ms=12.175 reconcile=false breaker=false
+[opti-controller] issue generation=5 q=0.025342 threshold=0.000 verify=[11055, 1347]
+[opti-controller] resolve generation=5 hit=false q=0.025342 expected_pending=11055 n_acc=0 bonus=1119 resolution_ms=12.215 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.013030 threshold=0.000 verify=[10520, 305]
+[opti-controller] resolve generation=6 hit=false q=0.013030 expected_pending=10520 n_acc=0 bonus=5768 resolution_ms=12.237 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.017648 threshold=0.000 verify=[95885, 469]
+[opti-controller] resolve generation=7 hit=false q=0.017648 expected_pending=95885 n_acc=0 bonus=6490 resolution_ms=12.209 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.339251 threshold=0.000 verify=[469, 855]
+[opti-controller] resolve generation=8 hit=true q=0.339251 expected_pending=469 n_acc=1 bonus=469 resolution_ms=12.291 reconcile=false breaker=false
+[opti-controller] issue generation=9 q=0.020826 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=9 hit=false q=0.020826 expected_pending=270 n_acc=0 bonus=612 resolution_ms=12.257 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.124386 threshold=0.000 verify=[62162, 85]
+[opti-controller] resolve generation=10 hit=false q=0.124386 expected_pending=62162 n_acc=1 bonus=93415 resolution_ms=12.269 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.180486 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=11 hit=false q=0.180486 expected_pending=260 n_acc=0 bonus=9764 resolution_ms=12.194 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.529418 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=12 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.305 reconcile=false breaker=false
+[opti-controller] issue generation=13 q=0.027990 threshold=0.000 verify=[10175, 260]
+[opti-controller] resolve generation=13 hit=false q=0.027990 expected_pending=10175 n_acc=0 bonus=3510 resolution_ms=12.257 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.199826 threshold=0.000 verify=[14, 566]
+[opti-controller] resolve generation=14 hit=false q=0.199826 expected_pending=14 n_acc=1 bonus=16 resolution_ms=12.279 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.843326 threshold=0.000 verify=[14, 362]
+[opti-controller] resolve generation=15 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.187 reconcile=false breaker=false
+[opti-controller] issue generation=16 q=0.018401 threshold=0.000 verify=[778, 10175]
+[opti-controller] resolve generation=16 hit=false q=0.018401 expected_pending=778 n_acc=0 bonus=1635 resolution_ms=12.345 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.361199 threshold=0.000 verify=[270, 1353]
+[opti-controller] resolve generation=17 hit=false q=0.361199 expected_pending=270 n_acc=1 bonus=1948 resolution_ms=12.288 reconcile=true breaker=false
+[opti-controller] issue generation=18 q=0.049804 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=18 hit=false q=0.049804 expected_pending=11055 n_acc=1 bonus=2038 resolution_ms=12.173 reconcile=true breaker=false
+[spec-stats] rounds=20 full_accept=12 len_hist=[0, 20] per_slot=[12/20=0.600] total=12/20=0.600 tok_per_round=1.600
+[spec-acc] ctx=325 burst=12/20 cum=49/79=0.620
+[meter] admit id=chatcmpl-8a6905b871bad07870725afafa3c8057 tenant=default lane=interactive model="step37"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.222 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.352 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.174 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.213 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.256 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.209 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.185 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.058972 threshold=0.000 verify=[260, 201]
+[opti-controller] resolve generation=7 hit=false q=0.058972 expected_pending=260 n_acc=0 bonus=294 resolution_ms=12.187 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.177678 threshold=0.000 verify=[2501, 10531]
+[opti-controller] resolve generation=8 hit=false q=0.177678 expected_pending=2501 n_acc=1 bonus=54186 resolution_ms=12.194 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.060792 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=9 hit=false q=0.060792 expected_pending=223 n_acc=1 bonus=17808 resolution_ms=12.216 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.080911 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=10 hit=false q=0.080911 expected_pending=2501 n_acc=1 bonus=18180 resolution_ms=12.248 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.793211 threshold=0.000 verify=[16, 37157]
+[opti-controller] resolve generation=11 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.232 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.457298 threshold=0.000 verify=[14, 790]
+[opti-controller] resolve generation=12 hit=false q=0.457298 expected_pending=14 n_acc=0 bonus=5978 resolution_ms=12.197 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.700454 threshold=0.000 verify=[28, 223]
+[opti-controller] resolve generation=13 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.197 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.061207 threshold=0.000 verify=[19, 16]
+[opti-controller] resolve generation=14 hit=false q=0.061207 expected_pending=19 n_acc=0 bonus=455 resolution_ms=12.179 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.031203 threshold=0.000 verify=[14, 270]
+[opti-controller] resolve generation=15 hit=false q=0.031203 expected_pending=14 n_acc=0 bonus=50991 resolution_ms=12.218 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.208226 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=16 hit=true q=0.208226 expected_pending=344 n_acc=1 bonus=344 resolution_ms=12.230 reconcile=false breaker=false
+[spec-stats] rounds=19 full_accept=12 len_hist=[0, 19] per_slot=[12/19=0.632] total=12/19=0.632 tok_per_round=1.632
+[spec-acc] ctx=228 burst=12/19 cum=12/19=0.632
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.290830 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=0 hit=false q=0.290830 expected_pending=62027 n_acc=0 bonus=23816 resolution_ms=12.275 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.226387 threshold=0.000 verify=[14, 716]
+[opti-controller] resolve generation=1 hit=false q=0.226387 expected_pending=14 n_acc=1 bonus=4197 resolution_ms=12.207 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.247795 threshold=0.000 verify=[294, 62027]
+[opti-controller] resolve generation=2 hit=false q=0.247795 expected_pending=294 n_acc=0 bonus=24921 resolution_ms=12.186 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.722893 threshold=0.000 verify=[710, 7723]
+[opti-controller] resolve generation=3 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.226 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036249 threshold=0.000 verify=[65, 94932]
+[opti-controller] resolve generation=4 hit=false q=0.036249 expected_pending=65 n_acc=0 bonus=54186 resolution_ms=12.176 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.743226 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=5 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.159 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.747594 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=6 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.231 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.003583 threshold=0.000 verify=[412, 34678]
+[opti-controller] resolve generation=7 hit=false q=0.003583 expected_pending=412 n_acc=1 bonus=19873 resolution_ms=12.225 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.267901 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=8 hit=false q=0.267901 expected_pending=62027 n_acc=1 bonus=25240 resolution_ms=12.241 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.458176 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=9 hit=true q=0.458176 expected_pending=62027 n_acc=1 bonus=62027 resolution_ms=12.326 reconcile=false breaker=false
+[opti-controller] issue generation=10 q=0.055952 threshold=0.000 verify=[716, 13945]
+[opti-controller] resolve generation=10 hit=false q=0.055952 expected_pending=716 n_acc=1 bonus=52636 resolution_ms=12.307 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.691451 threshold=0.000 verify=[305, 716]
+[opti-controller] resolve generation=11 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.244 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.004994 threshold=0.000 verify=[86220, 7302]
+[opti-controller] resolve generation=12 hit=false q=0.004994 expected_pending=86220 n_acc=0 bonus=29553 resolution_ms=12.222 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.096150 threshold=0.000 verify=[4472, 62027]
+[opti-controller] resolve generation=13 hit=false q=0.096150 expected_pending=4472 n_acc=1 bonus=12582 resolution_ms=12.314 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.258727 threshold=0.000 verify=[2195, 4085]
+[opti-controller] resolve generation=14 hit=true q=0.258727 expected_pending=2195 n_acc=1 bonus=2195 resolution_ms=12.168 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018978 threshold=0.000 verify=[20819, 14]
+[opti-controller] resolve generation=15 hit=false q=0.018978 expected_pending=20819 n_acc=0 bonus=16 resolution_ms=12.312 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.460986 threshold=0.000 verify=[14, 223]
+[opti-controller] resolve generation=16 hit=false q=0.460986 expected_pending=14 n_acc=0 bonus=8279 resolution_ms=12.213 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.857581 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=17 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.275 reconcile=false breaker=false
+[opti-controller] issue generation=18 q=0.032618 threshold=0.000 verify=[1257, 14]
+[opti-controller] resolve generation=18 hit=false q=0.032618 expected_pending=1257 n_acc=0 bonus=2899 resolution_ms=12.291 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 21] per_slot=[11/21=0.524] total=11/21=0.524 tok_per_round=1.524
+[spec-acc] ctx=260 burst=11/21 cum=23/40=0.575
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.187672 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=0 hit=false q=0.187672 expected_pending=11055 n_acc=1 bonus=1902 resolution_ms=12.239 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.050459 threshold=0.000 verify=[362, 25244]
+[opti-controller] resolve generation=1 hit=false q=0.050459 expected_pending=362 n_acc=1 bonus=21136 resolution_ms=12.210 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.070769 threshold=0.000 verify=[4511, 270]
+[opti-controller] resolve generation=2 hit=false q=0.070769 expected_pending=4511 n_acc=1 bonus=5784 resolution_ms=12.282 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.031470 threshold=0.000 verify=[1202, 567]
+[opti-controller] resolve generation=3 hit=false q=0.031470 expected_pending=1202 n_acc=1 bonus=4197 resolution_ms=12.199 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.494768 threshold=0.000 verify=[14, 469]
+[opti-controller] resolve generation=4 hit=true q=0.494768 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.239 reconcile=false breaker=false
+[opti-controller] issue generation=5 q=0.036190 threshold=0.000 verify=[2340, 14]
+[opti-controller] resolve generation=5 hit=false q=0.036190 expected_pending=2340 n_acc=0 bonus=7823 resolution_ms=12.251 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.231958 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=6 hit=false q=0.231958 expected_pending=14 n_acc=0 bonus=51274 resolution_ms=12.206 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.632949 threshold=0.000 verify=[305, 270]
+[opti-controller] resolve generation=7 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.225 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.093579 threshold=0.000 verify=[367, 14]
+[opti-controller] resolve generation=8 hit=false q=0.093579 expected_pending=367 n_acc=0 bonus=50027 resolution_ms=12.171 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.108149 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=9 hit=false q=0.108149 expected_pending=270 n_acc=1 bonus=5604 resolution_ms=12.138 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.163887 threshold=0.000 verify=[2645, 305]
+[opti-controller] resolve generation=10 hit=false q=0.163887 expected_pending=2645 n_acc=1 bonus=2192 resolution_ms=12.179 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.357812 threshold=0.000 verify=[9802, 412]
+[opti-controller] resolve generation=11 hit=false q=0.357812 expected_pending=9802 n_acc=0 bonus=15417 resolution_ms=12.234 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.056557 threshold=0.000 verify=[1660, 3862]
+[opti-controller] resolve generation=12 hit=false q=0.056557 expected_pending=1660 n_acc=1 bonus=270 resolution_ms=12.322 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.078642 threshold=0.000 verify=[223, 19]
+[opti-controller] resolve generation=13 hit=false q=0.078642 expected_pending=223 n_acc=1 bonus=107787 resolution_ms=12.213 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.658849 threshold=0.000 verify=[37157, 14]
+[opti-controller] resolve generation=14 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.345 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.988212 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=15 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.321 reconcile=false breaker=false
+[opti-controller] issue generation=16 q=0.046142 threshold=0.000 verify=[2038, 1137]
+[opti-controller] resolve generation=16 hit=false q=0.046142 expected_pending=2038 n_acc=1 bonus=17808 resolution_ms=12.255 reconcile=true breaker=false
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=292 burst=14/18 cum=37/58=0.638
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.290830 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=0 hit=false q=0.290830 expected_pending=62027 n_acc=0 bonus=23816 resolution_ms=12.261 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.226387 threshold=0.000 verify=[14, 716]
+[opti-controller] resolve generation=1 hit=false q=0.226387 expected_pending=14 n_acc=1 bonus=4197 resolution_ms=12.177 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.247795 threshold=0.000 verify=[294, 62027]
+[opti-controller] resolve generation=2 hit=false q=0.247795 expected_pending=294 n_acc=0 bonus=24921 resolution_ms=12.178 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.722893 threshold=0.000 verify=[710, 7723]
+[opti-controller] resolve generation=3 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.228 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036249 threshold=0.000 verify=[65, 94932]
+[opti-controller] resolve generation=4 hit=false q=0.036249 expected_pending=65 n_acc=0 bonus=54186 resolution_ms=12.321 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.743226 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=5 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.211 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.747594 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=6 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.213 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.003583 threshold=0.000 verify=[412, 34678]
+[opti-controller] resolve generation=7 hit=false q=0.003583 expected_pending=412 n_acc=1 bonus=19873 resolution_ms=12.150 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.267901 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=8 hit=false q=0.267901 expected_pending=62027 n_acc=1 bonus=25240 resolution_ms=12.282 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.458176 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=9 hit=true q=0.458176 expected_pending=62027 n_acc=1 bonus=62027 resolution_ms=12.255 reconcile=false breaker=false
+[opti-controller] issue generation=10 q=0.055952 threshold=0.000 verify=[716, 13945]
+[opti-controller] resolve generation=10 hit=false q=0.055952 expected_pending=716 n_acc=1 bonus=52636 resolution_ms=12.297 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.691451 threshold=0.000 verify=[305, 716]
+[opti-controller] resolve generation=11 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.212 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.004994 threshold=0.000 verify=[86220, 7302]
+[opti-controller] resolve generation=12 hit=false q=0.004994 expected_pending=86220 n_acc=0 bonus=29553 resolution_ms=12.228 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.096150 threshold=0.000 verify=[4472, 62027]
+[opti-controller] resolve generation=13 hit=false q=0.096150 expected_pending=4472 n_acc=1 bonus=12582 resolution_ms=12.339 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.258727 threshold=0.000 verify=[2195, 4085]
+[opti-controller] resolve generation=14 hit=true q=0.258727 expected_pending=2195 n_acc=1 bonus=2195 resolution_ms=12.139 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018978 threshold=0.000 verify=[20819, 14]
+[opti-controller] resolve generation=15 hit=false q=0.018978 expected_pending=20819 n_acc=0 bonus=16 resolution_ms=12.277 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.460986 threshold=0.000 verify=[14, 223]
+[opti-controller] resolve generation=16 hit=false q=0.460986 expected_pending=14 n_acc=0 bonus=8279 resolution_ms=12.181 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.857581 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=17 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.193 reconcile=false breaker=false
+[opti-controller] issue generation=18 q=0.032618 threshold=0.000 verify=[1257, 14]
+[opti-controller] resolve generation=18 hit=false q=0.032618 expected_pending=1257 n_acc=0 bonus=2899 resolution_ms=12.233 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 21] per_slot=[11/21=0.524] total=11/21=0.524 tok_per_round=1.524
+[spec-acc] ctx=260 burst=11/21 cum=23/40=0.575
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.128827 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=0 hit=false q=0.128827 expected_pending=260 n_acc=0 bonus=295 resolution_ms=12.249 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.226586 threshold=0.000 verify=[11055, 14]
+[opti-controller] resolve generation=1 hit=false q=0.226586 expected_pending=11055 n_acc=1 bonus=36136 resolution_ms=12.252 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.204358 threshold=0.000 verify=[1202, 67153]
+[opti-controller] resolve generation=2 hit=false q=0.204358 expected_pending=1202 n_acc=1 bonus=8581 resolution_ms=12.255 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.345839 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=3 hit=false q=0.345839 expected_pending=14 n_acc=0 bonus=55530 resolution_ms=12.246 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.316285 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=4 hit=false q=0.316285 expected_pending=2501 n_acc=1 bonus=7110 resolution_ms=12.177 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.235233 threshold=0.000 verify=[418, 270]
+[opti-controller] resolve generation=5 hit=true q=0.235233 expected_pending=418 n_acc=1 bonus=418 resolution_ms=12.302 reconcile=false breaker=false
+[opti-controller] issue generation=6 q=0.025342 threshold=0.000 verify=[11055, 1347]
+[opti-controller] resolve generation=6 hit=false q=0.025342 expected_pending=11055 n_acc=0 bonus=1119 resolution_ms=12.227 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.013030 threshold=0.000 verify=[10520, 305]
+[opti-controller] resolve generation=7 hit=false q=0.013030 expected_pending=10520 n_acc=0 bonus=5768 resolution_ms=12.134 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.017648 threshold=0.000 verify=[95885, 469]
+[opti-controller] resolve generation=8 hit=false q=0.017648 expected_pending=95885 n_acc=0 bonus=6490 resolution_ms=12.290 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.339251 threshold=0.000 verify=[469, 855]
+[opti-controller] resolve generation=9 hit=true q=0.339251 expected_pending=469 n_acc=1 bonus=469 resolution_ms=12.285 reconcile=false breaker=false
+[opti-controller] issue generation=10 q=0.020826 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=10 hit=false q=0.020826 expected_pending=270 n_acc=0 bonus=612 resolution_ms=12.258 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.124386 threshold=0.000 verify=[62162, 85]
+[opti-controller] resolve generation=11 hit=false q=0.124386 expected_pending=62162 n_acc=1 bonus=93415 resolution_ms=12.256 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.180486 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=12 hit=false q=0.180486 expected_pending=260 n_acc=0 bonus=9764 resolution_ms=12.261 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.529418 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=13 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.236 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.027990 threshold=0.000 verify=[10175, 260]
+[opti-controller] resolve generation=14 hit=false q=0.027990 expected_pending=10175 n_acc=0 bonus=3510 resolution_ms=12.315 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.199826 threshold=0.000 verify=[14, 566]
+[opti-controller] resolve generation=15 hit=false q=0.199826 expected_pending=14 n_acc=1 bonus=16 resolution_ms=12.221 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.843326 threshold=0.000 verify=[14, 362]
+[opti-controller] resolve generation=16 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.204 reconcile=false breaker=false
+[opti-controller] issue generation=17 q=0.018401 threshold=0.000 verify=[778, 10175]
+[opti-controller] resolve generation=17 hit=false q=0.018401 expected_pending=778 n_acc=0 bonus=1635 resolution_ms=12.371 reconcile=true breaker=false
+[opti-controller] issue generation=18 q=0.361199 threshold=0.000 verify=[270, 1353]
+[opti-controller] resolve generation=18 hit=false q=0.361199 expected_pending=270 n_acc=1 bonus=1948 resolution_ms=12.219 reconcile=true breaker=false
+[opti-controller] issue generation=19 q=0.049804 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=19 hit=false q=0.049804 expected_pending=11055 n_acc=1 bonus=2038 resolution_ms=12.273 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=12 len_hist=[0, 21] per_slot=[12/21=0.571] total=12/21=0.571 tok_per_round=1.571
+[spec-acc] ctx=324 burst=12/21 cum=49/79=0.620
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[meter] admit id=chatcmpl-345463327750eae8e1db3f4428a13aa1 tenant=default lane=interactive model="step37"
+[opti-controller] issue generation=0 q=0.187672 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=0 hit=false q=0.187672 expected_pending=11055 n_acc=1 bonus=1902 resolution_ms=12.265 reconcile=true breaker=false
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=292 burst=1/1 cum=24/41=0.585
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.293 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.319 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.281 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.347 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.254 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.248 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.183 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.058972 threshold=0.000 verify=[260, 201]
+[opti-controller] resolve generation=7 hit=false q=0.058972 expected_pending=260 n_acc=0 bonus=294 resolution_ms=12.257 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.177678 threshold=0.000 verify=[2501, 10531]
+[opti-controller] resolve generation=8 hit=false q=0.177678 expected_pending=2501 n_acc=1 bonus=54186 resolution_ms=12.175 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.060792 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=9 hit=false q=0.060792 expected_pending=223 n_acc=1 bonus=17808 resolution_ms=12.144 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.080911 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=10 hit=false q=0.080911 expected_pending=2501 n_acc=1 bonus=18180 resolution_ms=12.155 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.793211 threshold=0.000 verify=[16, 37157]
+[opti-controller] resolve generation=11 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.235 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.457298 threshold=0.000 verify=[14, 790]
+[opti-controller] resolve generation=12 hit=false q=0.457298 expected_pending=14 n_acc=0 bonus=5978 resolution_ms=12.203 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.700454 threshold=0.000 verify=[28, 223]
+[opti-controller] resolve generation=13 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.264 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.061207 threshold=0.000 verify=[19, 16]
+[opti-controller] resolve generation=14 hit=false q=0.061207 expected_pending=19 n_acc=0 bonus=455 resolution_ms=12.222 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.031203 threshold=0.000 verify=[14, 270]
+[opti-controller] resolve generation=15 hit=false q=0.031203 expected_pending=14 n_acc=0 bonus=50991 resolution_ms=12.219 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.208226 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=16 hit=true q=0.208226 expected_pending=344 n_acc=1 bonus=344 resolution_ms=12.227 reconcile=false breaker=false
+[spec-stats] rounds=19 full_accept=12 len_hist=[0, 19] per_slot=[12/19=0.632] total=12/19=0.632 tok_per_round=1.632
+[spec-acc] ctx=228 burst=12/19 cum=12/19=0.632
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.050459 threshold=0.000 verify=[362, 25244]
+[opti-controller] resolve generation=0 hit=false q=0.050459 expected_pending=362 n_acc=1 bonus=21136 resolution_ms=12.289 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.070769 threshold=0.000 verify=[4511, 270]
+[opti-controller] resolve generation=1 hit=false q=0.070769 expected_pending=4511 n_acc=1 bonus=5784 resolution_ms=12.386 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.031470 threshold=0.000 verify=[1202, 567]
+[opti-controller] resolve generation=2 hit=false q=0.031470 expected_pending=1202 n_acc=1 bonus=4197 resolution_ms=12.200 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.494768 threshold=0.000 verify=[14, 469]
+[opti-controller] resolve generation=3 hit=true q=0.494768 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.207 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036190 threshold=0.000 verify=[2340, 14]
+[opti-controller] resolve generation=4 hit=false q=0.036190 expected_pending=2340 n_acc=0 bonus=7823 resolution_ms=12.185 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.231958 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.231958 expected_pending=14 n_acc=0 bonus=51274 resolution_ms=12.204 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.632949 threshold=0.000 verify=[305, 270]
+[opti-controller] resolve generation=6 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.205 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.093579 threshold=0.000 verify=[367, 14]
+[opti-controller] resolve generation=7 hit=false q=0.093579 expected_pending=367 n_acc=0 bonus=50027 resolution_ms=12.246 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.108149 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=8 hit=false q=0.108149 expected_pending=270 n_acc=1 bonus=5604 resolution_ms=12.175 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.163887 threshold=0.000 verify=[2645, 305]
+[opti-controller] resolve generation=9 hit=false q=0.163887 expected_pending=2645 n_acc=1 bonus=2192 resolution_ms=12.253 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.357812 threshold=0.000 verify=[9802, 412]
+[opti-controller] resolve generation=10 hit=false q=0.357812 expected_pending=9802 n_acc=0 bonus=15417 resolution_ms=12.237 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.056557 threshold=0.000 verify=[1660, 3862]
+[opti-controller] resolve generation=11 hit=false q=0.056557 expected_pending=1660 n_acc=1 bonus=270 resolution_ms=12.325 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.078642 threshold=0.000 verify=[223, 19]
+[opti-controller] resolve generation=12 hit=false q=0.078642 expected_pending=223 n_acc=1 bonus=107787 resolution_ms=12.222 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.658849 threshold=0.000 verify=[37157, 14]
+[opti-controller] resolve generation=13 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.216 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.988212 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=14 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.296 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.046142 threshold=0.000 verify=[2038, 1137]
+[opti-controller] resolve generation=15 hit=false q=0.046142 expected_pending=2038 n_acc=1 bonus=17808 resolution_ms=12.183 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.145143 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=16 hit=false q=0.145143 expected_pending=260 n_acc=1 bonus=7491 resolution_ms=12.228 reconcile=true breaker=false
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=294 burst=14/19 cum=38/60=0.633
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.204358 threshold=0.000 verify=[1202, 67153]
+[opti-controller] resolve generation=0 hit=false q=0.204358 expected_pending=1202 n_acc=1 bonus=8581 resolution_ms=12.250 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.345839 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=1 hit=false q=0.345839 expected_pending=14 n_acc=0 bonus=55530 resolution_ms=12.171 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.316285 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=2 hit=false q=0.316285 expected_pending=2501 n_acc=1 bonus=7110 resolution_ms=12.125 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.235233 threshold=0.000 verify=[418, 270]
+[opti-controller] resolve generation=3 hit=true q=0.235233 expected_pending=418 n_acc=1 bonus=418 resolution_ms=12.218 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.025342 threshold=0.000 verify=[11055, 1347]
+[opti-controller] resolve generation=4 hit=false q=0.025342 expected_pending=11055 n_acc=0 bonus=1119 resolution_ms=12.247 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.013030 threshold=0.000 verify=[10520, 305]
+[opti-controller] resolve generation=5 hit=false q=0.013030 expected_pending=10520 n_acc=0 bonus=5768 resolution_ms=12.176 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.017648 threshold=0.000 verify=[95885, 469]
+[opti-controller] resolve generation=6 hit=false q=0.017648 expected_pending=95885 n_acc=0 bonus=6490 resolution_ms=12.245 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.339251 threshold=0.000 verify=[469, 855]
+[opti-controller] resolve generation=7 hit=true q=0.339251 expected_pending=469 n_acc=1 bonus=469 resolution_ms=12.246 reconcile=false breaker=false
+[opti-controller] issue generation=8 q=0.020826 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=8 hit=false q=0.020826 expected_pending=270 n_acc=0 bonus=612 resolution_ms=12.312 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.124386 threshold=0.000 verify=[62162, 85]
+[opti-controller] resolve generation=9 hit=false q=0.124386 expected_pending=62162 n_acc=1 bonus=93415 resolution_ms=12.189 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.180486 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=10 hit=false q=0.180486 expected_pending=260 n_acc=0 bonus=9764 resolution_ms=12.274 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.529418 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=11 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.270 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.027990 threshold=0.000 verify=[10175, 260]
+[opti-controller] resolve generation=12 hit=false q=0.027990 expected_pending=10175 n_acc=0 bonus=3510 resolution_ms=12.299 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.199826 threshold=0.000 verify=[14, 566]
+[opti-controller] resolve generation=13 hit=false q=0.199826 expected_pending=14 n_acc=1 bonus=16 resolution_ms=12.234 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.843326 threshold=0.000 verify=[14, 362]
+[opti-controller] resolve generation=14 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.199 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018401 threshold=0.000 verify=[778, 10175]
+[opti-controller] resolve generation=15 hit=false q=0.018401 expected_pending=778 n_acc=0 bonus=1635 resolution_ms=12.332 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.361199 threshold=0.000 verify=[270, 1353]
+[opti-controller] resolve generation=16 hit=false q=0.361199 expected_pending=270 n_acc=1 bonus=1948 resolution_ms=12.207 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.049804 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=17 hit=false q=0.049804 expected_pending=11055 n_acc=1 bonus=2038 resolution_ms=12.286 reconcile=true breaker=false
+[spec-stats] rounds=19 full_accept=11 len_hist=[0, 19] per_slot=[11/19=0.579] total=11/19=0.579 tok_per_round=1.579
+[spec-acc] ctx=327 burst=11/19 cum=49/79=0.620
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[meter] admit id=chatcmpl-0bef8866bcdcddcf8cf5a84158012d61 tenant=default lane=interactive model="step37"
+[opti-controller] issue generation=0 q=0.290830 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=0 hit=false q=0.290830 expected_pending=62027 n_acc=0 bonus=23816 resolution_ms=12.293 reconcile=true breaker=false
+[spec-stats] rounds=1 full_accept=0 len_hist=[0, 1] per_slot=[0/1=0.000] total=0/1=0.000 tok_per_round=1.000
+[spec-acc] ctx=260 burst=0/1 cum=12/20=0.600
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.232 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.327 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.226 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.244 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.217 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.248 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.154 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.058972 threshold=0.000 verify=[260, 201]
+[opti-controller] resolve generation=7 hit=false q=0.058972 expected_pending=260 n_acc=0 bonus=294 resolution_ms=12.271 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.177678 threshold=0.000 verify=[2501, 10531]
+[opti-controller] resolve generation=8 hit=false q=0.177678 expected_pending=2501 n_acc=1 bonus=54186 resolution_ms=12.151 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.060792 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=9 hit=false q=0.060792 expected_pending=223 n_acc=1 bonus=17808 resolution_ms=12.182 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.080911 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=10 hit=false q=0.080911 expected_pending=2501 n_acc=1 bonus=18180 resolution_ms=12.229 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.793211 threshold=0.000 verify=[16, 37157]
+[opti-controller] resolve generation=11 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.190 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.457298 threshold=0.000 verify=[14, 790]
+[opti-controller] resolve generation=12 hit=false q=0.457298 expected_pending=14 n_acc=0 bonus=5978 resolution_ms=12.173 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.700454 threshold=0.000 verify=[28, 223]
+[opti-controller] resolve generation=13 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.190 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.061207 threshold=0.000 verify=[19, 16]
+[opti-controller] resolve generation=14 hit=false q=0.061207 expected_pending=19 n_acc=0 bonus=455 resolution_ms=12.206 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.031203 threshold=0.000 verify=[14, 270]
+[opti-controller] resolve generation=15 hit=false q=0.031203 expected_pending=14 n_acc=0 bonus=50991 resolution_ms=12.150 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.208226 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=16 hit=true q=0.208226 expected_pending=344 n_acc=1 bonus=344 resolution_ms=12.167 reconcile=false breaker=false
+[spec-stats] rounds=19 full_accept=12 len_hist=[0, 19] per_slot=[12/19=0.632] total=12/19=0.632 tok_per_round=1.632
+[spec-acc] ctx=228 burst=12/19 cum=12/19=0.632
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.226387 threshold=0.000 verify=[14, 716]
+[opti-controller] resolve generation=0 hit=false q=0.226387 expected_pending=14 n_acc=1 bonus=4197 resolution_ms=12.197 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.247795 threshold=0.000 verify=[294, 62027]
+[opti-controller] resolve generation=1 hit=false q=0.247795 expected_pending=294 n_acc=0 bonus=24921 resolution_ms=12.178 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.722893 threshold=0.000 verify=[710, 7723]
+[opti-controller] resolve generation=2 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.218 reconcile=false breaker=false
+[opti-controller] issue generation=3 q=0.036249 threshold=0.000 verify=[65, 94932]
+[opti-controller] resolve generation=3 hit=false q=0.036249 expected_pending=65 n_acc=0 bonus=54186 resolution_ms=12.149 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.743226 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=4 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.220 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.747594 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=5 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.257 reconcile=false breaker=false
+[opti-controller] issue generation=6 q=0.003583 threshold=0.000 verify=[412, 34678]
+[opti-controller] resolve generation=6 hit=false q=0.003583 expected_pending=412 n_acc=1 bonus=19873 resolution_ms=12.222 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.267901 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=7 hit=false q=0.267901 expected_pending=62027 n_acc=1 bonus=25240 resolution_ms=12.212 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.458176 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=8 hit=true q=0.458176 expected_pending=62027 n_acc=1 bonus=62027 resolution_ms=12.250 reconcile=false breaker=false
+[opti-controller] issue generation=9 q=0.055952 threshold=0.000 verify=[716, 13945]
+[opti-controller] resolve generation=9 hit=false q=0.055952 expected_pending=716 n_acc=1 bonus=52636 resolution_ms=12.202 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.691451 threshold=0.000 verify=[305, 716]
+[opti-controller] resolve generation=10 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.188 reconcile=false breaker=false
+[opti-controller] issue generation=11 q=0.004994 threshold=0.000 verify=[86220, 7302]
+[opti-controller] resolve generation=11 hit=false q=0.004994 expected_pending=86220 n_acc=0 bonus=29553 resolution_ms=12.148 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.096150 threshold=0.000 verify=[4472, 62027]
+[opti-controller] resolve generation=12 hit=false q=0.096150 expected_pending=4472 n_acc=1 bonus=12582 resolution_ms=12.201 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.258727 threshold=0.000 verify=[2195, 4085]
+[opti-controller] resolve generation=13 hit=true q=0.258727 expected_pending=2195 n_acc=1 bonus=2195 resolution_ms=12.221 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.018978 threshold=0.000 verify=[20819, 14]
+[opti-controller] resolve generation=14 hit=false q=0.018978 expected_pending=20819 n_acc=0 bonus=16 resolution_ms=12.246 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.460986 threshold=0.000 verify=[14, 223]
+[opti-controller] resolve generation=15 hit=false q=0.460986 expected_pending=14 n_acc=0 bonus=8279 resolution_ms=12.172 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.857581 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=16 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.188 reconcile=false breaker=false
+[opti-controller] issue generation=17 q=0.032618 threshold=0.000 verify=[1257, 14]
+[opti-controller] resolve generation=17 hit=false q=0.032618 expected_pending=1257 n_acc=0 bonus=2899 resolution_ms=12.178 reconcile=true breaker=false
+[opti-controller] issue generation=18 q=0.041683 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=18 hit=false q=0.041683 expected_pending=344 n_acc=0 bonus=18180 resolution_ms=12.320 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=12 len_hist=[0, 21] per_slot=[12/21=0.571] total=12/21=0.571 tok_per_round=1.571
+[spec-acc] ctx=261 burst=12/21 cum=24/41=0.585
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.050459 threshold=0.000 verify=[362, 25244]
+[opti-controller] resolve generation=0 hit=false q=0.050459 expected_pending=362 n_acc=1 bonus=21136 resolution_ms=12.174 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.070769 threshold=0.000 verify=[4511, 270]
+[opti-controller] resolve generation=1 hit=false q=0.070769 expected_pending=4511 n_acc=1 bonus=5784 resolution_ms=12.216 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.031470 threshold=0.000 verify=[1202, 567]
+[opti-controller] resolve generation=2 hit=false q=0.031470 expected_pending=1202 n_acc=1 bonus=4197 resolution_ms=12.210 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.494768 threshold=0.000 verify=[14, 469]
+[opti-controller] resolve generation=3 hit=true q=0.494768 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.247 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036190 threshold=0.000 verify=[2340, 14]
+[opti-controller] resolve generation=4 hit=false q=0.036190 expected_pending=2340 n_acc=0 bonus=7823 resolution_ms=12.183 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.231958 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.231958 expected_pending=14 n_acc=0 bonus=51274 resolution_ms=12.260 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.632949 threshold=0.000 verify=[305, 270]
+[opti-controller] resolve generation=6 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.199 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.093579 threshold=0.000 verify=[367, 14]
+[opti-controller] resolve generation=7 hit=false q=0.093579 expected_pending=367 n_acc=0 bonus=50027 resolution_ms=12.171 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.108149 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=8 hit=false q=0.108149 expected_pending=270 n_acc=1 bonus=5604 resolution_ms=12.212 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.163887 threshold=0.000 verify=[2645, 305]
+[opti-controller] resolve generation=9 hit=false q=0.163887 expected_pending=2645 n_acc=1 bonus=2192 resolution_ms=12.171 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.357812 threshold=0.000 verify=[9802, 412]
+[opti-controller] resolve generation=10 hit=false q=0.357812 expected_pending=9802 n_acc=0 bonus=15417 resolution_ms=12.242 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.056557 threshold=0.000 verify=[1660, 3862]
+[opti-controller] resolve generation=11 hit=false q=0.056557 expected_pending=1660 n_acc=1 bonus=270 resolution_ms=12.219 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.078642 threshold=0.000 verify=[223, 19]
+[opti-controller] resolve generation=12 hit=false q=0.078642 expected_pending=223 n_acc=1 bonus=107787 resolution_ms=12.111 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.658849 threshold=0.000 verify=[37157, 14]
+[opti-controller] resolve generation=13 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.265 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.988212 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=14 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.254 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.046142 threshold=0.000 verify=[2038, 1137]
+[opti-controller] resolve generation=15 hit=false q=0.046142 expected_pending=2038 n_acc=1 bonus=17808 resolution_ms=12.177 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.145143 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=16 hit=false q=0.145143 expected_pending=260 n_acc=1 bonus=7491 resolution_ms=12.177 reconcile=true breaker=false
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=294 burst=14/19 cum=38/60=0.633
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.290830 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=0 hit=false q=0.290830 expected_pending=62027 n_acc=0 bonus=23816 resolution_ms=12.192 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.226387 threshold=0.000 verify=[14, 716]
+[opti-controller] resolve generation=1 hit=false q=0.226387 expected_pending=14 n_acc=1 bonus=4197 resolution_ms=12.201 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.247795 threshold=0.000 verify=[294, 62027]
+[opti-controller] resolve generation=2 hit=false q=0.247795 expected_pending=294 n_acc=0 bonus=24921 resolution_ms=12.158 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.722893 threshold=0.000 verify=[710, 7723]
+[opti-controller] resolve generation=3 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.293 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036249 threshold=0.000 verify=[65, 94932]
+[opti-controller] resolve generation=4 hit=false q=0.036249 expected_pending=65 n_acc=0 bonus=54186 resolution_ms=12.186 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.743226 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=5 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.223 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.747594 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=6 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.205 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.003583 threshold=0.000 verify=[412, 34678]
+[opti-controller] resolve generation=7 hit=false q=0.003583 expected_pending=412 n_acc=1 bonus=19873 resolution_ms=12.213 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.267901 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=8 hit=false q=0.267901 expected_pending=62027 n_acc=1 bonus=25240 resolution_ms=12.186 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.458176 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=9 hit=true q=0.458176 expected_pending=62027 n_acc=1 bonus=62027 resolution_ms=12.232 reconcile=false breaker=false
+[opti-controller] issue generation=10 q=0.055952 threshold=0.000 verify=[716, 13945]
+[opti-controller] resolve generation=10 hit=false q=0.055952 expected_pending=716 n_acc=1 bonus=52636 resolution_ms=12.265 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.691451 threshold=0.000 verify=[305, 716]
+[opti-controller] resolve generation=11 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.270 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.004994 threshold=0.000 verify=[86220, 7302]
+[opti-controller] resolve generation=12 hit=false q=0.004994 expected_pending=86220 n_acc=0 bonus=29553 resolution_ms=12.211 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.096150 threshold=0.000 verify=[4472, 62027]
+[opti-controller] resolve generation=13 hit=false q=0.096150 expected_pending=4472 n_acc=1 bonus=12582 resolution_ms=12.309 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.258727 threshold=0.000 verify=[2195, 4085]
+[opti-controller] resolve generation=14 hit=true q=0.258727 expected_pending=2195 n_acc=1 bonus=2195 resolution_ms=12.221 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018978 threshold=0.000 verify=[20819, 14]
+[opti-controller] resolve generation=15 hit=false q=0.018978 expected_pending=20819 n_acc=0 bonus=16 resolution_ms=12.249 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.460986 threshold=0.000 verify=[14, 223]
+[opti-controller] resolve generation=16 hit=false q=0.460986 expected_pending=14 n_acc=0 bonus=8279 resolution_ms=12.227 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.857581 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=17 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.238 reconcile=false breaker=false
+[opti-controller] issue generation=18 q=0.032618 threshold=0.000 verify=[1257, 14]
+[opti-controller] resolve generation=18 hit=false q=0.032618 expected_pending=1257 n_acc=0 bonus=2899 resolution_ms=12.229 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 21] per_slot=[11/21=0.524] total=11/21=0.524 tok_per_round=1.524
+[spec-acc] ctx=260 burst=11/21 cum=23/40=0.575
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.204358 threshold=0.000 verify=[1202, 67153]
+[opti-controller] resolve generation=0 hit=false q=0.204358 expected_pending=1202 n_acc=1 bonus=8581 resolution_ms=12.228 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.345839 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=1 hit=false q=0.345839 expected_pending=14 n_acc=0 bonus=55530 resolution_ms=12.225 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.316285 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=2 hit=false q=0.316285 expected_pending=2501 n_acc=1 bonus=7110 resolution_ms=12.305 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.235233 threshold=0.000 verify=[418, 270]
+[opti-controller] resolve generation=3 hit=true q=0.235233 expected_pending=418 n_acc=1 bonus=418 resolution_ms=12.189 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.025342 threshold=0.000 verify=[11055, 1347]
+[opti-controller] resolve generation=4 hit=false q=0.025342 expected_pending=11055 n_acc=0 bonus=1119 resolution_ms=12.191 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.013030 threshold=0.000 verify=[10520, 305]
+[opti-controller] resolve generation=5 hit=false q=0.013030 expected_pending=10520 n_acc=0 bonus=5768 resolution_ms=12.226 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.017648 threshold=0.000 verify=[95885, 469]
+[opti-controller] resolve generation=6 hit=false q=0.017648 expected_pending=95885 n_acc=0 bonus=6490 resolution_ms=12.281 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.339251 threshold=0.000 verify=[469, 855]
+[opti-controller] resolve generation=7 hit=true q=0.339251 expected_pending=469 n_acc=1 bonus=469 resolution_ms=12.218 reconcile=false breaker=false
+[opti-controller] issue generation=8 q=0.020826 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=8 hit=false q=0.020826 expected_pending=270 n_acc=0 bonus=612 resolution_ms=12.353 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.124386 threshold=0.000 verify=[62162, 85]
+[opti-controller] resolve generation=9 hit=false q=0.124386 expected_pending=62162 n_acc=1 bonus=93415 resolution_ms=12.194 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.180486 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=10 hit=false q=0.180486 expected_pending=260 n_acc=0 bonus=9764 resolution_ms=12.340 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.529418 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=11 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.376 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.027990 threshold=0.000 verify=[10175, 260]
+[opti-controller] resolve generation=12 hit=false q=0.027990 expected_pending=10175 n_acc=0 bonus=3510 resolution_ms=12.235 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.199826 threshold=0.000 verify=[14, 566]
+[opti-controller] resolve generation=13 hit=false q=0.199826 expected_pending=14 n_acc=1 bonus=16 resolution_ms=12.287 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.843326 threshold=0.000 verify=[14, 362]
+[opti-controller] resolve generation=14 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.196 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018401 threshold=0.000 verify=[778, 10175]
+[opti-controller] resolve generation=15 hit=false q=0.018401 expected_pending=778 n_acc=0 bonus=1635 resolution_ms=12.236 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.361199 threshold=0.000 verify=[270, 1353]
+[opti-controller] resolve generation=16 hit=false q=0.361199 expected_pending=270 n_acc=1 bonus=1948 resolution_ms=12.311 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.049804 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=17 hit=false q=0.049804 expected_pending=11055 n_acc=1 bonus=2038 resolution_ms=12.189 reconcile=true breaker=false
+[spec-stats] rounds=19 full_accept=11 len_hist=[0, 19] per_slot=[11/19=0.579] total=11/19=0.579 tok_per_round=1.579
+[spec-acc] ctx=327 burst=11/19 cum=49/79=0.620
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[meter] admit id=chatcmpl-003e7ee65bee2ada57583ac0c8896271 tenant=default lane=interactive model="step37"
+[opti-controller] issue generation=0 q=0.187672 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=0 hit=false q=0.187672 expected_pending=11055 n_acc=1 bonus=1902 resolution_ms=12.241 reconcile=true breaker=false
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=292 burst=1/1 cum=24/41=0.585
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.274 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.257 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.293 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.258 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.205 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.256 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.183 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.058972 threshold=0.000 verify=[260, 201]
+[opti-controller] resolve generation=7 hit=false q=0.058972 expected_pending=260 n_acc=0 bonus=294 resolution_ms=12.231 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.177678 threshold=0.000 verify=[2501, 10531]
+[opti-controller] resolve generation=8 hit=false q=0.177678 expected_pending=2501 n_acc=1 bonus=54186 resolution_ms=12.279 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.060792 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=9 hit=false q=0.060792 expected_pending=223 n_acc=1 bonus=17808 resolution_ms=12.167 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.080911 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=10 hit=false q=0.080911 expected_pending=2501 n_acc=1 bonus=18180 resolution_ms=12.128 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.793211 threshold=0.000 verify=[16, 37157]
+[opti-controller] resolve generation=11 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.259 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.457298 threshold=0.000 verify=[14, 790]
+[opti-controller] resolve generation=12 hit=false q=0.457298 expected_pending=14 n_acc=0 bonus=5978 resolution_ms=12.164 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.700454 threshold=0.000 verify=[28, 223]
+[opti-controller] resolve generation=13 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.151 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.061207 threshold=0.000 verify=[19, 16]
+[opti-controller] resolve generation=14 hit=false q=0.061207 expected_pending=19 n_acc=0 bonus=455 resolution_ms=12.176 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.031203 threshold=0.000 verify=[14, 270]
+[opti-controller] resolve generation=15 hit=false q=0.031203 expected_pending=14 n_acc=0 bonus=50991 resolution_ms=12.158 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.208226 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=16 hit=true q=0.208226 expected_pending=344 n_acc=1 bonus=344 resolution_ms=12.222 reconcile=false breaker=false
+[spec-stats] rounds=19 full_accept=12 len_hist=[0, 19] per_slot=[12/19=0.632] total=12/19=0.632 tok_per_round=1.632
+[spec-acc] ctx=228 burst=12/19 cum=12/19=0.632
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.050459 threshold=0.000 verify=[362, 25244]
+[opti-controller] resolve generation=0 hit=false q=0.050459 expected_pending=362 n_acc=1 bonus=21136 resolution_ms=12.202 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.070769 threshold=0.000 verify=[4511, 270]
+[opti-controller] resolve generation=1 hit=false q=0.070769 expected_pending=4511 n_acc=1 bonus=5784 resolution_ms=12.195 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.031470 threshold=0.000 verify=[1202, 567]
+[opti-controller] resolve generation=2 hit=false q=0.031470 expected_pending=1202 n_acc=1 bonus=4197 resolution_ms=12.154 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.494768 threshold=0.000 verify=[14, 469]
+[opti-controller] resolve generation=3 hit=true q=0.494768 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.224 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036190 threshold=0.000 verify=[2340, 14]
+[opti-controller] resolve generation=4 hit=false q=0.036190 expected_pending=2340 n_acc=0 bonus=7823 resolution_ms=12.235 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.231958 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.231958 expected_pending=14 n_acc=0 bonus=51274 resolution_ms=12.165 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.632949 threshold=0.000 verify=[305, 270]
+[opti-controller] resolve generation=6 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.186 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.093579 threshold=0.000 verify=[367, 14]
+[opti-controller] resolve generation=7 hit=false q=0.093579 expected_pending=367 n_acc=0 bonus=50027 resolution_ms=12.227 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.108149 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=8 hit=false q=0.108149 expected_pending=270 n_acc=1 bonus=5604 resolution_ms=12.125 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.163887 threshold=0.000 verify=[2645, 305]
+[opti-controller] resolve generation=9 hit=false q=0.163887 expected_pending=2645 n_acc=1 bonus=2192 resolution_ms=12.201 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.357812 threshold=0.000 verify=[9802, 412]
+[opti-controller] resolve generation=10 hit=false q=0.357812 expected_pending=9802 n_acc=0 bonus=15417 resolution_ms=12.226 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.056557 threshold=0.000 verify=[1660, 3862]
+[opti-controller] resolve generation=11 hit=false q=0.056557 expected_pending=1660 n_acc=1 bonus=270 resolution_ms=12.238 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.078642 threshold=0.000 verify=[223, 19]
+[opti-controller] resolve generation=12 hit=false q=0.078642 expected_pending=223 n_acc=1 bonus=107787 resolution_ms=12.186 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.658849 threshold=0.000 verify=[37157, 14]
+[opti-controller] resolve generation=13 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.286 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.988212 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=14 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.245 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.046142 threshold=0.000 verify=[2038, 1137]
+[opti-controller] resolve generation=15 hit=false q=0.046142 expected_pending=2038 n_acc=1 bonus=17808 resolution_ms=12.286 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.145143 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=16 hit=false q=0.145143 expected_pending=260 n_acc=1 bonus=7491 resolution_ms=12.206 reconcile=true breaker=false
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=294 burst=14/19 cum=38/60=0.633
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.204358 threshold=0.000 verify=[1202, 67153]
+[opti-controller] resolve generation=0 hit=false q=0.204358 expected_pending=1202 n_acc=1 bonus=8581 resolution_ms=12.288 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.345839 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=1 hit=false q=0.345839 expected_pending=14 n_acc=0 bonus=55530 resolution_ms=12.311 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.316285 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=2 hit=false q=0.316285 expected_pending=2501 n_acc=1 bonus=7110 resolution_ms=12.182 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.235233 threshold=0.000 verify=[418, 270]
+[opti-controller] resolve generation=3 hit=true q=0.235233 expected_pending=418 n_acc=1 bonus=418 resolution_ms=12.207 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.025342 threshold=0.000 verify=[11055, 1347]
+[opti-controller] resolve generation=4 hit=false q=0.025342 expected_pending=11055 n_acc=0 bonus=1119 resolution_ms=12.312 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.013030 threshold=0.000 verify=[10520, 305]
+[opti-controller] resolve generation=5 hit=false q=0.013030 expected_pending=10520 n_acc=0 bonus=5768 resolution_ms=12.225 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.017648 threshold=0.000 verify=[95885, 469]
+[opti-controller] resolve generation=6 hit=false q=0.017648 expected_pending=95885 n_acc=0 bonus=6490 resolution_ms=12.275 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.339251 threshold=0.000 verify=[469, 855]
+[opti-controller] resolve generation=7 hit=true q=0.339251 expected_pending=469 n_acc=1 bonus=469 resolution_ms=12.314 reconcile=false breaker=false
+[opti-controller] issue generation=8 q=0.020826 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=8 hit=false q=0.020826 expected_pending=270 n_acc=0 bonus=612 resolution_ms=12.325 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.124386 threshold=0.000 verify=[62162, 85]
+[opti-controller] resolve generation=9 hit=false q=0.124386 expected_pending=62162 n_acc=1 bonus=93415 resolution_ms=12.165 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.180486 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=10 hit=false q=0.180486 expected_pending=260 n_acc=0 bonus=9764 resolution_ms=12.293 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.529418 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=11 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.472 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.027990 threshold=0.000 verify=[10175, 260]
+[opti-controller] resolve generation=12 hit=false q=0.027990 expected_pending=10175 n_acc=0 bonus=3510 resolution_ms=12.288 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.199826 threshold=0.000 verify=[14, 566]
+[opti-controller] resolve generation=13 hit=false q=0.199826 expected_pending=14 n_acc=1 bonus=16 resolution_ms=12.281 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.843326 threshold=0.000 verify=[14, 362]
+[opti-controller] resolve generation=14 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.170 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018401 threshold=0.000 verify=[778, 10175]
+[opti-controller] resolve generation=15 hit=false q=0.018401 expected_pending=778 n_acc=0 bonus=1635 resolution_ms=12.236 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.361199 threshold=0.000 verify=[270, 1353]
+[opti-controller] resolve generation=16 hit=false q=0.361199 expected_pending=270 n_acc=1 bonus=1948 resolution_ms=12.234 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.049804 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=17 hit=false q=0.049804 expected_pending=11055 n_acc=1 bonus=2038 resolution_ms=12.312 reconcile=true breaker=false
+[spec-stats] rounds=19 full_accept=11 len_hist=[0, 19] per_slot=[11/19=0.579] total=11/19=0.579 tok_per_round=1.579
+[spec-acc] ctx=327 burst=11/19 cum=49/79=0.620
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[meter] admit id=chatcmpl-366e8d9ca340b54507cebb3e13fdc426 tenant=default lane=interactive model="step37"
+[opti-controller] issue generation=0 q=0.290830 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=0 hit=false q=0.290830 expected_pending=62027 n_acc=0 bonus=23816 resolution_ms=12.206 reconcile=true breaker=false
+[spec-stats] rounds=1 full_accept=0 len_hist=[0, 1] per_slot=[0/1=0.000] total=0/1=0.000 tok_per_round=1.000
+[spec-acc] ctx=260 burst=0/1 cum=12/20=0.600
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.390381 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.390381 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.239 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.923254 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.304 reconcile=false breaker=false
+[opti-controller] issue generation=2 q=0.020820 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=2 hit=false q=0.020820 expected_pending=223 n_acc=1 bonus=5978 resolution_ms=12.314 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.436376 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=3 hit=true q=0.436376 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.274 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.040526 threshold=0.000 verify=[65, 21]
+[opti-controller] resolve generation=4 hit=false q=0.040526 expected_pending=65 n_acc=0 bonus=2038 resolution_ms=12.241 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.092950 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.092950 expected_pending=14 n_acc=0 bonus=1715 resolution_ms=12.211 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.514305 threshold=0.000 verify=[13672, 412]
+[opti-controller] resolve generation=6 hit=true q=0.514305 expected_pending=13672 n_acc=1 bonus=13672 resolution_ms=12.171 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.058972 threshold=0.000 verify=[260, 201]
+[opti-controller] resolve generation=7 hit=false q=0.058972 expected_pending=260 n_acc=0 bonus=294 resolution_ms=12.273 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.177678 threshold=0.000 verify=[2501, 10531]
+[opti-controller] resolve generation=8 hit=false q=0.177678 expected_pending=2501 n_acc=1 bonus=54186 resolution_ms=12.268 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.060792 threshold=0.000 verify=[223, 21]
+[opti-controller] resolve generation=9 hit=false q=0.060792 expected_pending=223 n_acc=1 bonus=17808 resolution_ms=12.138 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.080911 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=10 hit=false q=0.080911 expected_pending=2501 n_acc=1 bonus=18180 resolution_ms=12.163 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.793211 threshold=0.000 verify=[16, 37157]
+[opti-controller] resolve generation=11 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.150 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.457298 threshold=0.000 verify=[14, 790]
+[opti-controller] resolve generation=12 hit=false q=0.457298 expected_pending=14 n_acc=0 bonus=5978 resolution_ms=12.209 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.700454 threshold=0.000 verify=[28, 223]
+[opti-controller] resolve generation=13 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.152 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.061207 threshold=0.000 verify=[19, 16]
+[opti-controller] resolve generation=14 hit=false q=0.061207 expected_pending=19 n_acc=0 bonus=455 resolution_ms=12.210 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.031203 threshold=0.000 verify=[14, 270]
+[opti-controller] resolve generation=15 hit=false q=0.031203 expected_pending=14 n_acc=0 bonus=50991 resolution_ms=12.171 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.208226 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=16 hit=true q=0.208226 expected_pending=344 n_acc=1 bonus=344 resolution_ms=12.204 reconcile=false breaker=false
+[spec-stats] rounds=19 full_accept=12 len_hist=[0, 19] per_slot=[12/19=0.632] total=12/19=0.632 tok_per_round=1.632
+[spec-acc] ctx=228 burst=12/19 cum=12/19=0.632
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.226387 threshold=0.000 verify=[14, 716]
+[opti-controller] resolve generation=0 hit=false q=0.226387 expected_pending=14 n_acc=1 bonus=4197 resolution_ms=12.218 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.247795 threshold=0.000 verify=[294, 62027]
+[opti-controller] resolve generation=1 hit=false q=0.247795 expected_pending=294 n_acc=0 bonus=24921 resolution_ms=12.254 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.722893 threshold=0.000 verify=[710, 7723]
+[opti-controller] resolve generation=2 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.324 reconcile=false breaker=false
+[opti-controller] issue generation=3 q=0.036249 threshold=0.000 verify=[65, 94932]
+[opti-controller] resolve generation=3 hit=false q=0.036249 expected_pending=65 n_acc=0 bonus=54186 resolution_ms=12.223 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.743226 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=4 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.134 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.747594 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=5 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.198 reconcile=false breaker=false
+[opti-controller] issue generation=6 q=0.003583 threshold=0.000 verify=[412, 34678]
+[opti-controller] resolve generation=6 hit=false q=0.003583 expected_pending=412 n_acc=1 bonus=19873 resolution_ms=12.163 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.267901 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=7 hit=false q=0.267901 expected_pending=62027 n_acc=1 bonus=25240 resolution_ms=12.275 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.458176 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=8 hit=true q=0.458176 expected_pending=62027 n_acc=1 bonus=62027 resolution_ms=12.230 reconcile=false breaker=false
+[opti-controller] issue generation=9 q=0.055952 threshold=0.000 verify=[716, 13945]
+[opti-controller] resolve generation=9 hit=false q=0.055952 expected_pending=716 n_acc=1 bonus=52636 resolution_ms=12.280 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.691451 threshold=0.000 verify=[305, 716]
+[opti-controller] resolve generation=10 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.287 reconcile=false breaker=false
+[opti-controller] issue generation=11 q=0.004994 threshold=0.000 verify=[86220, 7302]
+[opti-controller] resolve generation=11 hit=false q=0.004994 expected_pending=86220 n_acc=0 bonus=29553 resolution_ms=12.155 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.096150 threshold=0.000 verify=[4472, 62027]
+[opti-controller] resolve generation=12 hit=false q=0.096150 expected_pending=4472 n_acc=1 bonus=12582 resolution_ms=12.224 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.258727 threshold=0.000 verify=[2195, 4085]
+[opti-controller] resolve generation=13 hit=true q=0.258727 expected_pending=2195 n_acc=1 bonus=2195 resolution_ms=12.194 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.018978 threshold=0.000 verify=[20819, 14]
+[opti-controller] resolve generation=14 hit=false q=0.018978 expected_pending=20819 n_acc=0 bonus=16 resolution_ms=12.198 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.460986 threshold=0.000 verify=[14, 223]
+[opti-controller] resolve generation=15 hit=false q=0.460986 expected_pending=14 n_acc=0 bonus=8279 resolution_ms=12.381 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.857581 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=16 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.190 reconcile=false breaker=false
+[opti-controller] issue generation=17 q=0.032618 threshold=0.000 verify=[1257, 14]
+[opti-controller] resolve generation=17 hit=false q=0.032618 expected_pending=1257 n_acc=0 bonus=2899 resolution_ms=12.294 reconcile=true breaker=false
+[opti-controller] issue generation=18 q=0.041683 threshold=0.000 verify=[344, 260]
+[opti-controller] resolve generation=18 hit=false q=0.041683 expected_pending=344 n_acc=0 bonus=18180 resolution_ms=12.319 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=12 len_hist=[0, 21] per_slot=[12/21=0.571] total=12/21=0.571 tok_per_round=1.571
+[spec-acc] ctx=261 burst=12/21 cum=24/41=0.585
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.050459 threshold=0.000 verify=[362, 25244]
+[opti-controller] resolve generation=0 hit=false q=0.050459 expected_pending=362 n_acc=1 bonus=21136 resolution_ms=12.214 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.070769 threshold=0.000 verify=[4511, 270]
+[opti-controller] resolve generation=1 hit=false q=0.070769 expected_pending=4511 n_acc=1 bonus=5784 resolution_ms=12.303 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.031470 threshold=0.000 verify=[1202, 567]
+[opti-controller] resolve generation=2 hit=false q=0.031470 expected_pending=1202 n_acc=1 bonus=4197 resolution_ms=12.263 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.494768 threshold=0.000 verify=[14, 469]
+[opti-controller] resolve generation=3 hit=true q=0.494768 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.272 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036190 threshold=0.000 verify=[2340, 14]
+[opti-controller] resolve generation=4 hit=false q=0.036190 expected_pending=2340 n_acc=0 bonus=7823 resolution_ms=12.169 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.231958 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=5 hit=false q=0.231958 expected_pending=14 n_acc=0 bonus=51274 resolution_ms=12.233 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.632949 threshold=0.000 verify=[305, 270]
+[opti-controller] resolve generation=6 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.220 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.093579 threshold=0.000 verify=[367, 14]
+[opti-controller] resolve generation=7 hit=false q=0.093579 expected_pending=367 n_acc=0 bonus=50027 resolution_ms=12.218 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.108149 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=8 hit=false q=0.108149 expected_pending=270 n_acc=1 bonus=5604 resolution_ms=12.219 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.163887 threshold=0.000 verify=[2645, 305]
+[opti-controller] resolve generation=9 hit=false q=0.163887 expected_pending=2645 n_acc=1 bonus=2192 resolution_ms=12.121 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.357812 threshold=0.000 verify=[9802, 412]
+[opti-controller] resolve generation=10 hit=false q=0.357812 expected_pending=9802 n_acc=0 bonus=15417 resolution_ms=12.238 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.056557 threshold=0.000 verify=[1660, 3862]
+[opti-controller] resolve generation=11 hit=false q=0.056557 expected_pending=1660 n_acc=1 bonus=270 resolution_ms=12.271 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.078642 threshold=0.000 verify=[223, 19]
+[opti-controller] resolve generation=12 hit=false q=0.078642 expected_pending=223 n_acc=1 bonus=107787 resolution_ms=12.190 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.658849 threshold=0.000 verify=[37157, 14]
+[opti-controller] resolve generation=13 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.272 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.988212 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=14 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.291 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.046142 threshold=0.000 verify=[2038, 1137]
+[opti-controller] resolve generation=15 hit=false q=0.046142 expected_pending=2038 n_acc=1 bonus=17808 resolution_ms=12.303 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.145143 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=16 hit=false q=0.145143 expected_pending=260 n_acc=1 bonus=7491 resolution_ms=12.257 reconcile=true breaker=false
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=294 burst=14/19 cum=38/60=0.633
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.290830 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=0 hit=false q=0.290830 expected_pending=62027 n_acc=0 bonus=23816 resolution_ms=12.244 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.226387 threshold=0.000 verify=[14, 716]
+[opti-controller] resolve generation=1 hit=false q=0.226387 expected_pending=14 n_acc=1 bonus=4197 resolution_ms=12.246 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.247795 threshold=0.000 verify=[294, 62027]
+[opti-controller] resolve generation=2 hit=false q=0.247795 expected_pending=294 n_acc=0 bonus=24921 resolution_ms=12.225 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.722893 threshold=0.000 verify=[710, 7723]
+[opti-controller] resolve generation=3 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.276 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.036249 threshold=0.000 verify=[65, 94932]
+[opti-controller] resolve generation=4 hit=false q=0.036249 expected_pending=65 n_acc=0 bonus=54186 resolution_ms=12.184 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.743226 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=5 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.246 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.747594 threshold=0.000 verify=[306, 14]
+[opti-controller] resolve generation=6 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.258 reconcile=false breaker=false
+[opti-controller] issue generation=7 q=0.003583 threshold=0.000 verify=[412, 34678]
+[opti-controller] resolve generation=7 hit=false q=0.003583 expected_pending=412 n_acc=1 bonus=19873 resolution_ms=12.368 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.267901 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=8 hit=false q=0.267901 expected_pending=62027 n_acc=1 bonus=25240 resolution_ms=12.196 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.458176 threshold=0.000 verify=[62027, 14]
+[opti-controller] resolve generation=9 hit=true q=0.458176 expected_pending=62027 n_acc=1 bonus=62027 resolution_ms=12.259 reconcile=false breaker=false
+[opti-controller] issue generation=10 q=0.055952 threshold=0.000 verify=[716, 13945]
+[opti-controller] resolve generation=10 hit=false q=0.055952 expected_pending=716 n_acc=1 bonus=52636 resolution_ms=12.293 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.691451 threshold=0.000 verify=[305, 716]
+[opti-controller] resolve generation=11 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.305 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.004994 threshold=0.000 verify=[86220, 7302]
+[opti-controller] resolve generation=12 hit=false q=0.004994 expected_pending=86220 n_acc=0 bonus=29553 resolution_ms=12.240 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.096150 threshold=0.000 verify=[4472, 62027]
+[opti-controller] resolve generation=13 hit=false q=0.096150 expected_pending=4472 n_acc=1 bonus=12582 resolution_ms=12.296 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.258727 threshold=0.000 verify=[2195, 4085]
+[opti-controller] resolve generation=14 hit=true q=0.258727 expected_pending=2195 n_acc=1 bonus=2195 resolution_ms=12.172 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018978 threshold=0.000 verify=[20819, 14]
+[opti-controller] resolve generation=15 hit=false q=0.018978 expected_pending=20819 n_acc=0 bonus=16 resolution_ms=12.300 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.460986 threshold=0.000 verify=[14, 223]
+[opti-controller] resolve generation=16 hit=false q=0.460986 expected_pending=14 n_acc=0 bonus=8279 resolution_ms=12.312 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.857581 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=17 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.257 reconcile=false breaker=false
+[opti-controller] issue generation=18 q=0.032618 threshold=0.000 verify=[1257, 14]
+[opti-controller] resolve generation=18 hit=false q=0.032618 expected_pending=1257 n_acc=0 bonus=2899 resolution_ms=12.326 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 21] per_slot=[11/21=0.524] total=11/21=0.524 tok_per_round=1.524
+[spec-acc] ctx=260 burst=11/21 cum=23/40=0.575
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.204358 threshold=0.000 verify=[1202, 67153]
+[opti-controller] resolve generation=0 hit=false q=0.204358 expected_pending=1202 n_acc=1 bonus=8581 resolution_ms=12.275 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.345839 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=1 hit=false q=0.345839 expected_pending=14 n_acc=0 bonus=55530 resolution_ms=12.227 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.316285 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=2 hit=false q=0.316285 expected_pending=2501 n_acc=1 bonus=7110 resolution_ms=12.183 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.235233 threshold=0.000 verify=[418, 270]
+[opti-controller] resolve generation=3 hit=true q=0.235233 expected_pending=418 n_acc=1 bonus=418 resolution_ms=12.170 reconcile=false breaker=false
+[opti-controller] issue generation=4 q=0.025342 threshold=0.000 verify=[11055, 1347]
+[opti-controller] resolve generation=4 hit=false q=0.025342 expected_pending=11055 n_acc=0 bonus=1119 resolution_ms=12.214 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.013030 threshold=0.000 verify=[10520, 305]
+[opti-controller] resolve generation=5 hit=false q=0.013030 expected_pending=10520 n_acc=0 bonus=5768 resolution_ms=12.234 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.017648 threshold=0.000 verify=[95885, 469]
+[opti-controller] resolve generation=6 hit=false q=0.017648 expected_pending=95885 n_acc=0 bonus=6490 resolution_ms=12.270 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.339251 threshold=0.000 verify=[469, 855]
+[opti-controller] resolve generation=7 hit=true q=0.339251 expected_pending=469 n_acc=1 bonus=469 resolution_ms=12.195 reconcile=false breaker=false
+[opti-controller] issue generation=8 q=0.020826 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=8 hit=false q=0.020826 expected_pending=270 n_acc=0 bonus=612 resolution_ms=12.256 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.124386 threshold=0.000 verify=[62162, 85]
+[opti-controller] resolve generation=9 hit=false q=0.124386 expected_pending=62162 n_acc=1 bonus=93415 resolution_ms=12.193 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.180486 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=10 hit=false q=0.180486 expected_pending=260 n_acc=0 bonus=9764 resolution_ms=12.255 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.529418 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=11 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.267 reconcile=false breaker=false
+[opti-controller] issue generation=12 q=0.027990 threshold=0.000 verify=[10175, 260]
+[opti-controller] resolve generation=12 hit=false q=0.027990 expected_pending=10175 n_acc=0 bonus=3510 resolution_ms=12.314 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.199826 threshold=0.000 verify=[14, 566]
+[opti-controller] resolve generation=13 hit=false q=0.199826 expected_pending=14 n_acc=1 bonus=16 resolution_ms=12.232 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.843326 threshold=0.000 verify=[14, 362]
+[opti-controller] resolve generation=14 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.183 reconcile=false breaker=false
+[opti-controller] issue generation=15 q=0.018401 threshold=0.000 verify=[778, 10175]
+[opti-controller] resolve generation=15 hit=false q=0.018401 expected_pending=778 n_acc=0 bonus=1635 resolution_ms=12.263 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.361199 threshold=0.000 verify=[270, 1353]
+[opti-controller] resolve generation=16 hit=false q=0.361199 expected_pending=270 n_acc=1 bonus=1948 resolution_ms=12.211 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.049804 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=17 hit=false q=0.049804 expected_pending=11055 n_acc=1 bonus=2038 resolution_ms=12.273 reconcile=true breaker=false
+[spec-stats] rounds=19 full_accept=11 len_hist=[0, 19] per_slot=[11/19=0.579] total=11/19=0.579 tok_per_round=1.579
+[spec-acc] ctx=327 burst=11/19 cum=49/79=0.620
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.187672 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=0 hit=false q=0.187672 expected_pending=11055 n_acc=1 bonus=1902 resolution_ms=12.172 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.050459 threshold=0.000 verify=[362, 25244]
+[opti-controller] resolve generation=1 hit=false q=0.050459 expected_pending=362 n_acc=1 bonus=21136 resolution_ms=12.245 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.070769 threshold=0.000 verify=[4511, 270]
+[opti-controller] resolve generation=2 hit=false q=0.070769 expected_pending=4511 n_acc=1 bonus=5784 resolution_ms=12.243 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.031470 threshold=0.000 verify=[1202, 567]
+[opti-controller] resolve generation=3 hit=false q=0.031470 expected_pending=1202 n_acc=1 bonus=4197 resolution_ms=12.267 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.494768 threshold=0.000 verify=[14, 469]
+[opti-controller] resolve generation=4 hit=true q=0.494768 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.294 reconcile=false breaker=false
+[opti-controller] issue generation=5 q=0.036190 threshold=0.000 verify=[2340, 14]
+[opti-controller] resolve generation=5 hit=false q=0.036190 expected_pending=2340 n_acc=0 bonus=7823 resolution_ms=12.221 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.231958 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=6 hit=false q=0.231958 expected_pending=14 n_acc=0 bonus=51274 resolution_ms=12.261 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.632949 threshold=0.000 verify=[305, 270]
+[opti-controller] resolve generation=7 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.256 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.093579 threshold=0.000 verify=[367, 14]
+[opti-controller] resolve generation=8 hit=false q=0.093579 expected_pending=367 n_acc=0 bonus=50027 resolution_ms=12.225 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.108149 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=9 hit=false q=0.108149 expected_pending=270 n_acc=1 bonus=5604 resolution_ms=12.184 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.163887 threshold=0.000 verify=[2645, 305]
+[opti-controller] resolve generation=10 hit=false q=0.163887 expected_pending=2645 n_acc=1 bonus=2192 resolution_ms=12.233 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.357812 threshold=0.000 verify=[9802, 412]
+[opti-controller] resolve generation=11 hit=false q=0.357812 expected_pending=9802 n_acc=0 bonus=15417 resolution_ms=12.332 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.056557 threshold=0.000 verify=[1660, 3862]
+[opti-controller] resolve generation=12 hit=false q=0.056557 expected_pending=1660 n_acc=1 bonus=270 resolution_ms=12.245 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.078642 threshold=0.000 verify=[223, 19]
+[opti-controller] resolve generation=13 hit=false q=0.078642 expected_pending=223 n_acc=1 bonus=107787 resolution_ms=12.280 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.658849 threshold=0.000 verify=[37157, 14]
+[opti-controller] resolve generation=14 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.298 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.988212 threshold=0.000 verify=[28, 455]
+[opti-controller] resolve generation=15 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.245 reconcile=false breaker=false
+[opti-controller] issue generation=16 q=0.046142 threshold=0.000 verify=[2038, 1137]
+[opti-controller] resolve generation=16 hit=false q=0.046142 expected_pending=2038 n_acc=1 bonus=17808 resolution_ms=12.281 reconcile=true breaker=false
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=292 burst=14/18 cum=37/58=0.638
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.128827 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=0 hit=false q=0.128827 expected_pending=260 n_acc=0 bonus=295 resolution_ms=12.330 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.226586 threshold=0.000 verify=[11055, 14]
+[opti-controller] resolve generation=1 hit=false q=0.226586 expected_pending=11055 n_acc=1 bonus=36136 resolution_ms=12.223 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.204358 threshold=0.000 verify=[1202, 67153]
+[opti-controller] resolve generation=2 hit=false q=0.204358 expected_pending=1202 n_acc=1 bonus=8581 resolution_ms=12.287 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.345839 threshold=0.000 verify=[14, 305]
+[opti-controller] resolve generation=3 hit=false q=0.345839 expected_pending=14 n_acc=0 bonus=55530 resolution_ms=12.301 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.316285 threshold=0.000 verify=[2501, 14]
+[opti-controller] resolve generation=4 hit=false q=0.316285 expected_pending=2501 n_acc=1 bonus=7110 resolution_ms=12.191 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.235233 threshold=0.000 verify=[418, 270]
+[opti-controller] resolve generation=5 hit=true q=0.235233 expected_pending=418 n_acc=1 bonus=418 resolution_ms=12.202 reconcile=false breaker=false
+[opti-controller] issue generation=6 q=0.025342 threshold=0.000 verify=[11055, 1347]
+[opti-controller] resolve generation=6 hit=false q=0.025342 expected_pending=11055 n_acc=0 bonus=1119 resolution_ms=12.292 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.013030 threshold=0.000 verify=[10520, 305]
+[opti-controller] resolve generation=7 hit=false q=0.013030 expected_pending=10520 n_acc=0 bonus=5768 resolution_ms=12.217 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.017648 threshold=0.000 verify=[95885, 469]
+[opti-controller] resolve generation=8 hit=false q=0.017648 expected_pending=95885 n_acc=0 bonus=6490 resolution_ms=12.265 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.339251 threshold=0.000 verify=[469, 855]
+[opti-controller] resolve generation=9 hit=true q=0.339251 expected_pending=469 n_acc=1 bonus=469 resolution_ms=12.339 reconcile=false breaker=false
+[opti-controller] issue generation=10 q=0.020826 threshold=0.000 verify=[270, 905]
+[opti-controller] resolve generation=10 hit=false q=0.020826 expected_pending=270 n_acc=0 bonus=612 resolution_ms=12.275 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.124386 threshold=0.000 verify=[62162, 85]
+[opti-controller] resolve generation=11 hit=false q=0.124386 expected_pending=62162 n_acc=1 bonus=93415 resolution_ms=12.251 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.180486 threshold=0.000 verify=[260, 4031]
+[opti-controller] resolve generation=12 hit=false q=0.180486 expected_pending=260 n_acc=0 bonus=9764 resolution_ms=12.412 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.529418 threshold=0.000 verify=[270, 1257]
+[opti-controller] resolve generation=13 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.304 reconcile=false breaker=false
+[opti-controller] issue generation=14 q=0.027990 threshold=0.000 verify=[10175, 260]
+[opti-controller] resolve generation=14 hit=false q=0.027990 expected_pending=10175 n_acc=0 bonus=3510 resolution_ms=12.276 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.199826 threshold=0.000 verify=[14, 566]
+[opti-controller] resolve generation=15 hit=false q=0.199826 expected_pending=14 n_acc=1 bonus=16 resolution_ms=12.307 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.843326 threshold=0.000 verify=[14, 362]
+[opti-controller] resolve generation=16 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.215 reconcile=false breaker=false
+[opti-controller] issue generation=17 q=0.018401 threshold=0.000 verify=[778, 10175]
+[opti-controller] resolve generation=17 hit=false q=0.018401 expected_pending=778 n_acc=0 bonus=1635 resolution_ms=12.264 reconcile=true breaker=false
+[opti-controller] issue generation=18 q=0.361199 threshold=0.000 verify=[270, 1353]
+[opti-controller] resolve generation=18 hit=false q=0.361199 expected_pending=270 n_acc=1 bonus=1948 resolution_ms=12.241 reconcile=true breaker=false
+[opti-controller] issue generation=19 q=0.049804 threshold=0.000 verify=[11055, 305]
+[opti-controller] resolve generation=19 hit=false q=0.049804 expected_pending=11055 n_acc=1 bonus=2038 resolution_ms=12.230 reconcile=true breaker=false
+[spec-stats] rounds=21 full_accept=12 len_hist=[0, 21] per_slot=[12/21=0.571] total=12/21=0.571 tok_per_round=1.571
+[spec-acc] ctx=324 burst=12/21 cum=49/79=0.620
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

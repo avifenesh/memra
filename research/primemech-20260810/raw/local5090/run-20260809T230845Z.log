@@ -1,0 +1,16 @@
+=== primemech local5090 ts=20260809T230845Z commit=d8e3722c278bd58516a04c91ac8ab6a619124be0
+binary=/home/avifenesh/projects/wt-primemech/target/release/memra-server bytes=51911736 sha256=fc76bdad1f61056cbf872d782b4a7bdc77f7b15be36015865a2df3189b24dde0
+model=/home/avifenesh/models/qwen3.5-9b-judge-q8_0.gguf bytes=9527501696 sha256=0825505bda37933f5856fd0751273b3bdf7224961d81dad9c4fcc1d47d49210c
+protocol=q9 Q8_0, prompt_ids=4096, cold distinct salts, generation=4, repeats=3 per c
+cache controls=KV reuse off, prefix cache off, same-window dedup off
+arms=production default versus explicit MEMRA_PREFILL_TICK=4096
+lock acquired 2026-08-09T23:09:00Z
+=== entry GPU
+0, NVIDIA GeForce RTX 5090 Laptop GPU, 53, 180 MHz, 405 MHz, 9.35 W, 31 MiB, 0 %, 0 %
+=== entry compute apps
+=== production-default scheduler geometry
+default ready pid=2390756 tick=default log=/home/avifenesh/projects/wt-primemech/research/primemech-20260810/raw/local5090/default-server-20260809T230845Z.log
+default client rc=1
+0, NVIDIA GeForce RTX 5090 Laptop GPU, 55, 180 MHz, 9001 MHz, 22.92 W, 31 MiB, 0 %, 0 %
+lock released 2026-08-09T23:09:11Z
+=== run rc=1 done=2026-08-09T23:09:11Z

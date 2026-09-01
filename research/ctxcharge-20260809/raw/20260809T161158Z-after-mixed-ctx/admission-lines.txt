@@ -1,0 +1,6 @@
+17:[admission] request cost: model="cap" ctx=8192 path=spec = 18560 B/token x ctx + 0MB fixed = 152MB
+23:[admission] request cost: model="cap" ctx=131072 path=spec = 18560 B/token x ctx + 103MB fixed = 2536MB
+28:[admission] request cost: model="cap" ctx=262144 path=spec = 18560 B/token x ctx + 103MB fixed = 4968MB
+39:[admission] request cost: model="cap" ctx=131072 path=spec = 18560 B/token x ctx + 103MB fixed = 2536MB
+45:[admission] request cost: model="cap" ctx=131072 path=plain = 16704 B/token x ctx + 103MB fixed = 2292MB
+46:[admit-oom] reclaim-on-defer: evicted 0 plain + 1 spec parked sessions (global LRU); effective free 2251MB -> 7341MB

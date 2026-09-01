@@ -1,0 +1,16 @@
+{
+  "run_gen": {
+    "prefill_vs_decode_argmax": "MATCH",
+    "batched_prime_vs_tokenwise_argmax": "MATCH",
+    "binary_sha256": "9d4dd6a53c713d736784351e105b8acc620ff77b3a04e5523e6069a2a79e8a4b"
+  },
+  "run_spec": {
+    "k": [1, 2, 3, 4, 5, 6, 7, 8],
+    "self_consistency_passes": 8,
+    "result": "SELF-CONSISTENCY PASS",
+    "oracle": "Step35 live B=1 batched target",
+    "binary_sha256": "6690f91817bd993a7abb1a069b8b277adf6cb277a951c6fd2ff13d543f4f065f"
+  },
+  "candidate_source": "711fbcaaef54491d22488a84d40b7fc35e5a58dd",
+  "lock_window_utc": ["2026-08-10T17:18:59Z", "2026-08-10T17:20:33Z"]
+}

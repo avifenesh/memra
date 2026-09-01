@@ -1,0 +1,56 @@
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=27s
+[load] layer 11 -> dev0 done t=40s
+[load] layer 15 -> dev0 done t=54s
+[load] layer 19 -> dev0 done t=68s
+[load] layer 23 -> dev1 done t=81s
+[load] layer 27 -> dev1 done t=95s
+[load] layer 31 -> dev1 done t=108s
+[load] layer 35 -> dev1 done t=122s
+[load] layer 39 -> dev1 done t=135s
+[load] layer 42 -> dev1 done t=146s
+loaded, split at 22
+prefill done, t32 = 2581
+logits max-abs decode-vs-reprefill: 2.882e0
+| layer | x | q | kv | o | attn_out | h3 |
+| 0 | 0.000e0 | 4.768e-6 | 4.768e-7 | 1.192e-6 | 1.022e-3 | 5.704e-4 |
+| 1 | 8.640e-5 | 9.369e-3 | 1.849e-3 | 8.007e-3 | 1.228e-2 | 8.787e-4 |
+| 2 | 1.366e-3 | 1.894e-2 | 4.474e-3 | 3.672e-3 | 1.446e-2 | 9.749e-4 |
+| 3 | 5.192e-4 | 3.154e-2 | 4.001e-3 | 1.127e-2 | 1.651e-2 | 1.457e-3 |
+| 4 | 4.741e-3 | 2.744e-2 | 6.464e-3 | 1.128e-1 | 2.431e-1 | 1.417e-2 |
+| 21 | 1.900e-2 | 3.882e-1 | 3.000e-1 | 5.232e-1 | 8.382e-1 | 7.406e-1 |
+| 22 | 1.625e-1 | 1.661e0 | 6.987e-1 | 5.903e-1 | 6.978e-1 | 1.416e0 |
+| 42 | 7.672e-2 | 6.560e-1 | 3.981e-1 | 3.940e-1 | 1.644e0 | 6.112e0 |
+layer 2 cache blocks vs re-prefill pooled (8 vs 8 blocks): max-abs 5.501e-3
+layer 2 indexer cache vs re-prefill (8 vs 8 blocks): max-abs 5.000e-1
+layer 4 cache blocks vs re-prefill pooled (8 vs 8 blocks): max-abs 2.790e-1
+layer 4 indexer cache vs re-prefill (8 vs 8 blocks): max-abs 5.000e-1
+GEMM m-A/B wq_a [n=1024,k=4096]: m=1 vs m=32 row0 max-abs 2.980e-8 (rel 4.330e-5); m=1 vs m=33 row0 max-abs 4.470e-8; m=32 row0 vs m=33 row0 max-abs 4.470e-8; m=33 row0 vs row32 max-abs 0.000e0
+GEMM m-A/B wkv [n=512,k=4096]: m=1 vs m=32 row0 max-abs 2.980e-8 (rel 9.108e-6); m=1 vs m=33 row0 max-abs 1.192e-7; m=32 row0 vs m=33 row0 max-abs 1.192e-7; m=33 row0 vs row32 max-abs 0.000e0
+CONTROL prefill@32 vs prefill@33, same positions (pure lane-4 path):
+| layer | x@31 | q@31 | kv@31 | o@31 | attn_out@31 | h3@31 | h3@16 |
+| 0 | 0.000e0 | 0.000e0 | 4.768e-7 | 9.537e-7 | 3.405e-4 | 4.975e-4 | 4.773e-4 |
+| 1 | 6.424e-5 | 7.599e-3 | 1.193e-3 | 6.064e-3 | 1.073e-2 | 9.517e-4 | 7.481e-4 |
+| 2 | 2.668e-3 | 2.016e-2 | 4.091e-3 | 4.351e-3 | 1.822e-2 | 1.171e-3 | 5.488e-4 |
+| 3 | 5.299e-4 | 2.504e-2 | 5.822e-3 | 1.235e-2 | 3.251e-2 | 7.490e-2 | 9.585e-4 |
+| 4 | 8.193e-2 | 1.169e0 | 1.618e-1 | 2.746e-1 | 2.950e-1 | 5.790e-2 | 4.370e-3 |
+| 21 | 3.194e-2 | 6.381e-1 | 4.288e-1 | 5.391e-1 | 5.694e-1 | 1.461e0 | 2.814e-1 |
+| 22 | 4.085e-1 | 7.583e-1 | 6.883e-1 | 5.333e-1 | 7.293e-1 | 1.488e0 | 2.764e-1 |
+| 42 | 6.474e-2 | 8.232e-1 | 3.423e-1 | 3.960e-1 | 1.267e0 | 4.757e0 | 1.311e1 |
+LOGITS m-floor (pure lane-4, row p: m=p+1 vs m=p+2):
+  row 32 : m=33 vs m=34 max-abs 6.868e-1
+  row 33 : m=34 vs m=35 max-abs 1.844e-1
+  row 34 : m=35 vs m=36 max-abs 7.649e-1
+  row 35 : m=36 vs m=37 max-abs 7.945e-1
+  row 36 : m=37 vs m=38 max-abs 9.569e-1
+  row 37 : m=38 vs m=39 max-abs 5.411e-1
+  row 38 : m=39 vs m=40 max-abs 5.716e-1
+  row 39 : m=40 vs m=41 max-abs 1.481e0
+  row 40 : m=41 vs m=42 max-abs 5.297e-1
+  row 41 : m=42 vs m=43 max-abs 5.694e-1
+  row 42 : m=43 vs m=44 max-abs 9.384e-1
+  row 43 : m=44 vs m=45 max-abs 3.080e0
+  row 44 : m=45 vs m=46 max-abs 2.816e-1
+  row 45 : m=46 vs m=47 max-abs 5.402e-1
+  row 46 : m=47 vs m=48 max-abs 3.010e-1
+probe complete

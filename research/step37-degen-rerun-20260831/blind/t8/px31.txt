@@ -1,0 +1,39 @@
+finish=length content_nonempty=False
+---
+Got it, let's tackle this GitHub issue step by step. First, I need to understand what the bug is: the JetBrains Marketplace listing for the Agnix plugin has two broken links: the Documentation link 404s, and the Source Code link points to a stale repo URL.
+
+First, let's start with triage: this is a bug report, not a question, so no need to ask for clarification first. The fix is straightforward: update the two links in the plugin's marketplace metadata.
+
+First, I need to figure out where the marketplace metadata lives for a JetBrains plugin. For most JetBrains plugins, the marketplace listing metadata is either in the plugin's `plugin.xml` file (under the `<idea-plugin>` tag, with `<vendor>` and `<url>` tags, or specific marketplace listing fields), or in the `gradle.properties` if they're using the Gradle IntelliJ Plugin, or in the JetBrains Marketplace listing configuration (sometimes in a `marketplace` section of the build file, or a separate `marketplace.json`).
+
+Wait, first, let's confirm the current state: the issue says the docs link 404s and source code is stale. First, I need to find the correct current URLs:
+1. Correct documentation URL: likely the official Agnix docs, probably https://agent-sh.github.io/agnix/ or the repo's README/docs folder, or the project's main site.
+2. Correct source code URL: the current GitHub repo, which is probably https://github.com/agent-sh/agnix (since the issue is in that repo, the old one was probably a different org, like `agnix-dev` or something stale).
+
+Next, steps to implement:
+1. First, create a fix branch off main, e.g., `fix/marketplace-links-1099`.
+2. Locate the marketplace metadata file:
+   - If using Gradle IntelliJ Plugin: check `build.gradle.kts` or `build.gradle` for `intellij { marketplace { ... } }` block, or `gradle.properties` for `pluginUrl`, `documentationUrl`, `sourceCodeUrl` properties.
+   - If using `plugin.xml`: check for `<url>` tags under `<idea-plugin>`, or `<vendor>` with `url` attribute, or specific marketplace extension tags.
+3. Update the two links:
+   - Set `documentationUrl` to the valid docs URL (e.g., https://agent-sh.github.io/agnix/docs/ or the repo's docs root)
+   - Set `sourceCodeUrl` to https://github.com/agent-sh/agnix (the current active repo)
+4. Verify there are no other stale links in the metadata (e.g., issue tracker URL, changelog URL) to prevent similar bugs.
+5. Run the plugin build to make sure the metadata change doesn't break the build (e.g., `./gradlew build` for Gradle projects).
+6. Commit the changes with a clear message: `fix: update stale marketplace links for docs and source code (closes #1099)`
+7. Push the branch and open a PR against main, referencing the issue.
+
+Wait, also, need to make sure we don't break anything else. Let's also check if there are any other places where these links are hardcoded, like the README, the plugin's about page, etc., but the issue is specifically about the JetBrains Marketplace listing, so focus on the marketplace metadata first.
+
+Also, let's confirm the correct URLs: since the issue is in the `agent-sh/agnix` repo, the source code URL is definitely that repo. For the docs, if the repo has a `docs` folder, the GitHub pages URL would be https://agent-sh.github.io/agnix/, which is the standard for GitHub repos with pages enabled. If that 404s too, then the docs might be in the repo's README, so we can link to the repo's root as a fallback, but first check if the GitHub pages site exists.
+
+Wait, also, the user said "implement on a branch if code is needed"—this is a config change, not code, but it's still a fix that needs a branch.
+
+Now, let's structure the response:
+First, triage conclusion: this is a straightforward bug fix, no clarification needed. Then, steps taken, then summary.
+
+Wait, also, let's make sure to follow the GitHub workflow: create branch, fix, test build, PR, etc.
+
+Also, let's check if there are any other related issues: like if the issue tracker link is also stale, but the issue only mentions docs and source code, so focus on those first, but note if we find others.
+
+Wait, let's also make sure that the links are correct: let's verify (hypothetically, since I can't browse, but based on standard repo setup):

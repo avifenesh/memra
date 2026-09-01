@@ -1,0 +1,7 @@
+MEASURE-FAIL: RuntimeError: cached-long resumed only 0 tokens; expected at least 1024
+Traceback (most recent call last):
+  File "/home/ubuntu/cx-kpolicy-47da3098/research/kpolicy-20260808/measure_client.py", line 160, in <module>
+    main()
+  File "/home/ubuntu/cx-kpolicy-47da3098/research/kpolicy-20260808/measure_client.py", line 115, in main
+    raise RuntimeError(
+RuntimeError: cached-long resumed only 0 tokens; expected at least 1024

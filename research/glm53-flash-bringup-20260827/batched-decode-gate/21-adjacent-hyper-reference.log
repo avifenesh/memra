@@ -1,0 +1,12 @@
+     Running tests/hyper_connections_gpu.rs (target/release/deps/hyper_connections_gpu-c1bfcc7a3dc1a8f3)
+
+running 6 tests
+test hyper_forward_last_matches_the_reference_last_row ... ok
+test a_missing_hc_tensor_is_refused_by_name ... ok
+test hyper_prime_then_decode_matches_a_full_recompute ... ok
+test hyper_two_chunk_prime_then_decode_matches_a_full_recompute ... ok
+test hyper_prefill_logits_match_the_reference ... ok
+test zeroing_an_hc_scale_breaks_the_comparison ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.40s
+

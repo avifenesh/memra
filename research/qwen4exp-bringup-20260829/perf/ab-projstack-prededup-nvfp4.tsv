@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=nvfp4	binary_sha256=ed925ac0fd889299c99a7ce04cfffd0e67923283a6539f9ed54a6b2d8e86711e	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ab-projstack: fresh state + probe prefill per arm, 4 warmup steps excluded per arm
+rep	arm	steps	mean_ms	median_ms	tok_per_s
+0	proj_per_mat	40	15.71	15.71	63.67
+0	proj_stack	40	15.17	15.18	65.94
+1	proj_per_mat	40	15.61	15.62	64.05
+1	proj_stack	40	15.11	15.11	66.17
+2	proj_per_mat	40	15.69	15.70	63.74
+2	proj_stack	40	15.13	15.15	66.11
+3	proj_per_mat	40	15.64	15.65	63.96
+3	proj_stack	40	15.14	15.15	66.04
+4	proj_per_mat	40	15.63	15.64	63.97
+4	proj_stack	40	15.15	15.16	66.02
+# arm proj_per_mat	mean_of_means_ms=15.65	min=15.61	max=15.71	tok_per_s=63.88
+# arm proj_stack	mean_of_means_ms=15.14	min=15.11	max=15.17	tok_per_s=66.06
+# rep0_arm_chain_first_divergence	-1
+# rep0_proj_per_mat	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310
+# rep0_proj_stack	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310

@@ -1,0 +1,97 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;color:#1a1a1a;background:#f5f7fa;display:flex;flex-direction:column;min-height:100vh}
+header{position:sticky;top:0;z-index:100;background:#0f172a;color:#e2e8f0;padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,0.25)}
+header h1{font-size:1.4rem;font-weight:700;letter-spacing:0.5px}
+header .search{display:flex;align-items:center;gap:0.5rem}
+header .search input{background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:0.5rem 0.75rem;border-radius:0.375rem;width:16rem;font-size:0.95rem}
+header .search input:focus{outline:2px solid #60a5fa}
+.sidebar{width:260px;background:#1e293b;color:#cbd5e1;padding:1.5rem 1rem;position:fixed;top:4rem;bottom:0;left:0;overflow-y:auto;border-right:1px solid #334155}
+.sidebar nav a{display:block;padding:0.4rem 0.6rem;color:#94a3b8;text-decoration:none;border-radius:0.25rem;margin-bottom:0.25rem;font-size:0.9rem}
+.sidebar nav a:hover,.sidebar nav a:focus{background:#334155;color:#f1f5f9;outline:2px solid #60a5fa}
+main{margin-left:260px;padding:2rem;max-width:1200px;width:100%}
+section{background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:1.5rem;margin-bottom:1.5rem;scroll-margin-top:5rem}
+section h2{font-size:1.3rem;color:#0f172a;margin-bottom:0.75rem;border-bottom:2px solid #e2e8f0;padding-bottom:0.4rem}
+section p{margin-bottom:0.75rem;color:#334155}
+section dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.75rem;margin:1rem 0}
+section dt{font-weight:700;color:#0f172a}
+section dd{color:#475569;margin-left:0}
+section table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:0.95rem}
+section th,section td{border:1px solid #cbd5e1;padding:0.5rem 0.75rem;text-align:left}
+section th{background:#f1f5f9;font-weight:600;color:#0f172a}
+section tr:nth-child(even){background:#f8fafc}
+section pre{background:#0f172a;color:#e2e8f0;padding:1rem;border-radius:0.375rem;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:0.9rem;margin:1rem 0}
+section .actions{display:flex;gap:0.5rem;margin-top:1rem}
+button{padding:0.5rem 1rem;border:none;border-radius:0.375rem;background:#2563eb;color:#fff;font-size:0.95rem;cursor:pointer}
+button:hover{background:#1d4ed8}
+button:focus{outline:3px solid #fbbf24}
+button.secondary{background:#475569}
+button.secondary:hover{background:#334155}
+footer{text-align:center;padding:2rem;color:#64748b;font-size:0.9rem;margin-top:auto}
+.status{background:#ecfdf5;border:1px solid #10b981;color:#065f46;padding:0.75rem 1rem;border-radius:0.375rem;margin-bottom:1.5rem;display:flex;align-items:center;gap:0.5rem}
+.toast{position:fixed;bottom:1rem;right:1rem;background:#0f172a;color:#e2e8f0;padding:0.75rem 1rem;border-radius:0.375rem;box-shadow:0 4px 12px rgba(0,0,0,0.3);opacity:0;pointer-events:none;transition:opacity 0.3s}
+.toast.show{opacity:1}
+@media(max-width:900px){
+.sidebar{display:none}
+main{margin-left:0;padding:1rem}
+header{padding:0.75rem 1rem}
+header .search input{width:10rem}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Atlas Operations Manual</h1>
+<div class="search">
+<input type="search" id="search" placeholder="Search sections..." aria-label="Search sections">
+<button id="searchBtn" aria-label="Run search">Go</button>
+</div>
+</header>
+<aside class="sidebar">
+<nav aria-label="Section navigation">
+<a href="#section-1">1. System Overview</a>
+<a href="#section-2">2. Installation</a>
+<a href="#section-3">3. Configuration</a>
+<a href="#section-4">4. User Management</a>
+<a href="#section-5">5. Security Policies</a>
+<a href="#section-6">6. Network Setup</a>
+<a href="#section-7">7. Database Access</a>
+<a href="#section-8">8. API Integration</a>
+<a href="#section-9">9. Monitoring</a>
+<a href="#section-10">10. Backup Procedures</a>
+<a href="#section-11">11. Disaster Recovery</a>
+<a href="#section-12">12. Performance Tuning</a>
+<a href="#section-13">13. Log Management</a>
+<a href="#section-14">14. Update Process</a>
+<a href="#section-15">15. Troubleshooting</a>
+<a href="#section-16">16. Compliance</a>
+<a href="#section-17">17. Audit Trail</a>
+<a href="#section-18">18. Data Retention</a>
+<a href="#section-19">19. Access Control</a>
+<a href="#section-20">20. Incident Response</a>
+</nav>
+</aside>
+<main>
+<div class="status" role="status" aria-live="polite">System status: All services operational. Last updated 2025-01-15 08:00 UTC.</div>
+<section id="section-1">
+<h2>1. System Overview</h2>
+<p>Atlas is a modular operations platform designed for high-throughput data processing and real-time analytics. It provides a unified interface for managing clusters, pipelines, and user permissions across multiple environments.</p>
+<p>The core runtime is written in portable C with optional bindings for Python and JavaScript. Configuration is driven by hierarchical YAML files validated against JSON schemas.</p>
+<dl>
+<dt>Architecture</dt><dd>Microservices with event-driven communication</dd>
+<dt>Uptime SLA</dt><dd>99.98 percent over trailing twelve months</dd>
+<dt>Data format</dt><dd>Protocol Buffers v3 and Apache Avro</dd>
+<dt>Scalability</dt><dd>Horizontal scaling to 1024 nodes per cluster</dd>
+</dl>
+<table>
+<thead><tr><th>Component</th><th>Version</th><th>Status</th><th>Owner</th><th>Last audit</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>ingress</td><td>2.4.1</td><td>active</td><td>netops</td><td>2024-12-01</td><td>Rate limiting enabled</td></tr>
+<tr><td>scheduler</td><td>3.1.0</td><td>active</td><td>platform</td><td>2024-11-20</td><td>Fair sharing</td></tr>
+<tr><td>storage</td><td>5.0.2</td><td>active</td><td>data</td><td>2024-12-10</td><td>Erasure coding</

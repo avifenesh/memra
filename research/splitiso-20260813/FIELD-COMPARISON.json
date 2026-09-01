@@ -1,0 +1,366 @@
+{
+  "failures": [],
+  "schema": "memra.splitiso.field-comparison.v1",
+  "source_logs": [
+    "research/splitiso-20260813/raw/box1-smoke-original-four/candidate-server.log"
+  ],
+  "splits": {
+    "2048": {
+      "boundary_session_difference": {
+        "field": "boundary_logits",
+        "left": {
+          "eos": [
+            {
+              "bits": "41291366",
+              "id": 1
+            },
+            {
+              "bits": "4120a27a",
+              "id": 106
+            }
+          ],
+          "len": 262144,
+          "sha256_f32le": "b7e9a4fb60e4a6f10d07d97595491e92f9336edaa3238ccf596650cae4cc7424",
+          "top1": {
+            "bits": "41c7da83",
+            "id": 236771
+          },
+          "top2": {
+            "bits": "41bd2c58",
+            "id": 236812
+          }
+        },
+        "right": {
+          "eos": [
+            {
+              "bits": "412f9028",
+              "id": 1
+            },
+            {
+              "bits": "412576f8",
+              "id": 106
+            }
+          ],
+          "len": 262144,
+          "sha256_f32le": "2a4a309803c1ed8056b629d31a06c3b242c9e43f5ed46d12c48540e47cb9a34e",
+          "top1": {
+            "bits": "41c94a2a",
+            "id": 236771
+          },
+          "top2": {
+            "bits": "41bcc176",
+            "id": 236812
+          }
+        }
+      },
+      "comparison_matrix": {
+        "boundary_logits_equal": false,
+        "cache_pos_equal": true,
+        "decode_batch_provenance_equal": true,
+        "engine_scoped_flags_equal": true,
+        "first_suffix_kv_equal": false,
+        "len_d_equal": false,
+        "prefix_kv_equal": true,
+        "recurrent_and_spare_equal": true,
+        "rope_position_equal": true,
+        "sampler_equal": true,
+        "selected_first_token_equal": true,
+        "suffix_aggregate_equal": false
+      },
+      "first_logical_model_state_difference": {
+        "field": "kv.layer.1.first_suffix_k_sha256",
+        "left": "f55e1ebaab8229644692d83e51468eed807a81a1afbc58b33b655873824e656a",
+        "right": "df6c4050a9fe387b722c22bf319f78bb522bd0dc3c9b3a5681edf04da3194369"
+      },
+      "genuinely_cold": {
+        "decode_batch_row": null,
+        "decode_batch_width": null,
+        "logits_producer": "prime-cache",
+        "selected": 236771
+      },
+      "len_d_difference": {
+        "field": "kv.layer.0.len_d",
+        "left": [
+          4860
+        ],
+        "right": [
+          0
+        ]
+      },
+      "restored": {
+        "decode_batch_row": null,
+        "decode_batch_width": null,
+        "logits_producer": "decode-step-prefill",
+        "selected": 236771
+      }
+    },
+    "4374": {
+      "boundary_session_difference": {
+        "field": "boundary_logits",
+        "left": {
+          "eos": [
+            {
+              "bits": "411ecabc",
+              "id": 1
+            },
+            {
+              "bits": "4128c88f",
+              "id": 106
+            }
+          ],
+          "len": 262144,
+          "sha256_f32le": "5e8eb3ea2a7b935e002accbe13e06176b8d97ce43dc3defd9f291d0de3deb272",
+          "top1": {
+            "bits": "41b6ed3a",
+            "id": 236771
+          },
+          "top2": {
+            "bits": "41b2e53e",
+            "id": 236812
+          }
+        },
+        "right": {
+          "eos": [
+            {
+              "bits": "411dee56",
+              "id": 1
+            },
+            {
+              "bits": "4129ab7f",
+              "id": 106
+            }
+          ],
+          "len": 262144,
+          "sha256_f32le": "658df0c1e0403ff66e8294e4620d7e04def3a8e8681c58ca6678e4db480cedb2",
+          "top1": {
+            "bits": "41b8a9a4",
+            "id": 236771
+          },
+          "top2": {
+            "bits": "41b2c90f",
+            "id": 236812
+          }
+        }
+      },
+      "comparison_matrix": {
+        "boundary_logits_equal": false,
+        "cache_pos_equal": true,
+        "decode_batch_provenance_equal": true,
+        "engine_scoped_flags_equal": true,
+        "first_suffix_kv_equal": false,
+        "len_d_equal": false,
+        "prefix_kv_equal": true,
+        "recurrent_and_spare_equal": true,
+        "rope_position_equal": true,
+        "sampler_equal": true,
+        "selected_first_token_equal": true,
+        "suffix_aggregate_equal": false
+      },
+      "first_logical_model_state_difference": {
+        "field": "kv.layer.1.first_suffix_k_sha256",
+        "left": "cd7a4fb4116c850285bbf055601b4f475768538bbc744506d4680ea365b9e824",
+        "right": "f05271532a0411d51817795779a5cacc9b4e95b9c4939bd7777df9d249dc0a79"
+      },
+      "genuinely_cold": {
+        "decode_batch_row": null,
+        "decode_batch_width": null,
+        "logits_producer": "prime-cache",
+        "selected": 236771
+      },
+      "len_d_difference": {
+        "field": "kv.layer.0.len_d",
+        "left": [
+          4860
+        ],
+        "right": [
+          0
+        ]
+      },
+      "restored": {
+        "decode_batch_row": null,
+        "decode_batch_width": null,
+        "logits_producer": "decode-step-prefill",
+        "selected": 236771
+      }
+    },
+    "512": {
+      "boundary_session_difference": {
+        "field": "boundary_logits",
+        "left": {
+          "eos": [
+            {
+              "bits": "4103d057",
+              "id": 1
+            },
+            {
+              "bits": "409400ce",
+              "id": 106
+            }
+          ],
+          "len": 262144,
+          "sha256_f32le": "8df69cee814abcd8a72a1c22dc328654c0c2b07cb31a29c5f1395b94dc57bd9b",
+          "top1": {
+            "bits": "41b5aa0b",
+            "id": 236770
+          },
+          "top2": {
+            "bits": "419da90d",
+            "id": 5626
+          }
+        },
+        "right": {
+          "eos": [
+            {
+              "bits": "40dbbdca",
+              "id": 1
+            },
+            {
+              "bits": "40844388",
+              "id": 106
+            }
+          ],
+          "len": 262144,
+          "sha256_f32le": "f25eb43303484dc36b625b34a5a9f87194a11f52f5af64e9c64824b463902614",
+          "top1": {
+            "bits": "41b549be",
+            "id": 236770
+          },
+          "top2": {
+            "bits": "419ee73b",
+            "id": 1403
+          }
+        }
+      },
+      "comparison_matrix": {
+        "boundary_logits_equal": false,
+        "cache_pos_equal": true,
+        "decode_batch_provenance_equal": true,
+        "engine_scoped_flags_equal": true,
+        "first_suffix_kv_equal": false,
+        "len_d_equal": false,
+        "prefix_kv_equal": true,
+        "recurrent_and_spare_equal": true,
+        "rope_position_equal": true,
+        "sampler_equal": true,
+        "selected_first_token_equal": true,
+        "suffix_aggregate_equal": false
+      },
+      "first_logical_model_state_difference": {
+        "field": "kv.layer.1.first_suffix_k_sha256",
+        "left": "b17762a9d4c528a9aee3aa6ba701a781eab7861a93dde100a6ab7ad2a5ada145",
+        "right": "7092e4c8fc6a95532d560f6ac7dc6e83f5927b7cf8e2611dafadbb1b2162814f"
+      },
+      "genuinely_cold": {
+        "decode_batch_row": null,
+        "decode_batch_width": null,
+        "logits_producer": "prime-cache",
+        "selected": 236770
+      },
+      "len_d_difference": {
+        "field": "kv.layer.0.len_d",
+        "left": [
+          4860
+        ],
+        "right": [
+          0
+        ]
+      },
+      "restored": {
+        "decode_batch_row": null,
+        "decode_batch_width": null,
+        "logits_producer": "decode-step-prefill",
+        "selected": 236770
+      }
+    },
+    "64": {
+      "boundary_session_difference": {
+        "field": "boundary_logits",
+        "left": {
+          "eos": [
+            {
+              "bits": "41204314",
+              "id": 1
+            },
+            {
+              "bits": "40e4c29d",
+              "id": 106
+            }
+          ],
+          "len": 262144,
+          "sha256_f32le": "a0030e528855f902738cb820b78aef760a2156328e817deb78995c82e8f4f2cd",
+          "top1": {
+            "bits": "41ce60b5",
+            "id": 236771
+          },
+          "top2": {
+            "bits": "41bfe631",
+            "id": 236812
+          }
+        },
+        "right": {
+          "eos": [
+            {
+              "bits": "412ad2ec",
+              "id": 1
+            },
+            {
+              "bits": "410f1ec4",
+              "id": 106
+            }
+          ],
+          "len": 262144,
+          "sha256_f32le": "550ca5dd6118ea737bd19625f92065e88a7e2a783e2516570b7e137a618be33f",
+          "top1": {
+            "bits": "41c3905e",
+            "id": 236771
+          },
+          "top2": {
+            "bits": "41bc96d9",
+            "id": 236800
+          }
+        }
+      },
+      "comparison_matrix": {
+        "boundary_logits_equal": false,
+        "cache_pos_equal": true,
+        "decode_batch_provenance_equal": true,
+        "engine_scoped_flags_equal": true,
+        "first_suffix_kv_equal": false,
+        "len_d_equal": false,
+        "prefix_kv_equal": true,
+        "recurrent_and_spare_equal": true,
+        "rope_position_equal": true,
+        "sampler_equal": true,
+        "selected_first_token_equal": true,
+        "suffix_aggregate_equal": false
+      },
+      "first_logical_model_state_difference": {
+        "field": "kv.layer.1.first_suffix_k_sha256",
+        "left": "630043b633f4c697e0c8cffe08fd805f8b18a4cbe6aad002786f82a05d37541f",
+        "right": "c075e640ebad9e2d9a5b9c89bc1635fb1e937926fa211fcbb515b5889ef609e1"
+      },
+      "genuinely_cold": {
+        "decode_batch_row": null,
+        "decode_batch_width": null,
+        "logits_producer": "prime-cache",
+        "selected": 236771
+      },
+      "len_d_difference": {
+        "field": "kv.layer.0.len_d",
+        "left": [
+          4860
+        ],
+        "right": [
+          0
+        ]
+      },
+      "restored": {
+        "decode_batch_row": null,
+        "decode_batch_width": null,
+        "logits_producer": "decode-step-prefill",
+        "selected": 236771
+      }
+    }
+  },
+  "verdict": "COMPLETE"
+}

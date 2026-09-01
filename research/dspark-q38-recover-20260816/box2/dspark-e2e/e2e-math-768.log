@@ -1,0 +1,10 @@
+target loaded (65 layers); dspark draft: block 7, taps [4, 16, 28, 40, 52], markov true, yarn true
+[dspark-q38] acceptance 64/280 = 0.229 rounds=125 draft=314.6ms snap=93.1ms verify=2273.5ms rollback+replay=39.7ms ingest=33.8ms
+gsm-01.txt: prompt 46 -> gen 189 | plain 69.4 tok/s | spec 68.0 tok/s | EXACT
+[dspark-q38] acceptance 120/368 = 0.326 rounds=151 draft=387.7ms snap=112.8ms verify=2794.7ms rollback+replay=42.2ms ingest=41.0ms
+gsm-02.txt: prompt 39 -> gen 270 | plain 69.8 tok/s | spec 79.3 tok/s | EXACT
+[dspark-q38] acceptance 83/322 = 0.258 rounds=143 draft=367.6ms snap=105.8ms verify=2565.1ms rollback+replay=44.0ms ingest=38.5ms
+gsm-03.txt: prompt 69 -> gen 226 | plain 70.0 tok/s | spec 71.8 tok/s | EXACT
+[dspark-q38] acceptance 135/396 = 0.341 rounds=167 draft=431.0ms snap=122.9ms verify=3053.6ms rollback+replay=47.9ms ingest=45.5ms
+gsm-04.txt: prompt 33 -> gen 301 | plain 69.8 tok/s | spec 80.7 tok/s | EXACT
+== dspark_q38_gate: ALL EXACT | mean plain 69.7 tok/s | mean spec 75.0 tok/s | 986 tokens ==

@@ -1,0 +1,371 @@
+{
+  "allocator": {
+    "default": {
+      "budget_violations": 0,
+      "cuda_initialized": {
+        "allocated_mib": 0.0,
+        "allocator_backend": "native",
+        "budget_mib": 18432,
+        "budget_ok": true,
+        "device_name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "event": "cuda_initialized",
+        "inactive_split_mib": 2.0,
+        "max_allocated_mib": 0.0,
+        "max_reserved_mib": 2.0,
+        "mono_s": 1.053829,
+        "nvidia_process_mib": 676,
+        "pgid": 407422,
+        "pid": 407422,
+        "reserved_mib": 2.0,
+        "total_mib": 97251.75,
+        "ts": "2026-08-10T01:47:42.362709+00:00"
+      },
+      "cuda_probed": {
+        "available": true,
+        "cuda_initialized": false,
+        "event": "cuda_probed",
+        "mono_s": 0.904529,
+        "nvidia_process_mib": null,
+        "pgid": 407422,
+        "pid": 407422,
+        "ts": "2026-08-10T01:47:42.213409+00:00"
+      },
+      "optimizer_step": {
+        "allocated_mib": 16538.251,
+        "budget_mib": 18432,
+        "budget_ok": true,
+        "event": "optimizer_step",
+        "inactive_split_mib": 19.749,
+        "loss": 0.71929967,
+        "max_allocated_mib": 16826.251,
+        "max_reserved_mib": 17538.0,
+        "mono_s": 5.123599,
+        "nvidia_process_mib": 18230,
+        "pgid": 407422,
+        "pid": 407422,
+        "reserved_mib": 17538.0,
+        "step": 515,
+        "step_ms": 1.266,
+        "step_p50_ms": 1.255,
+        "ts": "2026-08-10T01:47:46.432481+00:00"
+      },
+      "optimizer_step_p50_ms": 1.1865,
+      "process_start": {
+        "argv": [
+          "/home/ubuntu/darktrain2/harness/train_lora_seam.py",
+          "--events",
+          "/home/ubuntu/darktrain2/receipts/20260810T014700Z/allocator/default/trainer-events.jsonl",
+          "--state",
+          "/home/ubuntu/darktrain2/receipts/20260810T014700Z/allocator/default/trainer-state.json",
+          "--checkpoint",
+          "/home/ubuntu/darktrain2/receipts/20260810T014700Z/allocator/default/trainer-checkpoint.pt",
+          "--marker",
+          "/home/ubuntu/darktrain2/receipts/20260810T014700Z/allocator/default/trainer-launched.marker",
+          "--reserve-mb",
+          "16384",
+          "--rank",
+          "16",
+          "--max-steps",
+          "1000000",
+          "--log-every",
+          "5"
+        ],
+        "budget_mib": 18432,
+        "cuda_visible_devices": "0",
+        "event": "process_start",
+        "mono_s": 0.026284,
+        "nvidia_process_mib": null,
+        "pgid": 407422,
+        "pid": 407422,
+        "pytorch_alloc_conf": null,
+        "pytorch_cuda_alloc_conf": null,
+        "ts": "2026-08-10T01:47:41.335165+00:00"
+      },
+      "setup_complete": {
+        "allocated_mib": 16517.0,
+        "budget_mib": 18432,
+        "budget_ok": true,
+        "event": "setup_complete",
+        "frozen_parameters": 67108864,
+        "inactive_split_mib": 17.0,
+        "max_allocated_mib": 16517.0,
+        "max_reserved_mib": 16534.0,
+        "mono_s": 1.637118,
+        "nvidia_process_mib": 17208,
+        "pgid": 407422,
+        "pid": 407422,
+        "reserve_chunks": 32,
+        "reserve_requested_mib": 16384,
+        "reserved_mib": 16534.0,
+        "trainable_parameters": 524288,
+        "ts": "2026-08-10T01:47:42.945999+00:00"
+      },
+      "torch_imported": {
+        "cuda_initialized": false,
+        "event": "torch_imported",
+        "import_s": 0.8104,
+        "mono_s": 0.861513,
+        "nvidia_process_mib": null,
+        "pgid": 407422,
+        "pid": 407422,
+        "torch_cuda_version": "12.8",
+        "torch_version": "2.11.0+cu128",
+        "ts": "2026-08-10T01:47:42.170392+00:00"
+      }
+    },
+    "maxsplit": {
+      "budget_violations": 0,
+      "cuda_initialized": {
+        "allocated_mib": 0.0,
+        "allocator_backend": "native",
+        "budget_mib": 18432,
+        "budget_ok": true,
+        "device_name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "event": "cuda_initialized",
+        "inactive_split_mib": 2.0,
+        "max_allocated_mib": 0.0,
+        "max_reserved_mib": 2.0,
+        "mono_s": 1.056021,
+        "nvidia_process_mib": 676,
+        "pgid": 407893,
+        "pid": 407893,
+        "reserved_mib": 2.0,
+        "total_mib": 97251.75,
+        "ts": "2026-08-10T01:48:28.604205+00:00"
+      },
+      "cuda_probed": {
+        "available": true,
+        "cuda_initialized": false,
+        "event": "cuda_probed",
+        "mono_s": 0.906048,
+        "nvidia_process_mib": null,
+        "pgid": 407893,
+        "pid": 407893,
+        "ts": "2026-08-10T01:48:28.454230+00:00"
+      },
+      "optimizer_step": {
+        "allocated_mib": 16538.251,
+        "budget_mib": 18432,
+        "budget_ok": true,
+        "event": "optimizer_step",
+        "inactive_split_mib": 39.749,
+        "loss": 0.71815562,
+        "max_allocated_mib": 16826.251,
+        "max_reserved_mib": 17558.0,
+        "mono_s": 5.15439,
+        "nvidia_process_mib": null,
+        "pgid": 407893,
+        "pid": 407893,
+        "reserved_mib": 17558.0,
+        "step": 520,
+        "step_ms": 1.129,
+        "step_p50_ms": 1.219,
+        "ts": "2026-08-10T01:48:32.702572+00:00"
+      },
+      "optimizer_step_p50_ms": 1.186,
+      "process_start": {
+        "argv": [
+          "/home/ubuntu/darktrain2/harness/train_lora_seam.py",
+          "--events",
+          "/home/ubuntu/darktrain2/receipts/20260810T014700Z/allocator/maxsplit/trainer-events.jsonl",
+          "--state",
+          "/home/ubuntu/darktrain2/receipts/20260810T014700Z/allocator/maxsplit/trainer-state.json",
+          "--checkpoint",
+          "/home/ubuntu/darktrain2/receipts/20260810T014700Z/allocator/maxsplit/trainer-checkpoint.pt",
+          "--marker",
+          "/home/ubuntu/darktrain2/receipts/20260810T014700Z/allocator/maxsplit/trainer-launched.marker",
+          "--reserve-mb",
+          "16384",
+          "--rank",
+          "16",
+          "--max-steps",
+          "1000000",
+          "--log-every",
+          "5"
+        ],
+        "budget_mib": 18432,
+        "cuda_visible_devices": "0",
+        "event": "process_start",
+        "mono_s": 0.026471,
+        "nvidia_process_mib": null,
+        "pgid": 407893,
+        "pid": 407893,
+        "pytorch_alloc_conf": null,
+        "pytorch_cuda_alloc_conf": "max_split_size_mb:128",
+        "ts": "2026-08-10T01:48:27.574654+00:00"
+      },
+      "setup_complete": {
+        "allocated_mib": 16517.0,
+        "budget_mib": 18432,
+        "budget_ok": true,
+        "event": "setup_complete",
+        "frozen_parameters": 67108864,
+        "inactive_split_mib": 17.0,
+        "max_allocated_mib": 16517.0,
+        "max_reserved_mib": 16534.0,
+        "mono_s": 1.638785,
+        "nvidia_process_mib": 17208,
+        "pgid": 407893,
+        "pid": 407893,
+        "reserve_chunks": 32,
+        "reserve_requested_mib": 16384,
+        "reserved_mib": 16534.0,
+        "trainable_parameters": 524288,
+        "ts": "2026-08-10T01:48:29.186968+00:00"
+      },
+      "torch_imported": {
+        "cuda_initialized": false,
+        "event": "torch_imported",
+        "import_s": 0.8102,
+        "mono_s": 0.861248,
+        "nvidia_process_mib": null,
+        "pgid": 407893,
+        "pid": 407893,
+        "torch_cuda_version": "12.8",
+        "torch_version": "2.11.0+cu128",
+        "ts": "2026-08-10T01:48:28.409430+00:00"
+      }
+    }
+  },
+  "checkpoint_resume": null,
+  "qos": {
+    "all_exact": false,
+    "all_requests_ok": true,
+    "arms": {
+      "absent": {
+        "latency_p50_s": 3.346391,
+        "latency_p50_s_range": [
+          3.346391,
+          3.346391
+        ],
+        "latency_p99_s": 3.393323,
+        "latency_p99_s_range": [
+          3.393323,
+          3.393323
+        ],
+        "n_cells": 1,
+        "requests_per_cell": 8,
+        "step_p50_ms": 49.289322,
+        "step_p50_ms_range": [
+          49.289322,
+          49.289322
+        ],
+        "step_p99_ms": 49.872257,
+        "step_p99_ms_range": [
+          49.872257,
+          49.872257
+        ],
+        "ttft_p50_s": 0.160272,
+        "ttft_p50_s_range": [
+          0.160272,
+          0.160272
+        ],
+        "ttft_p99_s": 0.385143,
+        "ttft_p99_s_range": [
+          0.385143,
+          0.385143
+        ]
+      },
+      "parked": {
+        "latency_p50_s": null,
+        "latency_p50_s_range": null,
+        "latency_p99_s": null,
+        "latency_p99_s_range": null,
+        "n_cells": 0,
+        "requests_per_cell": 8,
+        "step_p50_ms": null,
+        "step_p50_ms_delta_pct": null,
+        "step_p50_ms_range": null,
+        "step_p99_ms": null,
+        "step_p99_ms_range": null,
+        "ttft_p50_s": null,
+        "ttft_p50_s_delta_pct": null,
+        "ttft_p50_s_range": null,
+        "ttft_p99_s": null,
+        "ttft_p99_s_delta_pct": null,
+        "ttft_p99_s_range": null
+      },
+      "running": {
+        "latency_p50_s": 3.382954,
+        "latency_p50_s_range": [
+          3.382954,
+          3.382954
+        ],
+        "latency_p99_s": 3.429976,
+        "latency_p99_s_range": [
+          3.429976,
+          3.429976
+        ],
+        "n_cells": 1,
+        "requests_per_cell": 8,
+        "step_p50_ms": null,
+        "step_p50_ms_delta_pct": null,
+        "step_p50_ms_range": null,
+        "step_p99_ms": null,
+        "step_p99_ms_range": null,
+        "ttft_p50_s": 0.190252,
+        "ttft_p50_s_delta_pct": 18.706,
+        "ttft_p50_s_range": [
+          0.190252,
+          0.190252
+        ],
+        "ttft_p99_s": 0.416029,
+        "ttft_p99_s_delta_pct": 8.019,
+        "ttft_p99_s_range": [
+          0.416029,
+          0.416029
+        ]
+      }
+    },
+    "campaign_complete": false,
+    "cells": [
+      {
+        "arm": "absent",
+        "exactness": "match",
+        "latency_p50_s": 3.346391,
+        "latency_p99_s": 3.393323,
+        "n_error": 0,
+        "n_ok": 8,
+        "rep": 1,
+        "step_p50_ms": 49.28932189941406,
+        "step_p99_ms": 49.872257232666016,
+        "text_sha256": [
+          "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de"
+        ],
+        "ttft_p50_s": 0.160272,
+        "ttft_p99_s": 0.385143,
+        "watch_state_before": null,
+        "watch_terminal": null,
+        "yield_or_prepark_ms": null
+      },
+      {
+        "arm": "running",
+        "exactness": "within-cell-mismatch",
+        "latency_p50_s": 3.382954,
+        "latency_p99_s": 3.429976,
+        "n_error": 0,
+        "n_ok": 8,
+        "rep": 1,
+        "step_p50_ms": null,
+        "step_p99_ms": null,
+        "text_sha256": [
+          "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de",
+          "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f"
+        ],
+        "ttft_p50_s": 0.190252,
+        "ttft_p99_s": 0.416029,
+        "watch_state_before": "R",
+        "watch_terminal": "T",
+        "yield_or_prepark_ms": 144.609
+      }
+    ],
+    "expected_cells": 9,
+    "observed_cells": 2,
+    "running_sigstop_ms_median": 144.609,
+    "running_sigstop_ms_range": [
+      144.609,
+      144.609
+    ]
+  },
+  "refusal_metrics": null
+}

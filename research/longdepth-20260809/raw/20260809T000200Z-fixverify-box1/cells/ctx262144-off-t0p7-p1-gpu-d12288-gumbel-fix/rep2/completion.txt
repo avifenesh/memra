@@ -1,0 +1,245 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --text: #111111;
+  --muted: #555555;
+  --accent: #0b4f7c;
+  --accent2: #d45f00;
+  --border: #cccccc;
+  --focus: #ffd700;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: system-ui, Segoe UI, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+  border-bottom: 2px solid var(--accent);
+  padding: 0.5rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--accent);
+}
+header .search {
+  display: flex;
+  gap: 0.25rem;
+}
+header input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+header button {
+  padding: 0.4rem 0.7rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+header button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.layout {
+  display: flex;
+}
+aside {
+  width: 220px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 1rem;
+  position: sticky;
+  top: 3.4rem;
+  align-self: flex-start;
+  max-height: calc(100vh - 3.4rem);
+  overflow: auto;
+}
+aside nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+aside nav li {
+  margin: 0.25rem 0;
+}
+aside nav a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+aside nav a:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+main {
+  flex: 1;
+  padding: 1rem;
+  max-width: 1100px;
+}
+.status {
+  background: #e6f4ea;
+  border: 1px solid #b7e1c8;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 6px;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.status span { font-weight: bold; color: var(--accent); }
+.status button {
+  background: var(--accent2);
+  color: #fff;
+  border: none;
+  padding: 0.4rem 0.7rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.status button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+section h2 {
+  margin-top: 0;
+  color: var(--accent);
+  font-size: 1.2rem;
+}
+section p {
+  margin: 0.5rem 0;
+}
+section dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  background: #fafafa;
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin: 0.5rem 0;
+}
+section dt {
+  font-weight: bold;
+  color: var(--muted);
+}
+section dd {
+  margin: 0;
+}
+section table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+}
+section th, section td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  font-size: 0.9rem;
+}
+section th {
+  background: #eef2f5;
+}
+section pre {
+  background: #1e1e1e;
+  color: #dcdcdc;
+  padding: 0.75rem;
+  overflow: auto;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+section .actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+section .actions button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.4rem 0.7rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+section .actions button.secondary {
+  background: #6c757d;
+}
+section .actions button:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.results {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  min-height: 1.5rem;
+  font-size: 0.9rem;
+}
+@media (max-width: 800px) {
+  aside { display: none; }
+  .layout { flex-direction: column; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Atlas Operations Manual</h1>
+  <div class="search">
+    <input type="search" id="searchInput" placeholder="Search sections...">
+    <button id="searchBtn">Search</button>
+    <button id="clearBtn">Clear</button>
+  </div>
+</header>
+<div class="layout">
+  <aside>
+    <nav>
+      <ul>
+        <li><a href="#s1">Section 1</a></li>
+        <li><a href="#s2">Section 2</a></li>
+        <li><a href="#s3">Section 3</a></li>
+        <li><a href="#s4">Section 4</a></li>
+        <li><a href="#s5">Section 5</a></li>
+        <li><a href="#s6">Section 6</a></li>
+        <li><a href="#s7">Section 7</a></li>
+        <li><a href="#s8">Section 8</a></li>
+        <li><a href="#s9">Section 9</a></li>
+        <li><a href="#s10">Section 10</a></li>
+      </ul>
+    </nav>
+  </aside>
+  <main>
+    <div class="status" id="statusBar">
+      <div>System Status: <span id="sysStatus">Operational</span></div>
+      <div>Active Sessions: <span id="sessionCount">0</span></div>
+      <button id="refreshStatus">Refresh</button>
+    </div>
+    <div class="results" id="results" aria-live="polite"></div>

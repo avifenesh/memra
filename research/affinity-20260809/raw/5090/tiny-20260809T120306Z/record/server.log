@@ -1,0 +1,77 @@
+[server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q9: regime draft attached (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q9": 33 layers, eos=248046
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q9: decode chunk cap 16 (exact-16 tier)
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:18246
+[meter] admit id=cmpl-eb3b89b89efc20aff9e650822a54a78a tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=748 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ea323d615238c0eb456a6d047a0cf083 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 743 of 784 prompt tokens (priming 41 suffix; model q9)
+[worker] kv-reuse: 743 of 784 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=784 cached=743 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-65bd0fa9bd217abfdaf7ffeda717b82a tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 779 of 821 prompt tokens (priming 42 suffix; model q9)
+[worker] kv-reuse: 779 of 821 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=821 cached=779 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7cffca38a98125234aae4e477d6122f7 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 816 of 860 prompt tokens (priming 44 suffix; model q9)
+[worker] kv-reuse: 816 of 860 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=860 cached=816 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b080a76bc924490c4db6348ed31fd820 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 855 of 897 prompt tokens (priming 42 suffix; model q9)
+[worker] kv-reuse: 855 of 897 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=897 cached=855 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-999d040f7831f4444c7d0ac7f3414430 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 892 of 930 prompt tokens (priming 38 suffix; model q9)
+[worker] kv-reuse: 892 of 930 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=930 cached=892 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f1ed313d2d50573c5c5f18e0824bbc93 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 925 of 964 prompt tokens (priming 39 suffix; model q9)
+[worker] kv-reuse: 925 of 964 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=964 cached=925 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4ad1305f2d9c32a9af8c2216bf9861ab tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 959 of 1006 prompt tokens (priming 47 suffix; model q9)
+[worker] kv-reuse: 959 of 1006 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1006 cached=959 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4199a033d933f36c38ae68004bd75b20 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 1001 of 1043 prompt tokens (priming 42 suffix; model q9)
+[worker] kv-reuse: 1001 of 1043 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1043 cached=1001 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7c467f8d791b0fec223b2bad13f4f0b2 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 1038 of 1081 prompt tokens (priming 43 suffix; model q9)
+[worker] kv-reuse: 1038 of 1081 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1081 cached=1038 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-eaad52ca445b4660a0cfe91e7fcb45ee tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 1076 of 1117 prompt tokens (priming 41 suffix; model q9)
+[worker] kv-reuse: 1076 of 1117 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1117 cached=1076 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f1f304ea3eefd6bbe1bacf01ad7800a3 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: rewound to 1112 of 1153 prompt tokens (priming 41 suffix; model q9)
+[worker] kv-reuse: 1112 of 1153 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1153 cached=1112 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-637cae143a6ec4126b5c149af4402396 tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-acb54f621381590153e496c2e51d858b tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-c90f022e06eadd0a4304aa4cc301cfed tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-080ecdb924a9cfbfc3ec7ba137ce43a2 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: declined (identity did not nominate; 1 parked, 1186 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1186 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q9": 34MB (admission gate = 2x)
+[worker] plain-affinity: declined (identity did not nominate; 1 parked, 1185 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1185 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[worker] plain-affinity: declined (identity did not nominate; 1 parked, 1184 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1184 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[worker] plain-affinity: declined (identity did not nominate; 1 parked, 1186 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1186 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-a328e0abb915121035634e337f5ccea0 tenant=default lane=interactive model="q9"
+[worker] plain-affinity: declined (history diverged at 1164 of checkpoint 1179; 4 parked, 1190 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1190 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

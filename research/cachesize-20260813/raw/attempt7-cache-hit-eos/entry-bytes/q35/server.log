@@ -1,0 +1,31 @@
+[server] starting; models config = [("q35", "/opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q35" <- /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.88GB (expert budget 96.29GB) -> RESIDENT
+[worker]   loaded "q35": 41 layers, eos=248046
+[worker] q35: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q35: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 2147MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "q35": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q35"]
+[server] listening on http://127.0.0.1:18435
+[meter] admit id=cmpl-c45ba14e89dfcdf6456a0fde7d9f5166 tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4161 path=plain = 10208 B/token x ctx + 0MB fixed = 42MB
+[spec-k] model="q35" tenant="cx-cachesize-entry-q35-t4096" K=0 source=eligibility-fallback prompt=4096 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q35" 129MB (observed 171MB at ctx 4105 path=plain)
+[prefix-cache] insert (seed): 4096 tokens, 103.9MB (resident 103.9MB / 2147MB, model q35, ns "cx-cachesize-entry-q35-t4096")
+[meter] admit id=cmpl-9537e0bb12615b89a5c400b266d37062 tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4925 path=plain = 10208 B/token x ctx + 129MB fixed = 179MB
+[spec-k] model="q35" tenant="cx-cachesize-entry-q35-t4860" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 214.8MB / 2147MB, model q35, ns "cx-cachesize-entry-q35-t4860")
+[meter] admit id=cmpl-dd3c2474e635f2d3c56bcea275be03b8 tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=8257 path=plain = 10208 B/token x ctx + 129MB fixed = 213MB
+[spec-k] model="q35" tenant="cx-cachesize-entry-q35-t8192" K=0 source=eligibility-fallback prompt=8192 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 8192 tokens, 141.9MB (resident 356.7MB / 2147MB, model q35, ns "cx-cachesize-entry-q35-t8192")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

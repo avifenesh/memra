@@ -1,0 +1,77 @@
+block=matrix out=/workspace/newboxgates-20260811/raw/matrix-20260810T233141Z start=2026-08-10T23:31:41Z host=eb3f5389a86e
+production_service_stopped=2026-08-10T23:31:50Z
+source_commit=5911de40f48d1d2fe36a92fef7b9b41cebc792f2
+server_sha256=1b2159b50c9bb5cf2703e9f159ac44b6f40d339db6fa078a8a0212ce1d54bf7b
+golden_sha256=21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de
+## HEAD (no branch)
+artifact=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-10 22:05:50.016554273 +0000
+artifact=/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-10 21:14:11.549094887 +0000
+artifact=/workspace/memra/research/darktrain2-20260810/raw/qos/golden-response.bin bytes=326 mtime=2026-08-10 19:53:31.916487270 +0000
+condition=h2-c1 cells=10 requests=1 stamp=20260810T233150Z lock_acquired=2026-08-10T23:31:50Z
+host=eb3f5389a86e
+source_commit=5911de40f48d1d2fe36a92fef7b9b41cebc792f2
+binary_sha256=1b2159b50c9bb5cf2703e9f159ac44b6f40d339db6fa078a8a0212ce1d54bf7b
+qos_sha256=6c9e7386e3304deb6b625db1e7bd5089b3f0cf4844c198b17d7173e5c0082e9d
+golden_sha256=21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de
+## HEAD (no branch)
+artifact=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-10 22:05:50.016554273 +0000
+artifact=/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-10 21:14:11.549094887 +0000
+cell=h2-c1-cell-01 boot_start=2026-08-10T23:31:50Z
+{"actual_start_offsets_ms": [0.037], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-01", "latency_p50_s": 1.094401, "latency_p99_s": 1.094401, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.485622, "ttft_p99_s": 0.485622, "wall_s": 1.094581}
+cell=h2-c1-cell-01 probe_rc=0 boot_done=2026-08-10T23:32:23Z
+cell=h2-c1-cell-02 boot_start=2026-08-10T23:32:23Z
+{"actual_start_offsets_ms": [0.037], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-02", "latency_p50_s": 1.221802, "latency_p99_s": 1.221802, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.614248, "ttft_p99_s": 0.614248, "wall_s": 1.221975}
+cell=h2-c1-cell-02 probe_rc=0 boot_done=2026-08-10T23:33:01Z
+cell=h2-c1-cell-03 boot_start=2026-08-10T23:33:01Z
+{"actual_start_offsets_ms": [0.037], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-03", "latency_p50_s": 1.080876, "latency_p99_s": 1.080876, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.475549, "ttft_p99_s": 0.475549, "wall_s": 1.081057}
+cell=h2-c1-cell-03 probe_rc=0 boot_done=2026-08-10T23:33:33Z
+cell=h2-c1-cell-04 boot_start=2026-08-10T23:33:33Z
+{"actual_start_offsets_ms": [0.037], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-04", "latency_p50_s": 1.077002, "latency_p99_s": 1.077002, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.472611, "ttft_p99_s": 0.472611, "wall_s": 1.077175}
+cell=h2-c1-cell-04 probe_rc=0 boot_done=2026-08-10T23:34:05Z
+cell=h2-c1-cell-05 boot_start=2026-08-10T23:34:05Z
+{"actual_start_offsets_ms": [0.037], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-05", "latency_p50_s": 1.080281, "latency_p99_s": 1.080281, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.47636, "ttft_p99_s": 0.47636, "wall_s": 1.080494}
+cell=h2-c1-cell-05 probe_rc=0 boot_done=2026-08-10T23:34:38Z
+cell=h2-c1-cell-06 boot_start=2026-08-10T23:34:38Z
+{"actual_start_offsets_ms": [0.036], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-06", "latency_p50_s": 1.226266, "latency_p99_s": 1.226266, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.61878, "ttft_p99_s": 0.61878, "wall_s": 1.226431}
+cell=h2-c1-cell-06 probe_rc=0 boot_done=2026-08-10T23:35:15Z
+cell=h2-c1-cell-07 boot_start=2026-08-10T23:35:15Z
+{"actual_start_offsets_ms": [0.039], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-07", "latency_p50_s": 1.227856, "latency_p99_s": 1.227856, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.62047, "ttft_p99_s": 0.62047, "wall_s": 1.228081}
+cell=h2-c1-cell-07 probe_rc=0 boot_done=2026-08-10T23:35:53Z
+cell=h2-c1-cell-08 boot_start=2026-08-10T23:35:53Z
+{"actual_start_offsets_ms": [0.038], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-08", "latency_p50_s": 1.094317, "latency_p99_s": 1.094317, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.487468, "ttft_p99_s": 0.487468, "wall_s": 1.094479}
+cell=h2-c1-cell-08 probe_rc=0 boot_done=2026-08-10T23:36:25Z
+cell=h2-c1-cell-09 boot_start=2026-08-10T23:36:25Z
+{"actual_start_offsets_ms": [0.037], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-09", "latency_p50_s": 1.134575, "latency_p99_s": 1.134575, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.526817, "ttft_p99_s": 0.526817, "wall_s": 1.134759}
+cell=h2-c1-cell-09 probe_rc=0 boot_done=2026-08-10T23:36:58Z
+cell=h2-c1-cell-10 boot_start=2026-08-10T23:36:58Z
+{"actual_start_offsets_ms": [0.038], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "h2-c1-cell-10", "latency_p50_s": 1.111799, "latency_p99_s": 1.111799, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.503902, "ttft_p99_s": 0.503902, "wall_s": 1.111969}
+cell=h2-c1-cell-10 probe_rc=0 boot_done=2026-08-10T23:37:30Z
+condition=h2-c1 completed_cells=10 divergent_cells=0 block_done=2026-08-10T23:37:30Z
+condition=same cells=5 requests=8 stamp=20260810T233730Z lock_acquired=2026-08-10T23:37:30Z
+host=eb3f5389a86e
+source_commit=5911de40f48d1d2fe36a92fef7b9b41cebc792f2
+binary_sha256=1b2159b50c9bb5cf2703e9f159ac44b6f40d339db6fa078a8a0212ce1d54bf7b
+qos_sha256=6c9e7386e3304deb6b625db1e7bd5089b3f0cf4844c198b17d7173e5c0082e9d
+golden_sha256=21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de
+## HEAD (no branch)
+artifact=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-10 22:05:50.016554273 +0000
+artifact=/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-10 21:14:11.549094887 +0000
+cell=same-cell-01 boot_start=2026-08-10T23:37:30Z
+{"actual_start_offsets_ms": [1.895, 0.852, 1.039, 1.209, 1.4, 1.593, 0.053, 1.749], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 8, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 8}, "label": "same-cell-01", "latency_p50_s": 6.17258, "latency_p99_s": 6.173458, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 3.593991, "ttft_p99_s": 3.595361, "wall_s": 6.174921}
+cell=same-cell-01 probe_rc=0 boot_done=2026-08-10T23:38:07Z
+cell=same-cell-02 boot_start=2026-08-10T23:38:07Z
+{"actual_start_offsets_ms": [0.055, 0.625, 0.817, 1.007, 1.202, 1.395, 1.582, 1.78], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 8, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 8}, "label": "same-cell-02", "latency_p50_s": 6.31243, "latency_p99_s": 6.313245, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 3.725459, "ttft_p99_s": 3.726255, "wall_s": 6.314285}
+cell=same-cell-02 probe_rc=0 boot_done=2026-08-10T23:38:49Z
+cell=same-cell-03 boot_start=2026-08-10T23:38:49Z
+{"actual_start_offsets_ms": [1.723, 0.895, 1.047, 1.234, 1.544, 1.397, 1.894, 0.057], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 8, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 8}, "label": "same-cell-03", "latency_p50_s": 6.193772, "latency_p99_s": 6.194573, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 3.61198, "ttft_p99_s": 3.612602, "wall_s": 6.195955}
+cell=same-cell-03 probe_rc=0 boot_done=2026-08-10T23:39:26Z
+cell=same-cell-04 boot_start=2026-08-10T23:39:26Z
+{"actual_start_offsets_ms": [2.048, 1.177, 1.009, 0.056, 1.456, 1.857, 1.67, 2.191], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 8, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 8}, "label": "same-cell-04", "latency_p50_s": 6.30915, "latency_p99_s": 6.309861, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 3.717748, "ttft_p99_s": 3.718416, "wall_s": 6.311455}
+cell=same-cell-04 probe_rc=0 boot_done=2026-08-10T23:40:08Z
+cell=same-cell-05 boot_start=2026-08-10T23:40:08Z
+{"actual_start_offsets_ms": [1.916, 0.975, 1.124, 1.269, 1.459, 1.605, 1.749, 0.049], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 8, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 8}, "label": "same-cell-05", "latency_p50_s": 6.194459, "latency_p99_s": 6.197173, "n_error": 0, "n_ok": 8, "requests": 8, "scheduled_delays_ms": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "ttft_p50_s": 3.614161, "ttft_p99_s": 3.615103, "wall_s": 6.197394}
+cell=same-cell-05 probe_rc=0 boot_done=2026-08-10T23:40:46Z
+condition=same completed_cells=5 divergent_cells=0 block_done=2026-08-10T23:40:46Z
+{"cells": 15, "completion_hashes": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 50}, "conditions": {"h2-c1": 10, "same": 5}, "golden_matches": 50, "requests": 50, "requests_ok": 50, "verdict": "PASS"}
+production_service_restored=2026-08-10T23:41:13Z
+block=matrix out=/workspace/newboxgates-20260811/raw/matrix-20260810T233141Z exit=0 restore_exit=0 done=2026-08-10T23:41:13Z

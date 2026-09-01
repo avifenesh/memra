@@ -1,0 +1,12 @@
+host=<private-host-redacted>
+ts=2026-08-11T03:21:19Z
+lock=busy rc=1
+ 560166 561263 561276 561519 561572 561615                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    F.... bash
+                     ubuntu    F.... bash
+                     ubuntu    F.... flock
+                     ubuntu    F.... memra-server
+                     ubuntu    F.... journalctl
+                     ubuntu    F.... sleep
+GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 561519, /home/ubuntu/memra-cx-sigrouter/target/release/memra-server, 12810 MiB
+GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 561519, /home/ubuntu/memra-cx-sigrouter/target/release/memra-server, 1036 MiB

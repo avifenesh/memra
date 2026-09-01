@@ -1,0 +1,56 @@
+[server] starting; models config = [("q9", "/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q9" <- /scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q9: regime draft attached (/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q9": 33 layers, eos=248046
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] q9: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:8151
+[meter] admit id=cmpl-fa9e918f0997df14aa5d918a83791b10 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-mixed-after-r3-warmup" K=3 source=cold-short prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=28 burst=21/36 cum=21/36=0.583
+[meter] admit id=cmpl-d1e08ef92c0c8b71a4e954dbada4f549 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-mixed-after-r3-seq-short" K=3 source=cold-short prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q9": 201MB (admission gate = 2x)
+[spec-acc] ctx=28 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=62 burst=23/33 cum=44/69=0.638
+[spec-acc] ctx=96 burst=26/27 cum=70/96=0.729
+[spec-acc] ctx=131 burst=19/27 cum=89/123=0.724
+[meter] admit id=cmpl-cd6040143682e7db719c279573895b35 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-mixed-after-r3-seq-long" K=3 source=cold-long prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=5411 burst=22/33 cum=22/33=0.667
+[spec-acc] ctx=5445 burst=21/36 cum=43/69=0.623
+[spec-acc] ctx=5478 burst=19/39 cum=62/108=0.574
+[spec-acc] ctx=5510 burst=19/30 cum=81/138=0.587
+[meter] admit id=cmpl-ec6f4a88467ab2310a18066cf0651160 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-mixed-after-r3-cached" K=3 source=cold-long prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=5411 burst=22/33 cum=22/33=0.667
+[spec-acc] ctx=5445 burst=21/36 cum=43/69=0.623
+[meter] admit id=cmpl-93f8a1f134d50ba6c3e8974a7bd0b390 tenant=default lane=interactive model="q9"
+[worker] spec-reuse: 5478 committed tokens resumed (model q9)
+[spec-k] model="q9" tenant="kpolicy-mixed-after-r3-cached" K=2 source=cached-long prompt=5490 cached=5478 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=12 burst=19/28 cum=19/28=0.679
+[spec-acc] ctx=46 burst=21/26 cum=40/54=0.741
+[spec-acc] ctx=80 burst=17/30 cum=57/84=0.679
+[spec-acc] ctx=112 burst=15/26 cum=72/110=0.655
+[meter] admit id=cmpl-26e7504da7077b7ee91ad53145cb332c tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-mixed-after-r3-wave-short-a" K=3 source=cold-short prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b260d6e18c94e83124462b480c283470 tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-e76397f06e0c07a9d4dc405adacd88cb tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-f0959bba53f4d1de30d6c984ebe16d00 tenant=default lane=interactive model="q9"
+[worker] spec-reuse: 5618 committed tokens resumed (model q9)
+[spec-k] model="q9" tenant="kpolicy-mixed-after-r3-cached" K=2 source=cached-long prompt=5630 cached=5618 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q9" tenant="kpolicy-mixed-after-r3-wave-short-b" K=0 source=concurrency prompt=28 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q9" tenant="kpolicy-mixed-after-r3-wave-long" K=0 source=concurrency prompt=5411 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-gate] demoted session to batched decode: 4 active >= HIGH=4 (model q9, committed 29, generated 1)
+[spec-gate] demoted session to batched decode: 4 active >= HIGH=4 (model q9, committed 5618, generated 0)
+[prefix-cache] insert (seed): 5411 tokens, 133.0MB (resident 133.0MB / 268MB, model q9, ns "kpolicy-mixed-after-r3-wave-long")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

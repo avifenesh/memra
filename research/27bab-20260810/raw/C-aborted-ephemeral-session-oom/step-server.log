@@ -1,0 +1,112 @@
+[server] starting; models config = [("stepfun/step-3.7-flash", "/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "stepfun/step-3.7-flash" <- /workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (HOST-STAGED pinned D2H -> H2D per cross boundary; MEMRA_PP_HOST_BOUNCE=1; peer access and peer-pool grants bypassed; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.87GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] stepfun/step-3.7-flash: regime draft attached (/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "stepfun/step-3.7-flash": 45 layers, eos=128007
+[worker] stepfun/step-3.7-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] stepfun/step-3.7-flash: decode chunk cap 8
+[pp] MEMRA_PP_HOST_BOUNCE=1 safety doors: speculative PP, cross-device prefix snapshots, and plain-affinity checkpoints disabled (they retain peer reads/copies)
+[admission] "stepfun/step-3.7-flash": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["stepfun/step-3.7-flash"]
+[server] listening on http://0.0.0.0:8002
+[meter] admit id=chatcmpl-a01738684787a362837df623492e80d1 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[pp] host-bounce staging ready: n_embd=4096 max_tokens=4096 slot_bytes=67108864 slots_per_cross_boundary=2
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-initial-1786382027918035432-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-fa31ac5109e293bc11b632f684c3d91b tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-idle-r1-1786382029495982768-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-c1e64d4b5157cffe41f5b54e5b23bf7d tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-idle-r1-1786382030192079189-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-b57eba3bb6e895347c39f27ba9b42d5f tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-idle-post-r1-1786382034259838154-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-4bebb62f2c5cb93884db70325b79114c tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-active-r1-1786382037246248348-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-c95a5c5c5362d6fe4c98437382210ec2 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-active-r1-1786382039628238420-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-59c62646da013abd1a0b38e3d8ef7475 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-active-post-r1-1786382051346742999-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-55a8f2fd45171c8010b468fdf293b5ad tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-active-r2-1786382054267311640-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-cff12ce27a43f10d01ea934061a2ec5d tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-active-r2-1786382056645357054-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-3d5b84fc52c7e807aeaa71e7adbd7e98 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-active-post-r2-1786382068410484120-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-9513fe8f6693cb66831b81b1a07a2bb3 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-idle-r2-1786382069567985927-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-a5a7f37e8d55dbc437005b56c8ed26eb tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-idle-r2-1786382070264040830-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-d62689094b708ab8f6d41b81bca4b6f0 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-idle-post-r2-1786382074220223993-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-217d83781fb6cc1671549145726422cf tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-idle-r3-1786382075391525437-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-0392219a1289daa4e6cd772d68fa8d0c tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-idle-r3-1786382076087417732-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-d9f5f477fab529decd40de5a042978d6 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-idle-post-r3-1786382080027931464-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-1e915421dfa8b0c4996d4849149e5b27 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-active-r3-1786382082952460675-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-ac5315c20a001c8ae261078be7c1075c tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-active-r3-1786382085334824307-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-6a808a4c8316ab5f6617648a3e373223 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-active-post-r3-1786382097097640477-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-4cb6ae01305c48cbbf660b19a4b83a5d tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-active-r4-1786382099974994215-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-62cb500aca69d42f61e768aa82bd632d tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-active-r4-1786382102365562149-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-d1cc5bac79e19a889f9ebfb69cc492c5 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-active-post-r4-1786382114171139514-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-af975b8b0c83483cbeb2dcd71df3c2bb tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-idle-r4-1786382115328349202-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-a1c5146b0e58844a550f7c719846bbb8 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-idle-r4-1786382116018859691-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-006f1ddc38b36d424efaab872f7c3e97 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-idle-post-r4-1786382119955695097-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-d1c01ae998b6bc3e6812e2c3beac58b6 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-idle-r5-1786382121126223061-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-0f5995eb17803ce0ee87f3bdbe38780f tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-idle-r5-1786382121820269562-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-b395101c1eb3e0d8dadbfea34ca3789e tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-idle-post-r5-1786382125770278263-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-aa3c18f367f7acf5b7337c2e9b4107a3 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-short-active-r5-1786382128700519519-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-fa4e3156c13e01f1eb5ec6cf7c06aff4 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=491 path=plain = 83520 B/token x ctx + 0MB fixed = 41MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-step-decode-active-r5-1786382131067233896-0-0" K=0 source=pp2-placement prompt=171 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-122f122425de3425b7a59772badfe186 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=111 path=plain = 83520 B/token x ctx + 0MB fixed = 9MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-forward-active-post-r5-1786382142860044030-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-35746227e79fbc35d65989d25cf00922 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-before-reverse-1786382144029742433-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-fa8458992f484fab97811725cfe84cb8 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="cx27-sanity-step-reverse-idle-post-r1-1786382146967792327-0-0" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

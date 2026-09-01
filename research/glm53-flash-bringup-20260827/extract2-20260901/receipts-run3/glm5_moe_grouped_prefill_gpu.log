@@ -1,0 +1,23 @@
+warning: memra-engine@0.122.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.122.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.122.0 (/home/avifenesh/projects/wt-glm5-extract2/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.55s
+     Running tests/glm5_moe_grouped_prefill_gpu.rs (target/debug/deps/glm5_moe_grouped_prefill_gpu-8ca5f0436cfe7ab8)
+
+running 11 tests
+test flattened_macro_plane_fails_the_gate ... [moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=128 out_f=64 n_active=8 max_m=15
+ok
+test grouped_prefill_matches_the_reference ... ok
+test grouped_prefill_matches_the_reference_at_the_chunk_cap ... ok
+test routing_is_identical_between_arms ... ok
+test sequential_control_matches_the_reference ... ok
+test slru_placement_fails_closed ... ok
+test the_macro_plane_is_live ... ok
+test the_plan_declares_the_program_under_gate ... ok
+test the_two_arms_agree_and_the_knee_is_bitwise ... ok
+test the_wrong_programs_actually_bind_at_grouped_widths ... ok
+test wrong_programs_fail_the_gate ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.81s
+
+exit=0

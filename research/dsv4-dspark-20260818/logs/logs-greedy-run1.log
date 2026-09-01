@@ -1,0 +1,17 @@
+dsv4-dspark-gate | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | mode greedy | fixtures /home/ubuntu/dsv4-dspark/fixtures/dsv4_dspark_fixtures_ref.json | first_pos 32 last_pos 190 | torch accept_mean 3.7862
+npz integrity: 51 arrays sha-verified
+model loaded t=57s
+prefill(32) + ring prime done (argmax 2581) t=136s
+step 19/160 token 339 t=336s
+step 39/160 token 2143 t=536s
+step 59/160 token 52765 t=736s
+step 79/160 token 305 t=936s
+step 99/160 token 19 t=1136s
+step 119/160 token 201 t=1339s
+step 139/160 token 1512 t=1543s
+  [IN-BAND flip round] start_pos 41 slot 3: rust 9544 vs torch 5718 | torch margin 9.3977e-2, rust margin 1.2959e-1, band 8.0093e0 | accepts 3 == own prefix 3
+  [IN-BAND flip round] start_pos 67 slot 4: rust 42499 vs torch 1031 | torch margin 1.9414e-1, rust margin 2.7622e-1, band 8.0093e0 | accepts 3 == own prefix 3
+  [IN-BAND flip round] start_pos 121 slot 4: rust 12485 vs torch 56526 | torch margin 3.7464e-1, rust margin 2.7695e-2, band 8.0093e0 | accepts 4 == own prefix 4
+
+SPEC==PLAIN IDENTITY GATE [PASS]: 160/160 tokens == banked REF trajectory | LITERAL IDENTITY, zero corrections | rounds 37 | accepted drafts 143 (mean 3.865/round, 4.324 tokens/round incl. bonus) | cross-check vs torch profile 33 exact + 3 in-band flip rounds / 0 FAIL | determinism sha256 bc4a2737b20928a043857b564c43efdbdc6b811e9019a0fb8e923d80f72c3352
+elapsed 1735s

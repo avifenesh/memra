@@ -1,0 +1,28 @@
+# tag=mainmerged-n2-OFF stages=2 reps=12 prime_reps=8 want_pass=25 shared='MEMRA_MOE_VROWS_DEDUP_ORDER=0 MEMRA_MOE_VROWS_DOWN_TMAJ=0 MEMRA_MOE_VROWS_PACK=0' spinners=6 quota=400% gpuload=1
+rep1   FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep1   CTL exit=1   pass_lines=23  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=FAIL    dev1=1/8
+rep2   FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep2   CTL exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep3   FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep3   CTL exit=1   pass_lines=23  sweep=FAIL    accepted=(10/63)  P0=PASS    dev0=0/8 P1=FAIL    dev1=1/8
+rep4   FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep4   CTL exit=1   pass_lines=22  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=FAIL    dev1=1/8
+rep5   FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep5   CTL exit=1   pass_lines=23  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=FAIL    dev1=1/8
+rep6   FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep6   CTL exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep7   FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep7   CTL exit=1   pass_lines=24  sweep=FAIL    accepted=(10/63)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep8   FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep8   CTL exit=1   pass_lines=23  sweep=FAIL    accepted=(10/63)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep9   FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep9   CTL exit=1   pass_lines=23  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=FAIL    dev1=1/8
+rep10  FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep10  CTL exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep11  FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep11  CTL exit=1   pass_lines=24  sweep=FAIL    accepted=(10/63)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep12  FIX exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+rep12  CTL exit=1   pass_lines=23  sweep=FAIL    accepted=(10/63)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+=== mainmerged-n2-OFF :: interleaved x12, stages=2 ===
+FIX  sweep FAILS=0/12   P0 FAILS=0/12 (dev 0/96)   P1 FAILS=0/12 (dev 0/96)
+CTL  sweep FAILS=5/12   P0 FAILS=0/12 (dev 0/96)   P1 FAILS=5/12 (dev 5/96)

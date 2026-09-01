@@ -1,0 +1,36 @@
+[server] starting; models config = [("smoke", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "smoke" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[worker]   loaded "smoke": 33 layers, eos=248046
+[worker] smoke: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] smoke: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "smoke": plain 16704 B/token, spec 18560 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["smoke"]
+[server] listening on http://127.0.0.1:8177
+[meter] admit id=cmpl-f54b1a4484497079520d20d26a2595d0 tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-d6dc769ce1db2f178c53abeaad6c3b06 tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-bddd75706dd499522d0d0fbfda3d31a9 tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-6a3d4ac2448918534f8e4ccf4e0c552a tenant=default lane=interactive model="smoke"
+[meter] admit id=cmpl-19d3be8ba5c9f3a063111627f1d1288f tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=344 path=plain = 16704 B/token x ctx + 0MB fixed = 6MB
+[meter] admit id=cmpl-381ae5e0cb701c3b70d92942ffb79a0b tenant=default lane=interactive model="smoke"
+[spec-k] model="smoke" tenant="meter-B" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="smoke" 103MB (observed 108MB at ctx 288 path=plain)
+[admission] request cost: model="smoke" ctx=344 path=plain = 16704 B/token x ctx + 103MB fixed = 109MB
+[spec-k] model="smoke" tenant="meter-A" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[prefix-cache] insert probation (in-batch fanout): 256 tokens, 56.5MB (resident 56.5MB / 268MB, model smoke, ns "meter-A")
+[prefix-dedup] B=4 prefix=256 saved=768 hash=6f9cf1d9c04f1a45 in 147.3ms retained=true (model smoke, ns "meter-A")
+[prefix-cache] insert probation (seed): 272 tokens, 56.7MB (resident 113.2MB / 268MB, model smoke, ns "meter-B")
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model smoke)
+[spec-k] model="smoke" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=6 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

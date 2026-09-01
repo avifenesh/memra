@@ -1,0 +1,29 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "The function should return a class that can be instantiated and used to perform the operations.\n\n<think>\n\n</think>\n\n```python\nfrom typing import Optional, TypeVar, Generic, Iterator\n\nT = TypeVar('T')\n\n\nclass DoublyLinkedList(Generic[T]):\n    \"\"\"A doubly-linked list implementation with insert, delete, and reverse operations.\"\"\"\n\n    class _Node(Generic[T]):\n        \"\"\"Internal node class for the doubly-linked list.\"\"\"\n\n        __slots__ = ('data', 'prev', 'next')\n\n        def __init__(self, data: T, prev: Optional['_Node[T]'] = None"
+    }
+  ],
+  "created": 1786211376,
+  "id": "cmpl-076be8c9d6e4105ef0966cc229e456f0",
+  "model": "q27",
+  "object": "text_completion",
+  "system_fingerprint": "memra-47da3098d8aa",
+  "usage": {
+    "completion_tokens": 128,
+    "elapsed_s": 0.875336246,
+    "prompt_tokens": 28,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "spec": {
+      "acceptance_rate": 0.6746031746031746,
+      "accepted": 85,
+      "drafted": 126,
+      "rounds": 42
+    },
+    "total_tokens": 156
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-7342d4e4f9983ae76c913d2936c26ce7",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 1209,
+    "completion_tokens": 256,
+    "total_tokens": 1465,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 2.077487526
+  },
+  "text": "The user wants me to add an accessible cache-tier legend to the dashboard. This should explain the different cache tiers (continuation, speculative, prefix reuse) in an accessible way. I need to add this to the existing dashboard while maintaining all previous functionality.\n\nLet me create a comprehensive HTML document with:\n1. All the original dashboard panels\n2. A cache-tier legend that's accessible (using proper ARIA labels, semantic HTML)\n3. The sticky request inspector that explains TTFT separately from decode time\n4. All 8 requests with their data\n5. Mobile-responsive layout\n6. Filtering capabilities\n\nI'll make sure the legend is clearly visible and accessible, using proper color coding and labels.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-tertiary: #"
+}

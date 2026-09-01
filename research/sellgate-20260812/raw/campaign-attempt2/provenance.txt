@@ -1,0 +1,46 @@
+timestamp=2026-08-12T03:11:00Z
+runtime_source=79c3c0b2779101c7de89d6f822b9392d03e71702
+shape=q27 physical GPU0 plus q35 physical GPU1; two independent servers
+<private-host-redacted>
+Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+79c3c0b2 (HEAD) Merge lane/cx-bizdirection: business-direction research (owner order) — RECOMMENDED: private Q35+Q27 pair pilot $5,500/mo + $2,500 setup = $180.82/day (clears $170 payback bar in ONE close; one card $90.41/day clears $85 expansion bar); OR listing = parallel apply-don't-depend (~$36/day at assumed shares, September acceptance not assured); raw rental = idle fallback only ($57.60/day median, consumes the lab); HF/Chutes/Poe/subscriptions ruled out for September with cited reasons; 4-agent-day month plan w/ week-2 (5 calls + 2 written workloads) and week-3 (signed+prepaid) kill gates
+33344d86 docs(flags): record dual-PP x prefix-cache validated intersection + budget-sizing note (hermes 4beb2984)
+0b50a765 Merge lane/prefixmoney-box1: cache-on Step PP-2 battery PASS on box1 @f0ab104e7 (THE money gate) — byte identity 3/3 repeated+shared-prefix, hit TTFT 1.3ms vs 6034ms cold (4600x), 90%-hit ladder sustains 7.2x req/s over cold (1.18 vs 0.164 req/s, flat c=1..32, all clean), cache coexists with naked dual-PP (0 collisions/194 pairs). Cache-on serve shape VALIDATED: native-peer, ring-OFF, budget-sized
+0919bfe2 data(prefixmoney): box1 cache-on battery PASS @f0ab104e7 — byte identity 3/3 both shapes, hit TTFT 1.3ms (4600x cold), 90%-hit ladder 7.2x req/s vs cold (1.18 vs 0.164), 0 slot collisions with cache+naked-dual, all arms clean c=1..32
+478818f2 data(perf-ci): recover stranded 5090 battery rows @ae558f55 from wt-public-split (hermes cd2a5e8d — only copy sat uncommitted in stale worktree)
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-4e3d2603-6e05-0671-993e-5184f988511a, 595.71.05, 97887 MiB
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-e106ad99-c817-b1a4-fe0c-a87d73cea5c4, 595.71.05, 97887 MiB
+	[4mGPU0	GPU1	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	PIX	0-47	0		N/A
+GPU1	PIX	 X 	0-47	0		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+Filesystem                      Size  Used Avail Use% Mounted on
+/dev/mapper/vg.01-lv_ephemeral  3.5T  140G  3.1T   5% /opt/scratch/nvme
+/dev/mapper/vg.01-lv_ephemeral  3.5T  140G  3.1T   5% /opt/scratch/nvme
+serve_shape=one target-only plain server per physical GPU; both active
+draft_shape=external drafters are exactness-gate inputs, not loaded by cache serving
+MEMRA_SERVE_SPEC=0 (cross-request prefix cache excludes spec sessions)
+MEMRA_PREFIX_CACHE_MB=4096 per model
+MEMRA_PREFIX_DEDUP=1
+MEMRA_REUSE_POOL=0
+MEMRA_AFFINITY=0
+MEMRA_CTX=8192
+MEMRA_MAX_SESSIONS=96
+workload_lock_sha256=ece441325e4ce0a9bc4ec851fe81b8ef7280acfb48afcc194af89628d9b39cf7
+exactness_prompt_sha256=ce404f9ec20c6aab37220a2428254c6f7dc59286f1620d9060bb30e9d5ad9027

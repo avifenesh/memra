@@ -1,0 +1,59 @@
+[server] starting; models config = [("step", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step": 45 layers, eos=128007
+[worker] step: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step: decode chunk cap 8
+[admission] "step": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step"]
+[server] listening on http://127.0.0.1:18331
+[meter] admit id=cmpl-fcce571a6cb710739a1c1ac6790df3ee tenant=default lane=interactive model="step"
+[admission] request cost: model="step" ctx=208 path=plain = 83520 B/token x ctx + 0MB fixed = 17MB
+[spec-k] model="step" tenant="cx-throughput-warmup-0" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=cmpl-c622340cc1de11da1dcc92ec35981ff2 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-695838572cb71536be28f79e7537ea28 tenant=default lane=interactive model="step"
+[admission] request cost: model="step" ctx=2320 path=plain = 83520 B/token x ctx + 0MB fixed = 194MB
+[meter] admit id=cmpl-e23ccc6b573e1a2d0b7505b2c031e8c4 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-821afaada8f0f11bbab5b09c455fcdfd tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-ef52f207df9c132d4e668fceb5abf911 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-ba7d256b52d065774749eeb69b6d7ac5 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b9ce55677f221f258a94c726035c4282 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-ea667707a874285afeda6f497c1f0d77 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-18d290c741e47376eff86e530e590274 tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-1" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=cmpl-80257d48b67b07a1769f55f323f622b6 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b17272ef5c7aa081c744271581deefc6 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3890cfcdd0021fd956e0720005b18a9d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-1b0e7c8b9578047fbfea60bb63e99711 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-2098d36271279cd96bb812e17076421d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-4b984c85d56c59e77c55f832ef7f800a tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-92f3a614ce253c85da9db9f7b7dcda5c tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-5" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-15" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-9" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-12" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-2" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-14" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-6" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-0" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-7" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-4" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-10" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-11" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-3" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-8" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-13" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[step35-batch] first B>1 batched step35 walk: B=8 layers=[0,22)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

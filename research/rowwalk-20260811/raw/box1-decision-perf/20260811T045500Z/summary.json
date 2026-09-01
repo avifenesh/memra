@@ -1,0 +1,111 @@
+{
+  "metric": "aggregate completion tokens / live wall second",
+  "moesd_target_timing": {
+    "reason": "T_T(B,gamma) requires the standalone B-by-gamma verify harness and expert-union telemetry; ordinary serve wall is not target-forward time",
+    "rows": [
+      {
+        "B": 2,
+        "T_T_B_1_ms": null,
+        "T_T_B_gamma_ms": null,
+        "gamma": null
+      },
+      {
+        "B": 4,
+        "T_T_B_1_ms": null,
+        "T_T_B_gamma_ms": null,
+        "gamma": null
+      },
+      {
+        "B": 8,
+        "T_T_B_1_ms": null,
+        "T_T_B_gamma_ms": null,
+        "gamma": null
+      }
+    ],
+    "status": "not-measured-by-live-rowwalk-harness"
+  },
+  "protocol": "N=5 paired rounds, alternating arm order, fresh server per arm",
+  "provenance": {
+    "candidate_binary_sha256": "59037f8b46e723b7e4509ddd1c2d3496ba0385b6fdcb75b6036b2fbee09cb964",
+    "candidate_source": "fc3a00c939f5deabad2266fbf41609160863ef6f",
+    "current_binary_sha256": "43ad098d46bb26d644ba0b742d92f3f014d9287ac72e8a0edb8ebf9dac3ba608",
+    "current_source": "711fbcaaef54491d22488a84d40b7fc35e5a58dd"
+  },
+  "receipt": {
+    "errors": 0,
+    "points": 40,
+    "request_rows": 150,
+    "short_completions": 0
+  },
+  "rig": "box1, 2x RTX PRO 6000 Blackwell Server Edition",
+  "schema": "memra.rowwalk.perf-summary.v1",
+  "thermal_regime": {
+    "artificial_cooldown": false,
+    "sample_count": 1010,
+    "sampling_interval_ms": 500,
+    "temperature_c_max": 45.0,
+    "temperature_c_min": 31.0
+  },
+  "widths": {
+    "c2": {
+      "N": 5,
+      "candidate_aggregate_tok_s": [
+        120.29913555720753,
+        120.61408778109443,
+        120.41199173694997,
+        120.55726368819631,
+        120.7783087445484
+      ],
+      "candidate_median_tok_s": 120.55726368819631,
+      "current_aggregate_tok_s": [
+        119.05967564037506,
+        119.19661886848515,
+        119.31585670055617,
+        119.39915739690011,
+        119.19140973165118
+      ],
+      "current_median_tok_s": 119.19661886848515,
+      "delta_pct": 1.1415129326884932
+    },
+    "c4": {
+      "N": 5,
+      "candidate_aggregate_tok_s": [
+        146.47900555314817,
+        146.8509125471188,
+        146.69634777129033,
+        146.51831873077722,
+        146.94936594119474
+      ],
+      "candidate_median_tok_s": 146.69634777129033,
+      "current_aggregate_tok_s": [
+        144.71132768557348,
+        144.53610530941265,
+        144.73811512024668,
+        144.62062584640526,
+        144.67333582669588
+      ],
+      "current_median_tok_s": 144.67333582669588,
+      "delta_pct": 1.398330890094246
+    },
+    "c8": {
+      "N": 5,
+      "candidate_aggregate_tok_s": [
+        163.8056522614412,
+        164.45253307436687,
+        164.07293343784607,
+        164.23494005700744,
+        165.0247285138109
+      ],
+      "candidate_median_tok_s": 164.23494005700744,
+      "current_aggregate_tok_s": [
+        161.7461862889854,
+        162.00122884628513,
+        162.0147030057456,
+        161.8788960717368,
+        162.32787673925694
+      ],
+      "current_median_tok_s": 162.00122884628513,
+      "delta_pct": 1.3788236216663252
+    }
+  }
+}

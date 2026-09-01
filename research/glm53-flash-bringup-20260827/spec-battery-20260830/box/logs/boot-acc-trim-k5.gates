@@ -1,0 +1,6 @@
+boot=acc-trim-k5 pid=43978 nonce=f27a5d7b-7121-43c8-af1d-9b0d99daad16
+resident_lines=153 glm5spec_lines=1 spec_env=1 trim_env=1
+[bf16-mmv] RESIDENT output.weight ne=[4096, 154880] n=634388480 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[glm5-spec] serve route ARMED: MTP head loaded; draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)

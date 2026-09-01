@@ -1,0 +1,6 @@
+warning: memra-engine@0.81.1: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.81.1: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.06s
+== serve-stress-gate: c=64 staggered short streams (128-256 tok) ==
+completed 64/64; wall p50=41.2s p95=45.1s max=45.5s; ttfb p50=5.00s p95=5.00s  (informational)
+serve-stress-gate: ALL GREEN (c=64 complete, streams well-formed, worker alive, log clean)

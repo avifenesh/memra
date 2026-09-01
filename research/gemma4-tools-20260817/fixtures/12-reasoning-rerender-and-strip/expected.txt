@@ -1,0 +1,12 @@
+<|turn>system
+<|tool>declaration:get_weather{description:<|"|>Get current weather for a location<|"|>,parameters:{properties:{location:{description:<|"|>City name<|"|>,type:<|"|>STRING<|"|>},unit:{enum:[<|"|>celsius<|"|>,<|"|>fahrenheit<|"|>],type:<|"|>STRING<|"|>}},required:[<|"|>location<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+Weather in Paris?<turn|>
+<|turn>model
+I checked already.<turn|>
+<|turn>user
+Check again.<turn|>
+<|turn>model
+<|channel>thought
+The user wants a fresh reading.
+<channel|><|tool_call>call:get_weather{location:<|"|>Paris<|"|>}<tool_call|><|tool_response>response:get_weather{value:<|"|>20C<|"|>}<tool_response|>

@@ -1,0 +1,28 @@
+warning: memra-engine@0.119.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.119.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running tests/glm5_mtp_head_gpu.rs (target/debug/deps/glm5_mtp_head_gpu-ceb4ae4d99989c87)
+
+running 6 tests
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+worst of 48 draft rows: 1.144e-3 at row 44
+ok
+test gpu_mtp_eh_proj_transpose_mutation_fails_the_gate ... [mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+eh_proj-transposed worst row: 4.165e0 at row 5
+ok
+test gpu_mtp_h_seed_off_by_one_row_fails_the_gate ... [mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+h_seed-off-by-one worst row: 6.723e-1 at row 16
+ok
+test gpu_mtp_head_load_is_flag_gated_default_off ... [mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+ok
+test gpu_mtp_position_discipline_refuses_gaps ... [mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+ok
+test the_plan_declares_the_mtp_block_and_the_reference_executes_it ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+

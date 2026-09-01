@@ -1,0 +1,20 @@
+{
+  "request_id": "cmpl-4500a11817deb4511c68d9e8b0ee8bc6",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 14716,
+    "completion_tokens": 768,
+    "total_tokens": 15484,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 31.255542458,
+    "spec": {
+      "rounds": 274,
+      "drafted": 822,
+      "accepted": 493,
+      "acceptance_rate": 0.5997566909975669
+    }
+  },
+  "text": "The user wants me to return to the main branch, audit the page for regressions, and emit the complete final HTML. This means I need to provide the complete, final version of the dashboard incorporating all iterations (1-12) in a single, self-contained HTML document.\n\nLet me review what was requested across all iterations:\n\n1. Iteration 1: Initial dashboard with all required panels and realistic placeholder rows.\n2. Iteration 2: Add a sticky request inspector that explains TTFT separately from decode time.\n3. Iteration 3: Add an accessible cache-tier legend for continuation, speculative, and prefix reuse.\n4. Iteration 4: Add a compact admission-pressure strip with defer, park, active, and queued values.\n5. Iteration 5: Add a responsive incident timeline and emphasize the first counter correlated with a slope.\n6. Iteration 6: Add keyboard navigation and visible focus treatment throughout the dashboard.\n7. Iteration 7: Add a comparison drawer for spec-default versus spec-off measurements.\n8. Iteration 8: Add a pool-residency section with driver-free, reserved, used, and cached byte gauges.\n9. Iteration 9: Add an eviction-thrash warning state and a short operator remediation checklist.\n10. Iteration 10: Add a print stylesheet that preserves the request receipt as a legible table.\n11. Iteration 11: Add a small sparkline beside every request without introducing external dependencies.\n12. Iteration 12: Finish the dashboard with a concise evidence footer and no marketing language.\n\nNow I need to create a complete, self-contained HTML document that includes all of these features. I need to make sure:\n- All panels are present: request timeline, cache hit-rate chart, admission queue, GPU-memory gauge, incident annotations, compact mobile layout\n- Request data includes: arrival time, time to first token, generated-token rate, cache source, queue delay, completion state\n- Timeline makes rising latency visually distinguishable from slower decoding\n- Cache counters are cumulative\n- Pool occupancy and active sessions are gauges\n- Evidence rows retain units and exact timestamps\n- Operators can filter by session\n- Compare speculative and plain arms\n- Sticky request inspector explains TTFT vs decode time\n- Accessible cache-tier legend for continuation, speculative, prefix reuse\n- Admission-pressure strip with defer, park, active, queued\n- Responsive incident timeline with emphasized first counter correlated with slope\n- Keyboard navigation and visible focus treatment\n- Comparison drawer for spec-default vs spec-off\n- Pool-residency section with driver-free, reserved, used, cached byte gauges\n- Eviction-thrash warning state and operator remediation checklist\n- Print stylesheet preserving request receipt as legible table\n- Sparklines beside every request (inline SVG, no external dependencies)\n- Concise evidence footer\n- No marketing language\n- Semantic HTML and accessible labels\n- CSS and JavaScript inline\n\nThis is a substantial document. I need to carefully construct it to include all features while maintaining clean code.\n\nLet me plan the structure:\n\nHTML:\n- Skip link\n- Eviction-thrash warning banner (initially hidden, can be triggered)\n- Header with title, session filter, comparison drawer toggle, print button\n- Main grid:\n  - Left column (wider on desktop):\n    - Request timeline (with sparklines)\n    - Evidence table (with sparklines)\n  - Right column:\n    - Cache hit-rate chart (canvas-based, no external libs)\n    - GPU memory gauge (circular)\n    - Pool residency section (4 gauges: driver-free, reserved, used, cached)\n    - Pool occupancy gauge\n    - Active sessions gauge\n    - Admission-pressure strip ("
+}

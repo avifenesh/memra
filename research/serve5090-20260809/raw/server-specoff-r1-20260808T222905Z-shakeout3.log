@@ -1,0 +1,163 @@
+[server] starting; models config = [("q27", "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", Some("/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27" <- /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q27: regime draft attached (/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] q27: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 537MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q27"]
+[server] listening on http://127.0.0.1:8189
+[meter] admit id=cmpl-cee50bf99ccd7794925a3eb23e70e784 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-0b8f2407f0f359b996812eb5152d84b5 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-d67b929f2bcf62b5150315fd7c7b6dbe tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5d87eb1f7f18094ef9576e3c643b7684 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-9b56ee738b7f997fb4e94ee47ed0eca0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="meter-A" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q27": 336MB (admission gate = 2x)
+[spec-k] model="q27" tenant="meter-B" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (in-batch fanout): 256 tokens, 164.5MB (resident 164.5MB / 537MB, model q27, ns "meter-A")
+[prefix-dedup] B=3 prefix=256 saved=512 hash=6f9cf1d9c04f1a45 in 271.8ms retained=true (model q27, ns "meter-A")
+[prefix-cache] insert (seed): 272 tokens, 165.0MB (resident 329.5MB / 537MB, model q27, ns "meter-B")
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-40a870f2842cea50de870c7b6afb2159 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r1-shared" K=0 source=eligibility-fallback prompt=27 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-17b85cb5ba5fb61d3d3efd40925f0276 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r1-shared" K=0 source=eligibility-fallback prompt=229 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 229 tokens, 163.7MB (resident 493.2MB / 537MB, model q27, ns "q27-specoff-r1-shared")
+[meter] admit id=chatcmpl-22f1e27d2a696a1c3281f00deeb8c0d3 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r1-shared" K=0 source=eligibility-fallback prompt=229 cached=0 lcp=4 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 229 tokens, 163.7MB (resident 656.9MB / 537MB, model q27, ns "q27-specoff-r1-shared")
+[prefix-cache] evict (LRU): 272 tokens, 165.0MB (model q27, ns "meter-B")
+[meter] admit id=chatcmpl-4c23c14f2c1575069829157388f616ed tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r1-shared" K=0 source=eligibility-fallback prompt=4107 cached=0 lcp=6 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4107 tokens, 278.9MB (resident 770.7MB / 537MB, model q27, ns "q27-specoff-r1-shared")
+[prefix-cache] evict (LRU): 229 tokens, 163.7MB (model q27, ns "q27-specoff-r1-shared")
+[prefix-cache] evict (LRU): 229 tokens, 163.7MB (model q27, ns "q27-specoff-r1-shared")
+[meter] admit id=chatcmpl-b6ca1261f9d77454a3b739be87f99a9e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r1-shared" K=0 source=eligibility-fallback prompt=4107 cached=0 lcp=4 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4107 tokens, 278.9MB (resident 722.2MB / 537MB, model q27, ns "q27-specoff-r1-shared")
+[prefix-cache] evict (LRU): 4107 tokens, 278.9MB (model q27, ns "q27-specoff-r1-shared")
+[meter] admit id=cmpl-9904a3d2ed48423b7951c9fa5940b44e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r1-shared" K=0 source=eligibility-fallback prompt=4094 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4094 tokens, 278.5MB (resident 721.8MB / 537MB, model q27, ns "q27-specoff-r1-shared")
+[prefix-cache] evict (LRU): 4107 tokens, 278.9MB (model q27, ns "q27-specoff-r1-shared")
+[meter] admit id=cmpl-1eaca099ee58dd9000a20109591cf4b2 tenant=default lane=interactive model="q27"
+[worker] kv-reuse: 4158 of 4177 prompt tokens resumed (model q27)
+[spec-k] model="q27" tenant="q27-specoff-r1-shared" K=0 source=eligibility-fallback prompt=4177 cached=4158 lcp=4094 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-0484321d1f87e2ac7e3dd8e45d6c5b4b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 4094 tokens, 278.5MB (model q27, ns "q27-specoff-r1-shared")
+[meter] admit id=chatcmpl-4e49d702274d1efefcd5832044647874 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-a61de148a046b7219e41d23b7f85b948 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-df351648bb661dab9e003a0c81dbd4c8 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-9e8cddfba14da9d59141d62ae7eb303a tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-ba35a01c1d833c330d7295e1f2bc03d6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-6063085498d89430d94868d153ac3c54 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-e448658063afaf530369e18d4d93aef2 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-9de654c6bf0923083425c1ae3a2b9c41 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-f6f928afc1f965ee62babbfad7460887 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-42e6ae350a39fb2b103776435bf3ad51 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-ac7ae42bf8699a994724b86795d86ddf tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-ea0b773e302083bd91177ecb63b69624 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-56d36c936b23d953eb056e3f62aa493c tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-055c19b240c903cfc7c05722e6dd468e tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-18abab6cd8327b7fecccf165ea9691eb tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-aad91ea2a43808885f9a13db0766d019 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-b988739007268565cf1761b2c7763690 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-d6665070b2d5bba569753407e49c77cb tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-3cf9f81dfa1aa1e5a2b74aca83b76262 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-240cde974b8ff1d3ed2b0b7e7115de4b tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-c1b2433ccdb1288b3bc16f57b6f6ca29 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-cbe44a7186390340383f650b4ba73fe0 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-1a8dcbe0cfc1f898d3f37ee71a0ae577 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-fba4220147540199572f5c8d2c461c30 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-ace93020c1ab9c630619fafb1dec3fdc tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-27ae1d0de12f4b28164c860b8953ce25 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-76e582e7c02b1145978d2caf6bc4b46e tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-ddd0192c7d0be4baaabff936b40f9be1 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-9bd8d3171fdf3c570beaef622f9d4cca tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-ecce3159aa02d1f4b66fc5d28cb16dea tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-c7f29ed42b83182c349d03c33df4e9c0 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-e4a17915d578f0eae5914267f67d9c89 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-c202d676782031399bf64bd952c6989e tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-159e314c3708934beb7d1e293f53a4fa tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=226 lcp=226 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 226 of 226 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=226 lcp=226 active=4 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

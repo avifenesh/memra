@@ -1,0 +1,1037 @@
+{
+  "aggregate_output_tok_s": 80.52902754062855,
+  "base": "http://127.0.0.1:8003",
+  "bos_garbage_count": 0,
+  "completion_tokens": 32,
+  "concurrency": 1,
+  "decode_tok_s_median": 139.23893146695977,
+  "decode_tok_s_values": [
+    139.23893146695977
+  ],
+  "duration_target_s": null,
+  "errors": [],
+  "expected_matches": 1,
+  "expected_sha256": "4306581845673ae4aacafd106f15c040eeb28017dd8828144ae13cdec76c22c0",
+  "label": "sanity-q27-forward-active-post-r5",
+  "max_tokens": 32,
+  "metrics_after": {
+    "active_sessions": 0,
+    "admission_session_defers": 0,
+    "admission_vram_defers": 0,
+    "admitted": 81,
+    "cache_hit_token_ratio": 0.0,
+    "cached_tokens_in": 0,
+    "completed": 81,
+    "computed_tokens_in": 11553,
+    "continuation_pool_entries": 0,
+    "continuation_pool_evictions": 0,
+    "continuation_pool_hits": 0,
+    "cuda_driver_free_bytes": 1189412864,
+    "cuda_pool_cached_bytes": 235386680,
+    "cuda_pool_reserved_bytes": 51338280960,
+    "cuda_pool_used_bytes": 51102894280,
+    "lcp_histogram": {
+      "counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edges": [
+        0,
+        1,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,
+        2048,
+        4096
+      ]
+    },
+    "plain_affinity_rewinds": 0,
+    "prefix_cache_bytes": 0,
+    "prefix_cache_entries": 0,
+    "prefix_cache_evictions": 0,
+    "prefix_cache_hit_tokens": 0,
+    "prefix_cache_hits": 0,
+    "prefix_cache_inserts": 0,
+    "prefix_cache_misses": 0,
+    "prompt_tokens_in": 11553,
+    "queued_requests": 0,
+    "serve_idle_seconds": 0.01,
+    "spec": {
+      "q27": {
+        "accept_rate_per_pos": [
+          0.9202166064981949,
+          0.7859205776173285,
+          0.6328519855595668
+        ],
+        "acceptance_rate": 0.7796630565583634,
+        "accepted": 6479,
+        "drafted": 8310,
+        "pos_accepted": [
+          2549,
+          2177,
+          1753
+        ],
+        "pos_drafted": [
+          2770,
+          2770,
+          2770
+        ],
+        "rounds": 2770,
+        "tokens_per_round": 3.33898916967509
+      }
+    },
+    "spec_pool_affinity_rewinds": 0,
+    "spec_pool_entries": 74,
+    "spec_pool_evictions": 7,
+    "spec_pool_hits": 0,
+    "spec_pool_misses": 81,
+    "step_oom_parks": 0,
+    "step_p50_ms": 7.768810272216797,
+    "step_p99_ms": 12.62572193145752,
+    "tenants": {
+      "cx27-q27-bg-r1-1786382492679964090-0-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-sanity-q27-forward-active-post-r1-1786382509316358895-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-active-post-r2-1786382526398558493-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-active-post-r3-1786382555050624785-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-active-post-r4-1786382572157574948-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-active-post-r5-1786382600810943617-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r1-1786382492199684947-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r2-1786382532177725335-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r3-1786382537938904207-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r4-1786382577925117628-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r5-1786382583703291737-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-initial-1786382485553295229-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      }
+    },
+    "tokens_out": 9312
+  },
+  "metrics_before": {
+    "active_sessions": 0,
+    "admission_session_defers": 0,
+    "admission_vram_defers": 0,
+    "admitted": 80,
+    "cache_hit_token_ratio": 0.0,
+    "cached_tokens_in": 0,
+    "completed": 80,
+    "computed_tokens_in": 11540,
+    "continuation_pool_entries": 0,
+    "continuation_pool_evictions": 0,
+    "continuation_pool_hits": 0,
+    "cuda_driver_free_bytes": 1659174912,
+    "cuda_pool_cached_bytes": 233979180,
+    "cuda_pool_reserved_bytes": 50868518912,
+    "cuda_pool_used_bytes": 50634539732,
+    "lcp_histogram": {
+      "counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edges": [
+        0,
+        1,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,
+        2048,
+        4096
+      ]
+    },
+    "plain_affinity_rewinds": 0,
+    "prefix_cache_bytes": 0,
+    "prefix_cache_entries": 0,
+    "prefix_cache_evictions": 0,
+    "prefix_cache_hit_tokens": 0,
+    "prefix_cache_hits": 0,
+    "prefix_cache_inserts": 0,
+    "prefix_cache_misses": 0,
+    "prompt_tokens_in": 11540,
+    "queued_requests": 0,
+    "serve_idle_seconds": 1.325,
+    "spec": {
+      "q27": {
+        "accept_rate_per_pos": [
+          0.9202898550724637,
+          0.7862318840579711,
+          0.6326086956521739
+        ],
+        "acceptance_rate": 0.7797101449275362,
+        "accepted": 6456,
+        "drafted": 8280,
+        "pos_accepted": [
+          2540,
+          2170,
+          1746
+        ],
+        "pos_drafted": [
+          2760,
+          2760,
+          2760
+        ],
+        "rounds": 2760,
+        "tokens_per_round": 3.3391304347826085
+      }
+    },
+    "spec_pool_affinity_rewinds": 0,
+    "spec_pool_entries": 73,
+    "spec_pool_evictions": 7,
+    "spec_pool_hits": 0,
+    "spec_pool_misses": 80,
+    "step_oom_parks": 0,
+    "step_p50_ms": 7.651461124420166,
+    "step_p99_ms": 12.62572193145752,
+    "tenants": {
+      "cx27-q27-bg-r1-1786382492679964090-0-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-0-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r1-1786382492679964090-1-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-0-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r2-1786382509789771818-1-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-0-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r3-1786382538422912665-1-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-0-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r4-1786382555534811659-1-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-10": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-12": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-2": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-4": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-6": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-0-8": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-11": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-13": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-3": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-5": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-7": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-q27-bg-r5-1786382584182704185-1-9": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 163
+      },
+      "cx27-sanity-q27-forward-active-post-r1-1786382509316358895-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-active-post-r2-1786382526398558493-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-active-post-r3-1786382555050624785-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-active-post-r4-1786382572157574948-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r1-1786382492199684947-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r2-1786382532177725335-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r3-1786382537938904207-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r4-1786382577925117628-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-forward-idle-post-r5-1786382583703291737-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      },
+      "cx27-sanity-q27-initial-1786382485553295229-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 13
+      }
+    },
+    "tokens_out": 9280
+  },
+  "metrics_expected_completed": 81,
+  "metrics_settled": true,
+  "model": "q27",
+  "n": 1,
+  "n_error": 0,
+  "n_ok": 1,
+  "prompt_bytes": 7,
+  "prompt_kind": "sanity",
+  "prompt_sha256": "707b3c25bb5ccddd6fc12555147d3841b0ce137bd465cae17bcbf962d128ca90",
+  "prompt_tokens_observed": [
+    13
+  ],
+  "requested_requests": 1,
+  "session_key": "cx27-q27-sanity",
+  "spec_metrics_delta": {
+    "acceptance_rate": 0.7666666666666667,
+    "accepted": 23,
+    "drafted": 30,
+    "rounds": 10
+  },
+  "temperature": 0.0,
+  "text_hash_counts": {
+    "4306581845673ae4aacafd106f15c040eeb28017dd8828144ae13cdec76c22c0": 1
+  },
+  "text_prefixes": [
+    "Here's a thinking process:\n\n1.  **Analyze User Input:** The user simply says \"Say OK.\"\n2.  **Identify Intent"
+  ],
+  "ttft_p50_s": 0.1747333575040102,
+  "ttft_p99_s": 0.1747333575040102,
+  "ttft_values_s": [
+    0.1747333575040102
+  ],
+  "wall_s": 0.3973722392693162
+}

@@ -1,0 +1,424 @@
+=== build 41b0040e4101 (41b0040e41019fd2a2a51d883b6a6fdeb5f56807) started 2026-08-31T10:36:02Z ===
+--- git log -1 AFTER checkout (attribution receipt) ---
+41b0040e41019fd2a2a51d883b6a6fdeb5f56807 2026-08-30 12:06:43 +0300 Merge lane/step37-draft-graph-serving-20260830: per-session draft-chain CUDA graph on step37's qualified serving shape
+--- toolchain ---
+rustc 1.98.0 (88d9e12ae 2026-08-18)
+cargo 1.98.0 (797e8a9bc 2026-08-05)
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+--- cargo build ---
+   Compiling memra-engine v0.120.0 (/home/ubuntu/perf-chain/memra/crates/memra-engine)
+warning: memra-engine@0.120.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.2/bin/nvcc
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/hybrid_forward.rs:2814:13
+     |
+2814 |         let mut mark = |e: &Engine, acc: usize, t0: &mut std::time::Instant, ph: &mut [f64; 4]| {
+     |             ----^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/hybrid_forward.rs:9634:17
+     |
+9634 |             let mut up = |src: &CudaSlice<u8>,
+     |                 ----^^
+     |                 |
+     |                 help: remove this `mut`
+
+warning: unused variable: `eps`
+     --> crates/memra-engine/src/hybrid_forward.rs:19705:13
+      |
+19705 |         let eps = self.cfg.rms_eps;
+      |             ^^^ help: if this is intentional, prefix it with an underscore: `_eps`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/spec.rs:4261:13
+     |
+4261 |         let mut anat_mark = |i: usize,
+     |             ----^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/spec.rs:6563:25
+     |
+6563 |                     let mut ffn_col =
+     |                         ----^^^^^^^
+     |                         |
+     |                         help: remove this `mut`
+
+warning: unused variable: `mtp`
+    --> crates/memra-engine/src/spec.rs:9884:17
+     |
+9884 |             let mtp = self.mtp.as_ref().expect("mtp checked above");
+     |                 ^^^ help: if this is intentional, prefix it with an underscore: `_mtp`
+
+warning: method `matvec_bf16_dual` is never used
+     --> crates/memra-engine/src/lib.rs:19304:19
+      |
+ 1430 | impl Engine {
+      | ----------- method in this implementation
+...
+19304 |     pub(crate) fn matvec_bf16_dual(
+      |                   ^^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `step35_spec_fa2_precheck` and `step35_verify_spec_fa2_join` are never used
+     --> crates/memra-engine/src/hybrid_forward.rs:16820:19
+      |
+15245 | impl HybridModel {
+      | ---------------- methods in this implementation
+...
+16820 |     pub(crate) fn step35_spec_fa2_precheck(
+      |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+17558 |     pub(crate) fn step35_verify_spec_fa2_join(
+      |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `keeper` is never read
+    --> crates/memra-engine/src/spec.rs:2025:5
+     |
+2022 | struct DraftChainGraphs {
+     |        ---------------- field in this struct
+...
+2025 |     keeper: Vec<Box<dyn std::any::Any + Send>>,
+     |     ^^^^^^
+
+warning: method `decode_v2_spec_fa2_join` is never used
+    --> crates/memra-engine/src/tp.rs:5979:19
+     |
+1547 | impl TpE4m3HostBounce {
+     | --------------------- method in this implementation
+...
+5979 |     pub(crate) fn decode_v2_spec_fa2_join(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `out_stage_mut` is never used
+    --> crates/memra-engine/src/tp.rs:9194:19
+     |
+9187 | impl Nvfp4DeviceRoutesWorkspace {
+     | ------------------------------- method in this implementation
+...
+9194 |     pub(crate) fn out_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
+     |                   ^^^^^^^^^^^^^
+
+warning: field `graph` is never read
+     --> crates/memra-engine/src/tp.rs:13373:5
+      |
+13372 | struct TokenGraphChild {
+      |        --------------- field in this struct
+13373 |     graph: cudarc::driver::CudaGraph,
+      |     ^^^^^
+
+warning: calls to `std::mem::drop` with a value that implements `Copy` does nothing
+    --> crates/memra-engine/src/spec.rs:6671:21
+     |
+6671 |                     drop(ffn_col);
+     |                     ^^^^^-------^
+     |                          |
+     |                          argument has type `{closure@crates/memra-engine/src/spec.rs:6564:25: 6567:67}`
+     |
+     = note: `#[warn(dropping_copy_types)]` on by default
+help: use `let _ = ...` to ignore the expression or result
+     |
+6671 -                     drop(ffn_col);
+6671 +                     let _ = ffn_col;
+     |
+
+   Compiling memra-server v0.120.0 (/home/ubuntu/perf-chain/memra/crates/memra-server)
+warning: variable does not need to be mutable
+   --> crates/memra-server/src/embed_api.rs:263:9
+    |
+263 |     let mut n_prompt;
+    |         ----^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `dspark_draft_ready`
+    --> crates/memra-server/src/worker.rs:8099:17
+     |
+8099 |             let dspark_draft_ready = dspark_draft.is_some();
+     |                 ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dspark_draft_ready`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `started` is never read
+    --> crates/memra-server/src/lib.rs:1419:5
+     |
+1395 | struct AppState {
+     |        -------- field in this struct
+...
+1419 |     started: u64,
+     |     ^^^^^^^
+     |
+     = note: `AppState` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `bind_is_loopback` is never used
+    --> crates/memra-server/src/lib.rs:1513:4
+     |
+1513 | fn bind_is_loopback(addr: &str) -> Result<bool, String> {
+     |    ^^^^^^^^^^^^^^^^
+
+warning: function `validate_bind_security` is never used
+    --> crates/memra-server/src/lib.rs:1517:4
+     |
+1517 | fn validate_bind_security(
+     |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `admission_backpressure` is never used
+    --> crates/memra-server/src/lib.rs:1959:15
+     |
+1959 | pub(crate) fn admission_backpressure(
+     |               ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `single` is never used
+    --> crates/memra-server/src/lib.rs:2704:8
+     |
+2661 | impl ModelSamplingDefaults {
+     | -------------------------- associated function in this implementation
+...
+2704 |     fn single(thinking: SamplingDefaults) -> Self {
+     |        ^^^^^^
+
+warning: field `affinity` is never read
+    --> crates/memra-server/src/worker.rs:1619:5
+     |
+1607 | struct DsparkReuseEntry {
+     |        ---------------- field in this struct
+...
+1619 |     affinity: Option<String>,
+     |     ^^^^^^^^
+
+warning: field `vision_memory` is never read
+    --> crates/memra-server/src/worker.rs:6188:5
+     |
+6074 | struct Session {
+     |        ------- field in this struct
+...
+6188 |     vision_memory: Option<crate::VisionMemoryPermit>,
+     |     ^^^^^^^^^^^^^
+
+warning: `memra-server` (lib) generated 9 warnings (run `cargo fix --lib -p memra-server` to apply 2 suggestions)
+warning: `memra-engine` (lib) generated 13 warnings (run `cargo fix --lib -p memra-engine` to apply 6 suggestions)
+    Finished `release` profile [optimized] target(s) in 4m 33s
+build_seconds=273 rc=0
+=== build 41b0040e4101 (41b0040e41019fd2a2a51d883b6a6fdeb5f56807) started 2026-08-31T10:51:26Z ===
+--- git log -1 AFTER checkout (attribution receipt) ---
+41b0040e41019fd2a2a51d883b6a6fdeb5f56807 2026-08-30 12:06:43 +0300 Merge lane/step37-draft-graph-serving-20260830: per-session draft-chain CUDA graph on step37's qualified serving shape
+--- toolchain ---
+rustc 1.98.0 (88d9e12ae 2026-08-18)
+cargo 1.98.0 (797e8a9bc 2026-08-05)
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+--- cargo build ---
+warning: memra-engine@0.120.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.2/bin/nvcc
+   Compiling memra-server v0.120.0 (/home/ubuntu/perf-chain/memra/crates/memra-server)
+   Compiling memra-engine v0.120.0 (/home/ubuntu/perf-chain/memra/crates/memra-engine)
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/hybrid_forward.rs:2814:13
+     |
+2814 |         let mut mark = |e: &Engine, acc: usize, t0: &mut std::time::Instant, ph: &mut [f64; 4]| {
+     |             ----^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/hybrid_forward.rs:9634:17
+     |
+9634 |             let mut up = |src: &CudaSlice<u8>,
+     |                 ----^^
+     |                 |
+     |                 help: remove this `mut`
+
+warning: unused variable: `eps`
+     --> crates/memra-engine/src/hybrid_forward.rs:19705:13
+      |
+19705 |         let eps = self.cfg.rms_eps;
+      |             ^^^ help: if this is intentional, prefix it with an underscore: `_eps`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/spec.rs:4261:13
+     |
+4261 |         let mut anat_mark = |i: usize,
+     |             ----^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/spec.rs:6563:25
+     |
+6563 |                     let mut ffn_col =
+     |                         ----^^^^^^^
+     |                         |
+     |                         help: remove this `mut`
+
+warning: unused variable: `mtp`
+    --> crates/memra-engine/src/spec.rs:9884:17
+     |
+9884 |             let mtp = self.mtp.as_ref().expect("mtp checked above");
+     |                 ^^^ help: if this is intentional, prefix it with an underscore: `_mtp`
+
+warning: method `matvec_bf16_dual` is never used
+     --> crates/memra-engine/src/lib.rs:19304:19
+      |
+ 1430 | impl Engine {
+      | ----------- method in this implementation
+...
+19304 |     pub(crate) fn matvec_bf16_dual(
+      |                   ^^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `step35_spec_fa2_precheck` and `step35_verify_spec_fa2_join` are never used
+     --> crates/memra-engine/src/hybrid_forward.rs:16820:19
+      |
+15245 | impl HybridModel {
+      | ---------------- methods in this implementation
+...
+16820 |     pub(crate) fn step35_spec_fa2_precheck(
+      |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+17558 |     pub(crate) fn step35_verify_spec_fa2_join(
+      |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `keeper` is never read
+    --> crates/memra-engine/src/spec.rs:2025:5
+     |
+2022 | struct DraftChainGraphs {
+     |        ---------------- field in this struct
+...
+2025 |     keeper: Vec<Box<dyn std::any::Any + Send>>,
+     |     ^^^^^^
+
+warning: method `decode_v2_spec_fa2_join` is never used
+    --> crates/memra-engine/src/tp.rs:5979:19
+     |
+1547 | impl TpE4m3HostBounce {
+     | --------------------- method in this implementation
+...
+5979 |     pub(crate) fn decode_v2_spec_fa2_join(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `out_stage_mut` is never used
+    --> crates/memra-engine/src/tp.rs:9194:19
+     |
+9187 | impl Nvfp4DeviceRoutesWorkspace {
+     | ------------------------------- method in this implementation
+...
+9194 |     pub(crate) fn out_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
+     |                   ^^^^^^^^^^^^^
+
+warning: field `graph` is never read
+     --> crates/memra-engine/src/tp.rs:13373:5
+      |
+13372 | struct TokenGraphChild {
+      |        --------------- field in this struct
+13373 |     graph: cudarc::driver::CudaGraph,
+      |     ^^^^^
+
+warning: calls to `std::mem::drop` with a value that implements `Copy` does nothing
+    --> crates/memra-engine/src/spec.rs:6671:21
+     |
+6671 |                     drop(ffn_col);
+     |                     ^^^^^-------^
+     |                          |
+     |                          argument has type `{closure@crates/memra-engine/src/spec.rs:6564:25: 6567:67}`
+     |
+     = note: `#[warn(dropping_copy_types)]` on by default
+help: use `let _ = ...` to ignore the expression or result
+     |
+6671 -                     drop(ffn_col);
+6671 +                     let _ = ffn_col;
+     |
+
+warning: variable does not need to be mutable
+   --> crates/memra-server/src/embed_api.rs:263:9
+    |
+263 |     let mut n_prompt;
+    |         ----^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `dspark_draft_ready`
+    --> crates/memra-server/src/worker.rs:8099:17
+     |
+8099 |             let dspark_draft_ready = dspark_draft.is_some();
+     |                 ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dspark_draft_ready`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `started` is never read
+    --> crates/memra-server/src/lib.rs:1419:5
+     |
+1395 | struct AppState {
+     |        -------- field in this struct
+...
+1419 |     started: u64,
+     |     ^^^^^^^
+     |
+     = note: `AppState` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `bind_is_loopback` is never used
+    --> crates/memra-server/src/lib.rs:1513:4
+     |
+1513 | fn bind_is_loopback(addr: &str) -> Result<bool, String> {
+     |    ^^^^^^^^^^^^^^^^
+
+warning: function `validate_bind_security` is never used
+    --> crates/memra-server/src/lib.rs:1517:4
+     |
+1517 | fn validate_bind_security(
+     |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `admission_backpressure` is never used
+    --> crates/memra-server/src/lib.rs:1959:15
+     |
+1959 | pub(crate) fn admission_backpressure(
+     |               ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `single` is never used
+    --> crates/memra-server/src/lib.rs:2704:8
+     |
+2661 | impl ModelSamplingDefaults {
+     | -------------------------- associated function in this implementation
+...
+2704 |     fn single(thinking: SamplingDefaults) -> Self {
+     |        ^^^^^^
+
+warning: field `affinity` is never read
+    --> crates/memra-server/src/worker.rs:1619:5
+     |
+1607 | struct DsparkReuseEntry {
+     |        ---------------- field in this struct
+...
+1619 |     affinity: Option<String>,
+     |     ^^^^^^^^
+
+warning: field `vision_memory` is never read
+    --> crates/memra-server/src/worker.rs:6188:5
+     |
+6074 | struct Session {
+     |        ------- field in this struct
+...
+6188 |     vision_memory: Option<crate::VisionMemoryPermit>,
+     |     ^^^^^^^^^^^^^
+
+warning: `memra-server` (lib) generated 9 warnings (run `cargo fix --lib -p memra-server` to apply 2 suggestions)
+warning: `memra-engine` (lib) generated 13 warnings (run `cargo fix --lib -p memra-engine` to apply 6 suggestions)
+    Finished `release` profile [optimized] target(s) in 32.91s
+build_seconds=33 rc=0

@@ -1,0 +1,26 @@
+=== rep 1 ===
+[q4rp] split-plane IN-PLACE swap: 420 dense trunk tensors
+dflash spec block=16 n_new=128 prompt=19 toks
+[dflash] acceptance 78/142 = 0.549
+plain: 74.23 tok/s | dflash spec: 132.64 tok/s (1.79x) | stream agreement 128/128
+=== rep 2 ===
+[q4rp] split-plane IN-PLACE swap: 420 dense trunk tensors
+dflash spec block=16 n_new=128 prompt=19 toks
+[dflash] acceptance 78/142 = 0.549
+plain: 74.21 tok/s | dflash spec: 132.67 tok/s (1.79x) | stream agreement 128/128
+=== rep 3 ===
+[q4rp] split-plane IN-PLACE swap: 420 dense trunk tensors
+dflash spec block=16 n_new=128 prompt=19 toks
+[dflash] acceptance 78/142 = 0.549
+plain: 74.25 tok/s | dflash spec: 132.61 tok/s (1.79x) | stream agreement 128/128
+=== rep 4 ===
+[q4rp] split-plane IN-PLACE swap: 420 dense trunk tensors
+dflash spec block=16 n_new=128 prompt=19 toks
+[dflash] acceptance 78/142 = 0.549
+plain: 74.26 tok/s | dflash spec: 132.62 tok/s (1.79x) | stream agreement 128/128
+=== rep 5 ===
+[q4rp] split-plane IN-PLACE swap: 420 dense trunk tensors
+dflash spec block=16 n_new=128 prompt=19 toks
+[dflash] acceptance 78/142 = 0.549
+plain: 74.23 tok/s | dflash spec: 132.62 tok/s (1.79x) | stream agreement 128/128
+ACCEPT5-DONE

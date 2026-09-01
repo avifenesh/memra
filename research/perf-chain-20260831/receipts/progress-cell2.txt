@@ -1,0 +1,321 @@
+2026-08-31T10:39:35Z RUN_START cell=cell2 boots=[1 2 3] arms=P:/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18:current PV:/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18:current-novision
+10:39:35Z BOOT_START P1 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current
+BOOT_OK pid=1098375 arm=P1 mode=current
+arm=P1
+mode=current
+boot_nonce=pc37-P1-1788172775-16638
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=1098375
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-P1-1788172775-16638
+environ_mode=current
+environ_census=/home/ubuntu/perf-chain/receipts/environ-P1.txt (42 MEMRA_/PC vars)
+0, 84375 MiB, 600.00 W, 2310 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=current (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR=/data/models/step37-flash-nvfp4 MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8652849740932642, "spec_rounds": 84, "wall_tok_s": 98.58, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 117.44 tok/s
+rep 1 wall_tok_s=117.47 ttft=0.1786 ct=512 acc=0.9466666666666667 finish=length
+rep 2 wall_tok_s=118.19 ttft=0.1774 ct=512 acc=0.954177897574124 finish=length
+rep 3 wall_tok_s=115.54 ttft=0.1774 ct=512 acc=0.9263157894736842 finish=length
+rep 4 wall_tok_s=113.04 ttft=0.1777 ct=512 acc=0.9093333333333333 finish=length
+rep 5 wall_tok_s=113.97 ttft=0.1775 ct=512 acc=0.9164490861618799 finish=length
+rep 6 wall_tok_s=114.6 ttft=0.1786 ct=512 acc=0.9232804232804233 finish=length
+rep 7 wall_tok_s=101.82 ttft=0.1784 ct=512 acc=0.7733990147783252 finish=length
+rep 8 wall_tok_s=113.47 ttft=0.1782 ct=512 acc=0.9081364829396326 finish=length
+BOOT_MEDIAN arm=P1 boot=1 wall_tok_s=114.285 n=8
+STOPPED gpus drained (max 0 MiB)
+10:43:22Z CYCLE_DONE P1
+10:43:22Z BOOT_START PV1 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current-novision
+BOOT_OK pid=1099379 arm=PV1 mode=current-novision
+arm=PV1
+mode=current-novision
+boot_nonce=pc37-PV1-1788173002-24912
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=1099379
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-PV1-1788173002-24912
+environ_mode=current-novision
+environ_census=/home/ubuntu/perf-chain/receipts/environ-PV1.txt (41 MEMRA_/PC vars)
+0, 76855 MiB, 600.00 W, 2310 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=current-novision (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.9402173913043478, "spec_rounds": 75, "wall_tok_s": 103.78, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 118.85 tok/s
+rep 1 wall_tok_s=109.72 ttft=0.1767 ct=512 acc=0.8766404199475065 finish=length
+rep 2 wall_tok_s=108.32 ttft=0.178 ct=512 acc=0.8545918367346939 finish=length
+rep 3 wall_tok_s=117.89 ttft=0.1775 ct=512 acc=0.9493333333333334 finish=length
+rep 4 wall_tok_s=114.08 ttft=0.1776 ct=512 acc=0.9164490861618799 finish=length
+rep 5 wall_tok_s=116.52 ttft=0.1765 ct=512 acc=0.9490616621983914 finish=length
+rep 6 wall_tok_s=115.77 ttft=0.1786 ct=512 acc=0.935656836461126 finish=length
+rep 7 wall_tok_s=117.62 ttft=0.1782 ct=512 acc=0.9496021220159151 finish=length
+rep 8 wall_tok_s=113.85 ttft=0.178 ct=512 acc=0.910761154855643 finish=length
+BOOT_MEDIAN arm=PV1 boot=1 wall_tok_s=114.925 n=8
+STOPPED gpus drained (max 0 MiB)
+10:46:58Z CYCLE_DONE PV1
+10:46:58Z BOOT_START P2 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current
+BOOT_OK pid=1100059 arm=P2 mode=current
+arm=P2
+mode=current
+boot_nonce=pc37-P2-1788173218-9569
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=1100059
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-P2-1788173218-9569
+environ_mode=current
+environ_census=/home/ubuntu/perf-chain/receipts/environ-P2.txt (42 MEMRA_/PC vars)
+0, 84375 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=current (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR=/data/models/step37-flash-nvfp4 MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.845360824742268, "spec_rounds": 84, "wall_tok_s": 98.2, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 115.44 tok/s
+rep 1 wall_tok_s=113.82 ttft=0.1769 ct=512 acc=0.9025641025641026 finish=length
+rep 2 wall_tok_s=117.81 ttft=0.1792 ct=512 acc=0.9516129032258065 finish=length
+rep 3 wall_tok_s=109.79 ttft=0.1774 ct=512 acc=0.8727272727272727 finish=length
+rep 4 wall_tok_s=114.12 ttft=0.1785 ct=512 acc=0.92 finish=length
+rep 5 wall_tok_s=117.28 ttft=0.1785 ct=512 acc=0.9441489361702128 finish=length
+rep 6 wall_tok_s=114.78 ttft=0.1778 ct=512 acc=0.9295392953929539 finish=length
+rep 7 wall_tok_s=113.35 ttft=0.179 ct=512 acc=0.9115281501340483 finish=length
+rep 8 wall_tok_s=117.01 ttft=0.1785 ct=512 acc=0.9366754617414248 finish=length
+BOOT_MEDIAN arm=P2 boot=2 wall_tok_s=114.45 n=8
+STOPPED gpus drained (max 0 MiB)
+10:50:44Z CYCLE_DONE P2
+10:50:44Z BOOT_START PV2 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current-novision
+BOOT_OK pid=1100658 arm=PV2 mode=current-novision
+arm=PV2
+mode=current-novision
+boot_nonce=pc37-PV2-1788173444-6460
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=1100658
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-PV2-1788173444-6460
+environ_mode=current-novision
+environ_census=/home/ubuntu/perf-chain/receipts/environ-PV2.txt (41 MEMRA_/PC vars)
+0, 76855 MiB, 600.00 W, 2310 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=current-novision (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8972972972972973, "spec_rounds": 84, "wall_tok_s": 99.7, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 116.57 tok/s
+rep 1 wall_tok_s=112.4 ttft=0.1786 ct=512 acc=0.9045092838196287 finish=length
+rep 2 wall_tok_s=107.84 ttft=0.1775 ct=512 acc=0.8601036269430051 finish=length
+rep 3 wall_tok_s=116.03 ttft=0.1776 ct=512 acc=0.9366754617414248 finish=length
+rep 4 wall_tok_s=110.72 ttft=0.1793 ct=512 acc=0.8730964467005076 finish=length
+rep 5 wall_tok_s=113.93 ttft=0.1775 ct=512 acc=0.9253333333333333 finish=length
+rep 6 wall_tok_s=119.16 ttft=0.1781 ct=512 acc=0.967654986522911 finish=length
+rep 7 wall_tok_s=118.23 ttft=0.1786 ct=512 acc=0.9571045576407506 finish=length
+rep 8 wall_tok_s=119.57 ttft=0.178 ct=512 acc=0.9728997289972899 finish=length
+BOOT_MEDIAN arm=PV2 boot=2 wall_tok_s=114.98 n=8
+STOPPED gpus drained (max 0 MiB)
+10:54:25Z CYCLE_DONE PV2
+10:54:25Z BOOT_START P3 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current
+BOOT_OK pid=1101454 arm=P3 mode=current
+arm=P3
+mode=current
+boot_nonce=pc37-P3-1788173665-309
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=1101454
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-P3-1788173665-309
+environ_mode=current
+environ_census=/home/ubuntu/perf-chain/receipts/environ-P3.txt (42 MEMRA_/PC vars)
+0, 84375 MiB, 600.00 W, 2302 MHz
+1, 58515 MiB, 600.00 W, 2302 MHz
+ENV_VERIFIED mode=current (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR=/data/models/step37-flash-nvfp4 MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.90625, "spec_rounds": 76, "wall_tok_s": 102.49, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 113.08 tok/s
+rep 1 wall_tok_s=116.7 ttft=0.1781 ct=512 acc=0.9410187667560321 finish=length
+rep 2 wall_tok_s=118.73 ttft=0.1778 ct=512 acc=0.9598930481283422 finish=length
+rep 3 wall_tok_s=111.67 ttft=0.1776 ct=512 acc=0.8941798941798942 finish=length
+rep 4 wall_tok_s=118.03 ttft=0.1787 ct=512 acc=0.9571045576407506 finish=length
+rep 5 wall_tok_s=118.01 ttft=0.1799 ct=512 acc=0.9521276595744681 finish=length
+rep 6 wall_tok_s=117.62 ttft=0.1778 ct=512 acc=0.9546666666666667 finish=length
+rep 7 wall_tok_s=120.04 ttft=0.18 ct=512 acc=0.9704301075268817 finish=length
+rep 8 wall_tok_s=119.04 ttft=0.1763 ct=512 acc=0.9573333333333334 finish=length
+BOOT_MEDIAN arm=P3 boot=3 wall_tok_s=118.02000000000001 n=8
+STOPPED gpus drained (max 0 MiB)
+10:58:06Z CYCLE_DONE P3
+10:58:06Z BOOT_START PV3 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current-novision
+BOOT_OK pid=1101694 arm=PV3 mode=current-novision
+arm=PV3
+mode=current-novision
+boot_nonce=pc37-PV3-1788173886-32746
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=1101694
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-PV3-1788173886-32746
+environ_mode=current-novision
+environ_census=/home/ubuntu/perf-chain/receipts/environ-PV3.txt (41 MEMRA_/PC vars)
+0, 76855 MiB, 600.00 W, 2310 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=current-novision (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.9301075268817204, "spec_rounds": 76, "wall_tok_s": 103.01, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 114.56 tok/s
+rep 1 wall_tok_s=113.42 ttft=0.1781 ct=512 acc=0.9052631578947369 finish=length
+rep 2 wall_tok_s=119.47 ttft=0.1779 ct=512 acc=0.967654986522911 finish=length
+rep 3 wall_tok_s=109.66 ttft=0.1783 ct=512 acc=0.868421052631579 finish=length
+rep 4 wall_tok_s=117.6 ttft=0.1778 ct=512 acc=0.9565217391304348 finish=length
+rep 5 wall_tok_s=111.32 ttft=0.1774 ct=512 acc=0.8862433862433863 finish=length
+rep 6 wall_tok_s=107.34 ttft=0.1793 ct=512 acc=0.8370927318295739 finish=length
+rep 7 wall_tok_s=117.59 ttft=0.1785 ct=512 acc=0.9546666666666667 finish=length
+rep 8 wall_tok_s=117.95 ttft=0.1776 ct=512 acc=0.9672131147540983 finish=length
+BOOT_MEDIAN arm=PV3 boot=3 wall_tok_s=115.505 n=8
+STOPPED gpus drained (max 0 MiB)
+11:01:52Z CYCLE_DONE PV3
+2026-08-31T11:01:52Z RUN_DONE cell=cell2
+CHAIN1_DONE 2026-08-31T11:01:52Z
+PREFLIGHT_OK arm=P bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 md5=dd421c2958ab9d87adf8cdc46055588a fp=fp/3999a92a6e18 mode=current
+PREFLIGHT_OK arm=PV bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 md5=dd421c2958ab9d87adf8cdc46055588a fp=fp/3999a92a6e18 mode=current-novision
+2026-08-31T12:47:16Z RUN_START cell=cell2 boots=[4 5] arms=P:/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18:current PV:/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18:current-novision
+12:47:16Z BOOT_START P4 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current
+BOOT_OK pid=12145 arm=P4 mode=current
+arm=P4
+mode=current
+boot_nonce=pc37-P4-1788180436-20958
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=12145
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-P4-1788180436-20958
+environ_mode=current
+environ_census=/home/ubuntu/perf-chain/receipts/environ-P4.txt (42 MEMRA_/PC vars)
+0, 84375 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=current (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR=/data/models/step37-flash-nvfp4 MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.9358288770053476, "spec_rounds": 74, "wall_tok_s": 105.08, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 119.04 tok/s
+rep 1 wall_tok_s=117.65 ttft=0.1773 ct=512 acc=0.9442970822281167 finish=length
+rep 2 wall_tok_s=118.83 ttft=0.177 ct=512 acc=0.9445910290237467 finish=length
+rep 3 wall_tok_s=111.22 ttft=0.1771 ct=512 acc=0.8847184986595175 finish=length
+rep 4 wall_tok_s=117.94 ttft=0.1769 ct=512 acc=0.9486486486486486 finish=length
+rep 5 wall_tok_s=116.52 ttft=0.1777 ct=512 acc=0.9287598944591029 finish=length
+rep 6 wall_tok_s=104.49 ttft=0.1782 ct=512 acc=0.7964824120603015 finish=length
+rep 7 wall_tok_s=119.04 ttft=0.1776 ct=512 acc=0.9568733153638814 finish=length
+rep 8 wall_tok_s=116.83 ttft=0.1765 ct=512 acc=0.9388297872340425 finish=length
+BOOT_MEDIAN arm=P4 boot=4 wall_tok_s=117.24000000000001 n=8
+STOPPED gpus drained (max 0 MiB)
+12:50:46Z CYCLE_DONE P4
+12:50:46Z BOOT_START PV4 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current-novision
+BOOT_OK pid=12531 arm=PV4 mode=current-novision
+arm=PV4
+mode=current-novision
+boot_nonce=pc37-PV4-1788180646-13389
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=12531
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-PV4-1788180646-13389
+environ_mode=current-novision
+environ_census=/home/ubuntu/perf-chain/receipts/environ-PV4.txt (41 MEMRA_/PC vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=current-novision (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.9277777777777778, "spec_rounds": 83, "wall_tok_s": 101.97, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 115.74 tok/s
+rep 1 wall_tok_s=113.52 ttft=0.1763 ct=512 acc=0.9112271540469974 finish=length
+rep 2 wall_tok_s=117.15 ttft=0.1765 ct=512 acc=0.9544235924932976 finish=length
+rep 3 wall_tok_s=114.64 ttft=0.1771 ct=512 acc=0.9151193633952255 finish=length
+rep 4 wall_tok_s=110.55 ttft=0.1772 ct=512 acc=0.8835978835978836 finish=length
+rep 5 wall_tok_s=114.79 ttft=0.1764 ct=512 acc=0.9257294429708223 finish=length
+rep 6 wall_tok_s=113.37 ttft=0.1775 ct=512 acc=0.91005291005291 finish=length
+rep 7 wall_tok_s=118.47 ttft=0.1765 ct=512 acc=0.9544235924932976 finish=length
+rep 8 wall_tok_s=111.87 ttft=0.176 ct=512 acc=0.8814432989690721 finish=length
+BOOT_MEDIAN arm=PV4 boot=4 wall_tok_s=114.08 n=8
+STOPPED gpus drained (max 0 MiB)
+12:54:13Z CYCLE_DONE PV4
+12:54:13Z BOOT_START P5 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current
+BOOT_OK pid=12791 arm=P5 mode=current
+arm=P5
+mode=current
+boot_nonce=pc37-P5-1788180853-30922
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=12791
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-P5-1788180853-30922
+environ_mode=current
+environ_census=/home/ubuntu/perf-chain/receipts/environ-P5.txt (42 MEMRA_/PC vars)
+0, 84375 MiB, 600.00 W, 2272 MHz
+1, 58515 MiB, 600.00 W, 2302 MHz
+ENV_VERIFIED mode=current (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR=/data/models/step37-flash-nvfp4 MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.875, "spec_rounds": 87, "wall_tok_s": 99.71, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 109.67 tok/s
+rep 1 wall_tok_s=113.7 ttft=0.1769 ct=512 acc=0.900523560209424 finish=length
+rep 2 wall_tok_s=115.17 ttft=0.1778 ct=512 acc=0.9114583333333334 finish=length
+rep 3 wall_tok_s=112.82 ttft=0.1767 ct=512 acc=0.8886075949367088 finish=length
+rep 4 wall_tok_s=108.79 ttft=0.1785 ct=512 acc=0.8582677165354331 finish=length
+rep 5 wall_tok_s=113.39 ttft=0.1776 ct=512 acc=0.8994708994708994 finish=length
+rep 6 wall_tok_s=114.78 ttft=0.1765 ct=512 acc=0.9202127659574468 finish=length
+rep 7 wall_tok_s=113.57 ttft=0.1773 ct=512 acc=0.9036458333333334 finish=length
+rep 8 wall_tok_s=114.86 ttft=0.1774 ct=512 acc=0.9278074866310161 finish=length
+BOOT_MEDIAN arm=P5 boot=5 wall_tok_s=113.63499999999999 n=8
+STOPPED gpus drained (max 0 MiB)
+12:57:40Z CYCLE_DONE P5
+12:57:40Z BOOT_START PV5 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=current-novision
+BOOT_OK pid=13049 arm=PV5 mode=current-novision
+arm=PV5
+mode=current-novision
+boot_nonce=pc37-PV5-1788181060-6078
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=13049
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-PV5-1788181060-6078
+environ_mode=current-novision
+environ_census=/home/ubuntu/perf-chain/receipts/environ-PV5.txt (41 MEMRA_/PC vars)
+0, 76855 MiB, 600.00 W, 2310 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=current-novision (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7938144329896907, "spec_rounds": 95, "wall_tok_s": 93.0, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 117.17 tok/s
+rep 1 wall_tok_s=113.07 ttft=0.1768 ct=512 acc=0.8958333333333334 finish=length
+rep 2 wall_tok_s=116.9 ttft=0.1762 ct=512 acc=0.9366754617414248 finish=length
+rep 3 wall_tok_s=116.19 ttft=0.1764 ct=512 acc=0.9315789473684211 finish=length
+rep 4 wall_tok_s=119.27 ttft=0.1768 ct=512 acc=0.9572192513368984 finish=length
+rep 5 wall_tok_s=118.49 ttft=0.177 ct=512 acc=0.9447368421052632 finish=length
+rep 6 wall_tok_s=117.0 ttft=0.1766 ct=512 acc=0.9486486486486486 finish=length
+rep 7 wall_tok_s=111.05 ttft=0.1767 ct=512 acc=0.8766404199475065 finish=length
+rep 8 wall_tok_s=110.86 ttft=0.1771 ct=512 acc=0.8759894459102903 finish=length
+BOOT_MEDIAN arm=PV5 boot=5 wall_tok_s=116.545 n=8
+STOPPED gpus drained (max 0 MiB)
+13:01:06Z CYCLE_DONE PV5
+2026-08-31T13:01:06Z RUN_DONE cell=cell2

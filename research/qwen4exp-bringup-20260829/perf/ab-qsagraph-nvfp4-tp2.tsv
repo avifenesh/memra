@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=nvfp4-tp2	binary_sha256=ff3f38cbaae5fd3a322ce86b3f1305ecc699ceb4dca1915d6d72cd48a100824b	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ab-qsagraph: fresh state + probe prefill per arm, 4 warmup steps excluded per arm
+rep	arm	steps	mean_ms	median_ms	tok_per_s
+0	qsa_eager	40	13.62	13.63	73.44
+0	qsa_graphs	40	13.61	13.63	73.46
+1	qsa_eager	40	13.58	13.59	73.64
+1	qsa_graphs	40	13.60	13.61	73.55
+2	qsa_eager	40	13.61	13.62	73.49
+2	qsa_graphs	40	13.63	13.64	73.38
+3	qsa_eager	40	13.64	13.66	73.33
+3	qsa_graphs	40	13.60	13.62	73.53
+4	qsa_eager	40	13.63	13.63	73.37
+4	qsa_graphs	40	13.60	13.62	73.52
+# arm qsa_eager	mean_of_means_ms=13.61	min=13.58	max=13.64	tok_per_s=73.45
+# arm qsa_graphs	mean_of_means_ms=13.61	min=13.60	max=13.63	tok_per_s=73.49
+# rep0_arm_chain_first_divergence	-1
+# rep0_qsa_eager	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310
+# rep0_qsa_graphs	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310

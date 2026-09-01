@@ -1,0 +1,91 @@
+{
+  "captured_utc": "2026-08-10T17:39:50Z",
+  "failure_signatures": {
+    "/var/log/memra-q27-27bab.log": [],
+    "/var/log/memra-step-27bab.log": []
+  },
+  "fresh_soak": {
+    "all_errors_empty": true,
+    "count": 9,
+    "first_i": 1,
+    "last_i": 9,
+    "last_ttft_s": 0.15057587623596191
+  },
+  "live_assertions": "PASS",
+  "metrics": {
+    "8002": {
+      "active_sessions": 0,
+      "completed": 10,
+      "cuda_driver_free_bytes": 42863296512,
+      "cuda_pool_reserved_bytes": 58317602816,
+      "spec_pool_entries": 0,
+      "step_oom_parks": 0,
+      "tokens_out": 896
+    },
+    "8003": {
+      "active_sessions": 0,
+      "completed": 1,
+      "cuda_driver_free_bytes": 36608212992,
+      "cuda_pool_reserved_bytes": 16508780544,
+      "spec_pool_entries": 1,
+      "step_oom_parks": 0,
+      "tokens_out": 32
+    }
+  },
+  "pids": {
+    "q27": 69935,
+    "soak": 70049,
+    "step": 69696
+  },
+  "q27_env": {
+    "CUDA_VISIBLE_DEVICES": "0",
+    "MEMRA_ADDR": "0.0.0.0:8003",
+    "MEMRA_CTX": "32768",
+    "MEMRA_MODELS": "q27=/workspace/models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf+/workspace/models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf",
+    "MEMRA_PREFIX_CACHE_MB": "0",
+    "MEMRA_SERVE_SPEC": "1",
+    "MEMRA_SPEC_K": "3"
+  },
+  "ready": {
+    "8002": {
+      "models": [
+        "stepfun/step-3.7-flash"
+      ],
+      "status": "ready",
+      "worker": {
+        "beat_age_ms": 3545,
+        "generation": 0,
+        "phase": "idle",
+        "stall_threshold_ms": 120000,
+        "tick_max_ms": 212,
+        "xid_warnings": 0
+      }
+    },
+    "8003": {
+      "models": [
+        "q27"
+      ],
+      "status": "ready",
+      "worker": {
+        "beat_age_ms": 180182,
+        "generation": 0,
+        "phase": "idle",
+        "stall_threshold_ms": 120000,
+        "tick_max_ms": 0,
+        "xid_warnings": 0
+      }
+    }
+  },
+  "step_env": {
+    "CUDA_VISIBLE_DEVICES": "0,1",
+    "MEMRA_ADDR": "0.0.0.0:8002",
+    "MEMRA_CTX": "262144",
+    "MEMRA_MODELS": "stepfun/step-3.7-flash=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf+/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf",
+    "MEMRA_MOE_GROUPED": "1",
+    "MEMRA_PP_DEVICES": "0,1",
+    "MEMRA_PP_HOST_BOUNCE": "1",
+    "MEMRA_PP_STAGES": "2",
+    "MEMRA_PREFILL_TICK": "2048",
+    "MEMRA_PREFIX_CACHE_MB": "2048"
+  }
+}

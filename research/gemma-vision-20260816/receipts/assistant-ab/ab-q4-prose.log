@@ -1,0 +1,50 @@
+=== q4/prose rep 1 ===
+--- dflash(dspark) ---
+[dflash] acceptance 78/142 = 0.549
+plain: 74.32 tok/s | dflash spec: 131.34 tok/s (1.77x) | stream agreement 128/128
+--- mtp qat-Q8 K=5 ---
+[gemma-spec] rounds=34 drafted=150 accepted=94                    accept-rate=0.627 tok/round=3.76
+plain: 74.43 tok/s | spec: 208.54 tok/s (2.80x) | stream agreement 128/128
+--- mtp official-F16 K=5 ---
+[gemma-spec] rounds=59 drafted=244 accepted=69                    accept-rate=0.283 tok/round=2.17
+plain: 74.46 tok/s | spec: 99.27 tok/s (1.33x) | stream agreement 128/128
+=== q4/prose rep 2 ===
+--- dflash(dspark) ---
+[dflash] acceptance 78/142 = 0.549
+plain: 74.31 tok/s | dflash spec: 131.23 tok/s (1.77x) | stream agreement 128/128
+--- mtp qat-Q8 K=5 ---
+[gemma-spec] rounds=34 drafted=150 accepted=94                    accept-rate=0.627 tok/round=3.76
+plain: 74.39 tok/s | spec: 208.13 tok/s (2.80x) | stream agreement 128/128
+--- mtp official-F16 K=5 ---
+[gemma-spec] rounds=59 drafted=244 accepted=69                    accept-rate=0.283 tok/round=2.17
+plain: 74.37 tok/s | spec: 98.85 tok/s (1.33x) | stream agreement 128/128
+=== q4/prose rep 3 ===
+--- dflash(dspark) ---
+[dflash] acceptance 78/142 = 0.549
+plain: 74.21 tok/s | dflash spec: 131.25 tok/s (1.77x) | stream agreement 128/128
+--- mtp qat-Q8 K=5 ---
+[gemma-spec] rounds=34 drafted=150 accepted=94                    accept-rate=0.627 tok/round=3.76
+plain: 74.42 tok/s | spec: 208.56 tok/s (2.80x) | stream agreement 128/128
+--- mtp official-F16 K=5 ---
+[gemma-spec] rounds=59 drafted=244 accepted=69                    accept-rate=0.283 tok/round=2.17
+plain: 74.47 tok/s | spec: 99.10 tok/s (1.33x) | stream agreement 128/128
+=== q4/prose rep 4 ===
+--- dflash(dspark) ---
+[dflash] acceptance 78/142 = 0.549
+plain: 74.31 tok/s | dflash spec: 131.46 tok/s (1.77x) | stream agreement 128/128
+--- mtp qat-Q8 K=5 ---
+[gemma-spec] rounds=34 drafted=150 accepted=94                    accept-rate=0.627 tok/round=3.76
+plain: 74.43 tok/s | spec: 205.87 tok/s (2.77x) | stream agreement 128/128
+--- mtp official-F16 K=5 ---
+[gemma-spec] rounds=59 drafted=244 accepted=69                    accept-rate=0.283 tok/round=2.17
+plain: 68.20 tok/s | spec: 85.43 tok/s (1.25x) | stream agreement 128/128
+=== q4/prose rep 5 ===
+--- dflash(dspark) ---
+[dflash] acceptance 78/142 = 0.549
+plain: 42.37 tok/s | dflash spec: 59.25 tok/s (1.40x) | stream agreement 128/128
+--- mtp qat-Q8 K=5 ---
+[gemma-spec] rounds=34 drafted=150 accepted=94                    accept-rate=0.627 tok/round=3.76
+plain: 34.53 tok/s | spec: 98.37 tok/s (2.85x) | stream agreement 128/128
+--- mtp official-F16 K=5 ---
+[gemma-spec] rounds=59 drafted=244 accepted=69                    accept-rate=0.283 tok/round=2.17
+plain: 35.03 tok/s | spec: 47.58 tok/s (1.36x) | stream agreement 128/128

@@ -1,0 +1,77 @@
+LOCK_QUEUE_CHECK ts=2026-08-12T12:11:59Z
+KNEERAISE_AB_LOCK_ACQUIRED ts=2026-08-12T12:11:59Z pid=1028793
+AB_ARM_START ts=2026-08-12T12:11:59Z round=1 order=1 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T12:11:59Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1028810 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:13:47Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r01-o01-baseline
+AB_ARM_PASS ts=2026-08-12T12:13:47Z round=1 order=1 arm=baseline
+AB_ARM_START ts=2026-08-12T12:13:47Z round=1 order=2 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T12:13:47Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1029094 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:15:35Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r01-o02-candidate
+AB_ARM_PASS ts=2026-08-12T12:15:35Z round=1 order=2 arm=candidate
+AB_ARM_START ts=2026-08-12T12:15:35Z round=2 order=1 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T12:15:35Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1029512 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:17:23Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r02-o01-candidate
+AB_ARM_PASS ts=2026-08-12T12:17:23Z round=2 order=1 arm=candidate
+AB_ARM_START ts=2026-08-12T12:17:23Z round=2 order=2 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T12:17:23Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1030050 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:19:10Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r02-o02-baseline
+AB_ARM_PASS ts=2026-08-12T12:19:10Z round=2 order=2 arm=baseline
+AB_ARM_START ts=2026-08-12T12:19:10Z round=3 order=1 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T12:19:10Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1030334 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:20:58Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r03-o01-baseline
+AB_ARM_PASS ts=2026-08-12T12:20:58Z round=3 order=1 arm=baseline
+AB_ARM_START ts=2026-08-12T12:20:58Z round=3 order=2 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T12:20:58Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1030692 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:22:46Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r03-o02-candidate
+AB_ARM_PASS ts=2026-08-12T12:22:46Z round=3 order=2 arm=candidate
+AB_ARM_START ts=2026-08-12T12:22:46Z round=4 order=1 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T12:22:46Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1030975 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:24:33Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r04-o01-candidate
+AB_ARM_PASS ts=2026-08-12T12:24:33Z round=4 order=1 arm=candidate
+AB_ARM_START ts=2026-08-12T12:24:33Z round=4 order=2 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T12:24:33Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1032017 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:26:21Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r04-o02-baseline
+AB_ARM_PASS ts=2026-08-12T12:26:21Z round=4 order=2 arm=baseline
+AB_ARM_START ts=2026-08-12T12:26:21Z round=5 order=1 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T12:26:21Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1032330 F.... bash
+                     ubuntu    1032331 F.... flock
+                     ubuntu    1032472 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:28:09Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r05-o01-baseline
+AB_ARM_PASS ts=2026-08-12T12:28:09Z round=5 order=1 arm=baseline
+AB_ARM_START ts=2026-08-12T12:28:09Z round=5 order=2 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T12:28:09Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1028793 F.... bash
+                     ubuntu    1032330 F.... bash
+                     ubuntu    1032331 F.... flock
+                     ubuntu    1032941 F.... bash
+KNEERAISE_RUN_PASS ts=2026-08-12T12:29:56Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z/r05-o02-candidate
+AB_ARM_PASS ts=2026-08-12T12:29:56Z round=5 order=2 arm=candidate
+KNEERAISE_AB_PASS ts=2026-08-12T12:29:56Z out=/opt/scratch/nvme/cx-kneeraise/raw/ab-prefill2048-20260812T121159Z

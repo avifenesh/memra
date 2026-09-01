@@ -1,0 +1,29 @@
+command: env CUDA_VISIBLE_DEVICES=0 MEMRA_NGEN=32 MEMRA_PROMPT_FILE=research/e2e/prompts/p1-code-short.txt MEMRA_CHAT=1 target/release/run-gen /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+2026-08-12T03:05:25Z
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, 71, 11.64 W, 0 %, 1554 MiB, 24463 MiB
+2751402, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1392 MiB
+loaded qwen35 (32 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Write a Python function that implements a doubly-linked list with insert, delete, and reverse operations. Include full type hints and docstrings.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Write a Python function that implements a doubly-linked list with insert, delete, and reverse operations. Include full type hints and docstrings.\n"
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+prefill argmax=40  decode argmax=40  logit maxdiff=1.256e0  MATCH
+batched-prime argmax=40  tokenwise argmax=40  logit maxdiff=1.321e0  MATCH
+prefill 37 tok in 0.0351s = 1054.6 tok/s (pp37)
+generated 32 tokens in 0.240s = 133.30 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.035s) [stop: MaxNew]
+tokens: [40, 1144, 310, 1791, 264, 90651, 52589, 1103, 7873, 303, 12654, 440, 25, 198, 16, 13, 16598, 5488, 198, 17, 13, 10118, 5488, 198, 18, 13, 23515, 5488, 198, 19, 13, 8363]
+OUTPUT TEXT: "I need to create a doubly-linked list implementation in Python with:\n1. Insert operation\n2. Delete operation\n3. Reverse operation\n4. Full"
+--- generated text ---
+I need to create a doubly-linked list implementation in Python with:
+1. Insert operation
+2. Delete operation
+3. Reverse operation
+4. Full
+2026-08-12T03:05:28Z
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, 80, 169.44 W, 99 %, 1554 MiB, 24463 MiB
+2751402, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1392 MiB
+run-gen rc=0

@@ -1,0 +1,21 @@
+per-layer B/token: 1856
+45-layer sum:      83520  (val256 receipt: 83520 -> MATCH)
+full-attn share:   22272 B/token (5.44 GiB @262k)
+SWA share:         61248 B/token (14.95 GiB @262k)
+SWA fraction of KV: 73.3% of bytes
+
+SWA read reach (code receipt):
+  decode  (hybrid_forward step35_decode_attn):   off = len-win        -> last 512 rows
+  batched (decode_batch step35_decode_batch...): off = len-win        -> last 512 rows
+  prime   (step35_attn_pre_wo):                  off = (len-(win-1))&~31 -> last <=543+chunk rows
+  verify  (spec step35_verify -> decode_attn):   off = len-win        -> last 512 rows
+  Nothing below the window is ever read on an SWA layer after it slides.
+
+Ring sizing (win=512, keep = win-1 rounded to 32-align <= 543):
+  prime_chunk 4096: cap 5184 tok -> ring 303 MiB/session; session KV 5.73 GiB (was 20.39) = 3.56x
+  prime_chunk 8192: cap 9280 tok -> ring 542 MiB/session; session KV 5.97 GiB (was 20.39) = 3.42x
+
+Option 3 arithmetic (KV format on the 12 full-attn layers only):
+  fp8 K+V = 32+32 B/blk = 2048 B/tok/layer vs q8_0/q5_1 1856 -> fp8 is +10.3% BIGGER (capacity LOSS, dead on arithmetic)
+  q4_0 V  = 1664 B/tok/layer (-10.3%); after the ring only 12 layers carry ctx-scaled V:
+    savings = 12*32*6*262144 = 576 MiB/session (~8% of ringed session) — blocked by the standing q4_0 argmax MISMATCH verdict

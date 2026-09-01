@@ -1,0 +1,6 @@
+<|turn>system
+<|tool>declaration:ping{description:<|"|>Liveness probe<|"|>,parameters:{type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+Ping twice.<turn|>
+<|turn>model
+<|tool_call>call:ping{}<tool_call|><|tool_call>call:ping{}<tool_call|><|tool_response>response:ping{value:42}<tool_response|><|tool_response>response:ping{value:<|"|>pong<|"|>}<tool_response|>

@@ -1,0 +1,34 @@
+ts=2026-08-10T13:25:59Z
+host=a89be09b37be
+source=650a2aecf5d6798f57108b705d71862924c41829
+## lane/cx-hostbounce
+8d84431595109fc82c03fd8576b91f03dc1d9ede0548a9782a5b56ad26ee39ed  target/release/memra-server
+01279e8799e48ff7b60d5e3502bc7bb8aa9fb6dcc196987e6e4a96c0761607ed  target/release/pp-transport-smoke
+artifact=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-09 19:52:21.322420385 +0000
+artifact=/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-09 19:55:57.886073787 +0000
+serve_env
+export CUDA_VISIBLE_DEVICES=0,1
+export LD_LIBRARY_PATH=/usr/local/cuda-13.1/compat:/usr/local/cuda-13.1/lib64:/usr/local/cuda-12.8/lib64
+export MEMRA_ADDR=0.0.0.0:8002
+export MEMRA_COMPAT=openai
+export MEMRA_MODELS="stepfun/step-3.7-flash=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf+/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"
+export MEMRA_PP_STAGES=2
+export MEMRA_PP_DEVICES=0,1
+export MEMRA_CTX=262144
+export MEMRA_PREFIX_CACHE_MB=2048
+export MEMRA_MOE_GROUPED=1
+export MEMRA_PREFILL_TICK=2048
+export MEMRA_PP_HOST_BOUNCE=1
+resolved_environment
+CUDA_VISIBLE_DEVICES=0,1
+LD_LIBRARY_PATH=/usr/local/cuda-13.1/compat:/usr/local/cuda-13.1/lib64:/usr/local/cuda-12.8/lib64
+MEMRA_ADDR=0.0.0.0:8002
+MEMRA_COMPAT=openai
+MEMRA_CTX=262144
+MEMRA_MODELS=stepfun/step-3.7-flash=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf+/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+MEMRA_MOE_GROUPED=1
+MEMRA_PP_DEVICES=0,1
+MEMRA_PP_HOST_BOUNCE=1
+MEMRA_PP_STAGES=2
+MEMRA_PREFILL_TICK=2048
+MEMRA_PREFIX_CACHE_MB=2048

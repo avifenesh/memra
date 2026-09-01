@@ -1,0 +1,148 @@
+=== grouped-serve gates 20260809T222302Z commit=0fc0677a35039d0842b4ce464138371cf4514576
+run-gen=afb3f23519709ff1e5f8a26ae52b5942c05c2db7d3ec8c79347d06afd9c63352
+kernel-check=dad228e7ba583f7ff19e7fde8d577a68cfa6531ebe0c426d1f2855ebc19bc4cb
+model=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296
+config=MEMRA_MOE_GROUPED=1 PP-2 devices 0,1
+lock acquired 2026-08-09T23:25:05Z
+snapshot 2026-08-09T23:25:05Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 397 MHz, 50.53 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 187 MHz, 49.00 W, 0 MiB, 0 %
+########## grouped-oracle ##########
+raw=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/gates/grouped-oracle-20260809T222302Z.log
+snapshot 2026-08-09T23:25:05Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 397 MHz, 50.53 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 187 MHz, 49.00 W, 0 MiB, 0 %
+moe-gate il=34 t=19 BYTE-IDENTICAL
+moe-grouped il=35 t=19 dispatch=resident-q8-rows active=78/288 m_e: min=1 median=1 mean=1.9 max=14
+moe-stats il=35 t=19 assignments=152 active=78/288 entropy=5.852b (max 8.170b) mean_tok_per_active=1.95 max_tok_per_expert=14
+moe-gate il=35 t=19 BYTE-IDENTICAL
+moe-grouped il=36 t=19 dispatch=resident-q8-rows active=79/288 m_e: min=1 median=1 mean=1.9 max=9
+moe-stats il=36 t=19 assignments=152 active=79/288 entropy=5.992b (max 8.170b) mean_tok_per_active=1.92 max_tok_per_expert=9
+moe-gate il=36 t=19 BYTE-IDENTICAL
+moe-grouped il=37 t=19 dispatch=resident-q8-rows active=89/288 m_e: min=1 median=1 mean=1.7 max=5
+moe-stats il=37 t=19 assignments=152 active=89/288 entropy=6.256b (max 8.170b) mean_tok_per_active=1.71 max_tok_per_expert=5
+moe-gate il=37 t=19 BYTE-IDENTICAL
+moe-grouped il=38 t=19 dispatch=resident-q8-rows active=83/288 m_e: min=1 median=1 mean=1.8 max=9
+moe-stats il=38 t=19 assignments=152 active=83/288 entropy=6.058b (max 8.170b) mean_tok_per_active=1.83 max_tok_per_expert=9
+moe-gate il=38 t=19 BYTE-IDENTICAL
+moe-grouped il=39 t=19 dispatch=resident-q8-rows active=81/288 m_e: min=1 median=1 mean=1.9 max=11
+moe-stats il=39 t=19 assignments=152 active=81/288 entropy=5.976b (max 8.170b) mean_tok_per_active=1.88 max_tok_per_expert=11
+moe-gate il=39 t=19 BYTE-IDENTICAL
+moe-grouped il=40 t=19 dispatch=resident-q8-rows active=91/288 m_e: min=1 median=1 mean=1.7 max=7
+moe-stats il=40 t=19 assignments=152 active=91/288 entropy=6.219b (max 8.170b) mean_tok_per_active=1.67 max_tok_per_expert=7
+moe-gate il=40 t=19 BYTE-IDENTICAL
+moe-grouped il=41 t=19 dispatch=resident-q8-rows active=87/288 m_e: min=1 median=1 mean=1.7 max=9
+moe-stats il=41 t=19 assignments=152 active=87/288 entropy=6.127b (max 8.170b) mean_tok_per_active=1.75 max_tok_per_expert=9
+moe-gate il=41 t=19 BYTE-IDENTICAL
+moe-grouped il=42 t=19 dispatch=resident-q8-rows active=83/288 m_e: min=1 median=1 mean=1.8 max=6
+moe-stats il=42 t=19 assignments=152 active=83/288 entropy=6.124b (max 8.170b) mean_tok_per_active=1.83 max_tok_per_expert=6
+moe-gate il=42 t=19 BYTE-IDENTICAL
+moe-grouped il=43 t=19 dispatch=resident-q8-clamped-pairs active=75/288 m_e: min=1 median=1 mean=2.0 max=18
+moe-stats il=43 t=19 assignments=152 active=75/288 entropy=5.736b (max 8.170b) mean_tok_per_active=2.03 max_tok_per_expert=18
+moe-gate il=43 t=19 BYTE-IDENTICAL
+moe-grouped il=44 t=19 dispatch=resident-q8-clamped-pairs active=90/288 m_e: min=1 median=1 mean=1.7 max=9
+moe-stats il=44 t=19 assignments=152 active=90/288 entropy=6.252b (max 8.170b) mean_tok_per_active=1.69 max_tok_per_expert=9
+moe-gate il=44 t=19 BYTE-IDENTICAL
+generated 1 tokens in 0.032s = 31.08 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.226s) [stop: MaxNew]
+tokens: [6776]
+MoE cache: 15356 slots | cumulative hits=41886 misses=5211 (hit-rate=88.9%) | Stage-1 baseline = 2678 MB/decode-token (every block, every layer, every token)
+MoE cache STEADY-STATE (32 tokens after warmup): hit-rate=0.0% | 0.0 MB/decode-token (vs 2678 MB/token Stage-1 => infx less PCIe)
+OUTPUT TEXT: "  \n\n"
+--- generated text ---
+  
+
+
+grouped-oracle exit=0
+snapshot 2026-08-09T23:25:47Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2407 MHz, 95.15 W, 0 MiB, 5 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2325 MHz, 94.03 W, 0 MiB, 88 %
+grouped-oracle byte_identical=210 mismatch=0
+grouped-oracle assertion PASS: dispatch=resident-q8-rows
+grouped-oracle assertion PASS: dispatch=resident-q8-clamped-pairs
+########## kernel-check ##########
+raw=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/gates/kernel-check-20260809T222302Z.log
+snapshot 2026-08-09T23:25:47Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2407 MHz, 99.03 W, 0 MiB, 100 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2325 MHz, 95.08 W, 0 MiB, 88 %
+sdpa_naive_w_quantized_view window=48 differs from unwindowed T=100 Tkv=100: changed=53248/102400 OK
+fa_prefill_view_ws_w_hd128 window=48 vs CPU windowed oracle T=100 Tkv=100: rel=2.45e-3 OK
+fa_prefill_view_ws_w_hd128 window=48 vs f32 floor T=100 Tkv=100: rel=2.45e-3 OK
+fa_prefill_view_ws_w_hd128 window=48 differs from unwindowed FA T=100 Tkv=100: changed=53248/102400 OK
+fa_prefill_view_ws_w_hd128 window=48 db vs single-buffer T=100 Tkv=100: bitdiff=0 OK
+sdpa_naive_w_quantized_view(window=0) vs unwindowed T=37 Tkv=297: bitdiff=0 OK
+sdpa_naive_w_quantized_view(window>=Tkv) vs unwindowed T=37 Tkv=297: bitdiff=0 OK
+sdpa_naive_w_quantized_view window=64 vs CPU windowed oracle T=37 Tkv=297: rel=8.53e-7 OK
+sdpa_naive_w_quantized_view window=64 differs from unwindowed T=37 Tkv=297: changed=37888/37888 OK
+fa_prefill_view_ws_w_hd128 window=64 vs CPU windowed oracle T=37 Tkv=297: rel=9.36e-3 OK
+fa_prefill_view_ws_w_hd128 window=64 vs f32 floor T=37 Tkv=297: rel=9.36e-3 OK
+fa_prefill_view_ws_w_hd128 window=64 differs from unwindowed FA T=37 Tkv=297: changed=37888/37888 OK
+fa_prefill_view_ws_w_hd128 window=64 db vs single-buffer T=37 Tkv=297: bitdiff=0 OK
+fa_prefill_view_ws_w_hd128(window=0) vs fa_prefill_view_ws T=64 Tkv=192: bitdiff=0 OK
+kvq q8_0 K round-trip: rel=3.99e-3 OK
+kvq q5_1 V round-trip: rel=1.35e-2 OK
+kvq q5_1 5th-bit boundary: maxerr=3.78e-4 (d~5.00e-2) OK
+kv append rows-vs-loop bit-identity (T=7, t0=3): k_mismatch=0 v_mismatch=0 OK
+moe_router idx-match (incl. tie 17/200): OK
+moe_router weight rel=2.23e-7 (max 3 ULP, host-exp vs device-expf): OK
+KC-SKIP [d2-cache-bit-identity] Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: absent on this box (3 candidates tried) — set MEMRA_KC_MODELS_DIR=<dir containing it> to run this section
+KC-SKIP [fast-router-batch] Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: absent on this box (4 candidates tried) — set MEMRA_KC_MODELS_DIR=<dir containing it> to run this section
+moe async-prefetch ordering + protected victim: OK
+fp8-blk-gpu Q8_0 bit-parity [256x512] bytes=139264 bad=0 OK
+fp8-blk-gpu Q8_0 bit-parity [136x160] bytes=23120 bad=0 OK
+fp8-blk-gpu Q8_0 bit-parity [8x32] bytes=272 bad=0 OK
+fp8-blk-gpu Q8_0 bit-parity [5x128] bytes=680 bad=0 OK
+fp8-blk-gpu Q8_0 bit-parity [6x160] bytes=1020 bad=0 OK
+attn_head_gate [hd128 nh64 T1] maxdiff=1.19e-7 f16_mismatch=0 per_head_varies=6856/8192 OK
+attn_head_gate [hd128 nh64 T7] maxdiff=1.19e-7 f16_mismatch=0 per_head_varies=49025/57344 OK
+attn_head_gate [hd128 nh96 T1] maxdiff=1.19e-7 f16_mismatch=0 per_head_varies=10413/12288 OK
+attn_head_gate [hd128 nh96 T7] maxdiff=2.38e-7 f16_mismatch=0 per_head_varies=73647/86016 OK
+attn_head_gate dst16=None skip: f32_mismatch=0 OK
+swiglu_clamped [limit=7 gs=1 us=1] maxdiff=1.91e-6 clamped=3700/4096 OK
+swiglu_clamped [limit=7 gs=0.75 us=1.25] maxdiff=3.81e-6 clamped=3914/4096 OK
+swiglu_clamped [limit=16 gs=1 us=1] maxdiff=3.81e-6 clamped=3700/4096 OK
+swiglu_clamped [limit=16 gs=0.75 us=1.25] maxdiff=7.63e-6 clamped=3914/4096 OK
+swiglu_clamped != swigluoai by mechanism: up=-1_oai_zero=true up=-0.99_two_orders=true gate>limit_clamp_order=true up=0_no_linear=true OK
+
+ALL GREEN: kernels match CPU reference.
+kernel-check exit=0
+snapshot 2026-08-09T23:25:56Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2407 MHz, 97.00 W, 0 MiB, 2 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 31, 180 MHz, 47.06 W, 0 MiB, 0 %
+kernel-check assertion PASS: ^ALL GREEN: kernels match CPU reference\.$
+########## run-gen ##########
+raw=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/gates/run-gen-20260809T222302Z.log
+snapshot 2026-08-09T23:25:56Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2407 MHz, 92.52 W, 0 MiB, 2 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 31, 180 MHz, 47.08 W, 0 MiB, 0 %
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 trunk layers; optional MTP skipped)
+prompt text: "Write a short paragraph explaining how a CPU pipeline improves instruction throughput, and mention one hazard."
+prompt tokens: [0, 21750, 260, 3107, 15363, 26131, 1192, 260, 25454, 28499, 28232, 12740, 62027, 14, 305, 6731, 834, 23616, 16]
+prefill argmax=6776  decode argmax=6776  logit maxdiff=8.228e-1  MATCH
+batched-prime argmax=6776  tokenwise argmax=6776  logit maxdiff=7.178e-1  MATCH
+prefill 19 tok in 0.5111s = 37.2 tok/s (pp19)
+generated 64 tokens in 3.419s = 18.72 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.126s) [stop: MaxNew]
+tokens: [6776, 666, 7805, 11490, 2143, 35, 25454, 28499, 21994, 270, 16846, 294, 411, 12740, 1055, 3586, 13656, 343, 70698, 14, 64285, 14, 22218, 14, 6464, 14, 5085, 43360, 3555, 797, 6001, 834, 12740, 344, 295, 270, 22218, 6632, 14, 270, 2894, 588, 366, 91249, 14, 305, 270, 834, 1561, 396, 588, 366, 114400, 14, 832, 3586, 12846, 477, 295, 14349, 19649, 16, 1162, 48058]
+MoE cache: 15356 slots | cumulative hits=10422 misses=5211 (hit-rate=66.7%) | Stage-1 baseline = 2678 MB/decode-token (every block, every layer, every token)
+MoE cache STEADY-STATE (32 tokens after warmup): hit-rate=0.0% | 0.0 MB/decode-token (vs 2678 MB/token Stage-1 => infx less PCIe)
+OUTPUT TEXT: "  \n\n**Answer:**  \nA CPU pipeline breaks the execution of an instruction into several stages (fetch, decode, execute, memory, write‑back). While one instruction is in the execute stage, the next can be decoded, and the one after that can be fetched, so several instructions are in flight simultaneously. This overlapping"
+--- generated text ---
+  
+
+**Answer:**  
+A CPU pipeline breaks the execution of an instruction into several stages (fetch, decode, execute, memory, write‑back). While one instruction is in the execute stage, the next can be decoded, and the one after that can be fetched, so several instructions are in flight simultaneously. This overlapping
+run-gen exit=0
+snapshot 2026-08-09T23:26:44Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 32, 2415 MHz, 95.21 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 93.22 W, 0 MiB, 82 %
+run-gen assertion PASS: prefill argmax=.* MATCH$
+run-gen assertion PASS: batched-prime argmax=.* MATCH$
+snapshot 2026-08-09T23:26:44Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2415 MHz, 99.33 W, 0 MiB, 100 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 94.28 W, 0 MiB, 82 %
+lock released 2026-08-09T23:26:44Z
+=== grouped-serve gates rc=0
+=== done 2026-08-09T23:26:44Z

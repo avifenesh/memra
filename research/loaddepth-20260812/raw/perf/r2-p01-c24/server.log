@@ -1,0 +1,161 @@
+[server] starting; models config = [("step37", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step37" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.708
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=615.363
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step37: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step37": 45 layers, eos=128007
+[worker] step37: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step37: decode wave cap 8; scheduler tick cap 16 (dual PP, default-off arm)
+[admission] "step37": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step37"]
+[server] listening on http://127.0.0.1:18524
+[meter] admit id=chatcmpl-60e82ab3cdeb1244485a7fe2b62b2e65 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-833544d3ce041870c20afe51cfe6db46 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-52e6e037e40fe4d062994e4e12c7d740 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-a8e8789862a0705a68a93323201aa595 tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=215 path=plain = 83520 B/token x ctx + 0MB fixed = 18MB
+[meter] admit id=chatcmpl-be5d08473c28db5affcb0a30cc9437fd tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-3c97e5a09395a9bf49bf78cdf2765ffc tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-68749a873875f2d686273212acd0dc12 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-5965b29edfef305b34cf37c7c825c517 tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-e0e6de2cb42033ae83df4ce026577f68 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-79f6e2e53d86fc4cddea3436ecf095e8 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-1eb83f692a00dadceefecafc9a8fa039 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-93712c9405b1176be13a674345169579 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-9ef42db6818124e02a1e60ceace8cd3a tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-986882c9caef100d24b1713183bc0df1 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-c444c856565f6374c993057c132556fb tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-cefb362e5b85be3a66b0d835474a3acb tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-8a92a3db5d4d672acdd21de48e58ee6a tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-4c0f852325e2943f09d50d8b5049d560 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-bf689fffecf4a7cf6098cf72769ff2d5 tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[meter] admit id=chatcmpl-704bddba8b73e977ea1c84eec3147deb tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-0fc18cd915e82cab19d9bd99b55d61bf tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[meter] admit id=chatcmpl-6ea274d4605ada003d54ad41dc4eb62d tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[meter] admit id=chatcmpl-01963f50fca06fd7492f03951a746948 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-57d762d074e4eeccd280e3520826c97d tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[step35-prime-batch] first concat prime: B=6 tokens=138
+[prime-batch] B=6 tokens=138 in 384.7ms
+[prime-batch] B=3 tokens=69 in 217.1ms
+[step35-batch] first B>1 batched step35 walk: B=5 layers=[0,22)
+[dual-pp] dual-active PP-2 decode engaged (default OFF; two waves)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=17 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=18 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=19 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=20 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=21 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=22 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=23 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=24 placement=pp2-cross-device
+[prime-batch] B=6 tokens=138 in 346.9ms
+[prime-batch] B=6 tokens=138 in 347.3ms
+[prime-batch] B=3 tokens=69 in 217.2ms
+[meter] admit id=chatcmpl-b0c6b674d6aed7f588fc545a46850c14 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-03d93f6dfdc9119e05250b39d85025f0 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[meter] admit id=chatcmpl-d33bb25d34b1bc53b0a6111c89847988 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-c345a2293b74833de535fa73e25731cc tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-9303a1fd23443118eadf05c1533ddc87 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-cffb1df8841457ff9d7225e53130f255 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-b04fd1b760e60411f18e7f2579f2a421 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-833ddaad805cb1dda67e348a0c0006a0 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-969750fa13bf4bd6896ffb5da82bcd3b tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-9195911b5d8f8b03a50c32e9b8d32a55 tenant=default lane=interactive model="step37"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[meter] admit id=chatcmpl-436fd15c5059b31965250eca53c3d4cc tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-d03847970b1905a805a48069e572d958 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-ba49d9c519d250b15946ae86b10b9806 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-8977f9eeb5fceadadf82afd4f783bcf4 tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[meter] admit id=chatcmpl-32e4960016c9cfa008803811c1729103 tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[meter] admit id=chatcmpl-44d57ab10e1c72a55b3834e098ca3d4f tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-6069d0fe4470cdad8a4397c5250f1926 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-88ba303c3839883ab578bbb332f6657e tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[meter] admit id=chatcmpl-7185cdd9bf8799b0104bd7c71354bd38 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-071fad9820d9c774e04bdc47ac7b58ed tenant=default lane=interactive model="step37"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[meter] admit id=chatcmpl-a78db6f9e78aca13f558435bd51d808b tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-c45f5cb2f222138f436a7f2b67558003 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-582cc47957abfb389fa21bf1b07c7e61 tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[meter] admit id=chatcmpl-b9a67381e8f22f4a822eab07cd72b1b0 tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[prime-batch] B=6 tokens=138 in 344.0ms
+[prime-batch] B=4 tokens=92 in 256.3ms
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=17 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=18 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=19 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=20 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=21 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=22 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=23 placement=pp2-cross-device
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 23 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=23 cached=0 lcp=0 active=24 placement=pp2-cross-device
+[prime-batch] B=6 tokens=138 in 343.8ms
+[prime-batch] B=6 tokens=138 in 343.6ms
+[prime-batch] B=2 tokens=46 in 167.1ms
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

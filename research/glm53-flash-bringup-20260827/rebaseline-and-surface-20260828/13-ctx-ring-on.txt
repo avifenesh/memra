@@ -1,0 +1,10 @@
+=== ARM: ring ON (default), lane-head binary 263963b6f0b11834 ===
+  ~ 1000 tok (   4172 chars): status= 200 prompt_tokens=   940 OK 'ok'
+  ~ 2000 tok (   8312 chars): status= 200 prompt_tokens=  1860 OK 'ok'
+  ~ 3000 tok (  12452 chars): status= 200 prompt_tokens=  2780 OK 'ok'
+  ~ 4000 tok (  16592 chars): status= 200 prompt_tokens=  3700 OK 'ok'
+  ~ 5000 tok (  20777 chars): status= 200 prompt_tokens=  4630 OK 'ok'
+  ~ 6000 tok (  24917 chars): status= 500 prompt_tokens=  None ERR 'prefill error: layer 3: DSA k-pool selection failed: indexer tail ring lapped: 5120 rows cannot cover pools fr'
+  ~ 7000 tok (  29057 chars): status= 500 prompt_tokens=  None ERR 'prefill error: layer 3: DSA k-pool selection failed: indexer tail ring lapped: 5120 rows cannot cover pools fr'
+  ~ 7900 tok (  32792 chars): status= 500 prompt_tokens=  None ERR 'prefill error: layer 3: DSA k-pool selection failed: indexer tail ring lapped: 5120 rows cannot cover pools fr'
+  == RING-ON: largest SERVED prompt = 4630 tokens; 3 failure(s) at/above ~6000 tokens

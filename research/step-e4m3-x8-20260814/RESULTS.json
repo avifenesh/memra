@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "date": "2026-08-14",
+  "verdict": "promote",
+  "scope": "GEMM kernel only; not end-to-end Step throughput",
+  "implementation": {
+    "owner": "Memra",
+    "external_code_or_runtime_dependency": false,
+    "tactic": "128 output rows x 8 tokens",
+    "activation_format": "dynamic E4M3, one scale per token and 128 features",
+    "weight_format": "block-128 E4M3 with f32 scales",
+    "default": "enabled when m <= 8",
+    "rollback": "MEMRA_FP8_MMQ_X8=0"
+  },
+  "source": {
+    "base": "fd1892e32f280d330036def22ee8319deaf76441",
+    "kernel_sha256": "cf343c3e7150b19c16100118a81f6ce0f67f502fc07e2a485040b16bb20363a4",
+    "bench_sha256": "17ea4aeddda866e244a124308f632c9f3d08e26b7f594065b29dda5e21560bf8"
+  },
+  "exactness": {
+    "rtx_5090": {
+      "full_ragged_battery": "pass",
+      "step_widths": [1, 2, 3, 4, 5, 6, 7, 8],
+      "exact_bit_mismatches": 0,
+      "e4m3_codes_covered": 254
+    },
+    "rtx_pro_6000": {
+      "cards": 3,
+      "step_widths": [1, 4, 8],
+      "pass_markers_per_card": 18,
+      "exact_bit_mismatches": 0,
+      "e4m3_codes_covered": 254
+    }
+  },
+  "performance_contract": {
+    "rtx_5090": {
+      "independent_runs_per_arm": 6,
+      "inner_interleaved_repetitions": 9,
+      "balanced_outer_order": true
+    },
+    "rtx_pro_6000": {
+      "cards": 3,
+      "independent_runs_per_arm_per_card": 5,
+      "inner_interleaved_repetitions": 9,
+      "balanced_outer_order": true
+    }
+  },
+  "default_gate": {
+    "rtx_5090": {
+      "naked_boots": 2,
+      "naked_gate_or_up_ms": [0.0229, 0.0229],
+      "forced_on_gate_or_up_ms": 0.0228,
+      "forced_off_gate_or_up_ms": 0.0881,
+      "naked_down_ms": [0.0130, 0.0129],
+      "forced_on_down_ms": 0.0129,
+      "forced_off_down_ms": 0.0359,
+      "exactness": "pass"
+    },
+    "rtx_pro_6000": {
+      "cards": 3,
+      "naked_boots_per_card": 2,
+      "naked_gate_or_up_ms_range": [0.0317, 0.0379],
+      "forced_on_gate_or_up_ms_range": [0.0315, 0.0330],
+      "forced_off_gate_or_up_ms_range": [0.1082, 0.1100],
+      "naked_down_ms_range": [0.0204, 0.0257],
+      "forced_on_down_ms_range": [0.0202, 0.0211],
+      "forced_off_down_ms_range": [0.0453, 0.0465],
+      "exactness": "pass"
+    }
+  },
+  "rtx_5090_comparisons": [
+    {"m": 1, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.9069, "x8_vs_q8": 2.9091},
+    {"m": 1, "projection": "expert_down", "x8_vs_old_fp8": 2.7838, "x8_vs_q8": 2.0927},
+    {"m": 4, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.9117, "x8_vs_q8": 2.8962},
+    {"m": 4, "projection": "expert_down", "x8_vs_old_fp8": 2.7245, "x8_vs_q8": 2.0679},
+    {"m": 8, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.9035, "x8_vs_q8": 2.8662},
+    {"m": 8, "projection": "expert_down", "x8_vs_old_fp8": 2.7481, "x8_vs_q8": 2.0763}
+  ],
+  "rtx_pro_6000_comparisons": [
+    {"card": 0, "m": 1, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.5192, "x8_vs_q8": 2.6410},
+    {"card": 0, "m": 1, "projection": "expert_down", "x8_vs_old_fp8": 2.2500, "x8_vs_q8": 1.7700},
+    {"card": 0, "m": 4, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.4255, "x8_vs_q8": 2.5621},
+    {"card": 0, "m": 4, "projection": "expert_down", "x8_vs_old_fp8": 2.2800, "x8_vs_q8": 1.7650},
+    {"card": 0, "m": 8, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.2917, "x8_vs_q8": 2.4940},
+    {"card": 0, "m": 8, "projection": "expert_down", "x8_vs_old_fp8": 2.3350, "x8_vs_q8": 1.8173},
+    {"card": 1, "m": 1, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.2340, "x8_vs_q8": 2.5228},
+    {"card": 1, "m": 1, "projection": "expert_down", "x8_vs_old_fp8": 2.1805, "x8_vs_q8": 1.7610},
+    {"card": 1, "m": 4, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.4135, "x8_vs_q8": 2.6026},
+    {"card": 1, "m": 4, "projection": "expert_down", "x8_vs_old_fp8": 2.2821, "x8_vs_q8": 1.8359},
+    {"card": 1, "m": 8, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.4057, "x8_vs_q8": 2.5755},
+    {"card": 1, "m": 8, "projection": "expert_down", "x8_vs_old_fp8": 2.2792, "x8_vs_q8": 1.8122},
+    {"card": 2, "m": 1, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.3065, "x8_vs_q8": 2.5268},
+    {"card": 2, "m": 1, "projection": "expert_down", "x8_vs_old_fp8": 2.1659, "x8_vs_q8": 1.7650},
+    {"card": 2, "m": 4, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.2920, "x8_vs_q8": 2.5310},
+    {"card": 2, "m": 4, "projection": "expert_down", "x8_vs_old_fp8": 2.2347, "x8_vs_q8": 1.7559},
+    {"card": 2, "m": 8, "projection": "expert_gate_or_up", "x8_vs_old_fp8": 3.2522, "x8_vs_q8": 2.4783},
+    {"card": 2, "m": 8, "projection": "expert_down", "x8_vs_old_fp8": 2.1659, "x8_vs_q8": 1.7558}
+  ],
+  "telemetry": {
+    "interval_ms": 250,
+    "rtx_5090": {"samples": 712, "max_util_pct": 4, "max_power_w": 9.99, "max_temp_c": 56},
+    "rtx_pro_6000_fleet": {"samples": 681, "max_util_pct": 5, "max_power_w": 90.68, "max_temp_c": 28}
+  }
+}

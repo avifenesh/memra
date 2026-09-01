@@ -1,0 +1,89 @@
+{
+  "active_sessions": 0,
+  "admission_session_defers": 0,
+  "admission_vram_defers": 5729,
+  "admitted": 21,
+  "cache_hit_token_ratio": 0.1360535898690146,
+  "cached_tokens_in": 10013,
+  "completed": 21,
+  "computed_tokens_in": 63583,
+  "constraint_compiler_fail_closed": {
+    "qwen/qwen3.6-35b-a3b": 0
+  },
+  "continuation_pool_entries": 0,
+  "continuation_pool_evictions": 0,
+  "continuation_pool_hits": 0,
+  "cuda_driver_free_bytes": 2042626048,
+  "cuda_pool_cached_bytes": 3618048032,
+  "cuda_pool_reserved_bytes": 22749904896,
+  "cuda_pool_used_bytes": 19131856864,
+  "lcp_histogram": {
+    "counts": [
+      16,
+      2,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      2
+    ],
+    "edges": [
+      0,
+      1,
+      16,
+      32,
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048,
+      4096
+    ]
+  },
+  "peer_probe_boundary_copies": 0,
+  "peer_probe_bypassed": 0,
+  "peer_probe_deferred_total": 0,
+  "peer_probe_degraded_to_host_bounce": false,
+  "peer_probe_integrity_degraded": false,
+  "peer_probe_runtime_failures": 0,
+  "peer_probe_runtime_reprobes": 0,
+  "plain_affinity_rewinds": 0,
+  "prefix_cache_bytes": 512440640,
+  "prefix_cache_entries": 5,
+  "prefix_cache_evictions": 9,
+  "prefix_cache_hit_tokens": 10013,
+  "prefix_cache_hits": 3,
+  "prefix_cache_inserts": 14,
+  "prefix_cache_misses": 18,
+  "prefix_cache_skips_budget": 0,
+  "prefix_cache_skips_pinned": 0,
+  "prompt_tokens_in": 73596,
+  "queued_requests": 0,
+  "serve_idle_seconds": 0.004,
+  "spec_pool_affinity_rewinds": 0,
+  "spec_pool_entries": 0,
+  "spec_pool_evictions": 0,
+  "spec_pool_hits": 0,
+  "spec_pool_misses": 0,
+  "step_oom_parks": 0,
+  "step_p50_ms": 11.20482063293457,
+  "step_p99_ms": 18.658849716186523,
+  "tenants": {
+    "t:apifix-gate": {
+      "cache_hit_token_ratio": 0.28842608595460306,
+      "cached_tokens_in": 10013,
+      "prompt_tokens_in": 34716
+    },
+    "t:apifix-long": {
+      "cache_hit_token_ratio": 0.0,
+      "cached_tokens_in": 0,
+      "prompt_tokens_in": 38880
+    }
+  },
+  "tokens_out": 1040
+}

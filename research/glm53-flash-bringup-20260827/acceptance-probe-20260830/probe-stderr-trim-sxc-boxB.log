@@ -1,0 +1,315 @@
+[card3-probe] model=/root/models/glm53-nvfp4 prompts=/root/card3-lane/prompts-decode out=/root/card3-lane/out/acc-trim-sxc ks=[1, 2, 3, 4, 5, 6, 7] max_new=128 plain=true MEMRA_GLM5_MTP=Some("1") MEMRA_GLM5_SPEC=Some("1") MEMRA_FRSPEC_TRIM=Some("/root/card3-lane/glm53-ranks-sxc32768.gguf.txt") MEMRA_MOE_SLOTS=Some("12000")
+[card3-probe] GPU: NVIDIA RTX PRO 6000 Blackwell Workstation Edition
+[loader-law] WARNING: output.weight loads as 2D Float ne=[4096, 154880] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_b.weight loads as 2D Float ne=[4096, 64] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[8192, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_q_b.weight loads as 2D Float ne=[1536, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk3-gate: 1296 MiB in 0.1s (25528 MiB/s)
+[st-spill] free_pinnable_ram=450571 MiB
+[slab-populate] blk3-up: 1296 MiB in 0.1s (25238 MiB/s)
+[slab-populate] blk3-down: 1296 MiB in 0.1s (25442 MiB/s)
+[slab-populate] blk4-gate: 1296 MiB in 0.1s (25016 MiB/s)
+[slab-populate] blk4-up: 1296 MiB in 0.1s (25404 MiB/s)
+[slab-populate] blk4-down: 1296 MiB in 0.1s (25451 MiB/s)
+[slab-populate] blk5-gate: 1296 MiB in 0.1s (24910 MiB/s)
+[slab-populate] blk5-up: 1296 MiB in 0.1s (25410 MiB/s)
+[slab-populate] blk5-down: 1296 MiB in 0.1s (25545 MiB/s)
+[slab-populate] blk6-gate: 1296 MiB in 0.1s (25248 MiB/s)
+[slab-populate] blk6-up: 1296 MiB in 0.1s (25520 MiB/s)
+[slab-populate] blk6-down: 1296 MiB in 0.1s (25506 MiB/s)
+[slab-populate] blk7-gate: 1296 MiB in 0.1s (24899 MiB/s)
+[slab-populate] blk7-up: 1296 MiB in 0.1s (25701 MiB/s)
+[slab-populate] blk7-down: 1296 MiB in 0.1s (24637 MiB/s)
+[slab-populate] blk8-gate: 1296 MiB in 0.1s (24869 MiB/s)
+[slab-populate] blk8-up: 1296 MiB in 0.1s (25580 MiB/s)
+[slab-populate] blk8-down: 1296 MiB in 0.1s (25372 MiB/s)
+[slab-populate] blk9-gate: 1296 MiB in 0.1s (24945 MiB/s)
+[slab-populate] blk9-up: 1296 MiB in 0.1s (25696 MiB/s)
+[slab-populate] blk9-down: 1296 MiB in 0.1s (25436 MiB/s)
+[slab-populate] blk10-gate: 1296 MiB in 0.1s (25178 MiB/s)
+[slab-populate] blk10-up: 1296 MiB in 0.1s (24553 MiB/s)
+[slab-populate] blk10-down: 1296 MiB in 0.1s (25422 MiB/s)
+[slab-populate] blk11-gate: 1296 MiB in 0.1s (25534 MiB/s)
+[slab-populate] blk11-up: 1296 MiB in 0.1s (25423 MiB/s)
+[slab-populate] blk11-down: 1296 MiB in 0.1s (25544 MiB/s)
+[slab-populate] blk12-gate: 1296 MiB in 0.1s (25081 MiB/s)
+[slab-populate] blk12-up: 1296 MiB in 0.1s (25586 MiB/s)
+[slab-populate] blk12-down: 1296 MiB in 0.1s (25697 MiB/s)
+[slab-populate] blk13-gate: 1296 MiB in 0.1s (24961 MiB/s)
+[slab-populate] blk13-up: 1296 MiB in 0.1s (24377 MiB/s)
+[slab-populate] blk13-down: 1296 MiB in 0.1s (25218 MiB/s)
+[slab-populate] blk14-gate: 1296 MiB in 0.1s (25275 MiB/s)
+[slab-populate] blk14-up: 1296 MiB in 0.1s (25373 MiB/s)
+[slab-populate] blk14-down: 1296 MiB in 0.1s (25384 MiB/s)
+[slab-populate] blk15-gate: 1296 MiB in 0.1s (25293 MiB/s)
+[slab-populate] blk15-up: 1296 MiB in 0.1s (25389 MiB/s)
+[slab-populate] blk15-down: 1296 MiB in 0.1s (25373 MiB/s)
+[slab-populate] blk16-gate: 1296 MiB in 0.1s (25344 MiB/s)
+[slab-populate] blk16-up: 1296 MiB in 0.1s (25348 MiB/s)
+[slab-populate] blk16-down: 1296 MiB in 0.1s (25637 MiB/s)
+[slab-populate] blk17-gate: 1296 MiB in 0.1s (25007 MiB/s)
+[slab-populate] blk17-up: 1296 MiB in 0.1s (25232 MiB/s)
+[slab-populate] blk17-down: 1296 MiB in 0.1s (25333 MiB/s)
+[slab-populate] blk18-gate: 1296 MiB in 0.1s (24732 MiB/s)
+[slab-populate] blk18-up: 1296 MiB in 0.1s (25299 MiB/s)
+[slab-populate] blk18-down: 1296 MiB in 0.1s (25225 MiB/s)
+[slab-populate] blk19-gate: 1296 MiB in 0.1s (25454 MiB/s)
+[slab-populate] blk19-up: 1296 MiB in 0.1s (25199 MiB/s)
+[slab-populate] blk19-down: 1296 MiB in 0.1s (25359 MiB/s)
+[slab-populate] blk20-gate: 1296 MiB in 0.1s (24896 MiB/s)
+[slab-populate] blk20-up: 1296 MiB in 0.1s (25315 MiB/s)
+[slab-populate] blk20-down: 1296 MiB in 0.1s (25126 MiB/s)
+[slab-populate] blk21-gate: 1296 MiB in 0.1s (24725 MiB/s)
+[slab-populate] blk21-up: 1296 MiB in 0.1s (25368 MiB/s)
+[slab-populate] blk21-down: 1296 MiB in 0.1s (25240 MiB/s)
+[slab-populate] blk22-gate: 1296 MiB in 0.1s (25025 MiB/s)
+[slab-populate] blk22-up: 1296 MiB in 0.1s (25547 MiB/s)
+[slab-populate] blk22-down: 1296 MiB in 0.1s (25591 MiB/s)
+[slab-populate] blk23-gate: 1296 MiB in 0.0s (25966 MiB/s)
+[slab-populate] blk23-up: 1296 MiB in 0.1s (25866 MiB/s)
+[slab-populate] blk23-down: 1296 MiB in 0.1s (25498 MiB/s)
+[slab-populate] blk24-gate: 1296 MiB in 0.1s (25395 MiB/s)
+[slab-populate] blk24-up: 1296 MiB in 0.1s (25586 MiB/s)
+[slab-populate] blk24-down: 1296 MiB in 0.1s (25617 MiB/s)
+[slab-populate] blk25-gate: 1296 MiB in 0.1s (25152 MiB/s)
+[slab-populate] blk25-up: 1296 MiB in 0.1s (25852 MiB/s)
+[slab-populate] blk25-down: 1296 MiB in 0.1s (25571 MiB/s)
+[slab-populate] blk26-gate: 1296 MiB in 0.1s (25452 MiB/s)
+[slab-populate] blk26-up: 1296 MiB in 0.1s (25582 MiB/s)
+[slab-populate] blk26-down: 1296 MiB in 0.1s (25425 MiB/s)
+[slab-populate] blk27-gate: 1296 MiB in 0.1s (25832 MiB/s)
+[slab-populate] blk27-up: 1296 MiB in 0.1s (25818 MiB/s)
+[slab-populate] blk27-down: 1296 MiB in 0.1s (25538 MiB/s)
+[slab-populate] blk28-gate: 1296 MiB in 0.1s (25513 MiB/s)
+[slab-populate] blk28-up: 1296 MiB in 0.1s (25107 MiB/s)
+[slab-populate] blk28-down: 1296 MiB in 0.1s (25868 MiB/s)
+[slab-populate] blk29-gate: 1296 MiB in 0.1s (25510 MiB/s)
+[slab-populate] blk29-up: 1296 MiB in 0.1s (25559 MiB/s)
+[slab-populate] blk29-down: 1296 MiB in 0.1s (25805 MiB/s)
+[slab-populate] blk30-gate: 1296 MiB in 0.1s (25138 MiB/s)
+[slab-populate] blk30-up: 1296 MiB in 0.1s (25630 MiB/s)
+[slab-populate] blk30-down: 1296 MiB in 0.1s (25914 MiB/s)
+[slab-populate] blk31-gate: 1296 MiB in 0.1s (25908 MiB/s)
+[slab-populate] blk31-up: 1296 MiB in 0.1s (25619 MiB/s)
+[slab-populate] blk31-down: 1296 MiB in 0.1s (25625 MiB/s)
+[slab-populate] blk32-gate: 1296 MiB in 0.1s (24875 MiB/s)
+[slab-populate] blk32-up: 1296 MiB in 0.1s (25418 MiB/s)
+[slab-populate] blk32-down: 1296 MiB in 0.1s (25681 MiB/s)
+[slab-populate] blk33-gate: 1296 MiB in 0.1s (25238 MiB/s)
+[slab-populate] blk33-up: 1296 MiB in 0.1s (25877 MiB/s)
+[slab-populate] blk33-down: 1296 MiB in 0.1s (25505 MiB/s)
+[slab-populate] blk34-gate: 1296 MiB in 0.1s (25044 MiB/s)
+[slab-populate] blk34-up: 1296 MiB in 0.1s (25807 MiB/s)
+[slab-populate] blk34-down: 1296 MiB in 0.1s (25809 MiB/s)
+[slab-populate] blk35-gate: 1296 MiB in 0.1s (25755 MiB/s)
+[slab-populate] blk35-up: 1296 MiB in 0.1s (25830 MiB/s)
+[slab-populate] blk35-down: 1296 MiB in 0.1s (25552 MiB/s)
+[slab-populate] blk36-gate: 1296 MiB in 0.1s (25260 MiB/s)
+[slab-populate] blk36-up: 1296 MiB in 0.1s (25465 MiB/s)
+[slab-populate] blk36-down: 1296 MiB in 0.1s (25822 MiB/s)
+[slab-populate] blk37-gate: 1296 MiB in 0.1s (25070 MiB/s)
+[slab-populate] blk37-up: 1296 MiB in 0.1s (25777 MiB/s)
+[slab-populate] blk37-down: 1296 MiB in 0.0s (25941 MiB/s)
+[slab-populate] blk38-gate: 1296 MiB in 0.1s (25252 MiB/s)
+[slab-populate] blk38-up: 1296 MiB in 0.1s (25694 MiB/s)
+[slab-populate] blk38-down: 1296 MiB in 0.1s (25062 MiB/s)
+[slab-populate] blk39-gate: 1296 MiB in 0.1s (25203 MiB/s)
+[slab-populate] blk39-up: 1296 MiB in 0.1s (25618 MiB/s)
+[slab-populate] blk39-down: 1296 MiB in 0.1s (25507 MiB/s)
+[slab-populate] blk40-gate: 1296 MiB in 0.1s (25275 MiB/s)
+[slab-populate] blk40-up: 1296 MiB in 0.1s (25507 MiB/s)
+[slab-populate] blk40-down: 1296 MiB in 0.1s (25513 MiB/s)
+[slab-populate] blk41-gate: 1296 MiB in 0.1s (25305 MiB/s)
+[slab-populate] blk41-up: 1296 MiB in 0.1s (25599 MiB/s)
+[slab-populate] blk41-down: 1296 MiB in 0.1s (25529 MiB/s)
+[slab-populate] blk42-gate: 1296 MiB in 0.1s (25036 MiB/s)
+[slab-populate] blk42-up: 1296 MiB in 0.1s (25141 MiB/s)
+[slab-populate] blk42-down: 1296 MiB in 0.1s (25836 MiB/s)
+[slab-populate] blk43-gate: 1296 MiB in 0.1s (25501 MiB/s)
+[slab-populate] blk43-up: 1296 MiB in 0.1s (25471 MiB/s)
+[slab-populate] blk43-down: 1296 MiB in 0.1s (25610 MiB/s)
+[slab-populate] blk44-gate: 1296 MiB in 0.1s (25169 MiB/s)
+[slab-populate] blk44-up: 1296 MiB in 0.1s (25799 MiB/s)
+[slab-populate] blk44-down: 1296 MiB in 0.1s (25510 MiB/s)
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[loader-law] WARNING: blk.*.nextn.eh_proj.weight loads as 2D Float ne=[8192, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk45-gate: 1296 MiB in 0.1s (25699 MiB/s)
+[slab-populate] blk45-up: 1296 MiB in 0.1s (25601 MiB/s)
+[slab-populate] blk45-down: 1296 MiB in 0.1s (25553 MiB/s)
+[frspec-trim] self-trimmed head: 32768 rows of main output.weight (BF16)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[glm5-spec] serve route ARMED: MTP head loaded; draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] loaded: n_layer=46 n_embd=4096 n_vocab=154880 mtp_loaded=true
+[card3-probe] vram post-load: free=71.04 GiB / total=94.97 GiB
+[card3-probe] prompt p00-code: 987 chars -> 239 tokens
+[moe-grouped-prefill] flag=on t=239 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[card3-probe] p00-code plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p00-code K=1: rounds=68 drafted=68 accepted=60 tape_identical=yes acc/cycle=0.882 tok/cycle=1.882
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p00-code K=2: rounds=55 drafted=110 accepted=73 tape_identical=yes acc/cycle=1.327 tok/cycle=2.327
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p00-code K=3: rounds=50 drafted=150 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p00-code K=4: rounds=50 drafted=200 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p00-code K=5: rounds=50 drafted=250 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p00-code K=6: rounds=50 drafted=300 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p00-code K=7: rounds=50 drafted=350 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[card3-probe] prompt p01-code: 1135 chars -> 289 tokens
+[card3-probe] p01-code plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p01-code K=1: rounds=75 drafted=75 accepted=52 tape_identical=yes acc/cycle=0.693 tok/cycle=1.693
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p01-code K=2: rounds=66 drafted=132 accepted=63 tape_identical=yes acc/cycle=0.955 tok/cycle=1.955
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p01-code K=3: rounds=59 drafted=177 accepted=68 tape_identical=yes acc/cycle=1.153 tok/cycle=2.153
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p01-code K=4: rounds=60 drafted=240 accepted=67 tape_identical=yes acc/cycle=1.117 tok/cycle=2.117
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p01-code K=5: rounds=60 drafted=300 accepted=67 tape_identical=yes acc/cycle=1.117 tok/cycle=2.117
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p01-code K=6: rounds=60 drafted=360 accepted=67 tape_identical=yes acc/cycle=1.117 tok/cycle=2.117
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p01-code K=7: rounds=60 drafted=420 accepted=67 tape_identical=yes acc/cycle=1.117 tok/cycle=2.117
+[card3-probe] prompt p02-code: 2049 chars -> 563 tokens
+[card3-probe] p02-code plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p02-code K=1: rounds=69 drafted=69 accepted=58 tape_identical=yes acc/cycle=0.841 tok/cycle=1.841
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p02-code K=2: rounds=54 drafted=108 accepted=73 tape_identical=yes acc/cycle=1.352 tok/cycle=2.352
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p02-code K=3: rounds=50 drafted=150 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p02-code K=4: rounds=50 drafted=200 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p02-code K=5: rounds=50 drafted=250 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p02-code K=6: rounds=50 drafted=300 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p02-code K=7: rounds=50 drafted=350 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[card3-probe] prompt p03-code: 1634 chars -> 453 tokens
+[card3-probe] p03-code plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p03-code K=1: rounds=73 drafted=73 accepted=55 tape_identical=yes acc/cycle=0.753 tok/cycle=1.753
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p03-code K=2: rounds=57 drafted=114 accepted=70 tape_identical=yes acc/cycle=1.228 tok/cycle=2.228
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p03-code K=3: rounds=53 drafted=159 accepted=74 tape_identical=yes acc/cycle=1.396 tok/cycle=2.396
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p03-code K=4: rounds=53 drafted=212 accepted=74 tape_identical=yes acc/cycle=1.396 tok/cycle=2.396
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p03-code K=5: rounds=53 drafted=265 accepted=74 tape_identical=yes acc/cycle=1.396 tok/cycle=2.396
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p03-code K=6: rounds=53 drafted=318 accepted=74 tape_identical=yes acc/cycle=1.396 tok/cycle=2.396
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p03-code K=7: rounds=53 drafted=371 accepted=74 tape_identical=yes acc/cycle=1.396 tok/cycle=2.396
+[card3-probe] prompt p04-code: 2108 chars -> 520 tokens
+[card3-probe] p04-code plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p04-code K=1: rounds=72 drafted=72 accepted=56 tape_identical=yes acc/cycle=0.778 tok/cycle=1.778
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p04-code K=2: rounds=58 drafted=116 accepted=70 tape_identical=yes acc/cycle=1.207 tok/cycle=2.207
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p04-code K=3: rounds=56 drafted=168 accepted=72 tape_identical=yes acc/cycle=1.286 tok/cycle=2.286
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p04-code K=4: rounds=56 drafted=224 accepted=72 tape_identical=yes acc/cycle=1.286 tok/cycle=2.286
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p04-code K=5: rounds=56 drafted=280 accepted=72 tape_identical=yes acc/cycle=1.286 tok/cycle=2.286
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p04-code K=6: rounds=56 drafted=336 accepted=72 tape_identical=yes acc/cycle=1.286 tok/cycle=2.286
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p04-code K=7: rounds=56 drafted=392 accepted=72 tape_identical=yes acc/cycle=1.286 tok/cycle=2.286
+[card3-probe] prompt p05-code: 785 chars -> 192 tokens
+[card3-probe] p05-code plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p05-code K=1: rounds=73 drafted=73 accepted=54 tape_identical=yes acc/cycle=0.740 tok/cycle=1.740
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p05-code K=2: rounds=63 drafted=126 accepted=66 tape_identical=yes acc/cycle=1.048 tok/cycle=2.048
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p05-code K=3: rounds=62 drafted=186 accepted=68 tape_identical=yes acc/cycle=1.097 tok/cycle=2.097
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p05-code K=4: rounds=61 drafted=244 accepted=69 tape_identical=yes acc/cycle=1.131 tok/cycle=2.131
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p05-code K=5: rounds=61 drafted=305 accepted=69 tape_identical=yes acc/cycle=1.131 tok/cycle=2.131
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p05-code K=6: rounds=61 drafted=366 accepted=69 tape_identical=yes acc/cycle=1.131 tok/cycle=2.131
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p05-code K=7: rounds=61 drafted=427 accepted=69 tape_identical=yes acc/cycle=1.131 tok/cycle=2.131
+[card3-probe] prompt p06-prose: 505 chars -> 131 tokens
+[card3-probe] p06-prose plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p06-prose K=1: rounds=73 drafted=73 accepted=55 tape_identical=yes acc/cycle=0.753 tok/cycle=1.753
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p06-prose K=2: rounds=59 drafted=118 accepted=69 tape_identical=yes acc/cycle=1.169 tok/cycle=2.169
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p06-prose K=3: rounds=54 drafted=162 accepted=75 tape_identical=yes acc/cycle=1.389 tok/cycle=2.389
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p06-prose K=4: rounds=53 drafted=212 accepted=76 tape_identical=yes acc/cycle=1.434 tok/cycle=2.434
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p06-prose K=5: rounds=53 drafted=265 accepted=76 tape_identical=yes acc/cycle=1.434 tok/cycle=2.434
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p06-prose K=6: rounds=53 drafted=318 accepted=76 tape_identical=yes acc/cycle=1.434 tok/cycle=2.434
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p06-prose K=7: rounds=53 drafted=371 accepted=76 tape_identical=yes acc/cycle=1.434 tok/cycle=2.434
+[card3-probe] prompt p07-prose: 1097 chars -> 281 tokens
+[card3-probe] p07-prose plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p07-prose K=1: rounds=70 drafted=70 accepted=58 tape_identical=yes acc/cycle=0.829 tok/cycle=1.829
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p07-prose K=2: rounds=54 drafted=108 accepted=73 tape_identical=yes acc/cycle=1.352 tok/cycle=2.352
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p07-prose K=3: rounds=50 drafted=150 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p07-prose K=4: rounds=48 drafted=192 accepted=79 tape_identical=yes acc/cycle=1.646 tok/cycle=2.646
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p07-prose K=5: rounds=48 drafted=240 accepted=79 tape_identical=yes acc/cycle=1.646 tok/cycle=2.646
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p07-prose K=6: rounds=48 drafted=288 accepted=79 tape_identical=yes acc/cycle=1.646 tok/cycle=2.646
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p07-prose K=7: rounds=48 drafted=336 accepted=79 tape_identical=yes acc/cycle=1.646 tok/cycle=2.646
+[card3-probe] prompt p08-prose: 809 chars -> 225 tokens
+[card3-probe] p08-prose plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p08-prose K=1: rounds=70 drafted=70 accepted=57 tape_identical=yes acc/cycle=0.814 tok/cycle=1.814
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p08-prose K=2: rounds=54 drafted=108 accepted=73 tape_identical=yes acc/cycle=1.352 tok/cycle=2.352
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p08-prose K=3: rounds=51 drafted=153 accepted=76 tape_identical=yes acc/cycle=1.490 tok/cycle=2.490
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p08-prose K=4: rounds=50 drafted=200 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p08-prose K=5: rounds=49 drafted=245 accepted=78 tape_identical=yes acc/cycle=1.592 tok/cycle=2.592
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p08-prose K=6: rounds=49 drafted=294 accepted=78 tape_identical=yes acc/cycle=1.592 tok/cycle=2.592
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p08-prose K=7: rounds=49 drafted=343 accepted=78 tape_identical=yes acc/cycle=1.592 tok/cycle=2.592
+[card3-probe] prompt p09-prose: 677 chars -> 140 tokens
+[card3-probe] p09-prose plain tape: 128 tokens
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p09-prose K=1: rounds=73 drafted=73 accepted=55 tape_identical=yes acc/cycle=0.753 tok/cycle=1.753
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p09-prose K=2: rounds=59 drafted=118 accepted=69 tape_identical=yes acc/cycle=1.169 tok/cycle=2.169
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p09-prose K=3: rounds=57 drafted=171 accepted=71 tape_identical=yes acc/cycle=1.246 tok/cycle=2.246
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p09-prose K=4: rounds=57 drafted=228 accepted=71 tape_identical=yes acc/cycle=1.246 tok/cycle=2.246
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p09-prose K=5: rounds=57 drafted=285 accepted=71 tape_identical=yes acc/cycle=1.246 tok/cycle=2.246
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p09-prose K=6: rounds=57 drafted=342 accepted=71 tape_identical=yes acc/cycle=1.246 tok/cycle=2.246
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[card3-probe] p09-prose K=7: rounds=57 drafted=399 accepted=71 tape_identical=yes acc/cycle=1.246 tok/cycle=2.246
+[card3-probe] done: /root/card3-lane/out/acc-trim-sxc/results.tsv

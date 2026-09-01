@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=nvfp4	binary_sha256=2bd432bffeff0d719eb3e87e1eaabcec079e76a9a1cd0a39e8e02aea6ce7b1d4	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ab-trunk: fresh state + probe prefill per arm, 4 warmup steps excluded per arm
+rep	arm	steps	mean_ms	median_ms	tok_per_s
+0	trunk_f32	40	28.78	28.77	34.75
+0	trunk_bf16	40	22.61	22.62	44.22
+1	trunk_f32	40	28.82	28.83	34.70
+1	trunk_bf16	40	22.56	22.55	44.33
+2	trunk_f32	40	28.88	28.88	34.63
+2	trunk_bf16	40	22.57	22.57	44.31
+3	trunk_f32	40	28.86	28.86	34.65
+3	trunk_bf16	40	22.60	22.60	44.25
+4	trunk_f32	40	28.87	28.88	34.64
+4	trunk_bf16	40	22.58	22.60	44.28
+# arm trunk_f32	mean_of_means_ms=28.84	min=28.78	max=28.88	tok_per_s=34.67
+# arm trunk_bf16	mean_of_means_ms=22.58	min=22.56	max=22.61	tok_per_s=44.28
+# rep0_arm_chain_first_divergence	12
+# rep0_trunk_f32	198,760,1156,682,3106,728,264,1575,20654,93530,2319,471,328,760,3841,13477,37550,33075,888,279,15217,5388,1149,1061,11316,5435,1396,6321,314,279,6163,26887,506,3140,2957,13,1049,579,16138,1429
+# rep0_trunk_bf16	198,760,1156,682,3106,728,264,1575,20654,93530,2319,471,264,11316,421,5435,1396,6321,314,279,26887,506,3140,2957,13,328,760,3841,13477,37550,33075,888,279,15217,5388,1149,271,1919,369,264

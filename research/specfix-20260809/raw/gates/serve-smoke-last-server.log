@@ -1,0 +1,25 @@
+[server] starting; models config = [("smoke", "/data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "smoke" <- /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[worker]   loaded "smoke": 48 layers, eos=1
+[worker] smoke: template caps tools=false think=false think_switch=true chat_ok=true effort_levels=false gemma_think=true ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[worker] smoke: decode chunk cap 8
+[worker] smoke: EAGER-ONLY serving (gemma4 class — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "smoke": plain 172032 B/token, spec 172032 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["smoke"]
+[server] listening on http://127.0.0.1:8177
+[meter] admit id=chatcmpl-4aea6fa30078bc2389b259261586f570 tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=8192 path=plain = 172032 B/token x ctx + 0MB fixed = 1409MB
+[admission] fixed residual high-water: model="smoke" 0MB (observed 1409MB at ctx 8192 path=plain)
+[meter] admit id=chatcmpl-d9f6598d15bbcff774e9bb2bcefc332e tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=8192 path=plain = 172032 B/token x ctx + 0MB fixed = 1409MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 21 prompt tokens; model smoke)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

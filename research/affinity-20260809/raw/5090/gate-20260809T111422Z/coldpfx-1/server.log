@@ -1,0 +1,68 @@
+[server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q9: regime draft attached (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q9": 33 layers, eos=248046
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q9: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 537MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:18242
+[meter] admit id=cmpl-4c8648225dfe7fc4cd04d2a00b71bf70 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=748 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 748 tokens, 63.8MB (resident 63.8MB / 537MB, model q9, ns "cachespec-20260809")
+[meter] admit id=cmpl-281bd55cdda301a44b107c495ef08d01 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1032 cached=0 lcp=746 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q9": 34MB (admission gate = 2x)
+[prefix-cache] insert (lcp-split): 746 tokens, 63.8MB (resident 127.6MB / 537MB, model q9, ns "cachespec-20260809")
+[meter] admit id=cmpl-143c1fea620bf34cf58bd7f8249043d4 tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 1209 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1209 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8b237f10f9f93133ff77b0c2527daa96 tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 1368 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1368 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ba524a29f2eac0664a5954fe923de239 tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 1552 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1552 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-38d01d1163d5cf96879d867acec1e91f tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 1715 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1715 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-fcc4c2339a0f8503159e52fe3d30767d tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 1859 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1859 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b12b727cf05efb7e6b3c4121c566ddcb tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 2034 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2034 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-340771132c14e1077c176bab095d8554 tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 2251 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2251 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7500b49ab97978795b8ec5778912c06f tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 2401 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2401 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-0867aa475cec8a214bd3957b1378e3c0 tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 2614 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2614 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9730a41351a0f9fb197249774bce77e2 tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 2814 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2814 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8b2982e6f846e31ae3aea93d38adec43 tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-1c5f0a39229e4800eeb7eac31b9821a9 tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-4567d788c8d46c35a15280eb6594a3aa tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-f544056fcba359cb396c3d4e137c7223 tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 2910 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2910 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 746 of 2909 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2909 cached=746 lcp=746 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 746 of 2911 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2911 cached=746 lcp=746 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 746 of 2911 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2911 cached=746 lcp=746 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-1e2eab8c370cf8efa48408762f984062 tenant=default lane=interactive model="q9"
+[prefix-cache] hit: 746 of 2915 prompt tokens from cache (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=2915 cached=746 lcp=746 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

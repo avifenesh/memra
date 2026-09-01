@@ -1,0 +1,6 @@
+# qwen4exp_real_gate	label=nvfp4-spec	binary_sha256=c515f1095d0cdb2352fef2920b8752c27a9b40ac75ae283fbe6ec77c904017b1	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# spec-sampled: vendor defaults temp=1.0 top_p=0.95 top_k=20 seed=0x5eedcafe k=4
+# SPEC-ENGAGEMENT	rounds=20	rounds_with_accepts=10	accepted=19	drafted=80	accept_hist=10,3,6,0,1
+# timing	tokens=40	ms_per_token=24.01	tok_per_s=41.66
+# ids	271,2,220,17,15,17,15,95859,19,96212,16,19,95971,96405,247256,271,550,220,247359,471,220,247359,271,13962,220,96921,103058,271,16,13,220,96052,67813,95924,102997,28452,5205,148813,97634,180137

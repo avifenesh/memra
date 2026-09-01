@@ -1,0 +1,30 @@
+{
+  "rig": "box1 cloud pair, 2x NVIDIA RTX PRO 6000 Blackwell Server Edition, 600 W limits",
+  "candidate_source": "711fbcaaef54491d22488a84d40b7fc35e5a58dd",
+  "candidate_binary_sha256": "91544a0d32977dac792bc548b609ce26dafda1c4ce92bf7fb071534660bb7e3f",
+  "eager_source": "188154299064a42b67fc8eb1f41757cf6237300d",
+  "wall": {
+    "steps_per_rep": 64,
+    "timed_reps_per_arm": 3,
+    "discarded_warmup_reps_per_arm": 1,
+    "order": ["candidate", "eager"],
+    "candidate_tok_s_median": 85.4,
+    "eager_tok_s_median": 85.9,
+    "candidate_vs_eager_pct": -0.5821,
+    "prior_batched_tok_s_median_separate_block": 81.8,
+    "candidate_vs_prior_batched_pct": 4.4010,
+    "prior_gap_recovered_pct": 85.7143,
+    "thermal_regime": "single candidate-then-eager order; candidate start 27/27 C, eager start 33/34 C; anatomy confirmation only, not the promotion A/B"
+  },
+  "sync_bounded_phase": {
+    "steps_per_rep": 8,
+    "measured_plus_warmup_tokens": 16,
+    "candidate_total_ms": 227.6,
+    "candidate_q_a_dtod_ms": 0.0,
+    "candidate_q_a_dtod_share_pct": 0.0,
+    "removed_copy_launches_per_token": 90,
+    "prior_batched_q_a_dtod_ms_separate_block": 15.0,
+    "interpretation": "MEMRA_BATCH_PHASE=1 synchronizes every boundary; rank/share and launch anatomy only, not uninstrumented wall time"
+  },
+  "errors": 0
+}

@@ -1,0 +1,210 @@
+BLOCK1_BEGIN 2026-08-10T11:18:00Z
+RUNTIME_STOPPED 2026-08-10T11:18:02Z
+warning: memra-engine@0.74.0: nvcc from MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.74.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.05s
+devices=2
+dev0 name="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition" cc=12.0 pci=0000:41:00
+dev1 name="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition" cc=12.0 pci=0000:61:00
+canAccessPeer 0->1=1 1->0=1
+peer_enabled=1
+bytes,tokens_at_nembd4096,batch_us,serialized_us,GB_s
+16384,1,1.806,5.100,9.074
+2097152,128,19.730,24.156,106.294
+4194304,256,38.781,43.265,108.155
+8388608,512,76.921,81.831,109.055
+16777216,1024,153.669,158.583,109.177
+correctness bytes=16384 wrong=16320 verdict=FAIL
+devices=2
+dev0 name="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition" cc=12.0 pci=0000:41:00
+dev1 name="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition" cc=12.0 pci=0000:61:00
+canAccessPeer 0->1=1 1->0=1
+peer_enabled=1
+bytes,tokens_at_nembd4096,batch_us,serialized_us,GB_s
+16384,1,1.782,5.382,9.196
+2097152,128,19.702,24.346,106.446
+4194304,256,38.726,43.492,108.306
+8388608,512,76.816,81.485,109.204
+16777216,1024,152.897,157.685,109.729
+correctness bytes=16384 wrong=16320 verdict=FAIL
+[/root/simpleP2P-official] - Starting...
+Checking for multiple GPUs...
+CUDA-capable device count: 2
+
+Checking GPU(s) for support of peer to peer memory access...
+> Peer access from NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (GPU0) -> NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (GPU1) : Yes
+> Peer access from NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (GPU1) -> NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (GPU0) : Yes
+Enabling peer access between GPU0 and GPU1...
+Allocating buffers (64MB on GPU0, GPU1 and CPU Host)...
+Creating event handles...
+cudaMemcpyPeer / cudaMemcpy between GPU0 and GPU1: 59.38GB/s
+Preparing host buffer and memcpy to GPU0...
+Run kernel on GPU1, taking source data from GPU0 and writing to GPU1...
+Run kernel on GPU0, taking source data from GPU1 and writing to GPU0...
+Copy data back to host from GPU0 and verify results...
+Verification error @ element 0: val = -0.003189, ref = 0.000000
+Verification error @ element 1: val = 0.000000, ref = 4.000000
+Verification error @ element 2: val = 0.000000, ref = 8.000000
+Verification error @ element 3: val = 0.000000, ref = 12.000000
+Verification error @ element 4: val = 0.000000, ref = 16.000000
+Verification error @ element 5: val = 0.000000, ref = 20.000000
+Verification error @ element 6: val = 0.000000, ref = 24.000000
+Verification error @ element 7: val = 0.000000, ref = 28.000000
+Verification error @ element 8: val = 0.000000, ref = 32.000000
+Verification error @ element 9: val = 0.000000, ref = 36.000000
+Verification error @ element 10: val = 0.000000, ref = 40.000000
+Verification error @ element 11: val = 0.000000, ref = 44.000000
+Disabling peer access...
+Shutting down...
+Test failed!
+[/root/simpleP2P-official] - Starting...
+Checking for multiple GPUs...
+CUDA-capable device count: 2
+
+Checking GPU(s) for support of peer to peer memory access...
+> Peer access from NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (GPU0) -> NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (GPU1) : Yes
+> Peer access from NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (GPU1) -> NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition (GPU0) : Yes
+Enabling peer access between GPU0 and GPU1...
+Allocating buffers (64MB on GPU0, GPU1 and CPU Host)...
+Creating event handles...
+cudaMemcpyPeer / cudaMemcpy between GPU0 and GPU1: 104.72GB/s
+Preparing host buffer and memcpy to GPU0...
+Run kernel on GPU1, taking source data from GPU0 and writing to GPU1...
+Run kernel on GPU0, taking source data from GPU1 and writing to GPU0...
+Copy data back to host from GPU0 and verify results...
+Verification error @ element 0: val = -0.003189, ref = 0.000000
+Verification error @ element 1: val = 0.000000, ref = 4.000000
+Verification error @ element 2: val = 0.000000, ref = 8.000000
+Verification error @ element 3: val = 0.000000, ref = 12.000000
+Verification error @ element 4: val = 0.000000, ref = 16.000000
+Verification error @ element 5: val = 0.000000, ref = 20.000000
+Verification error @ element 6: val = 0.000000, ref = 24.000000
+Verification error @ element 7: val = 0.000000, ref = 28.000000
+Verification error @ element 8: val = 0.000000, ref = 32.000000
+Verification error @ element 9: val = 0.000000, ref = 36.000000
+Verification error @ element 10: val = 0.000000, ref = 40.000000
+Verification error @ element 11: val = 0.000000, ref = 44.000000
+Disabling peer access...
+Shutting down...
+Test failed!
+[P2P (Peer-to-Peer) GPU Bandwidth Latency Test]
+Device: 0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, pciBusID: 41, pciDeviceID: 0, pciDomainID:0
+Device: 1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, pciBusID: 61, pciDeviceID: 0, pciDomainID:0
+Device=0 CAN Access Peer Device=1
+Device=1 CAN Access Peer Device=0
+
+***NOTE: In case a device doesn't have P2P access to other one, it falls back to normal memcopy procedure.
+So you can see lesser Bandwidth (GB/s) and unstable Latency (us) in those cases.
+
+P2P Connectivity Matrix
+     D\D     0     1
+     0	     1     1
+     1	     1     1
+Unidirectional P2P=Disabled Bandwidth Matrix (GB/s)
+   D\D     0      1 
+     0 1486.02  36.08 
+     1  36.02 1525.88 
+Unidirectional P2P=Enabled Bandwidth (P2P Writes) Matrix (GB/s)
+   D\D     0      1 
+     0 1482.45 112.91 
+     1 113.89 1519.94 
+Bidirectional P2P=Disabled Bandwidth Matrix (GB/s)
+   D\D     0      1 
+     0 1484.49  40.61 
+     1  40.39 1505.23 
+Bidirectional P2P=Enabled Bandwidth Matrix (GB/s)
+   D\D     0      1 
+     0 1483.09 225.98 
+     1 225.14 1503.78 
+P2P=Disabled Latency Matrix (us)
+   GPU     0      1 
+     0   2.07  14.45 
+     1  14.34   2.07 
+
+   CPU     0      1 
+     0   2.15   6.86 
+     1   6.81   2.12 
+P2P=Enabled Latency (P2P Writes) Matrix (us)
+   GPU     0      1 
+     0   2.07   0.44 
+     1   0.44   2.07 
+
+   CPU     0      1 
+     0   2.13   1.74 
+     1   1.80   2.13 
+
+NOTE: The CUDA Samples are not meant for performance measurements. Results may vary when GPU Boost is enabled.
+[P2P (Peer-to-Peer) GPU Bandwidth Latency Test]
+Device: 0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, pciBusID: 41, pciDeviceID: 0, pciDomainID:0
+Device: 1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, pciBusID: 61, pciDeviceID: 0, pciDomainID:0
+Device=0 CAN Access Peer Device=1
+Device=1 CAN Access Peer Device=0
+
+***NOTE: In case a device doesn't have P2P access to other one, it falls back to normal memcopy procedure.
+So you can see lesser Bandwidth (GB/s) and unstable Latency (us) in those cases.
+
+P2P Connectivity Matrix
+     D\D     0     1
+     0	     1     1
+     1	     1     1
+Unidirectional P2P=Disabled Bandwidth Matrix (GB/s)
+   D\D     0      1 
+     0 1494.32  34.59 
+     1  34.75 1528.86 
+Unidirectional P2P=Enabled Bandwidth (P2P Writes) Matrix (GB/s)
+   D\D     0      1 
+     0 1485.27 112.59 
+     1 114.01 1514.05 
+Bidirectional P2P=Disabled Bandwidth Matrix (GB/s)
+   D\D     0      1 
+     0 1482.38  39.10 
+     1  39.13 1500.89 
+Bidirectional P2P=Enabled Bandwidth Matrix (GB/s)
+   D\D     0      1 
+     0 1481.68 224.97 
+     1 225.76 1498.02 
+P2P=Disabled Latency Matrix (us)
+   GPU     0      1 
+     0   2.07  14.45 
+     1  14.32   2.07 
+
+   CPU     0      1 
+     0   2.12   6.66 
+     1   6.65   2.08 
+P2P=Enabled Latency (P2P Writes) Matrix (us)
+   GPU     0      1 
+     0   2.07   0.51 
+     1   0.43   2.07 
+
+   CPU     0      1 
+     0   2.11   1.70 
+     1   1.76   2.13 
+
+NOTE: The CUDA Samples are not meant for performance measurements. Results may vary when GPU Boost is enabled.
+primary device: 1
+devices: 2
+cuDeviceCanAccessPeer(0 -> 1) = 1
+cuDeviceCanAccessPeer(1 -> 0) = 1
+peer-arm copy (cuMemcpyPeerAsync, same-ctx degenerate): bytediff=0 OK
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+Pp2Rt built: cross_device=true
+boundary roundtrip step 0 slot 0: bytediff=5119 FAIL
+boundary roundtrip step 1 slot 1: bytediff=5120 FAIL
+boundary roundtrip step 2 slot 0: bytediff=5120 FAIL
+boundary roundtrip step 3 slot 1: bytediff=5120 FAIL
+pp-transport-smoke FAIL (1 sub-smokes)
+primary device: 1
+devices: 2
+cuDeviceCanAccessPeer(0 -> 1) = 1
+cuDeviceCanAccessPeer(1 -> 0) = 1
+peer-arm copy (cuMemcpyPeerAsync, same-ctx degenerate): bytediff=0 OK
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+Pp2Rt built: cross_device=true
+boundary roundtrip step 0 slot 0: bytediff=5119 FAIL
+boundary roundtrip step 1 slot 1: bytediff=5120 FAIL
+boundary roundtrip step 2 slot 0: bytediff=5120 FAIL
+boundary roundtrip step 3 slot 1: bytediff=5120 FAIL
+pp-transport-smoke FAIL (1 sub-smokes)
+BLOCK1_MEASUREMENT_DONE 2026-08-10T11:18:16Z
+RESTORE_BEGIN 2026-08-10T11:18:16Z
+RESTORE_OK 2026-08-10T11:19:48Z

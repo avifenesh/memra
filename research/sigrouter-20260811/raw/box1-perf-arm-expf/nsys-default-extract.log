@@ -1,0 +1,547 @@
+{
+  "database": "nsys-default.sqlite",
+  "enum_tables": [
+    {
+      "columns": [
+        "id",
+        "name",
+        "label"
+      ],
+      "rows": [
+        [
+          0,
+          "CUDA_MEMCPY_KIND_UNKNOWN",
+          "Unknown"
+        ],
+        [
+          1,
+          "CUDA_MEMCPY_KIND_HTOD",
+          "Host-to-Device"
+        ],
+        [
+          2,
+          "CUDA_MEMCPY_KIND_DTOH",
+          "Device-to-Host"
+        ],
+        [
+          3,
+          "CUDA_MEMCPY_KIND_HTOA",
+          "Host-to-Array"
+        ],
+        [
+          4,
+          "CUDA_MEMCPY_KIND_ATOH",
+          "Array-to-Host"
+        ],
+        [
+          5,
+          "CUDA_MEMCPY_KIND_ATOA",
+          "Array-to-Array"
+        ],
+        [
+          6,
+          "CUDA_MEMCPY_KIND_ATOD",
+          "Array-to-Device"
+        ],
+        [
+          7,
+          "CUDA_MEMCPY_KIND_DTOA",
+          "Device-to-Array"
+        ],
+        [
+          8,
+          "CUDA_MEMCPY_KIND_DTOD",
+          "Device-to-Device"
+        ],
+        [
+          9,
+          "CUDA_MEMCPY_KIND_HTOH",
+          "Host-to-Host"
+        ],
+        [
+          10,
+          "CUDA_MEMCPY_KIND_PTOP",
+          "Peer-to-Peer"
+        ],
+        [
+          11,
+          "CUDA_MEMCPY_KIND_UVM_HTOD",
+          "Unified Host-to-Device"
+        ],
+        [
+          12,
+          "CUDA_MEMCPY_KIND_UVM_DTOH",
+          "Unified Device-to-Host"
+        ],
+        [
+          13,
+          "CUDA_MEMCPY_KIND_UVM_DTOD",
+          "Unified Device-to-Device"
+        ]
+      ],
+      "table": "ENUM_CUDA_MEMCPY_OPER"
+    }
+  ],
+  "memcpy_columns": [
+    "start",
+    "end",
+    "deviceId",
+    "contextId",
+    "greenContextId",
+    "streamId",
+    "correlationId",
+    "globalPid",
+    "bytes",
+    "copyKind",
+    "deprecatedSrcId",
+    "srcKind",
+    "dstKind",
+    "srcDeviceId",
+    "srcContextId",
+    "dstDeviceId",
+    "dstContextId",
+    "migrationCause",
+    "graphNodeId",
+    "virtualAddress",
+    "copyCount"
+  ],
+  "memcpy_groups": [
+    {
+      "bytes": 4,
+      "copy_kind": 1,
+      "count": 18206
+    },
+    {
+      "bytes": 8,
+      "copy_kind": 1,
+      "count": 4419
+    },
+    {
+      "bytes": 12,
+      "copy_kind": 1,
+      "count": 3042
+    },
+    {
+      "bytes": 16,
+      "copy_kind": 1,
+      "count": 2259
+    },
+    {
+      "bytes": 20,
+      "copy_kind": 1,
+      "count": 1746
+    },
+    {
+      "bytes": 24,
+      "copy_kind": 1,
+      "count": 1026
+    },
+    {
+      "bytes": 28,
+      "copy_kind": 1,
+      "count": 891
+    },
+    {
+      "bytes": 32,
+      "copy_kind": 1,
+      "count": 936
+    },
+    {
+      "bytes": 36,
+      "copy_kind": 1,
+      "count": 756
+    },
+    {
+      "bytes": 40,
+      "copy_kind": 1,
+      "count": 630
+    },
+    {
+      "bytes": 44,
+      "copy_kind": 1,
+      "count": 513
+    },
+    {
+      "bytes": 48,
+      "copy_kind": 1,
+      "count": 513
+    },
+    {
+      "bytes": 52,
+      "copy_kind": 1,
+      "count": 351
+    },
+    {
+      "bytes": 56,
+      "copy_kind": 1,
+      "count": 378
+    },
+    {
+      "bytes": 60,
+      "copy_kind": 1,
+      "count": 198
+    },
+    {
+      "bytes": 64,
+      "copy_kind": 1,
+      "count": 126
+    },
+    {
+      "bytes": 68,
+      "copy_kind": 1,
+      "count": 153
+    },
+    {
+      "bytes": 72,
+      "copy_kind": 1,
+      "count": 198
+    },
+    {
+      "bytes": 76,
+      "copy_kind": 1,
+      "count": 153
+    },
+    {
+      "bytes": 80,
+      "copy_kind": 1,
+      "count": 99
+    },
+    {
+      "bytes": 84,
+      "copy_kind": 1,
+      "count": 81
+    },
+    {
+      "bytes": 88,
+      "copy_kind": 1,
+      "count": 81
+    },
+    {
+      "bytes": 92,
+      "copy_kind": 1,
+      "count": 72
+    },
+    {
+      "bytes": 96,
+      "copy_kind": 1,
+      "count": 108
+    },
+    {
+      "bytes": 100,
+      "copy_kind": 1,
+      "count": 45
+    },
+    {
+      "bytes": 104,
+      "copy_kind": 1,
+      "count": 72
+    },
+    {
+      "bytes": 108,
+      "copy_kind": 1,
+      "count": 36
+    },
+    {
+      "bytes": 112,
+      "copy_kind": 1,
+      "count": 63
+    },
+    {
+      "bytes": 116,
+      "copy_kind": 1,
+      "count": 18
+    },
+    {
+      "bytes": 120,
+      "copy_kind": 1,
+      "count": 45
+    },
+    {
+      "bytes": 124,
+      "copy_kind": 1,
+      "count": 45
+    },
+    {
+      "bytes": 128,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 132,
+      "copy_kind": 1,
+      "count": 54
+    },
+    {
+      "bytes": 136,
+      "copy_kind": 1,
+      "count": 45
+    },
+    {
+      "bytes": 140,
+      "copy_kind": 1,
+      "count": 18
+    },
+    {
+      "bytes": 144,
+      "copy_kind": 1,
+      "count": 18
+    },
+    {
+      "bytes": 148,
+      "copy_kind": 1,
+      "count": 18
+    },
+    {
+      "bytes": 156,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 160,
+      "copy_kind": 1,
+      "count": 18
+    },
+    {
+      "bytes": 164,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 168,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 172,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 176,
+      "copy_kind": 1,
+      "count": 27
+    },
+    {
+      "bytes": 184,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 216,
+      "copy_kind": 1,
+      "count": 18
+    },
+    {
+      "bytes": 220,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 228,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 232,
+      "copy_kind": 1,
+      "count": 18
+    },
+    {
+      "bytes": 236,
+      "copy_kind": 1,
+      "count": 27
+    },
+    {
+      "bytes": 240,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 256,
+      "copy_kind": 1,
+      "count": 2
+    },
+    {
+      "bytes": 260,
+      "copy_kind": 1,
+      "count": 18
+    },
+    {
+      "bytes": 268,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 284,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 288,
+      "copy_kind": 1,
+      "count": 42
+    },
+    {
+      "bytes": 292,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 332,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 336,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 364,
+      "copy_kind": 1,
+      "count": 222
+    },
+    {
+      "bytes": 368,
+      "copy_kind": 1,
+      "count": 4
+    },
+    {
+      "bytes": 512,
+      "copy_kind": 1,
+      "count": 90
+    },
+    {
+      "bytes": 1152,
+      "copy_kind": 1,
+      "count": 42
+    },
+    {
+      "bytes": 2912,
+      "copy_kind": 1,
+      "count": 294
+    },
+    {
+      "bytes": 3456,
+      "copy_kind": 1,
+      "count": 42
+    },
+    {
+      "bytes": 6912,
+      "copy_kind": 1,
+      "count": 42
+    },
+    {
+      "bytes": 16384,
+      "copy_kind": 1,
+      "count": 307
+    },
+    {
+      "bytes": 139264,
+      "copy_kind": 1,
+      "count": 12
+    },
+    {
+      "bytes": 208896,
+      "copy_kind": 1,
+      "count": 33
+    },
+    {
+      "bytes": 2228224,
+      "copy_kind": 1,
+      "count": 45
+    },
+    {
+      "bytes": 2785280,
+      "copy_kind": 1,
+      "count": 9438
+    },
+    {
+      "bytes": 2883584,
+      "copy_kind": 1,
+      "count": 45
+    },
+    {
+      "bytes": 4718592,
+      "copy_kind": 1,
+      "count": 42
+    },
+    {
+      "bytes": 17825792,
+      "copy_kind": 1,
+      "count": 24
+    },
+    {
+      "bytes": 24510464,
+      "copy_kind": 1,
+      "count": 9
+    },
+    {
+      "bytes": 26738688,
+      "copy_kind": 1,
+      "count": 66
+    },
+    {
+      "bytes": 280477696,
+      "copy_kind": 1,
+      "count": 1
+    },
+    {
+      "bytes": 433090560,
+      "copy_kind": 1,
+      "count": 1
+    },
+    {
+      "bytes": 802160640,
+      "copy_kind": 1,
+      "count": 126
+    },
+    {
+      "bytes": 32,
+      "copy_kind": 2,
+      "count": 18144
+    },
+    {
+      "bytes": 2912,
+      "copy_kind": 2,
+      "count": 420
+    },
+    {
+      "bytes": 515584,
+      "copy_kind": 2,
+      "count": 221
+    },
+    {
+      "bytes": 16384,
+      "copy_kind": 8,
+      "count": 439
+    },
+    {
+      "bytes": 1490944,
+      "copy_kind": 8,
+      "count": 100
+    },
+    {
+      "bytes": 4100096,
+      "copy_kind": 8,
+      "count": 12
+    },
+    {
+      "bytes": 4,
+      "copy_kind": 10,
+      "count": 46
+    },
+    {
+      "bytes": 16384,
+      "copy_kind": 10,
+      "count": 216
+    },
+    {
+      "bytes": 1490944,
+      "copy_kind": 10,
+      "count": 2
+    }
+  ],
+  "memcpy_total": 68193,
+  "schema": "memra.sigrouter.nsys-memcpy.v1"
+}

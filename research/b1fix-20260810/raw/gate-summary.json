@@ -1,0 +1,35 @@
+{
+  "b2_geometry_live_defaults": {
+    "canary": "PASS: disabling Step35 batching broke the live assertions",
+    "naked": "PASS",
+    "transition": "ready=1 -> ready>=2; early and both late completions equal the c=1 reference"
+  },
+  "chunk_invariance": {
+    "canary": "PASS: rollback seam produced CHUNK-DEPENDENT",
+    "naked": "PASS: 4096,513,512,256,64 exact"
+  },
+  "decode_batch_gate": {
+    "batches": [1, 2, 4, 8],
+    "failing_arms": 0,
+    "mode": "PP-2",
+    "reps": 2,
+    "result": "ALL GREEN"
+  },
+  "kernel_check": "ALL GREEN",
+  "run_gen": {
+    "batched_prime_vs_tokenwise": "MATCH",
+    "prefill_vs_decode": "MATCH"
+  },
+  "run_spec": {
+    "k": "1..8",
+    "result": "SELF-CONSISTENCY PASS"
+  },
+  "serve_smoke": {
+    "failures": 0,
+    "optional_gemma4_arm": "SKIP: artifact absent"
+  },
+  "tick_invariance": {
+    "canary": "PASS: rollback seam produced TICK-DEPENDENT",
+    "naked": "PASS: budgets 0,1024,513,512,256,64 and splits 64,256,512 exact"
+  }
+}

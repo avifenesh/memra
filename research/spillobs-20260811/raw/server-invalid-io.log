@@ -1,0 +1,26 @@
+[server] starting; models config = [("spill", "/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "spill" <- /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[spill] disk tier ON: free_vram=23116 MiB  pinnable_ram=0 MiB (MemAvailable*frac)
+[spill] experts placed: 0 pinned (Tier 1), 31488 mmap'd from disk (Tier 2, 14878 MiB)
+[worker]   loaded "spill": 41 layers, eos=248046
+[worker] spill: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] spill: decode chunk cap 8
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "spill": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["spill"]
+[server] listening on http://127.0.0.1:18971
+[meter] admit id=cmpl-7f7d648d8943d9ccd347b3189fc58c4b tenant=default lane=interactive model="spill"
+[admission] request cost: model="spill" ctx=66 path=plain = 10208 B/token x ctx + 0MB fixed = 1MB
+[spec-k] model="spill" tenant="" K=0 source=eligibility-fallback prompt=1 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="spill" 129MB (observed 129MB at ctx 10 path=plain)
+[spill-pread] invalid MEMRA_SPILL_IO="wroker" (expected mmap, pread, worker, or direct); using mmap
+[spill-pread] snapshot reads=0 bytes=0 errors=0 short_reads=0 config_fallbacks=1 fallbacks=0 buffer_waits=0 ring_full=0
+[moe-cache] snapshot hits=0 misses=1920 hit_rate=0.000 staged_bytes=951189504 slots=8
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,23 @@
+== perf-ab settle: qwen9b-plain-short, N=5 interleaved, one lock hold ==
+   entry: 62, 180 MHz, 9.95 W
+   other GPU compute apps at entry:
+     2893760, 1390 MiB, /home/avifenesh/projects/colbert-2/.venv/bin/python
+
+  [warmup rep into the steady thermal state, discarded]
+  A    rep1: 126.74   tok/s  (exit 0, 69,1717MHz)
+  B    rep1: 126.51   tok/s  (exit 0, 67,1747MHz)
+  A    rep2: 126.59   tok/s  (exit 0, 68,1725MHz)
+  B    rep2: 126.37   tok/s  (exit 0, 68,1717MHz)
+  A    rep3: 126.22   tok/s  (exit 0, 72,1500MHz)
+  B    rep3: 126.23   tok/s  (exit 0, 73,1552MHz)
+  A    rep4: 126.12   tok/s  (exit 0, 73,1537MHz)
+  B    rep4: 126.00   tok/s  (exit 0, 74,1620MHz)
+  A    rep5: 125.98   tok/s  (exit 0, 75,1680MHz)
+  B    rep5: 125.74   tok/s  (exit 0, 73,1725MHz)
+
+== VERDICT (this window only, N=5 each, interleaved, exclusive lock) ==
+   A base b78b439bc median: 126.22 tok/s   [126.74 126.59 126.22 126.12 125.98 ]
+   B lane candidate median: 126.23 tok/s   [126.51 126.37 126.23 126.00 125.74 ]
+   B vs A: +0.01%
+
+[exited with code 0]

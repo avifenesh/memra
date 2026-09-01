@@ -1,0 +1,111 @@
+RESULTS HEADER: bin=/home/ubuntu/degen-rerun/bin/memra-server-3999a92a6 md5=87127d4862e5cf2a58d09eb4b43e2b74 expect=87127d4862e5cf2a58d09eb4b43e2b74 date=2026-08-31T14:48:56Z
+[lock] waiting (max 21600s) 14:48:56
+[lock] acquired 14:48:56
+REFUSAL_OK (door recipe refused at boot)
+[boot d7boot] door-free log=/home/ubuntu/degen-rerun/lane/raw/server-d7boot.log nonce=d7rr-1788187737-21317
+[boot] HEALTH=200 boot_seconds=155
+server_pid=24962
+exe=/home/ubuntu/degen-rerun/bin/memra-server-3999a92a6
+bin_md5=87127d4862e5cf2a58d09eb4b43e2b74
+bin_fingerprint_sha12=3999a92a6e18  # baked fingerprint is "memra-" + this sha12; the literal token is withheld from the public repo (public-boundary rule live_fingerprint)
+boot_nonce_asked=d7rr-1788187737-21317
+boot_nonce_live=d7rr-1788187737-21317
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+environ_census=/home/ubuntu/degen-rerun/lane/receipts/environ-d7boot.txt (36 MEMRA_/BOOT vars)
+door_MEMRA_NVFP4_BANK_V2_live=0
+door_MEMRA_SEL_DOWN8_live=0
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+GATE greedy         r1 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.9178082191780822
+GATE greedy         r2 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.9178082191780822
+GATE greedy         r3 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.9178082191780822
+GATE greedy         r4 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.9178082191780822
+GATE greedy         r5 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.9178082191780822
+GATE greedy         r6 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.9178082191780822
+GATE greedy         r7 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.9178082191780822
+GATE greedy         r8 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.9178082191780822
+GATE vendor_default r1 answer=True finish=stop first16='We are asked: "W' spec_acc=0.86
+GATE vendor_default r2 answer=True finish=stop first16='We are asked: "W' spec_acc=0.9175257731958762
+GATE vendor_default r3 answer=True finish=stop first16='We need to answe' spec_acc=0.835820895522388
+GATE vendor_default r4 answer=True finish=stop first16='We are asked: "W' spec_acc=0.7592592592592593
+GATE vendor_default r5 answer=True finish=stop first16='We need to answe' spec_acc=0.7662337662337663
+GATE vendor_default r6 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.8350515463917526
+GATE vendor_default r7 answer=True finish=stop first16="Got it, let's ca" spec_acc=0.9571428571428572
+GATE vendor_default r8 answer=True finish=stop first16='We need to compu' spec_acc=0.8805970149253731
+DOORFREE_GATE {"greedy": {"correct": "8/8", "spec_engaged": "8/8"}, "vendor_default": {"correct": "8/8", "spec_engaged": "8/8"}}
+DOORFREE_GATE_PASS
+CT t1 attempt 1 maxtok=4096 finish=length content=3915 reasoning=13348
+CT t1 attempt 2 maxtok=4096 finish=stop content=5096 reasoning=12344
+CT t2 attempt 1 maxtok=4096 finish=stop content=2085 reasoning=5453
+CT t3 attempt 1 maxtok=4096 finish=length content=0 reasoning=16374
+CT t3 attempt 2 maxtok=4096 finish=length content=5401 reasoning=11549
+CT t3 attempt 3 maxtok=4096 finish=stop content=4594 reasoning=10043
+CT t4 attempt 1 maxtok=4096 finish=stop content=4373 reasoning=6781
+CT t5 attempt 1 maxtok=4096 finish=length content=221 reasoning=16608
+CT t5 attempt 2 maxtok=4096 finish=length content=0 reasoning=15578
+CT t5 attempt 3 maxtok=4096 finish=length content=0 reasoning=15529
+CT t5 attempt 4 maxtok=8192 finish=stop content=5440 reasoning=22215
+CT t6 attempt 1 maxtok=4096 finish=stop content=4496 reasoning=6289
+CT t7 attempt 1 maxtok=4096 finish=stop content=2753 reasoning=8188
+CLEAN_TRANSCRIPT_DONE chars={1: 4000, 2: 2085, 3: 4000, 4: 4000, 5: 4000, 6: 4000, 7: 2753}
+T2PROBE a1 maxtok=4096 finish=stop content=2862 reasoning=7674 stop_inside_think=False
+T2PROBE a2 maxtok=4096 finish=stop content=1475 reasoning=3668 stop_inside_think=False
+T2PROBE a3 maxtok=4096 finish=stop content=1701 reasoning=5707 stop_inside_think=False
+T2PROBE a4 maxtok=8192 finish=stop content=5309 reasoning=8293 stop_inside_think=False
+T2PROBE a5 maxtok=4096 finish=stop content=1446 reasoning=4230 stop_inside_think=False
+T2PROBE a6 maxtok=4096 finish=stop content=1839 reasoning=5141 stop_inside_think=False
+T2PROBE a7 maxtok=4096 finish=stop content=1555 reasoning=4853 stop_inside_think=False
+T2PROBE a8 maxtok=8192 finish=stop content=2108 reasoning=4855 stop_inside_think=False
+T2PROBE_DONE stop_inside_think=0/8
+ROW ctrl s1 valid=True finish=length chars=4379(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.49 acc=0.7522464698331194
+ROW clean s1 valid=True finish=length chars=4323(+0 content) repfrac=0.002 t5=0 t8=6 ttft=3.35 acc=0.7581699346405228
+ROW cleanlow s1 valid=True finish=length chars=4449(+0 content) repfrac=0.001 t5=0 t8=6 ttft=3.42 acc=0.7866666666666666
+ROW ctrllow s1 valid=True finish=length chars=4123(+0 content) repfrac=0.006 t5=0 t8=5 ttft=3.39 acc=0.7896174863387978
+ROW clean4k s1 valid=True finish=stop chars=8570(+2796 content) repfrac=0.000 t5=0 t8=5 ttft=3.36 acc=0.8492183560262229
+ROW empty s1 valid=True finish=length chars=4352(+0 content) repfrac=0.000 t5=0 t8=6 ttft=1.09 acc=0.8143053645116919
+ROW t1 s1 valid=True finish=length chars=4497(+0 content) repfrac=0.000 t5=0 t8=0 ttft=0.76 acc=0.7902511078286558
+ROW ctrl s2 valid=True finish=length chars=4231(+0 content) repfrac=0.000 t5=0 t8=5 ttft=3.49 acc=0.8077956989247311
+ROW clean s2 valid=True finish=length chars=4239(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.34 acc=0.7771664374140302
+ROW cleanlow s2 valid=True finish=length chars=4174(+0 content) repfrac=0.003 t5=0 t8=6 ttft=3.41 acc=0.7946927374301676
+ROW ctrllow s2 valid=True finish=length chars=4418(+0 content) repfrac=0.001 t5=0 t8=5 ttft=3.39 acc=0.8066759388038943
+ROW clean4k s2 valid=True finish=stop chars=11915(+2328 content) repfrac=0.000 t5=0 t8=4 ttft=3.36 acc=0.8112286411716843
+ROW empty s2 valid=True finish=length chars=4361(+0 content) repfrac=0.000 t5=0 t8=5 ttft=1.09 acc=0.8002793296089385
+ROW t1 s2 valid=True finish=length chars=4687(+0 content) repfrac=0.005 t5=0 t8=0 ttft=0.76 acc=0.7479892761394102
+ROW ctrl s3 valid=True finish=length chars=4229(+0 content) repfrac=0.002 t5=0 t8=6 ttft=3.49 acc=0.8007968127490039
+ROW clean s3 valid=True finish=length chars=4151(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.34 acc=0.801641586867305
+ROW cleanlow s3 valid=True finish=length chars=4401(+0 content) repfrac=0.003 t5=0 t8=6 ttft=3.41 acc=0.8014285714285714
+ROW ctrllow s3 valid=True finish=length chars=4346(+0 content) repfrac=0.003 t5=0 t8=5 ttft=3.38 acc=0.7945578231292517
+ROW clean4k s3 valid=True finish=stop chars=8673(+2078 content) repfrac=0.000 t5=0 t8=5 ttft=3.36 acc=0.8382352941176471
+ROW empty s3 valid=True finish=length chars=4427(+0 content) repfrac=0.007 t5=0 t8=6 ttft=1.09 acc=0.7956104252400549
+ROW t1 s3 valid=True finish=length chars=4196(+0 content) repfrac=0.007 t5=0 t8=0 ttft=0.76 acc=0.8179271708683473
+ROW ctrl s4 valid=True finish=length chars=4232(+0 content) repfrac=0.003 t5=0 t8=5 ttft=3.49 acc=0.8361344537815126
+ROW clean s4 valid=True finish=length chars=4569(+0 content) repfrac=0.001 t5=0 t8=6 ttft=3.34 acc=0.7839673913043478
+ROW cleanlow s4 valid=True finish=length chars=4254(+0 content) repfrac=0.000 t5=0 t8=5 ttft=3.42 acc=0.7625994694960212
+ROW ctrllow s4 valid=True finish=length chars=4237(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.39 acc=0.8052126200274349
+ROW clean4k s4 valid=True finish=stop chars=13126(+2443 content) repfrac=0.000 t5=0 t8=5 ttft=3.36 acc=0.7921428571428571
+ROW empty s4 valid=True finish=length chars=4265(+0 content) repfrac=0.000 t5=0 t8=5 ttft=1.09 acc=0.7711978465679677
+ROW t1 s4 valid=True finish=length chars=4643(+0 content) repfrac=0.001 t5=0 t8=0 ttft=0.76 acc=0.7748917748917749
+ROW ctrl s5 valid=True finish=length chars=4425(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.49 acc=0.7909215955983494
+ROW clean s5 valid=True finish=length chars=4330(+0 content) repfrac=0.002 t5=0 t8=6 ttft=3.35 acc=0.8041379310344827
+ROW cleanlow s5 valid=True finish=length chars=4268(+0 content) repfrac=0.003 t5=0 t8=6 ttft=3.41 acc=0.7829036635006784
+ROW ctrllow s5 valid=True finish=length chars=4129(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.38 acc=0.7916666666666666
+ROW empty s5 valid=True finish=length chars=4162(+0 content) repfrac=0.010 t5=0 t8=6 ttft=1.09 acc=0.7997256515775034
+ROW t1 s5 valid=True finish=length chars=4718(+0 content) repfrac=0.003 t5=0 t8=0 ttft=0.76 acc=0.7711738484398217
+ROW ctrl s6 valid=True finish=length chars=4375(+0 content) repfrac=0.004 t5=0 t8=5 ttft=3.49 acc=0.782258064516129
+ROW clean s6 valid=True finish=length chars=4286(+0 content) repfrac=0.002 t5=0 t8=6 ttft=3.34 acc=0.8253521126760563
+ROW cleanlow s6 valid=True finish=length chars=4136(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.42 acc=0.7789757412398922
+ROW ctrllow s6 valid=True finish=length chars=4465(+0 content) repfrac=0.003 t5=0 t8=6 ttft=3.39 acc=0.7662682602921647
+ROW empty s6 valid=True finish=length chars=4279(+0 content) repfrac=0.000 t5=0 t8=6 ttft=1.10 acc=0.7401360544217687
+ROW t1 s6 valid=True finish=length chars=4564(+0 content) repfrac=0.018 t5=0 t8=0 ttft=0.76 acc=0.8326417704011065
+ROW ctrl s7 valid=True finish=length chars=4448(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.49 acc=0.7516688918558078
+ROW clean s7 valid=True finish=length chars=4262(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.34 acc=0.777027027027027
+ROW cleanlow s7 valid=True finish=length chars=4210(+0 content) repfrac=0.003 t5=0 t8=6 ttft=3.41 acc=0.8046767537826685
+ROW ctrllow s7 valid=True finish=length chars=4402(+0 content) repfrac=0.004 t5=0 t8=6 ttft=3.39 acc=0.7923280423280423
+ROW ctrl s8 valid=True finish=length chars=4334(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.49 acc=0.8352112676056338
+ROW clean s8 valid=True finish=length chars=4288(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.34 acc=0.8052126200274349
+ROW cleanlow s8 valid=True finish=length chars=4239(+0 content) repfrac=0.002 t5=0 t8=6 ttft=3.42 acc=0.7755102040816326
+ROW ctrllow s8 valid=True finish=length chars=4204(+0 content) repfrac=0.000 t5=0 t8=6 ttft=3.39 acc=0.8118948824343015
+D7_ROWS_DONE
+[down] ILLEGAL=0 hash87=0 panics=0
+[down] SERVER_GONE
+D7_RERUN_DONE

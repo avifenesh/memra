@@ -1,0 +1,69 @@
+[dd] no pidfile, nothing to stop
+[dd] launched pid=128663 boot=v3k-k6 nonce=7c082335-87d0-4d1a-9d0b-00c113dbfd38
+[dd] READY after 40s
+[dd] GATES GREEN boot=v3k-k6
+[sample] ok=True wall=2.2s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+door=hc-fused-pre expected=0 lines=0
+door=hc-decode-ws expected=0 lines=0
+door=kda-fused6-bf16 expected=0 lines=0
+door=kda-fused6-q8(forbidden-on-this-recipe) expected=0 lines=0
+door=mla-decode-split expected=0 lines=0
+door=verify-walk-batched expected=1 lines=1
+door=verify-walk-per-row expected=0 lines=0
+door=verify-walk-moe-pairs expected=1 lines=1
+door=glm5-vrows expected=1 lines=1
+[dd] DOORS GREEN boot=v3k-k6
+[timed] d00-code ttft=1.072 tok/s=60.4 spec={'rounds': 87, 'drafted': 268, 'accepted': 168, 'acceptance_rate': 0.6268656716417911} err=None
+[timed] d01-code ttft=1.108 tok/s=56.7 spec={'rounds': 92, 'drafted': 282, 'accepted': 168, 'acceptance_rate': 0.5957446808510638} err=None
+[timed] d02-code ttft=1.067 tok/s=55.3 spec={'rounds': 93, 'drafted': 257, 'accepted': 164, 'acceptance_rate': 0.6381322957198443} err=None
+[timed] d03-code ttft=1.034 tok/s=54.2 spec={'rounds': 93, 'drafted': 278, 'accepted': 166, 'acceptance_rate': 0.5971223021582733} err=None
+[timed] d04-code ttft=1.151 tok/s=63.9 spec={'rounds': 66, 'drafted': 262, 'accepted': 165, 'acceptance_rate': 0.6297709923664122} err=None
+[timed] d05-code ttft=0.884 tok/s=62.4 spec={'rounds': 82, 'drafted': 251, 'accepted': 174, 'acceptance_rate': 0.6932270916334662} err=None
+[timed] d06-prose ttft=0.893 tok/s=71.4 spec={'rounds': 76, 'drafted': 219, 'accepted': 180, 'acceptance_rate': 0.821917808219178} err=None
+[timed] d07-prose ttft=1.119 tok/s=68.1 spec={'rounds': 74, 'drafted': 263, 'accepted': 181, 'acceptance_rate': 0.688212927756654} err=None
+[timed] d08-prose ttft=1.035 tok/s=62.7 spec={'rounds': 81, 'drafted': 269, 'accepted': 176, 'acceptance_rate': 0.654275092936803} err=None
+[timed] d09-prose ttft=0.972 tok/s=66.1 spec={'rounds': 83, 'drafted': 238, 'accepted': 176, 'acceptance_rate': 0.7394957983193278} err=None
+[timed l3] l3-WARM ttft=1.109 tok/s=83.2 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.551 tok/s=53.1 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=3.85 tok/s=49.9 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.23 tok/s=57.0 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.146 err=None
+[timed deep] l3-A4630 ttft=3.557 err=None
+[timed vendor] d04-code tok/s=50.8 spec={'rounds': 108, 'drafted': 239, 'accepted': 148, 'acceptance_rate': 0.6192468619246861} err=None
+[dd] SIGTERM pid=128663 exe=/root/memra-diet/target/release/memra-server
+[dd] stopped
+[dd] launched pid=129006 boot=v3k-k7 nonce=6302d90e-04fa-4ed3-ae59-c9776fbdc970
+[dd] READY after 41s
+[dd] GATES GREEN boot=v3k-k7
+[sample] ok=True wall=2.2s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+door=hc-fused-pre expected=0 lines=0
+door=hc-decode-ws expected=0 lines=0
+door=kda-fused6-bf16 expected=0 lines=0
+door=kda-fused6-q8(forbidden-on-this-recipe) expected=0 lines=0
+door=mla-decode-split expected=0 lines=0
+door=verify-walk-batched expected=1 lines=1
+door=verify-walk-per-row expected=0 lines=0
+door=verify-walk-moe-pairs expected=1 lines=1
+door=glm5-vrows expected=1 lines=1
+[dd] DOORS GREEN boot=v3k-k7
+[timed] d00-code ttft=1.073 tok/s=60.0 spec={'rounds': 87, 'drafted': 269, 'accepted': 168, 'acceptance_rate': 0.6245353159851301} err=None
+[timed] d01-code ttft=1.11 tok/s=57.7 spec={'rounds': 88, 'drafted': 285, 'accepted': 172, 'acceptance_rate': 0.6035087719298246} err=None
+[timed] d02-code ttft=1.069 tok/s=54.8 spec={'rounds': 91, 'drafted': 265, 'accepted': 167, 'acceptance_rate': 0.630188679245283} err=None
+[timed] d03-code ttft=1.035 tok/s=53.1 spec={'rounds': 93, 'drafted': 286, 'accepted': 166, 'acceptance_rate': 0.5804195804195804} err=None
+[timed] d04-code ttft=1.171 tok/s=61.2 spec={'rounds': 66, 'drafted': 278, 'accepted': 166, 'acceptance_rate': 0.5971223021582733} err=None
+[timed] d05-code ttft=0.887 tok/s=60.7 spec={'rounds': 81, 'drafted': 265, 'accepted': 175, 'acceptance_rate': 0.660377358490566} err=None
+[timed] d06-prose ttft=0.856 tok/s=72.4 spec={'rounds': 72, 'drafted': 220, 'accepted': 184, 'acceptance_rate': 0.8363636363636363} err=None
+[timed] d07-prose ttft=1.129 tok/s=67.3 spec={'rounds': 73, 'drafted': 269, 'accepted': 182, 'acceptance_rate': 0.6765799256505576} err=None
+[timed] d08-prose ttft=1.036 tok/s=62.6 spec={'rounds': 79, 'drafted': 273, 'accepted': 179, 'acceptance_rate': 0.6556776556776557} err=None
+[timed] d09-prose ttft=0.973 tok/s=66.2 spec={'rounds': 81, 'drafted': 242, 'accepted': 178, 'acceptance_rate': 0.7355371900826446} err=None
+[timed l3] l3-WARM ttft=1.132 tok/s=82.7 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.593 tok/s=53.2 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=3.874 tok/s=49.2 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.255 tok/s=56.2 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.166 err=None
+[timed deep] l3-A4630 ttft=3.58 err=None
+[timed vendor] d04-code tok/s=52.5 spec={'rounds': 42, 'drafted': 179, 'accepted': 85, 'acceptance_rate': 0.4748603351955307} err=None
+[dd] SIGTERM pid=129006 exe=/root/memra-diet/target/release/memra-server
+[dd] stopped
+[loop-law] screened=56 flagged=0
+V3K2_DONE

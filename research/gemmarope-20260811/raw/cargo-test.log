@@ -1,0 +1,594 @@
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling memra-validate v0.76.0 (/home/avifenesh/projects/wt-cx-gemmarope/crates/memra-validate)
+   Compiling memra-sampling v0.76.0 (/home/avifenesh/projects/wt-cx-gemmarope/crates/memra-sampling)
+warning: memra-engine@0.76.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.76.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling libloading v0.9.0
+   Compiling cudarc v0.19.8
+   Compiling memmap2 v0.9.11
+   Compiling memra-gguf v0.76.0 (/home/avifenesh/projects/wt-cx-gemmarope/crates/memra-gguf)
+   Compiling memra-tokenizer v0.76.0 (/home/avifenesh/projects/wt-cx-gemmarope/crates/memra-tokenizer)
+   Compiling memra-kv v0.76.0 (/home/avifenesh/projects/wt-cx-gemmarope/crates/memra-kv)
+   Compiling memra-runtime v0.76.0 (/home/avifenesh/projects/wt-cx-gemmarope/crates/memra-runtime)
+   Compiling memra-engine v0.76.0 (/home/avifenesh/projects/wt-cx-gemmarope/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.08s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-6567d1443c87cce9)
+
+running 58 tests
+test cpu_experts::tests::accepts_supported_native_qtypes_without_translation ... ok
+test cpu_experts::tests::rejects_missing_symbols_and_wrong_abi ... ok
+test hybrid::draft_head_tests::draft_without_a_nextn_head_falls_back_to_file_level_output ... ok
+test hybrid::draft_head_tests::a_different_blocks_nextn_head_is_never_borrowed ... ok
+test cpu_experts::tests::validates_thread_count ... ok
+test hybrid::draft_head_tests::each_nextn_block_selects_its_own_head ... ok
+test hybrid::residency_tests::pp_residency_combines_stages_that_share_one_device ... ok
+test cpu_experts::tests::dropped_ticket_joins_outstanding_worker ... ok
+test hybrid_forward::page_prefetch_tests::grouped_worker_prefetch_primes_first_then_each_known_next_once ... ok
+test hybrid::draft_head_tests::step37_drafter_prefers_the_blocks_own_nextn_head_over_file_level_output ... ok
+test hybrid::draft_head_tests::legacy_shared_head_is_probed_but_loses_to_shared_head_head ... ok
+test hybrid_forward::page_prefetch_tests::page_prefetch_window_keeps_existing_opt_in_default ... ok
+test hybrid_forward::page_prefetch_tests::rolling_page_prefetch_advises_each_future_expert_once ... ok
+test hybrid::residency_tests::pp_residency_counts_only_each_devices_expert_slice ... ok
+test hybrid_forward::page_prefetch_tests::rolling_worker_prefetch_primes_current_and_each_future_expert_once ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_matches_registered_shapes ... ok
+test hybrid_forward::prime_chunk_schedule_tests::fixed_schedule_retains_measured_geometry ... ok
+test model::tests::legacy_mmap_source_requires_retained_file_extent ... ok
+test mla::tests::rope_norm_equals_permuted_neox ... ok
+test model::tests::direct_split_equals_chained ... ok
+test moe_cache::vram_fraction_tests::size_class_plan_preserves_classes_and_never_exceeds_budget ... ok
+test model::tests::mixed_expert_loader_keeps_each_encoding_and_extent ... ok
+test moe_cache::slru_intrusive_tests::slru_list_basic_invariants ... ok
+test model::tests::uniform_expert_loader_coalesces_contiguous_mmap ... ok
+test moe_cache::vram_fraction_tests::lfu_decay_is_opt_in_and_bounded ... ok
+test moe_cache::vram_fraction_tests::lfu_mtp_weight_defaults_and_is_bounded ... ok
+test moe_cache::vram_fraction_tests::size_class_plan_does_not_overflow_on_pathological_sizes ... ok
+test moe_cache::vram_fraction_tests::hard_vram_fraction_defaults_and_rejects_unsafe_values ... ok
+test pp::host_bounce_tests::host_bounce_capacity_rejects_invalid_or_overflowing_geometry ... ok
+test spill_pread::tests::buffer_state_rejects_early_reuse ... ok
+test spill_pread::tests::direct_io_requires_conservative_block_alignment ... ok
+test spill_pread::tests::mode_and_depth_defaults_are_conservative ... ok
+test spill_pread::tests::short_positioned_read_is_an_error ... ok
+test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... ignored, requires a CUDA GPU
+test target_dispatch_tests::legacy_quant_gemm_arch_policy_honors_the_escape_hatch ... ok
+test pp::host_bounce_tests::transport_selection_keeps_peer_default_and_bounces_only_cross_device ... ok
+test spill_pread::tests::exact_and_unaligned_positioned_reads_match_file_bytes ... ok
+test model::tests::mixed_expert_loader_omits_masked_expert_bytes ... ok
+test spec::draft_graph_fallback_tests::reset_on_resume_clears_flags_and_logs_once ... ok
+test mla::tests::naive_equals_absorbed_prefill_causal ... ok
+test model::tests::tiered_expert_source_does_not_double_apply_layout_offset ... ok
+test spec::draft_graph_fallback_tests::shape_change_clears_are_silent ... ok
+test spec::opti_fork_tests::alternating_mode_flips_by_generation_not_round_parity ... ok
+test spec::opti_fork_tests::live_generation_cannot_be_overwritten ... ok
+test spec::opti_fork_tests::teardown_rejects_a_stale_generation_tag ... ok
+test spec::telem_tests::delta_isolates_burst_contribution ... ok
+test spec::telem_tests::delta_saturates_never_wraps ... ok
+test spec::telem_tests::merge_accumulates_fieldwise ... ok
+test spill::tests::spill_ctx_keeps_parsed_gguf_inode_after_path_replacement ... ok
+test pp::host_bounce_tests::step37_geometry_sizes_each_slot_from_the_prime_cap ... ok
+test model::tests::mixed_expert_loader_keeps_mmap_backing_zero_copy ... ok
+test moe_cache::vram_fraction_tests::size_class_plan_returns_full_inventory_when_it_fits ... ok
+test spec::draft_graph_fallback_tests::flip_is_loud_once_and_memoized_after ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_covers_exactly_and_shrinks_after_fill ... ok
+test mla::tests::naive_equals_absorbed_decode_t1 ... ok
+test moe_cache::slru_intrusive_tests::hit_promotion_is_o1_not_on ... ok
+test mla::tests::naive_equals_absorbed_glm52_full_dims ... ok
+test moe_cache::slru_intrusive_tests::same_eviction_decisions_randomized_soak ... ok
+
+test result: ok. 57 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+     Running unittests src/bin/accprobe_bench.rs (target/debug/deps/accprobe_bench-b58adebcf43ed98a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/argmax_gate.rs (target/debug/deps/argmax_gate-22d3580d26e9a385)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/argmax_margin_probe.rs (target/debug/deps/argmax_margin_probe-03166fae3d61833d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/clc_mmq_bench.rs (target/debug/deps/clc_mmq_bench-0da3aef25d0f7322)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/concat_prime_probe.rs (target/debug/deps/concat_prime_probe-0ff6a9e127a8fc7a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/cpu_native_check.rs (target/debug/deps/cpu_native_check-ad7737e79ab7597b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/cutlass_smoke.rs (target/debug/deps/cutlass_smoke-b07f57b75d7a67e4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_batch_bench.rs (target/debug/deps/decode_batch_bench-c4cf67b520383de9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_batch_gate.rs (target/debug/deps/decode_batch_gate-4b3544d8281be7ae)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_bench.rs (target/debug/deps/decode_bench-27b312be19460719)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_dc_gate.rs (target/debug/deps/decode_dc_gate-b53d58f8c1faf81b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_window_profile.rs (target/debug/deps/decode_window_profile-8e897598da5d6c57)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/depth_profile.rs (target/debug/deps/depth_profile-e65d7eba98365fb2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dflash_parity.rs (target/debug/deps/dflash_parity-237ffa62103be41d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dtype_gpu_check5.rs (target/debug/deps/dtype_gpu_check5-42fbfcefa6021577)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/f8f4_check.rs (target/debug/deps/f8f4_check-6480d6e6dbbf29d5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fa_ab_bench.rs (target/debug/deps/fa_ab_bench-4dfe729801c3cdba)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fa_hd128_check.rs (target/debug/deps/fa_hd128_check-6c75034304c51f5c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fa_sanitize.rs (target/debug/deps/fa_sanitize-01e7e347a5df3da5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fa_deep_bench.rs (target/debug/deps/fa_deep_bench-3187757952ca4ce2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fa_v2_bench.rs (target/debug/deps/fa_v2_bench-f0362cd1a8446766)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fp8_mmq_bench.rs (target/debug/deps/fp8_mmq_bench-28421318073093e5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fp8_mmq_check.rs (target/debug/deps/fp8_mmq_check-f993edeb37b6978e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fp8_mmq_stream.rs (target/debug/deps/fp8_mmq_stream-684f4fa21be0253d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/frspec_owngen.rs (target/debug/deps/frspec_owngen-c1a287376c847158)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/frspec_rank.rs (target/debug/deps/frspec_rank-3037ceacbee77742)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fused_actq_bench.rs (target/debug/deps/fused_actq_bench-cf861b121f26a238)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gdn_bench.rs (target/debug/deps/gdn_bench-4ab9ec91b37e47c0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gemma_gate.rs (target/debug/deps/gemma_gate-217313e9218b76fe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gemv_e4m3_bench.rs (target/debug/deps/gemv_e4m3_bench-d344fac54dcc94a5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/graph_allocfree_probe.rs (target/debug/deps/graph_allocfree_probe-6701947f20ea1d2e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/graph_decode_gate.rs (target/debug/deps/graph_decode_gate-7fe3e7104972c097)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/graph_session_gate.rs (target/debug/deps/graph_session_gate-b1bab76457a9dcbf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/graph_warmup_stress.rs (target/debug/deps/graph_warmup_stress-29f7a1b9cd15e663)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gu_wall_bench.rs (target/debug/deps/gu_wall_bench-a430a84764c317c8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/hy3-layer0-oracle.rs (target/debug/deps/hy3_layer0_oracle-77398319fb8600ac)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/iso_gap_probe.rs (target/debug/deps/iso_gap_probe-aad3b152002dee2b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/k27div_probe.rs (target/debug/deps/k27div_probe-89a7bb8e8d896aa6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/kernel_check.rs (target/debug/deps/kernel_check-22fe8b0b825f6097)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/kv_fmt_bench.rs (target/debug/deps/kv_fmt_bench-51f3a8d6c701f010)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/logit_sample_probe.rs (target/debug/deps/logit_sample_probe-23ef9d89f43fd1c0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/lt_ndep.rs (target/debug/deps/lt_ndep-5189c62736f76d2d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/m3ref.rs (target/debug/deps/m3ref-d5612386b433b586)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/mmvq_bisect.rs (target/debug/deps/mmvq_bisect-073a1325be35379b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/mmvq_pair_m3.rs (target/debug/deps/mmvq_pair_m3-8a9283a5c812d1cb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/moe_devq8_check.rs (target/debug/deps/moe_devq8_check-ed100706681bcc61)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/mvq_msweep.rs (target/debug/deps/mvq_msweep-b1d0d1eb4161f7b5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/normq_check.rs (target/debug/deps/normq_check-e4c6cdec3f7bfa76)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/optipipe_gate.rs (target/debug/deps/optipipe_gate-f80beb6ef1cebf96)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/plainbatch_margin_probe.rs (target/debug/deps/plainbatch_margin_probe-8d438f776e3e9d9e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pp_transport_smoke.rs (target/debug/deps/pp_transport_smoke-d02fa97285e33215)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pp2_gate.rs (target/debug/deps/pp2_gate-691ea7de8159b882)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/ppn_bench.rs (target/debug/deps/ppn_bench-17b72e6be6c1cadb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/ppn_gate.rs (target/debug/deps/ppn_gate-28f7485bb7cea124)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/prime_batch_gate.rs (target/debug/deps/prime_batch_gate-e6729c947823b4c3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/prime_gate.rs (target/debug/deps/prime_gate-b3af12aa92d47c7f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/prime_graph_gate.rs (target/debug/deps/prime_graph_gate-9570f6e88043c8bf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/prime_graph_smoke.rs (target/debug/deps/prime_graph_smoke-bb7b04ca94fc3ca2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/q5issue_bench.rs (target/debug/deps/q5issue_bench-4585bb36ee907581)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/quant_kv_f32_check.rs (target/debug/deps/quant_kv_f32_check-5a52528d2b7eb42f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/replay_acceptance.rs (target/debug/deps/replay_acceptance-d203cc9022200afc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/router_batch_bench.rs (target/debug/deps/router_batch_bench-cfa4dddfe2e1c562)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/rp_q4_probe.rs (target/debug/deps/rp_q4_probe-469e26480b20acd6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_dense.rs (target/debug/deps/run_dense-12973a1cea02d200)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_eagle.rs (target/debug/deps/run_eagle-3d159849fc903ff0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_gen.rs (target/debug/deps/run_gen-bf486d33a02ee9d3)
+
+running 1 test
+test tests::maps_cpu_expert_stats_without_positional_drift ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_hybrid.rs (target/debug/deps/run_hybrid-b3f1955548e14a93)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_safetensors.rs (target/debug/deps/run_safetensors-142c221627953a2c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_spec.rs (target/debug/deps/run_spec-a5b561618270a563)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_lockstep.rs (target/debug/deps/run_lockstep-352324cfc0a429f0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sample_check.rs (target/debug/deps/sample_check-5cb1b0b78cc002f5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/session_bench.rs (target/debug/deps/session_bench-e28f5a76ac9ec4ab)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/session_gate.rs (target/debug/deps/session_gate-2a7eac14efec60c5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/spec_econ.rs (target/debug/deps/spec_econ-61f1d390001c759e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/spec_st_probe.rs (target/debug/deps/spec_st_probe-b8ccf3f34f8218c9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/spec_serve_gate.rs (target/debug/deps/spec_serve_gate-b73f8fa1d1ee2b0e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/st_vs_gguf.rs (target/debug/deps/st_vs_gguf-35af92aafd20a392)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/synth_f8f4.rs (target/debug/deps/synth_f8f4-eeea4eed0f4c39ae)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/t2probe.rs (target/debug/deps/t2probe-113ca8c02d5f5a16)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/verify_mscale.rs (target/debug/deps/verify_mscale-2a26641e2c93adc6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/verify_probe.rs (target/debug/deps/verify_probe-5eb2d3a93cae3a0f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/w4a4_gate.rs (target/debug/deps/w4a4_gate-67cfe92d26fd316c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mla_fixture_forward.rs (target/debug/deps/mla_fixture_forward-1d21076a9abd5078)
+
+running 3 tests
+test cpu_block_forward_absorbed_equals_naive_chunked ... ok
+test cpu_block_forward_absorbed_equals_naive_decode ... ok
+test cpu_block_forward_absorbed_equals_naive_prefill ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/mla_fixture_load_gpu.rs (target/debug/deps/mla_fixture_load_gpu-21e798c3f43ad7fb)
+
+running 1 test
+test gpu_load_glm_dsa_micro_fixture ... ignored, needs a CUDA device — run under flock /tmp/gpu5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

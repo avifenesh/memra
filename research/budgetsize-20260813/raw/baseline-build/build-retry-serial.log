@@ -1,0 +1,49 @@
+   Compiling serde_urlencoded v0.7.1
+   Compiling axum-core v0.4.5
+   Compiling memra-engine v0.81.3 (/home/avifenesh/projects/wt-cx-budgetsize-baseline/crates/memra-engine)
+warning: memra-engine@0.81.3: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+error: failed to run custom build command for `memra-engine v0.81.3 (/home/avifenesh/projects/wt-cx-budgetsize-baseline/crates/memra-engine)`
+
+Caused by:
+  process didn't exit successfully: `/home/avifenesh/projects/wt-cx-budgetsize/target/baseline-instrumented/release/build/memra-engine-5411ce7d799d9b22/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-env-changed=MEMRA_NVCC
+  cargo:rerun-if-env-changed=CUDA_HOME
+  cargo:rerun-if-env-changed=CUDA_PATH
+  cargo:rerun-if-env-changed=CUDA_ROOT
+  cargo:warning=nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+  cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH
+  cargo:rerun-if-env-changed=MEMRA_CUTLASS
+  cargo:rustc-check-cfg=cfg(memra_portable_cuda)
+  cargo:rustc-check-cfg=cfg(memra_hopper_mma)
+  cargo:rustc-check-cfg=cfg(memra_cutlass)
+  cargo:warning=MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+  cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a
+  cargo:rerun-if-changed=cu/kernels.cu
+  cargo:rerun-if-changed=cu/wgmma_common.cuh
+  cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS
+
+  --- stderr
+  cu/kernels.cu(798): warning #550-D: variable "head" was set but never used
+        int head = hr % n_heads;
+            ^
+
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+  cu/kernels.cu(1770): warning #550-D: variable "red" was set but never used
+        __attribute__((shared)) float red[1];
+                                      ^
+
+  cu/kernels.cu(1817): warning #550-D: variable "red" was set but never used
+        __attribute__((shared)) float red[1];
+                                      ^
+
+  /usr/include/c++/15/bits/move.h(139): catastrophic error: error while writing generated C file: Disk quota exceeded
+
+  1 catastrophic error detected in the compilation of "cu/kernels.cu".
+  Compilation terminated.
+
+  thread 'main' (837756) panicked at crates/memra-engine/build.rs:251:9:
+  nvcc fatbin build failed for cu/kernels.cu
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

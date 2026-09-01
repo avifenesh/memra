@@ -1,0 +1,37 @@
+== e2e gates (final driver, vendor-default sampling; server bin md5 98845da6e4b9732bd9e16579de9ff722, memra commit 04b3c771e) ==
+GATE img-single-640: PASS http=200 answer='Orange triangle on white' truth=orange triangle on white
+GATE usage-171-per-image: PASS delta=171 (img=214, plain=43)
+GATE img-tiled-1600x900: PASS http=200 answer='purple triangle on red' truth=purple triangle on red
+GATE usage-670-tiled: PASS delta=670
+GATE img-multi: PASS http=200 answer='1. Blue circle on white.\n2. Blue triangle on green.' truth1=blue circle on white truth2=blue triangle on green
+GATE usage-multi-342: PASS prompt_tokens=388 (>= 2x171 floor)
+GATE img-mid-conversation: PASS http=200 answer='blue rectangle on orange' truth=blue square on orange
+GATE faked-pads-400: PASS http=400 body={"error": {"message": "prompt carries 2 step image pad run(s) but the request's units need 1 \u2014 literal pad tokens in message text are not allowed", "type":
+GATE http-url-400: PASS http=400
+GATE video-400: PASS http=400
+GATE text-on-vision-binary: PASS http=200 answer='101, 103, 107'
+E2E PASS (0 failing: [])
+
+== spec-k attribution (whole boot) ==
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=214 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=43 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=713 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=388 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=234 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=26 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=214 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=43 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=713 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=388 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=234 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=26 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=214 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=43 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=713 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=388 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=234 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=26 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+
+== hygiene ==
+ILLEGAL=0 hash87=0 panic=0 spec_backstop=0

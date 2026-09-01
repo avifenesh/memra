@@ -1,0 +1,451 @@
+#!/usr/bin/env bash
+# Generated architecture gate. Re-run tools/generate-arch-gates.py to change it.
+#
+# THIS FILE IS A TEMPLATE OUTPUT. The integrity rules baked in below are not decoration —
+# every one of them replaces a defect shape that GATE-INTEGRITY-20260819 found in a
+# HAND-WRITTEN gate, and that this template used to mint into every gate generated from it:
+#
+#   A-16  a fixed port with no occupancy guard, so a foreign responder gets measured as the
+#         model under test.  -> tools/port-guard.sh, pre-flight AND post-boot ownership.
+#   A-11  a missing artifact / GPU / drafter printing SKIP and exiting 0, which every caller
+#         reads as a pass.   -> the skip contract below: exit 77, census row, named override.
+#   A-15  `[ -n "$REF" ] && ! grep -q '^ERROR'` passing on {"reasoning":null,"content":null},
+#         so the headline byte-identity assertion holds VACUOUSLY against a null reference.
+#         -> ask() refuses an empty completion, and the reference substance is its own arm.
+#   A-10  a canary that reads ANY nonzero exit as teeth — including rc 75 (lock timeout, no
+#         assertion ran).    -> the canary asserts the verdict word AND the declared
+#         discriminator, from a banked file rather than a tee'd pipeline.
+#   §3    a verdict counted inside a pipeline/subshell and discarded.
+#         -> v() echoes AND banks; the assertion COUNT is checked against a constant.
+set -uo pipefail
+
+GATE_NAME={{GATE_NAME}}
+ARCHITECTURE={{ARCHITECTURE}}
+ARTIFACT_ENV={{ARTIFACT_ENV}}
+DEFAULT_ARTIFACT={{DEFAULT_ARTIFACT}}
+DRAFT_ENV={{DRAFT_ENV}}
+DEFAULT_DRAFT={{DEFAULT_DRAFT}}
+MODEL_ALIAS={{MODEL_ALIAS}}
+REQUIRED_GPUS={{REQUIRED_GPUS}}
+PP_STAGES={{PP_STAGES}}
+PP_DEVICES={{PP_DEVICES}}
+CONCURRENCY=({{CONCURRENCY}})
+PORT_ENV={{PORT_ENV}}
+DEFAULT_PORT={{DEFAULT_PORT}}
+RECEIPT_DIR={{RECEIPT_DIR}}
+{{SERVER_ENV}}
+{{CANARY_ENV}}
+BODY={{REQUEST_BODY}}
+CAP_REGEX={{CAP_REGEX}}
+CAP_MIN={{CAP_MIN}}
+WALK_REGEX={{WALK_REGEX}}
+CANARY_EXPECT={{CANARY_EXPECT}}
+# 1 reference-substance + one per concurrent response + 2 liveness. Computed by the generator
+# from the spec, asserted at the verdict: an arm that quietly stops running turns the gate RED
+# instead of making it smaller and greener.
+EXPECT_ASSERTS={{EXPECT_ASSERTS}}
+
+CANARY=0
+PORT="${!PORT_ENV:-$DEFAULT_PORT}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --canary) CANARY=1; shift ;;
+    --port) PORT="$2"; shift 2 ;;
+    *) echo "$GATE_NAME: unknown arg $1" >&2; exit 2 ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
+# SKIP CONTRACT (GATE-INTEGRITY-20260819 A-11/A-17, and A-2 in #[test] form).
+#
+# This template used to print "SKIP (...)" and `exit 0` on a missing artifact, a missing
+# nvidia-smi and a too-small GPU count. Every caller — fast-gate, local-ci.sh, a human reading
+# a log — reads exit 0 as "this architecture's batched geometry is proven". It was not proven;
+# nothing ran. docs/ONBOARDING.md already said "do not treat SKIP from a missing artifact or
+# GPU as evidence" while this template made SKIP indistinguishable from evidence.
+#
+# A skip is now REPORTED and FATAL BY DEFAULT (exit 77, distinct from a real red so a caller
+# can tell them apart), recorded into $MEMRA_SKIP_CENSUS when the census is wired, and
+# releasable only by NAMING the override. That is the shape tools/validate-h100.sh uses for
+# kernel-check's skip budget: an accounted skip, never an invisible one.
+# ---------------------------------------------------------------------------
+SKIP_EXIT=77
+skip() { # $1 reason
+  local reason=$1
+  echo "$GATE_NAME: SKIP ($reason)"
+  if [ -n "${MEMRA_SKIP_CENSUS:-}" ]; then
+    printf '%s\tgate\t%s\t%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GATE_NAME" "$reason" >> "$MEMRA_SKIP_CENSUS" || {
+      echo "$GATE_NAME: FAIL — MEMRA_SKIP_CENSUS=$MEMRA_SKIP_CENSUS is not writable."
+      echo "  A census that cannot record is worse than no census: the skip still happens and"
+      echo "  now nothing counts it. Refusing rather than skipping unrecorded."
+      exit 1
+    }
+  fi
+  if [ "${MEMRA_ARCH_GATE_ALLOW_SKIP:-0}" = 1 ]; then
+    echo "$GATE_NAME: skip ACCOUNTED (MEMRA_ARCH_GATE_ALLOW_SKIP=1)."
+    echo "  This run proves NOTHING about $ARCHITECTURE batched geometry."
+    exit 0
+  fi
+  echo "$GATE_NAME: FAIL — a skip is not a pass, and this gate has a caller that reads its"
+  echo "  exit code. Stage what is missing, or set MEMRA_ARCH_GATE_ALLOW_SKIP=1 to account"
+  echo "  for the skip deliberately (it will still be printed and still be censused)."
+  exit "$SKIP_EXIT"
+}
+
+MODEL="${!ARTIFACT_ENV:-}"
+[ -n "$MODEL" ] || MODEL="$DEFAULT_ARTIFACT"
+[ -f "$MODEL" ] || skip "no artifact at $MODEL; set $ARTIFACT_ENV"
+
+# ---------------------------------------------------------------------------
+# DRAFTER CONTRACT. `[ -f "$DRAFT" ] || DRAFT=""` was A-6's exact shape: with the drafter
+# absent the server boots plain, the spec path the spec DECLARED never engages, and the gate
+# prints its ALL-GREEN verdict about a configuration that was never run. The repo already
+# wrote the law down at tools/accept-gate.sh: "A missing drafter must NOT silently degrade
+# into a no-spec run that reports PASS."
+#
+# Three states, kept apart:
+#   requested by env  -> the operator named a path; missing is a HARD FAIL, not a skip.
+#   spec default only -> the spec declared one; missing is an accounted SKIP.
+#   not declared      -> plain is the intended configuration; say so in the header.
+# ---------------------------------------------------------------------------
+DRAFT=""
+DRAFT_SOURCE="not declared"
+DRAFT_REQUESTED=""
+if [ -n "$DRAFT_ENV" ]; then
+  DRAFT_REQUESTED="${!DRAFT_ENV:-}"
+fi
+if [ -n "$DRAFT_REQUESTED" ]; then
+  DRAFT="$DRAFT_REQUESTED"
+  DRAFT_SOURCE="$DRAFT_ENV"
+  [ -f "$DRAFT" ] || {
+    echo "$GATE_NAME: FAIL — $DRAFT_ENV names $DRAFT and no such file exists."
+    echo "  Refusing to boot plain: a run without the drafter that was explicitly requested"
+    echo "  would report a verdict about a configuration nobody asked for."
+    exit 1
+  }
+elif [ -n "$DEFAULT_DRAFT" ]; then
+  DRAFT="$DEFAULT_DRAFT"
+  DRAFT_SOURCE="spec batch.draft_path"
+  [ -f "$DRAFT" ] || skip "declared drafter absent at $DRAFT; set $DRAFT_ENV or stage it"
+fi
+
+command -v nvidia-smi >/dev/null 2>&1 || skip "nvidia-smi unavailable"
+# `nvidia-smi ... | wc -l` reported 0 for BOTH "no GPUs" and "nvidia-smi failed", and 0 read as
+# a skip. A failing nvidia-smi is not a box without GPUs; it is a box we cannot ask.
+NVSMI_OUT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>&1)
+NVSMI_RC=$?
+if [ "$NVSMI_RC" -ne 0 ]; then
+  echo "$GATE_NAME: FAIL — nvidia-smi exists but failed (rc=$NVSMI_RC):"
+  printf '%s\n' "$NVSMI_OUT" | sed 's/^/    /' | head -10
+  echo "  An unanswerable driver is not a GPU-less box. Refusing rather than skipping."
+  exit 1
+fi
+NGPU=$(printf '%s\n' "$NVSMI_OUT" | grep -c '^[0-9]')
+[ "$NGPU" -ge "$REQUIRED_GPUS" ] || skip "needs $REQUIRED_GPUS GPUs, have $NGPU"
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$HERE"
+while [ "$ROOT" != / ] && [ ! -f "$ROOT/Cargo.toml" ]; do
+  ROOT="$(dirname "$ROOT")"
+done
+[ -f "$ROOT/Cargo.toml" ] || {
+  echo "$GATE_NAME: FAIL (cannot locate repository root)"
+  exit 1
+}
+cd "$ROOT" || exit 1
+BIN=./target/release/memra-server
+[ -x "$BIN" ] || {
+  echo "$GATE_NAME: FAIL (no $BIN; build release first)"
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
+# PORT GUARD (A-16). The generator allocates from a band reserved for generated gates and
+# refuses a spec port already bound by any gate in tools/, so a new gate cannot be BORN
+# colliding — this template previously documented 8094, which is step35-b2-geometry-gate's
+# port, so every gate ever generated from it collided with that gate and with each other.
+#
+# A distinct default only removes the collisions we happen to know about, so the guard is here
+# too, and the refusal is a HARD ABORT: an occupied port means we cannot prove the responder is
+# ours, and every measurement below would be someone else's model. rc 2 (neither ss nor lsof)
+# is propagated rather than flattened into 1 — an unobservable port is its own diagnosis.
+# ---------------------------------------------------------------------------
+[ -f "$ROOT/tools/port-guard.sh" ] || {
+  echo "$GATE_NAME: FAIL — $ROOT/tools/port-guard.sh is missing."
+  echo "  This gate will not bind a port it cannot prove is free. Regenerate against a tree"
+  echo "  that carries tools/port-guard.sh rather than running unguarded."
+  exit 1
+}
+# shellcheck source=/dev/null
+. "$ROOT/tools/port-guard.sh"
+
+MODELS_SPEC="${MODEL_ALIAS}=${MODEL}"
+[ -n "$DRAFT" ] && MODELS_SPEC="${MODELS_SPEC}+${DRAFT}"
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+mkdir -p "$RECEIPT_DIR"
+TAG=$([ "$CANARY" = 1 ] && echo canary || echo naked)
+SLOG="$RECEIPT_DIR/${GATE_NAME}-server-${TAG}-${TS}.log"
+GLOG="$RECEIPT_DIR/${GATE_NAME}-${TAG}-${TS}.log"
+BASE="http://127.0.0.1:${PORT}"
+# MEMRA_GPU_LOCK is the fleet-wide lock seam (gate-integrity round 2 standardised the
+# hand-written gates on it; the template briefly said MEMRA_GATE_LOCK — reconciled at the
+# v0.96.0 train so generated gates and hand-written gates serialise under ONE name).
+LOCK="${MEMRA_GPU_LOCK:-/tmp/memra-gpu.lock}"
+LOCK_WAIT="${MEMRA_GPU_LOCK_WAIT:-3600}"
+TMP=$(mktemp -d "/tmp/${GATE_NAME}-XXXXXX")
+ASSERTIONS_RAN="$TMP/assertions-ran"
+# The verdict bank. NOT $GLOG: $GLOG is written through `exec > >(tee ...)`, a process
+# substitution whose buffer this shell cannot flush, so the canary arm reading it would parse a
+# half-written file — the same class of bug as reading only an exit code (A-10).
+VLOG="$TMP/verdicts.txt"
+: > "$VLOG"
+# /tmp hygiene law: the task that created the scratch dir deletes it. Not an EXIT trap — the
+# canary arm below still has to read $VLOG after the subshell returns.
+trap 'rm -rf "$TMP"' INT TERM
+
+exec > >(tee "$GLOG") 2>&1
+echo "=== $GATE_NAME arch=$ARCHITECTURE tag=$TAG ts=$TS model=$MODEL ==="
+echo "=== draft=${DRAFT:-none} (source: $DRAFT_SOURCE) port=$PORT (override $PORT_ENV) ==="
+
+(
+  flock -w "$LOCK_WAIT" 9 || {
+    echo "$GATE_NAME: FAIL (GPU lock timeout)"
+    exit 75
+  }
+  echo "lock acquired $(date -u +%FT%TZ)"
+
+  # Inside the lock, before the bind: a sibling gate that held the lock has released its port
+  # by now, so checking here (rather than at parse time) refuses only real foreign responders.
+  memra_port_guard "$GATE_NAME" "$PORT" "$PORT_ENV"
+  GUARD_RC=$?
+  [ "$GUARD_RC" -eq 0 ] || exit "$GUARD_RC"
+
+  nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
+
+  ACTIVE_CANARY_ENV=()
+  [ "$CANARY" = 1 ] && ACTIVE_CANARY_ENV=("${CANARY_ENV[@]}")
+  env "${ACTIVE_CANARY_ENV[@]}" "${SERVER_ENV[@]}" \
+    MEMRA_MODELS="$MODELS_SPEC" \
+    MEMRA_PP_STAGES="$PP_STAGES" \
+    MEMRA_PP_DEVICES="$PP_DEVICES" \
+    MEMRA_ADDR="127.0.0.1:$PORT" \
+    "$BIN" > "$SLOG" 2>&1 &
+  SRV=$!
+  cleanup_server() {
+    kill "$SRV" 2>/dev/null || true
+    wait "$SRV" 2>/dev/null || true
+  }
+  trap cleanup_server EXIT INT TERM
+
+  READY=0
+  for _ in $(seq 1 120); do
+    sleep 5
+    if curl -sf "$BASE/readyz" >/dev/null 2>&1; then
+      READY=1
+      break
+    fi
+    kill -0 "$SRV" 2>/dev/null || {
+      echo "$GATE_NAME: FAIL (server died during boot)"
+      sed -n '1,80p' "$SLOG"
+      exit 1
+    }
+  done
+  [ "$READY" = 1 ] || {
+    echo "$GATE_NAME: FAIL (server never became ready)"
+    exit 1
+  }
+  # Belt and braces: the pre-flight check loses to a process that grabbed the port between the
+  # check and our bind, so the healthy responder must BE our child.
+  memra_port_owned "$GATE_NAME" "$PORT" "$SRV" || exit 1
+
+  # ask() REFUSES an empty completion (A-15). It used to print
+  # {"reasoning": null, "content": null} for a 200 that generated nothing: non-empty, not
+  # ^ERROR, so the reference guard passed and every concurrent response matched that same null
+  # — the byte-identity headline held while the model produced nothing. The refusal is here,
+  # at the source, so it covers the reference AND every concurrent row.
+  ask() {
+    curl -sS --fail-with-body "$BASE/v1/chat/completions" \
+      -H 'Content-Type: application/json' \
+      -d "$BODY" |
+      python3 -c 'import json,sys
+r=json.load(sys.stdin)
+c=r.get("choices")
+if not c:
+    print("ERROR", json.dumps(r.get("error"), sort_keys=True))
+    raise SystemExit(1)
+m=c[0]["message"]
+def blank(x):
+    return x is None or (isinstance(x, str) and not x.strip())
+if blank(m.get("reasoning")) and blank(m.get("content")):
+    print("ERROR", json.dumps({"empty_completion": {
+        "finish_reason": c[0].get("finish_reason"),
+        "usage": r.get("usage"),
+    }}, sort_keys=True))
+    raise SystemExit(1)
+print(json.dumps({"reasoning": m.get("reasoning"), "content": m.get("content")}, sort_keys=True))'
+  }
+
+  echo "--- c=1 reference (greedy) ---"
+  ask > "$TMP/ref.txt" || {
+    echo "$GATE_NAME: FAIL (reference request failed)"
+    cat "$TMP/ref.txt"
+    exit 1
+  }
+  cat "$TMP/ref.txt"
+
+  for C in "${CONCURRENCY[@]}"; do
+    echo "--- c=$C concurrent identical requests ---"
+    PIDS=()
+    for I in $(seq 1 "$C"); do
+      ask > "$TMP/c${C}-${I}.txt" &
+      PIDS+=($!)
+    done
+    REQUEST_RC=0
+    for PID in "${PIDS[@]}"; do
+      wait "$PID" || REQUEST_RC=1
+    done
+    [ "$REQUEST_RC" = 0 ] || {
+      echo "$GATE_NAME: FAIL (one or more c=$C requests failed)"
+      cat "$TMP"/c"$C"-*.txt
+      exit 1
+    }
+    cat "$TMP"/c"$C"-*.txt
+  done
+
+  cleanup_server
+  trap - EXIT INT TERM
+  nvidia-smi --query-gpu=index,memory.used --format=csv,noheader
+  echo "lock released $(date -u +%FT%TZ)"
+
+  # ---- verdicts ----
+  # v() echoes AND banks. Never `| tee`: a counter incremented inside a pipeline lives in a
+  # subshell and its value is discarded (GATE-INTEGRITY-20260819 §3, which shipped a fixture
+  # printing "1 passed / 0 failed" with an arm visibly failing).
+  v() { printf '%s\n' "$*"; printf '%s\n' "$*" >> "$VLOG"; }
+  touch "$ASSERTIONS_RAN"
+  FAILS=0
+  ASSERTS=0
+
+  # Arm 1 — the reference has SUBSTANCE. Independent of ask()'s own refusal on purpose: this is
+  # the assertion the byte-identity comparison rests on, and an assertion that rests on another
+  # program's behaviour should say so out loud rather than assume it.
+  ASSERTS=$((ASSERTS + 1))
+  REF=$(cat "$TMP/ref.txt")
+  if [ -n "$REF" ] && ! grep -q '^ERROR' "$TMP/ref.txt" \
+     && ! grep -qE '^\{"content": ?null, ?"reasoning": ?null\}$' "$TMP/ref.txt"; then
+    v "c=1 reference has substance OK"
+  else
+    v "FAIL: c=1 reference is empty, an error, or an all-null completion — every later"
+    v "      comparison would hold vacuously against it"
+    FAILS=$((FAILS + 1))
+  fi
+
+  for C in "${CONCURRENCY[@]}"; do
+    for I in $(seq 1 "$C"); do
+      ASSERTS=$((ASSERTS + 1))
+      ROW_FILE="$TMP/c${C}-${I}.txt"
+      if [ ! -s "$ROW_FILE" ] || grep -q '^ERROR' "$ROW_FILE"; then
+        v "FAIL: c=$C response $I is empty or an error"
+        FAILS=$((FAILS + 1))
+        continue
+      fi
+      ROW=$(cat "$ROW_FILE")
+      if [ "$ROW" = "$REF" ]; then
+        v "c${C}[${I}] == ref"
+      else
+        v "FAIL: c${C}[${I}] != ref"
+        echo "  ref: $REF"
+        echo "  got: $ROW"
+        FAILS=$((FAILS + 1))
+      fi
+    done
+  done
+
+  ASSERTS=$((ASSERTS + 1))
+  CAP_LINE=$(grep -oE "$CAP_REGEX" "$SLOG" | head -1)
+  CAP=$(printf '%s\n' "$CAP_LINE" | grep -oE '[0-9]+' | tail -1)
+  if [ -n "$CAP" ] && [ "$CAP" -ge "$CAP_MIN" ]; then
+    v "chunk cap $CAP >= $CAP_MIN OK"
+  else
+    v "FAIL: decode chunk cap is '${CAP:-unset}' (< $CAP_MIN) — no B>1 walk was tested"
+    FAILS=$((FAILS + 1))
+  fi
+
+  ASSERTS=$((ASSERTS + 1))
+  if grep -qE "$WALK_REGEX" "$SLOG"; then
+    v "batched-walk evidence OK"
+  else
+    v "FAIL: no batched-walk evidence matching $WALK_REGEX — no B>1 tick ran"
+    FAILS=$((FAILS + 1))
+  fi
+
+  echo "server log: $SLOG"
+  # The assertion COUNT is itself an assertion. An arm that stops running (a renamed field, an
+  # early `continue`, a loop over an empty list) otherwise makes the gate SMALLER and GREENER.
+  if [ "$ASSERTS" -ne "$EXPECT_ASSERTS" ]; then
+    v "VERDICT: BROKEN-GATE ($ASSERTS assertions ran, $EXPECT_ASSERTS declared)"
+    exit 3
+  fi
+  if [ "$FAILS" -eq 0 ]; then
+    v "VERDICT: PASS ($ASSERTS assertions: concurrent responses match c=1 and B>1 execution is proven)"
+    exit 0
+  fi
+  v "VERDICT: FAIL ($FAILS of $ASSERTS assertions failed)"
+  exit 1
+) 9>"$LOCK"
+RC=$?
+
+if [ "$CANARY" = 1 ]; then
+  # CANARY EVIDENCE CONTRACT (A-10). This was `[ -f "$ASSERTIONS_RAN" ] && [ "$RC" -ne 0 ]`,
+  # which certifies the naked arm's teeth from "the assertion phase began and something went
+  # wrong". Anything after the marker satisfies it: a liveness regex the injected seam happened
+  # to change, a stray CAP parse, a killed server. The canary must name WHICH assertion the
+  # injected rollback is guaranteed to break, and the spec declares it
+  # (batch.canary_expect_regex) because only the spec author knows what the seam does.
+  VERDICT_SEEN=0
+  EXPECT_SEEN=0
+  if [ -f "$VLOG" ]; then
+    grep -q '^VERDICT: FAIL' "$VLOG" && VERDICT_SEEN=1
+    grep -qE "$CANARY_EXPECT" "$VLOG" && EXPECT_SEEN=1
+  fi
+  if [ "$RC" -eq 75 ]; then
+    echo "$GATE_NAME: CANARY INCONCLUSIVE — rc 75 is the GPU lock timeout; NOT ONE assertion"
+    echo "  ran. This certifies nothing about the naked arm. Re-run when the lock is free."
+    rm -rf "$TMP"
+    exit 1
+  fi
+  if [ "$RC" -eq 3 ]; then
+    echo "$GATE_NAME: CANARY INCONCLUSIVE — the gate reported BROKEN-GATE (assertion-count"
+    echo "  mismatch), so the red did not come from the injected seam."
+    rm -rf "$TMP"
+    exit 1
+  fi
+  if [ ! -f "$ASSERTIONS_RAN" ]; then
+    echo "$GATE_NAME: CANARY FAILED (rc=$RC) — infrastructure failed BEFORE the assertion"
+    echo "  phase was reached, so no assertion was exercised."
+    rm -rf "$TMP"
+    exit 1
+  fi
+  if [ "$RC" -eq 0 ]; then
+    echo "$GATE_NAME: CANARY FAILED — every assertion PASSED under the rollback seam, so the"
+    echo "  naked arm has no teeth against it."
+    rm -rf "$TMP"
+    exit 1
+  fi
+  if [ "$VERDICT_SEEN" = 1 ] && [ "$EXPECT_SEEN" = 1 ]; then
+    echo "$GATE_NAME: CANARY OK (the rollback seam broke the declared assertion: $CANARY_EXPECT)"
+    rm -rf "$TMP"
+    exit 0
+  fi
+  echo "$GATE_NAME: CANARY FAILED (rc=$RC) — the run went red for the WRONG reason."
+  echo "  'VERDICT: FAIL' present: $VERDICT_SEEN; declared discriminator matched: $EXPECT_SEEN"
+  echo "  expected pattern: $CANARY_EXPECT"
+  echo "  banked verdicts:"
+  sed 's/^/    /' "$VLOG" 2>/dev/null | head -40
+  rm -rf "$TMP"
+  exit 1
+fi
+
+rm -rf "$TMP"
+exit "$RC"

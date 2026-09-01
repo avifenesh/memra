@@ -1,0 +1,25 @@
+{
+  "format": "memra-hy3-rtx4-capacity-v1",
+  "artifact": "memra-streaming-modelopt-0.46.0-all-expert-mint",
+  "tensor_payload_bytes": 180826481152,
+  "repository_file_bytes": null,
+  "safetensors_file_bytes": null,
+  "shard_count": 99,
+  "pp4_default_fences": [0, 20, 40, 60, 81],
+  "pp4_weight_payload_bytes": [42824764416, 44575365120, 44575365120, 47861130752],
+  "pp4_weight_payload_gib": [39.883670, 41.514044, 41.514044, 44.574152],
+  "host_embedding_bytes": 989855744,
+  "disk_pre_download_minimum_bytes": 250000000000,
+  "disk_pre_download_preferred_bytes": 300000000000,
+  "disk_streaming_mint_minimum_bytes": 850000000000,
+  "host_ram_minimum_bytes": 137438953472,
+  "host_ram_preferred_bytes": 274877906944,
+  "hbm_per_card_bytes": 102642393088,
+  "hbm_peak_budget_per_card_bytes": 69793218560,
+  "notes": [
+    "PP-4 payloads are exact header arithmetic before allocator, CUDA, KV, and workspace overhead.",
+    "The load gate must record measured peak HBM; the 65 GiB/card budget is a preflight ceiling, not a result.",
+    "Safetensors are mmap-backed. Process RSS should remain below host RAM minimum, while the kernel page cache may consume the full artifact size.",
+    "A 200 GB container disk is insufficient even though the tensor payload is below 200 GB."
+  ]
+}

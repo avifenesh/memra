@@ -1,0 +1,204 @@
+warning: memra-engine@0.81.3: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.11s
+check-flags: runtime literal reads=464
+check-flags: uncovered runtime names (known and new):
+  MEMRA_BUILD_SHA
+  MEMRA_BUILT_CUDA_ARCH
+  MEMRA_BVAR
+  MEMRA_CPU_EXPERT_EXECUTORS
+  MEMRA_CPU_FILE_IDENTITY_KEEP
+  MEMRA_DC_GATE
+  MEMRA_DEBUG
+  MEMRA_DEBUG_AFFINITY
+  MEMRA_DEBUG_FAPOOL
+  MEMRA_DEBUG_ZERO_ALLOCS
+  MEMRA_ENGINE_FATBIN
+  MEMRA_F16OUT
+  MEMRA_FA_BF16KV
+  MEMRA_FA_EMIT
+  MEMRA_FA_P1
+  MEMRA_FA_PP_W2
+  MEMRA_FA_SHAPE
+  MEMRA_FA_SP16
+  MEMRA_FA_VL
+  MEMRA_FLASH_FATBIN
+  MEMRA_FLASH_FATBIN_KF8
+  MEMRA_FLASH_FATBIN_KF8VF8
+  MEMRA_FLASH_FATBIN_KF8VQ4
+  MEMRA_FLASH_FATBIN_VF8
+  MEMRA_FLASH_FATBIN_VQ4
+  MEMRA_FP8_MMQ_LOGITS
+  MEMRA_FP8_MMQ_NLL
+  MEMRA_FP8_MMQ_TF
+  MEMRA_G4PLAIN_EAGER
+  MEMRA_GEMMA_BURST_GRAPH
+  MEMRA_GEMMA_CSR
+  MEMRA_GEMMA_MOE_FAST
+  MEMRA_GEMMA_MOE_MMA
+  MEMRA_GEMMA_MOE_PAIRS
+  MEMRA_GEMMA_PROBE
+  MEMRA_GEMM_FATBIN
+  MEMRA_GEMV_JSONL
+  MEMRA_GEN_CORPUS
+  MEMRA_GEN_OUT
+  MEMRA_GS_PROF
+  MEMRA_HYBRID_FATBIN
+  MEMRA_KV_PREFETCH
+  MEMRA_LOCKSTEP_GROUPED
+  MEMRA_LOCKSTEP_M
+  MEMRA_MOE_INPUT_TRACE_DIR
+  MEMRA_MOE_PREFETCH_MIN_LAYER
+  MEMRA_MOE_PREFETCH_TOP
+  MEMRA_MSCALE_INTERLEAVE
+  MEMRA_OPTI_CAP
+  MEMRA_OPTI_PROMPT
+  MEMRA_OPTI_STRESS_NGEN
+  MEMRA_PPN_GATE_WINDOW
+  MEMRA_PP_TOKENS
+  MEMRA_PRIME_SEG
+  MEMRA_PRIME_SLABS
+  MEMRA_PRIME_TRACE
+  MEMRA_PROBE_CTX
+  MEMRA_PROBE_DEVICE
+  MEMRA_Q4F16
+  MEMRA_QKV_APPEND
+  MEMRA_QMATVEC_FATBIN
+  MEMRA_REPLAY_DUMP
+  MEMRA_REPLAY_GATE
+  MEMRA_REPLAY_HDUMP
+  MEMRA_REPLAY_NLL
+  MEMRA_RMS_BLOCK
+  MEMRA_ROUTER_FATBIN
+  MEMRA_SAMPLE_FATBIN
+  MEMRA_SPEC
+  MEMRA_SPEC_ONLY
+  MEMRA_SPEC_PP_ANATOMY
+  MEMRA_SPILL_COPY_H2D
+  MEMRA_VERIFY_GATE
+  MEMRA_W8A8_SIM
+  MEMRA_WGMMA
+check-flags: no new drift beyond research/docsync3-20260811/flags-drift.txt
+== local-ci: correctness stage ==
+SKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture)
+kernel-check: ALL GREEN (106 cells, 1 skipped)
+prime-gate SUMMARY: 8 prompts (0 skipped short) | MATCH=8 FLIP-NEARTIE=0 STRUCTURED=0 det_fails=0 | worst maxdiff=2.3640e0 min flip margin=-
+prime-gate: ALL GREEN
+run-spec K=1..8 self-consistency: PASS (Qwen 35B, 8/8)
+run-gen argmax: MATCH (31B)
+VERIFY-GATE K=7 depth: PASS (31B)
+spec self-consistency 64/64: PASS (31B)
+run-gen argmax depth: MATCH (12B)
+VERIFY-GATE K=7 depth: PASS (12B)
+decode-batch-gate config B=8: ALL GREEN (9B NVFP4)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B NVFP4)
+decode-batch-gate config B=8: ALL GREEN (9B Q8_0)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B Q8_0)
+warning: memra-engine@0.81.3: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.06s
+== graph-warmup-stress gate: /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf cycles=10 warmups=1 ==
+model /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf arch qwen35 (32 layers) cycles=10 large=160tok/@4096 small=90tok/@96 MEMRA_GRAPH_WARMUPS=1 canary=false
+[pool] post-load: reserved 4640 MB used 4624 MB
+[pool] post-eager-ref: reserved 4736 MB used 4625 MB
+cycle 1: OK  [pool after L-drop: 5408/4627 MB, after S: 5408/4627 MB rsv/used]
+cycle 2: OK  [pool after L-drop: 5408/4627 MB, after S: 5408/4627 MB rsv/used]
+cycle 3: OK  [pool after L-drop: 5408/4627 MB, after S: 5408/4627 MB rsv/used]
+cycle 4: OK  [pool after L-drop: 5408/4627 MB, after S: 5408/4627 MB rsv/used]
+cycle 5: OK  [pool after L-drop: 5408/4627 MB, after S: 5408/4627 MB rsv/used]
+cycle 6: OK  [pool after L-drop: 5408/4627 MB, after S: 5408/4627 MB rsv/used]
+cycle 7: OK  [pool after L-drop: 5408/4627 MB, after S: 5408/4627 MB rsv/used]
+cycle 8: OK  [pool after L-drop: 5408/4627 MB, after S: 5408/4627 MB rsv/used]
+cycle 9: OK  [pool after L-drop: 5440/4627 MB, after S: 5440/4627 MB rsv/used]
+cycle 10: OK  [pool after L-drop: 5440/4627 MB, after S: 5440/4627 MB rsv/used]
+overlap arm: OK (A survived B's pool growth; B survived A's free + recapture)
+[pool] end: reserved 6080 MB used 4627 MB
+ALL GREEN: graph-warmup-stress (10 cycles x 4 arms + overlap, bit-identical, no fault)
+== canary arm: injected graph-memory corruption must be CAUGHT ==
+model /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf arch qwen35 (32 layers) cycles=1 large=160tok/@4096 small=90tok/@96 MEMRA_GRAPH_WARMUPS=1 canary=true
+[pool] post-load: reserved 4640 MB used 4624 MB
+[pool] post-eager-ref: reserved 4736 MB used 4625 MB
+cycle 1 ->S: canary caught at token 30 (expected — comparator has teeth)
+cycle 1: OK  [pool after L-drop: 5408/4627 MB, after S: 5408/4627 MB rsv/used]
+overlap arm: OK (A survived B's pool growth; B survived A's free + recapture)
+[pool] end: reserved 6048 MB used 4627 MB
+CANARY GATE PASS: injected graph-memory corruption was detected; all clean arms held
+ALL GREEN: graph-warmup-stress gate (10 cycles + canary)
+correctness stage: GREEN
+warning: memra-engine@0.81.3: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.14s
+== serve-smoke: plain serving ==
+  ok: /models lists the model
+  ok: chat non-stream (text + usage + finish_reason)
+  ok: chat stream (SSE chunks + [DONE])
+  ok: /v1/completions
+  ok: greedy determinism (2 runs identical)
+  ok: 3 concurrent chats
+  ok: long generation (>=100 tok)
+== serve-smoke: cache-metering exactness ==
+  ok: A fanout cached_tokens == [0] + [256]x4
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  ok: cached_tokens_in == 1024
+  ok: computed_tokens_in == prompt - cached
+  ok: cache_hit_token_ratio matches arithmetic
+  ok: prefix_cache_hits == N-1
+  ok: prefix_cache_misses == 2 (one A leader + cross-salt B)
+  ok: prefix_cache_inserts == 2 (shared A prefix + B seed)
+  ok: prefix_cache_hit_tokens == 1024
+  ok: lcp_histogram: 6 probes total
+  ok: lcp_histogram: 2 cold probes in bucket [0]
+  ok: lcp_histogram: 4 probes in K's bucket (edge 256)
+  ok: tick-seg [64,512) window carries the shared-prefix probes
+  ok: tenants[meter-A] split exact
+  ok: tenants[meter-B] split exact (0 cached)
+  ok: economics revenue_multiplier == 2.6842 (factor 1.0)
+cache-meter-gate: 0 failed
+  ok: cache-metering accounting exact (per-request + /metrics + economics)
+== serve-smoke: spec serving (draft attached) ==
+  ok: spec == plain greedy text (serving exactness)
+== serve-smoke: sampled truncation matrix (spec server) ==
+  (immune baseline: untruncated t0.8 seed=7, bangs=0)
+  ok: trunc top_k=40 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc top_p=0.95 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc min_p=0.05 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc llama-default k40+p0.95+m0.05 (reproducible, bangs=0 <= baseline 0)
+== serve-smoke: session-affinity resume exactness ==
+  ok: affinity resume is deterministic across servers (4 rewritten turns)
+  ok: replay arm resumed too (3 rewind(s))
+  ok: affinity fired (3 rewind(s) on a rewritten history)
+  ok: no failed rewinds
+== serve-smoke: gemma4 arm (default scheduler; the worker-panic regression) ==
+  ok: gemma4 1-request on DEFAULT scheduler (clean content, stop at turn end)
+  ok: gemma4 thinking-on: thought/content separated, tags stay syntax
+  ok: gemma4 server alive after both requests
+  ok: gemma4 arm: zero panics in the server log
+== serve-smoke: Q35 mixed c=4 cold-prefill exactness ==
+  ok: Q35 mixed c=4: 20/20 requests reached exactly 60 tokens
+  ok: Q35 routed-MoE carried prime batches remain gated
+serve-smoke: 0 failed
+warning: memra-engine@0.81.3: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.16s
+== serve-stress-gate: c=64 staggered short streams (128-256 tok) ==
+completed 64/64; wall p50=49.7s p95=54.1s max=54.6s; ttfb p50=5.00s p95=5.00s  (informational)
+serve-stress-gate: ALL GREEN (c=64 complete, streams well-formed, worker alive, log clean)
+warning: memra-engine@0.81.3: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.13s
+== accept-gate: served-spec acceptance + long-text assertion ==
+   cells: q27-p1 (smoke tier; --full for the matrix)
+   arm env: MEMRA_MMQ_F8F4=unset
+   logs: research/slrucache-20260813/raw/postaudit-battery-complete/accept-gate
+-- server: Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf + draft-daily-owntrim-nvfp4head-q4blk.gguf K=3 ctx=8192
+   up in 10s
+  q27-p1: PASS (rounds=42 drafted=126 accepted=85 accept=0.6746, 128 tok text sha-identical)
+
+accept-gate: 1 pass, 0 fail, 0 unpinned, 0 skip

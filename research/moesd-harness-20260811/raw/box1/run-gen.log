@@ -1,0 +1,20 @@
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 trunk layers; optional MTP skipped)
+prompt text: "Explain in one short paragraph why batching can amortize memory-bound expert weights."
+prompt tokens: [0, 65106, 295, 834, 3107, 15363, 3939, 291, 19468, 588, 75920, 1387, 6464, 52051, 8739, 23997, 16]
+prefill argmax=6776  decode argmax=6776  logit maxdiff=7.347e-1  MATCH
+batched-prime argmax=6776  tokenwise argmax=6776  logit maxdiff=7.667e-1  MATCH
+prefill 17 tok in 0.4967s = 34.2 tok/s (pp17)
+generated 64 tokens in 3.118s = 20.53 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.115s) [stop: MaxNew]
+tokens: [6776, 666, 7805, 11490, 2143, 36, 19468, 4691, 1623, 35977, 396, 1309, 270, 1975, 8739, 1055, 260, 4031, 8452, 43360, 16640, 29717, 14, 832, 270, 8739, 442, 85, 5288, 8452, 344, 1733, 4387, 305, 99782, 3881, 270, 4445, 26359, 16, 1162, 13738, 1623, 2395, 23332, 1055, 260, 2767, 3226, 14, 23809, 43360, 72, 16802, 23332, 14, 11135, 6464, 43360, 19660, 3127, 30433, 305, 75920]
+MoE cache: 15356 slots | cumulative hits=10164 misses=5082 (hit-rate=66.7%) | Stage-1 baseline = 2678 MB/decode-token (every block, every layer, every token)
+MoE cache STEADY-STATE (32 tokens after warmup): hit-rate=0.0% | 0.0 MB/decode-token (vs 2678 MB/token Stage-1 => infx less PCIe)
+OUTPUT TEXT: "  \n\n**Answer:**  \nBatching groups many tokens that need the same expert into a single matrix‑multiply, so the expert’s weight matrix is read once and reused across the whole batch. This turns many small reads into a few large, cache‑friendly reads, reducing memory‑traffic overhead and amort"
+--- generated text ---
+  
+
+**Answer:**  
+Batching groups many tokens that need the same expert into a single matrix‑multiply, so the expert’s weight matrix is read once and reused across the whole batch. This turns many small reads into a few large, cache‑friendly reads, reducing memory‑traffic overhead and amort

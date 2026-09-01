@@ -1,0 +1,47 @@
+{
+ "name": "22-neg-literal-placeholder-echo",
+ "status": 200,
+ "request": {
+  "model": "zai/glm-5.3-flash",
+  "temperature": 0,
+  "max_tokens": 256,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Repeat this string exactly, character by character: <|image|>"
+   }
+  ]
+ },
+ "response": {
+  "object": "chat.completion",
+  "model": "zai/glm-5.3-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning": "The user has sent a message that says \"Repeat this string exactly, character by character:\" followed by what appears to be an empty or invisible string, or possibly an image placeholder.\n\nLooking at the message, after the colon there appears to be nothing visible - it could be:\n1. An empty string\n2. Whitespace characters\n3. An image that didn't render\n4. Some invisible characters\n\nThe format shows \"character by character: \" followed by what looks like an image tag or empty content. Since I can't see any actual content after the colon, I should let the user know that I don't see any string to repeat, or that the string appears to be empty/invisible.\n\nActually, looking more carefully, there might be an image attached that I should be able to see. But in this text-based interaction, if there's no visible content, I should ask for clarification.\n\nWait - the message might contain an image that I'm supposed to see. If the human turn includes an image, I would typically see it described or have access to it. Since I don't see any image content or string content, the safest response is to note that I don't see any string after the colon and ask them to share it.\n\nLet me respond help",
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "The user has sent a message that says \"Repeat this string exactly, character by character:\" followed by what appears to be an empty or invisible string, or possibly an image placeholder.\n\nLooking at the message, after the colon there appears to be nothing visible - it could be:\n1. An empty string\n2. Whitespace characters\n3. An image that didn't render\n4. Some invisible characters\n\nThe format shows \"character by character: \" followed by what looks like an image tag or empty content. Since I can't see any actual content after the colon, I should let the user know that I don't see any string to repeat, or that the string appears to be empty/invisible.\n\nActually, looking more carefully, there might be an image attached that I should be able to see. But in this text-based interaction, if there's no visible content, I should ask for clarification.\n\nWait - the message might contain an image that I'm supposed to see. If the human turn includes an image, I would typically see it described or have access to it. Since I don't see any image content or string content, the safest response is to note that I don't see any string after the colon and ask them to share it.\n\nLet me respond help"
+      }
+     ]
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 23,
+   "completion_tokens": 256,
+   "total_tokens": 279,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 16.29580464
+  },
+  "id": "chatcmpl-888ebc9e2e9c9da8d858179e0d6aade9",
+  "created": 1788056923
+ }
+}

@@ -1,0 +1,450 @@
+                                                 MawForge: Memory-Bounded Expert Materialization for Local
+                                                              Mixture-of-Experts Inference
+                                                                                        Craig Opie, Holocron Security, Inc.
+
+
+                                            Abstract— Sparse Mixture-of-Experts (MoE) language mod-               Sparse MoE models relax the compute side of this con-
+                                         els separate total parameter count from per-token active com-         straint. A token does not activate every expert; it activates a
+                                         putation, but local inference systems often still require the         routed subset. However, most local inference paths still treat
+                                         full model, key-value cache, runtime buffers, and operating-
+                                         system headroom to fit in fast memory. MawForge tests a               model residency as a whole-file loading problem. The full
+                                         different systems hypothesis: local MoE serving can be made           GGUF is mapped or loaded, and failure occurs when the
+                                         practical on constrained unified-memory machines by storing           aggregate model, KV cache, and runtime memory exceed
+                                         the full model on disk, keeping common tensors resident, and          what the machine can absorb. Sparse activation does not
+                                         materializing routed expert tensors into a bounded execution          automatically become sparse residency.
+                                         cache on demand.
+                                            This article presents MawForge's split-pack architecture,             MawForge reframes the problem as a memory hierarchy.
+                                         budget model, native GGUF serving path, and completed local           The full model remains a durable disk object. Common
+                                         validation on a MacBook Pro M5 Pro with 24 GB unified                 tensors remain resident. Routed expert tensors are split into
+
+
+
+
+arXiv:2607.09686v1 [cs.LG] 17 Jun 2026
+                                         memory under an 18 GiB explicit serving target. The validation        per-layer, per-expert payloads and copied into bounded in-
+                                         matrix contains 600 non-speculative MawForge rows across
+                                                                                                               memory slots only when the router demands them. The
+                                         three model profiles, five cache settings, two context lengths,
+                                         four prompt classes, and five repetitions per cell. Static planning   resulting question is not simply "does the full model fit?" but
+                                         accepted 27 of 30 unique model/context/cache cells and rejected       "how much expert cache is enough to capture route locality
+                                         3 cells before execution; all 540 statically feasible generation      without crossing the host memory-pressure boundary?"
+                                         rows returned valid 96-token completions without triggering              This distinction matters. On the test machine, a direct
+                                         the memory guard. The results show that MawForge can serve
+                                         large GGUF MoE models within a bounded local memory                   non-MawForge load of Gemma 4 26B A4B Q8_0 at 32K
+                                         envelope, including a 34 GB Qwen3.6 35B A3B Q8_0 profile              context crossed a 98% system-used safety guard and was
+                                         and a 25 GB Gemma 4 26B A4B Q8_0 profile. They also                   terminated before producing route output. The MawForge
+                                         show that expert-cache size is non-monotonic: larger caches           split-pack path completed every statically feasible Gemma
+                                         consistently improve hit rate and reduce materialized bytes,          Q8 32K validation row under an 18 GiB serving target.
+                                         but they can reduce throughput by increasing host memory
+                                         pressure. Qwen Q8 favored the smallest tested cache, 15%,             The finding does not prove that no other direct configuration
+                                         at both 4K and 32K contexts; Gemma Q8 favored 35%                     could run; it demonstrates that the tested full-GGUF Metal
+                                         among feasible points; Qwen Q4 shifted with context and               path was unsafe or impractical on the same machine while
+                                         prompt class. A focused speculative-decoding addendum found           MawForge's bounded path remained controllable.
+                                         that Gemma MTP speculation accepted more draft tokens
+                                                                                                                  This article makes four contributions:
+                                         but reduced throughput and increased expert materialization,
+                                         indicating that dense-model speculation assumptions do not              1. It describes MawForge's split-pack and runtime mate-
+                                         transfer directly to split-pack MoE serving.                               rialization architecture for local GGUF MoE serving.
+                                            The central finding is that MawForge is effective as a
+                                         bounded execution mechanism and measurement substrate
+                                                                                                                 2. It formulates local sparse-expert inference as a
+                                         for local MoE inference, but not as a cache-maximization                   bounded cache-placement problem with explicit budget
+                                         policy. Performance depends on balancing expert reuse against              and throughput tradeoffs.
+                                         resident footprint, KV-cache size, quantization, route locality,        3. It reports a completed 600-row validation matrix on
+                                         and macOS memory pressure.                                                 constrained Apple Silicon hardware, including static
+                                            Index Terms— Mixture-of-Experts, local inference, memory
+                                                                                                                    budget rejections and guarded generation completions.
+                                         hierarchy, expert caching, GGUF, Apple Silicon, model serving,
+                                         systems evaluation                                                      4. It analyzes failure modes that are not visible from
+                                                                                                                    cache hit rate alone, including high-cache latency
+                                                               I. I NTRODUCTION                                     collapse and speculative decoding regression.
+                                           Large language model deployment is usually governed                    The work is intentionally narrow in its empirical claims.
+                                         by a hard residency constraint: model weights must fit                It evaluates one current machine, three model profiles, two
+                                         in fast memory with additional headroom for key-value                 context lengths, four prompt classes, and short fixed comple-
+                                         (KV) cache, runtime allocations, accelerator buffers, and             tions. Within that boundary, the matrix is complete for the
+                                         operating-system pressure. This constraint is especially sharp        stated non-speculative MawForge protocol.
+                                         on consumer and workstation systems with unified memory
+                                         because the CPU, GPU, kernel, display stack, filesystem                               II. R ESEARCH Q UESTIONS
+                                         cache, and inference runtime draw from the same physical
+                                         pool.                                                                   The evaluation addresses five research questions.
+   RQ1: Feasibility. Can MawForge serve large GGUF MoE           B. Split-Pack Representation
+models on a 24 GB unified-memory laptop under an 18 GiB             The packer reads a GGUF model and separates tensors
+explicit serving budget?                                         into common tensors and routed expert tensors. Common
+   RQ2: Cache behavior. How does expert-cache percentage         tensors are emitted in resident form. Expert tensors are split
+affect decode throughput, TTFT, cache hit rate, materialized     into deterministic per-layer, per-expert blocks. Each block
+expert bytes, and memory pressure?                               records tensor kind, layer, expert id, source offsets, byte
+   RQ3: Quantization and context. Does changing quan-            counts, topology metadata, and digests. The block payloads
+tization or context length change the feasible cache region      are written to experts.pack, and the index is written to
+and the best operating point?                                    experts.index.
+   RQ4: Speculation. Does MTP speculative decoding im-              The split-pack design has two practical consequences.
+prove throughput for MawForge split-pack serving?                First, the runtime can address an expert block without
+   RQ5: Measurement discipline. What claim boundaries            scanning or copying unrelated model weights. Second, the
+are justified by the completed validation evidence, and which    pack index becomes a reproducibility artifact: a validation
+claims require further measurement?                              row can bind a model profile to a pack path and pack digest
+                                                                 rather than relying only on a human-readable model name.
+        III. BACKGROUND AND R ELATED W ORK
+                                                                 C. Native Serving Path
+   MoE models use conditional computation to increase               The serving worker loads common tensors and allocates
+total parameter count while activating only a subset of          compact per-layer slot tensors for routed experts. Slot count
+parameters for each token. GShard demonstrated large-scale       is computed from the requested cache bytes, routed layer
+conditional computation and automatic sharding for sparsely      count, per-slot expert block size, active experts per token,
+gated models [1]. Switch Transformer simplified routing and      and experts per layer. Architectures with fused feed-forward
+showed that sparse activation can scale model capacity while     tensors use fused slot tensors; architectures with separate
+maintaining a smaller active computation path [2].               gate, up, and down tensors allocate corresponding slot ten-
+   Serving research has also emphasized memory manage-           sors. On a cache miss, the runtime materializes the requested
+ment as a first-class systems problem. vLLM's PagedAtten-        expert block into an available slot and updates route-to-slot
+tion treats KV-cache allocation as a paging problem and          metadata.
+demonstrates that memory layout and allocation policy can           The worker exposes an OpenAI-compatible local endpoint
+dominate serving throughput [3]. MawForge applies a re-          through mawforge serve. The CLI reports TTFT, decode
+lated systems perspective to a different object: routed expert   rate, expert-cache bytes, KV-cache bytes, resident common
+weights rather than attention KV pages.                          bytes, hit rate, materialized expert bytes, speculative coun-
+   Speculative decoding proposes draft tokens with a smaller     ters, and budget provenance.
+or cheaper model and verifies them with the target model
+to reduce serial decoding latency [4]. For dense models, the     D. Static Budget Check
+primary question is whether accepted draft tokens offset draft      MawForge performs a static planning check before serv-
+and verification overhead. For split-pack MoE serving, there     ing. Let C be resident common tensor bytes, E(p) be the
+is an additional question: whether speculation expands the       expert-cache budget at cache percentage p, K(n) be KV-cache
+union of routed experts touched per step enough to increase      bytes at context length n, and O be runtime overhead. The
+materialization cost and cache churn.                            static lower bound is:
+   GGUF is the llama.cpp model format used for many quan-         L(p, n) = C + E(p) + K(n)
+tized local models [5]. MawForge's current most complete
+serving path targets GGUF MoE models through a native              The runtime footprint is:
+llama.cpp-derived worker that uses MawForge split packs           F(p, n) = C + E(p) + K(n) + O
+rather than requiring fully resident expert tensors.
+                                                                    Static planning rejects rows where the lower bound already
+                 IV. M AW F ORGE D ESIGN                         exceeds the requested serving target. Runtime load then
+                                                                 verifies allocator behavior under the same budget. This
+A. System Thesis                                                 approach intentionally treats rejection as evidence: a rejected
+  MawForge is built around the following thesis:                 row is not a failed benchmark if the rejection proves that
+     Sparse expert inference should be served from a             the requested cache/context point is outside the configured
+     bounded expert materialization cache rather than            budget.
+     requiring all routed expert tensors to be resident.         E. Throughput Model
+   The thesis does not imply that disk access is free or that       The cache tradeoff is non-monotonic. A simplified
+sparse models are automatically fast. It implies that a local    throughput relation is:
+inference system should expose the expert residency trade-        T(p) = generated_tokens / (compute_time +
+off directly and should make budget feasibility measurable            materialization_time(p) + pressure_penalty(F)
+before runtime load.                                                  )
+   Increasing p usually reduces materialization_time(p           D. Measurements
+)  by improving route locality and hit rate. It also in-            The primary dependent variables were decode tokens per
+creases F. When the larger cache pushes the host into            second, TTFT, cache hit rate, materialized expert bytes,
+compression, paging, or lower effective memory bandwidth,        expert-cache bytes, resident common bytes, KV-cache bytes,
+pressure_penalty(F) can dominate. Under that regime,             process-tree RSS, sampled system-used ratio, and guard
+cache hit rate improves while decode throughput worsens.         status. The CLI telemetry line was persisted with raw request
+   Speculative decoding adds another term:                       and response bodies, health metrics, parsed JSON telemetry,
+ T_spec = generated_tokens /
+                                                                 memory samples, stdout and stderr, and run summaries.
+          (target_time -                                            The current worker logs did not collect all preferred
+     accepted_target_work_saved                                  macOS memory fields directly. In particular, system_ram,
+           + draft_overhead +
+                                                                 tracked_metal, and metal_budget were not populated by
+     verification_overhead
+           + extra_materialization +                             the worker in the latest local logs. The benchmark wrapper
+     state_overhead)                                             collected separate host and process samples. The paper
+                                                                 therefore treats process RSS and wrapper samples as memory
+    The      critical  MawForge-specific      term      is       signals with explicitly named sources rather than merging
+extra_materialization.      Speculative lookahead can            them into a single unified-memory field.
+touch a larger union of experts before route locality can           The reported statistics are descriptive. Each feasible
+amortize the cache, especially when accepted draft tokens        model/context/cache/prompt-class cell contains five valid
+are few in absolute number.                                      repetitions, and the source artifacts report means and stan-
+                                                                 dard deviations for those cells. This article aggregates se-
+                V. E XPERIMENTAL M ETHOD                         lected cells to answer the research questions and does not
+                                                                 claim formal hypothesis-test significance. That choice is de-
+A. Hardware and Budget                                           liberate: the strongest claim supported by the current matrix
+                                                                 is operating-envelope characterization under controlled local
+   All primary validation evidence was collected on a Mac-       conditions, not population-level inference across hardware,
+Book Pro M5 Pro with 24 GB unified memory on June 8-             prompts, or model distributions.
+9, 2026 HST. The primary MawForge serving target was
+18 GiB. The validation runner used memory guards and             E. Validity Rules
+terminated direct or MawForge runs that crossed configured          A generation row was valid only if the server started,
+safety thresholds. The primary non-speculative generation        returned HTTP 200 through the OpenAI-compatible end-
+rows used 96 maximum completion tokens.                          point, produced nonzero completion tokens, emitted final
+                                                                 telemetry, stayed below the guard threshold, and shut down
+                                                                 after the run. A static rejection row was valid when serve
+B. Model Profiles
+                                                                 plan rejected the model/context/cache point before runtime
+  The validation matrix used three model profiles.               load because the estimated lower bound exceeded the budget.
+  The matrix evaluated two context lengths, 4K and 32K,                                  VI. R ESULTS
+and four prompt classes: code, summarization, long-form
+writing, and reasoning. Each model/context/cache/prompt             Unless otherwise noted, numeric results in this section are
+cell used five repetitions when statically feasible.             taken from the benchmark ledger [6] and its referenced run
+                                                                 artifacts. The validation protocol [7] defines the matrix di-
+                                                                 mensions and acceptance rules, and the telemetry schema [8]
+C. Validation Matrix                                             defines field meanings and derived metrics.
+    The primary validation matrix is:                            A. RQ1: Feasibility Under a Bounded Budget
+ 3 model profiles * 5 cache settings * 2 contexts                   MawForge completed all 540 statically feasible generation
+     * 4 prompt classes * 5 repetitions = 600 rows               rows under the 18 GiB target, with no memory-guard triggers
+                                                                 during MawForge generation. This supports the feasibility
+   The static planning stage expanded the full 600-row man-      claim for the tested split-pack configurations: MawForge
+ifest and executed the 30 unique model/context/cache budget      can serve the evaluated GGUF MoE profiles on the 24 GB
+checks. Of those 30 static checks, 27 were feasible and          unified-memory machine when the static planner accepts the
+3 were rejected under the 18 GiB budget. Each rejected           row.
+static cell corresponds to 4 prompt classes and 5 repetitions,      The result is strongest when interpreted with the static re-
+producing 60 valid static rejection rows. The remaining 540      jections. MawForge did not force every model/cache/context
+rows were executed as guarded generation runs.                   combination to run. It rejected combinations where common
+   The three static rejections were Gemma Q8 at 32K with         tensors, expert cache, and KV cache already exceeded the
+50% cache, Gemma Q8 at 32K with 65% cache, and Qwen              target. This is the intended behavior for a bounded local
+Q4 at 32K with 90% cache.                                        serving system.
+                                      Profile                       Local size Cache settings
+                                      Gemma 4 26B A4B Q8_0             25 GB 15%, 25%, 35%, 50%, 65%
+                                      Qwen3.6 35B A3B Q8_0             34 GB 15%, 20%, 25%, 35%, 45%
+                                      Qwen3.6 35B A3B Q4_K_M           20 GB 15%, 25%, 35%, 65%, 90%
+
+
+                                Validation component                                                     Count
+                                Matrix rows                                                                 600
+                                Unique static plan rows                                                      30
+                                Feasible static plan rows                                                    27
+                                Static budget rejections                         3 unique cells, 60 matrix rows
+                                Guarded generation completions                                              540
+                                Memory guard triggers during MawForge generation                              0
+
+
+                                                Profile    Context Cache Static minimum Decision
+                                                Gemma Q8     32K    50%      20.2782 GiB rejected
+                                                Gemma Q8     32K    65%      23.6681 GiB rejected
+                                                Qwen Q4      32K    90%      18.5217 GiB rejected
+
+
+
+
+B. RQ2: Expert Cache Is Not Monotonic                                        The context result should not be overgeneralized. The 32K
+                                                                          rows used the same 96-token completion limit, so they stress
+   Across the matrix, larger expert caches generally increased
+                                                                          allocation and KV footprint more than long-session behavior.
+hit rate and reduced materialized expert bytes. Throughput
+                                                                          Still, they show that a larger KV cache does not necessarily
+did not follow monotonically. The most visible example is
+                                                                          force the best expert-cache point downward when the static
+Qwen Q8, where all prompt classes at both context lengths
+                                                                          budget remains feasible.
+favored the smallest tested cache, 15%.
+   The Qwen Q8 rows show why cache hit rate cannot be
+used as the objective function. At 32K code, 45% cache                    D. RQ4: Speculative Decoding Did Not Improve the Tested
+reduced materialized expert I/O to 33.00 GiB and reached                  MawForge Path
+89.90% hit rate, but decode fell to 1.56 tok/s and TTFT                      The speculative addendum evaluated Gemma Q8 with an
+averaged 127.9 s. The row is feasible but not interactive.                MTP draft model. The most focused run used horizon 4
+   Gemma Q8 shows a different curve. At 4K, the best                      and an acceptance threshold of 0.5 at 25% expert cache.
+combined cache point was 35%, not 15%, but high cache                     It accepted 4 of 7 drafted tokens, or 57.1%, but decoded at
+still failed as a throughput setting.                                     8.31 tok/s compared with a 25% non-speculative exploratory
+   Moving Gemma Q8 from 35% to 65% improved hit rate                      baseline of 9.52 tok/s. Materialized expert bytes increased
+from 86.73% to 95.03% and reduced mean materialized I/O                   from 48.06 GiB to 116.66 GiB.
+from 56.8783 GiB to 20.1301 GiB. Decode fell from 13.8591                    This addendum is not as strong as the 600-row non-
+tok/s to 1.3033 tok/s. This is the clearest demonstration that            speculative matrix because it is a focused comparison rather
+lower materialization is not sufficient when resident cache               than a completed factorial study. Its value is diagnostic:
+footprint moves the system into a worse operating regime.                 speculative acceptance ratio alone was not predictive of
+                                                                          speedup. The likely mechanism is route churn. A speculative
+C. RQ3: Quantization and Context Change the Operating                     verification batch can touch a wider set of experts than a
+Point                                                                     single-token decode step, and accepted draft tokens must
+                                                                          save enough target work to offset that added materialization.
+   Qwen Q4 and Qwen Q8 share the same model family and
+topology but differ in quantization and footprint. Their cache
+                                                                          E. Direct Non-MawForge Load Addendum
+behavior differs substantially.
+   At 4K, Qwen Q4 had prompt-dependent optima. Long-                         A guarded direct load attempted to run the original Gemma
+form writing favored 15%, code and reasoning favored 25%,                 Q8 GGUF through a direct llama.cpp full-GGUF path at 32K
+and summarization had the highest mean at 35% but better                  context without MawForge split packs or expert cache. A
+stability at 25%. At 32K, Qwen Q4 shifted upward: 35%                     watchdog terminated the process when system-used memory
+was best for long-form writing, code, and summarization,                  reached 99.19%, above the configured 98% guard. No route
+while reasoning remained best at 25%. The 90% 32K cache                   output was produced.
+point was rejected by static planning because the lower-                     This is a load-rejection baseline, not a throughput baseline.
+bound footprint was 18.5217 GiB, above the 18 GiB target.                 It supports the narrower claim that the tested direct full-
+   Gemma Q8 preserved a broad 35% optimum at both                         GGUF Metal load at 32K was unsafe or impractical on
+context lengths among feasible points. At 32K, 50% and 65%                this 24 GB machine without an external guard. It does not
+were static budget rejections rather than slow-but-loadable               prove that all llama.cpp configurations, lower contexts, lower
+rows. The 32K KV cache was 6.8750 GiB, yet 35% remained                   quantization levels, CPU-only modes, or alternate offload
+feasible and fastest.                                                     policies would fail.
+              Qwen Q8 context Prompt              15% decode Highest-cache decode Highest-cache hit rate Interpretation
+              4K              Long-form writing     8.51 tok/s    1.36 tok/s at 45%                  86.41%    hit rate improved, decode collapsed
+              4K              Code                 12.09 tok/s    1.83 tok/s at 45%                  89.90%    high cache became a latency failure
+              4K              Summarization        11.66 tok/s    1.27 tok/s at 45%                  89.36%    TTFT rose to 166.9 s
+              4K              Reasoning            11.40 tok/s    1.69 tok/s at 45%                  89.89%    smallest cache remained fastest
+              32K             Long-form writing    11.91 tok/s    1.41 tok/s at 45%                  86.41%    same curve at larger context
+              32K             Code                 12.12 tok/s    1.56 tok/s at 45%                  89.90%    same curve at larger context
+              32K             Summarization        10.93 tok/s    1.14 tok/s at 45%                  89.36%    high-cache TTFT reached 169.7 s
+              32K             Reasoning            11.42 tok/s    1.52 tok/s at 45%                  89.89%    high cache minimized I/O, not time
+
+
+                      Gemma Q8 4K cache Runs Decode mean TTFT mean Hit rate              Materialized       Max RSS Max system used
+                                       15%   20 8.5057 tok/s         25.9 s   61.46% 165.8767 GiB 9.2174 GiB                      65.41%
+                                       25%   20 8.6229 tok/s         24.9 s   78.83% 91.2989 GiB 11.3355 GiB                      65.08%
+                                       35%   20 13.8591 tok/s        17.4 s   86.73% 56.8783 GiB 12.8817 GiB                      67.15%
+                                       50%   20 2.3453 tok/s         91.6 s   92.85% 29.9465 GiB 13.9882 GiB                      83.68%
+                                       65%   20 1.3033 tok/s        116.0 s   95.03% 20.1301 GiB 15.8544 GiB                      84.09%
+
+
+                            Qwen Q4 context Prompt                Best cache Best mean decode Notes
+                            4K                Long-form writing         15%           18.53 tok/s   smallest cache won
+                            4K                Code                      25%           14.52 tok/s   65% and 90% regressed
+                            4K                Summarization             35%           16.31 tok/s   25% was more stable
+                            4K                Reasoning                 25%           19.87 tok/s   fastest Qwen Q4 4K cell
+                            32K               Long-form writing         35%           17.20 tok/s   25% nearly tied
+                            32K               Code                      35%           17.99 tok/s   65% fell to 7.87 tok/s
+                            32K               Summarization             35%           18.07 tok/s   65% fell to 6.75 tok/s
+                            32K               Reasoning                 25%           18.37 tok/s   strongest Qwen Q4 32K cell
+
+
+                            Gemma Q8 context Cache Runs Decode mean TTFT mean Hit rate                  Materialized         KV
+                            4K                    35%      20 13.8591 tok/s       17.4 s 86.73% 56.8783 GiB 0.8594 GiB
+                            32K                   35%      20 14.6371 tok/s       16.8 s 86.73% 56.8783 GiB 6.8750 GiB
+
+
+
+
+                      VII. D ISCUSSION                                        rate, KV bytes, RSS, wrapper memory samples, and static
+A. Effectiveness of MawForge                                                  feasibility together.
+   Within the tested boundary, MawForge is effective at                       C. Quantization Is a Systems Variable
+what it is designed to do: enforce a memory budget, reject                       Quantization changed both footprint and optimum. Qwen
+over-budget cache/context settings before load, and serve                     Q4 was generally faster than Qwen Q8 and had a broader
+large local MoE models by materializing routed experts on                     feasible cache region, but it did not produce a universal cache
+demand. The completed matrix gives a stronger claim than an                   recommendation. Qwen Q4 at 4K favored different cache
+isolated demonstration because it covers all statically feasible              settings for different prompt classes; at 32K, 35% became
+cells in the declared factorial protocol.                                     the broad default while reasoning favored 25%. Quantization
+   The system should not be described as a universal speedup                  should therefore be treated as part of the serving configura-
+over conventional local inference. The strongest evidence                     tion, not only as a model-quality or storage decision.
+is a same-machine feasibility and operating-envelope re-
+sult. MawForge turns configurations that may be unsafe or                     D. Context Length Has Two Roles
+impractical under full residency into measurable bounded                         Context length increases KV-cache footprint and can move
+configurations, but performance depends on a tuned cache                      static feasibility boundaries. Gemma Q8 at 32K rejected 50%
+point.                                                                        and 65% cache settings that were feasible at 4K. However,
+                                                                              context length did not always reduce the best feasible cache
+B. Cache Hit Rate Is an Incomplete Objective
+                                                                              point. Gemma Q8 still favored 35% at 32K, and Qwen Q4
+   The most important empirical pattern is that hit rate and                  moved upward from a 25% conservative 4K default to a
+throughput diverge. In a pure cache model, one might expect                   35% broad 32K default. The interaction depends on model
+larger caches to improve latency because they reduce misses.                  topology, KV size, quantization, and prompt route locality.
+On unified-memory Apple Silicon, cache footprint itself has
+a cost. Once the footprint approaches a pressure region,                      E. Speculation Requires MoE-Aware Accounting
+reduced materialization can be outweighed by memory com-                         The speculative addendum argues against importing dense-
+pression, paging, lower effective bandwidth, or allocator                     model speculation expectations without measurement. Ac-
+behavior.                                                                     cepted draft tokens matter, but expert materialization can
+   This implies that MawForge needs an optimizer that                         erase the benefit. A future speculative study should record
+minimizes end-to-end latency subject to a memory budget,                      per-step drafted tokens, accepted tokens, target verification
+not a policy that maximizes cache hit rate. A practical tuner                 width, expert misses, materialized bytes, slot evictions, draft-
+should use decode tok/s, TTFT, materialized bytes, cache hit                  model memory, and draft KV memory.
+                              Mode                                   Cache   Decode TTFT Accepted Hit rate Materialized
+                              Non-speculative exploratory baseline    25% 9.52 tok/s 9.8 s      n/a 78.46%    48.06 GiB
+                              MTP horizon 4, threshold 0.5            25% 8.31 tok/s 14.7 s     4/7 48.38%   116.66 GiB
+
+
+Model                  Context Mode                             Status         Guard reason                          Max system used Max process-tree RSS
+Gemma 4 26B A4B Q8_0     32K direct full-GGUF llama.cpp load memory guard system_used_ratio 0.9919 exceeded 0.9800           99.19%          16.3313 GiB
+
+
+
+
+               VIII. T HREATS TO VALIDITY                                       under docs/evidence/runs. The direct non-MawForge
+   The evaluation is limited to one 24 GB unified-memory                        addendum is documented in docs/evidence/direct-
+Apple Silicon machine. Results may differ across memory                         non-mawforge-load-attempt.md and docs/evidence/runs
+sizes, SSD performance, macOS versions, thermal states,                         /20260609-062219Z-direct-llama.
+power modes, and CPU/GPU scheduling behavior.                                     The primary static planning command is:
+   The prompt suite contains four deterministic prompt                           scripts/bench/mawforge_matrix_runner.py
+classes and 96-token completions. This supports controlled
+                                                                                   The guarded generation command template is:
+cache comparisons but does not characterize long interactive
+                                                                                 scripts/bench/mawforge_generation_runner.py \
+sessions, multi-turn state growth, streaming workloads, or                         --matrix-path docs/evidence/runs
+multi-user serving.                                                                  /20260608-203646Z-static-plan/matrix.jsonl
+   The matrix evaluates MawForge's non-speculative path
+thoroughly for the declared profiles, but direct non-                             Each served row uses the same core MawForge command
+MawForge comparison is represented by one guarded                               shape:
+Gemma Q8 32K load attempt. Broader baselines are needed                          target/release/mawforge serve \
+                                                                                   --pack "$PACK" \
+for lower contexts, lower quantization, CPU-only settings,                         --model-id "$MODEL_ID" \
+alternate offload policies, and conventional llama.cpp con-                        --host 127.0.0.1 \
+figurations that use different memory behavior.                                    --port "$PORT" \
+                                                                                   --memory-budget-gib 18 \
+   The evidence artifacts were collected locally by the Maw-                       --context "$CONTEXT" \
+Forge project rather than by an independent laboratory. The                        --expert-cache-percent "$CACHE_PERCENT" \
+artifacts are sufficient for internal reproducibility and paper                    --max-tokens-default 96 \
+                                                                                   --no-speculative
+inspection, but external replication remains necessary before
+generalizing the measured operating points beyond the tested
+environment.                                                                           X. A NSWERS TO THE R ESEARCH Q UESTIONS
+   The current worker telemetry does not directly populate                         RQ1. Yes, for the tested statically feasible configurations.
+every macOS memory-pressure field. Wrapper samples pro-                         MawForge completed 540 guarded generation rows under
+vide useful independent signals, but timestamp-aligned OS                       an 18 GiB target and rejected 60 over-budget matrix rows
+pressure, Metal allocation tracking, and page-compression                       through static planning. This supports bounded local serving
+counters would strengthen causal interpretation of high-cache                   feasibility for the evaluated profiles on the tested 24 GB
+regressions.                                                                    machine.
+   The speculative result is diagnostic rather than compre-                        RQ2. Expert cache percentage has a non-monotonic re-
+hensive. It should not be generalized to all MTP settings, all                  lationship with throughput. Larger caches improved hit rate
+MoE models, or all draft models without a larger factorial                      and reduced materialized bytes, but high-cache rows often
+speculative study.                                                              became latency failures. Qwen Q8 favored 15% at both 4K
+   Finally, the evaluation measures systems behavior, not                       and 32K across all prompt classes. Gemma Q8 favored 35%
+answer quality. Temperature was fixed and completions were                      and then collapsed at 50% and 65% at 4K despite higher hit
+constrained for reproducibility; the paper does not claim that                  rates.
+one cache setting improves semantic quality over another.                          RQ3. Quantization and context changed the operating
+                                                                                point. Qwen Q4 had prompt-dependent 4K optima and a
+  IX. A RTIFACT AVAILABILITY AND R EPRODUCIBILITY                               broader 35% 32K default, while Qwen Q8 consistently
+   The local evidence base is stored under docs/                                favored 15%. Gemma Q8 preserved a 35% optimum at 32K
+evidence. The benchmark ledger is docs/evidence/                                among feasible points, but higher 32K cache settings were
+benchmark-results.md. The validation protocol is docs/                          rejected by static planning.
+evidence/validation-protocol.md. The telemetry schema                              RQ4. The tested speculative path did not improve through-
+is docs/evidence/telemetry-schema.md. The static man-                           put. Gemma MTP horizon 4 accepted 4 of 7 draft tokens,
+ifest is docs/evidence/runs/20260608-203646Z-static-                            but decode fell from 9.52 tok/s to 8.31 tok/s and materialized
+plan/manifest.json, with matrix rows in matrix.jsonl and                        expert bytes rose from 48.06 GiB to 116.66 GiB.
+static planning rows in plans.jsonl.                                               RQ5. The completed evidence supports bounded Maw-
+   The generation artifacts include raw requests, responses,                    Forge feasibility, non-monotonic cache behavior, model-
+parsed telemetry, memory samples, and run summaries                             specific cache tuning, static rejection as a safety mechanism,
+and a narrow direct-load rejection comparison. It does not                    [8] MawForge telemetry schema, docs/evidence/telemetry-
+support universal cache recommendations, universal specu-                         schema.md, local artifact, June 2026.
+                                                                              [9] MawForge direct non-MawForge load attempt, docs/evidence
+lative speedup claims, broad direct-baseline superiority, or                      /direct-non-mawforge-load-attempt.md, local artifact,
+answer-quality claims.                                                            June 2026.
+
+                         XI. C ONCLUSION
+   MawForge demonstrates that local sparse-expert inference
+can be implemented as bounded expert materialization rather
+than full expert residency. On the tested 24 GB unified-
+memory machine, the system served every statically feasible
+row in a 600-row non-speculative validation matrix under an
+18 GiB target and rejected over-budget cells before runtime
+load. This is meaningful because the tested model files are
+substantially larger than the comfortable resident-memory
+envelope of the machine.
+   The evidence also narrows the correct performance claim.
+MawForge is not a cache-maximization system. It is a
+memory-bounded execution system whose performance de-
+pends on finding the point where expert reuse improves
+enough to justify resident cache footprint. Qwen Q8, Qwen
+Q4, and Gemma Q8 occupy different points in this design
+space. High cache can increase hit rate while making the sys-
+tem slower, and speculative decoding can increase accepted
+draft tokens while increasing expert materialization.
+   The practical conclusion is that MawForge makes con-
+strained local MoE serving measurable and controllable. Its
+strongest current result is not a single throughput number
+but a validated operating-envelope method: plan the budget,
+execute only feasible cells, collect route-aware telemetry, and
+choose cache settings by measured latency and materializa-
+tion under host memory pressure.
+                  AI A SSISTANCE D ISCLOSURE
+   The author used OpenAI Codex 5.5 and Anthropic
+Claude Opus 4.8 as text-to-text generative AI tools during
+manuscript preparation. These tools were used to assist with
+drafting, editing, LaTeX formatting, and submission com-
+pliance review. The author reviewed, edited, and verified the
+manuscript, including all technical claims, citations, data, and
+conclusions, and accepts full responsibility for the submitted
+work.
+                            R EFERENCES
+ [1] D. Lepikhin et al., "GShard: Scaling Giant Models with Conditional
+     Computation and Automatic Sharding," 2020. Available: https://arxiv.
+     org/abs/2006.16668
+ [2] W. Fedus, B. Zoph, and N. Shazeer, "Switch Transformers: Scaling
+     to Trillion Parameter Models with Simple and Efficient Sparsity,"
+     Journal of Machine Learning Research, vol. 23, no. 120, pp. 1-39,
+     2022. Available: https://www.jmlr.org/papers/v23/21-0998.html
+ [3] W. Kwon et al., "Efficient Memory Management for Large Language
+     Model Serving with PagedAttention," 2023. Available: https://arxiv.
+     org/abs/2309.06180
+ [4] Y. Leviathan, M. Kalman, and Y. Matias, "Fast Inference from Trans-
+     formers via Speculative Decoding," 2023. Available: https://arxiv.org/
+     abs/2211.17192
+ [5] ggml-org, "GGUF File Format," llama.cpp documentation. Available:
+     https://www.mintlify.com/ggml-org/llama.cpp/concepts/gguf-format
+ [6] MawForge project evidence ledger, docs/evidence/benchmark
+     -results.md, local artifact, June 2026.
+ [7] MawForge validation protocol, docs/evidence/validation-
+     protocol.md, local artifact, June 2026.
+

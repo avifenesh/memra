@@ -1,0 +1,19 @@
+warning: memra-engine@0.122.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.122.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.122.0 (/home/avifenesh/projects/wt-glm5-extract2/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.50s
+     Running tests/glm5_routed_router_gpu.rs (target/debug/deps/glm5_routed_router_gpu-4c596b554f90457c)
+
+running 8 tests
+test routed_prefill_matches_the_reference ... ok
+test routed_prime_then_decode_matches_the_reference ... ok
+test the_engine_router_is_the_vendor_program ... ok
+test the_plan_and_the_engine_agree_on_the_glm5_router ... ok
+test the_router_program_actually_binds ... ok
+test the_selected_weights_carry_no_bias ... ok
+test the_selection_bias_actually_changes_the_picks ... ok
+test wrong_router_programs_fail_the_gate ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+
+exit=0

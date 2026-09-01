@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-ec7c43c00c73554508d9a59052244cac",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 748,
+    "completion_tokens": 256,
+    "total_tokens": 1004,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 2.058274929
+  },
+  "text": "The user wants an initial dashboard for an inference service.\nKey requirements:\n- Single-page HTML document.\n- Inline CSS and JS.\n- Semantic HTML and accessible labels.\n- Specific panels: Request timeline, cache hit-rate chart, admission queue, GPU-memory gauge, incident annotations.\n- Mobile layout.\n- Data points for 8 requests (arrival time, time to first token, generated-token rate, cache source, queue delay, completion state).\n- Visual distinction for rising latency vs slower decoding.\n- Cumulative cache counters, gauges for pool occupancy and active sessions.\n- Evidence rows with units and exact timestamps.\n- Filtering by session and comparing speculative vs plain arms.\n\nI need to construct a layout that fits these requirements.\n- **Header**: Title and global stats (cache hit rate, GPU memory).\n- **Main Content**:\n    - **Left Column (Desktop)**: Request Timeline (visualizing the 8 requests).\n    - **Right Column (Desktop)**: Cache Hit Rate Chart (cumulative), Admission Queue, Incident Annotations.\n- **Mobile**: Stacked layout.\n- **Data**: I will generate realistic placeholder data for the 8 requests.\n- **Interactivity**: Filtering"
+}

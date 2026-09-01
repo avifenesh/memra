@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-7500b49ab97978795b8ec5778912c06f",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 2401,
+    "completion_tokens": 256,
+    "total_tokens": 2657,
+    "prompt_tokens_details": {
+      "cached_tokens": 746
+    },
+    "elapsed_s": 2.230176818
+  },
+  "text": "The user wants me to add a print stylesheet that preserves the request receipt as a legible table. I need to add @media print styles that will make the dashboard print-friendly, particularly ensuring the request data is displayed as a clear table format.\n\nI'll add print-specific CSS that:\n1. Hides non-essential UI elements (like charts, gauges, interactive controls)\n2. Formats the request data as a clean, readable table\n3. Ensures proper page breaks and spacing\n4. Makes text legible with appropriate contrast\n5. Preserves the essential information from the request rows\n\nLet me create the complete HTML document with the print stylesheet added.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-tertiary: #334155;\n"
+}

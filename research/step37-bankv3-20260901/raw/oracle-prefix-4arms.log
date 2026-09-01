@@ -1,0 +1,31 @@
+PRE-FIX binary md5: 832fa62a0d60b5674404adf8be36ce9b
+######## PRE-FIX ARM=hybrid ########
+arm policy: shape_sel=0 cross=64 deep_tail=true f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.194909e5 maxrel=5.588e1 => DEVIATION
+[cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=4.304795410e3 (0x4586865d)
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=6.241349e4 maxrel=6.718e1 => DEVIATION
+[cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-2.233689941e3 (0xc50b9b0a)
+nvfp4-bank-oracle: FAIL — the slot-major bank is not a pure permutation on this arm
+EXIT=1
+######## PRE-FIX ARM=sk128 ########
+arm policy: shape_sel=0 cross=1 deep_tail=true f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+nvfp4-bank-oracle: PASS — every cell bit-identical
+EXIT=0
+######## PRE-FIX ARM=sk32 ########
+arm policy: shape_sel=0 cross=2147483647 deep_tail=true f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.194909e5 maxrel=5.588e1 => DEVIATION
+[cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=4.304795410e3 (0x4586865d)
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=6.241349e4 maxrel=6.718e1 => DEVIATION
+[cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-2.233689941e3 (0xc50b9b0a)
+nvfp4-bank-oracle: FAIL — the slot-major bank is not a pure permutation on this arm
+EXIT=1
+######## PRE-FIX ARM=tail0 ########
+arm policy: shape_sel=0 cross=64 deep_tail=false f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+nvfp4-bank-oracle: PASS — every cell bit-identical
+EXIT=0
+0, 0 MiB
+1, 0 MiB

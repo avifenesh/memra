@@ -1,0 +1,56 @@
+warning: memra-engine@0.81.2: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.81.2: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.08s
+== serve-smoke: plain serving ==
+  ok: /models lists the model
+  ok: chat non-stream (text + usage + finish_reason)
+  ok: chat stream (SSE chunks + [DONE])
+  ok: /v1/completions
+  ok: greedy determinism (2 runs identical)
+  ok: 3 concurrent chats
+  ok: long generation (>=100 tok)
+== serve-smoke: cache-metering exactness ==
+  ok: A fanout cached_tokens == [0] + [256]x4
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  ok: cached_tokens_in == 1024
+  ok: computed_tokens_in == prompt - cached
+  ok: cache_hit_token_ratio matches arithmetic
+  ok: prefix_cache_hits == N-1
+  ok: prefix_cache_misses == 2 (one A leader + cross-salt B)
+  ok: prefix_cache_inserts == 2 (shared A prefix + B seed)
+  ok: prefix_cache_hit_tokens == 1024
+  ok: lcp_histogram: 6 probes total
+  ok: lcp_histogram: 2 cold probes in bucket [0]
+  ok: lcp_histogram: 4 probes in K's bucket (edge 256)
+  ok: tick-seg [64,512) window carries the shared-prefix probes
+  ok: tenants[meter-A] split exact
+  ok: tenants[meter-B] split exact (0 cached)
+  ok: economics revenue_multiplier == 2.6842 (factor 1.0)
+cache-meter-gate: 0 failed
+  ok: cache-metering accounting exact (per-request + /metrics + economics)
+== serve-smoke: spec serving (draft attached) ==
+  ok: spec == plain greedy text (serving exactness)
+== serve-smoke: sampled truncation matrix (spec server) ==
+  (immune baseline: untruncated t0.8 seed=7, bangs=0)
+  ok: trunc top_k=40 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc top_p=0.95 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc min_p=0.05 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc llama-default k40+p0.95+m0.05 (reproducible, bangs=0 <= baseline 0)
+== serve-smoke: session-affinity resume exactness ==
+  ok: affinity resume is deterministic across servers (4 rewritten turns)
+  ok: replay arm resumed too (3 rewind(s))
+  ok: affinity fired (3 rewind(s) on a rewritten history)
+  ok: no failed rewinds
+== serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+== serve-smoke: Q35 mixed c=4 cold-prefill exactness ==
+{"cell_clean": false, "cold_misses": 2, "concurrency": 4, "expected_completion_tokens": 60, "hit_requests": 18, "kind": "q35_cold_mixed_gate", "requests": 20, "schema": "memra.q35-cold-mixed-gate.v1", "seed_failures": ["q35 hot template 0: seed failed: None", "q35 hot template 1: seed failed: None", "q35 hot template 2: seed failed: None", "q35 hot template 3: seed failed: None", "q35 hot template 4: seed failed: None", "q35 hot template 5: seed failed: None", "q35 hot template 6: seed failed: None", "q35 hot template 7: seed failed: None"], "short_or_non_length": [{"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 0, "request_id": "cmpl-279d7c9cae799ed1ca4439165ac62e99", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "miss", "completion_tokens": 25, "finish_reason": "stop", "index": 1, "request_id": "cmpl-633c05ece2e21b9bd56c3c5366e946ba", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 2, "request_id": "cmpl-5c5650c6fd11c4e4bf372ba53944d398", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "miss", "completion_tokens": 25, "finish_reason": "stop", "index": 3, "request_id": "cmpl-d358221bd17c10b2e0da39a095a64c94", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 4, "request_id": "cmpl-d6b833b3b2e923fe6db1b37ce7d1ae69", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 5, "request_id": "cmpl-b2fc4fa243002399a50e34b6579cf2e2", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 6, "request_id": "cmpl-9ef29cda469e9f87e984903ee7a4b93e", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 7, "request_id": "cmpl-269c5cc4f55310f4f528814ccf6b0662", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 8, "request_id": "cmpl-92024b0f427fc7e6d3c69a663c6135bc", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 9, "request_id": "cmpl-b0a3404c7318ec5dfaf4ad65e4a2bc24", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 10, "request_id": "cmpl-2a6caca8563bef63b11bb456ebd7525a", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 11, "request_id": "cmpl-4bf59f3dc3276eac6212e8daed540516", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 12, "request_id": "cmpl-f2c33d41014151a0355dfa85588a7851", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 13, "request_id": "cmpl-1d8cc12c1cdd774472306b8dfcd09f45", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 14, "request_id": "cmpl-7a372c01c0d0eda5183288f29ae5e0fa", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 15, "request_id": "cmpl-5010028b80656fe3a8bf8614490c462a", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 16, "request_id": "cmpl-3b07668209aa00ee41fe15b97d0abfb6", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 17, "request_id": "cmpl-72da1545425e0c2439c9310ccc88af4d", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 18, "request_id": "cmpl-30299966452f8d366190fd1879f9fd9d", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}, {"cache_role": "hit", "completion_tokens": 25, "finish_reason": "stop", "index": 19, "request_id": "cmpl-ea4c1e35ed11afc5e78bfe37245f237e", "text_sha256": "ef6fa7bc01474781a869b7fee31c7224305d6673456d1a9dc71126f636acceec"}], "verdict": "FAIL"}
+  FAIL: Q35 mixed c=4 exact-token regression
+  ok: Q35 routed-MoE carried prime batches remain gated
+serve-smoke: 1 failed

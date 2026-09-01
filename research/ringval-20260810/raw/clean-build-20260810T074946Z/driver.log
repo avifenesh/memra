@@ -1,0 +1,158 @@
+lock_acquired=2026-08-10T07:49:46Z host=<private-host-redacted> stamp=20260810T074946Z
+source_commit=019428e217e297cb5981d201a4a520aee69222a6
+## lane/cx-ringval-box1
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/root       387G  278G  109G  72% /
+target_dir=/home/ubuntu/memra-cx-ringval-target-ringval
+build_start=2026-08-10T07:49:46Z
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.46
+   Compiling libc v0.2.186
+   Compiling serde_core v1.0.228
+   Compiling serde v1.0.228
+   Compiling cfg-if v1.0.4
+   Compiling itoa v1.0.18
+   Compiling version_check v0.9.5
+   Compiling pin-project-lite v0.2.17
+   Compiling once_cell v1.21.4
+   Compiling futures-core v0.3.32
+   Compiling hashbrown v0.17.1
+   Compiling equivalent v1.0.2
+   Compiling bytes v1.12.0
+   Compiling zmij v1.0.21
+   Compiling crossbeam-utils v0.8.22
+   Compiling smallvec v1.15.2
+   Compiling getrandom v0.3.4
+   Compiling serde_json v1.0.150
+   Compiling crossbeam-epoch v0.9.20
+   Compiling zerocopy v0.8.55
+   Compiling percent-encoding v2.3.2
+   Compiling memchr v2.8.2
+   Compiling anyhow v1.0.104
+   Compiling ref-cast v1.0.26
+   Compiling crossbeam-deque v0.8.7
+   Compiling typenum v1.20.1
+   Compiling parking_lot_core v0.9.12
+   Compiling httparse v1.10.1
+   Compiling cudarc v0.19.8
+   Compiling rayon-core v1.13.0
+   Compiling futures-task v0.3.32
+   Compiling tower-service v0.3.3
+   Compiling scopeguard v1.2.0
+   Compiling slab v0.4.12
+   Compiling heck v0.5.0
+   Compiling log v0.4.33
+   Compiling rustversion v1.0.22
+   Compiling tower-layer v0.3.3
+   Compiling atomic-waker v1.1.2
+   Compiling httpdate v1.0.3
+   Compiling bytemuck v1.25.2
+   Compiling sync_wrapper v1.0.2
+   Compiling borrow-or-share v0.2.4
+   Compiling toml_write v0.1.2
+   Compiling winnow v0.7.15
+   Compiling memra-engine v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-engine)
+   Compiling libloading v0.9.0
+   Compiling mime v0.3.17
+   Compiling regex-syntax v0.8.11
+   Compiling either v1.17.0
+   Compiling futures-channel v0.3.32
+   Compiling llguidance v1.7.6
+   Compiling ryu v1.0.23
+   Compiling memra-server v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-server)
+   Compiling memra-sampling v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-sampling)
+   Compiling tracing-core v0.1.36
+   Compiling lock_api v0.4.14
+   Compiling memra-validate v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-validate)
+   Compiling matchit v0.7.3
+   Compiling cpufeatures v0.2.17
+   Compiling form_urlencoded v1.2.2
+   Compiling futures-util v0.3.32
+   Compiling generic-array v0.14.7
+   Compiling ahash v0.8.12
+   Compiling tracing v0.1.44
+   Compiling http v1.4.2
+   Compiling syn v2.0.118
+   Compiling syn v3.0.3
+   Compiling indexmap v2.14.0
+   Compiling errno v0.3.14
+   Compiling socket2 v0.6.4
+   Compiling mio v1.2.1
+   Compiling memmap2 v0.9.11
+   Compiling signal-hook-registry v1.4.8
+   Compiling memra-gguf v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-gguf)
+   Compiling parking_lot v0.12.5
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling http-body v1.0.1
+   Compiling rayon v1.12.0
+   Compiling http-body-util v0.1.3
+   Compiling memra-tokenizer v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-tokenizer)
+   Compiling ref-cast-impl v1.0.26
+   Compiling serde_path_to_error v0.1.20
+   Compiling serde_derive v1.0.228
+   Compiling tokio-macros v2.7.0
+   Compiling strum_macros v0.28.0
+   Compiling bytemuck_derive v1.11.0
+   Compiling async-trait v0.1.89
+   Compiling async-stream-impl v0.3.6
+   Compiling async-stream v0.3.6
+   Compiling tokio v1.52.3
+   Compiling axum-core v0.4.5
+   Compiling memra-kv v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-kv)
+   Compiling memra-runtime v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-runtime)
+   Compiling strum v0.28.0
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling fluent-uri v0.3.2
+   Compiling toktrie v1.7.6
+   Compiling serde_urlencoded v0.7.1
+   Compiling memra-lanes v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-lanes)
+   Compiling toml_edit v0.22.27
+   Compiling derivre v0.3.12
+   Compiling referencing v0.29.1
+   Compiling hyper v1.10.1
+   Compiling tower v0.5.3
+   Compiling toml v0.8.23
+   Compiling hyper-util v0.1.20
+   Compiling axum v0.7.9
+warning: memra-engine@0.73.1: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.73.1: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 3m 35s
+warning: memra-engine@0.73.1: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.73.1: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 11.06s
+   Compiling memra-tokenizer v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-tokenizer)
+    Finished `release` profile [optimized] target(s) in 0.24s
+build_done=2026-08-10T07:53:33Z
+7f04f76715d637c46a379366a833d518aed9d465a5dcfd1ffee53be79d9b9cef  /home/ubuntu/memra-cx-ringval-target-ringval/release/memra-server
+artifact=/home/ubuntu/memra-cx-ringval-target-ringval/release/memra-server bytes=51668152 mtime=2026-08-10 07:53:21.947925781 +0000
+c499498820478f2f355955ae0b963855dd1378142c4d83251f6980c1ab54588a  /home/ubuntu/memra-cx-ringval-target-ringval/release/kernel-check
+artifact=/home/ubuntu/memra-cx-ringval-target-ringval/release/kernel-check bytes=41690496 mtime=2026-08-10 07:53:33.036887738 +0000
+833b11f7e6f76e014bd94bf17f3543f3354d6ab23624b7dfc98bfb3d63eeefd5  /home/ubuntu/memra-cx-ringval-target-ringval/release/run-gen
+artifact=/home/ubuntu/memra-cx-ringval-target-ringval/release/run-gen bytes=44010560 mtime=2026-08-10 07:53:25.142914811 +0000
+942d0d1260ad44e8e349b1049c49d47faf692ffede318452972cef8a751100d1  /home/ubuntu/memra-cx-ringval-target-ringval/release/run-spec
+artifact=/home/ubuntu/memra-cx-ringval-target-ringval/release/run-spec bytes=44010064 mtime=2026-08-10 07:53:24.686916375 +0000
+b685f4067a6242df0b8f0d98dfa9a29d247fe4d013a65519f0d15668a450d7f8  /home/ubuntu/memra-cx-ringval-target-ringval/release/replay-acceptance
+artifact=/home/ubuntu/memra-cx-ringval-target-ringval/release/replay-acceptance bytes=42642808 mtime=2026-08-10 07:53:24.719916262 +0000
+1780a91a898c5aaae1202ac9bea9160c5ce0385756cad599780191717fda5698  /home/ubuntu/memra-cx-ringval-target-ringval/release/concat-prime-probe
+artifact=/home/ubuntu/memra-cx-ringval-target-ringval/release/concat-prime-probe bytes=43571936 mtime=2026-08-10 07:53:25.765912675 +0000
+201a715df82a2c7d4ef14b3840a7c826f401777f694aa887886aa6d4b4ddfa87  /home/ubuntu/memra-cx-ringval-target-ringval/release/prime-batch-gate
+artifact=/home/ubuntu/memra-cx-ringval-target-ringval/release/prime-batch-gate bytes=42983224 mtime=2026-08-10 07:53:24.331917593 +0000
+52b18f8453c683de69c4bd0605597316bae9b1d5378034332aaabdae02a89f3c  /home/ubuntu/memra-cx-ringval-target-ringval/release/decode-batch-gate
+artifact=/home/ubuntu/memra-cx-ringval-target-ringval/release/decode-batch-gate bytes=43375312 mtime=2026-08-10 07:53:25.478913659 +0000
+57fe150f254ad22ded5bce615791c79ab1d2f47e8463f4973acfe5ff0005f094  /home/ubuntu/memra-cx-ringval-target-ringval/release/tok-check
+artifact=/home/ubuntu/memra-cx-ringval-target-ringval/release/tok-check bytes=680104 mtime=2026-08-10 07:53:33.313886789 +0000
+clean_build_verdict=PASS
+lock_released=2026-08-10T07:53:33Z

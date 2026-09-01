@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/opt/scratch/nvme/cx-gscost/memra/research/gscost-20260813/reduce.py", line 265, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/opt/scratch/nvme/cx-gscost/memra/research/gscost-20260813/reduce.py", line 257, in main
+    "thermal": reduce_thermal(args.thermal),
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/scratch/nvme/cx-gscost/memra/research/gscost-20260813/reduce.py", line 228, in reduce_thermal
+    raise ValueError(f"neighbour GPU was not idle: {result['gpu1']}")
+ValueError: neighbour GPU was not idle: {'samples': 13075, 'active_samples': 15, 'temperature_c_min': 26.0, 'temperature_c_max': 27.0, 'active_sm_clock_mhz_min': 180.0, 'active_sm_clock_mhz_max': 180.0, 'power_limit_w_values': [600.0], 'memory_used_mib_max': 1.0, 'utilization_pct_max': 0.0}

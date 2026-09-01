@@ -1,0 +1,6 @@
+=== cachespec RunPod receipt ts=20260808T220100Z source_commit=a2a48d34d00a02047a3a68c4cd0e1bfceac0311b host=2a52525b1c93
+shape: sequential=12 c=4 max_tokens=768 base_notes=80
+=== RunPod lock acquired 2026-08-08T22:01:05Z
+FAIL: instrumented RunPod server did not become ready
+/workspace/memra-cx-cachespec/target/release/memra-server: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.39' not found (required by /workspace/memra-cx-cachespec/target/release/memra-server)
+OWNER_SERVER_RESTORED pid=10547 2026-08-08T22:02:08Z

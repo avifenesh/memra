@@ -1,0 +1,7 @@
+# qwen4exp_real_gate	label=r2spec-262k-thinkon	binary_sha256=2eeda2dfb36e35d3f34c47c7410be7a0c230259ae67a47cb653a8fedce77f633	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=(unset)
+# ladder	rungs=[262144]	chunk=2048	decode=36	kv_dev1=false	spec=Some(5)	ids=1150000	cap=262246
+# vram	pre-ladder	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+rung	prefill_s	draft_prefill_s	decode_ms_per_tok	tok_per_s	accept	rounds	zero_draft	sub_rounds	spread_pct	looped	cross_mb	vram	continuation_ids
+# spec-shape	source=/home/ubuntu/realgate/shapes/thinkon-prompts.tsv	suffix_tokens=83

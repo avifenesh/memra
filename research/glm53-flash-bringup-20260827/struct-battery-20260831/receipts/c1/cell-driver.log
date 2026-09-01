@@ -1,0 +1,284 @@
+######## C1 BOOT dhoff-1 ########
+[sb] no pidfile, nothing to stop
+[sb] launched pid=155011 boot=c1-dhoff-1 nonce=9c625b74-6ead-46a5-a27e-c16e4b39058f
+[sb] READY after 40s
+[sb] GATES GREEN boot=c1-dhoff-1
+[sample] ok=True wall=1.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+engage=bf16-tcols-wide(T,default-on) expected=1 lines=1
+engage=bf16-tcols-x1(X,default-on) expected=1 lines=1
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=1 lines=1
+engage=glm5-verify-ws(W,default-on) expected=1 lines=1
+engage=moe-vrows-dev-tables(D) expected=0 lines=0
+engage=moe-vrows-dedup(S) expected=0 lines=0
+engage=verify-walk-batched expected=1 lines=1
+engage=verify-walk-per-row expected=0 lines=0
+engage=glm5-vrows expected=1 lines=1
+[sb] ENGAGE GREEN boot=c1-dhoff-1
+[timed] d00-code ttft=0.96 tok/s=68.7 spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d01-code ttft=0.988 tok/s=63.9 spec={'rounds': 103, 'drafted': 235, 'accepted': 152, 'acceptance_rate': 0.6468085106382979} err=None
+[timed] d02-code ttft=1.037 tok/s=61.2 spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[timed] d03-code ttft=0.975 tok/s=60.7 spec={'rounds': 105, 'drafted': 236, 'accepted': 153, 'acceptance_rate': 0.6483050847457628} err=None
+[timed] d04-code ttft=1.044 tok/s=71.5 spec={'rounds': 81, 'drafted': 202, 'accepted': 151, 'acceptance_rate': 0.7475247524752475} err=None
+[timed] d05-code ttft=0.823 tok/s=72.2 spec={'rounds': 91, 'drafted': 206, 'accepted': 165, 'acceptance_rate': 0.8009708737864077} err=None
+[timed] d06-prose ttft=0.801 tok/s=76.1 spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[timed] d07-prose ttft=0.995 tok/s=75.2 spec={'rounds': 88, 'drafted': 215, 'accepted': 168, 'acceptance_rate': 0.7813953488372093} err=None
+[timed] d08-prose ttft=0.905 tok/s=69.5 spec={'rounds': 93, 'drafted': 227, 'accepted': 165, 'acceptance_rate': 0.7268722466960352} err=None
+[timed] d09-prose ttft=0.898 tok/s=72.0 spec={'rounds': 96, 'drafted': 208, 'accepted': 162, 'acceptance_rate': 0.7788461538461539} err=None
+[timed l3] l3-WARM ttft=1.017 tok/s=85.9 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.442 tok/s=58.3 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=3.75 tok/s=56.8 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.194 tok/s=59.7 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.05 err=None
+[timed deep] l3-A4630 ttft=3.438 err=None
+[timed vendor] d04-code tok/s=70.6 spec={'rounds': 77, 'drafted': 193, 'accepted': 145, 'acceptance_rate': 0.7512953367875648} err=None
+engagement: glm5spec=38 vrows=1 devtables=0
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+C1_dhoff-1_EXIT=0
+######## C1 BOOT dhon-1 ########
+[sb] SIGTERM pid=155011 exe=/root/memra-struct/target/release/memra-server
+[sb] stopped
+[sb] launched pid=155344 boot=c1-dhon-1 nonce=cede0c61-f113-4fd2-ad2e-9f77be4125b1
+[sb] READY after 40s
+[sb] GATES GREEN boot=c1-dhon-1
+[sample] ok=True wall=1.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+engage=bf16-tcols-wide(T,default-on) expected=1 lines=1
+engage=bf16-tcols-x1(X,default-on) expected=1 lines=1
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=1 lines=1
+engage=glm5-verify-ws(W,default-on) expected=1 lines=1
+engage=moe-vrows-dev-tables(D) expected=1 lines=1
+engage=moe-vrows-dedup(S) expected=0 lines=0
+engage=verify-walk-batched expected=1 lines=1
+engage=verify-walk-per-row expected=0 lines=0
+engage=glm5-vrows expected=1 lines=1
+[moe-vrows-dev-tables] engaged: pointer/scale tables built on device from the router's own sel/w; the per-layer pinned readback and its cuStreamSynchronize are skipped (MEMRA_MOE_VROWS_DEV_TABLES=1)
+[sb] ENGAGE GREEN boot=c1-dhon-1
+[timed] d00-code ttft=0.954 tok/s=69.6 spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d01-code ttft=0.979 tok/s=64.9 spec={'rounds': 103, 'drafted': 235, 'accepted': 152, 'acceptance_rate': 0.6468085106382979} err=None
+[timed] d02-code ttft=1.028 tok/s=62.1 spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[timed] d03-code ttft=0.966 tok/s=61.6 spec={'rounds': 105, 'drafted': 236, 'accepted': 153, 'acceptance_rate': 0.6483050847457628} err=None
+[timed] d04-code ttft=1.036 tok/s=72.5 spec={'rounds': 81, 'drafted': 202, 'accepted': 151, 'acceptance_rate': 0.7475247524752475} err=None
+[timed] d05-code ttft=0.815 tok/s=73.5 spec={'rounds': 91, 'drafted': 206, 'accepted': 165, 'acceptance_rate': 0.8009708737864077} err=None
+[timed] d06-prose ttft=0.791 tok/s=77.5 spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[timed] d07-prose ttft=0.988 tok/s=76.3 spec={'rounds': 88, 'drafted': 215, 'accepted': 168, 'acceptance_rate': 0.7813953488372093} err=None
+[timed] d08-prose ttft=0.897 tok/s=70.5 spec={'rounds': 93, 'drafted': 227, 'accepted': 165, 'acceptance_rate': 0.7268722466960352} err=None
+[timed] d09-prose ttft=0.889 tok/s=73.1 spec={'rounds': 96, 'drafted': 208, 'accepted': 162, 'acceptance_rate': 0.7788461538461539} err=None
+[timed l3] l3-WARM ttft=1.009 tok/s=87.2 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.438 tok/s=59.2 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=3.754 tok/s=57.6 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.205 tok/s=60.5 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.043 err=None
+[timed deep] l3-A4630 ttft=3.428 err=None
+[timed vendor] d04-code tok/s=59.4 spec={'rounds': 108, 'drafted': 232, 'accepted': 147, 'acceptance_rate': 0.6336206896551724} err=None
+engagement: glm5spec=38 vrows=1 devtables=1
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+C1_dhon-1_EXIT=0
+######## C1 BOOT dhoff-2 ########
+[sb] SIGTERM pid=155344 exe=/root/memra-struct/target/release/memra-server
+[sb] stopped
+[sb] launched pid=155677 boot=c1-dhoff-2 nonce=7a7631cd-0e5a-4e2a-9f48-df44a634ca95
+[sb] READY after 40s
+[sb] GATES GREEN boot=c1-dhoff-2
+[sample] ok=True wall=1.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+engage=bf16-tcols-wide(T,default-on) expected=1 lines=1
+engage=bf16-tcols-x1(X,default-on) expected=1 lines=1
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=1 lines=1
+engage=glm5-verify-ws(W,default-on) expected=1 lines=1
+engage=moe-vrows-dev-tables(D) expected=0 lines=0
+engage=moe-vrows-dedup(S) expected=0 lines=0
+engage=verify-walk-batched expected=1 lines=1
+engage=verify-walk-per-row expected=0 lines=0
+engage=glm5-vrows expected=1 lines=1
+[sb] ENGAGE GREEN boot=c1-dhoff-2
+[timed] d00-code ttft=0.962 tok/s=68.5 spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d01-code ttft=0.989 tok/s=63.8 spec={'rounds': 103, 'drafted': 235, 'accepted': 152, 'acceptance_rate': 0.6468085106382979} err=None
+[timed] d02-code ttft=1.039 tok/s=61.1 spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[timed] d03-code ttft=0.979 tok/s=60.6 spec={'rounds': 105, 'drafted': 236, 'accepted': 153, 'acceptance_rate': 0.6483050847457628} err=None
+[timed] d04-code ttft=1.048 tok/s=71.4 spec={'rounds': 81, 'drafted': 202, 'accepted': 151, 'acceptance_rate': 0.7475247524752475} err=None
+[timed] d05-code ttft=0.824 tok/s=72.1 spec={'rounds': 91, 'drafted': 206, 'accepted': 165, 'acceptance_rate': 0.8009708737864077} err=None
+[timed] d06-prose ttft=0.802 tok/s=76.0 spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[timed] d07-prose ttft=0.996 tok/s=75.1 spec={'rounds': 88, 'drafted': 215, 'accepted': 168, 'acceptance_rate': 0.7813953488372093} err=None
+[timed] d08-prose ttft=0.906 tok/s=69.4 spec={'rounds': 93, 'drafted': 227, 'accepted': 165, 'acceptance_rate': 0.7268722466960352} err=None
+[timed] d09-prose ttft=0.899 tok/s=71.9 spec={'rounds': 96, 'drafted': 208, 'accepted': 162, 'acceptance_rate': 0.7788461538461539} err=None
+[timed l3] l3-WARM ttft=1.018 tok/s=85.8 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.453 tok/s=58.3 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=3.757 tok/s=56.7 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.213 tok/s=59.7 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.052 err=None
+[timed deep] l3-A4630 ttft=3.445 err=None
+[timed vendor] d04-code tok/s=58.4 spec={'rounds': 109, 'drafted': 231, 'accepted': 149, 'acceptance_rate': 0.645021645021645} err=None
+engagement: glm5spec=38 vrows=1 devtables=0
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+C1_dhoff-2_EXIT=0
+######## C1 BOOT dhon-2 ########
+[sb] SIGTERM pid=155677 exe=/root/memra-struct/target/release/memra-server
+[sb] stopped
+[sb] launched pid=156021 boot=c1-dhon-2 nonce=ed1aec30-324e-445f-90cf-8438cd884986
+[sb] READY after 41s
+[sb] GATES GREEN boot=c1-dhon-2
+[sample] ok=True wall=1.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+engage=bf16-tcols-wide(T,default-on) expected=1 lines=1
+engage=bf16-tcols-x1(X,default-on) expected=1 lines=1
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=1 lines=1
+engage=glm5-verify-ws(W,default-on) expected=1 lines=1
+engage=moe-vrows-dev-tables(D) expected=1 lines=1
+engage=moe-vrows-dedup(S) expected=0 lines=0
+engage=verify-walk-batched expected=1 lines=1
+engage=verify-walk-per-row expected=0 lines=0
+engage=glm5-vrows expected=1 lines=1
+[moe-vrows-dev-tables] engaged: pointer/scale tables built on device from the router's own sel/w; the per-layer pinned readback and its cuStreamSynchronize are skipped (MEMRA_MOE_VROWS_DEV_TABLES=1)
+[sb] ENGAGE GREEN boot=c1-dhon-2
+[timed] d00-code ttft=0.954 tok/s=69.6 spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d01-code ttft=0.979 tok/s=64.8 spec={'rounds': 103, 'drafted': 235, 'accepted': 152, 'acceptance_rate': 0.6468085106382979} err=None
+[timed] d02-code ttft=1.03 tok/s=62.1 spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[timed] d03-code ttft=0.965 tok/s=61.6 spec={'rounds': 105, 'drafted': 236, 'accepted': 153, 'acceptance_rate': 0.6483050847457628} err=None
+[timed] d04-code ttft=1.037 tok/s=72.5 spec={'rounds': 81, 'drafted': 202, 'accepted': 151, 'acceptance_rate': 0.7475247524752475} err=None
+[timed] d05-code ttft=0.816 tok/s=73.5 spec={'rounds': 91, 'drafted': 206, 'accepted': 165, 'acceptance_rate': 0.8009708737864077} err=None
+[timed] d06-prose ttft=0.792 tok/s=77.4 spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[timed] d07-prose ttft=0.988 tok/s=76.2 spec={'rounds': 88, 'drafted': 215, 'accepted': 168, 'acceptance_rate': 0.7813953488372093} err=None
+[timed] d08-prose ttft=0.897 tok/s=70.5 spec={'rounds': 93, 'drafted': 227, 'accepted': 165, 'acceptance_rate': 0.7268722466960352} err=None
+[timed] d09-prose ttft=0.889 tok/s=73.1 spec={'rounds': 96, 'drafted': 208, 'accepted': 162, 'acceptance_rate': 0.7788461538461539} err=None
+[timed l3] l3-WARM ttft=1.008 tok/s=87.1 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.441 tok/s=59.2 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=3.751 tok/s=57.6 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.205 tok/s=60.5 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.043 err=None
+[timed deep] l3-A4630 ttft=3.429 err=None
+[timed vendor] d04-code tok/s=70.1 spec={'rounds': 46, 'drafted': 100, 'accepted': 61, 'acceptance_rate': 0.61} err=None
+engagement: glm5spec=38 vrows=1 devtables=1
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+C1_dhon-2_EXIT=0
+######## C1 BOOT dhoff-3 ########
+[sb] SIGTERM pid=156021 exe=/root/memra-struct/target/release/memra-server
+[sb] stopped
+[sb] launched pid=156357 boot=c1-dhoff-3 nonce=816275d3-b3d9-4fb6-838f-33d8e6140369
+[sb] READY after 40s
+[sb] GATES GREEN boot=c1-dhoff-3
+[sample] ok=True wall=1.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+engage=bf16-tcols-wide(T,default-on) expected=1 lines=1
+engage=bf16-tcols-x1(X,default-on) expected=1 lines=1
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=1 lines=1
+engage=glm5-verify-ws(W,default-on) expected=1 lines=1
+engage=moe-vrows-dev-tables(D) expected=0 lines=0
+engage=moe-vrows-dedup(S) expected=0 lines=0
+engage=verify-walk-batched expected=1 lines=1
+engage=verify-walk-per-row expected=0 lines=0
+engage=glm5-vrows expected=1 lines=1
+[sb] ENGAGE GREEN boot=c1-dhoff-3
+[timed] d00-code ttft=0.961 tok/s=68.5 spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d01-code ttft=0.989 tok/s=63.8 spec={'rounds': 103, 'drafted': 235, 'accepted': 152, 'acceptance_rate': 0.6468085106382979} err=None
+[timed] d02-code ttft=1.039 tok/s=61.1 spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[timed] d03-code ttft=0.977 tok/s=60.6 spec={'rounds': 105, 'drafted': 236, 'accepted': 153, 'acceptance_rate': 0.6483050847457628} err=None
+[timed] d04-code ttft=1.047 tok/s=71.4 spec={'rounds': 81, 'drafted': 202, 'accepted': 151, 'acceptance_rate': 0.7475247524752475} err=None
+[timed] d05-code ttft=0.824 tok/s=72.1 spec={'rounds': 91, 'drafted': 206, 'accepted': 165, 'acceptance_rate': 0.8009708737864077} err=None
+[timed] d06-prose ttft=0.802 tok/s=76.0 spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[timed] d07-prose ttft=0.997 tok/s=75.1 spec={'rounds': 88, 'drafted': 215, 'accepted': 168, 'acceptance_rate': 0.7813953488372093} err=None
+[timed] d08-prose ttft=0.907 tok/s=69.4 spec={'rounds': 93, 'drafted': 227, 'accepted': 165, 'acceptance_rate': 0.7268722466960352} err=None
+[timed] d09-prose ttft=0.899 tok/s=71.9 spec={'rounds': 96, 'drafted': 208, 'accepted': 162, 'acceptance_rate': 0.7788461538461539} err=None
+[timed l3] l3-WARM ttft=1.018 tok/s=85.8 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.453 tok/s=58.3 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=3.758 tok/s=56.7 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.219 tok/s=59.7 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.059 err=None
+[timed deep] l3-A4630 ttft=3.471 err=None
+[timed vendor] d04-code tok/s=54.3 spec={'rounds': 109, 'drafted': 282, 'accepted': 149, 'acceptance_rate': 0.5283687943262412} err=None
+engagement: glm5spec=38 vrows=1 devtables=0
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+C1_dhoff-3_EXIT=0
+######## C1 BOOT dhon-3 ########
+[sb] SIGTERM pid=156357 exe=/root/memra-struct/target/release/memra-server
+[sb] stopped
+[sb] launched pid=156690 boot=c1-dhon-3 nonce=008ab818-908f-41eb-b325-eaf823800136
+[sb] READY after 38s
+[sb] GATES GREEN boot=c1-dhon-3
+[sample] ok=True wall=1.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+engage=bf16-tcols-wide(T,default-on) expected=1 lines=1
+engage=bf16-tcols-x1(X,default-on) expected=1 lines=1
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=1 lines=1
+engage=glm5-verify-ws(W,default-on) expected=1 lines=1
+engage=moe-vrows-dev-tables(D) expected=1 lines=1
+engage=moe-vrows-dedup(S) expected=0 lines=0
+engage=verify-walk-batched expected=1 lines=1
+engage=verify-walk-per-row expected=0 lines=0
+engage=glm5-vrows expected=1 lines=1
+[moe-vrows-dev-tables] engaged: pointer/scale tables built on device from the router's own sel/w; the per-layer pinned readback and its cuStreamSynchronize are skipped (MEMRA_MOE_VROWS_DEV_TABLES=1)
+[sb] ENGAGE GREEN boot=c1-dhon-3
+[timed] d00-code ttft=0.953 tok/s=69.6 spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d01-code ttft=0.979 tok/s=64.8 spec={'rounds': 103, 'drafted': 235, 'accepted': 152, 'acceptance_rate': 0.6468085106382979} err=None
+[timed] d02-code ttft=1.029 tok/s=62.1 spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[timed] d03-code ttft=0.965 tok/s=61.6 spec={'rounds': 105, 'drafted': 236, 'accepted': 153, 'acceptance_rate': 0.6483050847457628} err=None
+[timed] d04-code ttft=1.036 tok/s=72.5 spec={'rounds': 81, 'drafted': 202, 'accepted': 151, 'acceptance_rate': 0.7475247524752475} err=None
+[timed] d05-code ttft=0.815 tok/s=73.5 spec={'rounds': 91, 'drafted': 206, 'accepted': 165, 'acceptance_rate': 0.8009708737864077} err=None
+[timed] d06-prose ttft=0.791 tok/s=77.5 spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[timed] d07-prose ttft=0.988 tok/s=76.2 spec={'rounds': 88, 'drafted': 215, 'accepted': 168, 'acceptance_rate': 0.7813953488372093} err=None
+[timed] d08-prose ttft=0.904 tok/s=70.5 spec={'rounds': 93, 'drafted': 227, 'accepted': 165, 'acceptance_rate': 0.7268722466960352} err=None
+[timed] d09-prose ttft=0.89 tok/s=73.1 spec={'rounds': 96, 'drafted': 208, 'accepted': 162, 'acceptance_rate': 0.7788461538461539} err=None
+[timed l3] l3-WARM ttft=1.007 tok/s=87.1 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.437 tok/s=59.2 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=3.754 tok/s=57.5 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.211 tok/s=60.5 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.044 err=None
+[timed deep] l3-A4630 ttft=3.432 err=None
+[timed vendor] d04-code tok/s=64.2 spec={'rounds': 97, 'drafted': 227, 'accepted': 160, 'acceptance_rate': 0.7048458149779736} err=None
+engagement: glm5spec=38 vrows=1 devtables=1
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+C1_dhon-3_EXIT=0
+[sb] SIGTERM pid=156690 exe=/root/memra-struct/target/release/memra-server
+[sb] stopped
+=== LOOP-LAW SCREEN (all c1 tapes) ===
+[loop-law] screened=84 flagged=0
+=== CROSS-ARM TAPE IDENTITY (D+H are bit gates on the rig; divergence = STOP) ===
+[compare] /root/out-struct/c1/dhoff-1 vs /root/out-struct/c1/dhon-1: shared=14 identical=14 diverged=0
+[compare] /root/out-struct/c1/dhoff-1 vs /root/out-struct/c1/dhon-2: shared=14 identical=14 diverged=0
+[compare] /root/out-struct/c1/dhoff-1 vs /root/out-struct/c1/dhon-3: shared=14 identical=14 diverged=0
+C1_IDENTITY_RC=0
+=== C1 D+H PRICE TABLE (baseline = ship config, D+H pinned =0) ===
+{
+ "dhoff": {
+  "n_boots": 3,
+  "dec_tok_s_median": 70.40315699643081,
+  "dec_boot_medians": [
+   70.475,
+   70.403,
+   70.396
+  ],
+  "spread_abs_tok_s": 0.079,
+  "spread_rel_pct": 0.1122,
+  "deep_tok_s_median": 58.98167855386589,
+  "pool_ttft_median": 0.9693256600294262,
+  "ttft_04k_median": 1.0520537360571325,
+  "ttft_37k_median": 3.444807786028832,
+  "vendor_tok_s_median": 58.35617318178716,
+  "vendor_excluded": []
+ },
+ "dhon": {
+  "n_boots": 3,
+  "dec_tok_s_median": 71.48857410199187,
+  "dec_boot_medians": [
+   71.508,
+   71.489,
+   71.484
+  ],
+  "spread_abs_tok_s": 0.0241,
+  "spread_rel_pct": 0.0338,
+  "deep_tok_s_median": 59.862251346129504,
+  "pool_ttft_median": 0.9592132314573973,
+  "ttft_04k_median": 1.0434133689850569,
+  "ttft_37k_median": 3.4288398472126573,
+  "vendor_tok_s_median": 61.82214332009026,
+  "vendor_excluded": [
+   "ct=107 finish=stop err=None"
+  ],
+  "gap_vs_baseline_tok_s": 1.085,
+  "ratio_vs_baseline": 1.0154,
+  "pooled_spread_tok_s": 0.079,
+  "verdict": "WIN"
+ }
+}
+X3_SUFFICIENT: no escalation rule fired (spreads receipted above)
+C1_ROUNDS_DONE: 1 2 3 rc=0 idrc=0

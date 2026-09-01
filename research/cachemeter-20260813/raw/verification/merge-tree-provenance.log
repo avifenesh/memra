@@ -1,0 +1,27 @@
+2026-08-13T08:02:17+03:00
+origin_main=56f7ac0d8a20c367d6dba25cc03427098bf7f248
+fix_commit=96361c531d26bdd95f4330617b872b2fa7d96f3d
+fix_tree=34db584815f9e96f03d10a70711ce594e742d2c5
+tree 2d55b47d278319363e8fa3d957185841c2348b66
+parent 96361c531d26bdd95f4330617b872b2fa7d96f3d
+parent d43962d1bc6401c06241ac77152f05fdec5a25dc
+author Avi Fenesh <redacted@users.noreply.github.com> 1786597031 +0300
+committer Avi Fenesh <redacted@users.noreply.github.com> 1786597031 +0300
+
+TEMP verification merge: prefix fix plus cx-budgetsize
+tree 9310d8008700aca49de0add89a877ba799cc71ad
+parent 96361c531d26bdd95f4330617b872b2fa7d96f3d
+parent 115f444b4aa59da8a290cf48a506284074236016
+author Avi Fenesh <redacted@users.noreply.github.com> 1786597031 +0300
+committer Avi Fenesh <redacted@users.noreply.github.com> 1786597031 +0300
+
+TEMP verification merge: prefix fix plus cx-shmconflict
+budget_engine_diff_check_exit=0
+shm_engine_diff_check_exit=0
+M	crates/memra-server/src/main.rs
+M	crates/memra-server/src/worker.rs
+M	docs/FLAGS.md
+M	docs/SERVING.md
+M	crates/memra-engine/cu/flash_attn.cu
+5c602b340bf119e1b8159e6e195359d4cef7a4e8:crates/memra-server/src/worker.rs:3190:            Some(l) if l.len == 0 && cache.pos > 0 => {
+50d3350be148af1be9c0a7820c0adfa171a3f873:crates/memra-server/src/worker.rs:3190:            Some(l) if l.len == 0 && cache.pos > 0 => {

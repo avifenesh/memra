@@ -1,0 +1,34 @@
+{
+  "actual_shape_text_identity": "PASS",
+  "completed_utc": "2026-08-13T02:45:28Z",
+  "lock": "/tmp/memra-5090.lock",
+  "models": {
+    "q27": {
+      "path": "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf",
+      "sha256": "d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517"
+    },
+    "q35": {
+      "path": "/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+      "sha256": "df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf"
+    }
+  },
+  "prompt_ids_sha256_canonical_json": "eba9dff66d4ebf3f40d6db80298ab9c884fa1bb2e1a6d4ca2c7dadd4f21513fb",
+  "prompt_tokens": 4860,
+  "repetitions": 5,
+  "schema": "memra.fa3softmax.measurement-provenance.v1",
+  "servers": {
+    "baseline": {
+      "path": "/home/avifenesh/.cache/memra-targets/cx-shmconflict-base-v0813/release/memra-server",
+      "sha256": "4f0205c2cc2b31cdde89a395b41211f2663caa76b333b55ba7a4a4a085e48521"
+    },
+    "candidate": {
+      "path": "/home/avifenesh/.cache/memra-targets/cx-shmconflict-candidate-v1/release/memra-server",
+      "sha256": "73a049376dc31bb5081d4369d2429a37a02dad34952f482f5019df767baa86ec"
+    }
+  },
+  "started_utc": "2026-08-13T02:41:18Z",
+  "thermal_cap_mhz": [
+    210,
+    1200
+  ]
+}

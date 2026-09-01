@@ -1,0 +1,64 @@
+{
+  "metric": "decode_window_tok_s",
+  "points": {
+    "c1": {
+      "default_median_tok_s": 84.4303660763373,
+      "default_tok_s": [
+        84.4303660763373,
+        84.4209247617446,
+        84.38711461974887,
+        84.5200101259821,
+        84.49983484036851
+      ],
+      "median_of_arm_medians_delta_pct": 1.425071052409299,
+      "paired_delta_median_pct": 1.425071052409299,
+      "paired_delta_pct": [
+        1.425071052409299,
+        1.1072198801868494,
+        1.479946372141594,
+        1.4175939397586657,
+        2.191763546570291
+      ],
+      "paired_wins": 5,
+      "rollback_median_tok_s": 83.24407880642218,
+      "rollback_tok_s": [
+        83.24407880642218,
+        83.49643562723247,
+        83.15644384585025,
+        83.33860708250127,
+        82.68751992117319
+      ]
+    },
+    "c8": {
+      "default_median_tok_s": 162.99239427198754,
+      "default_tok_s": [
+        162.96949457527265,
+        162.55373544586956,
+        163.03380441666553,
+        162.99239427198754,
+        163.13643286229117
+      ],
+      "median_of_arm_medians_delta_pct": 4.252399631690307,
+      "paired_delta_median_pct": 4.232331883231977,
+      "paired_delta_pct": [
+        4.165316565879218,
+        3.9718268144942837,
+        4.232331883231977,
+        4.289103034849839,
+        4.863177506688254
+      ],
+      "paired_wins": 5,
+      "rollback_median_tok_s": 156.34402167030947,
+      "rollback_tok_s": [
+        156.4527425711828,
+        156.34402167030947,
+        156.4138511256823,
+        156.2889981108775,
+        155.57075108837532
+      ]
+    }
+  },
+  "runs_per_arm": 5,
+  "schema": "memra.sigrouter.perf.v1",
+  "thermal_regime": "one exclusive GPU-lock hold; fresh server per arm; one warmup burst; default and rollback order alternated by repetition; c1 and c8 order reversed between arms; continuous 250 ms NVML sampling"
+}

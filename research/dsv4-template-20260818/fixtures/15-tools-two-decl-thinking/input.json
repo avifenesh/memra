@@ -1,0 +1,63 @@
+{
+  "turns": [
+    {
+      "role": "system",
+      "content": "Use tools."
+    },
+    {
+      "role": "user",
+      "content": "Weather then compute 2+2."
+    }
+  ],
+  "think": "thinking",
+  "reasoning_effort": null,
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a specific location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city name"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "celsius",
+                "fahrenheit"
+              ],
+              "description": "Temperature unit"
+            }
+          },
+          "required": [
+            "location"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate",
+        "description": "Evaluate an arithmetic expression",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "expr": {
+              "type": "string",
+              "description": "The expression"
+            }
+          },
+          "required": [
+            "expr"
+          ]
+        }
+      }
+    }
+  ],
+  "add_generation_prompt": true
+}

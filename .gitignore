@@ -1,0 +1,56 @@
+target/
+build/
+*.o
+*.so
+*.gguf
+*.safetensors
+__pycache__/
+.venv/
+research/raw/
+probe/arch_probe
+probe/bw_bench
+probe/tc_peak
+probe/lowbit_peak
+probe/epilogue_hoist_equiv
+probe/int8_swizzle_aload
+probe/*.o
+tools/llama_logits
+tools/ggml_dequant_ref
+tools/ggml_list_tensors
+.claude/worktrees/
+probe/int8_swizzle_aload
+probe/q4k_transient_decode
+probe/*.o
+lane/
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+probe/mxf4_transient_repack
+probe/kv_align_probe
+probe/pdl_probe
+target-*/
+
+# nsys full profiles capture the ENTIRE process environment (tokens, keys) —
+# 2026-08-06 credential-leak lesson. Commit exported kern-sum CSVs / text only.
+*.nsys-rep
+*.qdrep
+*.qdstrm
+research/ptx-audit-20260806/bin/
+.playwright-mcp/
+
+# Machine identity kept out of a public repo. Tracked instruction files point at
+# this file instead of naming an instance, address, host key or account id.
+LANE-LOCAL.md
+
+# Research captures built FROM the operator's own sessions. These hold personal and
+# cloud identity — an account id, an identity principal id, a payout wallet, rented box
+# addresses, an email — hundreds of occurrences across them, and redacting captures
+# in place would leave them useless as behaviour records anyway. Kept local by owner
+# decision 2026-08-16 rather than cleaned and published. If any of these ever needs
+# to be public, it gets redacted first and removed from this list deliberately.
+research/behaviour-corpus-20260813/
+research/brandwave-20260813/
+research/docwave-20260813/
+research/publishwave-20260813/
+research/rigor-check-20260813/
+research/statewave-20260813/

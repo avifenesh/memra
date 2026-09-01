@@ -1,0 +1,62 @@
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+timestamp=2026-08-11T02:26:15Z
+hostname=eb3f5389a86e
+kernel=Linux 6.8.0-136-generic x86_64 GNU/Linux
+nvidia_smi_header
+Tue Aug 11 02:26:15 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 610.57.04              KMD Version: 610.57.04     CUDA UMD Version: 13.3     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA RTX PRO 6000 Blac...    On  |   00000000:E1:00.0 Off |                  Off |
+| 30%   44C    P1             98W /  600W |   46290MiB /  97887MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA RTX PRO 6000 Blac...    On  |   00000000:F1:00.0 Off |                  Off |
+| 30%   44C    P1            100W /  600W |   56372MiB /  97887MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A           13667      C   ./target/release/memra-server         46090MiB |
+|    1   N/A  N/A           13667      C   ./target/release/memra-server         56172MiB |
++-----------------------------------------------------------------------------------------+
+gpu_query
+0, NVIDIA RTX PRO 6000 Blackwell Workstation Edition, GPU-8d6fa973-0e3c-c80e-6dca-befaa0082784, 610.57.04, P1, 44, 98.39 W, 600.00 W, 97887 MiB, 46290 MiB, 51000 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Workstation Edition, GPU-49e6b5eb-f4c6-5dce-fb29-bc11b062cec4, 610.57.04, P1, 44, 100.32 W, 600.00 W, 97887 MiB, 56372 MiB, 40918 MiB, 0 %
+compute_apps
+GPU-8d6fa973-0e3c-c80e-6dca-befaa0082784, 13667, ./target/release/memra-server, 46090 MiB
+GPU-49e6b5eb-f4c6-5dce-fb29-bc11b062cec4, 13667, ./target/release/memra-server, 56172 MiB
+processes
+13667 ./target/release/memra-server
+13803 python3 /root/soak.py
+14305 bash -c set -u printf "timestamp=%s\n" "$(date -u +%FT%TZ)" printf "hostname=%s\n" "$(hostname)" printf "kernel=%s\n" "$(uname -srmo)" printf "nvidia_smi_header\n" nvidia-smi printf "gpu_query\n" nvidia-smi --query-gpu=index,name,uuid,driver_version,pstate,temperature.gpu,power.draw,power.limit,memory.total,memory.used,memory.free,utilization.gpu --format=csv,noheader printf "compute_apps\n" nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv,noheader || true printf "processes\n" pgrep -af "memra-server|/root/soak.py" || true printf "listeners\n" ss -ltnp | grep -E ":8002|:8003" || true printf "health\n" curl -fsS --max-time 5 http://127.0.0.1:8002/health || true printf "models\n" curl -fsS --max-time 5 http://127.0.0.1:8002/v1/models || true printf "filesystems\n" df -h /workspace /root /data 2>&1 || true printf "candidate_repos\n" for repo in /workspace/memra /workspace/bw24-unified /root/memra /root/bw24-unified; do   if git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then     printf "%s " "$repo"     git -C "$repo" rev-parse HEAD     git -C "$repo" status --short --branch --untracked-files=no   fi done printf "artifacts\n" find /workspace /data /root -type f \( -name "Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf" -o -name "draft-daily-owntrim-nvfp4head-q4blk.gguf" \) -printf "%p %s bytes\n" 2>/dev/null || true printf "toolchain\n" rustc --version 2>&1 || true cargo --version 2>&1 || true nvcc --version 2>&1 || true 
+listeners
+LISTEN 0      128          0.0.0.0:8002      0.0.0.0:*    users:(("memra-server",pid=13667,fd=48))
+health
+{"status":"ok","models":["stepfun/step-3.7-flash"],"worker":{"phase":"idle","beat_age_ms":2866,"tick_max_ms":173,"stall_threshold_ms":120000,"generation":0,"xid_warnings":0}}models
+{"object":"list","data":[{"id":"stepfun/step-3.7-flash","name":"stepfun/step-3.7-flash","object":"model","created":1786406910,"context_length":262144,"architecture":{"modality":"text->text","tokenizer":"deepseek-v3","instruct_type":"chatml"},"supported_parameters":["max_tokens","temperature","top_p","stop","seed","response_format","structured_outputs","logit_bias","logprobs","top_logprobs","tools","tool_choice","reasoning","include_reasoning","reasoning_effort"],"pricing":{"prompt":"0","completion":"0","request":"0","image":"0"},"top_provider":{"context_length":262144,"max_completion_tokens":null}}]}filesystems
+df: /data: No such file or directory
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         200G  132G   69G  66% /
+overlay         200G  132G   69G  66% /
+candidate_repos
+/workspace/memra 5911de40f48d1d2fe36a92fef7b9b41cebc792f2
+## HEAD (no branch)
+artifacts
+toolchain
+bash: line 32: rustc: command not found
+bash: line 33: cargo: command not found
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Tue_Dec_16_07:23:41_PM_PST_2025
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0

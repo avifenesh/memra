@@ -1,0 +1,34 @@
+dsv4-decode-bench | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | variant clamp-only | n_new 1024 | devices [0, 1] | MEMRA_DSV4_EXPERT_ARM='native' MEMRA_DSV4_DECODE_PATH='device'
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f64
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=14s
+[load] layer 7 -> dev0 done t=28s
+[load] layer 11 -> dev0 done t=41s
+[load] layer 15 -> dev0 done t=55s
+[load] layer 19 -> dev0 done t=69s
+[load] layer 23 -> dev1 done t=83s
+[load] layer 27 -> dev1 done t=97s
+[load] layer 31 -> dev1 done t=110s
+[load] layer 35 -> dev1 done t=124s
+[load] layer 39 -> dev1 done t=138s
+[load] layer 42 -> dev1 done t=148s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path off (set MEMRA_DSV4_DRAFTER=dspark); trunk-only
+loaded: split at layer 22, t=149s
+[vram post-load] dev0 used 82.24/94.97 GiB (resident 81.51) | dev1 used 78.64/94.97 GiB (resident 77.94)
+[vram post-alloc] dev0 used 82.24/94.97 GiB (resident 81.51) | dev1 used 78.67/94.97 GiB (resident 77.94)
+prefill 32 tokens: 410.9 ms (informational)
+step 0: s=33 tok 1970 38.4 ms t=0.0s
+step 128: s=161 tok 64 38.5 ms t=5.0s
+step 256: s=289 tok 20 38.9 ms t=10.0s
+step 384: s=417 tok 666 39.0 ms t=15.1s
+step 512: s=545 tok 1132 39.2 ms t=20.2s
+step 640: s=673 tok 294 39.5 ms t=25.3s
+step 768: s=801 tok 0 39.7 ms t=30.5s
+step 896: s=929 tok 46460 39.8 ms t=35.6s
+step 1023: s=1056 tok 15974 41.7 ms t=40.8s
+[vram post-run] dev0 used 82.27/94.97 GiB (resident 81.51) | dev1 used 78.67/94.97 GiB (resident 77.94)
+decoded 1024 steps in 41.1s | stream sha256 12ec1d210e1431b61de38495d6498c1724ee3dafdbe0cf0ac13a1b5c21eb0870
+[window] s≈200: median 38.6 ms/step (min 38.5 / max 39.5, n=21) = 25.9 tok/s
+[window] s≈512: median 39.2 ms/step (min 39.1 / max 42.1, n=21) = 25.5 tok/s
+[window] s≈1024: median 40.7 ms/step (min 40.6 / max 43.5, n=21) = 24.6 tok/s
+banked /home/ubuntu/dsv4-it3-out/ab-f64-r2.json | total elapsed 191s | single-run: informational, NOT a perf claim

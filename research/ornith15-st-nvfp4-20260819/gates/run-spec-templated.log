@@ -1,0 +1,32 @@
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+loaded qwen35moe (41 layers, nextn=1)
+prompt tokens: [248045, 846, 198, 33963, 2250, 9944, 4947, 6826, 1056, 220, 16, 15, 15, 321, 1420, 781, 513, 9944, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   31 tok in 0.152s = 203.29 tok/s (gen-only; this run's prime 0.032s)
+  tokens: [760, 1156, 6587, 2250, 9944, 4947, 6826, 1056, 220, 16, 15, 15, 11, 321, 353, 1144, 310, 1420, 781, 513, 9944, 13, 271, 9764, 728, 3608, 2250, 47770, 6826, 1056, 220, 16]
+
+[generate_spec K=1] 32 tok in 0.264s = 117.45 tok/s (0.58x vs generate; this run's prime 0.032s)
+  acceptance: 14/18 = 77.8%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 32 tok in 0.316s = 98.04 tok/s (0.48x vs generate; this run's prime 0.032s)
+  acceptance: 16/32 = 50.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=3] 32 tok in 0.390s = 79.41 tok/s (0.39x vs generate; this run's prime 0.032s)
+  acceptance: 16/48 = 33.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 32 tok in 0.447s = 69.28 tok/s (0.34x vs generate; this run's prime 0.032s)
+  acceptance: 17/60 = 28.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 32 tok in 0.515s = 60.17 tok/s (0.30x vs generate; this run's prime 0.032s)
+  acceptance: 17/75 = 22.7%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=6] 32 tok in 0.586s = 52.90 tok/s (0.26x vs generate; this run's prime 0.032s)
+  acceptance: 17/90 = 18.9%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 32 tok in 0.651s = 47.63 tok/s (0.23x vs generate; this run's prime 0.032s)
+  acceptance: 17/105 = 16.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 32 tok in 0.722s = 42.94 tok/s (0.21x vs generate; this run's prime 0.032s)
+  acceptance: 17/120 = 14.2%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

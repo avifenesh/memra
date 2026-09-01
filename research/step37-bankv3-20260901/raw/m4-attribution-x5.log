@@ -1,0 +1,37 @@
+arm            boots  n_nonce  excl  decode  spread%%   wall  spread%%   ttft   acc   md5
+V3OFF              5        5     0  106.78    1.85  100.80    2.46  0.243  0.793  0ab9551f
+V3SM               5        5     0  105.35    3.12  100.73    2.62  0.246  0.782  0ab9551f
+V3SMGU             5        5     0  107.91    5.51  102.53    5.15  0.246  0.783  0ab9551f
+V3SMGUD8           5        5     0  113.83    1.97  107.75    2.33  0.246  0.775  0ab9551f
+
+RULE A FIRES  arm=V3OFF decode within-arm spread 1.85% > 0.5%
+RULE A FIRES  arm=V3OFF wall within-arm spread 2.46% > 0.5%
+RULE A FIRES  arm=V3SM decode within-arm spread 3.12% > 0.5%
+RULE A FIRES  arm=V3SM wall within-arm spread 2.62% > 0.5%
+RULE A FIRES  arm=V3SMGU decode within-arm spread 5.51% > 0.5%
+RULE A FIRES  arm=V3SMGU wall within-arm spread 5.15% > 0.5%
+RULE A FIRES  arm=V3SMGUD8 decode within-arm spread 1.97% > 0.5%
+RULE A FIRES  arm=V3SMGUD8 wall within-arm spread 2.33% > 0.5%
+
+CUMULATIVE ATTRIBUTION (each row is the delta to the row above — that delta IS the
+program's contribution, which is what one env var arming three programs could not give)
+step                       decode   d_decode    wall    d_wall   pooled_spread  verdict
+V3OFF                      106.78        --  100.80        --
+V3SM                       105.35   -1.43 (-1.34%)  100.73   -0.07 (-0.07%)   3.290 tok/s  WITHIN 2x POOLED SPREAD -> RULE B FIRES
+V3SMGU                     107.91   +2.56 (+2.43%)  102.53   +1.80 (+1.79%)   5.950 tok/s  WITHIN 2x POOLED SPREAD -> RULE B FIRES
+V3SMGUD8                   113.83   +5.92 (+5.48%)  107.75   +5.22 (+5.09%)   6.276 tok/s  WITHIN 2x POOLED SPREAD -> RULE B FIRES
+
+TOTAL V3OFF -> V3SMGUD8: decode 106.78 -> 113.83 (+6.60%), wall 100.80 -> 107.75 (+6.89%)
+
+ESCALATE TO x5 — rules fired:
+  arm=V3OFF rule=A metric=decode value=1.850
+  arm=V3OFF rule=A metric=wall value=2.455
+  arm=V3SM rule=A metric=decode value=3.123
+  arm=V3SM rule=A metric=wall value=2.616
+  arm=V3SMGU rule=A metric=decode value=5.514
+  arm=V3SMGU rule=A metric=wall value=5.155
+  arm=V3SMGUD8 rule=A metric=decode value=1.968
+  arm=V3SMGUD8 rule=A metric=wall value=2.334
+  arm=V3SM rule=B metric=decode value=1.430
+  arm=V3SMGU rule=B metric=decode value=2.565
+  arm=V3SMGUD8 rule=B metric=decode value=5.915

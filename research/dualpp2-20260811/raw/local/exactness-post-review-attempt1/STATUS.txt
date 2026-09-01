@@ -1,0 +1,9 @@
+INCOMPLETE_HARNESS_ATTEMPT
+
+The exact source release server build completed, but the zsh receipt helper then stopped before
+any focused test or model gate ran. The captured shell error was:
+
+run_logged:8: bad math expression: illegal character: {
+
+The helper had preserved Bash PIPESTATUS syntax literally under zsh. The GPU lock was released;
+the complete battery was rerun under Bash in ../exactness-post-review/.

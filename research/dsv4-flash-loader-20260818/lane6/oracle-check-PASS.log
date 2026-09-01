@@ -1,0 +1,82 @@
+dsv4-decode-oracle-check | prompt 32 | decode tokens 2176 | vocab 129280 | checkpoints 63
+GATE (a2) decode vs CPU ORACLE (thr4 = u·√86·√(2 ln n)·absmax_cpu, factor 1):
+| s | max-abs | thr4 | argmax d/c | in-band | top5 ovl/viol | top20 ovl/viol | verdict |
+| 33 | 2.844e0 | 7.008e0 | 1970/1970 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 34 | 9.278e-1 | 7.591e0 | 304/304 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 35 | 1.122e0 | 7.673e0 | 12827/12827 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 36 | 1.510e0 | 7.034e0 | 396/396 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 37 | 1.330e0 | 7.113e0 | 3517/3517 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 38 | 6.227e-1 | 8.041e0 | 9884/9884 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 39 | 8.940e-1 | 7.414e0 | 93/93 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 40 | 1.099e0 | 7.221e0 | 20/20 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 41 | 1.153e0 | 8.449e0 | 2913/2913 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 42 | 1.108e0 | 7.840e0 | 344/344 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 43 | 1.141e0 | 7.811e0 | 54195/54195 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 44 | 1.225e0 | 6.386e0 | 16/16 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 45 | 1.484e0 | 6.897e0 | 1350/1350 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 46 | 8.963e-1 | 7.354e0 | 5922/5922 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 47 | 1.001e0 | 7.129e0 | 11443/696 | flip(in-band, margin 0.2106) | 5/5 v0 | 19/20 v0 | PASS |
+| 48 | 1.241e0 | 7.422e0 | 513/513 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 49 | 1.337e0 | 6.774e0 | 53060/53060 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 50 | 1.608e0 | 6.896e0 | 339/339 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 51 | 1.497e0 | 7.592e0 | 666/666 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 52 | 1.332e0 | 7.687e0 | 9832/9832 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 53 | 1.497e0 | 7.114e0 | 223/223 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 54 | 1.317e0 | 7.061e0 | 19/19 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 55 | 1.080e0 | 7.725e0 | 28/28 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 56 | 5.851e-1 | 7.626e0 | 45773/45773 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 57 | 8.760e-1 | 7.033e0 | 270/270 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 58 | 6.148e-1 | 7.566e0 | 12236/12236 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 59 | 1.038e0 | 7.267e0 | 9709/9709 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 60 | 8.245e-1 | 8.152e0 | 2143/2143 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 61 | 7.891e-1 | 8.237e0 | 18444/18444 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 62 | 6.584e-1 | 6.963e0 | 14/14 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 63 | 6.081e-1 | 7.245e0 | 362/362 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 64 | 9.344e-1 | 7.156e0 | 270/270 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 65 | 7.327e-1 | 8.108e0 | 26271/26271 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 66 | 8.245e-1 | 9.217e0 | 294/294 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 67 | 9.223e-1 | 7.845e0 | 53060/53060 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 68 | 8.098e-1 | 7.681e0 | 14/14 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 69 | 9.173e-1 | 8.053e0 | 396/396 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 70 | 1.343e0 | 8.314e0 | 3517/3517 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 71 | 1.277e0 | 7.915e0 | 9884/9884 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 72 | 9.602e-1 | 7.404e0 | 93/93 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 126 | 7.671e-1 | 7.055e0 | 14/14 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 127 | 6.158e-1 | 7.254e0 | 5618/5618 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 128 | 7.761e-1 | 7.202e0 | 11/11 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 129 | 1.232e0 | 7.709e0 | 438/438 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 130 | 6.303e-1 | 7.137e0 | 223/223 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 131 | 1.596e0 | 7.757e0 | 19/19 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 132 | 9.115e-1 | 7.670e0 | 2201/2201 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 160 | 3.537e0 | 8.372e0 | 7490/7490 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 192 | 1.402e0 | 6.966e0 | 20/20 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 255 | 1.050e0 | 7.913e0 | 270/270 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 256 | 7.283e-1 | 7.925e0 | 4632/4632 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 257 | 7.543e-1 | 8.494e0 | 1167/1167 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 384 | 9.966e-1 | 7.278e0 | 305/305 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 512 | 8.702e-1 | 6.941e0 | 1512/1512 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 768 | 1.470e0 | 8.040e0 | 14/14 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 1024 | 9.710e-1 | 1.041e1 | 1628/1628 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 1025 | 3.393e-1 | 7.678e0 | 6787/6787 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 2048 | 1.603e0 | 8.201e0 | 13445/13445 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 2052 | 5.437e0 | 7.773e0 | 20/20 | same | 4/5 v0 | 16/20 v0 | PASS |
+| 2053 | 2.157e0 | 7.983e0 | 438/438 | same | 4/5 v0 | 18/20 v0 | PASS |
+| 2056 | 2.168e0 | 8.102e0 | 14/14 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 2176 | 2.229e0 | 8.575e0 | 339/339 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 2208 | - | - | - | - | - | - | NO CPU ROW (past sequence end) |
+(a2) worst max-abs 5.437e0 at s=2052 (lane-4's own (a) measured 4.35 vs 6.71 on this bound)
+GATE (b) part (i): first divergence at step 15: decode 11443 vs lane4 696; CPU logits 40.3528 vs 40.5635 (margin 0.2106, band 6.2342, cpu top1 696) -> in-band near-tie (legitimate realization flip)
+GATE (b) part (ii): CPU teacher-forcing over the decode trajectory: 2164/2176 agree; 12 disagreements:
+  step 15: cpu margin 0.2106 vs band 6.2342 -> in-band
+  step 50: cpu margin 0.1819 vs band 5.9776 -> in-band
+  step 81: cpu margin 0.3121 vs band 6.5785 -> in-band
+  step 604: cpu margin 1.2445 vs band 3.2905 -> in-band
+  step 611: cpu margin 0.2915 vs band 5.0192 -> in-band
+  step 631: cpu margin 0.0625 vs band 3.2975 -> in-band
+  step 634: cpu margin 0.0161 vs band 4.9225 -> in-band
+  step 700: cpu margin 1.4208 vs band 3.7504 -> in-band
+  step 759: cpu margin 0.0576 vs band 3.8114 -> in-band
+  step 818: cpu margin 0.2344 vs band 4.9792 -> in-band
+  step 826: cpu margin 0.0103 vs band 4.8234 -> in-band
+  step 850: cpu margin 0.0437 vs band 5.5386 -> in-band
+DSV4 DECODE ORACLE CHECK: PASS (a2 true | b true)

@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-cx-armrig5090/research/armrig5090-20260813/reduce.py", line 309, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/avifenesh/projects/wt-cx-armrig5090/research/armrig5090-20260813/reduce.py", line 301, in main
+    "thermal": reduce_thermal(args.thermal),
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/wt-cx-armrig5090/research/armrig5090-20260813/reduce.py", line 253, in reduce_thermal
+    raise ValueError("no GPU telemetry samples")
+ValueError: no GPU telemetry samples

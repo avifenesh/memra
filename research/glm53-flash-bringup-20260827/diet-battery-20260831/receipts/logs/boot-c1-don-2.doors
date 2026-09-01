@@ -1,0 +1,9 @@
+door=hc-fused-pre expected=1 lines=1
+door=hc-decode-ws expected=1 lines=1
+door=kda-fused6-bf16 expected=1 lines=1
+door=kda-fused6-q8(forbidden-on-this-recipe) expected=0 lines=0
+door=mla-decode-split expected=1 lines=1
+[hc-fused-pre] engaged streams=4 hidden=4096 t=239 (one launch replaces rowsq_scale + sinkhorn + collapse per site; MEMRA_HC_FUSED_PRE=1)
+[hc-decode-ws] engaged streams=4 hidden=4096 (persistent hc-glue workspace, per-engine pool; MEMRA_HC_DECODE_WS=1)
+[kda-fused6] engaged arm=bf16 in_f=4096 out=[8192, 8192, 8192, 128, 128, 64] t=1 (one launch replaces the six-projection group on the bf16-resident serving recipe; MEMRA_KDA_FUSED_PROJ=1)
+[mla-decode-split] engaged absorb_q t=1 heads=64 split=16 (output-range split of the (token, head) blocks; MEMRA_MLA_DECODE_SPLIT=1)

@@ -1,0 +1,102 @@
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+===== HEAD =====
+[server] starting; models config = [("step37", "/root/models/step37-flash-nvfp4", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "step37" <- /root/models/step37-flash-nvfp4
+[step37-defaults] serving doors armed ON for the SlidingGatedMoe program (per-flag =0 kills, =1 forces; owner flip 2026-08-27)
+[step-tp-preflight] layers=45 full_trunk=true runtime_groups=1 dense_attention_layers=3 tensor_expert_layers=42 expert_owner_layers=0 qualified_fp8_expert_projection_slices=36288 owner_first=true hardware=rtx-pro-6000-blackwell native_p2p=true bulk_p2p=false device_arithmetic=false weights_loaded=false performance_claim=false
+[bf16-mmv] RESIDENT output.weight ne=[4096, 128896] n=527958016 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[loader-law] WARNING: blk.*.attn_gate.weight loads as 2D Float ne=[4096, 64] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[tp] native peer byte-integrity probe PASS: devices=[0, 1] directions=2 byte_ladder=[16384, 65536, 1048576, 67108864] mismatches=0
+[tp] correctness transport=native-p2p devices=[0, 1] native_p2p=true activation=host-canonical bulk_p2p=false performance_claim=false
+[step-tp-qkv] load layer=0 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=0 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=0 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[bf16-mmv] RESIDENT blk.0.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=1 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=1 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=1 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[bf16-mmv] RESIDENT blk.1.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=2 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=2 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=2 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+===== ALL [gemm-prime] AND plain-affinity AND deadline/abort LINES =====
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[gemm-prime] WALK t=736 base=0 seq_end=764 (batched prime declined)
+[gemm-prime] WALK t=28 base=736 seq_end=764 (batched prime declined)
+[worker] plain-affinity: declined (history diverged at 6 of checkpoint 736 [ckpt ids [61, 5096, 260, 63, 764] vs prompt ids [61, 5096, 291, 63, 764]]; 1 parked, 1151 prompt tokens; model step37)
+[gemm-prime] WALK t=1120 base=0 seq_end=1151 (batched prime declined)
+[gemm-prime] WALK t=31 base=1120 seq_end=1151 (batched prime declined)
+[worker] plain-affinity: declined (history diverged at 5 of checkpoint 736 [ckpt ids [201, 61, 5096, 260, 63] vs prompt ids [201, 61, 3743, 1715, 269]]; 2 parked, 734 prompt tokens; model step37)
+[gemm-prime] WALK t=704 base=0 seq_end=734 (batched prime declined)
+[gemm-prime] WALK t=30 base=704 seq_end=734 (batched prime declined)
+[worker] plain-affinity: grew parked cache 998 -> 1296 rows (request-owned need)
+[worker] plain-affinity: rewound to 704 of 976 prompt tokens (priming 272 suffix; model step37)
+[gemm-prime] WALK t=256 base=704 seq_end=976 (batched prime declined)
+[gemm-prime] WALK t=16 base=960 seq_end=976 (batched prime declined)
+[worker] plain-affinity: declined (history diverged at 5 of checkpoint 1120 [ckpt ids [201, 61, 5096, 291, 63] vs prompt ids [201, 61, 3743, 1715, 269]]; 2 parked, 976 prompt tokens; model step37)
+[gemm-prime] WALK t=960 base=0 seq_end=976 (batched prime declined)
+[gemm-prime] WALK t=16 base=960 seq_end=976 (batched prime declined)
+[worker] plain-affinity: declined (history diverged at 8 of checkpoint 960 [ckpt ids [1715, 269, 22024, 18, 63] vs prompt ids [1715, 269, 29984, 18, 63]]; 2 parked, 734 prompt tokens; model step37)
+[gemm-prime] WALK t=704 base=0 seq_end=734 (batched prime declined)
+[gemm-prime] WALK t=30 base=704 seq_end=734 (batched prime declined)
+[worker] plain-affinity: grew parked cache 998 -> 1496 rows (request-owned need)
+[worker] plain-affinity: rewound to 704 of 1176 prompt tokens (priming 472 suffix; model step37)
+[gemm-prime] WALK t=448 base=704 seq_end=1176 (batched prime declined)
+[gemm-prime] WALK t=24 base=1152 seq_end=1176 (batched prime declined)
+[worker] plain-affinity: declined (history diverged at 8 of checkpoint 960 [ckpt ids [1715, 269, 22024, 18, 63] vs prompt ids [1715, 269, 29984, 18, 63]]; 2 parked, 1176 prompt tokens; model step37)
+[gemm-prime] WALK t=1152 base=0 seq_end=1176 (batched prime declined)
+[gemm-prime] WALK t=24 base=1152 seq_end=1176 (batched prime declined)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+===== TAIL =====
+[gemm-prime] WALK t=960 base=0 seq_end=976 (batched prime declined)
+[gemm-prime] WALK t=16 base=960 seq_end=976 (batched prime declined)
+[meter] admit id=chatcmpl-49183edff3f6f435545adeeb9382e9d3 tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=1054 path=plain = 83520 B/token x ctx + 7MB fixed = 95MB
+[admission] parallel device plan: [dev0 session 95MB + tp-kv 44MB + pending-tp-kv 0MB + reserve 95MB + boundary 0.000MB; dev1 session 0MB + tp-kv 44MB + pending-tp-kv 0MB + reserve 95MB + boundary 0.000MB]
+[worker] plain-affinity: declined (history diverged at 8 of checkpoint 960 [ckpt ids [1715, 269, 22024, 18, 63] vs prompt ids [1715, 269, 29984, 18, 63]]; 2 parked, 734 prompt tokens; model step37)
+[prefix-cache] refused for MEMRA_SWA_RING=1 Step35 session (flat-history snapshots/restores are excluded)
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=734 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[gemm-prime] WALK t=704 base=0 seq_end=734 (batched prime declined)
+[gemm-prime] WALK t=30 base=704 seq_end=734 (batched prime declined)
+[meter] admit id=chatcmpl-c423c6fbb7795fde6df48b6c0562977e tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=1496 path=plain = 83520 B/token x ctx + 7MB fixed = 132MB
+[admission] parallel device plan: [dev0 session 132MB + tp-kv 62MB + pending-tp-kv 0MB + reserve 132MB + boundary 0.000MB; dev1 session 0MB + tp-kv 62MB + pending-tp-kv 0MB + reserve 132MB + boundary 0.000MB]
+[worker] plain-affinity: grew parked cache 998 -> 1496 rows (request-owned need)
+[worker] plain-affinity: rewound to 704 of 1176 prompt tokens (priming 472 suffix; model step37)
+[prefix-cache] refused for MEMRA_SWA_RING=1 Step35 session (flat-history snapshots/restores are excluded)
+[worker] kv-reuse: 704 of 1176 prompt tokens resumed (model step37)
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=1176 cached=704 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[gemm-prime] WALK t=448 base=704 seq_end=1176 (batched prime declined)
+[gemm-prime] WALK t=24 base=1152 seq_end=1176 (batched prime declined)
+[meter] admit id=chatcmpl-517f0f3acb4e3d05c6860a5185ae5a9a tenant=default lane=interactive model="step37"
+[worker] plain-affinity: declined (history diverged at 8 of checkpoint 960 [ckpt ids [1715, 269, 22024, 18, 63] vs prompt ids [1715, 269, 29984, 18, 63]]; 2 parked, 1176 prompt tokens; model step37)
+[prefix-cache] refused for MEMRA_SWA_RING=1 Step35 session (flat-history snapshots/restores are excluded)
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=1176 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="step37" 8MB (observed 128MB at ctx 1440 path=plain)
+[gemm-prime] WALK t=1152 base=0 seq_end=1176 (batched prime declined)
+[gemm-prime] WALK t=24 base=1152 seq_end=1176 (batched prime declined)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

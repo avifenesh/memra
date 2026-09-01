@@ -1,0 +1,95 @@
+{
+  "anchor_sampling": {
+    "actual_records": 1268,
+    "deficient_records": 12,
+    "max_per_pair": 4,
+    "maximum_records": 1280,
+    "min_per_pair": 0,
+    "pairs_below_requested": 3,
+    "requested_per_pair": 4
+  },
+  "assignment_cells": {
+    "chat/nothink/heldout": 1,
+    "chat/nothink/train": 38,
+    "chat/think/train": 41,
+    "code/nothink/heldout": 2,
+    "code/nothink/train": 45,
+    "code/think/heldout": 5,
+    "code/think/train": 28,
+    "if/nothink/heldout": 1,
+    "if/nothink/train": 33,
+    "if/think/heldout": 5,
+    "if/think/train": 41,
+    "math/nothink/heldout": 2,
+    "math/nothink/train": 47,
+    "math/think/heldout": 2,
+    "math/think/train": 29
+  },
+  "categories": {
+    "chat": 80,
+    "code": 80,
+    "if": 80,
+    "math": 80
+  },
+  "chunks": 5,
+  "end": 320,
+  "format": "memra-dspark-corpus-summary-v2",
+  "label": "pilot",
+  "manifest_fingerprint": "13cf3befd40c6366d104f64b11d2375af9743eaaada29057616a8881d0abcf43",
+  "manifests": [
+    {
+      "chunk": "pilot-00000-00064",
+      "sha256": "1b589df5717a718613487d0b86239bf43c4b319985e5e92a71384ac8d944c0eb"
+    },
+    {
+      "chunk": "pilot-00064-00128",
+      "sha256": "b29097411b1e859ac4809508766f137efeecb686b944815316a5ab2364e09465"
+    },
+    {
+      "chunk": "pilot-00128-00192",
+      "sha256": "94a307096fedee84a545728c3f3fae9dce30144349cc2231f727a9a8bf9abc70"
+    },
+    {
+      "chunk": "pilot-00192-00256",
+      "sha256": "b51ef7a7644a0f3d916214f5410d6a7ddaaf1c6a18331c0d6e25cc6befdb0e9d"
+    },
+    {
+      "chunk": "pilot-00256-00320",
+      "sha256": "be0f2a4dc00ff8ea4cf5af0a33be2378d65074701d6d82abd8c3de86c137d304"
+    }
+  ],
+  "modes": {
+    "nothink": 169,
+    "think": 151
+  },
+  "pairs": 320,
+  "prompt_tokens": {
+    "max": 2953,
+    "min": 19,
+    "p50": 72,
+    "p95": 492,
+    "total": 45817
+  },
+  "records": 1268,
+  "response_tokens": {
+    "max": 512,
+    "max_new_512_count": 249,
+    "min": 2,
+    "p50": 512,
+    "p95": 512,
+    "total": 146555
+  },
+  "skipped_short_pairs": 3,
+  "splits": {
+    "heldout": 18,
+    "train": 302
+  },
+  "start": 0,
+  "validation": {
+    "max_logit_probability_ratio_error": 9.598196157867278e-07,
+    "max_probability_mass_error": 3.298590511846555e-08,
+    "sampled_token_top64_rate": 0.9996845425867508,
+    "tail_mass_max": 0.10399816930294037,
+    "tail_mass_mean": 0.00015522127569417656
+  }
+}

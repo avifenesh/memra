@@ -1,0 +1,146 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-5hce7sga> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Inference · tiyuvta</title><meta name="description" content="A limited API trial serving stepfun/step-3.7-flash with a 256k context window, manual keys, and $0 trial pricing."><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="alternate" type="application/rss+xml" title="tiyuvta blog" href="/rss.xml"><link rel="canonical" href="https://tiyuvta.ai/inference/"><meta property="og:title" content="Inference"><meta property="og:description" content="A limited API trial serving stepfun/step-3.7-flash with a 256k context window, manual keys, and $0 trial pricing."><meta property="og:url" content="https://tiyuvta.ai/inference/"><meta property="og:image" content="https://tiyuvta.ai/og/inference.png"><meta name="twitter:card" content="summary_large_image"><link rel="stylesheet" href="/_astro/caching.CoO6DNoZ.css">
+<style>.tabs[data-astro-cid-eqg5l7fp]{display:flex;flex-wrap:wrap}.tab-radio[data-astro-cid-eqg5l7fp]{position:absolute;opacity:0;pointer-events:none}.tab-label[data-astro-cid-eqg5l7fp]{font-family:var(--font-mono);font-size:var(--text-xs);color:var(--text-3);padding:var(--space-2) var(--space-4);cursor:pointer;border-bottom:1px solid transparent}.tab-radio[data-astro-cid-eqg5l7fp]:checked+.tab-label[data-astro-cid-eqg5l7fp]{color:var(--accent);border-bottom-color:var(--accent)}.tab-radio[data-astro-cid-eqg5l7fp]:focus-visible+.tab-label[data-astro-cid-eqg5l7fp]{outline:1px solid var(--accent)}.tab-panel[data-astro-cid-eqg5l7fp]{display:none;width:100%;order:1}.tab-radio[data-astro-cid-eqg5l7fp]:nth-of-type(1):checked~.tab-panel[data-astro-cid-eqg5l7fp]:nth-of-type(1),.tab-radio[data-astro-cid-eqg5l7fp]:nth-of-type(2):checked~.tab-panel[data-astro-cid-eqg5l7fp]:nth-of-type(2),.tab-radio[data-astro-cid-eqg5l7fp]:nth-of-type(3):checked~.tab-panel[data-astro-cid-eqg5l7fp]:nth-of-type(3){display:block}
+</style>
+<link rel="stylesheet" href="/_astro/index.DSdqfZbp.css"></head> <body data-astro-cid-5hce7sga> <a href="#main" class="skip-link" data-astro-cid-5hce7sga>Skip to content</a> <header class="site-header" data-astro-cid-5hce7sga> <div class="container header-inner" data-astro-cid-5hce7sga> <a href="/" class="home-link" aria-label="tiyuvta home" data-astro-cid-5hce7sga> <span class="wordmark" style="font-size:17px" data-astro-cid-hhuuaa7r> <svg class="wordmark-glyph" width="22.1" height="14.45" viewBox="0 0 37 24" fill="none" aria-hidden="true" data-astro-cid-hhuuaa7r> <rect x="0" y="0" width="18" height="4" fill="var(--chart-3)" data-astro-cid-hhuuaa7r></rect> <rect x="0" y="10" width="25" height="4" fill="var(--chart-2)" data-astro-cid-hhuuaa7r></rect> <rect x="10" y="20" width="27" height="4" fill="var(--accent)" data-astro-cid-hhuuaa7r></rect> </svg> <span class="wordmark-text" data-astro-cid-hhuuaa7r>tiyuvta</span> </span>  </a> <nav aria-label="Main" class="nav-desktop" data-astro-cid-5hce7sga> <ul class="nav-list" data-astro-cid-5hce7sga> <li data-astro-cid-5hce7sga> <a href="/research" data-astro-cid-5hce7sga> Research </a> </li><li data-astro-cid-5hce7sga> <a href="/blog" data-astro-cid-5hce7sga> Blog </a> </li><li data-astro-cid-5hce7sga> <a href="/about" data-astro-cid-5hce7sga> About </a> </li><li data-astro-cid-5hce7sga> <a href="/inference" aria-current="page" data-astro-cid-5hce7sga> Inference </a> </li> <li data-astro-cid-5hce7sga> <a href="https://github.com/avifenesh" class="gh-link" aria-label="Public research on GitHub" data-astro-cid-5hce7sga> <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" data-astro-cid-5hce7sga> <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" data-astro-cid-5hce7sga></path> </svg> <span class="gh-label" data-astro-cid-5hce7sga>GitHub</span> </a> </li> </ul> </nav> <a href="/access" class="btn btn-primary header-cta" data-astro-cid-5hce7sga>Get an API key</a> <details class="nav-mobile" data-astro-cid-5hce7sga> <summary aria-label="Menu" data-astro-cid-5hce7sga> <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" data-astro-cid-5hce7sga> <rect class="bar bar-1" x="2" y="4.5" width="16" height="1.6" fill="currentColor" data-astro-cid-5hce7sga></rect> <rect class="bar bar-2" x="2" y="9.2" width="16" height="1.6" fill="currentColor" data-astro-cid-5hce7sga></rect> <rect class="bar bar-3" x="2" y="13.9" width="16" height="1.6" fill="currentColor" data-astro-cid-5hce7sga></rect> </svg> </summary> <nav aria-label="Main" data-astro-cid-5hce7sga> <ul class="nav-mobile-list" data-astro-cid-5hce7sga> <li data-astro-cid-5hce7sga> <a href="/research" data-astro-cid-5hce7sga> Research </a> </li><li data-astro-cid-5hce7sga> <a href="/blog" data-astro-cid-5hce7sga> Blog </a> </li><li data-astro-cid-5hce7sga> <a href="/about" data-astro-cid-5hce7sga> About </a> </li><li data-astro-cid-5hce7sga> <a href="/inference" aria-current="page" data-astro-cid-5hce7sga> Inference </a> </li> <li data-astro-cid-5hce7sga> <a href="https://github.com/avifenesh" data-astro-cid-5hce7sga>Research on GitHub</a> </li> <li data-astro-cid-5hce7sga> <a href="/access" class="btn btn-primary" data-astro-cid-5hce7sga>Get an API key</a> </li> </ul> </nav> </details> </div> <hr class="lane-rule" data-astro-cid-5hce7sga> </header> <main id="main" data-astro-cid-5hce7sga>  <section class="hero container" data-astro-cid-dtrz36tb> <div class="hero-copy" data-astro-cid-dtrz36tb> <p class="kicker measured" data-astro-cid-dtrz36tb>hosted inference · limited trial</p> <h1 data-astro-cid-dtrz36tb>Step-3.7-Flash, served as a limited API trial.</h1> <p class="subhead" data-astro-cid-dtrz36tb>
+One open-weight thinking model. A 262,144-token context window. An
+        OpenAI-style chat-completions endpoint. Keys are issued manually and
+        the trial costs $0. That is the lab's current hosted offering; paid plans,
+        self-service, current performance claims, and an SLA are not live.
+</p> <div class="cta-row" data-astro-cid-dtrz36tb> <a href="/access" class="btn btn-primary" data-astro-cid-dtrz36tb>Request trial access</a> <a href="/docs" class="btn btn-secondary" data-astro-cid-dtrz36tb>Read the quickstart</a> </div> <p class="cta-microcopy" data-astro-cid-dtrz36tb>
+Manual keys · per-key limits · no promised approval time · no public
+        status page
+</p> </div> <div class="hero-terminal" data-astro-cid-dtrz36tb> <div class="terminal" data-terminal data-astro-cid-eqg5l7fp> <div class="terminal-bar" data-astro-cid-eqg5l7fp> <span data-astro-cid-eqg5l7fp>tiyuvta · /v1/chat/completions</span> <button class="copy-btn" data-copy hidden data-astro-cid-eqg5l7fp>copy</button> </div> <div class="tabs" data-astro-cid-eqg5l7fp>  <input type="radio" name="term-fj66ac" id="term-fj66ac-0" checked class="tab-radio" data-astro-cid-eqg5l7fp> <label for="term-fj66ac-0" class="tab-label" data-astro-cid-eqg5l7fp> curl </label>  <input type="radio" name="term-fj66ac" id="term-fj66ac-1" class="tab-radio" data-astro-cid-eqg5l7fp> <label for="term-fj66ac-1" class="tab-label" data-astro-cid-eqg5l7fp> python </label>  <input type="radio" name="term-fj66ac" id="term-fj66ac-2" class="tab-radio" data-astro-cid-eqg5l7fp> <label for="term-fj66ac-2" class="tab-label" data-astro-cid-eqg5l7fp> /v1/models </label>  <pre class="tab-panel" data-panel="0" data-code="curl https://api.tiyuvta.ai/v1/chat/completions \
+  -H &#34;Authorization: Bearer $TIYUVTA_API_KEY&#34; \
+  -H &#34;Content-Type: application/json&#34; \
+  -d '{
+    &#34;model&#34;: &#34;stepfun/step-3.7-flash&#34;,
+    &#34;messages&#34;: [{&#34;role&#34;: &#34;user&#34;, &#34;content&#34;: &#34;Explain this code.&#34;}]
+  }'" data-astro-cid-eqg5l7fp><code data-astro-cid-eqg5l7fp>curl https://api.tiyuvta.ai/v1/chat/completions \
+  -H "Authorization: Bearer $TIYUVTA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "stepfun/step-3.7-flash",
+    "messages": [{"role": "user", "content": "Explain this code."}]
+  }'</code></pre><pre class="tab-panel" data-panel="1" data-code="import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=&#34;https://api.tiyuvta.ai/v1&#34;,
+    api_key=os.environ[&#34;TIYUVTA_API_KEY&#34;],
+)
+
+r = client.chat.completions.create(
+    model=&#34;stepfun/step-3.7-flash&#34;,
+    messages=[{&#34;role&#34;: &#34;user&#34;, &#34;content&#34;: &#34;Explain this code.&#34;}],
+)
+print(r.choices[0].message.content)" data-astro-cid-eqg5l7fp><code data-astro-cid-eqg5l7fp>import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.tiyuvta.ai/v1",
+    api_key=os.environ["TIYUVTA_API_KEY"],
+)
+
+r = client.chat.completions.create(
+    model="stepfun/step-3.7-flash",
+    messages=[{"role": "user", "content": "Explain this code."}],
+)
+print(r.choices[0].message.content)</code></pre><pre class="tab-panel" data-panel="2" data-code="{
+  &#34;id&#34;: &#34;stepfun/step-3.7-flash&#34;,
+  &#34;context_length&#34;: 262144,
+  &#34;architecture&#34;: { &#34;modality&#34;: &#34;text->text&#34; },
+  &#34;pricing&#34;: {
+    &#34;prompt&#34;: &#34;0&#34;,
+    &#34;completion&#34;: &#34;0&#34;,
+    &#34;request&#34;: &#34;0&#34;,
+    &#34;image&#34;: &#34;0&#34;
+  }
+}" data-astro-cid-eqg5l7fp><code data-astro-cid-eqg5l7fp>{
+  "id": "stepfun/step-3.7-flash",
+  "context_length": 262144,
+  "architecture": { "modality": "text->text" },
+  "pricing": {
+    "prompt": "0",
+    "completion": "0",
+    "request": "0",
+    "image": "0"
+  }
+}</code></pre> </div> </div> <script type="module">for(const e of document.querySelectorAll("[data-terminal]")){const t=e.querySelector("[data-copy]");t&&(t.hidden=!1,t.addEventListener("click",async()=>{const c=[...e.querySelectorAll(".tab-panel")],o=[...e.querySelectorAll(".tab-radio")].findIndex(n=>n.checked),a=c[Math.max(o,0)]?.dataset.code??"";try{await navigator.clipboard.writeText(a),t.textContent="copied ✓",t.classList.add("copied")}catch{t.textContent="select + ctrl-c"}setTimeout(()=>{t.textContent="copy",t.classList.remove("copied")},1400)}))}</script> <!-- NOTE: the panel-reveal CSS below enumerates nth-of-type(1..3) — this
+     component supports at most 3 tabs; a 4th tab's panel would never show. -->  </div> </section> <section class="container" data-astro-cid-dtrz36tb> <ul class="stat-strip" data-astro-cid-dtrz36tb> <li data-astro-cid-dtrz36tb> <a class="measured stat-value" href="/inference/models" data-astro-cid-dtrz36tb>1 model</a> <span class="stat-label" data-astro-cid-dtrz36tb>stepfun/step-3.7-flash is the complete live catalog</span> </li><li data-astro-cid-dtrz36tb> <a class="measured stat-value" href="https://api.tiyuvta.ai/v1/models" data-astro-cid-dtrz36tb>256k context</a> <span class="stat-label" data-astro-cid-dtrz36tb>262,144 tokens in the live /v1/models response</span> </li><li data-astro-cid-dtrz36tb> <a class="measured stat-value" href="/inference/pricing" data-astro-cid-dtrz36tb>$0 trial</a> <span class="stat-label" data-astro-cid-dtrz36tb>no paid plan, checkout, or automatic conversion</span> </li> </ul> </section> <section class="container block" id="commitments" data-astro-cid-dtrz36tb> <span class="fig-label" data-astro-cid-dtrz36tb>fig. 01 · the current contract</span> <div class="three-col" data-astro-cid-dtrz36tb> <div data-astro-cid-dtrz36tb> <h2 class="col-title" data-astro-cid-dtrz36tb>Exact model id</h2> <p class="support" data-astro-cid-dtrz36tb>
+Send <code data-astro-cid-dtrz36tb>stepfun/step-3.7-flash</code>. No other model or alias is
+          advertised. Check the public
+<a href="https://api.tiyuvta.ai/v1/models" data-astro-cid-dtrz36tb>catalog endpoint</a>
+before depending on the trial.
+</p> </div> <div data-astro-cid-dtrz36tb> <h2 class="col-title" data-astro-cid-dtrz36tb>Text and thinking</h2> <p class="support" data-astro-cid-dtrz36tb>
+Step-3.7-Flash is a thinking model. The upstream weights support more
+          modalities, but this endpoint currently reports text input to text
+          output. Image and video input are not part of this trial contract.
+</p> </div> <div data-astro-cid-dtrz36tb> <h2 class="col-title" data-astro-cid-dtrz36tb>256k context</h2> <p class="support" data-astro-cid-dtrz36tb>
+The live catalog reports <span class="measured" data-astro-cid-dtrz36tb>262,144</span>
+tokens. A separate maximum-completion value is not published, so do
+          not assume the entire window is available for output.
+</p> </div> </div> </section> <hr class="lane-rule container-rule" data-astro-cid-dtrz36tb> <section class="container block" data-astro-cid-dtrz36tb> <span class="fig-label" data-astro-cid-dtrz36tb>fig. 02 · how access works</span> <div class="three-col" data-astro-cid-dtrz36tb> <div data-astro-cid-dtrz36tb> <h2 class="col-title" data-astro-cid-dtrz36tb>1. Describe the workload</h2> <p class="support" data-astro-cid-dtrz36tb>
+Send a short request through <a href="/access" data-astro-cid-dtrz36tb>the access page</a>.
+          Avi reads every request; there is no automated approval or promised
+          response time.
+</p> </div> <div data-astro-cid-dtrz36tb> <h2 class="col-title" data-astro-cid-dtrz36tb>2. Receive a trial key</h2> <p class="support" data-astro-cid-dtrz36tb>
+Keys are created and delivered manually. The rate limit for a key is
+          shared when access is issued; there is no public default quota.
+</p> </div> <div data-astro-cid-dtrz36tb> <h2 class="col-title" data-astro-cid-dtrz36tb>3. Send a basic request</h2> <p class="support" data-astro-cid-dtrz36tb>
+Follow the <a href="/docs" data-astro-cid-dtrz36tb>quickstart</a> with the exact model id.
+          There is no account dashboard or automatic conversion to billing.
+</p> </div> </div> </section> <hr class="lane-rule container-rule" data-astro-cid-dtrz36tb> <section class="container block" data-astro-cid-dtrz36tb> <span class="fig-label" data-astro-cid-dtrz36tb>fig. 03 · what trial means here</span> <div class="lanes-grid" data-astro-cid-dtrz36tb> <div class="prose" data-astro-cid-dtrz36tb> <h2 data-astro-cid-dtrz36tb>Useful for evaluation. Not a production dependency yet.</h2> <ul data-astro-cid-dtrz36tb> <li data-astro-cid-dtrz36tb>No uptime percentage or latency target is published.</li> <li data-astro-cid-dtrz36tb>No current Step-3.7-Flash throughput or determinism result is published.</li> <li data-astro-cid-dtrz36tb>There is no self-serve account, billing, key rotation, or recovery UI.</li> <li data-astro-cid-dtrz36tb>Limits are assigned per key and shared when access is granted.</li> </ul> <p data-astro-cid-dtrz36tb>
+Keep a fallback. If a result matters to your system, store the model
+          id, request, response, and time with your own run record.
+</p> </div> <div class="panel" data-astro-cid-dtrz36tb> <h3 data-astro-cid-dtrz36tb>Checked 2026-08-09</h3> <p class="support" data-astro-cid-dtrz36tb>
+The public health endpoint returned <code data-astro-cid-dtrz36tb>status: ok</code>. The
+          catalog returned one model and zero prices. Those are point-in-time
+          observations, not an uptime claim.
+</p> <p data-astro-cid-dtrz36tb> <a href="https://api.tiyuvta.ai/health" data-astro-cid-dtrz36tb>health</a> ·
+<a href="https://api.tiyuvta.ai/v1/models" data-astro-cid-dtrz36tb>models</a> </p> </div> </div> </section> <hr class="lane-rule container-rule" data-astro-cid-dtrz36tb> <section class="container block" data-astro-cid-dtrz36tb> <span class="fig-label" data-astro-cid-dtrz36tb>fig. 04 · who this trial is for</span> <div class="three-col" data-astro-cid-dtrz36tb> <div data-astro-cid-dtrz36tb> <h2 class="col-title" data-astro-cid-dtrz36tb>Developers testing a thinking model</h2> <p class="support" data-astro-cid-dtrz36tb>
+Bring an existing OpenAI client, swap the base URL and model id, and
+          compare the model on your own prompts.
+</p> </div> <div data-astro-cid-dtrz36tb> <h2 class="col-title" data-astro-cid-dtrz36tb>Small teams with long inputs</h2> <p class="support" data-astro-cid-dtrz36tb>
+The 256k window is relevant to repositories, long documents, and
+          agent histories. Test quality and latency on your actual workload.
+</p> </div> <div data-astro-cid-dtrz36tb> <h2 class="col-title" data-astro-cid-dtrz36tb>Self-hosters reading the engine</h2> <p class="support" data-astro-cid-dtrz36tb>
+The model weights and the memra engine are public. The hosted trial is
+          a way to inspect the serving surface before deciding what to run.
+</p> </div> </div> <p class="honest-line" data-astro-cid-dtrz36tb>
+This is not a consumer chat app, a broad model marketplace, or an
+      enterprise service with procurement and compliance guarantees.
+</p> </section> <hr class="lane-rule container-rule" data-astro-cid-dtrz36tb> <section class="container block" data-astro-cid-dtrz36tb> <span class="fig-label" data-astro-cid-dtrz36tb>fig. 05 · public components</span> <div class="open-grid" data-astro-cid-dtrz36tb> <div class="panel" data-astro-cid-dtrz36tb> <h3 data-astro-cid-dtrz36tb><a href="https://github.com/avifenesh/memra" data-astro-cid-dtrz36tb>memra</a></h3> <p data-astro-cid-dtrz36tb>
+The inference engine is a public Rust and CUDA project under the MIT
+          license. Its repository contains engine tests and dated research
+          runs. Those older measurements are not live trial performance.
+</p> </div> <div data-astro-cid-dtrz36tb> <h3 data-astro-cid-dtrz36tb><a href="https://huggingface.co/stepfun-ai/Step-3.7-Flash" data-astro-cid-dtrz36tb>Step-3.7-Flash weights</a></h3> <p class="support" data-astro-cid-dtrz36tb>
+StepFun publishes the model weights under Apache-2.0. The upstream
+          model is multimodal; tiyuvta's current endpoint is text-only.
+</p> </div> </div> </section> <hr class="lane-rule container-rule" data-astro-cid-dtrz36tb> <section class="container block" data-astro-cid-dtrz36tb> <span class="fig-label" data-astro-cid-dtrz36tb>fig. 06 · trial data and price</span> <div class="open-grid" data-astro-cid-dtrz36tb> <div class="panel" data-astro-cid-dtrz36tb> <h3 data-astro-cid-dtrz36tb>Trial data may be retained</h3> <p class="support" data-astro-cid-dtrz36tb>
+Prompts and responses may be used for training or evaluation. Do not
+          send secrets or data you cannot share under the
+<a href="/privacy" data-astro-cid-dtrz36tb>trial data policy</a>.
+</p> </div> <div data-astro-cid-dtrz36tb> <h3 data-astro-cid-dtrz36tb>The trial is $0</h3> <p class="support" data-astro-cid-dtrz36tb>
+No payment is collected and there is no automatic paid conversion.
+          Paid pricing is not published. The
+<a href="/inference/pricing" data-astro-cid-dtrz36tb>pricing page</a> records that plainly.
+</p> </div> </div> </section> <hr class="lane-rule container-rule" data-astro-cid-dtrz36tb>  <section class="container block" data-astro-cid-dtrz36tb> <span class="fig-label" data-astro-cid-dtrz36tb>faq</span> <div class="faq-grid" data-astro-cid-dtrz36tb> <div data-astro-cid-dtrz36tb> <h3 class="faq-q" data-astro-cid-dtrz36tb>Can I use the OpenAI SDK?</h3> <p class="support" data-astro-cid-dtrz36tb>
+Yes for the basic chat-completions request in the quickstart. Wider
+          parameter compatibility is not promised on this site yet.
+</p> </div> <div data-astro-cid-dtrz36tb> <h3 class="faq-q" data-astro-cid-dtrz36tb>Why only one model?</h3> <p class="support" data-astro-cid-dtrz36tb>
+That is the live deployment. Planned models and old Qwen experiments
+          are not listed as available.
+</p> </div> <div data-astro-cid-dtrz36tb> <h3 class="faq-q" data-astro-cid-dtrz36tb>What are the rate limits?</h3> <p class="support" data-astro-cid-dtrz36tb>
+They are set per key and disclosed at issuance. There is no public
+          default quota.
+</p> </div> <div data-astro-cid-dtrz36tb> <h3 class="faq-q" data-astro-cid-dtrz36tb>Can I use this in production?</h3> <p class="support" data-astro-cid-dtrz36tb>
+Treat it as a trial. There is no SLA, public uptime history, or
+          continued-availability promise.
+</p> </div> </div> </section> <section class="container block bottom-cta" data-astro-cid-dtrz36tb> <h2 data-astro-cid-dtrz36tb>If this fits a real workload, you are welcome to try it.</h2> <div class="cta-row cta-center" data-astro-cid-dtrz36tb> <a href="/access" class="btn btn-primary" data-astro-cid-dtrz36tb>Request access</a> <a href="/docs" class="btn btn-secondary" data-astro-cid-dtrz36tb>Read the quickstart</a> <a href="/inference/pricing" class="btn btn-secondary" data-astro-cid-dtrz36tb>See trial pricing</a> </div> </section>  </main> <footer class="site-footer" data-astro-cid-5hce7sga> <hr class="lane-rule" data-astro-cid-5hce7sga> <div class="container footer-inner" data-astro-cid-5hce7sga> <div class="footer-col" data-astro-cid-5hce7sga> <span class="wordmark" style="font-size:14px" data-astro-cid-hhuuaa7r> <svg class="wordmark-glyph" width="18.2" height="11.9" viewBox="0 0 37 24" fill="none" aria-hidden="true" data-astro-cid-hhuuaa7r> <rect x="0" y="0" width="18" height="4" fill="var(--chart-3)" data-astro-cid-hhuuaa7r></rect> <rect x="0" y="10" width="25" height="4" fill="var(--chart-2)" data-astro-cid-hhuuaa7r></rect> <rect x="10" y="20" width="27" height="4" fill="var(--accent)" data-astro-cid-hhuuaa7r></rect> </svg> <span class="wordmark-text" data-astro-cid-hhuuaa7r>tiyuvta</span> </span>  <p class="footer-note" data-astro-cid-5hce7sga>
+An independent model research lab run by one engineer, Avi Fenesh.
+            It studies better intelligence, training, retention, architecture, and
+            resource use. <a href="https://github.com/avifenesh/memra" data-astro-cid-5hce7sga>memra</a>
+is one engine and instrument in that work.
+</p> <p class="footer-legal" data-astro-cid-5hce7sga> <!-- OWNER SIGN-OFF: legal entity for the footer -->
+© 2026 tiyuvta
+</p> </div> <nav class="footer-col" aria-label="Lab" data-astro-cid-5hce7sga> <span class="fig-label" data-astro-cid-5hce7sga>lab</span> <ul data-astro-cid-5hce7sga> <li data-astro-cid-5hce7sga><a href="/research" data-astro-cid-5hce7sga>Research</a></li> <li data-astro-cid-5hce7sga><a href="/blog" data-astro-cid-5hce7sga>Blog</a></li> <li data-astro-cid-5hce7sga><a href="/about" data-astro-cid-5hce7sga>About</a></li> <li data-astro-cid-5hce7sga><a href="/rss.xml" data-astro-cid-5hce7sga>RSS</a></li> </ul> </nav> <nav class="footer-col" aria-label="Inference" data-astro-cid-5hce7sga> <span class="fig-label" data-astro-cid-5hce7sga>inference</span> <ul data-astro-cid-5hce7sga> <li data-astro-cid-5hce7sga><a href="/inference" data-astro-cid-5hce7sga>Trial overview</a></li> <li data-astro-cid-5hce7sga><a href="/inference/models" data-astro-cid-5hce7sga>Current model</a></li> <li data-astro-cid-5hce7sga><a href="/inference/pricing" data-astro-cid-5hce7sga>Trial pricing</a></li> <li data-astro-cid-5hce7sga><a href="/docs" data-astro-cid-5hce7sga>Quickstart</a></li> <li data-astro-cid-5hce7sga><a href="/access" data-astro-cid-5hce7sga>Request access</a></li> </ul> </nav> <nav class="footer-col" aria-label="Elsewhere" data-astro-cid-5hce7sga> <span class="fig-label" data-astro-cid-5hce7sga>elsewhere</span> <ul data-astro-cid-5hce7sga> <li data-astro-cid-5hce7sga><a href="https://github.com/avifenesh" data-astro-cid-5hce7sga>GitHub</a></li> <li data-astro-cid-5hce7sga><a href="https://avifenesh.ai" data-astro-cid-5hce7sga>avifenesh.ai</a></li> <li data-astro-cid-5hce7sga><a href="/privacy" data-astro-cid-5hce7sga>Privacy</a></li> <li data-astro-cid-5hce7sga><a href="/terms" data-astro-cid-5hce7sga>Terms</a></li> <li data-astro-cid-5hce7sga><a href="/cdn-cgi/l/email-protection#543c3138383b14203d2d212220357a353d" data-astro-cid-5hce7sga>Contact</a></li> </ul> </nav> </div> </footer> <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script></body></html> 

@@ -1,0 +1,17 @@
+warning: memra-engine@0.77.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.77.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/main.rs (target/debug/deps/memra_server-82ac615fd504334f)
+
+running 8 tests
+test tests::populated_dual_pp_metrics_are_operator_only ... ok
+test tests::no_key_loopback_metrics_remain_open_for_development ... ok
+test tests::metrics_token_protects_public_override_without_api_keys ... ok
+test tests::keyed_metrics_require_and_accept_api_bearer ... ok
+test tests::keyring_metrics_bearer_sees_only_its_tenant_row ... ok
+test tests::configured_metrics_token_is_exclusive_and_sees_all_tenants ... ok
+test tests::tenant_metrics_hide_capacity_and_aggregate_spec ... ok
+test tests::prefix_aggregate_metrics_are_operator_only_but_tenant_ratio_remains ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 178 filtered out; finished in 0.00s
+

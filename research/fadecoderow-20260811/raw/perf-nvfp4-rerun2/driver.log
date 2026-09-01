@@ -1,0 +1,315 @@
+baseline_source=ba3e70c9af455320dc661ab023e5c653539bc447
+candidate_code_source=3845bda8358a6fe5883095250d3d8e6df84fda2a
+candidate_lane_head=5f36611f500b1fedb689d5cd710e295e42a94282
+baseline_binary=/tmp/memra-fadecoderow-base-target.0vXLcN/release/decode-batch-bench sha256=308e8194e5b15d8ea1dd025cb619a5eb28d436765c53d3edef2b8d3f83aaac36
+candidate_binary=/home/avifenesh/projects/wt-cx-fadecoderow/target/release/decode-batch-bench sha256=3db8c7e9bc9e8a9da745484358443dbf9bd88e1d73dc029a848854d00d6dde7a
+artifact=/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf bytes=5657607424 mtime=2026-06-13 01:32:07.829009509 +0300
+artifact=/tmp/memra-fadecoderow-base-target.0vXLcN/release/decode-batch-bench bytes=43278384 mtime=2026-08-12 01:23:26.220684114 +0300
+artifact=/home/avifenesh/projects/wt-cx-fadecoderow/target/release/decode-batch-bench bytes=43602104 mtime=2026-08-12 01:21:05.696999814 +0300
+protocol=N=5 outer reps; alternating arm order; steps=128; inner warmup=1; inner timed reps=1; B=1,2,4,8; ctx=512; MEMRA_FAST=1; nice=15; ionice=idle
+ts=2026-08-11T23:27:29Z
+2026/08/12 02:27:29.996, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P8, 53, 9.23 W, [N/A], 180 MHz, 157 MiB, 24463 MiB, 0 %
+ts=2026-08-11T23:27:30Z
+2026/08/12 02:27:30.081, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P8, 53, 9.23 W, [N/A], 180 MHz, 157 MiB, 24463 MiB, 0 %
+0
+ts=2026-08-11T23:27:45Z
+2026/08/12 02:27:45.998, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 68, 164.38 W, [N/A], 1897 MHz, 157 MiB, 24463 MiB, 28 %
+B=1: aggregate 135.5 tok/s, per-seq 135.5 tok/s (median of 1)
+B=2: aggregate 213.5 tok/s, per-seq 106.7 tok/s (median of 1)
+B=4: aggregate 360.1 tok/s, per-seq 90.0 tok/s (median of 1)
+B=8: aggregate 467.8 tok/s, per-seq 58.5 tok/s (median of 1)
+ts=2026-08-11T23:27:46Z
+2026/08/12 02:27:46.041, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 65, 99.26 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 18 %
+0
+ts=2026-08-11T23:28:02Z
+2026/08/12 02:28:02.019, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 71, 103.19 W, [N/A], 1597 MHz, 157 MiB, 24463 MiB, 13 %
+B=1: aggregate 134.9 tok/s, per-seq 134.9 tok/s (median of 1)
+B=2: aggregate 211.8 tok/s, per-seq 105.9 tok/s (median of 1)
+B=4: aggregate 356.0 tok/s, per-seq 89.0 tok/s (median of 1)
+B=8: aggregate 463.9 tok/s, per-seq 58.0 tok/s (median of 1)
+ts=2026-08-11T23:28:02Z
+2026/08/12 02:28:02.064, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 71, 103.19 W, [N/A], 1597 MHz, 157 MiB, 24463 MiB, 13 %
+0
+ts=2026-08-11T23:28:18Z
+2026/08/12 02:28:18.143, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 74, 95.90 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 7 %
+B=1: aggregate 134.1 tok/s, per-seq 134.1 tok/s (median of 1)
+B=2: aggregate 210.8 tok/s, per-seq 105.4 tok/s (median of 1)
+B=4: aggregate 354.1 tok/s, per-seq 88.5 tok/s (median of 1)
+B=8: aggregate 461.0 tok/s, per-seq 57.6 tok/s (median of 1)
+ts=2026-08-11T23:28:18Z
+2026/08/12 02:28:18.185, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 74, 95.90 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 7 %
+0
+ts=2026-08-11T23:28:34Z
+2026/08/12 02:28:34.358, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 77, 136.37 W, [N/A], 1747 MHz, 157 MiB, 24463 MiB, 0 %
+B=1: aggregate 133.4 tok/s, per-seq 133.4 tok/s (median of 1)
+B=2: aggregate 210.2 tok/s, per-seq 105.1 tok/s (median of 1)
+B=4: aggregate 352.9 tok/s, per-seq 88.2 tok/s (median of 1)
+B=8: aggregate 460.2 tok/s, per-seq 57.5 tok/s (median of 1)
+ts=2026-08-11T23:28:34Z
+2026/08/12 02:28:34.399, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 77, 136.37 W, [N/A], 1747 MHz, 157 MiB, 24463 MiB, 0 %
+0
+ts=2026-08-11T23:28:50Z
+2026/08/12 02:28:50.677, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 77, 92.41 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 0 %
+B=1: aggregate 133.1 tok/s, per-seq 133.1 tok/s (median of 1)
+B=2: aggregate 209.2 tok/s, per-seq 104.6 tok/s (median of 1)
+B=4: aggregate 351.4 tok/s, per-seq 87.8 tok/s (median of 1)
+B=8: aggregate 458.4 tok/s, per-seq 57.3 tok/s (median of 1)
+ts=2026-08-11T23:28:50Z
+2026/08/12 02:28:50.718, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 77, 92.41 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 0 %
+0
+ts=2026-08-11T23:29:06Z
+2026/08/12 02:29:06.991, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 81, 145.32 W, [N/A], 1822 MHz, 157 MiB, 24463 MiB, 0 %
+B=1: aggregate 132.9 tok/s, per-seq 132.9 tok/s (median of 1)
+B=2: aggregate 209.1 tok/s, per-seq 104.5 tok/s (median of 1)
+B=4: aggregate 351.1 tok/s, per-seq 87.8 tok/s (median of 1)
+B=8: aggregate 457.3 tok/s, per-seq 57.2 tok/s (median of 1)
+ts=2026-08-11T23:29:07Z
+2026/08/12 02:29:07.033, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 81, 145.32 W, [N/A], 1822 MHz, 157 MiB, 24463 MiB, 0 %
+0
+ts=2026-08-11T23:29:23Z
+2026/08/12 02:29:23.413, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 78, 118.79 W, [N/A], 1695 MHz, 157 MiB, 24463 MiB, 0 %
+B=1: aggregate 132.7 tok/s, per-seq 132.7 tok/s (median of 1)
+B=2: aggregate 209.1 tok/s, per-seq 104.6 tok/s (median of 1)
+B=4: aggregate 350.4 tok/s, per-seq 87.6 tok/s (median of 1)
+B=8: aggregate 457.8 tok/s, per-seq 57.2 tok/s (median of 1)
+ts=2026-08-11T23:29:23Z
+2026/08/12 02:29:23.456, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 78, 118.79 W, [N/A], 1695 MHz, 157 MiB, 24463 MiB, 0 %
+0
+ts=2026-08-11T23:29:39Z
+2026/08/12 02:29:39.832, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 77, 105.34 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 0 %
+B=1: aggregate 132.9 tok/s, per-seq 132.9 tok/s (median of 1)
+B=2: aggregate 209.1 tok/s, per-seq 104.5 tok/s (median of 1)
+B=4: aggregate 351.0 tok/s, per-seq 87.7 tok/s (median of 1)
+B=8: aggregate 456.7 tok/s, per-seq 57.1 tok/s (median of 1)
+ts=2026-08-11T23:29:39Z
+2026/08/12 02:29:39.873, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 77, 105.34 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 0 %
+0
+ts=2026-08-11T23:29:56Z
+2026/08/12 02:29:56.143, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 81, 146.00 W, [N/A], 1732 MHz, 157 MiB, 24463 MiB, 20 %
+B=1: aggregate 133.0 tok/s, per-seq 133.0 tok/s (median of 1)
+B=2: aggregate 209.1 tok/s, per-seq 104.6 tok/s (median of 1)
+B=4: aggregate 351.1 tok/s, per-seq 87.8 tok/s (median of 1)
+B=8: aggregate 458.4 tok/s, per-seq 57.3 tok/s (median of 1)
+ts=2026-08-11T23:29:56Z
+2026/08/12 02:29:56.183, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 77, 83.83 W, [N/A], 1597 MHz, 157 MiB, 24463 MiB, 19 %
+0
+ts=2026-08-11T23:30:12Z
+2026/08/12 02:30:12.465, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 78, 124.19 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 0 %
+B=1: aggregate 133.0 tok/s, per-seq 133.0 tok/s (median of 1)
+B=2: aggregate 209.2 tok/s, per-seq 104.6 tok/s (median of 1)
+B=4: aggregate 350.7 tok/s, per-seq 87.7 tok/s (median of 1)
+B=8: aggregate 459.0 tok/s, per-seq 57.4 tok/s (median of 1)
+ts=2026-08-11T23:30:12Z
+2026/08/12 02:30:12.509, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 78, 124.19 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 0 %
+0
+ts=2026-08-11T23:30:28Z
+2026/08/12 02:30:28.981, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 78, 113.96 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 0 %
+B=1: aggregate 132.9 tok/s, per-seq 132.9 tok/s (median of 1)
+B=2: aggregate 208.7 tok/s, per-seq 104.4 tok/s (median of 1)
+B=4: aggregate 350.0 tok/s, per-seq 87.5 tok/s (median of 1)
+B=8: aggregate 456.6 tok/s, per-seq 57.1 tok/s (median of 1)
+ts=2026-08-11T23:30:29Z
+2026/08/12 02:30:29.021, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 78, 113.96 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 0 %
+0
+ts=2026-08-11T23:30:45Z
+2026/08/12 02:30:45.399, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 77, 110.12 W, [N/A], 1597 MHz, 157 MiB, 24463 MiB, 0 %
+B=1: aggregate 132.9 tok/s, per-seq 132.9 tok/s (median of 1)
+B=2: aggregate 208.8 tok/s, per-seq 104.4 tok/s (median of 1)
+B=4: aggregate 350.1 tok/s, per-seq 87.5 tok/s (median of 1)
+B=8: aggregate 457.4 tok/s, per-seq 57.2 tok/s (median of 1)
+ts=2026-08-11T23:30:45Z
+2026/08/12 02:30:45.729, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 76, 57.35 W, [N/A], 1590 MHz, 157 MiB, 24463 MiB, 0 %
+{
+  "protocol": {
+    "arm_order": "alternating baseline/candidate by round",
+    "artificial_cooldown": false,
+    "batches": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "ctx": 512,
+    "discarded_inner_warmups": 1,
+    "gpu_lock": "/tmp/gpu5090.lock",
+    "ionice": "idle",
+    "memra_fast": 1,
+    "nice": 15,
+    "outer_reps": 5,
+    "steps_per_inner_rep": 128,
+    "timed_inner_reps": 1
+  },
+  "provenance": {
+    "binary_sha256": {
+      "baseline": "308e8194e5b15d8ea1dd025cb619a5eb28d436765c53d3edef2b8d3f83aaac36",
+      "candidate": "3db8c7e9bc9e8a9da745484358443dbf9bd88e1d73dc029a848854d00d6dde7a"
+    },
+    "sources": {
+      "baseline": "ba3e70c9af455320dc661ab023e5c653539bc447",
+      "candidate": "3845bda8358a6fe5883095250d3d8e6df84fda2a"
+    }
+  },
+  "rig": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "schema": "memra.fadecoderow.local-ab.v1",
+  "thermal": {
+    "power_w": [
+      9.23,
+      173.64
+    ],
+    "samples": 390,
+    "sm_clock_mhz": [
+      180.0,
+      2167.0
+    ],
+    "temperature_c": [
+      53.0,
+      88.0
+    ]
+  },
+  "widths": {
+    "1": {
+      "N": 5,
+      "baseline_median_tok_s": 132.9,
+      "baseline_spread_tok_s": [
+        132.7,
+        134.1
+      ],
+      "baseline_tok_s": [
+        134.1,
+        132.9,
+        132.7,
+        133.0,
+        132.9
+      ],
+      "candidate_median_tok_s": 133.0,
+      "candidate_spread_tok_s": [
+        132.9,
+        133.4
+      ],
+      "candidate_tok_s": [
+        133.4,
+        133.1,
+        132.9,
+        133.0,
+        132.9
+      ],
+      "delta_pct": 0.07524454477050302,
+      "paired_delta_pct": [
+        -0.5219985085756829,
+        0.15048908954100604,
+        0.15071590052750938,
+        0.0,
+        0.0
+      ],
+      "paired_wins": 2
+    },
+    "2": {
+      "N": 5,
+      "baseline_median_tok_s": 209.1,
+      "baseline_spread_tok_s": [
+        208.7,
+        210.8
+      ],
+      "baseline_tok_s": [
+        210.8,
+        209.1,
+        209.1,
+        209.2,
+        208.7
+      ],
+      "candidate_median_tok_s": 209.1,
+      "candidate_spread_tok_s": [
+        208.8,
+        210.2
+      ],
+      "candidate_tok_s": [
+        210.2,
+        209.2,
+        209.1,
+        209.1,
+        208.8
+      ],
+      "delta_pct": 0.0,
+      "paired_delta_pct": [
+        -0.2846299810246755,
+        0.04782400765184214,
+        0.0,
+        -0.047801147227533036,
+        0.04791566842359263
+      ],
+      "paired_wins": 2
+    },
+    "4": {
+      "N": 5,
+      "baseline_median_tok_s": 350.7,
+      "baseline_spread_tok_s": [
+        350.0,
+        354.1
+      ],
+      "baseline_tok_s": [
+        354.1,
+        351.1,
+        350.4,
+        350.7,
+        350.0
+      ],
+      "candidate_median_tok_s": 351.1,
+      "candidate_spread_tok_s": [
+        350.1,
+        352.9
+      ],
+      "candidate_tok_s": [
+        352.9,
+        351.4,
+        351.0,
+        351.1,
+        350.1
+      ],
+      "delta_pct": 0.11405759908755808,
+      "paired_delta_pct": [
+        -0.3388873199661191,
+        0.08544574195383792,
+        0.1712328767123461,
+        0.11405759908755808,
+        0.028571428571444457
+      ],
+      "paired_wins": 4
+    },
+    "8": {
+      "N": 5,
+      "baseline_median_tok_s": 457.8,
+      "baseline_spread_tok_s": [
+        456.6,
+        461.0
+      ],
+      "baseline_tok_s": [
+        461.0,
+        457.3,
+        457.8,
+        459.0,
+        456.6
+      ],
+      "candidate_median_tok_s": 458.4,
+      "candidate_spread_tok_s": [
+        456.7,
+        460.2
+      ],
+      "candidate_tok_s": [
+        460.2,
+        458.4,
+        456.7,
+        458.4,
+        457.4
+      ],
+      "delta_pct": 0.1310615989515096,
+      "paired_delta_pct": [
+        -0.17353579175705125,
+        0.2405423135797058,
+        -0.2402795980777639,
+        -0.13071895424836555,
+        0.1752080595707195
+      ],
+      "paired_wins": 2
+    }
+  }
+}

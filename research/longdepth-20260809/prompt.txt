@@ -1,0 +1,24 @@
+Write one standalone production-quality HTML5 document for a fictional web application named
+"Atlas Operations Manual".
+
+Hard requirements:
+
+- Output source code only. Do not use a Markdown fence and do not add an explanation before or
+  after the document.
+- Use ASCII characters only, including all visible copy, identifiers, comments, CSS, and
+  JavaScript strings.
+- Begin with <!doctype html> and include explicit html, head, style, body, and script elements.
+- Use only vanilla HTML, CSS, and JavaScript. Do not load external assets or libraries.
+- Make the page responsive and accessible, with a sidebar, sticky header, search field, status
+  summary, tables, forms, keyboard focus styles, and a small amount of working interaction.
+- Write at least 400 numbered section elements literally in the HTML markup. Do not use a loop,
+  template, generated placeholder, ellipsis, or JavaScript to create or stand in for sections.
+- Give every section a unique ASCII id, a numbered h2, two informative paragraphs, a definition
+  list with four entries, a six-row table, a preformatted command example, and two buttons.
+- Keep all non-void tags explicitly balanced. Quote every attribute value. End every CSS rule and
+  JavaScript statement cleanly.
+- The document must be longer than 20000 output tokens. Do not conclude early. After section 400,
+  continue with detailed ASCII-only appendix tables until the output limit is reached.
+
+The purpose of the task is to exercise a long continuous code generation. Continue emitting valid
+HTML source without summaries, shortcuts, omitted sections, or prose outside the document.

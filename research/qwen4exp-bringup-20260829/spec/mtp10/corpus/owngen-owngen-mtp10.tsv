@@ -1,0 +1,1420 @@
+# qwen4exp_real_gate	label=owngen-mtp10	binary_sha256=6307988375a174e78f463d2d3b2964b4ee9173bfe2e956813c304ba902c82790	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# owngen: own-generated rank corpus, k=5, FULL-VOCAB draft head, greedy=256 sampled=512x2 eos=[248046, 248044]
+# provenance: prompts are REAL-SHAPED (goldens continuations + chat-template renders composed on the box); the counted distribution is this artifact's OWN emitted tokens
+prompt	class	arm	seed	prompt_tokens	gen_tokens	counted	hit_eos	accept_rate	mean_accept_len	ms_per_token
+# state_capacity=PER-GENERATION (prompt+tokens+k+4; uniform max-over-pack was measured WORSE — one generation at the pack maximum does not fit the ~2.6 GiB headroom)	max_cap=1461	resumed_rows=13	limit=0
+76	sxc_claude	sampled	0x5eed0000	724	512	512	false	0.172	1.86	30.98
+76	sxc_claude	sampled	0x5eed0001	724	512	512	false	0.172	1.86	30.42
+# vram	after_prompt=76	generated_this_run=1	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+60	sxc_claude	greedy	-	691	256	256	false	0.348	2.75	18.65
+60	sxc_claude	sampled	0x5eed0000	691	512	512	false	0.179	1.90	29.32
+60	sxc_claude	sampled	0x5eed0001	691	512	512	false	0.179	1.90	29.35
+# vram	after_prompt=60	generated_this_run=2	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+53	longctx	greedy	-	675	256	256	false	0.567	3.82	13.43
+53	longctx	sampled	0x5eed0000	675	512	321	true	0.469	3.35	16.75
+53	longctx	sampled	0x5eed0001	675	512	321	true	0.469	3.35	16.76
+# vram	after_prompt=53	generated_this_run=3	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+152	sxc_claude	greedy	-	660	256	256	false	0.328	2.64	19.25
+152	sxc_claude	sampled	0x5eed0000	660	512	512	false	0.183	1.92	28.89
+152	sxc_claude	sampled	0x5eed0001	660	512	512	false	0.183	1.92	28.84
+# vram	after_prompt=152	generated_this_run=4	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+144	sxc_claude	greedy	-	640	256	256	false	0.322	2.61	19.36
+144	sxc_claude	sampled	0x5eed0000	640	512	512	false	0.197	1.98	27.98
+144	sxc_claude	sampled	0x5eed0001	640	512	512	false	0.197	1.98	28.05
+# vram	after_prompt=144	generated_this_run=5	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+54	longctx	greedy	-	602	256	103	true	0.613	4.00	12.72
+54	longctx	sampled	0x5eed0000	602	512	113	true	0.659	4.30	12.99
+54	longctx	sampled	0x5eed0001	602	512	113	true	0.659	4.30	12.91
+# vram	after_prompt=54	generated_this_run=6	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+240	sxc_claude	greedy	-	595	256	256	false	0.291	2.44	20.54
+240	sxc_claude	sampled	0x5eed0000	595	512	512	false	0.168	1.84	29.86
+240	sxc_claude	sampled	0x5eed0001	595	512	512	false	0.168	1.84	30.05
+# vram	after_prompt=240	generated_this_run=7	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+301	sxc_codex	greedy	-	590	256	256	false	0.863	5.33	9.59
+301	sxc_codex	sampled	0x5eed0000	590	512	512	false	0.796	4.97	11.27
+301	sxc_codex	sampled	0x5eed0001	590	512	512	false	0.796	4.97	11.19
+# vram	after_prompt=301	generated_this_run=8	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+108	sxc_claude	greedy	-	565	256	256	false	0.307	2.53	19.94
+108	sxc_claude	sampled	0x5eed0000	565	512	512	false	0.385	2.91	18.61
+108	sxc_claude	sampled	0x5eed0001	565	512	512	false	0.385	2.91	18.57
+# vram	after_prompt=108	generated_this_run=9	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+237	sxc_codex	greedy	-	560	256	256	false	0.343	2.72	18.17
+237	sxc_codex	sampled	0x5eed0000	560	512	512	false	0.308	2.55	21.38
+237	sxc_codex	sampled	0x5eed0001	560	512	512	false	0.308	2.55	21.39
+# vram	after_prompt=237	generated_this_run=10	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+116	sxc_claude	greedy	-	519	256	256	false	0.297	2.49	19.98
+116	sxc_claude	sampled	0x5eed0000	519	512	249	true	0.493	3.44	15.76
+116	sxc_claude	sampled	0x5eed0001	519	512	249	true	0.493	3.44	15.78
+# vram	after_prompt=116	generated_this_run=11	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+34	agentic_tools	greedy	-	512	256	125	true	0.770	4.83	10.50
+34	agentic_tools	sampled	0x5eed0000	512	512	112	true	0.508	3.53	15.39
+34	agentic_tools	sampled	0x5eed0001	512	512	112	true	0.508	3.53	15.46
+# vram	after_prompt=34	generated_this_run=12	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+35	agentic_tools	greedy	-	502	256	154	true	0.727	4.65	10.82
+35	agentic_tools	sampled	0x5eed0000	502	512	141	true	0.674	4.38	12.35
+35	agentic_tools	sampled	0x5eed0001	502	512	141	true	0.674	4.38	12.34
+# vram	after_prompt=35	generated_this_run=13	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+140	sxc_claude	greedy	-	489	256	256	false	0.861	5.22	9.51
+140	sxc_claude	sampled	0x5eed0000	489	512	512	false	0.212	2.06	26.03
+140	sxc_claude	sampled	0x5eed0001	489	512	512	false	0.212	2.06	26.01
+# vram	after_prompt=140	generated_this_run=14	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+235	sxc_hermes	greedy	-	464	256	256	false	0.345	2.72	18.00
+235	sxc_hermes	sampled	0x5eed0000	464	512	512	false	0.203	2.02	26.32
+235	sxc_hermes	sampled	0x5eed0001	464	512	512	false	0.203	2.02	26.31
+# vram	after_prompt=235	generated_this_run=15	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+232	sxc_claude	greedy	-	447	256	256	false	0.247	2.23	21.57
+232	sxc_claude	sampled	0x5eed0000	447	512	512	false	0.219	2.10	25.25
+232	sxc_claude	sampled	0x5eed0001	447	512	512	false	0.219	2.10	25.42
+# vram	after_prompt=232	generated_this_run=16	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+239	sxc_hermes	greedy	-	361	256	256	false	0.898	5.45	8.84
+239	sxc_hermes	sampled	0x5eed0000	361	512	512	false	0.169	1.85	28.18
+239	sxc_hermes	sampled	0x5eed0001	361	512	512	false	0.169	1.85	28.16
+# vram	after_prompt=239	generated_this_run=17	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+36	agentic_tools	greedy	-	317	256	60	true	0.432	3.16	15.07
+36	agentic_tools	sampled	0x5eed0000	317	512	59	true	0.358	2.78	18.86
+36	agentic_tools	sampled	0x5eed0001	317	512	59	true	0.358	2.78	18.88
+# vram	after_prompt=36	generated_this_run=18	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+184	sxc_claude	greedy	-	299	256	256	false	0.885	5.45	8.85
+184	sxc_claude	sampled	0x5eed0000	299	512	512	false	0.228	2.13	24.06
+184	sxc_claude	sampled	0x5eed0001	299	512	512	false	0.228	2.13	24.18
+# vram	after_prompt=184	generated_this_run=19	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+297	sxc_codex	greedy	-	284	256	104	true	0.446	3.24	14.33
+297	sxc_codex	sampled	0x5eed0000	284	512	209	true	0.297	2.49	20.50
+297	sxc_codex	sampled	0x5eed0001	284	512	209	true	0.297	2.49	20.55
+# vram	after_prompt=297	generated_this_run=20	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+156	sxc_claude	greedy	-	267	256	256	false	0.255	2.27	20.32
+156	sxc_claude	sampled	0x5eed0000	267	512	512	false	0.202	2.02	25.47
+156	sxc_claude	sampled	0x5eed0001	267	512	512	false	0.202	2.02	25.39
+# vram	after_prompt=156	generated_this_run=21	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+300	sxc_claude	greedy	-	257	256	256	false	0.650	4.27	10.92
+300	sxc_claude	sampled	0x5eed0000	257	512	512	false	0.383	2.91	17.81
+300	sxc_claude	sampled	0x5eed0001	257	512	512	false	0.383	2.91	17.79
+# vram	after_prompt=300	generated_this_run=22	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+50	longctx	greedy	-	256	256	256	false	0.412	3.01	15.27
+50	longctx	sampled	0x5eed0000	256	512	512	false	0.273	2.36	21.68
+50	longctx	sampled	0x5eed0001	256	512	512	false	0.273	2.36	21.69
+# vram	after_prompt=50	generated_this_run=23	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+305	sxc_codex	greedy	-	251	256	119	true	0.407	3.05	15.14
+305	sxc_codex	sampled	0x5eed0000	251	512	82	true	0.533	3.66	13.87
+305	sxc_codex	sampled	0x5eed0001	251	512	82	true	0.533	3.66	13.88
+# vram	after_prompt=305	generated_this_run=24	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+198	sxc_eigen	greedy	-	243	256	256	false	0.585	3.94	11.83
+198	sxc_eigen	sampled	0x5eed0000	243	512	512	false	0.282	2.42	21.26
+198	sxc_eigen	sampled	0x5eed0001	243	512	512	false	0.282	2.42	21.26
+# vram	after_prompt=198	generated_this_run=25	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+197	sxc_codex	greedy	-	240	256	157	true	0.393	2.98	15.63
+197	sxc_codex	sampled	0x5eed0000	240	512	255	true	0.329	2.64	19.16
+197	sxc_codex	sampled	0x5eed0001	240	512	255	true	0.329	2.64	19.13
+# vram	after_prompt=197	generated_this_run=26	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+177	sxc_codex	greedy	-	238	256	166	true	0.424	3.12	14.70
+177	sxc_codex	sampled	0x5eed0000	238	512	94	true	0.222	2.12	23.98
+177	sxc_codex	sampled	0x5eed0001	238	512	94	true	0.222	2.12	24.25
+# vram	after_prompt=177	generated_this_run=27	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+189	sxc_codex	greedy	-	238	256	111	true	0.417	3.08	15.05
+189	sxc_codex	sampled	0x5eed0000	238	512	208	true	0.327	2.64	19.51
+189	sxc_codex	sampled	0x5eed0001	238	512	208	true	0.327	2.64	19.48
+# vram	after_prompt=189	generated_this_run=28	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+233	sxc_codex	greedy	-	238	256	101	true	0.312	2.56	17.94
+233	sxc_codex	sampled	0x5eed0000	238	512	240	true	0.239	2.20	23.25
+233	sxc_codex	sampled	0x5eed0001	238	512	240	true	0.239	2.20	23.28
+# vram	after_prompt=233	generated_this_run=29	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+325	sxc_codex	greedy	-	238	256	104	true	0.445	3.20	14.35
+325	sxc_codex	sampled	0x5eed0000	238	512	369	true	0.313	2.56	19.79
+325	sxc_codex	sampled	0x5eed0001	238	512	369	true	0.313	2.56	19.78
+# vram	after_prompt=325	generated_this_run=30	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+201	sxc_codex	greedy	-	236	256	200	true	0.295	2.49	18.40
+201	sxc_codex	sampled	0x5eed0000	236	512	149	true	0.247	2.23	22.85
+201	sxc_codex	sampled	0x5eed0001	236	512	149	true	0.247	2.23	22.90
+# vram	after_prompt=201	generated_this_run=31	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+101	sxc_codex	greedy	-	232	256	108	true	0.378	2.88	15.96
+101	sxc_codex	sampled	0x5eed0000	232	512	197	true	0.274	2.36	21.59
+101	sxc_codex	sampled	0x5eed0001	232	512	197	true	0.274	2.36	21.60
+# vram	after_prompt=101	generated_this_run=32	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+157	sxc_codex	greedy	-	230	256	134	true	0.419	3.05	15.19
+157	sxc_codex	sampled	0x5eed0000	230	512	250	true	0.196	1.97	25.68
+157	sxc_codex	sampled	0x5eed0001	230	512	250	true	0.196	1.97	25.71
+# vram	after_prompt=157	generated_this_run=33	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+164	sxc_claude	greedy	-	230	256	256	false	0.609	4.00	11.58
+164	sxc_claude	sampled	0x5eed0000	230	512	512	false	0.208	2.03	25.14
+164	sxc_claude	sampled	0x5eed0001	230	512	512	false	0.208	2.03	25.02
+# vram	after_prompt=164	generated_this_run=34	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+337	sxc_codex	greedy	-	230	256	152	true	0.419	3.08	14.85
+337	sxc_codex	sampled	0x5eed0000	230	512	210	true	0.281	2.40	21.10
+337	sxc_codex	sampled	0x5eed0001	230	512	210	true	0.281	2.40	21.10
+# vram	after_prompt=337	generated_this_run=35	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+345	sxc_codex	greedy	-	230	256	217	true	0.354	2.78	16.66
+345	sxc_codex	sampled	0x5eed0000	230	512	512	false	0.260	2.29	22.39
+345	sxc_codex	sampled	0x5eed0001	230	512	512	false	0.260	2.29	22.25
+# vram	after_prompt=345	generated_this_run=36	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+284	sxc_claude	greedy	-	213	256	256	false	0.360	2.81	16.53
+284	sxc_claude	sampled	0x5eed0000	213	512	512	false	0.176	1.88	27.08
+284	sxc_claude	sampled	0x5eed0001	213	512	512	false	0.176	1.88	26.83
+# vram	after_prompt=284	generated_this_run=37	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+52	longctx	greedy	-	212	256	256	false	0.476	3.37	13.67
+52	longctx	sampled	0x5eed0000	212	512	512	false	0.221	2.11	24.34
+52	longctx	sampled	0x5eed0001	212	512	512	false	0.221	2.11	24.35
+# vram	after_prompt=52	generated_this_run=38	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+62	sxc_eigen	greedy	-	207	256	256	false	0.556	3.76	12.25
+62	sxc_eigen	sampled	0x5eed0000	207	512	512	false	0.339	2.69	18.95
+62	sxc_eigen	sampled	0x5eed0001	207	512	512	false	0.339	2.69	18.94
+# vram	after_prompt=62	generated_this_run=39	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+132	sxc_claude	greedy	-	203	256	256	false	0.299	2.49	18.28
+132	sxc_claude	sampled	0x5eed0000	203	512	512	false	0.308	2.52	20.18
+132	sxc_claude	sampled	0x5eed0001	203	512	512	false	0.308	2.52	20.19
+# vram	after_prompt=132	generated_this_run=40	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+216	sxc_claude	greedy	-	202	256	256	false	0.448	3.24	14.07
+216	sxc_claude	sampled	0x5eed0000	202	512	512	false	0.312	2.56	19.90
+216	sxc_claude	sampled	0x5eed0001	202	512	512	false	0.312	2.56	19.91
+# vram	after_prompt=216	generated_this_run=41	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+250	sxc_eigen	greedy	-	199	256	256	false	0.623	4.13	11.03
+250	sxc_eigen	sampled	0x5eed0000	199	512	512	false	0.459	3.28	15.44
+250	sxc_eigen	sampled	0x5eed0001	199	512	512	false	0.459	3.28	15.46
+# vram	after_prompt=250	generated_this_run=42	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+192	sxc_claude	greedy	-	197	256	256	false	0.600	4.00	11.44
+192	sxc_claude	sampled	0x5eed0000	197	512	512	false	0.336	2.68	19.07
+192	sxc_claude	sampled	0x5eed0001	197	512	512	false	0.336	2.68	19.06
+# vram	after_prompt=192	generated_this_run=43	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+180	sxc_claude	greedy	-	196	256	256	false	0.495	3.46	13.22
+180	sxc_claude	sampled	0x5eed0000	196	512	512	false	0.349	2.74	18.52
+180	sxc_claude	sampled	0x5eed0001	196	512	512	false	0.349	2.74	18.55
+# vram	after_prompt=180	generated_this_run=44	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+51	longctx	greedy	-	183	256	256	false	0.395	2.98	15.25
+51	longctx	sampled	0x5eed0000	183	512	512	false	0.267	2.34	21.55
+51	longctx	sampled	0x5eed0001	183	512	512	false	0.267	2.34	21.54
+# vram	after_prompt=51	generated_this_run=45	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+161	sxc_codex	greedy	-	177	256	256	false	0.367	2.84	15.90
+161	sxc_codex	sampled	0x5eed0000	177	512	512	false	0.231	2.16	23.21
+161	sxc_codex	sampled	0x5eed0001	177	512	512	false	0.231	2.16	23.21
+# vram	after_prompt=161	generated_this_run=46	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+204	sxc_claude	greedy	-	173	256	256	false	0.430	3.16	14.41
+204	sxc_claude	sampled	0x5eed0000	173	512	512	false	0.294	2.46	20.46
+204	sxc_claude	sampled	0x5eed0001	173	512	512	false	0.294	2.46	20.66
+# vram	after_prompt=204	generated_this_run=47	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+91	sxc_hermes	greedy	-	171	256	256	false	0.570	3.82	11.83
+91	sxc_hermes	sampled	0x5eed0000	171	512	512	false	0.219	2.10	24.01
+91	sxc_hermes	sampled	0x5eed0001	171	512	512	false	0.219	2.10	24.13
+# vram	after_prompt=91	generated_this_run=48	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+329	sxc_codex	greedy	-	168	256	256	false	0.414	3.08	14.73
+329	sxc_codex	sampled	0x5eed0000	168	512	512	false	0.273	2.35	21.39
+329	sxc_codex	sampled	0x5eed0001	168	512	512	false	0.273	2.35	21.39
+# vram	after_prompt=329	generated_this_run=49	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+136	sxc_claude	greedy	-	165	256	256	false	0.328	2.64	17.10
+136	sxc_claude	sampled	0x5eed0000	165	512	512	false	0.178	1.89	26.62
+136	sxc_claude	sampled	0x5eed0001	165	512	512	false	0.178	1.89	26.66
+# vram	after_prompt=136	generated_this_run=50	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+333	sxc_codex	greedy	-	164	256	256	false	0.337	2.69	16.88
+333	sxc_codex	sampled	0x5eed0000	164	512	512	false	0.271	2.36	21.33
+333	sxc_codex	sampled	0x5eed0001	164	512	512	false	0.271	2.36	21.37
+# vram	after_prompt=333	generated_this_run=51	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+341	sxc_codex	greedy	-	160	256	256	false	0.556	3.76	12.05
+341	sxc_codex	sampled	0x5eed0000	160	512	512	false	0.272	2.36	21.28
+341	sxc_codex	sampled	0x5eed0001	160	512	512	false	0.272	2.36	21.36
+# vram	after_prompt=341	generated_this_run=52	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+348	sxc_claude	greedy	-	159	256	256	false	0.576	3.88	11.80
+348	sxc_claude	sampled	0x5eed0000	159	512	512	false	0.281	2.40	20.97
+348	sxc_claude	sampled	0x5eed0001	159	512	512	false	0.281	2.40	21.05
+# vram	after_prompt=348	generated_this_run=53	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+95	sxc_hermes	greedy	-	156	256	256	false	0.553	3.76	12.06
+95	sxc_hermes	sampled	0x5eed0000	156	512	512	false	0.323	2.60	19.33
+95	sxc_hermes	sampled	0x5eed0001	156	512	512	false	0.323	2.60	19.36
+# vram	after_prompt=95	generated_this_run=54	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+181	sxc_codex	greedy	-	154	256	256	false	0.410	3.05	14.84
+181	sxc_codex	sampled	0x5eed0000	154	512	512	false	0.304	2.52	20.02
+181	sxc_codex	sampled	0x5eed0001	154	512	512	false	0.304	2.52	20.00
+# vram	after_prompt=181	generated_this_run=55	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+57	sxc_codex	greedy	-	153	256	256	false	0.499	3.51	12.85
+57	sxc_codex	sampled	0x5eed0000	153	512	512	false	0.278	2.39	20.86
+57	sxc_codex	sampled	0x5eed0001	153	512	512	false	0.278	2.39	20.94
+# vram	after_prompt=57	generated_this_run=56	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+196	sxc_claude	greedy	-	153	256	256	false	0.493	3.41	13.32
+196	sxc_claude	sampled	0x5eed0000	153	512	377	true	0.296	2.49	20.37
+196	sxc_claude	sampled	0x5eed0001	153	512	377	true	0.296	2.49	20.38
+# vram	after_prompt=196	generated_this_run=57	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+185	sxc_codex	greedy	-	146	256	256	false	0.417	3.08	14.78
+185	sxc_codex	sampled	0x5eed0000	146	512	512	false	0.230	2.15	23.23
+185	sxc_codex	sampled	0x5eed0001	146	512	512	false	0.230	2.15	23.18
+# vram	after_prompt=185	generated_this_run=58	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+221	sxc_codex	greedy	-	143	256	256	false	0.337	2.69	16.66
+221	sxc_codex	sampled	0x5eed0000	143	512	512	false	0.279	2.39	20.77
+221	sxc_codex	sampled	0x5eed0001	143	512	512	false	0.279	2.39	20.76
+# vram	after_prompt=221	generated_this_run=59	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+166	sxc_eigen	greedy	-	138	256	256	false	0.412	3.01	14.88
+166	sxc_eigen	sampled	0x5eed0000	138	512	512	false	0.283	2.40	20.83
+166	sxc_eigen	sampled	0x5eed0001	138	512	512	false	0.283	2.40	20.76
+# vram	after_prompt=166	generated_this_run=60	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+213	sxc_codex	greedy	-	138	256	256	false	0.393	2.98	15.01
+213	sxc_codex	sampled	0x5eed0000	138	512	512	false	0.284	2.43	20.46
+213	sxc_codex	sampled	0x5eed0001	138	512	512	false	0.284	2.43	20.51
+# vram	after_prompt=213	generated_this_run=61	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+228	sxc_claude	greedy	-	138	256	256	false	0.464	3.28	13.64
+228	sxc_claude	sampled	0x5eed0000	138	512	512	false	0.236	2.18	22.85
+228	sxc_claude	sampled	0x5eed0001	138	512	512	false	0.236	2.18	22.95
+# vram	after_prompt=228	generated_this_run=62	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+349	sxc_codex	greedy	-	138	256	256	false	0.576	3.82	11.86
+349	sxc_codex	sampled	0x5eed0000	138	512	512	false	0.338	2.69	18.50
+349	sxc_codex	sampled	0x5eed0001	138	512	512	false	0.338	2.69	18.48
+# vram	after_prompt=349	generated_this_run=63	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+225	sxc_codex	greedy	-	133	256	256	false	0.348	2.75	16.29
+225	sxc_codex	sampled	0x5eed0000	133	512	512	false	0.206	2.03	24.36
+225	sxc_codex	sampled	0x5eed0001	133	512	512	false	0.206	2.03	24.47
+# vram	after_prompt=225	generated_this_run=64	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+278	sxc_eigen	greedy	-	132	256	256	false	0.485	3.41	13.14
+278	sxc_eigen	sampled	0x5eed0000	132	512	512	false	0.267	2.34	21.39
+278	sxc_eigen	sampled	0x5eed0001	132	512	512	false	0.267	2.34	21.42
+# vram	after_prompt=278	generated_this_run=65	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+23	logs	greedy	-	130	256	256	false	0.508	3.56	12.61
+23	logs	sampled	0x5eed0000	130	512	512	false	0.211	2.06	24.20
+23	logs	sampled	0x5eed0001	130	512	512	false	0.211	2.06	24.18
+# vram	after_prompt=23	generated_this_run=66	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+134	sxc_eigen	greedy	-	130	256	256	false	0.337	2.69	16.60
+134	sxc_eigen	sampled	0x5eed0000	130	512	512	false	0.225	2.12	23.34
+134	sxc_eigen	sampled	0x5eed0001	130	512	512	false	0.225	2.12	23.32
+# vram	after_prompt=134	generated_this_run=67	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+171	sxc_hermes	greedy	-	129	256	256	false	0.410	3.05	14.75
+171	sxc_hermes	sampled	0x5eed0000	129	512	512	false	0.273	2.37	21.00
+171	sxc_hermes	sampled	0x5eed0001	129	512	512	false	0.273	2.37	21.03
+# vram	after_prompt=171	generated_this_run=68	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+17	json	greedy	-	128	256	256	false	0.718	4.57	9.82
+17	json	sampled	0x5eed0000	128	512	257	true	0.746	4.74	10.50
+17	json	sampled	0x5eed0001	128	512	257	true	0.746	4.74	10.49
+# vram	after_prompt=17	generated_this_run=69	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+316	sxc_claude	greedy	-	128	256	256	false	0.480	3.41	13.05
+316	sxc_claude	sampled	0x5eed0000	128	512	512	false	0.284	2.43	20.62
+316	sxc_claude	sampled	0x5eed0001	128	512	512	false	0.284	2.43	20.56
+# vram	after_prompt=316	generated_this_run=70	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+141	sxc_codex	greedy	-	127	256	256	false	0.317	2.59	17.21
+141	sxc_codex	sampled	0x5eed0000	127	512	512	false	0.192	1.95	25.18
+141	sxc_codex	sampled	0x5eed0001	127	512	512	false	0.192	1.95	25.24
+# vram	after_prompt=141	generated_this_run=71	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+208	sxc_claude	greedy	-	127	256	256	false	0.559	3.76	11.90
+208	sxc_claude	sampled	0x5eed0000	127	512	512	false	0.248	2.25	22.23
+208	sxc_claude	sampled	0x5eed0001	127	512	512	false	0.248	2.25	22.11
+# vram	after_prompt=208	generated_this_run=72	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+25	logs	greedy	-	126	256	256	false	0.500	3.46	12.98
+25	logs	sampled	0x5eed0000	126	512	360	true	0.398	2.99	16.52
+25	logs	sampled	0x5eed0001	126	512	360	true	0.398	2.99	16.53
+# vram	after_prompt=25	generated_this_run=73	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+193	sxc_codex	greedy	-	126	256	256	false	0.445	3.20	13.99
+193	sxc_codex	sampled	0x5eed0000	126	512	512	false	0.214	2.07	24.10
+193	sxc_codex	sampled	0x5eed0001	126	512	512	false	0.214	2.07	24.04
+# vram	after_prompt=193	generated_this_run=74	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+7	refactor	greedy	-	124	256	256	false	0.351	2.75	16.18
+7	refactor	sampled	0x5eed0000	124	512	512	false	0.277	2.38	20.89
+7	refactor	sampled	0x5eed0001	124	512	512	false	0.277	2.38	20.89
+# vram	after_prompt=7	generated_this_run=75	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+67	sxc_hermes	greedy	-	124	256	256	false	0.400	2.98	14.98
+67	sxc_hermes	sampled	0x5eed0000	124	512	512	false	0.269	2.35	21.10
+67	sxc_hermes	sampled	0x5eed0001	124	512	512	false	0.269	2.35	21.10
+# vram	after_prompt=67	generated_this_run=76	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+217	sxc_codex	greedy	-	124	256	256	false	0.550	3.76	11.93
+217	sxc_codex	sampled	0x5eed0000	124	512	512	false	0.229	2.15	23.12
+217	sxc_codex	sampled	0x5eed0001	124	512	512	false	0.229	2.15	23.14
+# vram	after_prompt=217	generated_this_run=77	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+244	sxc_claude	greedy	-	123	256	256	false	0.380	2.91	15.30
+244	sxc_claude	sampled	0x5eed0000	123	512	512	false	0.246	2.24	22.20
+244	sxc_claude	sampled	0x5eed0001	123	512	512	false	0.246	2.24	22.15
+# vram	after_prompt=244	generated_this_run=78	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+258	sxc_eigen	greedy	-	123	256	256	false	0.462	3.32	13.46
+258	sxc_eigen	sampled	0x5eed0000	123	512	512	false	0.359	2.78	17.89
+258	sxc_eigen	sampled	0x5eed0001	123	512	512	false	0.359	2.78	17.85
+# vram	after_prompt=258	generated_this_run=79	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+19	json	greedy	-	121	256	95	true	0.171	1.86	23.81
+19	json	sampled	0x5eed0000	121	512	97	true	0.270	2.35	21.10
+19	json	sampled	0x5eed0001	121	512	97	true	0.270	2.35	21.23
+# vram	after_prompt=19	generated_this_run=80	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+188	sxc_claude	greedy	-	121	256	256	false	0.315	2.59	17.25
+188	sxc_claude	sampled	0x5eed0000	121	512	512	false	0.197	1.98	25.04
+188	sxc_claude	sampled	0x5eed0001	121	512	512	false	0.197	1.98	25.03
+# vram	after_prompt=188	generated_this_run=81	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+242	sxc_eigen	greedy	-	121	256	256	false	0.410	3.05	14.63
+242	sxc_eigen	sampled	0x5eed0000	121	512	512	false	0.262	2.32	21.47
+242	sxc_eigen	sampled	0x5eed0001	121	512	512	false	0.262	2.32	21.49
+# vram	after_prompt=242	generated_this_run=82	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+162	sxc_eigen	greedy	-	118	256	256	false	0.301	2.49	17.93
+162	sxc_eigen	sampled	0x5eed0000	118	512	512	false	0.177	1.89	26.01
+162	sxc_eigen	sampled	0x5eed0001	118	512	512	false	0.177	1.89	25.95
+# vram	after_prompt=162	generated_this_run=83	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+18	json	greedy	-	117	256	256	false	0.471	3.37	13.28
+18	json	sampled	0x5eed0000	117	512	512	false	0.301	2.51	19.73
+18	json	sampled	0x5eed0001	117	512	512	false	0.301	2.51	19.77
+# vram	after_prompt=18	generated_this_run=84	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+312	sxc_claude	greedy	-	116	256	256	false	0.483	3.41	13.06
+312	sxc_claude	sampled	0x5eed0000	116	512	512	false	0.324	2.63	18.94
+312	sxc_claude	sampled	0x5eed0001	116	512	512	false	0.324	2.63	18.86
+# vram	after_prompt=312	generated_this_run=85	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+3	code	greedy	-	115	256	256	false	0.409	3.01	14.79
+3	code	sampled	0x5eed0000	115	512	512	false	0.269	2.35	21.02
+3	code	sampled	0x5eed0001	115	512	512	false	0.269	2.35	21.01
+# vram	after_prompt=3	generated_this_run=86	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+135	sxc_hermes	greedy	-	115	256	256	false	0.407	3.01	14.75
+135	sxc_hermes	sampled	0x5eed0000	115	512	512	false	0.296	2.49	19.92
+135	sxc_hermes	sampled	0x5eed0001	115	512	512	false	0.296	2.49	19.94
+# vram	after_prompt=135	generated_this_run=87	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+158	sxc_eigen	greedy	-	114	256	256	false	0.281	2.42	18.32
+158	sxc_eigen	sampled	0x5eed0000	114	512	512	false	0.201	2.01	24.53
+158	sxc_eigen	sampled	0x5eed0001	114	512	512	false	0.201	2.01	24.56
+# vram	after_prompt=158	generated_this_run=88	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+211	sxc_hermes	greedy	-	111	256	256	false	0.446	3.24	13.71
+211	sxc_hermes	sampled	0x5eed0000	111	512	512	false	0.366	2.83	17.57
+211	sxc_hermes	sampled	0x5eed0001	111	512	512	false	0.366	2.83	17.57
+# vram	after_prompt=211	generated_this_run=89	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+294	sxc_eigen	greedy	-	111	256	256	false	0.327	2.61	17.04
+294	sxc_eigen	sampled	0x5eed0000	111	512	512	false	0.272	2.35	21.04
+294	sxc_eigen	sampled	0x5eed0001	111	512	512	false	0.272	2.35	21.08
+# vram	after_prompt=294	generated_this_run=90	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+298	sxc_eigen	greedy	-	111	256	256	false	0.360	2.81	15.79
+298	sxc_eigen	sampled	0x5eed0000	111	512	512	false	0.311	2.56	19.29
+298	sxc_eigen	sampled	0x5eed0001	111	512	512	false	0.311	2.56	19.31
+# vram	after_prompt=298	generated_this_run=91	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+9	reasoning	greedy	-	110	256	256	false	0.619	4.06	10.95
+9	reasoning	sampled	0x5eed0000	110	512	512	false	0.545	3.71	13.43
+9	reasoning	sampled	0x5eed0001	110	512	512	false	0.545	3.71	13.40
+# vram	after_prompt=9	generated_this_run=92	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+229	sxc_codex	greedy	-	110	256	256	false	0.400	3.01	14.83
+229	sxc_codex	sampled	0x5eed0000	110	512	512	false	0.235	2.17	22.77
+229	sxc_codex	sampled	0x5eed0001	110	512	512	false	0.235	2.17	22.90
+# vram	after_prompt=229	generated_this_run=93	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+207	sxc_hermes	greedy	-	109	256	256	false	0.475	3.32	13.38
+207	sxc_hermes	sampled	0x5eed0000	109	512	512	false	0.323	2.60	19.04
+207	sxc_hermes	sampled	0x5eed0001	109	512	512	false	0.323	2.60	19.05
+# vram	after_prompt=207	generated_this_run=94	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+295	sxc_hermes	greedy	-	109	256	256	false	0.393	2.98	14.90
+295	sxc_hermes	sampled	0x5eed0000	109	512	512	false	0.279	2.39	20.68
+295	sxc_hermes	sampled	0x5eed0001	109	512	512	false	0.279	2.39	20.67
+# vram	after_prompt=295	generated_this_run=95	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+5	code	greedy	-	108	256	256	false	0.479	3.37	13.20
+5	code	sampled	0x5eed0000	108	512	512	false	0.198	1.99	24.89
+5	code	sampled	0x5eed0001	108	512	512	false	0.198	1.99	24.86
+# vram	after_prompt=5	generated_this_run=96	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+10	reasoning	greedy	-	107	256	256	false	0.649	4.20	10.64
+10	reasoning	sampled	0x5eed0000	107	512	512	false	0.407	3.03	16.42
+10	reasoning	sampled	0x5eed0001	107	512	512	false	0.407	3.03	16.42
+# vram	after_prompt=10	generated_this_run=97	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+31	agentic_plan	greedy	-	106	256	256	false	0.497	3.46	12.88
+31	agentic_plan	sampled	0x5eed0000	106	512	512	false	0.229	2.15	23.34
+31	agentic_plan	sampled	0x5eed0001	106	512	512	false	0.229	2.15	23.31
+# vram	after_prompt=31	generated_this_run=98	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+299	sxc_hermes	greedy	-	106	256	256	false	0.407	3.05	14.59
+299	sxc_hermes	sampled	0x5eed0000	106	512	512	false	0.304	2.52	19.58
+299	sxc_hermes	sampled	0x5eed0001	106	512	512	false	0.304	2.52	19.64
+# vram	after_prompt=299	generated_this_run=99	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+8	refactor	greedy	-	105	256	256	false	0.407	3.05	14.54
+8	refactor	sampled	0x5eed0000	105	512	512	false	0.217	2.07	23.91
+8	refactor	sampled	0x5eed0001	105	512	512	false	0.217	2.07	23.96
+# vram	after_prompt=8	generated_this_run=100	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+236	sxc_claude	greedy	-	105	256	256	false	0.407	3.05	14.55
+236	sxc_claude	sampled	0x5eed0000	105	512	512	false	0.292	2.46	20.34
+236	sxc_claude	sampled	0x5eed0001	105	512	512	false	0.292	2.46	20.02
+# vram	after_prompt=236	generated_this_run=101	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+11	reasoning	greedy	-	104	256	256	false	0.667	4.27	10.44
+11	reasoning	sampled	0x5eed0000	104	512	512	false	0.574	3.85	12.88
+11	reasoning	sampled	0x5eed0001	104	512	512	false	0.574	3.85	12.88
+# vram	after_prompt=11	generated_this_run=102	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+246	sxc_eigen	greedy	-	104	256	256	false	0.524	3.61	12.33
+246	sxc_eigen	sampled	0x5eed0000	104	512	512	false	0.326	2.63	18.90
+246	sxc_eigen	sampled	0x5eed0001	104	512	512	false	0.326	2.63	18.91
+# vram	after_prompt=246	generated_this_run=103	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+254	sxc_eigen	greedy	-	104	256	256	false	0.501	3.51	12.66
+254	sxc_eigen	sampled	0x5eed0000	104	512	512	false	0.301	2.51	19.69
+254	sxc_eigen	sampled	0x5eed0001	104	512	512	false	0.301	2.51	19.68
+# vram	after_prompt=254	generated_this_run=104	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+320	sxc_claude	greedy	-	104	256	256	false	0.419	3.05	14.60
+320	sxc_claude	sampled	0x5eed0000	104	512	512	false	0.265	2.33	21.35
+320	sxc_claude	sampled	0x5eed0001	104	512	512	false	0.265	2.33	21.26
+# vram	after_prompt=320	generated_this_run=105	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+1	code	greedy	-	103	256	256	false	0.573	3.88	11.45
+1	code	sampled	0x5eed0000	103	512	512	false	0.416	3.08	15.96
+1	code	sampled	0x5eed0001	103	512	512	false	0.416	3.08	16.04
+# vram	after_prompt=1	generated_this_run=106	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+44	effort_low	greedy	-	103	256	256	false	0.619	4.06	10.94
+44	effort_low	sampled	0x5eed0000	103	512	512	false	0.586	3.91	12.60
+44	effort_low	sampled	0x5eed0001	103	512	512	false	0.586	3.91	12.63
+# vram	after_prompt=44	generated_this_run=107	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+255	sxc_hermes	greedy	-	103	256	256	false	0.337	2.69	16.48
+255	sxc_hermes	sampled	0x5eed0000	103	512	512	false	0.159	1.80	27.44
+255	sxc_hermes	sampled	0x5eed0001	103	512	512	false	0.159	1.80	27.40
+# vram	after_prompt=255	generated_this_run=108	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+6	refactor	greedy	-	102	256	256	false	0.448	3.20	13.86
+6	refactor	sampled	0x5eed0000	102	512	512	false	0.273	2.37	20.84
+6	refactor	sampled	0x5eed0001	102	512	512	false	0.273	2.37	20.93
+# vram	after_prompt=6	generated_this_run=109	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+56	sxc_claude	greedy	-	102	256	220	true	0.414	3.08	14.29
+56	sxc_claude	sampled	0x5eed0000	102	512	160	true	0.611	4.06	12.18
+56	sxc_claude	sampled	0x5eed0001	102	512	160	true	0.611	4.06	12.15
+# vram	after_prompt=56	generated_this_run=110	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+139	sxc_hermes	greedy	-	102	256	256	false	0.410	3.05	14.53
+139	sxc_hermes	sampled	0x5eed0000	102	512	512	false	0.205	2.02	24.46
+139	sxc_hermes	sampled	0x5eed0001	102	512	512	false	0.205	2.02	24.54
+# vram	after_prompt=139	generated_this_run=111	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+183	sxc_hermes	greedy	-	102	256	256	false	0.357	2.78	15.98
+183	sxc_hermes	sampled	0x5eed0000	102	512	512	false	0.229	2.13	23.07
+183	sxc_hermes	sampled	0x5eed0001	102	512	512	false	0.229	2.13	23.02
+# vram	after_prompt=183	generated_this_run=112	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+24	logs	greedy	-	101	256	256	false	0.384	2.91	15.25
+24	logs	sampled	0x5eed0000	101	512	512	false	0.239	2.20	22.62
+24	logs	sampled	0x5eed0001	101	512	512	false	0.239	2.20	22.61
+# vram	after_prompt=24	generated_this_run=113	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+59	sxc_hermes	greedy	-	101	256	256	false	0.286	2.44	18.14
+59	sxc_hermes	sampled	0x5eed0000	101	512	512	false	0.181	1.91	25.86
+59	sxc_hermes	sampled	0x5eed0001	101	512	512	false	0.181	1.91	25.83
+# vram	after_prompt=59	generated_this_run=114	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+257	sxc_codex	greedy	-	101	256	256	false	0.373	2.88	15.41
+257	sxc_codex	sampled	0x5eed0000	101	512	512	false	0.296	2.47	19.93
+257	sxc_codex	sampled	0x5eed0001	101	512	512	false	0.296	2.47	19.96
+# vram	after_prompt=257	generated_this_run=115	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+296	sxc_claude	greedy	-	101	256	256	false	0.402	3.01	14.72
+296	sxc_claude	sampled	0x5eed0000	101	512	512	false	0.274	2.37	20.88
+296	sxc_claude	sampled	0x5eed0001	101	512	512	false	0.274	2.37	20.95
+# vram	after_prompt=296	generated_this_run=116	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+324	sxc_claude	greedy	-	100	256	256	false	0.380	2.91	15.33
+324	sxc_claude	sampled	0x5eed0000	100	512	512	false	0.295	2.47	19.91
+324	sxc_claude	sampled	0x5eed0001	100	512	512	false	0.295	2.47	19.93
+# vram	after_prompt=324	generated_this_run=117	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+118	sxc_eigen	greedy	-	99	256	256	false	0.326	2.64	16.73
+118	sxc_eigen	sampled	0x5eed0000	99	512	309	true	0.237	2.19	22.49
+118	sxc_eigen	sampled	0x5eed0001	99	512	309	true	0.237	2.19	22.50
+# vram	after_prompt=118	generated_this_run=118	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+33	agentic_plan	greedy	-	98	256	256	false	0.324	2.61	17.02
+33	agentic_plan	sampled	0x5eed0000	98	512	512	false	0.190	1.95	25.38
+33	agentic_plan	sampled	0x5eed0001	98	512	512	false	0.190	1.95	25.34
+# vram	after_prompt=33	generated_this_run=119	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+46	effort_low	greedy	-	96	256	256	false	0.597	3.94	11.24
+46	effort_low	sampled	0x5eed0000	96	512	512	false	0.420	3.08	15.95
+46	effort_low	sampled	0x5eed0001	96	512	512	false	0.420	3.08	15.97
+# vram	after_prompt=46	generated_this_run=120	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+332	sxc_claude	greedy	-	96	256	256	false	0.290	2.46	17.89
+332	sxc_claude	sampled	0x5eed0000	96	512	512	false	0.162	1.82	27.15
+332	sxc_claude	sampled	0x5eed0001	96	512	512	false	0.162	1.82	27.17
+# vram	after_prompt=332	generated_this_run=121	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+0	code	greedy	-	95	256	256	false	0.338	2.67	16.51
+0	code	sampled	0x5eed0000	95	512	512	false	0.332	2.65	18.49
+0	code	sampled	0x5eed0001	95	512	512	false	0.332	2.65	18.45
+# vram	after_prompt=0	generated_this_run=122	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+29	writing	greedy	-	95	256	256	false	0.456	3.28	13.62
+29	writing	sampled	0x5eed0000	95	512	328	true	0.377	2.89	17.10
+29	writing	sampled	0x5eed0001	95	512	328	true	0.377	2.89	17.06
+# vram	after_prompt=29	generated_this_run=123	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+65	sxc_codex	greedy	-	95	256	256	false	0.328	2.64	16.82
+65	sxc_codex	sampled	0x5eed0000	95	512	512	false	0.195	1.98	24.94
+65	sxc_codex	sampled	0x5eed0001	95	512	512	false	0.195	1.98	24.97
+# vram	after_prompt=65	generated_this_run=124	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+205	sxc_codex	greedy	-	95	256	256	false	0.371	2.84	15.50
+205	sxc_codex	sampled	0x5eed0000	95	512	512	false	0.246	2.24	22.09
+205	sxc_codex	sampled	0x5eed0001	95	512	512	false	0.246	2.24	22.03
+# vram	after_prompt=205	generated_this_run=125	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+304	sxc_claude	greedy	-	94	256	256	false	0.497	3.46	12.91
+304	sxc_claude	sampled	0x5eed0000	94	512	512	false	0.340	2.69	18.29
+304	sxc_claude	sampled	0x5eed0001	94	512	512	false	0.340	2.69	18.34
+# vram	after_prompt=304	generated_this_run=126	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+30	agentic_plan	greedy	-	93	256	256	false	0.360	2.81	15.68
+30	agentic_plan	sampled	0x5eed0000	93	512	512	false	0.198	1.99	24.71
+30	agentic_plan	sampled	0x5eed0001	93	512	512	false	0.198	1.99	24.73
+# vram	after_prompt=30	generated_this_run=127	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+70	sxc_eigen	greedy	-	93	256	256	false	0.384	2.88	15.44
+70	sxc_eigen	sampled	0x5eed0000	93	512	512	false	0.241	2.21	22.31
+70	sxc_eigen	sampled	0x5eed0001	93	512	512	false	0.241	2.21	22.33
+# vram	after_prompt=70	generated_this_run=128	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+106	sxc_eigen	greedy	-	93	256	256	false	0.371	2.81	15.70
+106	sxc_eigen	sampled	0x5eed0000	93	512	512	false	0.239	2.19	22.49
+106	sxc_eigen	sampled	0x5eed0001	93	512	512	false	0.239	2.19	22.46
+# vram	after_prompt=106	generated_this_run=129	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+194	sxc_eigen	greedy	-	93	256	256	false	0.369	2.84	15.51
+194	sxc_eigen	sampled	0x5eed0000	93	512	512	false	0.301	2.51	19.53
+194	sxc_eigen	sampled	0x5eed0001	93	512	512	false	0.301	2.51	19.56
+# vram	after_prompt=194	generated_this_run=130	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+248	sxc_claude	greedy	-	93	256	256	false	0.531	3.66	12.08
+248	sxc_claude	sampled	0x5eed0000	93	512	512	false	0.271	2.36	21.03
+248	sxc_claude	sampled	0x5eed0001	93	512	512	false	0.271	2.36	20.89
+# vram	after_prompt=248	generated_this_run=131	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+4	code	greedy	-	92	256	256	false	0.465	3.32	13.33
+4	code	sampled	0x5eed0000	92	512	512	false	0.375	2.88	17.19
+4	code	sampled	0x5eed0001	92	512	512	false	0.375	2.88	17.18
+# vram	after_prompt=4	generated_this_run=132	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+47	effort_low	greedy	-	92	256	256	false	0.800	5.02	8.88
+47	effort_low	sampled	0x5eed0000	92	512	512	false	0.721	4.57	10.86
+47	effort_low	sampled	0x5eed0001	92	512	512	false	0.721	4.57	10.81
+# vram	after_prompt=47	generated_this_run=133	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+137	sxc_codex	greedy	-	92	256	256	false	0.363	2.78	15.90
+137	sxc_codex	sampled	0x5eed0000	92	512	512	false	0.224	2.12	23.21
+137	sxc_codex	sampled	0x5eed0001	92	512	512	false	0.224	2.12	23.17
+# vram	after_prompt=137	generated_this_run=134	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+352	sxc_claude	greedy	-	92	256	256	false	0.462	3.28	13.46
+352	sxc_claude	sampled	0x5eed0000	92	512	512	false	0.221	2.11	23.33
+352	sxc_claude	sampled	0x5eed0001	92	512	512	false	0.221	2.11	23.37
+# vram	after_prompt=352	generated_this_run=135	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+209	sxc_codex	greedy	-	91	256	256	false	0.351	2.75	16.03
+209	sxc_codex	sampled	0x5eed0000	91	512	512	false	0.230	2.15	22.94
+209	sxc_codex	sampled	0x5eed0001	91	512	512	false	0.230	2.15	22.94
+# vram	after_prompt=209	generated_this_run=136	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+252	sxc_claude	greedy	-	91	256	256	false	0.417	3.08	14.31
+252	sxc_claude	sampled	0x5eed0000	91	512	512	false	0.197	1.97	24.85
+252	sxc_claude	sampled	0x5eed0001	91	512	512	false	0.197	1.97	25.09
+# vram	after_prompt=252	generated_this_run=137	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+22	shell	greedy	-	90	256	256	false	0.442	3.16	14.01
+22	shell	sampled	0x5eed0000	90	512	512	false	0.301	2.51	19.76
+22	shell	sampled	0x5eed0001	90	512	512	false	0.301	2.51	19.66
+# vram	after_prompt=22	generated_this_run=138	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+264	sxc_claude	greedy	-	89	256	256	false	0.339	2.69	16.35
+264	sxc_claude	sampled	0x5eed0000	89	512	512	false	0.237	2.19	22.57
+264	sxc_claude	sampled	0x5eed0001	89	512	512	false	0.237	2.19	22.60
+# vram	after_prompt=264	generated_this_run=139	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+32	agentic_plan	greedy	-	88	256	256	false	0.230	2.15	20.47
+32	agentic_plan	sampled	0x5eed0000	88	512	512	false	0.158	1.79	27.44
+32	agentic_plan	sampled	0x5eed0001	88	512	512	false	0.158	1.79	27.44
+# vram	after_prompt=32	generated_this_run=140	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+280	sxc_claude	greedy	-	88	256	256	false	0.371	2.81	15.70
+280	sxc_claude	sampled	0x5eed0000	88	512	512	false	0.177	1.89	26.11
+280	sxc_claude	sampled	0x5eed0001	88	512	512	false	0.177	1.89	26.05
+# vram	after_prompt=280	generated_this_run=141	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+2	code	greedy	-	87	256	256	false	0.438	3.20	13.93
+2	code	sampled	0x5eed0000	87	512	512	false	0.371	2.86	17.21
+2	code	sampled	0x5eed0001	87	512	512	false	0.371	2.86	17.14
+# vram	after_prompt=2	generated_this_run=142	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+14	chat	greedy	-	87	256	256	false	0.315	2.53	17.41
+14	chat	sampled	0x5eed0000	87	512	512	false	0.242	2.22	22.32
+14	chat	sampled	0x5eed0001	87	512	512	false	0.242	2.22	22.12
+# vram	after_prompt=14	generated_this_run=143	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+66	sxc_eigen	greedy	-	87	256	256	false	0.291	2.44	18.05
+66	sxc_eigen	sampled	0x5eed0000	87	512	512	false	0.289	2.45	20.18
+66	sxc_eigen	sampled	0x5eed0001	87	512	512	false	0.289	2.45	20.11
+# vram	after_prompt=66	generated_this_run=144	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+200	sxc_claude	greedy	-	87	256	256	false	0.443	3.20	13.84
+200	sxc_claude	sampled	0x5eed0000	87	512	512	false	0.311	2.56	19.16
+200	sxc_claude	sampled	0x5eed0001	87	512	512	false	0.311	2.56	19.18
+# vram	after_prompt=200	generated_this_run=145	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+272	sxc_claude	greedy	-	87	256	256	false	0.337	2.69	16.53
+272	sxc_claude	sampled	0x5eed0000	87	512	512	false	0.195	1.98	24.78
+272	sxc_claude	sampled	0x5eed0001	87	512	512	false	0.195	1.98	24.82
+# vram	after_prompt=272	generated_this_run=146	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+279	sxc_hermes	greedy	-	87	256	256	false	0.355	2.75	16.21
+279	sxc_hermes	sampled	0x5eed0000	87	512	512	false	0.273	2.37	20.84
+279	sxc_hermes	sampled	0x5eed0001	87	512	512	false	0.273	2.37	20.83
+# vram	after_prompt=279	generated_this_run=147	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+310	sxc_eigen	greedy	-	87	256	256	false	0.331	2.67	16.50
+310	sxc_eigen	sampled	0x5eed0000	87	512	227	true	0.381	2.91	16.90
+310	sxc_eigen	sampled	0x5eed0001	87	512	227	true	0.381	2.91	16.90
+# vram	after_prompt=310	generated_this_run=148	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+315	sxc_hermes	greedy	-	87	256	256	false	0.465	3.32	13.23
+315	sxc_hermes	sampled	0x5eed0000	87	512	512	false	0.253	2.27	21.71
+315	sxc_hermes	sampled	0x5eed0001	87	512	512	false	0.253	2.27	21.71
+# vram	after_prompt=315	generated_this_run=149	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+319	sxc_hermes	greedy	-	87	256	256	false	0.395	2.94	15.08
+319	sxc_hermes	sampled	0x5eed0000	87	512	512	false	0.262	2.32	21.16
+319	sxc_hermes	sampled	0x5eed0001	87	512	512	false	0.262	2.32	21.18
+# vram	after_prompt=319	generated_this_run=150	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+26	translate	greedy	-	86	256	256	false	0.484	3.37	13.14
+26	translate	sampled	0x5eed0000	86	512	503	true	0.360	2.80	17.68
+26	translate	sampled	0x5eed0001	86	512	503	true	0.360	2.80	17.65
+# vram	after_prompt=26	generated_this_run=151	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+63	sxc_hermes	greedy	-	86	256	256	false	0.378	2.88	15.27
+63	sxc_hermes	sampled	0x5eed0000	86	512	512	false	0.263	2.32	21.28
+63	sxc_hermes	sampled	0x5eed0001	86	512	512	false	0.263	2.32	21.23
+# vram	after_prompt=63	generated_this_run=152	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+190	sxc_eigen	greedy	-	86	256	256	false	0.422	3.08	14.29
+190	sxc_eigen	sampled	0x5eed0000	86	512	512	false	0.327	2.64	18.60
+190	sxc_eigen	sampled	0x5eed0001	86	512	512	false	0.327	2.64	18.71
+# vram	after_prompt=190	generated_this_run=153	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+271	sxc_hermes	greedy	-	86	256	256	false	0.422	3.12	14.12
+271	sxc_hermes	sampled	0x5eed0000	86	512	512	false	0.262	2.31	21.38
+271	sxc_hermes	sampled	0x5eed0001	86	512	512	false	0.262	2.31	21.35
+# vram	after_prompt=271	generated_this_run=154	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+317	sxc_codex	greedy	-	86	256	256	false	0.395	2.98	14.80
+317	sxc_codex	sampled	0x5eed0000	86	512	512	false	0.389	2.93	16.90
+317	sxc_codex	sampled	0x5eed0001	86	512	512	false	0.389	2.93	16.87
+# vram	after_prompt=317	generated_this_run=155	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+326	sxc_eigen	greedy	-	86	256	256	false	0.497	3.46	12.92
+326	sxc_eigen	sampled	0x5eed0000	86	512	512	false	0.308	2.53	19.47
+326	sxc_eigen	sampled	0x5eed0001	86	512	512	false	0.308	2.53	19.45
+# vram	after_prompt=326	generated_this_run=156	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+342	sxc_eigen	greedy	-	86	256	256	false	0.386	2.94	14.98
+342	sxc_eigen	sampled	0x5eed0000	86	512	512	false	0.242	2.22	22.36
+342	sxc_eigen	sampled	0x5eed0001	86	512	512	false	0.242	2.22	22.27
+# vram	after_prompt=342	generated_this_run=157	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+165	sxc_codex	greedy	-	85	256	256	false	0.405	3.01	14.77
+165	sxc_codex	sampled	0x5eed0000	85	512	512	false	0.181	1.90	25.88
+165	sxc_codex	sampled	0x5eed0001	85	512	512	false	0.181	1.90	25.94
+# vram	after_prompt=165	generated_this_run=158	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+168	sxc_claude	greedy	-	85	256	256	false	0.348	2.75	16.10
+168	sxc_claude	sampled	0x5eed0000	85	512	512	false	0.227	2.13	23.10
+168	sxc_claude	sampled	0x5eed0001	85	512	512	false	0.227	2.13	23.07
+# vram	after_prompt=168	generated_this_run=159	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+199	sxc_hermes	greedy	-	85	256	256	false	0.360	2.81	15.69
+199	sxc_hermes	sampled	0x5eed0000	85	512	512	false	0.216	2.08	23.63
+199	sxc_hermes	sampled	0x5eed0001	85	512	512	false	0.216	2.08	23.65
+# vram	after_prompt=199	generated_this_run=160	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+256	sxc_claude	greedy	-	85	256	256	false	0.378	2.88	15.32
+256	sxc_claude	sampled	0x5eed0000	85	512	512	false	0.315	2.56	19.20
+256	sxc_claude	sampled	0x5eed0001	85	512	512	false	0.315	2.56	19.23
+# vram	after_prompt=256	generated_this_run=161	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+73	sxc_codex	greedy	-	84	256	256	false	0.348	2.75	16.06
+73	sxc_codex	sampled	0x5eed0000	84	512	461	true	0.275	2.38	20.57
+73	sxc_codex	sampled	0x5eed0001	84	512	461	true	0.275	2.38	20.60
+# vram	after_prompt=73	generated_this_run=162	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+90	sxc_eigen	greedy	-	84	256	256	false	0.398	2.98	14.81
+90	sxc_eigen	sampled	0x5eed0000	84	512	512	false	0.187	1.94	25.45
+90	sxc_eigen	sampled	0x5eed0001	84	512	512	false	0.187	1.94	25.48
+# vram	after_prompt=90	generated_this_run=163	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+114	sxc_eigen	greedy	-	84	256	256	false	0.326	2.64	16.83
+114	sxc_eigen	sampled	0x5eed0000	84	512	512	false	0.210	2.06	23.91
+114	sxc_eigen	sampled	0x5eed0001	84	512	512	false	0.210	2.06	23.98
+# vram	after_prompt=114	generated_this_run=164	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+175	sxc_hermes	greedy	-	84	256	256	false	0.314	2.56	17.14
+175	sxc_hermes	sampled	0x5eed0000	84	512	512	false	0.224	2.12	23.16
+175	sxc_hermes	sampled	0x5eed0001	84	512	512	false	0.224	2.12	23.17
+# vram	after_prompt=175	generated_this_run=165	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+182	sxc_eigen	greedy	-	84	256	203	true	0.518	3.61	12.35
+182	sxc_eigen	sampled	0x5eed0000	84	512	271	true	0.483	3.41	14.43
+182	sxc_eigen	sampled	0x5eed0001	84	512	271	true	0.483	3.41	14.43
+# vram	after_prompt=182	generated_this_run=166	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+186	sxc_eigen	greedy	-	84	256	256	false	0.585	3.94	11.22
+186	sxc_eigen	sampled	0x5eed0000	84	512	512	false	0.299	2.50	19.82
+186	sxc_eigen	sampled	0x5eed0001	84	512	512	false	0.299	2.50	19.78
+# vram	after_prompt=186	generated_this_run=167	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+270	sxc_eigen	greedy	-	84	256	256	false	0.293	2.44	18.07
+270	sxc_eigen	sampled	0x5eed0000	84	512	512	false	0.228	2.14	23.08
+270	sxc_eigen	sampled	0x5eed0001	84	512	512	false	0.228	2.14	23.10
+# vram	after_prompt=270	generated_this_run=168	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+273	sxc_codex	greedy	-	84	256	256	false	0.348	2.75	15.98
+273	sxc_codex	sampled	0x5eed0000	84	512	512	false	0.205	2.01	24.47
+273	sxc_codex	sampled	0x5eed0001	84	512	512	false	0.205	2.01	24.50
+# vram	after_prompt=273	generated_this_run=169	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+115	sxc_hermes	greedy	-	83	256	256	false	0.290	2.44	18.09
+115	sxc_hermes	sampled	0x5eed0000	83	512	512	false	0.236	2.17	22.69
+115	sxc_hermes	sampled	0x5eed0001	83	512	512	false	0.236	2.17	22.64
+# vram	after_prompt=115	generated_this_run=170	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+231	sxc_hermes	greedy	-	83	256	256	false	0.443	3.20	13.80
+231	sxc_hermes	sampled	0x5eed0000	83	512	512	false	0.277	2.38	20.71
+231	sxc_hermes	sampled	0x5eed0001	83	512	512	false	0.277	2.38	20.64
+# vram	after_prompt=231	generated_this_run=171	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+309	sxc_codex	greedy	-	83	256	256	false	0.398	2.98	14.80
+309	sxc_codex	sampled	0x5eed0000	83	512	512	false	0.260	2.31	21.36
+309	sxc_codex	sampled	0x5eed0001	83	512	512	false	0.260	2.31	21.29
+# vram	after_prompt=309	generated_this_run=172	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+28	writing	greedy	-	82	256	256	false	0.410	3.05	14.54
+28	writing	sampled	0x5eed0000	82	512	512	false	0.366	2.81	17.50
+28	writing	sampled	0x5eed0001	82	512	512	false	0.366	2.81	17.45
+# vram	after_prompt=28	generated_this_run=173	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+109	sxc_codex	greedy	-	82	256	256	false	0.367	2.84	15.46
+109	sxc_codex	sampled	0x5eed0000	82	512	512	false	0.293	2.46	19.88
+109	sxc_codex	sampled	0x5eed0001	82	512	512	false	0.293	2.46	19.91
+# vram	after_prompt=109	generated_this_run=174	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+323	sxc_hermes	greedy	-	82	256	256	false	0.468	3.32	13.22
+323	sxc_hermes	sampled	0x5eed0000	82	512	512	false	0.287	2.42	20.33
+323	sxc_hermes	sampled	0x5eed0001	82	512	512	false	0.287	2.42	20.39
+# vram	after_prompt=323	generated_this_run=175	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+20	shell	greedy	-	81	256	256	false	0.354	2.78	15.86
+20	shell	sampled	0x5eed0000	81	512	512	false	0.268	2.33	21.05
+20	shell	sampled	0x5eed0001	81	512	512	false	0.268	2.33	21.04
+# vram	after_prompt=20	generated_this_run=176	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+82	sxc_eigen	greedy	-	81	256	256	false	0.342	2.67	16.45
+82	sxc_eigen	sampled	0x5eed0000	81	512	512	false	0.267	2.34	20.94
+82	sxc_eigen	sampled	0x5eed0001	81	512	512	false	0.267	2.34	20.87
+# vram	after_prompt=82	generated_this_run=177	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+100	sxc_claude	greedy	-	81	256	256	false	0.345	2.72	16.13
+100	sxc_claude	sampled	0x5eed0000	81	512	512	false	0.215	2.07	23.62
+100	sxc_claude	sampled	0x5eed0001	81	512	512	false	0.215	2.07	23.73
+# vram	after_prompt=100	generated_this_run=178	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+124	sxc_claude	greedy	-	81	256	256	false	0.395	2.98	14.80
+124	sxc_claude	sampled	0x5eed0000	81	512	403	true	0.268	2.34	21.00
+124	sxc_claude	sampled	0x5eed0001	81	512	403	true	0.268	2.34	21.01
+# vram	after_prompt=124	generated_this_run=179	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+167	sxc_hermes	greedy	-	81	256	256	false	0.384	2.91	15.09
+167	sxc_hermes	sampled	0x5eed0000	81	512	368	true	0.336	2.68	18.27
+167	sxc_hermes	sampled	0x5eed0001	81	512	368	true	0.336	2.68	18.24
+# vram	after_prompt=167	generated_this_run=180	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+321	sxc_codex	greedy	-	81	256	256	false	0.438	3.20	13.76
+321	sxc_codex	sampled	0x5eed0000	81	512	512	false	0.292	2.45	20.01
+321	sxc_codex	sampled	0x5eed0001	81	512	512	false	0.292	2.45	20.04
+# vram	after_prompt=321	generated_this_run=181	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+45	effort_low	greedy	-	80	256	256	false	0.567	3.82	11.57
+45	effort_low	sampled	0x5eed0000	80	512	512	false	0.500	3.51	14.00
+45	effort_low	sampled	0x5eed0001	80	512	512	false	0.500	3.51	13.97
+# vram	after_prompt=45	generated_this_run=182	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+147	sxc_hermes	greedy	-	80	256	256	false	0.330	2.64	16.72
+147	sxc_hermes	sampled	0x5eed0000	80	512	512	false	0.317	2.59	18.95
+147	sxc_hermes	sampled	0x5eed0001	80	512	512	false	0.317	2.59	18.91
+# vram	after_prompt=147	generated_this_run=183	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+214	sxc_eigen	greedy	-	80	256	256	false	0.378	2.84	15.57
+214	sxc_eigen	sampled	0x5eed0000	80	512	512	false	0.207	2.04	24.04
+214	sxc_eigen	sampled	0x5eed0001	80	512	512	false	0.207	2.04	24.06
+# vram	after_prompt=214	generated_this_run=184	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+15	chat	greedy	-	79	256	256	false	0.282	2.39	18.42
+15	chat	sampled	0x5eed0000	79	512	512	false	0.170	1.85	26.45
+15	chat	sampled	0x5eed0001	79	512	512	false	0.170	1.85	26.50
+# vram	after_prompt=15	generated_this_run=185	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+16	chat	greedy	-	79	256	256	false	0.281	2.42	18.18
+16	chat	sampled	0x5eed0000	79	512	512	false	0.249	2.25	21.77
+16	chat	sampled	0x5eed0001	79	512	512	false	0.249	2.25	21.81
+# vram	after_prompt=16	generated_this_run=186	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+21	shell	greedy	-	79	256	256	false	0.378	2.84	15.48
+21	shell	sampled	0x5eed0000	79	512	512	false	0.382	2.91	16.82
+21	shell	sampled	0x5eed0001	79	512	512	false	0.382	2.91	16.82
+# vram	after_prompt=21	generated_this_run=187	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+131	sxc_hermes	greedy	-	79	256	256	false	0.389	2.94	14.96
+131	sxc_hermes	sampled	0x5eed0000	79	512	512	false	0.272	2.36	20.75
+131	sxc_hermes	sampled	0x5eed0001	79	512	512	false	0.272	2.36	20.71
+# vram	after_prompt=131	generated_this_run=188	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+334	sxc_eigen	greedy	-	79	256	256	false	0.321	2.59	16.96
+334	sxc_eigen	sampled	0x5eed0000	79	512	512	false	0.206	2.03	24.06
+334	sxc_eigen	sampled	0x5eed0001	79	512	512	false	0.206	2.03	24.01
+# vram	after_prompt=334	generated_this_run=189	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+340	sxc_claude	greedy	-	79	256	199	true	0.205	2.03	21.69
+340	sxc_claude	sampled	0x5eed0000	79	512	254	true	0.338	2.69	18.09
+340	sxc_claude	sampled	0x5eed0001	79	512	254	true	0.338	2.69	18.15
+# vram	after_prompt=340	generated_this_run=190	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+12	chat	greedy	-	78	256	256	false	0.402	3.01	14.59
+12	chat	sampled	0x5eed0000	78	512	211	true	0.328	2.63	18.68
+12	chat	sampled	0x5eed0001	78	512	211	true	0.328	2.63	18.64
+# vram	after_prompt=12	generated_this_run=191	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+27	translate	greedy	-	78	256	256	false	0.295	2.49	17.60
+27	translate	sampled	0x5eed0000	78	512	512	false	0.237	2.19	22.34
+27	translate	sampled	0x5eed0001	78	512	512	false	0.237	2.19	22.37
+# vram	after_prompt=27	generated_this_run=192	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+143	sxc_hermes	greedy	-	78	256	256	false	0.410	3.05	14.44
+143	sxc_hermes	sampled	0x5eed0000	78	512	512	false	0.233	2.17	22.60
+143	sxc_hermes	sampled	0x5eed0001	78	512	512	false	0.233	2.17	22.69
+# vram	after_prompt=143	generated_this_run=193	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+268	sxc_claude	greedy	-	78	256	256	false	0.331	2.67	16.50
+268	sxc_claude	sampled	0x5eed0000	78	512	512	false	0.234	2.15	22.73
+268	sxc_claude	sampled	0x5eed0001	78	512	512	false	0.234	2.15	22.77
+# vram	after_prompt=268	generated_this_run=194	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+287	sxc_hermes	greedy	-	78	256	256	false	0.261	2.31	19.04
+287	sxc_hermes	sampled	0x5eed0000	78	512	512	false	0.265	2.33	20.99
+287	sxc_hermes	sampled	0x5eed0001	78	512	512	false	0.265	2.33	21.01
+# vram	after_prompt=287	generated_this_run=195	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+130	sxc_eigen	greedy	-	76	256	256	false	0.573	3.88	11.38
+130	sxc_eigen	sampled	0x5eed0000	76	512	512	false	0.339	2.69	18.32
+130	sxc_eigen	sampled	0x5eed0001	76	512	512	false	0.339	2.69	18.27
+# vram	after_prompt=130	generated_this_run=196	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+151	sxc_hermes	greedy	-	76	256	225	true	0.369	2.81	15.57
+151	sxc_hermes	sampled	0x5eed0000	76	512	422	true	0.255	2.27	21.49
+151	sxc_hermes	sampled	0x5eed0001	76	512	422	true	0.255	2.27	21.49
+# vram	after_prompt=151	generated_this_run=197	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+226	sxc_eigen	greedy	-	76	256	256	false	0.326	2.64	16.62
+226	sxc_eigen	sampled	0x5eed0000	76	512	512	false	0.176	1.88	26.07
+226	sxc_eigen	sampled	0x5eed0001	76	512	512	false	0.176	1.88	26.03
+# vram	after_prompt=226	generated_this_run=198	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+354	sxc_eigen	greedy	-	76	256	256	false	0.518	3.61	12.17
+354	sxc_eigen	sampled	0x5eed0000	76	512	452	true	0.258	2.30	21.29
+354	sxc_eigen	sampled	0x5eed0001	76	512	452	true	0.258	2.30	21.24
+# vram	after_prompt=354	generated_this_run=199	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+48	effort_low	greedy	-	75	256	256	false	0.409	3.01	14.55
+48	effort_low	sampled	0x5eed0000	75	512	512	false	0.340	2.69	18.11
+48	effort_low	sampled	0x5eed0001	75	512	512	false	0.340	2.69	18.13
+# vram	after_prompt=48	generated_this_run=200	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+86	sxc_eigen	greedy	-	75	256	256	false	0.347	2.72	16.14
+86	sxc_eigen	sampled	0x5eed0000	75	512	512	false	0.190	1.95	24.97
+86	sxc_eigen	sampled	0x5eed0001	75	512	512	false	0.190	1.95	25.00
+# vram	after_prompt=86	generated_this_run=201	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+117	sxc_codex	greedy	-	75	256	256	false	0.283	2.42	18.06
+117	sxc_codex	sampled	0x5eed0000	75	512	512	false	0.186	1.93	25.33
+117	sxc_codex	sampled	0x5eed0001	75	512	512	false	0.186	1.93	25.34
+# vram	after_prompt=117	generated_this_run=202	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+313	sxc_codex	greedy	-	75	256	256	false	0.562	3.76	11.73
+313	sxc_codex	sampled	0x5eed0000	75	512	512	false	0.330	2.65	18.40
+313	sxc_codex	sampled	0x5eed0001	75	512	512	false	0.330	2.65	18.42
+# vram	after_prompt=313	generated_this_run=203	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+330	sxc_eigen	greedy	-	75	256	256	false	0.407	3.01	14.55
+330	sxc_eigen	sampled	0x5eed0000	75	512	512	false	0.239	2.20	22.43
+330	sxc_eigen	sampled	0x5eed0001	75	512	512	false	0.239	2.20	22.34
+# vram	after_prompt=330	generated_this_run=204	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+13	chat	greedy	-	74	256	256	false	0.312	2.56	17.03
+13	chat	sampled	0x5eed0000	74	512	512	false	0.195	1.98	24.81
+13	chat	sampled	0x5eed0001	74	512	512	false	0.195	1.98	24.85
+# vram	after_prompt=13	generated_this_run=205	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+69	sxc_codex	greedy	-	74	256	256	false	0.349	2.72	16.10
+69	sxc_codex	sampled	0x5eed0000	74	512	512	false	0.229	2.15	22.77
+69	sxc_codex	sampled	0x5eed0001	74	512	512	false	0.229	2.15	22.64
+# vram	after_prompt=69	generated_this_run=206	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+105	sxc_codex	greedy	-	74	256	205	true	0.386	2.94	14.93
+105	sxc_codex	sampled	0x5eed0000	74	512	233	true	0.436	3.18	15.38
+105	sxc_codex	sampled	0x5eed0001	74	512	233	true	0.436	3.18	15.39
+# vram	after_prompt=105	generated_this_run=207	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+195	sxc_hermes	greedy	-	74	256	256	false	0.483	3.41	12.91
+195	sxc_hermes	sampled	0x5eed0000	74	512	512	false	0.360	2.80	17.63
+195	sxc_hermes	sampled	0x5eed0001	74	512	512	false	0.360	2.80	17.67
+# vram	after_prompt=195	generated_this_run=208	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+202	sxc_eigen	greedy	-	74	256	125	true	0.550	3.76	11.70
+202	sxc_eigen	sampled	0x5eed0000	74	512	152	true	0.311	2.56	19.41
+202	sxc_eigen	sampled	0x5eed0001	74	512	152	true	0.311	2.56	19.27
+# vram	after_prompt=202	generated_this_run=209	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+283	sxc_hermes	greedy	-	74	256	256	false	0.384	2.91	15.12
+283	sxc_hermes	sampled	0x5eed0000	74	512	512	false	0.206	2.03	24.14
+283	sxc_hermes	sampled	0x5eed0001	74	512	512	false	0.206	2.03	24.13
+# vram	after_prompt=283	generated_this_run=210	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+286	sxc_eigen	greedy	-	74	256	256	false	0.369	2.84	15.51
+286	sxc_eigen	sampled	0x5eed0000	74	512	512	false	0.267	2.34	20.98
+286	sxc_eigen	sampled	0x5eed0001	74	512	512	false	0.267	2.34	21.15
+# vram	after_prompt=286	generated_this_run=211	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+266	sxc_eigen	greedy	-	73	256	117	true	0.432	3.16	13.88
+266	sxc_eigen	sampled	0x5eed0000	73	512	161	true	0.311	2.53	19.29
+266	sxc_eigen	sampled	0x5eed0001	73	512	161	true	0.311	2.53	19.31
+# vram	after_prompt=266	generated_this_run=212	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+87	sxc_hermes	greedy	-	72	256	256	false	0.393	2.98	14.78
+87	sxc_hermes	sampled	0x5eed0000	72	512	512	false	0.247	2.24	21.84
+87	sxc_hermes	sampled	0x5eed0001	72	512	512	false	0.247	2.24	21.81
+# vram	after_prompt=87	generated_this_run=213	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+111	sxc_hermes	greedy	-	72	256	256	false	0.542	3.71	11.89
+111	sxc_hermes	sampled	0x5eed0000	72	512	512	false	0.354	2.77	17.77
+111	sxc_hermes	sampled	0x5eed0001	72	512	512	false	0.354	2.77	17.76
+# vram	after_prompt=111	generated_this_run=214	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+223	sxc_hermes	greedy	-	72	256	256	false	0.412	3.05	14.44
+223	sxc_hermes	sampled	0x5eed0000	72	512	512	false	0.251	2.26	21.80
+223	sxc_hermes	sampled	0x5eed0001	72	512	512	false	0.251	2.26	21.76
+# vram	after_prompt=223	generated_this_run=215	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+281	sxc_codex	greedy	-	72	256	256	false	0.249	2.25	19.44
+281	sxc_codex	sampled	0x5eed0000	72	512	512	false	0.209	2.03	24.17
+281	sxc_codex	sampled	0x5eed0001	72	512	512	false	0.209	2.03	24.40
+# vram	after_prompt=281	generated_this_run=216	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+71	sxc_hermes	greedy	-	71	256	153	true	0.393	2.98	14.69
+71	sxc_hermes	sampled	0x5eed0000	71	512	385	true	0.261	2.31	21.18
+71	sxc_hermes	sampled	0x5eed0001	71	512	385	true	0.261	2.31	21.15
+# vram	after_prompt=71	generated_this_run=217	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+81	sxc_codex	greedy	-	71	256	256	false	0.398	2.98	14.72
+81	sxc_codex	sampled	0x5eed0000	71	512	512	false	0.309	2.55	19.33
+81	sxc_codex	sampled	0x5eed0001	71	512	512	false	0.309	2.55	19.34
+# vram	after_prompt=81	generated_this_run=218	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+125	sxc_codex	greedy	-	71	256	256	false	0.347	2.69	16.22
+125	sxc_codex	sampled	0x5eed0000	71	512	512	false	0.346	2.72	17.96
+125	sxc_codex	sampled	0x5eed0001	71	512	512	false	0.346	2.72	17.95
+# vram	after_prompt=125	generated_this_run=219	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+159	sxc_hermes	greedy	-	71	256	256	false	0.247	2.25	19.53
+159	sxc_hermes	sampled	0x5eed0000	71	512	512	false	0.327	2.63	18.63
+159	sxc_hermes	sampled	0x5eed0001	71	512	512	false	0.327	2.63	18.60
+# vram	after_prompt=159	generated_this_run=220	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+187	sxc_hermes	greedy	-	71	256	256	false	0.407	3.05	14.50
+187	sxc_hermes	sampled	0x5eed0000	71	512	512	false	0.302	2.51	19.63
+187	sxc_hermes	sampled	0x5eed0001	71	512	512	false	0.302	2.51	19.56
+# vram	after_prompt=187	generated_this_run=221	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+274	sxc_eigen	greedy	-	71	256	256	false	0.299	2.49	17.59
+274	sxc_eigen	sampled	0x5eed0000	71	512	512	false	0.272	2.36	20.87
+274	sxc_eigen	sampled	0x5eed0001	71	512	512	false	0.272	2.36	20.66
+# vram	after_prompt=274	generated_this_run=222	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+290	sxc_eigen	greedy	-	71	256	256	false	0.343	2.69	16.26
+290	sxc_eigen	sampled	0x5eed0000	71	512	208	true	0.317	2.57	19.04
+290	sxc_eigen	sampled	0x5eed0001	71	512	208	true	0.317	2.57	19.03
+# vram	after_prompt=290	generated_this_run=223	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+40	think_off	greedy	-	70	256	256	false	0.735	4.65	9.46
+40	think_off	sampled	0x5eed0000	70	512	512	false	0.659	4.30	11.40
+40	think_off	sampled	0x5eed0001	70	512	512	false	0.659	4.30	11.40
+# vram	after_prompt=40	generated_this_run=224	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+58	sxc_eigen	greedy	-	70	256	256	false	0.414	3.08	14.18
+58	sxc_eigen	sampled	0x5eed0000	70	512	512	false	0.248	2.24	21.96
+58	sxc_eigen	sampled	0x5eed0001	70	512	512	false	0.248	2.24	21.94
+# vram	after_prompt=58	generated_this_run=225	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+107	sxc_hermes	greedy	-	70	256	256	false	0.327	2.61	16.80
+107	sxc_hermes	sampled	0x5eed0000	70	512	512	false	0.265	2.33	21.07
+107	sxc_hermes	sampled	0x5eed0001	70	512	512	false	0.265	2.33	21.00
+# vram	after_prompt=107	generated_this_run=226	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+120	sxc_claude	greedy	-	70	256	256	false	0.363	2.81	15.59
+120	sxc_claude	sampled	0x5eed0000	70	512	512	false	0.272	2.35	20.85
+120	sxc_claude	sampled	0x5eed0001	70	512	512	false	0.272	2.35	20.87
+# vram	after_prompt=120	generated_this_run=227	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+169	sxc_codex	greedy	-	70	256	256	false	0.302	2.51	17.49
+169	sxc_codex	sampled	0x5eed0000	70	512	512	false	0.233	2.17	22.55
+169	sxc_codex	sampled	0x5eed0001	70	512	512	false	0.233	2.17	22.49
+# vram	after_prompt=169	generated_this_run=228	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+178	sxc_eigen	greedy	-	70	256	106	true	0.122	1.61	27.15
+178	sxc_eigen	sampled	0x5eed0000	70	512	97	true	0.160	1.80	27.18
+178	sxc_eigen	sampled	0x5eed0001	70	512	97	true	0.160	1.80	27.12
+# vram	after_prompt=178	generated_this_run=229	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+210	sxc_eigen	greedy	-	70	256	256	false	0.284	2.39	18.31
+210	sxc_eigen	sampled	0x5eed0000	70	512	512	false	0.201	2.00	24.47
+210	sxc_eigen	sampled	0x5eed0001	70	512	512	false	0.201	2.00	24.62
+# vram	after_prompt=210	generated_this_run=230	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+224	sxc_claude	greedy	-	70	256	256	false	0.414	3.08	14.34
+224	sxc_claude	sampled	0x5eed0000	70	512	512	false	0.260	2.31	21.31
+224	sxc_claude	sampled	0x5eed0001	70	512	512	false	0.260	2.31	21.14
+# vram	after_prompt=224	generated_this_run=231	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+234	sxc_eigen	greedy	-	70	256	256	false	0.300	2.51	17.44
+234	sxc_eigen	sampled	0x5eed0000	70	512	512	false	0.330	2.64	18.63
+234	sxc_eigen	sampled	0x5eed0001	70	512	512	false	0.330	2.64	18.58
+# vram	after_prompt=234	generated_this_run=232	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+275	sxc_hermes	greedy	-	70	256	256	false	0.307	2.53	17.31
+275	sxc_hermes	sampled	0x5eed0000	70	512	512	false	0.250	2.26	21.61
+275	sxc_hermes	sampled	0x5eed0001	70	512	512	false	0.250	2.26	21.61
+# vram	after_prompt=275	generated_this_run=233	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+350	sxc_eigen	greedy	-	70	256	256	false	0.453	3.24	13.58
+350	sxc_eigen	sampled	0x5eed0000	70	512	512	false	0.284	2.42	20.30
+350	sxc_eigen	sampled	0x5eed0001	70	512	512	false	0.284	2.42	20.30
+# vram	after_prompt=350	generated_this_run=234	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+61	sxc_codex	greedy	-	69	256	256	false	0.386	2.94	14.94
+61	sxc_codex	sampled	0x5eed0000	69	512	512	false	0.239	2.20	22.20
+61	sxc_codex	sampled	0x5eed0001	69	512	512	false	0.239	2.20	22.20
+# vram	after_prompt=61	generated_this_run=235	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+72	sxc_claude	greedy	-	69	256	256	false	0.339	2.69	16.31
+72	sxc_claude	sampled	0x5eed0000	69	512	512	false	0.202	2.01	24.36
+72	sxc_claude	sampled	0x5eed0001	69	512	512	false	0.202	2.01	24.36
+# vram	after_prompt=72	generated_this_run=236	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+75	sxc_hermes	greedy	-	69	256	256	false	0.357	2.78	15.78
+75	sxc_hermes	sampled	0x5eed0000	69	512	512	false	0.369	2.83	17.26
+75	sxc_hermes	sampled	0x5eed0001	69	512	512	false	0.369	2.83	17.25
+# vram	after_prompt=75	generated_this_run=237	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+99	sxc_hermes	greedy	-	69	256	256	false	0.375	2.88	15.17
+99	sxc_hermes	sampled	0x5eed0000	69	512	354	true	0.292	2.46	20.01
+99	sxc_hermes	sampled	0x5eed0001	69	512	354	true	0.292	2.46	19.95
+# vram	after_prompt=99	generated_this_run=238	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+133	sxc_codex	greedy	-	69	256	256	false	0.348	2.75	15.93
+133	sxc_codex	sampled	0x5eed0000	69	512	512	false	0.317	2.59	18.91
+133	sxc_codex	sampled	0x5eed0001	69	512	512	false	0.317	2.59	18.87
+# vram	after_prompt=133	generated_this_run=239	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+179	sxc_hermes	greedy	-	69	256	146	true	0.127	1.64	26.69
+179	sxc_hermes	sampled	0x5eed0000	69	512	161	true	0.352	2.77	17.64
+179	sxc_hermes	sampled	0x5eed0001	69	512	161	true	0.352	2.77	17.61
+# vram	after_prompt=179	generated_this_run=240	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+191	sxc_hermes	greedy	-	69	256	256	false	0.448	3.24	13.51
+191	sxc_hermes	sampled	0x5eed0000	69	512	512	false	0.395	2.96	16.63
+191	sxc_hermes	sampled	0x5eed0001	69	512	512	false	0.395	2.96	16.59
+# vram	after_prompt=191	generated_this_run=241	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+253	sxc_codex	greedy	-	69	256	256	false	0.268	2.35	18.56
+253	sxc_codex	sampled	0x5eed0000	69	512	512	false	0.261	2.30	21.25
+253	sxc_codex	sampled	0x5eed0001	69	512	512	false	0.261	2.30	21.20
+# vram	after_prompt=253	generated_this_run=242	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+259	sxc_hermes	greedy	-	69	256	256	false	0.343	2.72	16.12
+259	sxc_hermes	sampled	0x5eed0000	69	512	512	false	0.207	2.04	24.07
+259	sxc_hermes	sampled	0x5eed0001	69	512	512	false	0.207	2.04	24.10
+# vram	after_prompt=259	generated_this_run=243	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+308	sxc_claude	greedy	-	69	256	256	false	0.398	2.98	14.81
+308	sxc_claude	sampled	0x5eed0000	69	512	445	true	0.323	2.61	18.80
+308	sxc_claude	sampled	0x5eed0001	69	512	445	true	0.323	2.61	18.68
+# vram	after_prompt=308	generated_this_run=244	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+311	sxc_hermes	greedy	-	69	256	218	true	0.259	2.31	19.01
+311	sxc_hermes	sampled	0x5eed0000	69	512	337	true	0.243	2.21	22.05
+311	sxc_hermes	sampled	0x5eed0001	69	512	337	true	0.243	2.21	22.04
+# vram	after_prompt=311	generated_this_run=245	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+84	sxc_claude	greedy	-	68	256	178	true	0.438	3.20	13.73
+84	sxc_claude	sampled	0x5eed0000	68	512	215	true	0.228	2.14	22.83
+84	sxc_claude	sampled	0x5eed0001	68	512	215	true	0.228	2.14	22.87
+# vram	after_prompt=84	generated_this_run=246	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+96	sxc_claude	greedy	-	68	256	256	false	0.363	2.81	15.62
+96	sxc_claude	sampled	0x5eed0000	68	512	380	true	0.254	2.27	21.62
+96	sxc_claude	sampled	0x5eed0001	68	512	380	true	0.254	2.27	21.60
+# vram	after_prompt=96	generated_this_run=247	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+126	sxc_eigen	greedy	-	68	256	256	false	0.410	3.05	14.46
+126	sxc_eigen	sampled	0x5eed0000	68	512	512	false	0.406	3.03	16.09
+126	sxc_eigen	sampled	0x5eed0001	68	512	512	false	0.406	3.03	16.15
+# vram	after_prompt=126	generated_this_run=248	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+145	sxc_codex	greedy	-	68	256	256	false	0.371	2.84	15.49
+145	sxc_codex	sampled	0x5eed0000	68	512	512	false	0.218	2.09	23.52
+145	sxc_codex	sampled	0x5eed0001	68	512	512	false	0.218	2.09	23.49
+# vram	after_prompt=145	generated_this_run=249	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+212	sxc_claude	greedy	-	68	256	256	false	0.480	3.41	12.87
+212	sxc_claude	sampled	0x5eed0000	68	512	483	true	0.322	2.61	18.64
+212	sxc_claude	sampled	0x5eed0001	68	512	483	true	0.322	2.61	18.66
+# vram	after_prompt=212	generated_this_run=250	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+215	sxc_hermes	greedy	-	68	256	256	false	0.283	2.42	18.13
+215	sxc_hermes	sampled	0x5eed0000	68	512	512	false	0.233	2.17	22.52
+215	sxc_hermes	sampled	0x5eed0001	68	512	512	false	0.233	2.17	22.49
+# vram	after_prompt=215	generated_this_run=251	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+238	sxc_eigen	greedy	-	68	256	256	false	0.367	2.84	15.37
+238	sxc_eigen	sampled	0x5eed0000	68	512	512	false	0.397	2.98	16.36
+238	sxc_eigen	sampled	0x5eed0001	68	512	512	false	0.397	2.98	16.37
+# vram	after_prompt=238	generated_this_run=252	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+245	sxc_codex	greedy	-	68	256	256	false	0.311	2.53	17.26
+245	sxc_codex	sampled	0x5eed0000	68	512	323	true	0.289	2.45	19.93
+245	sxc_codex	sampled	0x5eed0001	68	512	323	true	0.289	2.45	19.86
+# vram	after_prompt=245	generated_this_run=253	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+262	sxc_eigen	greedy	-	68	256	256	false	0.373	2.88	15.20
+262	sxc_eigen	sampled	0x5eed0000	68	512	512	false	0.275	2.38	20.44
+262	sxc_eigen	sampled	0x5eed0001	68	512	512	false	0.275	2.38	20.41
+# vram	after_prompt=262	generated_this_run=254	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+288	sxc_claude	greedy	-	68	256	256	false	0.367	2.84	15.46
+288	sxc_claude	sampled	0x5eed0000	68	512	395	true	0.261	2.31	21.18
+288	sxc_claude	sampled	0x5eed0001	68	512	395	true	0.261	2.31	21.22
+# vram	after_prompt=288	generated_this_run=255	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+336	sxc_claude	greedy	-	68	256	256	false	0.440	3.20	13.70
+336	sxc_claude	sampled	0x5eed0000	68	512	512	false	0.309	2.55	19.22
+336	sxc_claude	sampled	0x5eed0001	68	512	512	false	0.309	2.55	19.18
+# vram	after_prompt=336	generated_this_run=256	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+347	sxc_hermes	greedy	-	68	256	201	true	0.367	2.84	15.36
+347	sxc_hermes	sampled	0x5eed0000	68	512	221	true	0.304	2.52	19.26
+347	sxc_hermes	sampled	0x5eed0001	68	512	221	true	0.304	2.52	19.30
+# vram	after_prompt=347	generated_this_run=257	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+41	think_off	greedy	-	67	256	256	false	0.668	4.34	10.09
+41	think_off	sampled	0x5eed0000	67	512	512	false	0.627	4.13	11.85
+41	think_off	sampled	0x5eed0001	67	512	512	false	0.627	4.13	11.83
+# vram	after_prompt=41	generated_this_run=258	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+49	effort_low	greedy	-	67	256	256	false	0.407	3.05	14.44
+49	effort_low	sampled	0x5eed0000	67	512	512	false	0.328	2.64	18.43
+49	effort_low	sampled	0x5eed0001	67	512	512	false	0.328	2.64	18.45
+# vram	after_prompt=49	generated_this_run=259	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+123	sxc_hermes	greedy	-	67	256	256	false	0.353	2.75	15.83
+123	sxc_hermes	sampled	0x5eed0000	67	512	367	true	0.365	2.83	17.27
+123	sxc_hermes	sampled	0x5eed0001	67	512	367	true	0.365	2.83	17.26
+# vram	after_prompt=123	generated_this_run=260	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+146	sxc_eigen	greedy	-	67	256	256	false	0.288	2.44	17.87
+146	sxc_eigen	sampled	0x5eed0000	67	512	512	false	0.204	2.02	24.01
+146	sxc_eigen	sampled	0x5eed0001	67	512	512	false	0.204	2.02	24.01
+# vram	after_prompt=146	generated_this_run=261	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+170	sxc_eigen	greedy	-	67	256	256	false	0.402	3.01	14.52
+170	sxc_eigen	sampled	0x5eed0000	67	512	278	true	0.294	2.47	19.71
+170	sxc_eigen	sampled	0x5eed0001	67	512	278	true	0.294	2.47	19.71
+# vram	after_prompt=170	generated_this_run=262	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+203	sxc_hermes	greedy	-	67	256	256	false	0.302	2.51	17.39
+203	sxc_hermes	sampled	0x5eed0000	67	512	512	false	0.239	2.20	22.11
+203	sxc_hermes	sampled	0x5eed0001	67	512	512	false	0.239	2.20	22.14
+# vram	after_prompt=203	generated_this_run=263	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+206	sxc_eigen	greedy	-	67	256	93	true	0.095	1.48	29.43
+206	sxc_eigen	sampled	0x5eed0000	67	512	98	true	0.273	2.37	20.77
+206	sxc_eigen	sampled	0x5eed0001	67	512	98	true	0.273	2.37	20.78
+# vram	after_prompt=206	generated_this_run=264	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+219	sxc_hermes	greedy	-	67	256	256	false	0.286	2.44	17.92
+219	sxc_hermes	sampled	0x5eed0000	67	512	512	false	0.277	2.38	20.37
+219	sxc_hermes	sampled	0x5eed0001	67	512	512	false	0.277	2.38	20.52
+# vram	after_prompt=219	generated_this_run=265	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+249	sxc_codex	greedy	-	67	256	256	false	0.305	2.53	17.20
+249	sxc_codex	sampled	0x5eed0000	67	512	512	false	0.189	1.95	25.04
+249	sxc_codex	sampled	0x5eed0001	67	512	512	false	0.189	1.95	25.03
+# vram	after_prompt=249	generated_this_run=266	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+306	sxc_eigen	greedy	-	67	256	256	false	0.357	2.75	15.85
+306	sxc_eigen	sampled	0x5eed0000	67	512	512	false	0.197	1.98	24.57
+306	sxc_eigen	sampled	0x5eed0001	67	512	512	false	0.197	1.98	24.54
+# vram	after_prompt=306	generated_this_run=267	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+331	sxc_hermes	greedy	-	67	256	99	true	0.554	3.71	11.77
+331	sxc_hermes	sampled	0x5eed0000	67	512	197	true	0.465	3.32	14.55
+331	sxc_hermes	sampled	0x5eed0001	67	512	197	true	0.465	3.32	14.58
+# vram	after_prompt=331	generated_this_run=268	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+344	sxc_claude	greedy	-	67	256	256	false	0.341	2.69	16.22
+344	sxc_claude	sampled	0x5eed0000	67	512	512	false	0.209	2.05	23.96
+344	sxc_claude	sampled	0x5eed0001	67	512	512	false	0.209	2.05	23.85
+# vram	after_prompt=344	generated_this_run=269	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+77	sxc_codex	greedy	-	66	256	256	false	0.319	2.59	16.86
+77	sxc_codex	sampled	0x5eed0000	66	512	512	false	0.226	2.12	22.83
+77	sxc_codex	sampled	0x5eed0001	66	512	512	false	0.226	2.12	22.86
+# vram	after_prompt=77	generated_this_run=270	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+89	sxc_codex	greedy	-	66	256	256	false	0.309	2.53	17.26
+89	sxc_codex	sampled	0x5eed0000	66	512	512	false	0.201	2.01	24.27
+89	sxc_codex	sampled	0x5eed0001	66	512	512	false	0.201	2.01	24.23
+# vram	after_prompt=89	generated_this_run=271	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+93	sxc_codex	greedy	-	66	256	121	true	0.561	3.82	11.49
+93	sxc_codex	sampled	0x5eed0000	66	512	194	true	0.384	2.93	16.72
+93	sxc_codex	sampled	0x5eed0001	66	512	194	true	0.384	2.93	16.72
+# vram	after_prompt=93	generated_this_run=272	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+94	sxc_eigen	greedy	-	66	256	256	false	0.354	2.78	15.66
+94	sxc_eigen	sampled	0x5eed0000	66	512	512	false	0.284	2.43	20.00
+94	sxc_eigen	sampled	0x5eed0001	66	512	512	false	0.284	2.43	20.03
+# vram	after_prompt=94	generated_this_run=273	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+121	sxc_codex	greedy	-	66	256	256	false	0.380	2.91	15.09
+121	sxc_codex	sampled	0x5eed0000	66	512	512	false	0.215	2.07	23.52
+121	sxc_codex	sampled	0x5eed0001	66	512	512	false	0.215	2.07	23.51
+# vram	after_prompt=121	generated_this_run=274	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+251	sxc_hermes	greedy	-	66	256	218	true	0.380	2.91	15.00
+251	sxc_hermes	sampled	0x5eed0000	66	512	245	true	0.374	2.88	16.90
+251	sxc_hermes	sampled	0x5eed0001	66	512	245	true	0.374	2.88	16.97
+# vram	after_prompt=251	generated_this_run=275	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+265	sxc_codex	greedy	-	66	256	256	false	0.354	2.78	15.64
+265	sxc_codex	sampled	0x5eed0000	66	512	512	false	0.215	2.07	23.66
+265	sxc_codex	sampled	0x5eed0001	66	512	512	false	0.215	2.07	23.65
+# vram	after_prompt=265	generated_this_run=276	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+338	sxc_eigen	greedy	-	66	256	256	false	0.281	2.42	18.10
+338	sxc_eigen	sampled	0x5eed0000	66	512	512	false	0.196	1.98	24.54
+338	sxc_eigen	sampled	0x5eed0001	66	512	512	false	0.196	1.98	24.52
+# vram	after_prompt=338	generated_this_run=277	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+85	sxc_codex	greedy	-	65	256	205	true	0.499	3.51	12.53
+85	sxc_codex	sampled	0x5eed0000	65	512	181	true	0.303	2.52	19.27
+85	sxc_codex	sampled	0x5eed0001	65	512	181	true	0.303	2.52	19.39
+# vram	after_prompt=85	generated_this_run=278	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+103	sxc_hermes	greedy	-	65	256	256	false	0.343	2.72	16.12
+103	sxc_hermes	sampled	0x5eed0000	65	512	512	false	0.272	2.35	20.69
+103	sxc_hermes	sampled	0x5eed0001	65	512	512	false	0.272	2.35	20.65
+# vram	after_prompt=103	generated_this_run=279	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+113	sxc_codex	greedy	-	65	256	97	true	0.600	3.94	11.12
+113	sxc_codex	sampled	0x5eed0000	65	512	91	true	0.621	4.10	11.92
+113	sxc_codex	sampled	0x5eed0001	65	512	91	true	0.621	4.10	11.96
+# vram	after_prompt=113	generated_this_run=280	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+127	sxc_hermes	greedy	-	65	256	256	false	0.391	2.94	14.86
+127	sxc_hermes	sampled	0x5eed0000	65	512	512	false	0.269	2.35	20.82
+127	sxc_hermes	sampled	0x5eed0001	65	512	512	false	0.269	2.35	20.81
+# vram	after_prompt=127	generated_this_run=281	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+155	sxc_hermes	greedy	-	65	256	256	false	0.309	2.53	17.28
+155	sxc_hermes	sampled	0x5eed0000	65	512	512	false	0.228	2.14	22.86
+155	sxc_hermes	sampled	0x5eed0001	65	512	512	false	0.228	2.14	22.83
+# vram	after_prompt=155	generated_this_run=282	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+218	sxc_eigen	greedy	-	65	256	256	false	0.373	2.84	15.30
+218	sxc_eigen	sampled	0x5eed0000	65	512	512	false	0.238	2.19	22.19
+218	sxc_eigen	sampled	0x5eed0001	65	512	512	false	0.238	2.19	22.21
+# vram	after_prompt=218	generated_this_run=283	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+220	sxc_claude	greedy	-	65	256	256	false	0.353	2.75	15.86
+220	sxc_claude	sampled	0x5eed0000	65	512	499	true	0.257	2.28	21.43
+220	sxc_claude	sampled	0x5eed0001	65	512	499	true	0.257	2.28	21.47
+# vram	after_prompt=220	generated_this_run=284	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+227	sxc_hermes	greedy	-	65	256	256	false	0.369	2.81	15.51
+227	sxc_hermes	sampled	0x5eed0000	65	512	389	true	0.349	2.75	17.79
+227	sxc_hermes	sampled	0x5eed0001	65	512	389	true	0.349	2.75	17.79
+# vram	after_prompt=227	generated_this_run=285	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+230	sxc_eigen	greedy	-	65	256	184	true	0.395	2.98	14.77
+230	sxc_eigen	sampled	0x5eed0000	65	512	222	true	0.320	2.59	18.78
+230	sxc_eigen	sampled	0x5eed0001	65	512	222	true	0.320	2.59	18.79
+# vram	after_prompt=230	generated_this_run=286	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+269	sxc_codex	greedy	-	65	256	256	false	0.445	3.20	13.65
+269	sxc_codex	sampled	0x5eed0000	65	512	382	true	0.264	2.32	21.12
+269	sxc_codex	sampled	0x5eed0001	65	512	382	true	0.264	2.32	21.04
+# vram	after_prompt=269	generated_this_run=287	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+277	sxc_codex	greedy	-	65	256	256	false	0.328	2.64	16.51
+277	sxc_codex	sampled	0x5eed0000	65	512	512	false	0.246	2.23	21.98
+277	sxc_codex	sampled	0x5eed0001	65	512	512	false	0.246	2.23	21.96
+# vram	after_prompt=277	generated_this_run=288	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+282	sxc_eigen	greedy	-	65	256	256	false	0.369	2.84	15.42
+282	sxc_eigen	sampled	0x5eed0000	65	512	183	true	0.367	2.81	17.22
+282	sxc_eigen	sampled	0x5eed0001	65	512	183	true	0.367	2.81	17.25
+# vram	after_prompt=282	generated_this_run=289	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+285	sxc_codex	greedy	-	65	256	256	false	0.286	2.44	17.90
+285	sxc_codex	sampled	0x5eed0000	65	512	360	true	0.273	2.35	20.76
+285	sxc_codex	sampled	0x5eed0001	65	512	360	true	0.273	2.35	20.74
+# vram	after_prompt=285	generated_this_run=290	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+302	sxc_eigen	greedy	-	65	256	256	false	0.341	2.69	16.26
+302	sxc_eigen	sampled	0x5eed0000	65	512	512	false	0.229	2.15	22.69
+302	sxc_eigen	sampled	0x5eed0001	65	512	512	false	0.229	2.15	22.68
+# vram	after_prompt=302	generated_this_run=291	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+307	sxc_hermes	greedy	-	65	256	256	false	0.312	2.56	17.09
+307	sxc_hermes	sampled	0x5eed0000	65	512	512	false	0.223	2.12	22.94
+307	sxc_hermes	sampled	0x5eed0001	65	512	512	false	0.223	2.12	22.98
+# vram	after_prompt=307	generated_this_run=292	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+314	sxc_eigen	greedy	-	65	256	256	false	0.301	2.49	17.51
+314	sxc_eigen	sampled	0x5eed0000	65	512	299	true	0.228	2.14	22.78
+314	sxc_eigen	sampled	0x5eed0001	65	512	299	true	0.228	2.14	22.81
+# vram	after_prompt=314	generated_this_run=293	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+119	sxc_hermes	greedy	-	64	256	91	true	0.518	3.61	12.15
+119	sxc_hermes	sampled	0x5eed0000	64	512	111	true	0.655	4.27	11.43
+119	sxc_hermes	sampled	0x5eed0001	64	512	111	true	0.655	4.27	11.46
+# vram	after_prompt=119	generated_this_run=294	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+163	sxc_hermes	greedy	-	64	256	179	true	0.205	2.03	21.54
+163	sxc_hermes	sampled	0x5eed0000	64	512	161	true	0.269	2.34	20.89
+163	sxc_hermes	sampled	0x5eed0001	64	512	161	true	0.269	2.34	20.84
+# vram	after_prompt=163	generated_this_run=295	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+241	sxc_codex	greedy	-	64	256	256	false	0.305	2.53	17.21
+241	sxc_codex	sampled	0x5eed0000	64	512	512	false	0.278	2.39	20.36
+241	sxc_codex	sampled	0x5eed0001	64	512	512	false	0.278	2.39	20.48
+# vram	after_prompt=241	generated_this_run=296	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+267	sxc_hermes	greedy	-	64	256	256	false	0.331	2.67	16.41
+267	sxc_hermes	sampled	0x5eed0000	64	512	418	true	0.262	2.32	21.14
+267	sxc_hermes	sampled	0x5eed0001	64	512	418	true	0.262	2.32	21.15
+# vram	after_prompt=267	generated_this_run=297	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+289	sxc_codex	greedy	-	64	256	256	false	0.264	2.33	18.80
+289	sxc_codex	sampled	0x5eed0000	64	512	512	false	0.189	1.95	25.12
+289	sxc_codex	sampled	0x5eed0001	64	512	512	false	0.189	1.95	25.17
+# vram	after_prompt=289	generated_this_run=298	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+291	sxc_hermes	greedy	-	64	256	256	false	0.255	2.29	19.08
+291	sxc_hermes	sampled	0x5eed0000	64	512	512	false	0.159	1.80	27.17
+291	sxc_hermes	sampled	0x5eed0001	64	512	512	false	0.159	1.80	27.12
+# vram	after_prompt=291	generated_this_run=299	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+292	sxc_claude	greedy	-	64	256	256	false	0.322	2.61	16.83
+292	sxc_claude	sampled	0x5eed0000	64	512	327	true	0.301	2.51	19.67
+292	sxc_claude	sampled	0x5eed0001	64	512	327	true	0.301	2.51	19.64
+# vram	after_prompt=292	generated_this_run=300	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+318	sxc_eigen	greedy	-	64	256	256	false	0.357	2.78	15.65
+318	sxc_eigen	sampled	0x5eed0000	64	512	512	false	0.217	2.09	23.21
+318	sxc_eigen	sampled	0x5eed0001	64	512	512	false	0.217	2.09	23.24
+# vram	after_prompt=318	generated_this_run=301	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+328	sxc_claude	greedy	-	64	256	256	false	0.343	2.72	16.08
+328	sxc_claude	sampled	0x5eed0000	64	512	512	false	0.249	2.25	21.69
+328	sxc_claude	sampled	0x5eed0001	64	512	512	false	0.249	2.25	21.68
+# vram	after_prompt=328	generated_this_run=302	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+38	think_off	greedy	-	63	256	256	false	0.828	5.12	8.62
+38	think_off	sampled	0x5eed0000	63	512	218	true	0.561	3.79	12.90
+38	think_off	sampled	0x5eed0001	63	512	218	true	0.561	3.79	12.90
+# vram	after_prompt=38	generated_this_run=303	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+55	sxc_hermes	greedy	-	63	256	256	false	0.380	2.91	15.01
+55	sxc_hermes	sampled	0x5eed0000	63	512	262	true	0.390	2.94	16.62
+55	sxc_hermes	sampled	0x5eed0001	63	512	262	true	0.390	2.94	16.75
+# vram	after_prompt=55	generated_this_run=304	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+80	sxc_claude	greedy	-	63	256	256	false	0.286	2.44	17.95
+80	sxc_claude	sampled	0x5eed0000	63	512	512	false	0.300	2.50	19.43
+80	sxc_claude	sampled	0x5eed0001	63	512	512	false	0.300	2.50	19.46
+# vram	after_prompt=80	generated_this_run=305	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+83	sxc_hermes	greedy	-	63	256	256	false	0.369	2.84	15.35
+83	sxc_hermes	sampled	0x5eed0000	63	512	248	true	0.384	2.93	16.68
+83	sxc_hermes	sampled	0x5eed0001	63	512	248	true	0.384	2.93	16.75
+# vram	after_prompt=83	generated_this_run=306	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+88	sxc_claude	greedy	-	63	256	247	true	0.398	2.98	14.64
+88	sxc_claude	sampled	0x5eed0000	63	512	512	false	0.248	2.25	21.84
+88	sxc_claude	sampled	0x5eed0001	63	512	512	false	0.248	2.25	21.82
+# vram	after_prompt=88	generated_this_run=307	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+97	sxc_codex	greedy	-	63	256	256	false	0.384	2.91	15.03
+97	sxc_codex	sampled	0x5eed0000	63	512	273	true	0.311	2.55	19.17
+97	sxc_codex	sampled	0x5eed0001	63	512	273	true	0.311	2.55	19.11
+# vram	after_prompt=97	generated_this_run=308	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+129	sxc_codex	greedy	-	63	256	256	false	0.517	3.56	12.35
+129	sxc_codex	sampled	0x5eed0000	63	512	392	true	0.338	2.69	18.19
+129	sxc_codex	sampled	0x5eed0001	63	512	392	true	0.338	2.69	18.20
+# vram	after_prompt=129	generated_this_run=309	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+172	sxc_claude	greedy	-	63	256	145	true	0.400	3.01	14.56
+172	sxc_claude	sampled	0x5eed0000	63	512	230	true	0.377	2.89	16.90
+172	sxc_claude	sampled	0x5eed0001	63	512	230	true	0.377	2.89	16.93
+# vram	after_prompt=172	generated_this_run=310	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+174	sxc_eigen	greedy	-	63	256	109	true	0.114	1.57	27.74
+174	sxc_eigen	sampled	0x5eed0000	63	512	108	true	0.224	2.12	22.95
+174	sxc_eigen	sampled	0x5eed0001	63	512	108	true	0.224	2.12	23.01
+# vram	after_prompt=174	generated_this_run=311	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+247	sxc_hermes	greedy	-	63	256	256	false	0.454	3.28	13.36
+247	sxc_hermes	sampled	0x5eed0000	63	512	185	true	0.399	2.99	16.30
+247	sxc_hermes	sampled	0x5eed0001	63	512	185	true	0.399	2.99	16.28
+# vram	after_prompt=247	generated_this_run=312	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+263	sxc_hermes	greedy	-	63	256	78	true	0.103	1.51	28.80
+263	sxc_hermes	sampled	0x5eed0000	63	512	81	true	0.195	1.98	24.71
+263	sxc_hermes	sampled	0x5eed0001	63	512	81	true	0.195	1.98	24.76
+# vram	after_prompt=263	generated_this_run=313	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+327	sxc_hermes	greedy	-	63	256	256	false	0.324	2.61	16.80
+327	sxc_hermes	sampled	0x5eed0000	63	512	512	false	0.206	2.03	23.96
+327	sxc_hermes	sampled	0x5eed0001	63	512	512	false	0.206	2.03	23.99
+# vram	after_prompt=327	generated_this_run=314	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+335	sxc_hermes	greedy	-	63	256	110	true	0.087	1.44	30.43
+335	sxc_hermes	sampled	0x5eed0000	63	512	129	true	0.160	1.80	27.28
+335	sxc_hermes	sampled	0x5eed0001	63	512	129	true	0.160	1.80	27.24
+# vram	after_prompt=335	generated_this_run=315	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+339	sxc_hermes	greedy	-	63	256	256	false	0.345	2.69	16.26
+339	sxc_hermes	sampled	0x5eed0000	63	512	512	false	0.406	3.03	16.00
+339	sxc_hermes	sampled	0x5eed0001	63	512	512	false	0.406	3.03	16.00
+# vram	after_prompt=339	generated_this_run=316	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+346	sxc_eigen	greedy	-	63	256	256	false	0.380	2.91	14.96
+346	sxc_eigen	sampled	0x5eed0000	63	512	221	true	0.377	2.89	16.80
+346	sxc_eigen	sampled	0x5eed0001	63	512	221	true	0.377	2.89	16.82
+# vram	after_prompt=346	generated_this_run=317	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+351	sxc_hermes	greedy	-	63	256	130	true	0.269	2.33	18.75
+351	sxc_hermes	sampled	0x5eed0000	63	512	297	true	0.243	2.22	21.97
+351	sxc_hermes	sampled	0x5eed0001	63	512	297	true	0.243	2.22	22.11
+# vram	after_prompt=351	generated_this_run=318	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+353	sxc_codex	greedy	-	63	256	256	false	0.337	2.69	16.28
+353	sxc_codex	sampled	0x5eed0000	63	512	512	false	0.361	2.80	17.43
+353	sxc_codex	sampled	0x5eed0001	63	512	512	false	0.361	2.80	17.45
+# vram	after_prompt=353	generated_this_run=319	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+64	sxc_claude	greedy	-	62	256	256	false	0.274	2.37	18.32
+64	sxc_claude	sampled	0x5eed0000	62	512	512	false	0.242	2.22	21.99
+64	sxc_claude	sampled	0x5eed0001	62	512	512	false	0.242	2.22	22.05
+# vram	after_prompt=64	generated_this_run=320	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+78	sxc_eigen	greedy	-	62	256	256	false	0.292	2.46	17.65
+78	sxc_eigen	sampled	0x5eed0000	62	512	376	true	0.278	2.39	20.38
+78	sxc_eigen	sampled	0x5eed0001	62	512	376	true	0.278	2.39	20.38
+# vram	after_prompt=78	generated_this_run=321	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+92	sxc_claude	greedy	-	62	256	134	true	0.393	2.98	14.67
+92	sxc_claude	sampled	0x5eed0000	62	512	367	true	0.142	1.71	28.62
+92	sxc_claude	sampled	0x5eed0001	62	512	367	true	0.142	1.71	28.76
+# vram	after_prompt=92	generated_this_run=322	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+98	sxc_eigen	greedy	-	62	256	256	false	0.267	2.33	18.65
+98	sxc_eigen	sampled	0x5eed0000	62	512	500	true	0.332	2.67	18.21
+98	sxc_eigen	sampled	0x5eed0001	62	512	500	true	0.332	2.67	18.24
+# vram	after_prompt=98	generated_this_run=323	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+128	sxc_claude	greedy	-	62	256	256	false	0.386	2.94	14.86
+128	sxc_claude	sampled	0x5eed0000	62	512	512	false	0.217	2.07	23.55
+128	sxc_claude	sampled	0x5eed0001	62	512	512	false	0.217	2.07	23.48
+# vram	after_prompt=128	generated_this_run=324	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+138	sxc_eigen	greedy	-	62	256	256	false	0.402	3.01	14.51
+138	sxc_eigen	sampled	0x5eed0000	62	512	512	false	0.268	2.34	20.81
+138	sxc_eigen	sampled	0x5eed0001	62	512	512	false	0.268	2.34	20.83
+# vram	after_prompt=138	generated_this_run=325	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+153	sxc_codex	greedy	-	62	256	256	false	0.499	3.51	12.54
+153	sxc_codex	sampled	0x5eed0000	62	512	512	false	0.340	2.69	18.11
+153	sxc_codex	sampled	0x5eed0001	62	512	512	false	0.340	2.69	18.14
+# vram	after_prompt=153	generated_this_run=326	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+154	sxc_eigen	greedy	-	62	256	256	false	0.422	3.12	13.96
+154	sxc_eigen	sampled	0x5eed0000	62	512	380	true	0.258	2.30	21.24
+154	sxc_eigen	sampled	0x5eed0001	62	512	380	true	0.258	2.30	21.28
+# vram	after_prompt=154	generated_this_run=327	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+322	sxc_eigen	greedy	-	62	256	256	false	0.304	2.51	17.34
+322	sxc_eigen	sampled	0x5eed0000	62	512	512	false	0.226	2.13	22.92
+322	sxc_eigen	sampled	0x5eed0001	62	512	512	false	0.226	2.13	22.83
+# vram	after_prompt=322	generated_this_run=328	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+343	sxc_hermes	greedy	-	62	256	176	true	0.410	3.05	14.41
+343	sxc_hermes	sampled	0x5eed0000	62	512	512	false	0.239	2.19	22.44
+343	sxc_hermes	sampled	0x5eed0001	62	512	512	false	0.239	2.19	22.32
+# vram	after_prompt=343	generated_this_run=329	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+68	sxc_claude	greedy	-	61	256	237	true	0.357	2.78	15.65
+68	sxc_claude	sampled	0x5eed0000	61	512	512	false	0.192	1.96	24.93
+68	sxc_claude	sampled	0x5eed0001	61	512	512	false	0.192	1.96	24.97
+# vram	after_prompt=68	generated_this_run=330	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+102	sxc_eigen	greedy	-	61	256	256	false	0.355	2.75	15.95
+102	sxc_eigen	sampled	0x5eed0000	61	512	512	false	0.324	2.63	18.61
+102	sxc_eigen	sampled	0x5eed0001	61	512	512	false	0.324	2.63	18.56
+# vram	after_prompt=102	generated_this_run=331	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+104	sxc_claude	greedy	-	61	256	256	false	0.343	2.72	16.02
+104	sxc_claude	sampled	0x5eed0000	61	512	512	false	0.276	2.37	20.52
+104	sxc_claude	sampled	0x5eed0001	61	512	512	false	0.276	2.37	20.60
+# vram	after_prompt=104	generated_this_run=332	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+110	sxc_eigen	greedy	-	61	256	256	false	0.320	2.61	16.67
+110	sxc_eigen	sampled	0x5eed0000	61	512	512	false	0.224	2.12	23.05
+110	sxc_eigen	sampled	0x5eed0001	61	512	512	false	0.224	2.12	23.00
+# vram	after_prompt=110	generated_this_run=333	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+122	sxc_eigen	greedy	-	61	256	256	false	0.305	2.53	17.19
+122	sxc_eigen	sampled	0x5eed0000	61	512	512	false	0.280	2.40	20.32
+122	sxc_eigen	sampled	0x5eed0001	61	512	512	false	0.280	2.40	20.20
+# vram	after_prompt=122	generated_this_run=334	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+142	sxc_eigen	greedy	-	61	256	256	false	0.341	2.69	16.21
+142	sxc_eigen	sampled	0x5eed0000	61	512	377	true	0.260	2.31	21.10
+142	sxc_eigen	sampled	0x5eed0001	61	512	377	true	0.260	2.31	21.10
+# vram	after_prompt=142	generated_this_run=335	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+149	sxc_codex	greedy	-	61	256	256	false	0.360	2.81	15.60
+149	sxc_codex	sampled	0x5eed0000	61	512	362	true	0.275	2.38	20.47
+149	sxc_codex	sampled	0x5eed0001	61	512	362	true	0.275	2.38	20.47
+# vram	after_prompt=149	generated_this_run=336	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+150	sxc_eigen	greedy	-	61	256	176	true	0.410	3.05	14.34
+150	sxc_eigen	sampled	0x5eed0000	61	512	176	true	0.338	2.67	18.42
+150	sxc_eigen	sampled	0x5eed0001	61	512	176	true	0.338	2.67	18.41
+# vram	after_prompt=150	generated_this_run=337	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+173	sxc_codex	greedy	-	61	256	256	false	0.389	2.94	14.88
+173	sxc_codex	sampled	0x5eed0000	61	512	512	false	0.241	2.21	22.08
+173	sxc_codex	sampled	0x5eed0001	61	512	512	false	0.241	2.21	21.89
+# vram	after_prompt=173	generated_this_run=338	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+222	sxc_eigen	greedy	-	61	256	256	false	0.315	2.53	17.18
+222	sxc_eigen	sampled	0x5eed0000	61	512	512	false	0.239	2.20	22.27
+222	sxc_eigen	sampled	0x5eed0001	61	512	512	false	0.239	2.20	22.22
+# vram	after_prompt=222	generated_this_run=339	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+243	sxc_hermes	greedy	-	61	256	256	false	0.363	2.81	15.50
+243	sxc_hermes	sampled	0x5eed0000	61	512	476	true	0.290	2.45	19.89
+243	sxc_hermes	sampled	0x5eed0001	61	512	476	true	0.290	2.45	19.90
+# vram	after_prompt=243	generated_this_run=340	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+276	sxc_claude	greedy	-	61	256	256	false	0.338	2.67	16.40
+276	sxc_claude	sampled	0x5eed0000	61	512	512	false	0.182	1.91	25.53
+276	sxc_claude	sampled	0x5eed0001	61	512	512	false	0.182	1.91	25.52
+# vram	after_prompt=276	generated_this_run=341	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+293	sxc_codex	greedy	-	61	256	188	true	0.424	3.12	13.95
+293	sxc_codex	sampled	0x5eed0000	61	512	246	true	0.349	2.74	17.79
+293	sxc_codex	sampled	0x5eed0001	61	512	246	true	0.349	2.74	17.74
+# vram	after_prompt=293	generated_this_run=342	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+303	sxc_hermes	greedy	-	61	256	256	false	0.268	2.35	18.55
+303	sxc_hermes	sampled	0x5eed0000	61	512	368	true	0.303	2.52	19.37
+303	sxc_hermes	sampled	0x5eed0001	61	512	368	true	0.303	2.52	19.27
+# vram	after_prompt=303	generated_this_run=343	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+74	sxc_eigen	greedy	-	60	256	256	false	0.291	2.42	18.05
+74	sxc_eigen	sampled	0x5eed0000	60	512	457	true	0.292	2.46	19.81
+74	sxc_eigen	sampled	0x5eed0001	60	512	457	true	0.292	2.46	19.65
+# vram	after_prompt=74	generated_this_run=344	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+79	sxc_hermes	greedy	-	60	256	256	false	0.290	2.46	17.81
+79	sxc_hermes	sampled	0x5eed0000	60	512	481	true	0.406	3.03	16.11
+79	sxc_hermes	sampled	0x5eed0001	60	512	481	true	0.406	3.03	16.17
+# vram	after_prompt=79	generated_this_run=345	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+260	sxc_claude	greedy	-	60	256	256	false	0.391	2.91	15.03
+260	sxc_claude	sampled	0x5eed0000	60	512	512	false	0.223	2.12	23.16
+260	sxc_claude	sampled	0x5eed0001	60	512	512	false	0.223	2.12	23.16
+# vram	after_prompt=260	generated_this_run=346	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+261	sxc_codex	greedy	-	60	256	256	false	0.373	2.88	15.22
+261	sxc_codex	sampled	0x5eed0000	60	512	512	false	0.196	1.98	24.53
+261	sxc_codex	sampled	0x5eed0001	60	512	512	false	0.196	1.98	24.58
+# vram	after_prompt=261	generated_this_run=347	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+37	think_off	greedy	-	55	256	256	false	0.762	4.83	9.07
+37	think_off	sampled	0x5eed0000	55	512	512	false	0.373	2.86	17.11
+37	think_off	sampled	0x5eed0001	55	512	512	false	0.373	2.86	17.13
+# vram	after_prompt=37	generated_this_run=348	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+39	think_off	greedy	-	47	256	256	false	0.788	4.92	8.89
+39	think_off	sampled	0x5eed0000	47	512	512	false	0.564	3.82	12.74
+39	think_off	sampled	0x5eed0001	47	512	512	false	0.564	3.82	12.75
+# vram	after_prompt=39	generated_this_run=349	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+42	think_off	greedy	-	38	256	256	false	0.483	3.41	12.81
+42	think_off	sampled	0x5eed0000	38	512	512	false	0.407	3.03	16.06
+42	think_off	sampled	0x5eed0001	38	512	512	false	0.407	3.03	16.05
+# vram	after_prompt=42	generated_this_run=350	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+43	think_off	greedy	-	34	256	256	false	0.660	4.27	10.20
+43	think_off	sampled	0x5eed0000	34	512	512	false	0.445	3.22	15.05
+43	think_off	sampled	0x5eed0001	34	512	512	false	0.445	3.22	15.13
+# vram	after_prompt=43	generated_this_run=351	0, 92115 MiB, 97887 MiB | 1, 10099 MiB, 97887 MiB
+# corpus	total_counted_tokens=404851	distinct_ids=11854	vocab=248320	seconds=10191
+# coverage table (share of counted tokens inside the global top-N)
+topN	global_coverage	floor_4x_tokens	floor_met	cov_agentic_plan	cov_agentic_tools	cov_chat	cov_code	cov_effort_low	cov_json	cov_logs	cov_longctx	cov_reasoning	cov_refactor	cov_shell	cov_sxc_claude	cov_sxc_codex	cov_sxc_eigen	cov_sxc_hermes	cov_think_off	cov_translate	cov_writing
+1024	0.78787	4096	true	0.67773	0.75493	0.69955	0.65195	0.71719	0.82300	0.70079	0.71916	0.84740	0.70781	0.70312	0.81021	0.79127	0.81535	0.79223	0.68454	0.62510	0.76369
+2048	0.87011	8192	true	0.80195	0.86397	0.80648	0.77734	0.80352	0.89055	0.79186	0.84034	0.92344	0.79609	0.83021	0.88694	0.87419	0.88985	0.87224	0.78106	0.73918	0.83622
+4096	0.93717	16384	true	0.90176	0.93666	0.90893	0.90000	0.90352	0.94784	0.90271	0.91869	0.97005	0.90599	0.92839	0.94586	0.93739	0.94586	0.93887	0.88139	0.91424	0.91332
+8192	0.98393	32768	true	0.98066	0.99896	0.97413	0.97956	0.97513	0.99829	0.98275	0.98184	0.99323	0.97604	0.98021	0.98585	0.98405	0.98618	0.98234	0.97432	0.98190	0.98221
+16384	1.00000	65536	true	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000
+32768	1.00000	131072	true	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000
+65536	1.00000	262144	true	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000	1.00000
+# ranks_sidecar	/home/ubuntu/realgate/mtp10/ranks-owngen-big.txt

@@ -1,0 +1,89 @@
+dsv4-forward gate | model /home/ubuntu/models/dsv4-flash-nvfp4 | fixtures /home/ubuntu/dsv4-lane2-fixtures/dsv4_fixtures_ref.json | variant ref (RefFp8Round)
+fixture integrity: 15 arrays, every payload sha256 matches the json
+config: 43 trunk + 1 MTP layers, hidden 4096, hc_mult 4, 3 hash layers
+capture layers: 32-token {0, 2, 3}, 160-token {3}
+  [PASS] embed_out [1, 32, 4096]: max-abs 0.000e0 max-rel 0.000e0 thr 0.000e0 over 0
+  [PASS] layer0_out [1, 32, 4, 4096]: max-abs 1.240e-5 max-rel 4.718e-2 thr 2.788e-3 over 0
+  [PASS] layer0_attn_out [1, 32, 4096]: max-abs 5.722e-6 max-rel 5.366e-2 thr 9.621e-4 over 0
+layer 0 done  t=2.6s
+layer 1 done  t=5.0s
+  [PASS] layer2_out [1, 32, 4, 4096]: max-abs 1.526e-5 max-rel 4.563e-2 thr 1.495e-2 over 0
+  [PASS] layer2_attn_out [1, 32, 4096]: max-abs 3.695e-6 max-rel 1.401e-2 thr 1.343e-3 over 0
+  [PASS] layer2_compressor_kv [1, 8, 512]: max-abs 9.537e-7 max-rel 1.689e-4 thr 1.043e-3 over 0
+  [PASS] layer2_indexer_kv [1, 8, 128]: max-abs 0.000e0 max-rel 0.000e0 thr 1.000e-3 over 0
+  [PASS] layer2_index_score [1, 32, 8]: max-abs 9.537e-7 max-rel 5.256e-7 thr 1.018e-3 over 0
+layer 2 done  t=7.7s
+  [PASS] layer3_out [1, 32, 4, 4096]: max-abs 1.907e-5 max-rel 7.497e-2 thr 1.503e-2 over 0
+  [PASS] layer3_attn_out [1, 32, 4096]: max-abs 6.199e-6 max-rel 4.265e-2 thr 4.590e-3 over 0
+layer 3 done  t=9.8s
+layer 4 done  t=12.0s
+layer 5 done  t=14.2s
+layer 6 done  t=16.6s
+layer 7 done  t=18.8s
+layer 8 done  t=20.9s
+layer 9 done  t=23.0s
+layer 10 done  t=25.5s
+layer 11 done  t=27.5s
+layer 12 done  t=29.7s
+layer 13 done  t=31.8s
+layer 14 done  t=34.1s
+layer 15 done  t=36.2s
+layer 16 done  t=38.4s
+layer 17 done  t=40.6s
+layer 18 done  t=42.9s
+layer 19 done  t=45.0s
+layer 20 done  t=47.3s
+layer 21 done  t=49.3s
+layer 22 done  t=51.7s
+layer 23 done  t=53.8s
+layer 24 done  t=56.0s
+layer 25 done  t=58.1s
+layer 26 done  t=60.3s
+layer 27 done  t=62.4s
+layer 28 done  t=64.6s
+layer 29 done  t=66.6s
+layer 30 done  t=68.9s
+layer 31 done  t=71.0s
+layer 32 done  t=73.3s
+layer 33 done  t=75.5s
+layer 34 done  t=77.9s
+layer 35 done  t=79.9s
+layer 36 done  t=82.2s
+layer 37 done  t=84.4s
+layer 38 done  t=86.8s
+layer 39 done  t=89.1s
+layer 40 done  t=91.4s
+layer 41 done  t=93.5s
+layer 42 done  t=95.8s
+  [PASS] final_logits_last [129280]: max-abs 3.944e-1 max-rel 3.763e3 thr 5.000e-1 over 0 | top1 2581==2581 | top5 set EXACT | top20 overlap 20/20
+  [PASS] mtp_logits_last [129280]: max-abs 4.583e-1 max-rel 8.377e3 thr 5.000e-1 over 0 | top1 2581==2581 | top5 set EXACT | top20 overlap 20/20
+trunk+mtp logits done t=98.9s
+c160 layer 0 done t=103.0s
+c160 layer 1 done t=107.0s
+c160 layer 2 done t=111.5s
+  [PASS] c160_layer3_out_last [1, 4, 4096]: max-abs 1.804e-5 max-rel 2.238e-1 thr 1.871e-4 over 0
+  [PASS] c160_layer3_attn_out_last [1, 4096]: max-abs 4.545e-4 max-rel 6.510e-1 thr 2.285e-3 over 0
+  [PASS] c160_layer3_compressor_kv [1, 1, 512]: max-abs 3.099e-6 max-rel 1.203e-3 thr 8.000e-4 over 0
+c160 layer 3 done t=116.2s
+
+== gate table (variant ref) ==
+| array | shape | max-abs | max-rel | threshold | verdict |
+|---|---|---|---|---|---|
+| embed_out | [1, 32, 4096] | 0.000e0 | 0.000e0 | 0.000e0 | PASS |
+| layer0_out | [1, 32, 4, 4096] | 1.240e-5 | 4.718e-2 | 2.788e-3 | PASS |
+| layer0_attn_out | [1, 32, 4096] | 5.722e-6 | 5.366e-2 | 9.621e-4 | PASS |
+| layer2_out | [1, 32, 4, 4096] | 1.526e-5 | 4.563e-2 | 1.495e-2 | PASS |
+| layer2_attn_out | [1, 32, 4096] | 3.695e-6 | 1.401e-2 | 1.343e-3 | PASS |
+| layer2_compressor_kv | [1, 8, 512] | 9.537e-7 | 1.689e-4 | 1.043e-3 | PASS |
+| layer2_indexer_kv | [1, 8, 128] | 0.000e0 | 0.000e0 | 1.000e-3 | PASS |
+| layer2_index_score | [1, 32, 8] | 9.537e-7 | 5.256e-7 | 1.018e-3 | PASS |
+| layer3_out | [1, 32, 4, 4096] | 1.907e-5 | 7.497e-2 | 1.503e-2 | PASS |
+| layer3_attn_out | [1, 32, 4096] | 6.199e-6 | 4.265e-2 | 4.590e-3 | PASS |
+| final_logits_last | [129280] | 3.944e-1 | 3.763e3 | 5.000e-1 | PASS (top1 2581==2581 | top5 set EXACT | top20 overlap 20/20) |
+| mtp_logits_last | [129280] | 4.583e-1 | 8.377e3 | 5.000e-1 | PASS (top1 2581==2581 | top5 set EXACT | top20 overlap 20/20) |
+| c160_layer3_out_last | [1, 4, 4096] | 1.804e-5 | 2.238e-1 | 1.871e-4 | PASS |
+| c160_layer3_attn_out_last | [1, 4096] | 4.545e-4 | 6.510e-1 | 2.285e-3 | PASS |
+| c160_layer3_compressor_kv | [1, 1, 512] | 3.099e-6 | 1.203e-3 | 8.000e-4 | PASS |
+
+elapsed: 116.2s
+FORWARD GATE [ref]: PASS (15 arrays compared, 0 failures)

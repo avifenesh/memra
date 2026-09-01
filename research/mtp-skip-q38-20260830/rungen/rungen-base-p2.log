@@ -1,0 +1,21 @@
+loaded qwen35 (64 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Describe, in three sentences, why tidal forces lock a moon to its planet.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Describe, in three sentences, why tidal forces lock a moon to its planet."
+prompt tokens: [248045, 846, 198, 72240, 11, 303, 2250, 22157, 11, 3069, 82507, 8177, 5128, 264, 17257, 310, 1141, 11247, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+prefill argmax=760  decode argmax=760  logit maxdiff=7.909e-1  MATCH
+batched-prime argmax=760  tokenwise argmax=760  logit maxdiff=6.432e-1  MATCH
+prefill 26 tok in 0.1058s = 245.7 tok/s (pp26)
+generated 64 tokens in 1.374s = 46.58 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.104s) [stop: MaxNew]
+tokens: [760, 1156, 16561, 728, 310, 10033, 303, 2250, 22157, 3069, 82507, 8177, 5128, 264, 17257, 310, 1141, 11247, 318, 23674, 278, 36605, 553, 6558, 728, 1683, 883, 279, 20665, 9077, 321, 3413, 284, 943, 13, 271, 51, 25055, 36605, 8311, 1521, 25, 198, 16, 13, 561, 67550, 6601, 494, 279, 11247, 369, 524, 13398, 3808, 279, 17257, 1892, 279, 3043, 3008, 369, 12854, 777]
+OUTPUT TEXT: "The user asks me to explain in three sentences why tidal forces lock a moon to its planet (tidal locking). Let me think about the physics clearly and concisely.\n\nTidal locking happens because:\n1. The gravitational pull from the planet is not uniform across the moon — the near side is pulled more"
+--- generated text ---
+The user asks me to explain in three sentences why tidal forces lock a moon to its planet (tidal locking). Let me think about the physics clearly and concisely.
+
+Tidal locking happens because:
+1. The gravitational pull from the planet is not uniform across the moon — the near side is pulled more

@@ -1,0 +1,92 @@
+{
+  "template": "official",
+  "request": {
+    "model": "g4",
+    "messages": [
+      {
+        "role": "system",
+        "content": "Use tools when needed."
+      },
+      {
+        "role": "user",
+        "content": "Run echo hello, then tell me what it printed."
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "c1",
+            "function": {
+              "name": "shell",
+              "arguments": "{\"command\": [\"echo\", \"hello\"], \"timeout_ms\": 5000}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "hello\n",
+        "tool_call_id": "c1"
+      },
+      {
+        "role": "assistant",
+        "content": "It printed: hello"
+      },
+      {
+        "role": "user",
+        "content": "Now run echo bye."
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "c2",
+            "function": {
+              "name": "shell",
+              "arguments": "{\"command\": [\"echo\", \"bye\"]}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "bye\n",
+        "tool_call_id": "c2"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "shell",
+          "description": "Runs a shell command and returns its output",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The command to execute"
+              },
+              "timeout_ms": {
+                "type": "number",
+                "description": "Timeout in milliseconds",
+                "nullable": true
+              },
+              "with_escalated_permissions": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

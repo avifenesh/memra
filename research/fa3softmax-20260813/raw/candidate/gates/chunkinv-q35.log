@@ -1,0 +1,16 @@
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.21GB (expert budget 19.61GB) -> RESIDENT
+loaded qwen35moe (40 layers)
+chunkinv: T=97 chat=false chunks=["2048", "64", "32"] steps=48
+ref chunk=2048 argmax=198 margin=0.732906
+  chunk | logits | first_div_pos | maxdiff   | argmax | stream_div
+     64 | EXACT |            -1 | 0.000e0 | - | identical
+     32 | EXACT |            -1 | 0.000e0 | - | identical
+chunkinv verdict: CHUNK-INVARIANT — prefill logits bit-identical at every chunk size
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.21GB (expert budget 19.61GB) -> RESIDENT
+loaded qwen35moe (40 layers)
+chunkinv: T=149 chat=false chunks=["2048", "64", "32"] steps=48
+ref chunk=2048 argmax=4558 margin=1.844452
+  chunk | logits | first_div_pos | maxdiff   | argmax | stream_div
+     64 | EXACT |            -1 | 0.000e0 | - | identical
+     32 | EXACT |            -1 | 0.000e0 | - | identical
+chunkinv verdict: CHUNK-INVARIANT — prefill logits bit-identical at every chunk size

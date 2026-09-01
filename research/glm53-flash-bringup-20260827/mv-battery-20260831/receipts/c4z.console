@@ -1,0 +1,83 @@
+[mv] no pidfile, nothing to stop
+[mv] launched pid=150637 boot=c4-w5p-1 nonce=f87a0d08-1438-43f2-814a-e5d5c9bc13b7
+[mv] READY after 40s
+[mv] GATES GREEN boot=c4-w5p-1
+[sample] ok=True wall=2.0s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+door=bf16-tcols-wide(T) expected=1 lines=1
+door=bf16-tcols-x1(X) expected=1 lines=1
+door=moe-vrows-pack(M) expected=0 lines=0
+door=topk-shards(K) expected=1 lines=1
+door=glm5-verify-ws(W) expected=1 lines=1
+door=verify-walk-batched expected=1 lines=1
+door=verify-walk-per-row expected=0 lines=0
+door=verify-walk-moe-pairs expected=1 lines=1
+door=glm5-vrows expected=1 lines=1
+[bf16-tcols-wide] engaged: t=7 in_f=4096 out_f=154880 rides the weight-once tcols class (MEMRA_BF16_TCOLS_WIDE=1)
+[bf16-tcols-x1] engaged: one-row-per-block tcols grid (MEMRA_BF16_TCOLS_X1=1)
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[mv] DOORS GREEN boot=c4-w5p-1
+[timed] d00-code ttft=0.984 tok/s=67.5 spec={'rounds': 90, 'drafted': 255, 'accepted': 165, 'acceptance_rate': 0.6470588235294118} err=None
+[timed] d01-code ttft=1.022 tok/s=64.1 spec={'rounds': 93, 'drafted': 270, 'accepted': 166, 'acceptance_rate': 0.6148148148148148} err=None
+[timed] d02-code ttft=1.005 tok/s=62.2 spec={'rounds': 95, 'drafted': 245, 'accepted': 161, 'acceptance_rate': 0.6571428571428571} err=None
+[timed] d03-code ttft=0.983 tok/s=61.3 spec={'rounds': 95, 'drafted': 264, 'accepted': 164, 'acceptance_rate': 0.6212121212121212} err=None
+[timed] d04-code ttft=1.071 tok/s=73.6 spec={'rounds': 67, 'drafted': 238, 'accepted': 165, 'acceptance_rate': 0.6932773109243697} err=None
+[timed] d05-code ttft=0.822 tok/s=71.3 spec={'rounds': 82, 'drafted': 239, 'accepted': 173, 'acceptance_rate': 0.7238493723849372} err=None
+[timed] d06-prose ttft=0.841 tok/s=79.3 spec={'rounds': 77, 'drafted': 220, 'accepted': 179, 'acceptance_rate': 0.8136363636363636} err=None
+[timed] d07-prose ttft=1.03 tok/s=75.8 spec={'rounds': 77, 'drafted': 249, 'accepted': 178, 'acceptance_rate': 0.714859437751004} err=None
+[timed] d08-prose ttft=0.965 tok/s=70.6 spec={'rounds': 82, 'drafted': 260, 'accepted': 174, 'acceptance_rate': 0.6692307692307692} err=None
+[timed] d09-prose ttft=0.898 tok/s=75.2 spec={'rounds': 84, 'drafted': 227, 'accepted': 175, 'acceptance_rate': 0.7709251101321586} err=None
+[timed l3] l3-WARM ttft=1.019 tok/s=90.6 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.441 tok/s=59.3 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=3.764 tok/s=55.6 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.139 tok/s=62.0 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.053 err=None
+[timed deep] l3-A4630 ttft=3.436 err=None
+[timed vendor] d04-code tok/s=45754.1 spec={'rounds': 5, 'drafted': 19, 'accepted': 14, 'acceptance_rate': 0.7368421052631579} err=None
+[mv] SIGTERM pid=150637 exe=/root/memra-mv/target/release/memra-server
+[mv] stopped
+[loop-law] screened=14 flagged=0
+{
+ "d4on": {
+  "n_boots": 3,
+  "dec_tok_s_median": 70.45765790111138,
+  "dec_boot_medians": [
+   70.458,
+   70.482,
+   70.397
+  ],
+  "spread_abs_tok_s": 0.0844,
+  "spread_rel_pct": 0.1198,
+  "deep_tok_s_median": 59.00837157146858,
+  "pool_ttft_median": 0.9682344880420715,
+  "ttft_04k_median": 1.0511352110188454,
+  "ttft_37k_median": 3.44100513192825,
+  "vendor_tok_s_median": 73.10381447614375,
+  "vendor_excluded": [
+   "ct=88 finish=stop err=None"
+  ]
+ },
+ "w5p": {
+  "n_boots": 1,
+  "dec_tok_s_median": 70.96457371323436,
+  "dec_boot_medians": [
+   70.965
+  ],
+  "spread_abs_tok_s": 0.0,
+  "spread_rel_pct": 0.0,
+  "deep_tok_s_median": 60.657778938516095,
+  "pool_ttft_median": 0.9834913663798943,
+  "ttft_04k_median": 1.0525312288664281,
+  "ttft_37k_median": 3.4360094340518117,
+  "vendor_tok_s_median": null,
+  "vendor_excluded": [
+   "ct=20 finish=stop err=None"
+  ],
+  "gap_vs_baseline_tok_s": 0.507,
+  "ratio_vs_baseline": 1.0072,
+  "pooled_spread_tok_s": 0.0844,
+  "verdict": "WIN"
+ }
+}
+X3_SUFFICIENT: no escalation rule fired (spreads receipted above)
+C4Z_DONE

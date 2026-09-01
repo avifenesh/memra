@@ -1,0 +1,20 @@
+{
+  "request_id": "cmpl-89fc9b7765d6113af72b4542fed5082c",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 14712,
+    "completion_tokens": 768,
+    "total_tokens": 15480,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 31.439637928,
+    "spec": {
+      "rounds": 279,
+      "drafted": 837,
+      "accepted": 487,
+      "acceptance_rate": 0.5818399044205496
+    }
+  },
+  "text": "The user wants me to continue iterating on the dashboard. They want:\n1. A modal showing the raw metrics delta for one request.\n\nI need to output a complete, self-contained HTML document. I should preserve all working behavior from the previous document (Iteration 12), make the requested change, use semantic HTML and accessible labels, and include CSS and JavaScript inline.\n\nSince I don't have the exact previous document content in this conversation thread, I need to reconstruct the full document from my previous responses. Let me recall what I built:\n\nIteration 1: Initial dashboard with all required panels and realistic placeholder rows.\nIteration 2: Added a sticky request inspector that explains TTFT separately from decode time.\nIteration 3: Added an accessible cache-tier legend for continuation, speculative, and prefix reuse.\nIteration 4: Added a compact admission-pressure strip with defer, park, active, and queued values.\nIteration 5: Added a responsive incident timeline and emphasized the first counter correlated with a slope.\nIteration 6: Added keyboard navigation and visible focus treatment throughout the dashboard.\nIteration 7: Added a comparison drawer for spec-default versus spec-off measurements.\nIteration 8: Added a pool-residency section with driver-free, reserved, used, and cached byte gauges.\nIteration 9: Added an eviction-thrash warning state and a short operator remediation checklist.\nIteration 10: Added a print stylesheet that preserves the request receipt as a legible table.\nIteration 11: Added a small sparkline beside every request without introducing external dependencies.\nIteration 12: Finished the dashboard with a concise evidence footer and no marketing language.\n\nNow I need to add:\n1. A modal showing the raw metrics delta for one request.\n\nI should create a complete HTML document that includes all previous features plus this new modal. The modal should show raw metrics delta for a selected request - meaning the differences or changes in metrics over time or between states.\n\nFor the modal:\n- Triggered by clicking on a request row or a button\n- Shows detailed raw metrics delta (e.g., change in TTFT, decode time, token rate, cache hits, etc.)\n- Accessible with proper ARIA attributes (role=\"dialog\", aria-modal, etc.)\n- Keyboard navigable (Escape to close, focus trap)\n- Responsive\n\nI'll integrate this into the existing layout. Maybe clicking on a request in the timeline or evidence table opens the modal.\n\nLet me write the complete HTML now. I'll include all previous features and add the modal.\n\nI need to make sure the code is clean, semantic, and accessible.\n\nLet me structure the HTML:\n1. DOCTYPE and head with meta tags and styles\n2. Body with:\n   - Skip link\n   - Eviction-thrash warning banner\n   - Header\n   - Main grid with all panels\n   - Sticky request inspector\n   - Cache-tier legend\n   - Admission-pressure strip\n   - Responsive incident timeline\n   - Comparison drawer\n   - Operator remediation checklist\n   - Print stylesheet\n   - Sparklines beside each request\n   - Evidence footer\n   - Raw metrics delta modal (new)\n\nFor the modal:\n- Fixed position overlay\n- Centered dialog box\n- Close button (X)\n- Escape key to close\n- Focus trap inside\n- Shows raw metrics delta for the selected request\n- Table or list of metrics with before/after values and delta\n\nI'll generate realistic delta data for each request.\n\nLet me write the code. I'll generate the request data in JavaScript to keep the HTML manageable, but ensure realistic placeholder data is present on load.\n\nI need to make sure the modal is accessible:\n- `role=\"dialog\"`\n- `"
+}

@@ -1,0 +1,5 @@
+Let me parse what the user is saying. They're describing a tool they want to build. Previously (implied context) there was a Rust version — "we don't go with rust this time" — so they want a different language. They want a CLI tool that:
+
+1. Takes minimal few sentences from the user (a brain dump)
+2. An agent captures it, puts it in place, tracks the relevant JSONL from whatever tool they were using (probably session logs from Claude Code / codex / etc. — JSONL session files), and compacts it
+3. Asks if the user wants to elaborate on

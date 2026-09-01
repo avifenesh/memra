@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-3274ff8881990a41f03704fedee09911",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 45723,
+    "completion_tokens": 256,
+    "total_tokens": 45979,
+    "prompt_tokens_details": {
+      "cached_tokens": 45430
+    },
+    "elapsed_s": 4.955999175
+  },
+  "text": "The user wants me to add an accessible cache-tier legend for continuation, speculative, and prefix reuse. This should be a legend that explains the different cache tiers/sources used in the dashboard.\n\nI need to:\n1. Keep all existing functionality (dashboard with 600 requests, sticky inspector, etc.)\n2. Add an accessible cache-tier legend\n3. Make it clear what continuation, speculative, and prefix reuse mean\n4. Ensure accessibility (proper ARIA labels, semantic HTML)\n5. Return a complete, self-contained HTML document\n\nLet me think about the cache tiers:\n- **Continuation**: Likely means continuing from a previous request's cache (same session/context)\n- **Speculative**: Likely means speculative decoding/cache (predictive, draft tokens)\n- **Prefix reuse**: Likely means reusing prefix tokens from a shared cache (common prompt prefixes)\n\nI'll add a legend section, probably near the cache hit-rate chart or timeline, with color coding and descriptions. I'll make it accessible with proper ARIA labels and semantic HTML.\n\nThe dashboard is getting complex. I need to make sure the HTML is complete and works. Let me structure it properly:\n\n1. Header\n2. Main layout:\n   - Left column: Timeline, cache"
+}

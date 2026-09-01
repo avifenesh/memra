@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user has pasted what looks like an error message from some tool called \"Atrium\" \u2014 specifically a \"re-entry\" agent that tried to run models via `opencode run` commands with models like `nvidia/z-ai/glm-5.2` and `nvidia/qwen/qwen3.5-122b-a10b`, and both commands failed with \"Command failed\".\n\nLet me think about what's happening here. This looks like output from a tool called \"atrium\" (possibly a CLI tool or agent orchestrator the user has installed, in `~/.config/atrium/reentry",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user has pasted what looks like an error message from some tool called \"Atrium\" \u2014 specifically a \"re-entry\" agent that tried to run models via `opencode run` commands with models like `nvidia/z-ai/glm-5.2` and `nvidia/qwen/qwen3.5-122b-a10b`, and both commands failed with \"Command failed\".\n\nLet me think about what's happening here. This looks like output from a tool called \"atrium\" (possibly a CLI tool or agent orchestrator the user has installed, in `~/.config/atrium/reentry"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 225,
+  "completion_tokens": 128,
+  "total_tokens": 353,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.08148465,
+  "spec": {
+   "rounds": 52,
+   "drafted": 156,
+   "accepted": 75,
+   "acceptance_rate": 0.4807692307692308
+  }
+ },
+ "id": "chatcmpl-3a2fd76a4e0039cc1df382fdc45bce9b",
+ "created": 1788081679,
+ "system_fingerprint": "REDACTED"
+}

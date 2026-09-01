@@ -1,0 +1,28 @@
+FINAL_HIT_LOCK_ACQUIRED 2026-08-11T03:07:52Z
+host=<private-host-redacted> source_commit=946ea26413313723ff7fd0aa00c1aa4280353ac0
+## lane/cx-opti2...origin/lane/cx-opti2 [ahead 27]
+warning: memra-engine@0.75.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.75.0 (/home/ubuntu/memra-opti2/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 17.60s
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[mtp-draft] loading external MTP draft: /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[opti-gate] real prompt tokens=228
+[spec-stats] rounds=4 full_accept=4 len_hist=[0, 4] per_slot=[4/4=1.000] total=4/4=1.000 tok_per_round=2.000
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.468762 threshold=0.000 verify=[678, 18664]
+[opti-controller] resolve generation=0 hit=false q=0.468762 expected_pending=678 n_acc=1 bonus=734 resolution_ms=12.198 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.913986 threshold=0.000 verify=[566, 16]
+[opti-controller] resolve generation=1 hit=true q=0.913986 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.242 reconcile=false breaker=false
+[spec-stats] rounds=4 full_accept=4 len_hist=[0, 4] per_slot=[4/4=1.000] total=4/4=1.000 tok_per_round=2.000
+[spec-stats] rounds=8 full_accept=8 len_hist=[0, 8] per_slot=[8/8=1.000] total=8/8=1.000 tok_per_round=2.000
+[spec-stats] rounds=8 full_accept=8 len_hist=[0, 8] per_slot=[8/8=1.000] total=8/8=1.000 tok_per_round=2.000
+RECURRENT RESTORE PRIMITIVE: PASS elements=262144 hit-skip=count/bonus-miss-restore
+STATE IDENTITY: PASS mode=controller q=Some(0.0) cap=380 generated=9 continuation=16 first=OptiForkStateIdentity { trunk_kv_bytes: 19710720, recurrent_bytes: 0, scratch_kv_bytes: 438016, hidden_bytes: 16384 } continued=OptiForkStateIdentity { trunk_kv_bytes: 21047040, recurrent_bytes: 0, scratch_kv_bytes: 467712, hidden_bytes: 16384 } stats=OptiForkGateStats { attempts: 2, hits: 1, misses: 1, abort_drains: 0, refusals: 0, gate_checks: 2, gate_admits: 2, gate_rejects: 0, reconciles: 1, wasted_draft_tokens: 2, shadow_draft_tokens: 4, breaker_trips: 0 }
+FINAL_HIT_COUNTERS attempts=2 hits=1 misses=1
+FINAL_HIT_STATE_PASS 2026-08-11T03:08:49Z

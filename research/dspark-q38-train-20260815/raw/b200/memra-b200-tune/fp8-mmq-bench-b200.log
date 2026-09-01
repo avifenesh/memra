@@ -1,0 +1,8 @@
+GPU: NVIDIA B200  m=512  reps=9  shapes=27b (interleaved fp8blk,q8_0 per rep; median of reps)
+shape in->out                   fp8blk_ms      q8_0_ms      ratio fp8blk_TFLOP   q8_0_TFLOP
+q_proj 5120->12288                 0.3425       0.3206     0.936x        188.1        201.0
+k/v_proj 5120->1024                0.1191       0.1150     0.966x         45.1         46.7
+o_proj 6144->5120                  0.2446       0.2511     1.027x        131.7        128.3
+gate/up_proj 5120->17408           0.3993       0.4353     1.090x        228.6        209.6
+down_proj 17408->5120              0.6550       0.7059     1.078x        139.3        129.3
+square-ref 5120->5120              0.2058       0.2093     1.017x        130.5        128.2

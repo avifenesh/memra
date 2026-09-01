@@ -1,0 +1,7 @@
+ALL GREEN: kernels match CPU reference.
+prefill argmax=818  decode argmax=818  logit maxdiff=1.164e0  MATCH
+batched-prime argmax=818  tokenwise argmax=818  logit maxdiff=1.164e0  MATCH
+g12 generated tokens: BYTE-IDENTICAL to pinned golden
+prefill argmax=8291  decode argmax=8291  logit maxdiff=2.814e0  MATCH
+batched-prime argmax=8291  tokenwise argmax=8291  logit maxdiff=2.814e0  MATCH
+e4b generated tokens: BYTE-IDENTICAL to pinned golden

@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what the user is asking for. They have some kind of autonomous agent system (sounds like they're building a personal AI research pipeline, possibly with something like OpenClaw/Clawdbot/Moltbot-style cron agents, or a custom setup with scheduled agents that \"wake up\" at certain hours). They mention:\n\n1. \"active research is a good one\" \u2014 apparently referring to a previous suggestion (this seems to be a continuation of a conversation, but I only see this message). They want to replace \"the digest\" with a \"twice a day researched thing.\"\n\n2. Add the MCP for search",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what the user is asking for. They have some kind of autonomous agent system (sounds like they're building a personal AI research pipeline, possibly with something like OpenClaw/Clawdbot/Moltbot-style cron agents, or a custom setup with scheduled agents that \"wake up\" at certain hours). They mention:\n\n1. \"active research is a good one\" \u2014 apparently referring to a previous suggestion (this seems to be a continuation of a conversation, but I only see this message). They want to replace \"the digest\" with a \"twice a day researched thing.\"\n\n2. Add the MCP for search"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 289,
+  "completion_tokens": 128,
+  "total_tokens": 417,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 8.905432157,
+  "spec": {
+   "rounds": 53,
+   "drafted": 265,
+   "accepted": 74,
+   "acceptance_rate": 0.2792452830188679
+  }
+ },
+ "id": "chatcmpl-3153c6b3591dd0c1ab053633672a7ba4",
+ "created": 1788081137,
+ "system_fingerprint": "REDACTED"
+}

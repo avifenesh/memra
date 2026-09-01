@@ -1,0 +1,99 @@
+[auth] keyring loaded: 2 key(s) from /tmp/cx-gateway-keys.ZN0DTN/keys.toml
+[server] OpenRouter metadata loaded: 1 model(s) from /opt/scratch/nvme/cx-gateway/memra/deploy/gateway/q27-models.toml
+[ledger] durable request-cost ledger enabled: /opt/scratch/nvme/cx-gateway/raw/preflight-20260812T081327Z/request-cost-replica1.jsonl
+[server] starting; models config = [("qwen/qwen3.6-27b", "/opt/scratch/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "qwen/qwen3.6-27b" <- /opt/scratch/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[worker]   loaded "qwen/qwen3.6-27b": 65 layers, eos=248046
+[worker] qwen/qwen3.6-27b: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] qwen/qwen3.6-27b: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 4295MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "qwen/qwen3.6-27b": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["qwen/qwen3.6-27b"]
+[server] listening on http://127.0.0.1:18428
+[meter] admit id=chatcmpl-dbebfcbbb6a6bdfd2622a034387d0365 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=111 path=plain = 31552 B/token x ctx + 0MB fixed = 4MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="qwen/qwen3.6-27b" 308MB (observed 310MB at ctx 55 path=plain)
+[meter] admit id=chatcmpl-88f215d15d3b9c5b820ac8e94658d7bd tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=111 path=plain = 31552 B/token x ctx + 308MB fixed = 311MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-6263427ac47608cfc70bb1e79b90a6b1 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=592 path=plain = 31552 B/token x ctx + 308MB fixed = 327MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 512 tokens, 172.1MB (resident 172.1MB / 4295MB, model qwen/qwen3.6-27b, ns "t:gateway_soak\u{1f}cx-gateway-preflight-20260812T081327Z-r1-505417938-serial-cache")
+[meter] admit id=cmpl-a5f3d043bb091ae306ab1165d2ba2f01 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b6c65acdf55619d939b6915685f6e3d2 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-3809183ee8480f23afb52b9ff1ae6ef4 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-144b149636b1bb7b8a50bd34c0f3a630 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ce48d962a1d91542fc19bc69d5a50d03 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e6e25061ce29f52bdf407a0524bfcad5 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8973c49a49613e742a463887533dba49 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-2f426889ff5a4fd62f18fa4478a7d36c tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-516b9efe84ee26d409faac4db9f49bb1 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-712598cc791638f30c982eff673b635a tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 512 tokens, 172.1MB (resident 344.2MB / 4295MB, model qwen/qwen3.6-27b, ns "t:gateway_soak\u{1f}cx-gateway-preflight-20260812T081327Z-r1-505417938-cross-tenant")
+[meter] admit id=cmpl-65f88e7ad4ca7f2e3bce9bacb2868568 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-28c573017ccb5b23c3d586517c526c78 tenant=gateway_isolation lane=interactive model="qwen/qwen3.6-27b"
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_isolation" K=0 source=eligibility-fallback prompt=512 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 512 tokens, 172.1MB (resident 516.3MB / 4295MB, model qwen/qwen3.6-27b, ns "t:gateway_isolation\u{1f}cx-gateway-preflight-20260812T081327Z-r1-505417938-cross-tenant")
+[meter] admit id=cmpl-8f21a3181911bdc478569f80b2d1a8ec tenant=gateway_isolation lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 512 of 512 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_isolation" K=0 source=eligibility-fallback prompt=512 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-438b7bf0cb5a81af41d87aebe8842bcf tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=485 path=plain = 31552 B/token x ctx + 308MB fixed = 323MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=293 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 293 tokens, 165.6MB (resident 681.9MB / 4295MB, model qwen/qwen3.6-27b, ns "t:gateway_soak\u{1f}")
+[meter] admit id=chatcmpl-260ce0a19c02dcaad3ab2748c3919118 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=160 path=plain = 31552 B/token x ctx + 308MB fixed = 313MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=32 cached=0 lcp=1 active=1 placement=single-or-non-pp2
+[constrained] qwen/qwen3.6-27b: 21 masked steps, mask total 0.47 ms (0.022 ms/step)
+[meter] admit id=chatcmpl-b7f0a9cfeb535f779aad8f271506524c tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=485 path=plain = 31552 B/token x ctx + 308MB fixed = 323MB
+[prefix-cache] hit: 293 of 293 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=293 cached=293 lcp=293 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-753f9373caf6b69e3f3b00273d4b04c3 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=160 path=plain = 31552 B/token x ctx + 308MB fixed = 313MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=32 cached=0 lcp=1 active=1 placement=single-or-non-pp2
+[constrained] qwen/qwen3.6-27b: 21 masked steps, mask total 0.39 ms (0.018 ms/step)
+[meter] admit id=cmpl-eda1f5c19ea861503348de2977bbb8b2 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[meter] admit id=cmpl-fa8fb6b8775d01c70f0065e3b95132bf tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[meter] admit id=cmpl-a695b2c579d958278d21396a121bae45 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[meter] admit id=cmpl-1521ae50a0f08199a7f80226fe035545 tenant=gateway_soak lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=4984 path=plain = 31552 B/token x ctx + 308MB fixed = 465MB
+[prefix-cache] hit: 512 of 4860 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=4860 cached=512 lcp=512 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 512 of 4860 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=eligibility-fallback prompt=4860 cached=512 lcp=512 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 512 of 4860 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=concurrency prompt=4860 cached=512 lcp=512 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 512 of 4860 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:gateway_soak" K=0 source=concurrency prompt=4860 cached=512 lcp=512 active=4 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

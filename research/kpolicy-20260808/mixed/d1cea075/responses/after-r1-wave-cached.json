@@ -1,0 +1,23 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "2] selector registered fd=11 events=EVENT_READ\n[worker-2] accepted conn from 1\n=== SESSION LOG ===\n$ python serve.py --workers 4\n[worker logs show that the file descriptor (fd=11) was registered with the selector for `EVENT_READ` immediately after accepting a connection. However, the crash occurs when the code attempts to retrieve the key for this fd using `self._selector.get_key(fd)`.\n\nThe traceback indicates that `get_key` raises a `KeyError` because the fd is not found in the selector's internal map. This suggests a race condition or a logic error where the registration is lost or the lookup fails.\n\nLooking at the `selectors.py` code provided:\n1.  `register` adds the fd to `self._fd_to_key`.\n2.  `unregister` removes it.\n3.  `get_key` looks it up.\n\nThe log shows:\n`[worker-2] selector registered fd=11 events=EVENT_READ`\n`[worker-2] accepted conn from 127.0.0.1:52144`\n\nThe crash happens *after* the log for registration but *"
+    }
+  ],
+  "created": 1786212833,
+  "id": "cmpl-5f38cba050c20fc7556b518585087140",
+  "model": "q9",
+  "object": "text_completion",
+  "system_fingerprint": "memra-b6b1dbff90b8",
+  "usage": {
+    "completion_tokens": 256,
+    "elapsed_s": 2.54831384,
+    "prompt_tokens": 5630,
+    "prompt_tokens_details": {
+      "cached_tokens": 5618
+    },
+    "total_tokens": 5886
+  }
+}

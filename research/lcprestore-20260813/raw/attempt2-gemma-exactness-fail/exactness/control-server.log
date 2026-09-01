@@ -1,0 +1,55 @@
+[server] starting; models config = [("g12", "/opt/scratch/nvme/cx-lcprestore/models/gemma-4-12b-it-qat-q4_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "g12" <- /opt/scratch/nvme/cx-lcprestore/models/gemma-4-12b-it-qat-q4_0.gguf
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[worker]   loaded "g12": 48 layers, eos=1
+[worker] g12: template caps tools=false think=false think_switch=true chat_ok=true effort_levels=false gemma_think=true ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[worker] g12: decode wave cap 8; scheduler tick cap 8
+[worker] g12: EAGER-ONLY serving (gemma4 class — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[prefix-cache] on: budget 8590MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[server] worker ready; serving models: ["g12"]
+[admission] "g12": plain 172032 B/token, spec 172032 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18731
+[meter] admit id=cmpl-3807efe3086c3d694a64ecd9481a05f0 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[admission] fixed residual high-water: model="g12" 0MB (observed 848MB at ctx 4928 path=plain)
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=050c2a3b3a55b8a32b9f766bdacb5bcb544145895ba0a597571d020f53d32e24 boundary_logits_sha256=25f67bcdf989b7629af17b0aa77b9938ad4a67374bf2ca4442a8cf91c3ed01f4
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 836.1MB / 8590MB, model g12, ns "cx-lcprestore-exact-64-r1")
+[meter] admit id=cmpl-672b81350fb4b82d9cd71453db862f30 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=d6c901d10325cd6ae6f231459cf17d9b06bce682196551486ee5d50fbaae2f7c boundary_logits_sha256=dcc7e4afdb745a2a3d1f2a808368db68bf3d1c6c29c6dc2046e4eef4e2c167a1
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 1672.2MB / 8590MB, model g12, ns "cx-lcprestore-exact-64-r1")
+[meter] admit id=cmpl-3553b0fedb70ad9b86f9c9e9f1b554ef tenant=default lane=interactive model="g12"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model g12)
+[meter] admit id=cmpl-f652bc47464c56e592416dae43ce1c95 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=cc6e6b1c344b918e3f6c9529df1e6932df018135577a64aeb491a4ef0ba5cefa boundary_logits_sha256=c9b444c0fee98165d178387f51d6ed1f1a461fe20c127162543c977d4fc004e0
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 2508.2MB / 8590MB, model g12, ns "cx-lcprestore-exact-512-r1")
+[meter] admit id=cmpl-4b1ce8fbf0d7e1c88ee47a323e8bed23 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=afb3584defe7d51f26cdcb9b693c618188ff6ed41881dea1b633c9565b76acb5 boundary_logits_sha256=7f99f5071b029a07510f5a757648abe56c58ea0b088716bc177e264e9a2ffbb8
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 3344.3MB / 8590MB, model g12, ns "cx-lcprestore-exact-512-r1")
+[meter] admit id=cmpl-7f445eff858f65fb2f8849b64fe4b825 tenant=default lane=interactive model="g12"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model g12)
+[meter] admit id=cmpl-b328e4013671ecaab42657cecd4b726b tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=84442aa36216a5bb37710ebb67854a94a6d9afc34fa1958038d0aeba9c053f62 boundary_logits_sha256=b1788d964479c2ef76f99e9e7c91cb3884e812bf47f05aecf0d0e93c38a1d8e7
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 4180.4MB / 8590MB, model g12, ns "cx-lcprestore-exact-2048-r1")
+[meter] admit id=cmpl-854e0e609c6e89121737e34d3d96f55a tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=4d89e16b7b2e0025b2c5c11d61872d279d6a5d28ffe06d78d83c853a5293ea53 boundary_logits_sha256=900534fecd21ee8571760f85cc541ec337a21d5f3fa61cc1ecc3d8379b8eebd3
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 5016.5MB / 8590MB, model g12, ns "cx-lcprestore-exact-2048-r1")
+[meter] admit id=cmpl-8e27c3dcc75fca3ab5c9f0f562a9fd8a tenant=default lane=interactive model="g12"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model g12)
+[meter] admit id=cmpl-53f84036941fc1e1de07b23649c9e067 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=7248bd16a7c48d7bcf92bb2c09a2370055d58eb5fcb613c5155587a0d6780d55 boundary_logits_sha256=6b39221c87ef336625014c61ad144481baa3a60d302ed461b2ae65db45df9301
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 5852.5MB / 8590MB, model g12, ns "cx-lcprestore-exact-4374-r1")
+[meter] admit id=cmpl-7ec73d85941849765da71ccc30fe6d98 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=024f6063f9f54a4deec8e29e9966abd9ad7292ed2a185ca8654a50773d22132f boundary_logits_sha256=f71c61ef54ae796ced957082e8a390139126b45c8e0a43e4971dd38bbb1eef33
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 6688.6MB / 8590MB, model g12, ns "cx-lcprestore-exact-4374-r1")
+[meter] admit id=cmpl-699ef865a73d851f8f8a14db0f1f9493 tenant=default lane=interactive model="g12"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model g12)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

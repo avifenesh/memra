@@ -1,0 +1,223 @@
+diff --git a/crates/memra-engine/src/bin/pp_transport_smoke.rs b/crates/memra-engine/src/bin/pp_transport_smoke.rs
+index 5c7681ee6..7d4d91b61 100644
+--- a/crates/memra-engine/src/bin/pp_transport_smoke.rs
++++ b/crates/memra-engine/src/bin/pp_transport_smoke.rs
+@@ -13,11 +13,16 @@
+ //! copy. Each stage scope binds its CUDA context just like the production PP walkers; pushing
+ //! an ambient stream alone is insufficient when the stages live on different devices.
+ //!
+-//! usage: pp-transport-smoke   (exit 0 = all sub-smokes pass)
++//! usage: pp-transport-smoke [--runtime-probe-cycle]   (exit 0 = all sub-smokes pass)
+ use cudarc::driver::{DevicePtr, DevicePtrMut};
+ use memra_engine::Engine;
+ 
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
++    let runtime_probe_cycle = match std::env::args().nth(1).as_deref() {
++        None => false,
++        Some("--runtime-probe-cycle") => true,
++        Some(arg) => return Err(format!("unknown argument {arg:?}").into()),
++    };
+     let mut fails = 0usize;
+     // Match the serving worker: under an explicit placement the primary Engine follows
+     // the last/head stage. With no placement this remains the original device-0 smoke.
+@@ -106,6 +111,51 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     // overlap=1 must alternate slots 0,1,0,1 — assert we actually exercised both
+     if round_fail > 0 { fails += 1; }
+ 
++    // Optional model-free runtime cadence receipt. Keep all CUDA work on this owner thread and
++    // service between completed boundary ticks, matching the server call site. The four regular
++    // smoke copies above count toward the fixed cadence, so continue through one exact cycle.
++    if runtime_probe_cycle {
++        if !rt.cross_device() {
++            return Err("--runtime-probe-cycle requires a cross-device PP placement".into());
++        }
++        let cycle_x = {
++            rt.bind_stage(0)?;
++            let _s0 = rt.enter(0);
++            rt.engine(0, &e).htod(&[1.0f32])?
++        };
++        let mut serviced = 0u64;
++        for copy_index in 4..memra_engine::pp::PEER_RUNTIME_PROBE_CYCLE_COPIES {
++            let slot = {
++                rt.bind_stage(0)?;
++                let _s0 = rt.enter(0);
++                rt.tx(0, &cycle_x, 1)?
++            };
++            {
++                rt.bind_stage(1)?;
++                let _s1 = rt.enter(1);
++                let _work = rt.rx(0, slot, 1)?;
++            }
++            if memra_engine::pp::service_runtime_peer_probe(&e)? {
++                serviced += 1;
++                println!("runtime probe serviced after boundary copy {}", copy_index + 1);
++            }
++        }
++        let metrics = memra_engine::pp::peer_probe_metrics();
++        let expected = memra_engine::pp::PEER_RUNTIME_PROBE_CYCLE_COPIES
++            / memra_engine::pp::PEER_RUNTIME_PROBE_INTERVAL_COPIES;
++        let ok = serviced == expected
++            && metrics.boundary_copies == memra_engine::pp::PEER_RUNTIME_PROBE_CYCLE_COPIES
++            && metrics.runtime_probes == expected
++            && metrics.runtime_failures == 0;
++        println!(
++            "runtime probe cycle: serviced={serviced}/{expected} boundary_copies={} \
++             runtime_failures={} {}",
++            metrics.boundary_copies,
++            metrics.runtime_failures,
++            if ok { "OK" } else { fails += 1; "FAIL" },
++        );
++    }
++
+     if fails == 0 {
+         println!("pp-transport-smoke PASS");
+         Ok(())
+diff --git a/crates/memra-engine/src/pp.rs b/crates/memra-engine/src/pp.rs
+index 17e51785e..8ed13509c 100644
+--- a/crates/memra-engine/src/pp.rs
++++ b/crates/memra-engine/src/pp.rs
+@@ -742,6 +742,9 @@ const PEER_PROBE_TOKEN_WIDTHS: [usize; 4] = [
+ /// Native cross-device boundary copies between low-frequency runtime integrity probes.
+ /// Fixed rather than operator-tunable: this is a safety gate, not a performance experiment.
+ pub const PEER_RUNTIME_PROBE_INTERVAL_COPIES: u64 = 8 * 1024;
++/// One complete runtime width rotation. The maximum-chunk rung runs once per cycle.
++pub const PEER_RUNTIME_PROBE_CYCLE_COPIES: u64 =
++    PEER_RUNTIME_PROBE_INTERVAL_COPIES * PEER_PROBE_TOKEN_WIDTHS.len() as u64;
+ 
+ pub const PEER_PROBE_REQUIRED_REFUSAL: &str =
+     "PP bring-up refused: MEMRA_PEER_PROBE=0 cannot authorize native peer transport for a \
+@@ -796,6 +799,13 @@ fn runtime_peer_probe_due(copies: u64, last_probe_copy: u64) -> bool {
+     copies.saturating_sub(last_probe_copy) >= PEER_RUNTIME_PROBE_INTERVAL_COPIES
+ }
+ 
++/// Select one boot-probe width per zero-based runtime probe attempt. The maximum-chunk rung is
++/// last, so it runs once every four cadence ticks rather than on every runtime re-probe.
++fn runtime_peer_probe_width(probe_index: u64) -> (usize, usize) {
++    let width_index = (probe_index % PEER_PROBE_TOKEN_WIDTHS.len() as u64) as usize;
++    (width_index, PEER_PROBE_TOKEN_WIDTHS[width_index])
++}
++
+ fn peer_probe_on() -> bool {
+     std::env::var("MEMRA_PEER_PROBE").as_deref() != Ok("0")
+ }
+@@ -2061,9 +2071,10 @@ impl PpNRt {
+                     .into(),
+             );
+         }
+-        if !matches!(self.peer_probe_geometry.get(), Some(Ok(_))) {
+-            return Ok(false);
+-        }
++        let row_bytes = match self.peer_probe_geometry.get() {
++            Some(Ok(bytes)) => *bytes,
++            _ => return Ok(false),
++        };
+ 
+         let copies = PEER_BOUNDARY_COPIES.load(Ordering::Relaxed);
+         loop {
+@@ -2079,14 +2090,24 @@ impl PpNRt {
+             }
+         }
+ 
+-        PEER_RUNTIME_PROBES.fetch_add(1, Ordering::Relaxed);
+-        let probe = run_peer_probe_pass(
+-            &self.stages,
+-            &self.peer_capable,
+-            false,
+-            "runtime-idle-16KiB",
+-            PEER_PROBE_FIXED_BYTES,
+-        );
++        let probe_index = PEER_RUNTIME_PROBES.fetch_add(1, Ordering::Relaxed);
++        let (width_index, tokens) = runtime_peer_probe_width(probe_index);
++        let probe_bytes = row_bytes.checked_mul(tokens);
++        let label = format!("runtime-idle-{tokens}tok");
++        let probe = match probe_bytes {
++            Some(bytes) => run_peer_probe_pass(
++                &self.stages,
++                &self.peer_capable,
++                false,
++                &label,
++                bytes,
++            ),
++            None => Err(format!(
++                "PP runtime peer probe byte count overflows for row_bytes={row_bytes} \
++                 tokens={tokens}"
++            )
++            .into()),
++        };
+         let restore = e.ctx().bind_to_thread();
+         let verdict = match (probe, restore) {
+             (Ok(()), Ok(())) => Ok(()),
+@@ -2098,15 +2119,22 @@ impl PpNRt {
+             PEER_RUNTIME_PROBE_FAILED.store(true, Ordering::Release);
+             let message = format!(
+                 "PP runtime peer byte-integrity re-probe FAILED after \
+-                 boundary_copies={copies}: {err}; refusing further native P2P (restart with \
+-                 MEMRA_PP_HOST_BOUNCE=1; MEMRA_PEER_PROBE=0 cannot bypass this failure)"
++                 boundary_copies={copies} rung={}/{} tokens={tokens}: {err}; refusing further \
++                 native P2P (restart with MEMRA_PP_HOST_BOUNCE=1; MEMRA_PEER_PROBE=0 cannot \
++                 bypass this failure)",
++                width_index + 1,
++                PEER_PROBE_TOKEN_WIDTHS.len(),
+             );
+             eprintln!("[pp] SECURITY RED: {message}");
+             return Err(message.into());
+         }
+         eprintln!(
+             "[pp] runtime peer byte-integrity re-probe PASS: \
+-             boundary_copies={copies} interval_copies={PEER_RUNTIME_PROBE_INTERVAL_COPIES}"
++             boundary_copies={copies} interval_copies={PEER_RUNTIME_PROBE_INTERVAL_COPIES} \
++             rung={}/{} tokens={tokens} bytes={} probe_index={probe_index}",
++            width_index + 1,
++            PEER_PROBE_TOKEN_WIDTHS.len(),
++            probe_bytes.unwrap(),
+         );
+         Ok(true)
+     }
+@@ -2691,10 +2719,11 @@ mod host_bounce_tests {
+         dual_pp_timing_snapshot, dual_pp_wave_mid, host_bounce_capacity,
+         peer_probe_bytes_to_f32, peer_probe_decision, peer_probe_f32_to_bytes,
+         peer_probe_mismatch_count, peer_probe_pattern, peer_probe_startup_policy,
+-        record_dual_pp_stage_result, runtime_peer_probe_due, BoundaryTransport,
+-        PeerProbeDecision, PeerProbeStartupPolicy, DUAL_PP_HOST_BOUNCE_REFUSAL,
+-        DUAL_PP_SINGLE_SLOT_REFUSAL, PEER_PROBE_FIXED_BYTES, PEER_PROBE_REQUIRED_REFUSAL,
+-        PEER_PROBE_TOKEN_WIDTHS, PEER_RUNTIME_PROBE_INTERVAL_COPIES,
++        record_dual_pp_stage_result, runtime_peer_probe_due, runtime_peer_probe_width,
++        BoundaryTransport, PeerProbeDecision, PeerProbeStartupPolicy,
++        DUAL_PP_HOST_BOUNCE_REFUSAL, DUAL_PP_SINGLE_SLOT_REFUSAL, PEER_PROBE_FIXED_BYTES,
++        PEER_PROBE_REQUIRED_REFUSAL, PEER_PROBE_TOKEN_WIDTHS,
++        PEER_RUNTIME_PROBE_CYCLE_COPIES, PEER_RUNTIME_PROBE_INTERVAL_COPIES,
+     };
+ 
+     // ---- 2026-08-11 default-flip safety regression (owner-ordered) ----------------------
+@@ -2840,6 +2869,7 @@ mod host_bounce_tests {
+     #[test]
+     fn runtime_reprobe_becomes_due_only_at_each_copy_interval() {
+         let every = PEER_RUNTIME_PROBE_INTERVAL_COPIES;
++        assert_eq!(PEER_RUNTIME_PROBE_CYCLE_COPIES, 4 * every);
+         assert!(!runtime_peer_probe_due(every - 1, 0));
+         assert!(runtime_peer_probe_due(every, 0));
+         assert!(!runtime_peer_probe_due(2 * every - 1, every));
+@@ -2847,6 +2877,23 @@ mod host_bounce_tests {
+         assert!(!runtime_peer_probe_due(every - 1, every));
+     }
+ 
++    #[test]
++    fn runtime_reprobe_rotates_every_boot_width_in_deterministic_order() {
++        let cycle_len = PEER_PROBE_TOKEN_WIDTHS.len();
++        let got: Vec<(usize, usize)> = (0..2 * cycle_len)
++            .map(|probe_index| runtime_peer_probe_width(probe_index as u64))
++            .collect();
++        let expected: Vec<(usize, usize)> = PEER_PROBE_TOKEN_WIDTHS
++            .into_iter()
++            .enumerate()
++            .chain(PEER_PROBE_TOKEN_WIDTHS.into_iter().enumerate())
++            .collect();
++
++        assert_eq!(got, expected);
++        assert_eq!(got[cycle_len - 1].1, crate::cache::PRIME_CHUNK_MAX_TOKENS);
++        assert_eq!(got[2 * cycle_len - 1].1, crate::cache::PRIME_CHUNK_MAX_TOKENS);
++    }
++
+     #[test]
+     fn transport_selection_keeps_peer_default_and_bounces_only_cross_device() {
+         assert_eq!(boundary_transport(false, false), BoundaryTransport::Local);

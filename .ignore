@@ -1,0 +1,6 @@
+# rg/fd default-ignore (override with rg -u). Receipt data drowns default search:
+# ~2,900 jsonl runs + logs under research/. Write-ups (*.md) stay searchable;
+# research/tune-data/current-board.json stays searchable (not jsonl).
+research/**/*.jsonl
+research/**/*.log
+research/**/raw/

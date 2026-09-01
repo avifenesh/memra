@@ -1,0 +1,291 @@
+{
+  "requests_compared": 17,
+  "determinism_ok": true,
+  "determinism_arms": 3,
+  "no_new_divergence_ok": false,
+  "shallow_bugs": [
+    {
+      "request": [
+        "burst",
+        1,
+        13
+      ],
+      "shared_prefix_chars": 15,
+      "on_chars": 960,
+      "cold_chars": 955
+    },
+    {
+      "request": [
+        "sequential",
+        1,
+        1
+      ],
+      "shared_prefix_chars": 15,
+      "on_chars": 901,
+      "cold_chars": 974
+    }
+  ],
+  "deep_divergences": 12,
+  "deep_divergence_detail": [
+    {
+      "request": [
+        "burst",
+        2,
+        14
+      ],
+      "shared_prefix_chars": 323,
+      "on_chars": 965,
+      "cold_chars": 981
+    },
+    {
+      "request": [
+        "postburst",
+        0,
+        16
+      ],
+      "shared_prefix_chars": 920,
+      "on_chars": 1151,
+      "cold_chars": 1168
+    },
+    {
+      "request": [
+        "sequential",
+        2,
+        2
+      ],
+      "shared_prefix_chars": 297,
+      "on_chars": 974,
+      "cold_chars": 1023
+    },
+    {
+      "request": [
+        "sequential",
+        3,
+        3
+      ],
+      "shared_prefix_chars": 409,
+      "on_chars": 864,
+      "cold_chars": 862
+    },
+    {
+      "request": [
+        "sequential",
+        4,
+        4
+      ],
+      "shared_prefix_chars": 53,
+      "on_chars": 953,
+      "cold_chars": 962
+    },
+    {
+      "request": [
+        "sequential",
+        5,
+        5
+      ],
+      "shared_prefix_chars": 380,
+      "on_chars": 1036,
+      "cold_chars": 1003
+    },
+    {
+      "request": [
+        "sequential",
+        6,
+        6
+      ],
+      "shared_prefix_chars": 133,
+      "on_chars": 925,
+      "cold_chars": 911
+    },
+    {
+      "request": [
+        "sequential",
+        7,
+        7
+      ],
+      "shared_prefix_chars": 169,
+      "on_chars": 804,
+      "cold_chars": 835
+    },
+    {
+      "request": [
+        "sequential",
+        8,
+        8
+      ],
+      "shared_prefix_chars": 323,
+      "on_chars": 1062,
+      "cold_chars": 1135
+    },
+    {
+      "request": [
+        "sequential",
+        9,
+        9
+      ],
+      "shared_prefix_chars": 257,
+      "on_chars": 838,
+      "cold_chars": 822
+    },
+    {
+      "request": [
+        "sequential",
+        10,
+        10
+      ],
+      "shared_prefix_chars": 64,
+      "on_chars": 869,
+      "cold_chars": 852
+    },
+    {
+      "request": [
+        "sequential",
+        11,
+        11
+      ],
+      "shared_prefix_chars": 170,
+      "on_chars": 1156,
+      "cold_chars": 867
+    }
+  ],
+  "short_window_checked": 0,
+  "short_window_exact_ok": true,
+  "budget_ok": true,
+  "max_tokens": 256,
+  "plain_affinity_rewinds": 11,
+  "slope_on_ms_per_uncached_tok": 0.0014,
+  "slope_off_ms_per_uncached_tok": 0.2239,
+  "slope_on_r2": 0.00012,
+  "slope_off_r2": 0.98617,
+  "shallow_chars_floor": 32,
+  "learning_turns": 2,
+  "ttft_by_turn": {
+    "on": [
+      {
+        "turn": 0,
+        "ttft_s": 0.233153,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.123145,
+        "cached": 743
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.095851,
+        "cached": 1027
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.094615,
+        "cached": 1204
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.095264,
+        "cached": 1363
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.095928,
+        "cached": 1547
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.10553,
+        "cached": 1710
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.099835,
+        "cached": 1854
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.098847,
+        "cached": 2029
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.096386,
+        "cached": 2246
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.100212,
+        "cached": 2396
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.099523,
+        "cached": 2609
+      }
+    ],
+    "off": [
+      {
+        "turn": 0,
+        "ttft_s": 0.200809,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.246131,
+        "cached": 0
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.108371,
+        "cached": 746
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.127191,
+        "cached": 746
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.179176,
+        "cached": 746
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.216587,
+        "cached": 746
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.26258,
+        "cached": 746
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.304105,
+        "cached": 746
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.328719,
+        "cached": 746
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.348362,
+        "cached": 746
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.403291,
+        "cached": 746
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.484047,
+        "cached": 746
+      }
+    ]
+  },
+  "failures": [
+    "NEW-DIVERGENCE: 2 affinity turn(s) diverge from the cold oracle with a shared prefix < 32 chars \u2014 a resume-state bug, not the near-tie class \u2014 [{'request': ['burst', 1, 13], 'shared_prefix_chars': 15, 'on_chars': 960, 'cold_chars': 955}, {'request': ['sequential', 1, 1], 'shared_prefix_chars': 15, 'on_chars': 901, 'cold_chars': 974}]"
+  ]
+}

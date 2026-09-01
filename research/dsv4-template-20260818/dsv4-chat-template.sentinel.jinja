@@ -1,0 +1,20 @@
+{#- DeepSeek-V4 (encoding_dsv4) chat-template SENTINEL.
+
+    memra does NOT execute jinja; it detects the dsv4 dialect by two structural markers in the
+    raw template string and reproduces encoding_dsv4.py in Rust (crates/memra-tokenizer/src/
+    chat.rs `apply_dsv4_template`). This file is the detection stand-in used by the
+    `dsv4_template_fixtures` gate. The real DeepSeek-V4 GGUF ships a jinja that renders the
+    same encoding and therefore carries the same two markers used by `template_is_dsv4()`: the
+    assistant turn prefix and the DSML tool-call markup token (both appear in the body below).
+
+    This sentinel deliberately contains NONE of the other dialects' detection substrings so
+    dispatch cannot mis-route (see chat.rs / worker.rs caps for the full marker set). Do not add
+    any qwen / step35 / gemma / hy3 / chatml marker text to this file, comments included: the
+    caps probe and renderer dispatch are pure substring tests over the raw template.
+-#}
+{{ bos_token }}{%- for m in messages -%}
+{%- if m.role == 'user' -%}<｜User｜>{{ m.content }}
+{%- elif m.role == 'assistant' -%}<｜Assistant｜>{{ m.content }}
+{%- endif -%}
+{%- endfor -%}
+{#- tool calls use the ｜DSML｜ markup token. -#}

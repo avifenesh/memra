@@ -1,0 +1,19 @@
+BUILD_START ts=2026-08-12T14:11:36Z
+source=b37d77c6f6403d8b3b87099470fc3b5c2cd62cee perf(server): batch cold prefill chunks
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+warning: memra-engine@0.80.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.80.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.80.0 (/opt/scratch/nvme/cx-coldhol/memra/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 7.35s
+090c693ebbafa662388e3a49b2f52a45fb239ae0a1c7442eaa48192204dd742b  target/release/kernel-check
+0106ff0eb85d8d5d07af5d1cfd15ce0866b56939f5db82d422f772d324e75343  target/release/run-gen
+f3358bb1f6fff9bc9f369ffbfdc4874c687aef5d5cf9d5cd7e82684cb22621a7  target/release/run-spec
+4c22c8a808bbfb8ccbed4d4b4885a2b7cb1210ce1e1c001b21109e4acb0bb11f  target/release/prime-batch-gate
+f00f1bd5d08fbf0476a540e497b51d749d813873c4b885a67fc5fce120120748  target/release/memra-server
+BUILD_PASS ts=2026-08-12T14:11:44Z

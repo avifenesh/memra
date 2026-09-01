@@ -1,0 +1,102 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#1a1a1a;background:#f5f7fa;display:flex;flex-direction:column;min-height:100vh}
+header{position:sticky;top:0;z-index:100;background:#0b1f3f;color:#fff;padding:0.75rem 1rem;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 6px rgba(0,0,0,0.2)}
+header h1{font-size:1.25rem;font-weight:600}
+header .search{display:flex;align-items:center;gap:0.5rem}
+header input{background:#fff;border:0;border-radius:4px;padding:0.4rem 0.6rem;font-size:0.95rem;width:220px}
+header button{background:#3b82f6;color:#fff;border:0;border-radius:4px;padding:0.4rem 0.7rem;cursor:pointer}
+.sidebar{width:260px;background:#eef2f7;border-right:1px solid #d1d5db;padding:1rem;position:fixed;top:56px;bottom:0;overflow-y:auto}
+.sidebar nav a{display:block;padding:0.35rem 0.5rem;color:#0b1f3f;text-decoration:none;border-radius:4px;margin-bottom:0.25rem}
+.sidebar nav a:hover{background:#dbeafe}
+main{margin-left:260px;padding:1.5rem;flex:1}
+section{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:1rem 1.25rem;margin-bottom:1.25rem;scroll-margin-top:80px}
+section h2{font-size:1.15rem;margin-bottom:0.5rem;color:#0b1f3f}
+section p{margin-bottom:0.6rem}
+section dl{display:grid;grid-template-columns:auto 1fr;gap:0.4rem 1rem;margin:0.6rem 0}
+section dt{font-weight:600;color:#374151}
+section dd{margin:0}
+section table{width:100%;border-collapse:collapse;margin:0.6rem 0;font-size:0.95rem}
+section table th,section table td{border:1px solid #d1d5db;padding:0.4rem 0.6rem;text-align:left}
+section table th{background:#f3f4f6;font-weight:600}
+section pre{background:#111827;color:#e5e7eb;padding:0.75rem;border-radius:6px;overflow-x:auto;font-size:0.9rem;margin:0.6rem 0}
+section .actions{display:flex;gap:0.5rem;margin-top:0.5rem}
+section button{background:#10b981;color:#fff;border:0;border-radius:4px;padding:0.35rem 0.7rem;cursor:pointer}
+section button.secondary{background:#6b7280}
+.status{display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
+.status .card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem 1rem;flex:1 1 180px}
+.status .card h3{font-size:0.9rem;color:#6b7280;margin-bottom:0.25rem}
+.status .card .value{font-size:1.4rem;font-weight:700;color:#0b1f3f}
+footer{text-align:center;padding:1rem;color:#6b7280;font-size:0.9rem}
+:focus{outline:3px solid #3b82f6;outline-offset:2px}
+@media(max-width:900px){.sidebar{display:none}main{margin-left:0}}
+</style>
+</head>
+<body>
+<header>
+<h1>Atlas Operations Manual</h1>
+<div class="search">
+<input type="search" id="search" placeholder="Search sections...">
+<button id="clearSearch">Clear</button>
+</div>
+</header>
+<aside class="sidebar">
+<nav id="toc"></nav>
+</aside>
+<main>
+<div class="status">
+<div class="card"><h3>Total Sections</h3><div class="value" id="totalSections">400</div></div>
+<div class="card"><h3>Active Tasks</h3><div class="value" id="activeTasks">27</div></div>
+<div class="card"><h3>System Uptime</h3><div class="value" id="uptime">99.97%</div></div>
+<div class="card"><h3>Alerts</h3><div class="value" id="alerts">3</div></div>
+</div>
+
+<section id="s001">
+<h2>1. Introduction</h2>
+<p>Atlas Operations Manual provides comprehensive guidance for system administrators, operators, and engineers. It covers installation, configuration, monitoring, and troubleshooting procedures for the Atlas platform.</p>
+<p>This document is organized into numbered sections, each addressing a specific operational domain. Cross-references are provided where related topics overlap.</p>
+<dl>
+<dt>Audience</dt><dd>System administrators and operators</dd>
+<dt>Version</dt><dd>4.2.1</dd>
+<dt>Last Updated</dt><dd>2025-06-10</dd>
+<dt>Maintainer</dt><dd>Atlas Documentation Team</dd>
+</dl>
+<table>
+<thead><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Notes</th><th>Source</th><th>Updated</th></tr></thead>
+<tbody>
+<tr><td>Core Count</td><td>16</td><td>count</td><td>Baseline</td><td>Inventory</td><td>2025-05-01</td></tr>
+<tr><td>Memory</td><td>64</td><td>GB</td><td>DDR5</td><td>Inventory</td><td>2025-05-01</td></tr>
+<tr><td>Storage</td><td>2048</td><td>GB</td><td>NVMe</td><td>Inventory</td><td>2025-05-01</td></tr>
+<tr><td>Network</td><td>10</td><td>Gbps</td><td>Dual</td><td>Inventory</td><td>2025-05-01</td></tr>
+<tr><td>Power</td><td>800</td><td>W</td><td>Redundant</td><td>Inventory</td><td>2025-05-01</td></tr>
+<tr><td>Cooling</td><td>Active</td><td>type</td><td>Liquid</td><td>Inventory</td><td>2025-05-01</td></tr>
+</tbody>
+</table>
+<pre>atlasctl init --config /etc/atlas/config.yaml --force</pre>
+<div class="actions">
+<button data-action="run">Run Command</button>
+<button class="secondary" data-action="copy">Copy</button>
+</div>
+</section>
+
+<section id="s002">
+<h2>2. System Requirements</h2>
+<p>Before deploying Atlas, verify that the target environment meets the minimum hardware and software specifications outlined in this section. Failure to comply may result in degraded performance or service interruption.</p>
+<p>Requirements are categorized by deployment scale: small, medium, and large. Select the appropriate tier based on expected load and redundancy needs.</p>
+<dl>
+<dt>Min CPU</dt><dd>4 cores</dd>
+<dt>Min RAM</dt><dd>16 GB</dd>
+<dt>Disk</dt><dd>500 GB SSD</dd>
+<dt>OS</dt><dd>Linux kernel 5.4+</dd>
+</dl>
+<table>
+<thead><tr><th>Component</th><th>Minimum</th><th>Recommended</th><th>Notes</th><th>Vendor</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>CPU</td><td>Intel Xeon E5</td><td>AMD EPYC 7543</td><td>AVX2 support</td><td>Intel/AMD</td><td>Required</td></tr>
+<tr><td>RAM</td><

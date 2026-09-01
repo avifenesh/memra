@@ -1,0 +1,2116 @@
+14:19:25 waiting for GPU + lock...
+chain holds the lock 15:01:40
+15:01:40 lock already held by the chain
+15:01:40 GPU free + chain lock held
+15:01:40 === PHASE A: baseline (md5 c97294fb0010ce2ec59ed3219a845c34) ===
+15:01:40 pre-boot ballast dev0 15920 MB
+ballast dev0 holding 15920 MB
+ballast dev0 steady at 15920 MB
+15:01:46 boot bin=/home/ubuntu/pt-bins/memra-server-base-189548721 md5=c97294fb0010ce2ec59ed3219a845c34 extra='' log=serve-A1.log
+15:04:21 HEALTH=200 pid=287608
+15:04:21 free after boot: 0: used 90542 free 7345 1: used 58291 free 39596 
+{"id": "greedy", "status": 200, "dur_s": 4.45, "t_end": 1788102266.282, "sha": "ffc4004c678ad8ea", "content_len": 0, "usage": {"prompt_tokens": 613, "completion_tokens": 400, "total_tokens": 1013, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 4.431275924, "spec": {"rounds": 192, "drafted": 286, "accepted": 207, "acceptance_rate": 0.7237762237762237}}}
+MODE=greedy ok=1/1 fail=0
+{"id": "turn-01", "status": 429, "dur_s": 0.49, "t_end": 1788102266.817, "error": "{\"error\":{\"message\":\"request context 8443 does not fit available KV capacity; retry with smaller max_tokens or max_ctx\",\"type\":\"rate_limit_error\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"}
+MODE=turns ok=0/1 fail=1
+15:04:26 A1 turns rc=0
+15:04:33 dmesg[A1]: 0
+0 fault line(s)
+--- receipts A1 (serve-A1.log)
+admit_cal: 0
+vram_defer_lines: 0
+vram_reject_lines: 1
+oom_parks: 2
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 0
+engine_errors: 0
+oom_lines: 2
+illegal=0 sentinel87=0 panic=0
+15:04:33 pre-boot ballast dev0 17215 MB
+ballast dev0 holding 17215 MB
+ballast dev0 steady at 17215 MB
+15:04:40 boot bin=/home/ubuntu/pt-bins/memra-server-base-189548721 md5=c97294fb0010ce2ec59ed3219a845c34 extra='' log=serve-A2.log
+15:07:15 HEALTH=200 pid=288159
+15:07:15 free after boot: 0: used 91838 free 6049 1: used 58291 free 39596 
+15:07:36 A2 conc rc=1 ok-count=1
+15:07:43 dmesg[A2]: 0
+0 fault line(s)
+--- receipts A2 (serve-A2.log)
+admit_cal: 0
+vram_defer_lines: 65
+vram_reject_lines: 6
+oom_parks: 7
+oom_not_parked: 1
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 2
+draft_state_lines: 0
+engine_errors: 1
+oom_lines: 8
+illegal=0 sentinel87=0 panic=0
+15:07:43 pre-boot ballast dev0 15820 MB
+ballast dev0 holding 15820 MB
+ballast dev0 steady at 15820 MB
+15:07:49 boot bin=/home/ubuntu/pt-bins/memra-server-base-189548721 md5=c97294fb0010ce2ec59ed3219a845c34 extra='MEMRA_ADMIT_RESERVE_MB=16 ' log=serve-A3-c8.log
+15:10:19 HEALTH=200 pid=289462
+15:10:19 free after boot: 0: used 90442 free 7445 1: used 58291 free 39596 
+15:10:20 A3-c8: conc rc=1 ok=0
+0/8
+15:10:23 A3-c8: server ALIVE post-storm health=200
+15:10:30 dmesg[A3-c8]: 0
+0 fault line(s)
+--- receipts A3-c8 (serve-A3-c8.log)
+admit_cal: 0
+vram_defer_lines: 12
+vram_reject_lines: 0
+oom_parks: 21
+oom_not_parked: 8
+teardown_lines: 0
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); eager fallback until session resume
+capture_receipts: 0
+draft_state_lines: 0
+engine_errors: 8
+oom_lines: 30
+illegal=0 sentinel87=0 panic=0
+15:10:30 pre-boot ballast dev0 15820 MB
+ballast dev0 holding 15820 MB
+ballast dev0 steady at 15820 MB
+15:10:36 boot bin=/home/ubuntu/pt-bins/memra-server-base-189548721 md5=c97294fb0010ce2ec59ed3219a845c34 extra='MEMRA_ADMIT_RESERVE_MB=16 ' log=serve-A3-c4.log
+15:13:11 HEALTH=200 pid=289979
+15:13:11 free after boot: 0: used 90442 free 7445 1: used 58291 free 39596 
+15:14:41 A3-c4: conc rc=1 ok=0
+0/4
+15:14:44 A3-c4: server ALIVE post-storm health=503
+15:15:49 dmesg[A3-c4]: 0
+0 fault line(s)
+--- receipts A3-c4 (serve-A3-c4.log)
+admit_cal: 0
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 0
+draft_state_lines: 0
+engine_errors: 0
+oom_lines: 2
+illegal=0 sentinel87=0 panic=2
+15:15:49 === PHASE A done ===
+15:15:49 lock already held by the chain
+15:15:49 GPU free + chain lock held
+15:15:50 === PHASE B: lane (md5 de5d5507080ba5795f8e3f2f7c8ae9f1) ===
+15:15:50 boot bin=/home/ubuntu/vram-bins/memra-server-vram-6ba68aceb md5=de5d5507080ba5795f8e3f2f7c8ae9f1 extra='' log=serve-B1.log
+15:18:25 HEALTH=200 pid=295230
+15:18:25 free after boot: 0: used 78967 free 18920 1: used 59891 free 37996 
+{"id": "greedy", "status": 200, "dur_s": 4.18, "t_end": 1788103109.561, "sha": "ffc4004c678ad8ea", "content_len": 0, "usage": {"prompt_tokens": 613, "completion_tokens": 400, "total_tokens": 1013, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 4.162419625, "spec": {"rounds": 192, "drafted": 286, "accepted": 207, "acceptance_rate": 0.7237762237762237}}}
+MODE=greedy ok=1/1 fail=0
+{"id": "turn-01", "status": 200, "dur_s": 11.3, "t_end": 1788103120.905, "sha": "34308d58624d30aa", "content_len": 1329, "usage": {"prompt_tokens": 187, "completion_tokens": 1186, "total_tokens": 1373, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 11.287161557, "spec": {"rounds": 443, "drafted": 896, "accepted": 713, "acceptance_rate": 0.7957589285714286}}}
+{"id": "turn-02", "status": 200, "dur_s": 41.9, "t_end": 1788103162.809, "sha": "bcf3ce6e93cf02c7", "content_len": 3675, "usage": {"prompt_tokens": 605, "completion_tokens": 4344, "total_tokens": 4949, "prompt_tokens_details": {"cached_tokens": 160}, "elapsed_s": 41.89815897, "spec": {"rounds": 1674, "drafted": 3330, "accepted": 2544, "acceptance_rate": 0.7639639639639639}}}
+{"id": "turn-03", "status": 200, "dur_s": 56.3, "t_end": 1788103219.11, "sha": "25b53bf07ab809e0", "content_len": 7038, "usage": {"prompt_tokens": 1613, "completion_tokens": 6125, "total_tokens": 7738, "prompt_tokens_details": {"cached_tokens": 576}, "elapsed_s": 56.294577408, "spec": {"rounds": 2151, "drafted": 4549, "accepted": 3799, "acceptance_rate": 0.8351285996922401}}}
+{"id": "turn-04", "status": 200, "dur_s": 76.42, "t_end": 1788103295.525, "sha": "766439d5487b7e03", "content_len": 2015, "usage": {"prompt_tokens": 3758, "completion_tokens": 8192, "total_tokens": 11950, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 76.405689248, "spec": {"rounds": 2880, "drafted": 6005, "accepted": 5065, "acceptance_rate": 0.8434637801831807}}}
+{"id": "turn-05", "status": 200, "dur_s": 19.38, "t_end": 1788103314.904, "sha": "e5468ffde079a7e6", "content_len": 2980, "usage": {"prompt_tokens": 4431, "completion_tokens": 1846, "total_tokens": 6277, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 19.36754579, "spec": {"rounds": 702, "drafted": 1392, "accepted": 1090, "acceptance_rate": 0.7830459770114943}}}
+{"id": "turn-06", "status": 200, "dur_s": 41.22, "t_end": 1788103356.121, "sha": "cda7d0a5f3f1510b", "content_len": 7459, "usage": {"prompt_tokens": 5308, "completion_tokens": 4174, "total_tokens": 9482, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 41.203332921, "spec": {"rounds": 1569, "drafted": 3033, "accepted": 2509, "acceptance_rate": 0.8272337619518628}}}
+{"id": "turn-07", "status": 200, "dur_s": 37.16, "t_end": 1788103393.285, "sha": "852d31cdeca90fb4", "content_len": 3479, "usage": {"prompt_tokens": 7298, "completion_tokens": 3661, "total_tokens": 10959, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 37.147388895, "spec": {"rounds": 1340, "drafted": 2706, "accepted": 2220, "acceptance_rate": 0.8203991130820399}}}
+{"id": "turn-08", "status": 200, "dur_s": 36.17, "t_end": 1788103429.46, "sha": "99bac4ee6935b926", "content_len": 5823, "usage": {"prompt_tokens": 8289, "completion_tokens": 3326, "total_tokens": 11615, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 36.155555, "spec": {"rounds": 1319, "drafted": 2495, "accepted": 1928, "acceptance_rate": 0.7727454909819639}}}
+MODE=turns ok=8/8 fail=0
+15:23:49 B1 turns rc=0
+15:23:54 dmesg[B1]: 0
+0 fault line(s)
+--- receipts B1 (serve-B1.log)
+admit_cal: 1
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 10
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+15:23:54 boot bin=/home/ubuntu/vram-bins/memra-server-vram-6ba68aceb md5=de5d5507080ba5795f8e3f2f7c8ae9f1 extra='MEMRA_ADMIT_CALIBRATE=0' log=serve-B2.log
+15:26:29 HEALTH=200 pid=295652
+15:26:29 free after boot: 0: used 74067 free 23820 1: used 58291 free 39596 
+15:26:37 B2 rc=0
+15:26:42 dmesg[B2]: 0
+0 fault line(s)
+--- receipts B2 (serve-B2.log)
+admit_cal: 1
+[admit-cal] boot calibration disarmed (MEMRA_ADMIT_CALIBRATE=0); static transient floor serves
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+15:26:42 pre-boot ballast dev0 17215 MB
+ballast dev0 holding 17215 MB
+ballast dev0 steady at 17215 MB
+15:26:48 boot bin=/home/ubuntu/vram-bins/memra-server-vram-6ba68aceb md5=de5d5507080ba5795f8e3f2f7c8ae9f1 extra='' log=serve-B3.log
+15:29:23 HEALTH=200 pid=296413
+15:29:23 free after boot: 0: used 96738 free 1149 1: used 59891 free 37996 
+15:29:23 B3 conc rc=1 ok-count=0
+15:29:30 dmesg[B3]: 0
+0 fault line(s)
+--- receipts B3 (serve-B3.log)
+admit_cal: 1
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 8
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+15:29:30 pre-boot ballast dev0 15920 MB
+ballast dev0 holding 15920 MB
+ballast dev0 steady at 15920 MB
+15:29:36 boot bin=/home/ubuntu/vram-bins/memra-server-vram-6ba68aceb md5=de5d5507080ba5795f8e3f2f7c8ae9f1 extra='' log=serve-B3b.log
+15:32:17 HEALTH=200 pid=296722
+15:32:17 free after boot: 0: used 95442 free 2445 1: used 59891 free 37996 
+{"id": "turn-01", "status": 429, "dur_s": 0.3, "t_end": 1788103937.538, "error": "{\"error\":{\"message\":\"request context 8443 does not fit available KV capacity; retry with smaller max_tokens or max_ctx\",\"type\":\"rate_limit_error\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"}
+MODE=turns ok=0/1 fail=1
+15:32:17 B3b turns rc=0
+15:32:24 dmesg[B3b]: 0
+0 fault line(s)
+--- receipts B3b (serve-B3b.log)
+admit_cal: 1
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 1
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+15:32:24 pre-boot ballast dev0 15820 MB
+ballast dev0 holding 15820 MB
+ballast dev0 steady at 15820 MB
+15:32:30 boot bin=/home/ubuntu/vram-bins/memra-server-vram-6ba68aceb md5=de5d5507080ba5795f8e3f2f7c8ae9f1 extra='MEMRA_ADMIT_RESERVE_MB=16 ' log=serve-B4-1.log
+15:35:05 HEALTH=200 pid=297561
+15:35:05 free after boot: 0: used 90442 free 7445 1: used 58291 free 39596 
+15:35:45 B4-1: conc rc=1 ok=2/8
+15:35:48 B4-1: server ALIVE post-storm health=200
+15:35:56 dmesg[B4-1]: 0
+0 fault line(s)
+--- receipts B4-1 (serve-B4-1.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 62
+vram_reject_lines: 6
+oom_parks: 6
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2744MB (driver 2294MB + pool-cached 449MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 6
+illegal=0 sentinel87=0 panic=0
+15:35:56 pre-boot ballast dev0 15820 MB
+ballast dev0 holding 15820 MB
+ballast dev0 steady at 15820 MB
+15:36:02 boot bin=/home/ubuntu/vram-bins/memra-server-vram-6ba68aceb md5=de5d5507080ba5795f8e3f2f7c8ae9f1 extra='MEMRA_ADMIT_RESERVE_MB=16 ' log=serve-B4-2.log
+15:38:37 HEALTH=200 pid=300012
+15:38:37 free after boot: 0: used 90442 free 7445 1: used 58291 free 39596 
+15:39:18 B4-2: conc rc=1 ok=2/8
+15:39:21 B4-2: server ALIVE post-storm health=200
+15:39:28 dmesg[B4-2]: 0
+0 fault line(s)
+--- receipts B4-2 (serve-B4-2.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 62
+vram_reject_lines: 6
+oom_parks: 6
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2744MB (driver 2294MB + pool-cached 449MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 6
+illegal=0 sentinel87=0 panic=0
+15:39:28 pre-boot ballast dev0 15820 MB
+ballast dev0 holding 15820 MB
+ballast dev0 steady at 15820 MB
+15:39:34 boot bin=/home/ubuntu/vram-bins/memra-server-vram-6ba68aceb md5=de5d5507080ba5795f8e3f2f7c8ae9f1 extra='MEMRA_ADMIT_RESERVE_MB=16 ' log=serve-B4-3.log
+15:42:09 HEALTH=200 pid=302448
+15:42:09 free after boot: 0: used 90442 free 7445 1: used 58291 free 39596 
+15:42:10 B4-3: conc rc=1 ok=0
+0/8
+15:42:13 B4-3: server ALIVE post-storm health=200
+15:42:20 dmesg[B4-3]: 0
+0 fault line(s)
+--- receipts B4-3 (serve-B4-3.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 11
+vram_reject_lines: 0
+oom_parks: 21
+oom_not_parked: 8
+teardown_lines: 16
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 458MB (driver 278MB + pool-cached 180MB) < required 1730MB (appetite 194MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 0
+draft_state_lines: 0
+engine_errors: 8
+oom_lines: 29
+illegal=0 sentinel87=0 panic=0
+15:42:20 pre-boot ballast dev0 15820 MB
+ballast dev0 holding 15820 MB
+ballast dev0 steady at 15820 MB
+15:42:26 boot bin=/home/ubuntu/vram-bins/memra-server-vram-6ba68aceb md5=de5d5507080ba5795f8e3f2f7c8ae9f1 extra='MEMRA_ADMIT_RESERVE_MB=16 ' log=serve-B4-4.log
+15:45:02 HEALTH=200 pid=303010
+15:45:02 free after boot: 0: used 90442 free 7445 1: used 58291 free 39596 
+15:45:02 B4-4: conc rc=1 ok=0
+0/8
+15:45:05 B4-4: server ALIVE post-storm health=200
+15:45:13 dmesg[B4-4]: 0
+0 fault line(s)
+--- receipts B4-4 (serve-B4-4.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 12
+vram_reject_lines: 0
+oom_parks: 21
+oom_not_parked: 8
+teardown_lines: 16
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 662MB (driver 406MB + pool-cached 255MB) < required 1730MB (appetite 194MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 0
+draft_state_lines: 0
+engine_errors: 8
+oom_lines: 29
+illegal=0 sentinel87=0 panic=0
+15:45:13 pre-boot ballast dev0 15820 MB
+ballast dev0 holding 15820 MB
+ballast dev0 steady at 15820 MB
+15:45:19 boot bin=/home/ubuntu/vram-bins/memra-server-vram-6ba68aceb md5=de5d5507080ba5795f8e3f2f7c8ae9f1 extra='MEMRA_ADMIT_RESERVE_MB=16 ' log=serve-B4-5.log
+15:47:54 HEALTH=200 pid=303569
+15:47:54 free after boot: 0: used 90442 free 7445 1: used 58291 free 39596 
+15:47:55 B4-5: conc rc=1 ok=0
+0/8
+15:47:58 B4-5: server ALIVE post-storm health=200
+15:48:05 dmesg[B4-5]: 0
+0 fault line(s)
+--- receipts B4-5 (serve-B4-5.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 12
+vram_reject_lines: 0
+oom_parks: 21
+oom_not_parked: 8
+teardown_lines: 16
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 662MB (driver 406MB + pool-cached 255MB) < required 1730MB (appetite 194MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 0
+draft_state_lines: 0
+engine_errors: 8
+oom_lines: 29
+illegal=0 sentinel87=0 panic=0
+15:48:05 === PHASE B done ===
+15:48:05 lock already held by the chain
+15:48:05 GPU free + chain lock held
+15:48:05 === PHASE C: run-spec exactness (base rs c8f1835e8e06519a0f6e3c1c65a3cf01 vs lane rs 80f64d6d35fcfbfce293437154a2779c) ===
+15:48:05 run-spec greedy base
+15:51:00 rs-greedy-base rc=0 === SELF-CONSISTENCY PASS ===
+15:51:00 run-spec sampled base (vendor shape, seed 4242)
+15:54:19 rs-sampled-base rc=0 === SELF-CONSISTENCY PASS ===
+15:54:19 run-spec greedy lane
+15:57:08 rs-greedy-lane rc=0 === SELF-CONSISTENCY PASS ===
+15:57:08 run-spec sampled lane (vendor shape, seed 4242)
+16:00:23 rs-sampled-lane rc=0 === SELF-CONSISTENCY PASS ===
+16:00:23 RS-greedy CROSS-BINARY IDENTITY: PASS
+16:00:23 RS-sampled CROSS-BINARY IDENTITY: PASS
+16:00:23 === PHASE C done ===
+ALL PHASES DONE 16:00:23
+16:00:23 lock already held by the chain
+16:00:23 === PHASE D: decode-phase squeeze (base c97294fb0010ce2ec59ed3219a845c34 / lane cfcb6465d65107e6e0440346b6978007) ===
+16:00:24 boot bin=/home/ubuntu/pt-bins/memra-server-base-189548721 md5=c97294fb0010ce2ec59ed3219a845c34 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-D-base-1.log
+16:02:59 HEALTH=200 pid=304496
+16:02:59 free after boot: 0: used 74067 free 23820 1: used 58291 free 39596 
+16:03:44 D-base-1: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:04:34 D-base-1: clients done at squeeze t=+55s
+16:04:39 D-base-1: server ALIVE post-squeeze; releasing ballast + health probe
+16:04:42 D-base-1: post-squeeze health=200
+16:04:49 dmesg[D-base-1]: 0
+0 fault line(s)
+--- receipts D-base-1 (serve-D-base-1.log)
+admit_cal: 0
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 8
+draft_state_lines: 0
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:04:49 boot bin=/home/ubuntu/pt-bins/memra-server-base-189548721 md5=c97294fb0010ce2ec59ed3219a845c34 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-D-base-2.log
+16:07:24 HEALTH=200 pid=309875
+16:07:24 free after boot: 0: used 74067 free 23820 1: used 58291 free 39596 
+16:08:09 D-base-2: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:08:59 D-base-2: clients done at squeeze t=+55s
+16:09:04 D-base-2: server ALIVE post-squeeze; releasing ballast + health probe
+16:09:07 D-base-2: post-squeeze health=200
+16:09:14 dmesg[D-base-2]: 0
+0 fault line(s)
+--- receipts D-base-2 (serve-D-base-2.log)
+admit_cal: 0
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 8
+draft_state_lines: 0
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:09:14 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-D-lane-1.log
+16:11:40 HEALTH=200 pid=315264
+16:11:40 free after boot: 0: used 74067 free 23820 1: used 58291 free 39596 
+16:12:25 D-lane-1: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:13:15 D-lane-1: clients done at squeeze t=+55s
+16:13:20 D-lane-1: server ALIVE post-squeeze; releasing ballast + health probe
+16:13:23 D-lane-1: post-squeeze health=200
+16:13:30 dmesg[D-lane-1]: 0
+0 fault line(s)
+--- receipts D-lane-1 (serve-D-lane-1.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 8
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:13:30 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-D-lane-2.log
+16:16:00 HEALTH=200 pid=320752
+16:16:00 free after boot: 0: used 74067 free 23820 1: used 58291 free 39596 
+16:16:45 D-lane-2: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:17:35 D-lane-2: clients done at squeeze t=+55s
+16:17:40 D-lane-2: server ALIVE post-squeeze; releasing ballast + health probe
+16:17:43 D-lane-2: post-squeeze health=200
+16:17:50 dmesg[D-lane-2]: 0
+0 fault line(s)
+--- receipts D-lane-2 (serve-D-lane-2.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 8
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:17:50 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-D-lane-3.log
+16:20:20 HEALTH=200 pid=326162
+16:20:20 free after boot: 0: used 74067 free 23820 1: used 58291 free 39596 
+16:21:05 D-lane-3: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:21:55 D-lane-3: clients done at squeeze t=+55s
+16:22:00 D-lane-3: server ALIVE post-squeeze; releasing ballast + health probe
+16:22:04 D-lane-3: post-squeeze health=200
+16:22:11 dmesg[D-lane-3]: 0
+0 fault line(s)
+--- receipts D-lane-3 (serve-D-lane-3.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 8
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:22:11 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-D-lane-4.log
+16:24:41 HEALTH=200 pid=331480
+16:24:41 free after boot: 0: used 74067 free 23820 1: used 58291 free 39596 
+16:25:26 D-lane-4: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:26:16 D-lane-4: clients done at squeeze t=+55s
+16:26:21 D-lane-4: server ALIVE post-squeeze; releasing ballast + health probe
+16:26:24 D-lane-4: post-squeeze health=200
+16:26:31 dmesg[D-lane-4]: 0
+0 fault line(s)
+--- receipts D-lane-4 (serve-D-lane-4.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 8
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:26:31 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-D-lane-5.log
+16:29:01 HEALTH=200 pid=336898
+16:29:01 free after boot: 0: used 74067 free 23820 1: used 58291 free 39596 
+16:29:46 D-lane-5: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:30:36 D-lane-5: clients done at squeeze t=+55s
+16:30:41 D-lane-5: server ALIVE post-squeeze; releasing ballast + health probe
+16:30:44 D-lane-5: post-squeeze health=200
+16:30:51 dmesg[D-lane-5]: 0
+0 fault line(s)
+--- receipts D-lane-5 (serve-D-lane-5.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 8
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:30:51 === PHASE D done ===
+CHAIN + D DONE 16:30:51
+16:30:51 lock already held by the chain
+16:30:52 === PHASE E: corrected squeeze + eager-arm cells (base c97294fb0010ce2ec59ed3219a845c34 / lane cfcb6465d65107e6e0440346b6978007) ===
+16:30:52 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+16:30:58 boot bin=/home/ubuntu/pt-bins/memra-server-base-189548721 md5=c97294fb0010ce2ec59ed3219a845c34 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-E-base-1.log
+16:33:53 HEALTH=200 pid=342238
+16:33:53 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+16:34:33 E-base-1: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:34:33 E-base-1: SERVER DIED at squeeze t=+5s
+16:34:38 E-base-1: server log tail:
+[admit-oom] step OOM parked session back to queue (model step37, retry 1/3, 8 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[admit-oom] step OOM parked session back to queue (model step37, retry 1/3, 8 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[admit-oom] step OOM parked session back to queue (model step37, retry 1/3, 8 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+drwxrwxrwx 2 root   root         4096 Aug 30 16:33 .
+drwxrwxrwt 5 root   root         4096 Aug 30 13:09 ..
+-rw------- 1 ubuntu ubuntu 1954418688 Aug 30 16:33 core.memra-gpu-worke.342238.1788107636
+16:34:43 dmesg[E-base-1]: 1 fault line(s)
+--- receipts E-base-1 (serve-E-base-1.log)
+admit_cal: 0
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 4
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 4
+draft_state_lines: 0
+engine_errors: 0
+oom_lines: 4
+illegal=0 sentinel87=0 panic=0
+16:34:43 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+16:34:49 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-E-lane-1.log
+16:37:44 HEALTH=200 pid=344753
+16:37:45 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+16:38:25 E-lane-1: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:38:25 E-lane-1: SERVER DIED at squeeze t=+5s
+16:38:30 E-lane-1: server log tail:
+[admit-oom] step OOM parked session back to queue (model step37, retry 1/3, 8 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[admit-oom] step OOM parked session back to queue (model step37, retry 1/3, 8 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[admit-oom] step OOM parked session back to queue (model step37, retry 1/3, 8 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+drwxrwxrwt 5 root   root         4096 Aug 30 13:09 ..
+-rw------- 1 ubuntu ubuntu 1954418688 Aug 30 16:33 core.memra-gpu-worke.342238.1788107636
+-rw------- 1 ubuntu ubuntu 1930543104 Aug 30 16:37 core.memra-gpu-worke.344753.1788107867
+16:38:35 dmesg[E-lane-1]: 1 fault line(s)
+--- receipts E-lane-1 (serve-E-lane-1.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 5
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 3
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 5
+illegal=0 sentinel87=0 panic=0
+16:38:35 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+16:38:41 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-E-lane-2.log
+16:41:11 HEALTH=200 pid=347273
+16:41:11 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+16:41:51 E-lane-2: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:42:46 E-lane-2: clients done at squeeze t=+60s
+16:42:51 E-lane-2: server ALIVE post-squeeze; releasing ballast + health probe
+16:42:54 E-lane-2: post-squeeze health=200
+16:43:01 dmesg[E-lane-2]: 0
+0 fault line(s)
+--- receipts E-lane-2 (serve-E-lane-2.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 35
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1189MB (driver 838MB + pool-cached 351MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 933MB (driver 644MB + pool-cached 288MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:43:01 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+16:43:07 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-E-lane-3.log
+16:45:32 HEALTH=200 pid=352585
+16:45:32 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+16:46:12 E-lane-3: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:47:07 E-lane-3: clients done at squeeze t=+60s
+16:47:12 E-lane-3: server ALIVE post-squeeze; releasing ballast + health probe
+16:47:15 E-lane-3: post-squeeze health=200
+16:47:22 dmesg[E-lane-3]: 0
+0 fault line(s)
+--- receipts E-lane-3 (serve-E-lane-3.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 30
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1190MB (driver 838MB + pool-cached 352MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 929MB (driver 548MB + pool-cached 381MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:47:22 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+16:47:29 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-E-lane-4.log
+16:49:59 HEALTH=200 pid=358137
+16:49:59 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+16:50:39 E-lane-4: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:51:34 E-lane-4: clients done at squeeze t=+60s
+16:51:39 E-lane-4: server ALIVE post-squeeze; releasing ballast + health probe
+16:51:42 E-lane-4: post-squeeze health=200
+16:51:49 dmesg[E-lane-4]: 0
+0 fault line(s)
+--- receipts E-lane-4 (serve-E-lane-4.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 30
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1195MB (driver 870MB + pool-cached 324MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 938MB (driver 676MB + pool-cached 262MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:51:49 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+16:51:55 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-E-lane-5.log
+16:54:30 HEALTH=200 pid=363905
+16:54:30 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+16:55:10 E-lane-5: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+16:56:05 E-lane-5: clients done at squeeze t=+60s
+16:56:10 E-lane-5: server ALIVE post-squeeze; releasing ballast + health probe
+16:56:13 E-lane-5: post-squeeze health=200
+16:56:20 dmesg[E-lane-5]: 0
+0 fault line(s)
+--- receipts E-lane-5 (serve-E-lane-5.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 30
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1182MB (driver 774MB + pool-cached 408MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 926MB (driver 644MB + pool-cached 282MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+16:56:20 pre-boot ballast dev0 17215 MB
+ballast dev0 holding 17215 MB
+ballast dev0 steady at 17215 MB
+16:56:26 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='' log=serve-E3.log
+16:58:57 HEALTH=200 pid=369285
+16:58:57 free after boot: 0: used 96738 free 1149 1: used 59891 free 37996 
+16:59:18 E3 conc rc=1 ok=1/8
+16:59:25 dmesg[E3]: 0
+0 fault line(s)
+--- receipts E3 (serve-E3.log)
+admit_cal: 1
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 64
+vram_reject_lines: 7
+oom_parks: 7
+oom_not_parked: 0
+teardown_lines: 2
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 3356MB (driver 512MB + pool-cached 2844MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 7
+illegal=0 sentinel87=0 panic=0
+16:59:25 pre-boot ballast dev0 15920 MB
+ballast dev0 holding 15920 MB
+ballast dev0 steady at 15920 MB
+16:59:31 boot bin=/home/ubuntu/vram-bins/memra-server-vram-140dac88b md5=cfcb6465d65107e6e0440346b6978007 extra='' log=serve-E4.log
+17:02:01 HEALTH=200 pid=370586
+17:02:01 free after boot: 0: used 95442 free 2445 1: used 59891 free 37996 
+{"id": "turn-01", "status": 429, "dur_s": 0.31, "t_end": 1788109321.81, "error": "{\"error\":{\"message\":\"request context 8443 does not fit available KV capacity; retry with smaller max_tokens or max_ctx\",\"type\":\"rate_limit_error\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"}
+MODE=turns ok=0/1 fail=1
+17:02:01 E4 turns done
+17:02:08 dmesg[E4]: 0
+0 fault line(s)
+--- receipts E4 (serve-E4.log)
+admit_cal: 1
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 1
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+17:02:08 === PHASE E done ===
+CHAIN + D + E DONE 17:02:08
+17:53:14 === PHASE F: final acceptance on a6bf7d9ee (md5 31c7b060356b1f1e55179ead9d3f45a6) ===
+17:53:14 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+17:53:20 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7bb2f55b7 md5=31c7b060356b1f1e55179ead9d3f45a6 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-F-lane-1.log
+17:55:55 HEALTH=200 pid=373657
+17:55:55 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+17:56:35 F-lane-1: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+17:57:30 F-lane-1: clients done at squeeze t=+60s
+17:57:35 F-lane-1: server ALIVE post-squeeze; releasing ballast + health probe
+17:57:38 F-lane-1: post-squeeze health=200
+17:57:45 dmesg[F-lane-1]: 0
+0 fault line(s)
+--- receipts F-lane-1 (serve-F-lane-1.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 44
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2791MB (driver 2342MB + pool-cached 448MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 948MB (driver 646MB + pool-cached 302MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+17:57:45 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+17:57:51 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7bb2f55b7 md5=31c7b060356b1f1e55179ead9d3f45a6 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-F-lane-2.log
+18:00:21 HEALTH=200 pid=379276
+18:00:21 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+18:01:01 F-lane-2: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+18:01:56 F-lane-2: clients done at squeeze t=+60s
+18:02:01 F-lane-2: server ALIVE post-squeeze; releasing ballast + health probe
+18:02:04 F-lane-2: post-squeeze health=200
+18:02:11 dmesg[F-lane-2]: 0
+0 fault line(s)
+--- receipts F-lane-2 (serve-F-lane-2.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 4
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2785MB (driver 2598MB + pool-cached 186MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 950MB (driver 582MB + pool-cached 368MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+18:02:11 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+18:02:18 PRE-BOOT: a memra-server variant is alive, refusing
+18:02:18 F-lane-3 BOOT FAILED
+18:02:23 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+18:02:29 PRE-BOOT: a memra-server variant is alive, refusing
+18:02:29 F-lane-4 BOOT FAILED
+18:02:34 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+18:02:40 PRE-BOOT: a memra-server variant is alive, refusing
+18:02:40 F-lane-5 BOOT FAILED
+18:02:45 pre-boot ballast dev0 17215 MB
+ballast dev0 holding 17215 MB
+ballast dev0 steady at 17215 MB
+18:02:51 PRE-BOOT: a memra-server variant is alive, refusing
+18:02:56 dmesg[F3]: 0
+0 fault line(s)
+--- receipts F3 (serve-F3.log)
+admit_cal: 
+vram_defer_lines: 
+vram_reject_lines: 
+oom_parks: 
+oom_not_parked: 
+teardown_lines: 
+capture_warns: 
+capture_receipts: 
+draft_state_lines: 
+engine_errors: 
+oom_lines: 
+illegal= sentinel87= panic=
+18:02:56 pre-boot ballast dev0 15920 MB
+ballast dev0 holding 15920 MB
+ballast dev0 steady at 15920 MB
+18:03:02 PRE-BOOT: a memra-server variant is alive, refusing
+18:03:07 dmesg[F4]: 0
+0 fault line(s)
+--- receipts F4 (serve-F4.log)
+admit_cal: 
+vram_defer_lines: 
+vram_reject_lines: 
+oom_parks: 
+oom_not_parked: 
+teardown_lines: 
+capture_warns: 
+capture_receipts: 
+draft_state_lines: 
+engine_errors: 
+oom_lines: 
+illegal= sentinel87= panic=
+18:03:07 PRE-BOOT: a memra-server variant is alive, refusing
+18:03:10 dmesg[F5]: 0
+0 fault line(s)
+--- receipts F5 (serve-F5.log)
+admit_cal: 
+vram_defer_lines: 
+vram_reject_lines: 
+oom_parks: 
+oom_not_parked: 
+teardown_lines: 
+capture_warns: 
+capture_receipts: 
+draft_state_lines: 
+engine_errors: 
+oom_lines: 
+illegal= sentinel87= panic=
+18:03:10 run-spec greedy final
+18:06:02 rs-greedy-final rc=0 === SELF-CONSISTENCY PASS ===
+18:06:02 run-spec sampled final
+18:09:16 rs-sampled-final rc=0 === SELF-CONSISTENCY PASS ===
+18:09:16 RS-greedy FINAL CROSS-BINARY IDENTITY: PASS
+18:09:16 RS-sampled FINAL CROSS-BINARY IDENTITY: PASS
+18:09:16 === PHASE F done ===
+18:16:33 === PHASE G: remaining final-acceptance cells on 7bb2f55b7 (md5 31c7b060356b1f1e55179ead9d3f45a6) ===
+18:16:33 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+18:16:39 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7bb2f55b7 md5=31c7b060356b1f1e55179ead9d3f45a6 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-F-lane-3.log
+18:19:09 HEALTH=200 pid=386198
+18:19:09 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+18:19:49 F-lane-3: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+18:20:44 F-lane-3: clients done at squeeze t=+60s
+18:20:49 F-lane-3: server ALIVE post-squeeze; releasing ballast + health probe
+18:20:52 F-lane-3: post-squeeze health=200
+18:20:59 dmesg[F-lane-3]: 0
+0 fault line(s)
+--- receipts F-lane-3 (serve-F-lane-3.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 58
+vram_reject_lines: 0
+oom_parks: 10
+oom_not_parked: 0
+teardown_lines: 3
+capture_warns: 4
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 2
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 10
+illegal=0 sentinel87=0 panic=0
+18:20:59 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+18:21:05 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7bb2f55b7 md5=31c7b060356b1f1e55179ead9d3f45a6 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-F-lane-4.log
+18:23:40 HEALTH=200 pid=391674
+18:23:40 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+18:24:20 F-lane-4: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+18:25:15 F-lane-4: clients done at squeeze t=+60s
+18:25:20 F-lane-4: server ALIVE post-squeeze; releasing ballast + health probe
+18:25:23 F-lane-4: post-squeeze health=200
+18:25:30 dmesg[F-lane-4]: 0
+0 fault line(s)
+--- receipts F-lane-4 (serve-F-lane-4.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 39
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1188MB (driver 838MB + pool-cached 350MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 934MB (driver 612MB + pool-cached 321MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+18:25:31 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+18:25:37 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7bb2f55b7 md5=31c7b060356b1f1e55179ead9d3f45a6 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-F-lane-5.log
+18:28:07 HEALTH=200 pid=396995
+18:28:07 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+18:28:47 F-lane-5: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+18:29:42 F-lane-5: clients done at squeeze t=+60s
+18:29:47 F-lane-5: server ALIVE post-squeeze; releasing ballast + health probe
+18:29:50 F-lane-5: post-squeeze health=200
+18:29:57 dmesg[F-lane-5]: 0
+0 fault line(s)
+--- receipts F-lane-5 (serve-F-lane-5.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 9
+oom_not_parked: 0
+teardown_lines: 3
+capture_warns: 2
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4080MB (driver 3682MB + pool-cached 398MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 3
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 9
+illegal=0 sentinel87=0 panic=0
+18:29:57 pre-boot ballast dev0 17215 MB
+ballast dev0 holding 17215 MB
+ballast dev0 steady at 17215 MB
+18:30:03 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7bb2f55b7 md5=31c7b060356b1f1e55179ead9d3f45a6 extra='' log=serve-F3.log
+18:32:43 HEALTH=200 pid=402571
+18:32:43 free after boot: 0: used 94626 free 3261 1: used 58515 free 39372 
+18:33:23 F3 conc rc=1 ok=2/8
+18:33:30 dmesg[F3]: 0
+0 fault line(s)
+--- receipts F3 (serve-F3.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 63
+vram_reject_lines: 6
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 2
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2938MB (driver 1792MB + pool-cached 1146MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2838MB (driver 1696MB + pool-cached 1142MB) < required 4144MB (appetite 2608MB + floor 1536MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+18:33:30 pre-boot ballast dev0 15920 MB
+ballast dev0 holding 15920 MB
+ballast dev0 steady at 15920 MB
+18:33:36 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7bb2f55b7 md5=31c7b060356b1f1e55179ead9d3f45a6 extra='' log=serve-F4.log
+18:36:16 HEALTH=200 pid=404789
+18:36:16 free after boot: 0: used 93330 free 4557 1: used 58515 free 39372 
+{"id": "turn-01", "status": 429, "dur_s": 0.3, "t_end": 1788114977.194, "error": "{\"error\":{\"message\":\"request context 8443 does not fit available KV capacity; retry with smaller max_tokens or max_ctx\",\"type\":\"rate_limit_error\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"}
+MODE=turns ok=0/1 fail=1
+18:36:17 F4 turns done ok=0
+0/8
+18:36:24 dmesg[F4]: 0
+0 fault line(s)
+--- receipts F4 (serve-F4.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 1
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+18:36:24 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7bb2f55b7 md5=31c7b060356b1f1e55179ead9d3f45a6 extra='' log=serve-F5.log
+18:38:59 HEALTH=200 pid=405152
+18:38:59 free after boot: 0: used 76855 free 21032 1: used 58515 free 39372 
+{"id": "greedy", "status": 200, "dur_s": 4.19, "t_end": 1788115143.812, "sha": "ffc4004c678ad8ea", "content_len": 0, "usage": {"prompt_tokens": 613, "completion_tokens": 400, "total_tokens": 1013, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 4.168196048, "spec": {"rounds": 192, "drafted": 286, "accepted": 207, "acceptance_rate": 0.7237762237762237}}}
+MODE=greedy ok=1/1 fail=0
+18:39:08 dmesg[F5]: 0
+0 fault line(s)
+--- receipts F5 (serve-F5.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 2
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+18:39:08 === PHASE G done ===
+18:51:06 === PHASE H: remaining final-acceptance cells on 7198046f1 (md5 a68d8866b4444fdc2b83e70389bfffa8) ===
+18:51:06 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+18:51:12 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7198046f1 md5=a68d8866b4444fdc2b83e70389bfffa8 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-H-lane-1.log
+18:53:42 HEALTH=200 pid=406214
+18:53:42 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+18:54:22 H-lane-1: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+18:55:17 H-lane-1: clients done at squeeze t=+60s
+18:55:22 H-lane-1: server ALIVE post-squeeze; releasing ballast + health probe
+18:55:25 H-lane-1: post-squeeze health=200
+18:55:32 dmesg[H-lane-1]: 0
+0 fault line(s)
+--- receipts H-lane-1 (serve-H-lane-1.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 10
+oom_not_parked: 1
+teardown_lines: 4
+capture_warns: 5
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4607MB (driver 4262MB + pool-cached 345MB) < required 5680MB (appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 1
+oom_lines: 11
+illegal=0 sentinel87=0 panic=0
+18:55:32 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+18:55:38 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7198046f1 md5=a68d8866b4444fdc2b83e70389bfffa8 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-H-lane-2.log
+18:58:03 HEALTH=200 pid=411533
+18:58:03 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+18:58:43 H-lane-2: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+18:59:38 H-lane-2: clients done at squeeze t=+60s
+18:59:43 H-lane-2: server ALIVE post-squeeze; releasing ballast + health probe
+18:59:46 H-lane-2: post-squeeze health=200
+18:59:53 dmesg[H-lane-2]: 0
+0 fault line(s)
+--- receipts H-lane-2 (serve-H-lane-2.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 39
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2791MB (driver 2342MB + pool-cached 448MB) < required 5680MB (appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 947MB (driver 646MB + pool-cached 301MB) < required 5680MB (appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+18:59:53 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+19:00:00 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7198046f1 md5=a68d8866b4444fdc2b83e70389bfffa8 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-H-lane-3.log
+19:02:30 HEALTH=200 pid=416828
+19:02:30 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+19:03:10 H-lane-3: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+19:04:05 H-lane-3: clients done at squeeze t=+60s
+19:04:10 H-lane-3: server ALIVE post-squeeze; releasing ballast + health probe
+19:04:13 H-lane-3: post-squeeze health=200
+19:04:20 dmesg[H-lane-3]: 0
+0 fault line(s)
+--- receipts H-lane-3 (serve-H-lane-3.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 10
+oom_not_parked: 0
+teardown_lines: 3
+capture_warns: 5
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4607MB (driver 4262MB + pool-cached 344MB) < required 5680MB (appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 10
+illegal=0 sentinel87=0 panic=0
+19:04:20 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+19:04:26 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7198046f1 md5=a68d8866b4444fdc2b83e70389bfffa8 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-H-lane-4.log
+19:06:51 HEALTH=200 pid=422202
+19:06:51 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+19:07:31 H-lane-4: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+19:08:26 H-lane-4: clients done at squeeze t=+60s
+19:08:31 H-lane-4: server ALIVE post-squeeze; releasing ballast + health probe
+19:08:34 H-lane-4: post-squeeze health=200
+19:08:41 dmesg[H-lane-4]: 0
+0 fault line(s)
+--- receipts H-lane-4 (serve-H-lane-4.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 10
+oom_not_parked: 0
+teardown_lines: 2
+capture_warns: 4
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 10
+illegal=0 sentinel87=0 panic=0
+19:08:41 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+19:08:47 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7198046f1 md5=a68d8866b4444fdc2b83e70389bfffa8 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-H-lane-5.log
+19:11:18 HEALTH=200 pid=427496
+19:11:18 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+19:11:58 H-lane-5: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+19:12:53 H-lane-5: clients done at squeeze t=+60s
+19:12:58 H-lane-5: server ALIVE post-squeeze; releasing ballast + health probe
+19:13:01 H-lane-5: post-squeeze health=200
+19:13:08 dmesg[H-lane-5]: 0
+0 fault line(s)
+--- receipts H-lane-5 (serve-H-lane-5.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 58
+vram_reject_lines: 0
+oom_parks: 11
+oom_not_parked: 0
+teardown_lines: 2
+capture_warns: 5
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 11
+illegal=0 sentinel87=0 panic=0
+19:13:08 pre-boot ballast dev0 17215 MB
+ballast dev0 holding 17215 MB
+ballast dev0 steady at 17215 MB
+19:13:14 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7198046f1 md5=a68d8866b4444fdc2b83e70389bfffa8 extra='' log=serve-H3.log
+19:15:44 HEALTH=200 pid=432904
+19:15:44 free after boot: 0: used 94626 free 3261 1: used 58515 free 39372 
+19:16:04 H3 conc rc=1 ok=1/8
+19:16:11 dmesg[H3]: 0
+0 fault line(s)
+--- receipts H3 (serve-H3.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 63
+vram_reject_lines: 7
+oom_parks: 6
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 3350MB (driver 2048MB + pool-cached 1301MB) < required 5680MB (appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 6
+illegal=0 sentinel87=0 panic=0
+19:16:11 pre-boot ballast dev0 15920 MB
+ballast dev0 holding 15920 MB
+ballast dev0 steady at 15920 MB
+19:16:17 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7198046f1 md5=a68d8866b4444fdc2b83e70389bfffa8 extra='' log=serve-H4.log
+19:18:47 HEALTH=200 pid=434158
+19:18:47 free after boot: 0: used 93330 free 4557 1: used 58515 free 39372 
+{"id": "turn-01", "status": 429, "dur_s": 0.3, "t_end": 1788117528.23, "error": "{\"error\":{\"message\":\"request context 8443 does not fit available KV capacity; retry with smaller max_tokens or max_ctx\",\"type\":\"rate_limit_error\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"}
+MODE=turns ok=0/1 fail=1
+19:18:48 H4 turns done ok=0
+0/8
+19:18:55 dmesg[H4]: 0
+0 fault line(s)
+--- receipts H4 (serve-H4.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 1
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+19:18:55 boot bin=/home/ubuntu/vram-bins/memra-server-vram-7198046f1 md5=a68d8866b4444fdc2b83e70389bfffa8 extra='' log=serve-H5.log
+19:21:25 HEALTH=200 pid=434439
+19:21:25 free after boot: 0: used 76855 free 21032 1: used 58515 free 39372 
+{"id": "greedy", "status": 200, "dur_s": 4.2, "t_end": 1788117689.857, "sha": "ffc4004c678ad8ea", "content_len": 0, "usage": {"prompt_tokens": 613, "completion_tokens": 400, "total_tokens": 1013, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 4.179869696, "spec": {"rounds": 192, "drafted": 286, "accepted": 207, "acceptance_rate": 0.7237762237762237}}}
+MODE=greedy ok=1/1 fail=0
+19:21:34 dmesg[H5]: 0
+0 fault line(s)
+--- receipts H5 (serve-H5.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 2
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+19:21:34 run-spec greedy+sampled on the shipped binary
+19:24:24 rs-greedy-h rc=0 === SELF-CONSISTENCY PASS ===
+19:27:38 rs-sampled-h rc=0 === SELF-CONSISTENCY PASS ===
+19:27:38 RS-greedy SHIPPED CROSS-BINARY IDENTITY: PASS
+19:27:38 RS-sampled SHIPPED CROSS-BINARY IDENTITY: PASS
+19:27:38 === PHASE H done ===
+19:31:26 === PHASE I: remaining final-acceptance cells on 356a69d8d (md5 45ffe426010ad2adfd38468f557513c2) ===
+19:31:26 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+19:31:32 boot bin=/home/ubuntu/vram-bins/memra-server-vram-356a69d8d md5=45ffe426010ad2adfd38468f557513c2 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-I-lane-1.log
+19:34:07 HEALTH=200 pid=435719
+19:34:07 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+19:34:47 I-lane-1: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+19:35:42 I-lane-1: clients done at squeeze t=+60s
+19:35:47 I-lane-1: server ALIVE post-squeeze; releasing ballast + health probe
+19:35:50 I-lane-1: post-squeeze health=200
+19:35:57 dmesg[I-lane-1]: 0
+0 fault line(s)
+--- receipts I-lane-1 (serve-I-lane-1.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 10
+oom_not_parked: 0
+teardown_lines: 2
+capture_warns: 4
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 10
+illegal=0 sentinel87=0 panic=0
+19:35:57 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+19:36:03 boot bin=/home/ubuntu/vram-bins/memra-server-vram-356a69d8d md5=45ffe426010ad2adfd38468f557513c2 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-I-lane-2.log
+19:38:38 HEALTH=200 pid=441045
+19:38:38 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+19:39:18 I-lane-2: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+19:40:13 I-lane-2: clients done at squeeze t=+60s
+19:40:18 I-lane-2: server ALIVE post-squeeze; releasing ballast + health probe
+19:40:21 I-lane-2: post-squeeze health=200
+19:40:28 dmesg[I-lane-2]: 0
+0 fault line(s)
+--- receipts I-lane-2 (serve-I-lane-2.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 9
+oom_not_parked: 0
+teardown_lines: 2
+capture_warns: 4
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4603MB (driver 4262MB + pool-cached 341MB) < required 8289MB (2x appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 9
+illegal=0 sentinel87=0 panic=0
+19:40:28 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+19:40:34 boot bin=/home/ubuntu/vram-bins/memra-server-vram-356a69d8d md5=45ffe426010ad2adfd38468f557513c2 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-I-lane-3.log
+19:43:10 HEALTH=200 pid=446374
+19:43:10 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+19:43:50 I-lane-3: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+19:44:45 I-lane-3: clients done at squeeze t=+60s
+19:44:50 I-lane-3: server ALIVE post-squeeze; releasing ballast + health probe
+19:44:53 I-lane-3: post-squeeze health=200
+19:45:00 dmesg[I-lane-3]: 0
+0 fault line(s)
+--- receipts I-lane-3 (serve-I-lane-3.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 27
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1189MB (driver 838MB + pool-cached 351MB) < required 8289MB (2x appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 927MB (driver 484MB + pool-cached 443MB) < required 8289MB (2x appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+19:45:00 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+19:45:06 boot bin=/home/ubuntu/vram-bins/memra-server-vram-356a69d8d md5=45ffe426010ad2adfd38468f557513c2 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-I-lane-4.log
+19:47:41 HEALTH=200 pid=451756
+19:47:41 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+19:48:21 I-lane-4: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+19:49:16 I-lane-4: clients done at squeeze t=+60s
+19:49:21 I-lane-4: server ALIVE post-squeeze; releasing ballast + health probe
+19:49:24 I-lane-4: post-squeeze health=200
+19:49:31 dmesg[I-lane-4]: 0
+0 fault line(s)
+--- receipts I-lane-4 (serve-I-lane-4.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 4
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1183MB (driver 806MB + pool-cached 377MB) < required 8289MB (2x appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 925MB (driver 612MB + pool-cached 313MB) < required 8289MB (2x appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+19:49:31 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+19:49:37 boot bin=/home/ubuntu/vram-bins/memra-server-vram-356a69d8d md5=45ffe426010ad2adfd38468f557513c2 extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-I-lane-5.log
+19:52:13 HEALTH=200 pid=457070
+19:52:13 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+19:52:53 I-lane-5: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+19:53:48 I-lane-5: clients done at squeeze t=+60s
+19:53:53 I-lane-5: server ALIVE post-squeeze; releasing ballast + health probe
+19:53:56 I-lane-5: post-squeeze health=200
+19:54:03 dmesg[I-lane-5]: 0
+0 fault line(s)
+--- receipts I-lane-5 (serve-I-lane-5.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 8
+oom_not_parked: 0
+teardown_lines: 2
+capture_warns: 5
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4599MB (driver 4230MB + pool-cached 369MB) < required 8289MB (2x appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4346MB (driver 4036MB + pool-cached 309MB) < required 8289MB (2x appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 8
+illegal=0 sentinel87=0 panic=0
+19:54:03 pre-boot ballast dev0 17215 MB
+ballast dev0 holding 17215 MB
+ballast dev0 steady at 17215 MB
+19:54:09 boot bin=/home/ubuntu/vram-bins/memra-server-vram-356a69d8d md5=45ffe426010ad2adfd38468f557513c2 extra='' log=serve-I3.log
+19:56:44 HEALTH=200 pid=462452
+19:56:44 free after boot: 0: used 94626 free 3261 1: used 58515 free 39372 
+19:57:04 I3 conc rc=1 ok=1/8
+19:57:11 dmesg[I3]: 0
+0 fault line(s)
+--- receipts I3 (serve-I3.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 63
+vram_reject_lines: 7
+oom_parks: 6
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 3319MB (driver 1920MB + pool-cached 1398MB) < required 8289MB (2x appetite 2608MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 6
+illegal=0 sentinel87=0 panic=0
+19:57:11 pre-boot ballast dev0 15920 MB
+ballast dev0 holding 15920 MB
+ballast dev0 steady at 15920 MB
+19:57:17 boot bin=/home/ubuntu/vram-bins/memra-server-vram-356a69d8d md5=45ffe426010ad2adfd38468f557513c2 extra='' log=serve-I4.log
+19:59:58 HEALTH=200 pid=463725
+19:59:58 free after boot: 0: used 93330 free 4557 1: used 58515 free 39372 
+{"id": "turn-01", "status": 429, "dur_s": 0.3, "t_end": 1788119998.363, "error": "{\"error\":{\"message\":\"request context 8443 does not fit available KV capacity; retry with smaller max_tokens or max_ctx\",\"type\":\"rate_limit_error\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"}
+MODE=turns ok=0/1 fail=1
+19:59:58 I4 turns done ok=0
+0/8
+20:00:05 dmesg[I4]: 0
+0 fault line(s)
+--- receipts I4 (serve-I4.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 1
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+20:00:05 boot bin=/home/ubuntu/vram-bins/memra-server-vram-356a69d8d md5=45ffe426010ad2adfd38468f557513c2 extra='' log=serve-I5.log
+20:02:40 HEALTH=200 pid=464025
+20:02:40 free after boot: 0: used 76855 free 21032 1: used 58515 free 39372 
+{"id": "greedy", "status": 200, "dur_s": 4.17, "t_end": 1788120164.965, "sha": "ffc4004c678ad8ea", "content_len": 0, "usage": {"prompt_tokens": 613, "completion_tokens": 400, "total_tokens": 1013, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 4.150273415, "spec": {"rounds": 192, "drafted": 286, "accepted": 207, "acceptance_rate": 0.7237762237762237}}}
+MODE=greedy ok=1/1 fail=0
+20:02:50 dmesg[I5]: 0
+0 fault line(s)
+--- receipts I5 (serve-I5.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 728MB; probe kv charge 358MB, draft-state 2608MB, drafted 48 accepted 48; [dev0 peak-used 78132MB rest-used 75240MB charged 3135MB -> 0MB; dev1 peak-used 58769MB rest-used 57872MB charged 168MB -> 728MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 2
+draft_state_lines: 1
+[spec] draft-session state high-water: 2608MB (effective-free delta across this session's captures; charged per spec admission)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+20:02:50 run-spec greedy+sampled on the shipped binary
+20:05:40 rs-greedy-i rc=0 === SELF-CONSISTENCY PASS ===
+20:08:54 rs-sampled-i rc=0 === SELF-CONSISTENCY PASS ===
+20:08:54 RS-greedy SHIPPED-I CROSS-BINARY IDENTITY: PASS
+20:08:54 RS-sampled SHIPPED-I CROSS-BINARY IDENTITY: PASS
+20:08:54 === PHASE I done ===
+20:12:39 === J1: owner shape, probe OFF, ballast to 7900 free ===
+20:12:45 boot bin=/home/ubuntu/vram-bins/memra-server-vram-356a69d8d md5=45ffe426010ad2adfd38468f557513c2 extra='MEMRA_ADMIT_CALIBRATE=0' log=serve-J1.log
+20:15:30 HEALTH=200 pid=465238
+20:15:30 free after boot: 0: used 90542 free 7345 1: used 58291 free 39596 
+{"id": "turn-01", "status": 429, "dur_s": 0.58, "t_end": 1788120931.315, "error": "{\"error\":{\"message\":\"request context 8443 does not fit available KV capacity; retry with smaller max_tokens or max_ctx\",\"type\":\"rate_limit_error\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"}
+MODE=turns ok=0/1 fail=1
+20:15:31 J1 turns done ok=0
+0/8
+20:15:38 dmesg[J1]: 0
+0 fault line(s)
+--- receipts J1 (serve-J1.log)
+admit_cal: 1
+[admit-cal] boot calibration disarmed (MEMRA_ADMIT_CALIBRATE=0); static transient floor serves
+vram_defer_lines: 0
+vram_reject_lines: 1
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 0
+capture_receipts: 0
+draft_state_lines: 0
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+20:15:38 === J1 done ===
+20:28:30 === PHASE K: remaining final-acceptance cells on 9fbbd149a (md5 952c895a7a9503025454353340198a5d) ===
+20:28:30 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+20:28:36 boot bin=/home/ubuntu/vram-bins/memra-server-vram-9fbbd149a md5=952c895a7a9503025454353340198a5d extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-K-lane-1.log
+20:31:26 HEALTH=200 pid=466305
+20:31:26 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+20:32:06 K-lane-1: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+20:33:01 K-lane-1: clients done at squeeze t=+60s
+20:33:06 K-lane-1: server ALIVE post-squeeze; releasing ballast + health probe
+20:33:09 K-lane-1: post-squeeze health=200
+20:33:16 dmesg[K-lane-1]: 0
+0 fault line(s)
+--- receipts K-lane-1 (serve-K-lane-1.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 4
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1193MB (driver 870MB + pool-cached 323MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 940MB (driver 614MB + pool-cached 325MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+20:33:16 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+20:33:23 boot bin=/home/ubuntu/vram-bins/memra-server-vram-9fbbd149a md5=952c895a7a9503025454353340198a5d extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-K-lane-2.log
+20:36:18 HEALTH=200 pid=471572
+20:36:18 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+20:36:58 K-lane-2: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+20:37:53 K-lane-2: clients done at squeeze t=+60s
+20:37:58 K-lane-2: server ALIVE post-squeeze; releasing ballast + health probe
+20:38:01 K-lane-2: post-squeeze health=200
+20:38:08 dmesg[K-lane-2]: 0
+0 fault line(s)
+--- receipts K-lane-2 (serve-K-lane-2.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 26
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1194MB (driver 870MB + pool-cached 324MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 938MB (driver 676MB + pool-cached 262MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+20:38:08 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+20:38:14 boot bin=/home/ubuntu/vram-bins/memra-server-vram-9fbbd149a md5=952c895a7a9503025454353340198a5d extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-K-lane-3.log
+20:41:04 HEALTH=200 pid=476839
+20:41:04 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+20:41:44 K-lane-3: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+20:42:39 K-lane-3: clients done at squeeze t=+60s
+20:42:44 K-lane-3: server ALIVE post-squeeze; releasing ballast + health probe
+20:42:47 K-lane-3: post-squeeze health=200
+20:42:54 dmesg[K-lane-3]: 0
+0 fault line(s)
+--- receipts K-lane-3 (serve-K-lane-3.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 57
+vram_reject_lines: 0
+oom_parks: 10
+oom_not_parked: 0
+teardown_lines: 2
+capture_warns: 4
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 10
+illegal=0 sentinel87=0 panic=0
+20:42:54 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+20:43:01 boot bin=/home/ubuntu/vram-bins/memra-server-vram-9fbbd149a md5=952c895a7a9503025454353340198a5d extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-K-lane-4.log
+20:45:46 HEALTH=200 pid=482120
+20:45:46 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+20:46:26 K-lane-4: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+20:47:21 K-lane-4: clients done at squeeze t=+60s
+20:47:26 K-lane-4: server ALIVE post-squeeze; releasing ballast + health probe
+20:47:29 K-lane-4: post-squeeze health=200
+20:47:36 dmesg[K-lane-4]: 0
+0 fault line(s)
+--- receipts K-lane-4 (serve-K-lane-4.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 58
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 4
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2793MB (driver 2598MB + pool-cached 195MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 951MB (driver 582MB + pool-cached 369MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+20:47:36 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+20:47:42 boot bin=/home/ubuntu/vram-bins/memra-server-vram-9fbbd149a md5=952c895a7a9503025454353340198a5d extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-K-lane-5.log
+20:50:27 HEALTH=200 pid=487400
+20:50:27 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+20:51:07 K-lane-5: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+20:52:02 K-lane-5: clients done at squeeze t=+60s
+20:52:07 K-lane-5: server ALIVE post-squeeze; releasing ballast + health probe
+20:52:10 K-lane-5: post-squeeze health=200
+20:52:17 dmesg[K-lane-5]: 0
+0 fault line(s)
+--- receipts K-lane-5 (serve-K-lane-5.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 31
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1189MB (driver 838MB + pool-cached 351MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 933MB (driver 644MB + pool-cached 289MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+20:52:17 pre-boot ballast dev0 17215 MB
+ballast dev0 holding 17215 MB
+ballast dev0 steady at 17215 MB
+20:52:24 boot bin=/home/ubuntu/vram-bins/memra-server-vram-9fbbd149a md5=952c895a7a9503025454353340198a5d extra='' log=serve-K3.log
+20:55:09 HEALTH=200 pid=492749
+20:55:09 free after boot: 0: used 94626 free 3261 1: used 58515 free 39372 
+20:55:48 K3 conc rc=1 ok=2/8
+20:55:55 dmesg[K3]: 0
+0 fault line(s)
+--- receipts K3 (serve-K3.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 64
+vram_reject_lines: 6
+oom_parks: 6
+oom_not_parked: 0
+teardown_lines: 2
+capture_warns: 2
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 3132MB (driver 1888MB + pool-cached 1244MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 3032MB (driver 1792MB + pool-cached 1239MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 6
+illegal=0 sentinel87=0 panic=0
+20:55:55 pre-boot ballast dev0 15920 MB
+ballast dev0 holding 15920 MB
+ballast dev0 steady at 15920 MB
+20:56:01 boot bin=/home/ubuntu/vram-bins/memra-server-vram-9fbbd149a md5=952c895a7a9503025454353340198a5d extra='' log=serve-K4.log
+20:58:47 HEALTH=200 pid=494948
+20:58:47 free after boot: 0: used 93330 free 4557 1: used 58515 free 39372 
+{"id": "turn-01", "status": 429, "dur_s": 0.3, "t_end": 1788123527.547, "error": "{\"error\":{\"message\":\"request context 8443 does not fit available KV capacity; retry with smaller max_tokens or max_ctx\",\"type\":\"rate_limit_error\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"}
+MODE=turns ok=0/1 fail=1
+20:58:47 K4 turns done ok=0
+0/8
+20:58:54 dmesg[K4]: 0
+0 fault line(s)
+--- receipts K4 (serve-K4.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 1
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+20:58:54 boot bin=/home/ubuntu/vram-bins/memra-server-vram-9fbbd149a md5=952c895a7a9503025454353340198a5d extra='' log=serve-K5.log
+21:01:44 HEALTH=200 pid=495307
+21:01:44 free after boot: 0: used 76855 free 21032 1: used 58515 free 39372 
+{"id": "greedy", "status": 200, "dur_s": 4.18, "t_end": 1788123709.219, "sha": "ffc4004c678ad8ea", "content_len": 0, "usage": {"prompt_tokens": 613, "completion_tokens": 400, "total_tokens": 1013, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 4.165406666, "spec": {"rounds": 192, "drafted": 286, "accepted": 207, "acceptance_rate": 0.7237762237762237}}}
+MODE=greedy ok=1/1 fail=0
+21:01:54 dmesg[K5]: 0
+0 fault line(s)
+--- receipts K5 (serve-K5.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 2
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+21:01:54 run-spec greedy+sampled on the shipped binary
+21:04:58 rs-greedy-k rc=0 === SELF-CONSISTENCY PASS ===
+21:08:26 rs-sampled-k rc=0 === SELF-CONSISTENCY PASS ===
+21:08:26 RS-greedy SHIPPED-K CROSS-BINARY IDENTITY: PASS
+21:08:26 RS-sampled SHIPPED-K CROSS-BINARY IDENTITY: PASS
+21:08:26 === PHASE K done ===
+21:10:13 === PHASE L: remaining final-acceptance cells on 02c4a01de (md5 1492f82f1f6518a862942b7525e98d6e) ===
+21:10:13 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+21:10:19 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-L-lane-1.log
+21:13:09 HEALTH=200 pid=496256
+21:13:09 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+21:13:49 L-lane-1: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+21:14:44 L-lane-1: clients done at squeeze t=+60s
+21:14:49 L-lane-1: server ALIVE post-squeeze; releasing ballast + health probe
+21:14:52 L-lane-1: post-squeeze health=200
+21:14:59 dmesg[L-lane-1]: 0
+0 fault line(s)
+--- receipts L-lane-1 (serve-L-lane-1.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 58
+vram_reject_lines: 0
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 5
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1187MB (driver 934MB + pool-cached 253MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 931MB (driver 644MB + pool-cached 286MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+21:14:59 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+21:15:05 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-L-lane-2.log
+21:17:50 HEALTH=200 pid=501531
+21:17:50 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+21:18:30 L-lane-2: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+21:19:25 L-lane-2: clients done at squeeze t=+60s
+21:19:30 L-lane-2: server ALIVE post-squeeze; releasing ballast + health probe
+21:19:33 L-lane-2: post-squeeze health=200
+21:19:41 dmesg[L-lane-2]: 0
+0 fault line(s)
+--- receipts L-lane-2 (serve-L-lane-2.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 56
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 4
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1185MB (driver 806MB + pool-cached 379MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 927MB (driver 612MB + pool-cached 315MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+21:19:41 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+21:19:47 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-L-lane-3.log
+21:22:32 HEALTH=200 pid=506806
+21:22:32 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+21:23:12 L-lane-3: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+21:24:07 L-lane-3: clients done at squeeze t=+60s
+21:24:12 L-lane-3: server ALIVE post-squeeze; releasing ballast + health probe
+21:24:15 L-lane-3: post-squeeze health=200
+21:24:22 dmesg[L-lane-3]: 0
+0 fault line(s)
+--- receipts L-lane-3 (serve-L-lane-3.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 32
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 7
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2791MB (driver 2342MB + pool-cached 448MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 942MB (driver 550MB + pool-cached 392MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+21:24:22 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+21:24:28 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-L-lane-4.log
+21:27:13 HEALTH=200 pid=512150
+21:27:13 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+21:27:53 L-lane-4: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+21:28:48 L-lane-4: clients done at squeeze t=+60s
+21:28:53 L-lane-4: server ALIVE post-squeeze; releasing ballast + health probe
+21:28:56 L-lane-4: post-squeeze health=200
+21:29:04 dmesg[L-lane-4]: 0
+0 fault line(s)
+--- receipts L-lane-4 (serve-L-lane-4.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 58
+vram_reject_lines: 0
+oom_parks: 11
+oom_not_parked: 0
+teardown_lines: 3
+capture_warns: 5
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+[spec] WARN: draft-graph capture failed (session replayed after a step-OOM park; draft capture disabled (fail-safe)); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 11
+illegal=0 sentinel87=0 panic=0
+21:29:04 pre-boot ballast dev0 9820 MB
+ballast dev0 holding 9820 MB
+ballast dev0 steady at 9820 MB
+21:29:10 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='MEMRA_ADMIT_RESERVE_MB=16' log=serve-L-lane-5.log
+21:31:55 HEALTH=200 pid=517427
+21:31:55 free after boot: 0: used 84442 free 13445 1: used 58291 free 39596 
+21:32:35 L-lane-5: decode-phase squeeze starts (hold 1GB, +1GB/2s, retrying)
+21:33:30 L-lane-5: clients done at squeeze t=+60s
+21:33:35 L-lane-5: server ALIVE post-squeeze; releasing ballast + health probe
+21:33:38 L-lane-5: post-squeeze health=200
+21:33:45 dmesg[L-lane-5]: 0
+0 fault line(s)
+--- receipts L-lane-5 (serve-L-lane-5.log)
+admit_cal: 1
+[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door overrides the floor anyway
+vram_defer_lines: 58
+vram_reject_lines: 0
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 5
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 1195MB (driver 902MB + pool-cached 293MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 943MB (driver 614MB + pool-cached 329MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+21:33:45 pre-boot ballast dev0 17215 MB
+ballast dev0 holding 17215 MB
+ballast dev0 steady at 17215 MB
+21:33:51 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='' log=serve-L3.log
+21:36:36 HEALTH=200 pid=522855
+21:36:36 free after boot: 0: used 94626 free 3261 1: used 58515 free 39372 
+21:36:56 L3 conc rc=1 ok=1/8
+21:37:04 dmesg[L3]: 0
+0 fault line(s)
+--- receipts L3 (serve-L3.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 64
+vram_reject_lines: 7
+oom_parks: 7
+oom_not_parked: 0
+teardown_lines: 2
+capture_warns: 1
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 3350MB (driver 2048MB + pool-cached 1301MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 7
+illegal=0 sentinel87=0 panic=0
+21:37:04 pre-boot ballast dev0 15920 MB
+ballast dev0 holding 15920 MB
+ballast dev0 steady at 15920 MB
+21:37:10 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='' log=serve-L4.log
+21:40:05 HEALTH=200 pid=524129
+21:40:05 free after boot: 0: used 93330 free 4557 1: used 58515 free 39372 
+{"id": "turn-01", "status": 429, "dur_s": 0.31, "t_end": 1788126005.796, "error": "{\"error\":{\"message\":\"request context 8443 does not fit available KV capacity; retry with smaller max_tokens or max_ctx\",\"type\":\"rate_limit_error\",\"param\":null,\"code\":\"rate_limit_exceeded\"}}"}
+MODE=turns ok=0/1 fail=1
+21:40:05 L4 turns done ok=0
+0/8
+21:40:12 dmesg[L4]: 0
+0 fault line(s)
+--- receipts L4 (serve-L4.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 1
+oom_parks: 1
+oom_not_parked: 0
+teardown_lines: 1
+capture_warns: 0
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 1
+illegal=0 sentinel87=0 panic=0
+21:40:13 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='' log=serve-L5.log
+21:43:18 HEALTH=200 pid=524510
+21:43:18 free after boot: 0: used 76855 free 21032 1: used 58515 free 39372 
+{"id": "greedy", "status": 200, "dur_s": 4.19, "t_end": 1788126202.536, "sha": "ffc4004c678ad8ea", "content_len": 0, "usage": {"prompt_tokens": 613, "completion_tokens": 400, "total_tokens": 1013, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 4.171099533, "spec": {"rounds": 192, "drafted": 286, "accepted": 207, "acceptance_rate": 0.7237762237762237}}}
+MODE=greedy ok=1/1 fail=0
+21:43:27 dmesg[L5]: 0
+0 fault line(s)
+--- receipts L5 (serve-L5.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 0
+capture_receipts: 2
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+21:43:27 run-spec greedy+sampled on the shipped binary
+21:46:39 rs-greedy-l rc=0 === SELF-CONSISTENCY PASS ===
+21:49:49 lock already held by the chain
+21:49:56 rs-sampled-l rc=0 === SELF-CONSISTENCY PASS ===
+21:49:56 RS-greedy SHIPPED-L CROSS-BINARY IDENTITY: PASS
+21:49:56 RS-sampled SHIPPED-L CROSS-BINARY IDENTITY: PASS
+21:49:56 === PHASE L done ===
+21:50:19 === PHASE M: acceptance cells at TRUE free targets on 02c4a01de (md5 1492f82f1f6518a862942b7525e98d6e) ===
+21:50:19 pre-boot ballast dev0 11020 MB
+ballast dev0 holding 11020 MB
+ballast dev0 steady at 11020 MB
+21:50:25 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='' log=serve-M4.log
+21:53:00 HEALTH=200 pid=525218
+21:53:00 free after boot: 0: used 88430 free 9457 1: used 58515 free 39372 
+{"id": "turn-01", "status": 200, "dur_s": 12.88, "t_end": 1788126793.691, "sha": "8cd1620d291c4953", "content_len": 1911, "usage": {"prompt_tokens": 187, "completion_tokens": 1380, "total_tokens": 1567, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 12.86480393, "spec": {"rounds": 496, "drafted": 1007, "accepted": 843, "acceptance_rate": 0.8371400198609732}}}
+{"id": "turn-02", "status": 200, "dur_s": 49.82, "t_end": 1788126843.511, "sha": "58da5d5c0a78aefb", "content_len": 8018, "usage": {"prompt_tokens": 715, "completion_tokens": 5305, "total_tokens": 6020, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 49.815932633, "spec": {"rounds": 1886, "drafted": 3970, "accepted": 3276, "acceptance_rate": 0.8251889168765743}}}
+{"id": "turn-03", "status": 200, "dur_s": 49.63, "t_end": 1788126893.14, "sha": "52ba143a73a29da9", "content_len": 7062, "usage": {"prompt_tokens": 2872, "completion_tokens": 5209, "total_tokens": 8081, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 49.620292051, "spec": {"rounds": 1821, "drafted": 3904, "accepted": 3260, "acceptance_rate": 0.8350409836065574}}}
+{"id": "turn-04", "status": 500, "dur_s": 3.57, "t_end": 1788126896.711, "error": "{\"error\":{\"message\":\"step error: SWA ring state exceeds capacity (5152 > 5151) [append len=5152 retain_from=4128 append_rows=1                      base=Some(0) called from crates/memra-engine/src/spec.rs:5286:27]\",\"type\":\"server_error\",\"param\":null,\"code\":\"engine_error\"}}"}
+MODE=turns ok=3/4 fail=1
+21:54:56 M4 turns done ok=3/8
+21:55:03 dmesg[M4]: 0
+0 fault line(s)
+--- receipts M4 (serve-M4.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 4
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4046MB (driver 3732MB + pool-cached 313MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4008MB (driver 2900MB + pool-cached 1107MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 1
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+21:55:03 pre-boot ballast dev0 12315 MB
+ballast dev0 holding 12315 MB
+ballast dev0 steady at 12315 MB
+21:55:09 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='' log=serve-M3.log
+21:57:45 HEALTH=200 pid=531052
+21:57:45 free after boot: 0: used 89726 free 8161 1: used 58515 free 39372 
+21:59:15 M3 conc rc=0 ok=8/8
+21:59:22 dmesg[M3]: 0
+0 fault line(s)
+--- receipts M3 (serve-M3.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 8
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 8032MB (driver 6788MB + pool-cached 1244MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 7932MB (driver 6692MB + pool-cached 1239MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+21:59:22 === PHASE M done ===
+22:01:11 === N1: owner shape rerun ===
+22:01:17 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='' log=serve-N1.log
+22:03:52 HEALTH=200 pid=536072
+22:03:52 free after boot: 0: used 88430 free 9457 1: used 58515 free 39372 
+{"id": "turn-01", "status": 200, "dur_s": 10.89, "t_end": 1788127443.441, "sha": "e56b613ae6e8efdb", "content_len": 1122, "usage": {"prompt_tokens": 187, "completion_tokens": 1139, "total_tokens": 1326, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 10.871464651, "spec": {"rounds": 411, "drafted": 856, "accepted": 713, "acceptance_rate": 0.8329439252336449}}}
+{"id": "turn-02", "status": 200, "dur_s": 78.44, "t_end": 1788127521.884, "sha": "92aa24412343f1a2", "content_len": 4792, "usage": {"prompt_tokens": 574, "completion_tokens": 8192, "total_tokens": 8766, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 78.439640756, "spec": {"rounds": 2977, "drafted": 6212, "accepted": 4969, "acceptance_rate": 0.799903412749517}}}
+{"id": "turn-03", "status": 200, "dur_s": 53.34, "t_end": 1788127575.224, "sha": "b841f47c7eb6beea", "content_len": 2551, "usage": {"prompt_tokens": 1962, "completion_tokens": 5736, "total_tokens": 7698, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 53.333455094, "spec": {"rounds": 1974, "drafted": 4246, "accepted": 3617, "acceptance_rate": 0.8518605746585021}}}
+{"id": "turn-04", "status": 200, "dur_s": 78.55, "t_end": 1788127653.771, "sha": "fc59fc2206fb3b6f", "content_len": 0, "usage": {"prompt_tokens": 2884, "completion_tokens": 8192, "total_tokens": 11076, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 78.539499722, "spec": {"rounds": 3038, "drafted": 5876, "accepted": 4908, "acceptance_rate": 0.8352620830496936}}}
+{"id": "turn-05", "status": 200, "dur_s": 27.36, "t_end": 1788127681.128, "sha": "485bf366670c5b6e", "content_len": 4596, "usage": {"prompt_tokens": 2980, "completion_tokens": 2764, "total_tokens": 5744, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 27.348923508, "spec": {"rounds": 1051, "drafted": 2002, "accepted": 1631, "acceptance_rate": 0.8146853146853147}}}
+{"id": "turn-06", "status": 200, "dur_s": 38.29, "t_end": 1788127719.416, "sha": "1cff96806103f376", "content_len": 4058, "usage": {"prompt_tokens": 4244, "completion_tokens": 3842, "total_tokens": 8086, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 38.277454427, "spec": {"rounds": 1441, "drafted": 2800, "accepted": 2286, "acceptance_rate": 0.8164285714285714}}}
+{"id": "turn-07", "status": 200, "dur_s": 37.1, "t_end": 1788127756.516, "sha": "9b0d1298248fbccd", "content_len": 2710, "usage": {"prompt_tokens": 5335, "completion_tokens": 3616, "total_tokens": 8951, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 37.088361194, "spec": {"rounds": 1360, "drafted": 2688, "accepted": 2175, "acceptance_rate": 0.8091517857142857}}}
+{"id": "turn-08", "status": 200, "dur_s": 57.16, "t_end": 1788127813.676, "sha": "9a8280d2d3afe637", "content_len": 6601, "usage": {"prompt_tokens": 6050, "completion_tokens": 5685, "total_tokens": 11735, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 57.146076908, "spec": {"rounds": 2141, "drafted": 4124, "accepted": 3383, "acceptance_rate": 0.8203200775945684}}}
+MODE=turns ok=8/8 fail=0
+22:10:13 N1 turns done ok=8/8
+22:10:20 dmesg[N1]: 0
+0 fault line(s)
+--- receipts N1 (serve-N1.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 8
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4046MB (driver 3732MB + pool-cached 313MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4026MB (driver 2996MB + pool-cached 1029MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+22:10:20 === N2: owner shape rerun ===
+22:10:26 boot bin=/home/ubuntu/vram-bins/memra-server-vram-02c4a01de md5=1492f82f1f6518a862942b7525e98d6e extra='' log=serve-N2.log
+22:13:02 HEALTH=200 pid=536458
+22:13:02 free after boot: 0: used 88430 free 9457 1: used 58515 free 39372 
+{"id": "turn-01", "status": 200, "dur_s": 12.73, "t_end": 1788127994.838, "sha": "ff352fa4800b4ec5", "content_len": 1557, "usage": {"prompt_tokens": 187, "completion_tokens": 1310, "total_tokens": 1497, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 12.712377702, "spec": {"rounds": 505, "drafted": 968, "accepted": 794, "acceptance_rate": 0.8202479338842975}}}
+{"id": "turn-02", "status": 200, "dur_s": 46.78, "t_end": 1788128041.615, "sha": "e335a7f4dc2cd559", "content_len": 6416, "usage": {"prompt_tokens": 651, "completion_tokens": 4858, "total_tokens": 5509, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 46.773773846, "spec": {"rounds": 1801, "drafted": 3675, "accepted": 2925, "acceptance_rate": 0.7959183673469388}}}
+{"id": "turn-03", "status": 200, "dur_s": 66.41, "t_end": 1788128108.02, "sha": "a29180b9ef2055a0", "content_len": 9404, "usage": {"prompt_tokens": 2403, "completion_tokens": 7071, "total_tokens": 9474, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 66.398467674, "spec": {"rounds": 2417, "drafted": 5305, "accepted": 4467, "acceptance_rate": 0.8420358152686145}}}
+{"id": "turn-04", "status": 200, "dur_s": 77.53, "t_end": 1788128185.552, "sha": "fc13504ba040537d", "content_len": 9806, "usage": {"prompt_tokens": 5207, "completion_tokens": 8028, "total_tokens": 13235, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 77.519098016, "spec": {"rounds": 2821, "drafted": 5869, "accepted": 4994, "acceptance_rate": 0.8509115692622252}}}
+{"id": "turn-05", "status": 200, "dur_s": 52.51, "t_end": 1788128238.059, "sha": "c77404b9c64bd1b4", "content_len": 7387, "usage": {"prompt_tokens": 8125, "completion_tokens": 5255, "total_tokens": 13380, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 52.489437587, "spec": {"rounds": 1795, "drafted": 3899, "accepted": 3331, "acceptance_rate": 0.8543216209284432}}}
+{"id": "turn-06", "status": 200, "dur_s": 44.23, "t_end": 1788128282.289, "sha": "08805d319ead89ce", "content_len": 6500, "usage": {"prompt_tokens": 10075, "completion_tokens": 4207, "total_tokens": 14282, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 44.209173003, "spec": {"rounds": 1505, "drafted": 3075, "accepted": 2602, "acceptance_rate": 0.8461788617886179}}}
+{"id": "turn-07", "status": 200, "dur_s": 47.33, "t_end": 1788128329.615, "sha": "afa6d9957420e1a7", "content_len": 3469, "usage": {"prompt_tokens": 11785, "completion_tokens": 4335, "total_tokens": 16120, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 47.301111563, "spec": {"rounds": 1571, "drafted": 3246, "accepted": 2655, "acceptance_rate": 0.8179297597042514}}}
+{"id": "turn-08", "status": 200, "dur_s": 47.21, "t_end": 1788128376.829, "sha": "d9960fde11d3677b", "content_len": 6200, "usage": {"prompt_tokens": 12696, "completion_tokens": 4164, "total_tokens": 16860, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 47.186696003, "spec": {"rounds": 1624, "drafted": 3054, "accepted": 2444, "acceptance_rate": 0.8002619515389653}}}
+MODE=turns ok=8/8 fail=0
+22:19:36 N2 turns done ok=8/8
+22:19:43 dmesg[N2]: 0
+0 fault line(s)
+--- receipts N2 (serve-N2.log)
+admit_cal: 2
+[admit-cal] boot calibration done: model="step37" transient floor 1536MB (static was 1536MB; measured 1207MB; probe kv charge 358MB, draft-state 2619MB, drafted 48 accepted 48; [dev0 peak-mapped 78368MB rest-mapped 76256MB charged 3146MB -> 0MB; dev1 peak-mapped 59328MB rest-mapped 57952MB charged 168MB -> 1207MB]; 2.3s)
+vram_defer_lines: 0
+vram_reject_lines: 0
+oom_parks: 0
+oom_not_parked: 0
+teardown_lines: 0
+capture_warns: 8
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4046MB (driver 3732MB + pool-cached 313MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 4023MB (driver 3060MB + pool-cached 963MB) < required 8311MB (2x appetite 2619MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+capture_receipts: 1
+draft_state_lines: 1
+[spec] draft-session state high-water: 2619MB (max of parked delta 2608MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+engine_errors: 0
+oom_lines: 0
+illegal=0 sentinel87=0 panic=0
+22:19:43 === PHASE N done ===

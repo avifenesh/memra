@@ -1,0 +1,23 @@
+{
+  "comparisons": [
+    {
+      "argmax": 5,
+      "argmax_match": true,
+      "candidate": "logits-row2-q8.tsv",
+      "cosine": 0.9986501481766639,
+      "engine": "memra-native-serving-numeric",
+      "max_abs": 0.5120782852172852,
+      "max_abs_index": 4309,
+      "max_rel": 3103.4058823529413,
+      "mean_abs": 0.07937702270529541,
+      "numeric_class": "serving-weight-and-cache-formats",
+      "reference_argmax": 5,
+      "rmse": 0.09979501972649603,
+      "top20_overlap": 20
+    }
+  ],
+  "format": "memra-checkpoint-oracle-comparison-v1",
+  "reference": "logits-row2-exact.tsv",
+  "reference_engine": "memra-native-serving-numeric",
+  "reference_numeric_class": "serving-weight-and-cache-formats"
+}

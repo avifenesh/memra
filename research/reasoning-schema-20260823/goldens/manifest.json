@@ -1,0 +1,440 @@
+{
+  "_refused_by_template": {
+    "": "Unexpected reasoning effort . Supported types are xhigh (default), medium, and low.",
+    "banana": "Unexpected reasoning effort banana. Supported types are xhigh (default), medium, and low.",
+    "high": null,
+    "minimal": "Unexpected reasoning effort minimal. Supported types are xhigh (default), medium, and low.",
+    "none": "Unexpected reasoning effort none. Supported types are xhigh (default), medium, and low."
+  },
+  "empty_system_low": {
+    "bytes": 226,
+    "kwargs": {
+      "reasoning_effort": "low"
+    },
+    "messages": [
+      {
+        "content": "",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "multiturn_default": {
+    "bytes": 393,
+    "kwargs": {},
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      },
+      {
+        "content": "hello there",
+        "role": "assistant"
+      },
+      {
+        "content": "again",
+        "role": "user"
+      }
+    ]
+  },
+  "multiturn_off": {
+    "bytes": 167,
+    "kwargs": {
+      "enable_thinking": false
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      },
+      {
+        "content": "hello there",
+        "role": "assistant"
+      },
+      {
+        "content": "again",
+        "role": "user"
+      }
+    ]
+  },
+  "multiturn_reasoned_off": {
+    "bytes": 194,
+    "kwargs": {
+      "enable_thinking": false
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      },
+      {
+        "content": "hello there",
+        "reasoning_content": "the user greets; greet back",
+        "role": "assistant"
+      },
+      {
+        "content": "again",
+        "role": "user"
+      }
+    ]
+  },
+  "plain_default": {
+    "bytes": 297,
+    "kwargs": {},
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "plain_low": {
+    "bytes": 226,
+    "kwargs": {
+      "reasoning_effort": "low"
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "plain_medium": {
+    "bytes": 60,
+    "kwargs": {
+      "reasoning_effort": "medium"
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "plain_off": {
+    "bytes": 71,
+    "kwargs": {
+      "enable_thinking": false
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "plain_off_with_level": {
+    "bytes": 71,
+    "kwargs": {
+      "enable_thinking": false,
+      "reasoning_effort": "low"
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "plain_xhigh": {
+    "bytes": 297,
+    "kwargs": {
+      "reasoning_effort": "xhigh"
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "system_default": {
+    "bytes": 313,
+    "kwargs": {},
+    "messages": [
+      {
+        "content": "You are terse.",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "system_low": {
+    "bytes": 242,
+    "kwargs": {
+      "reasoning_effort": "low"
+    },
+    "messages": [
+      {
+        "content": "You are terse.",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "system_medium": {
+    "bytes": 104,
+    "kwargs": {
+      "reasoning_effort": "medium"
+    },
+    "messages": [
+      {
+        "content": "You are terse.",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "system_off": {
+    "bytes": 115,
+    "kwargs": {
+      "enable_thinking": false
+    },
+    "messages": [
+      {
+        "content": "You are terse.",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "system_xhigh": {
+    "bytes": 313,
+    "kwargs": {
+      "reasoning_effort": "xhigh"
+    },
+    "messages": [
+      {
+        "content": "You are terse.",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "tools_default": {
+    "bytes": 1378,
+    "kwargs": {
+      "tools": [
+        {
+          "function": {
+            "description": "Get the weather",
+            "name": "get_weather",
+            "parameters": {
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "tools_low": {
+    "bytes": 1307,
+    "kwargs": {
+      "reasoning_effort": "low",
+      "tools": [
+        {
+          "function": {
+            "description": "Get the weather",
+            "name": "get_weather",
+            "parameters": {
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "tools_medium": {
+    "bytes": 1169,
+    "kwargs": {
+      "reasoning_effort": "medium",
+      "tools": [
+        {
+          "function": {
+            "description": "Get the weather",
+            "name": "get_weather",
+            "parameters": {
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "tools_xhigh": {
+    "bytes": 1378,
+    "kwargs": {
+      "reasoning_effort": "xhigh",
+      "tools": [
+        {
+          "function": {
+            "description": "Get the weather",
+            "name": "get_weather",
+            "parameters": {
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "two_system_off": {
+    "bytes": 116,
+    "kwargs": {
+      "enable_thinking": false
+    },
+    "messages": [
+      {
+        "content": "rules",
+        "role": "system"
+      },
+      {
+        "content": "dev rules",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "two_system_tools_low": {
+    "bytes": 1324,
+    "kwargs": {
+      "reasoning_effort": "low",
+      "tools": [
+        {
+          "function": {
+            "description": "Get the weather",
+            "name": "get_weather",
+            "parameters": {
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "function"
+        }
+      ]
+    },
+    "messages": [
+      {
+        "content": "rules",
+        "role": "system"
+      },
+      {
+        "content": "dev rules",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  },
+  "two_system_xhigh": {
+    "bytes": 314,
+    "kwargs": {
+      "reasoning_effort": "xhigh"
+    },
+    "messages": [
+      {
+        "content": "rules",
+        "role": "system"
+      },
+      {
+        "content": "dev rules",
+        "role": "system"
+      },
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ]
+  }
+}

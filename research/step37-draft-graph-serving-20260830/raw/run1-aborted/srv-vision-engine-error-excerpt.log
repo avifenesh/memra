@@ -1,0 +1,31 @@
+[step-tp] execute layer=40 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=41 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=42 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=43 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=44 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[fa-pool] grow #4 dev=0 o_len 114688 -> 229376 ml_len 896 -> 1792 (retired kept, zero=false)
+[fa-pool] grow #5 dev=1 o_len 114688 -> 229376 ml_len 896 -> 1792 (retired kept, zero=false)
+[meter] admit id=chatcmpl-50195cfa162141fc51c115f7c435b9e1 tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=115 path=spec = 89088 B/token x ctx + 18MB fixed = 28MB
+[admission] parallel device plan: [dev0 session 28MB + tp-kv 5MB + pending-tp-kv 0MB + reserve 1611MB + boundary 0.000MB; dev1 session 0MB + tp-kv 5MB + pending-tp-kv 0MB + reserve 1611MB + boundary 0.000MB]
+[prefix-cache] refused for MEMRA_SWA_RING=1 Step35 session (flat-history snapshots/restores are excluded)
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=43 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[step35-prime-batch] first concat prime: B=1 tokens=43
+[gemm-prime] ENGAGED t=43 base=0 seq_end=43 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot=128 rope_base=10000 clamp_shexp=None
+[spec] WARN: sampled draft-graph capture failed (fa_decode_dcw supports the default v3-vec class only                         (bucket >= vec floor, head_dim <= 256, MEMRA_FA_V3 on);                         keep eager outside it); eager fallback until session resume
+[engine-error] class=Engine step error: fa_decode_dcw supports the default v3-vec class only                         (bucket >= vec floor, head_dim <= 256, MEMRA_FA_V3 on);                         keep eager outside it
+[meter] admit id=chatcmpl-50b979550ef93f0a599bec3fd0496e5f tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=3777 path=spec = 89088 B/token x ctx + 18MB fixed = 354MB
+[admission] parallel device plan: [dev0 session 354MB + tp-kv 158MB + pending-tp-kv 0MB + reserve 1611MB + boundary 0.000MB; dev1 session 0MB + tp-kv 158MB + pending-tp-kv 0MB + reserve 1611MB + boundary 0.000MB]
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=713 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="step37" 21MB (observed 331MB at ctx 3721 path=plain)
+[gemm-prime] WALK t=713 base=0 seq_end=713 (batched prime declined)
+[fa-pool] grow #6 dev=0 o_len 229376 -> 458752 ml_len 1792 -> 3584 (retired kept, zero=false)
+[fa-pool] grow #7 dev=1 o_len 229376 -> 458752 ml_len 1792 -> 3584 (retired kept, zero=false)
+[meter] admit id=chatcmpl-1126c8547074b864f838469028c6a4fe tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=3452 path=spec = 89088 B/token x ctx + 21MB fixed = 328MB
+[admission] parallel device plan: [dev0 session 328MB + tp-kv 144MB + pending-tp-kv 0MB + reserve 1611MB + boundary 0.000MB; dev1 session 0MB + tp-kv 144MB + pending-tp-kv 0MB + reserve 1611MB + boundary 0.000MB]
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=388 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[gemm-prime] WALK t=388 base=0 seq_end=388 (batched prime declined)

@@ -1,0 +1,104 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+:root{--bg:#f4f6f8;--surface:#ffffff;--text:#1a1a1a;--muted:#5a6573;--accent:#005f99;--border:#cfd8dc;--focus:#ffbf47;--danger:#c62828;--success:#2e7d32;--warn:#f9a825}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.45}
+header{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom:1px solid var(--border);padding:0.75rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+header h1{font-size:1.25rem;margin:0;white-space:nowrap}
+header .search{flex:1;min-width:200px}
+header input[type=search]{width:100%;padding:0.5rem 0.6rem;border:1px solid var(--border);border-radius:4px;font:inherit}
+header .status{display:flex;gap:0.5rem;align-items:center;font-size:0.9rem}
+.badge{display:inline-block;padding:0.2rem 0.5rem;border-radius:4px;background:var(--muted);color:#fff;font-size:0.8rem}
+.badge.ok{background:var(--success)}
+.badge.warn{background:var(--warn)}
+.badge.err{background:var(--danger)}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:280px;background:var(--surface);border-right:1px solid var(--border);padding:1rem;overflow:auto;transform:translateX(-100%);transition:transform .2s;z-index:90}
+.sidebar.open{transform:translateX(0)}
+.sidebar nav a{display:block;padding:0.35rem 0;color:var(--text);text-decoration:none;font-size:0.95rem}
+.sidebar nav a:hover{text-decoration:underline}
+main{margin-left:0;padding:1rem}
+@media(min-width:800px){.sidebar{transform:translateX(0)}main{margin-left:300px}}
+button{cursor:pointer;font:inherit}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+h2{font-size:1.15rem;margin:1.5rem 0 0.25rem}
+section{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:1rem;margin:1rem 0}
+section>p{margin:0.4rem 0}
+dl{display:grid;grid-template-columns:auto 1fr;gap:0.25rem 1rem;margin:0.6rem 0}
+dt{font-weight:600}
+dd{margin:0}
+table{width:100%;border-collapse:collapse;margin:0.5rem 0;font-size:0.95rem}
+th,td{border:1px solid var(--border);padding:0.4rem 0.6rem;text-align:left}
+th{background:#eef1f5}
+pre{background:#0f1419;color:#c9d1d9;padding:0.6rem;border-radius:4px;overflow:auto;font-size:0.9rem}
+.actions{display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem}
+button.primary{background:var(--accent);color:#fff;border:none;padding:0.5rem 0.8rem;border-radius:4px}
+button.secondary{background:#e3e8ee;color:var(--text);border:1px solid var(--border);padding:0.5rem 0.8rem;border-radius:4px}
+.toast{position:fixed;bottom:1rem;right:1rem;background:#222;color:#fff;padding:0.6rem 0.9rem;border-radius:4px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:200}
+.toast.show{opacity:1}
+.skip{position:absolute;left:-9999px}
+.skip:focus{left:1rem;top:1rem;background:var(--surface);padding:0.5rem;border:1px solid var(--border);z-index:200}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header>
+<button class="secondary" id="menuBtn" aria-expanded="false" aria-controls="sidebar">Menu</button>
+<h1>Atlas Operations Manual</h1>
+<div class="search">
+<input type="search" id="searchField" placeholder="Search sections..." aria-label="Search sections">
+</div>
+<div class="status" aria-live="polite">
+<span class="badge ok" id="sysStatus">SYSTEM OK</span>
+<span class="badge" id="secCount">0 / 400</span>
+</div>
+</header>
+<aside class="sidebar" id="sidebar" aria-label="Section navigation">
+<nav id="toc"></nav>
+</aside>
+<main id="main">
+<section id="s0001">
+<h2>1. Introduction and Scope</h2>
+<p>This manual defines operational parameters for the Atlas platform. Personnel must review applicable sections before performing maintenance or configuration tasks.</p>
+<p>Scope covers hardware, software, network, safety, and compliance. Each numbered section is authoritative and supersedes informal guidance.</p>
+<dl>
+<dt>Audience</dt><dd>Operators, engineers, auditors</dd>
+<dt>Revision</dt><dd>2025-11-10</dd>
+<dt>Classification</dt><dd>Internal Use</dd>
+<dt>Approval</dt><dd>Chief Systems Officer</dd>
+</dl>
+<table>
+<thead><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Notes</th><th>Source</th><th>Review Date</th></tr></thead>
+<tbody>
+<tr><td>Uptime target</td><td>99.95</td><td>%</td><td>Annual</td><td>SLA-01</td><td>2026-01-01</td></tr>
+<tr><td>Max latency</td><td>120</td><td>ms</td><td>P95</td><td>PERF-04</td><td>2025-12-01</td></tr>
+<tr><td>Backup interval</td><td>6</td><td>hours</td><td>Incremental</td><td>OPS-12</td><td>2025-11-15</td></tr>
+<tr><td>Patch window</td><td>02:00</td><td>UTC</td><td>Tuesday</td><td>CHG-07</td><td>2025-11-20</td></tr>
+<tr><td>Incident response</td><td>15</td><td>minutes</td><td>P1</td><td>INC-03</td><td>2025-12-10</td></tr>
+<tr><td>Capacity headroom</td><td>30</td><td>%</td><td>Sustained</td><td>CAP-09</td><td>2026-02-01</td></tr>
+</tbody>
+</table>
+<pre>atlasctl verify --all --strict</pre>
+<div class="actions">
+<button class="primary" data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s0002">
+<h2>2. Terminology</h2>
+<p>Standardized terms ensure unambiguous communication. Terms defined here apply throughout this manual unless otherwise noted.</p>
+<p>When in doubt, consult the glossary appendix or query the terminology service.</p>
+<dl>
+<dt>Node</dt><dd>A single host in the cluster</dd>
+<dt>Shard</dt><dd>A partitioned data subset</dd>
+<dt>Quorum</dt><dd>Majority consensus for writes</dd>
+<dt>Replica</dt><dd>Readable copy of data</dd>
+</dl>
+<table>
+<thead><tr><th>Term</th><th>Definition</th><th>Context</th><th>Example</th><th>Status</th><th>Updated</th></tr></thead>
+<tbody>
+<tr

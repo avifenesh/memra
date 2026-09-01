@@ -1,0 +1,10 @@
+engage=bf16-tcols-wide(T,default-on) expected=1 lines=1
+engage=bf16-tcols-x1(X,default-on) expected=1 lines=1
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=1 lines=1
+engage=glm5-verify-ws(W,default-on) expected=1 lines=1
+engage=moe-vrows-dev-tables(D) expected=0 lines=0
+engage=moe-vrows-dedup(S) expected=0 lines=0
+engage=verify-walk-batched expected=1 lines=1
+engage=verify-walk-per-row expected=0 lines=0
+engage=glm5-vrows expected=1 lines=1

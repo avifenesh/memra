@@ -1,0 +1,34 @@
+[server] starting; models config = [("m", "/scratch-models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", Some("/scratch-models/draft-daily-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[worker] loading model "m" <- /scratch-models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] m: regime draft attached (/scratch-models/draft-daily-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "m": 65 layers, eos=248046
+[worker] m: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] m: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["m"]
+[server] listening on http://127.0.0.1:8318
+[meter] admit id=cmpl-5005e5740ed3b1ccfa6077818fb64e5c tenant=default lane=interactive model="m"
+[worker] observed session VRAM cost for "m": 336MB (admission gate = 2x)
+[spec-acc] ctx=28 burst=20/39 cum=20/39=0.513
+[spec-acc] ctx=62 burst=22/33 cum=42/72=0.583
+[spec-acc] ctx=95 burst=22/30 cum=64/102=0.627
+[spec-acc] ctx=127 burst=21/24 cum=85/126=0.675
+[meter] admit id=cmpl-c09ac3ba1e2f707601d8a23939e4e771 tenant=default lane=interactive model="m"
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 28; 1 parked, 1845 prompt tokens; model m)
+[spec-acc] ctx=1845 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=1879 burst=24/33 cum=45/69=0.652
+[spec-acc] ctx=1914 burst=24/27 cum=69/96=0.719
+[spec-acc] ctx=1947 burst=18/27 cum=87/123=0.707
+[meter] admit id=cmpl-b0a540b8e480504847b86d994d147ce9 tenant=default lane=interactive model="m"
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1845; 1 parked, 5411 prompt tokens; model m)
+[spec-acc] ctx=5411 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=5445 burst=24/30 cum=45/66=0.682
+[spec-acc] ctx=5479 burst=23/27 cum=68/93=0.731
+[spec-acc] ctx=5511 burst=23/24 cum=91/117=0.778
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

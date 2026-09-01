@@ -1,0 +1,49 @@
+phase=ncu start=2026-08-11T17:09:47Z
+ncu_devices=0
+host=<private-host-redacted>
+source_commit=1808220ead39d515a0854df49d1bb6452b558209
+source_status=0
+run_gen_sha256=706a6c7ccec59088750e7fe1351d7b9225b1701de33d316b765c3cdac618527a
+profile_bin=/opt/scratch/nvme/ncuspike-20260811/profile-target/release/ncuspike-profile
+profile_bin_sha256=5339bc01dfbcfd21d1e8e9c36df68b2485f508db2c4b09955f5eef8fc5746268
+model_first_part=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+model_part=Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-06T12:39:44.6703281470Z
+model_part=Step-3.7-flash-IQ4_XS-00002-of-00003.gguf bytes=46999941600 mtime=2026-08-06T12:42:15.1087994100Z
+model_part=Step-3.7-flash-IQ4_XS-00003-of-00003.gguf bytes=11510293728 mtime=2026-08-06T12:42:57.8846473420Z
+model_total_bytes=104993562624
+model_receipt=/home/ubuntu/memra-cx-sigrouter2/research/throughput-20260810/raw/block-baseline-20260809T222030Z/artifact-sha256.txt
+b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259  /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+e7e0caaaf0057fabc8bf9b71cbe41322f9945a44df7240bb58e6b7c375e7ffec  /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf
+ccbd3df81b4f4cb8e73d899734944bcbdefcf436faec9203353419c6750c0590  /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf
+shape=PP2 devices=0,1 stage-owned-KV resident-default sigmoid-router serving B=1 synthetic-depth=512
+clock_regime=stock 600W no application clock or power cap
+NVIDIA Nsight Systems version 2026.1.3.425-261338342291v0
+NVIDIA (R) Nsight Compute Command Line Profiler
+Copyright (c) 2018-2026 NVIDIA Corporation
+Version 2026.1.0.0 (build 37166530) (public-release)
+GPU_LOCK_ACQUIRED ts=2026-08-11T17:09:47Z
+host_pressure tmp_avail_kib=81148556 mem_avail_kib=413555176 swap_used_kib=0 swap_total_kib=0
+HOST_PRESSURE_PASS
+==WARNING== Note: Running with unmodified GPU clocks. If not controlled otherwise, profiling results may be inconsistent.
+==PROF== Connected to process 845265 (/opt/scratch/nvme/ncuspike-20260811/profile-target/release/ncuspike-profile)
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.72GB (expert budget 94.81GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.60GB (expert budget 94.68GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+==PROF== Profiling "qmatvec_iq4_XS_dp4a": 0%....50%....100% - 11 passes
+==PROF== Profiling "qmatvec_iq4_XS_dp4a": 0%....50%....100% - 11 passes
+==PROF== Profiling "qmatvec_iq4_XS_dp4a": 0%....50%....100% - 11 passes
+==PROF== Profiling "fa_decode_vec_q_v3": 0%....50%....100% - 11 passes
+==PROF== Profiling "qmatvec_iq4_XS_dp4a": 0%....50%....100% - 11 passes
+==PROF== Profiling "qmatvec_iq4_XS_dp4a": 0%....50%....100% - 11 passes
+==PROF== Profiling "qmatvec_iq4_XS_dp4a": 0%....50%....100% - 11 passes
+==PROF== Profiling "qmatvec_iq4_XS_dp4a": 0%....50%....100% - 11 passes
+==PROF== Profiling "fa_decode_vec_q_v3": 0%....50%....100% - 11 passes
+==PROF== Profiling "moe_gate_up_silu8_dev_q8_v_rows": 0%....50%....100% - 11 passes
+==PROF== Profiling "moe_down8_fma_dev_q8_rows_g": 0%....50%....100% - 11 passes
+==PROF== Profiling "qmatvec_iq4_XS_dp4a": 0%....50%....100% - 11 passes
+serving decode window @d512: 2 tokens in 680.687s = 0.0 tok/s (340343475.7 us/tok) final_token=163
+==PROF== Disconnected from process 845265
+==PROF== Report: /opt/scratch/nvme/ncuspike-20260811/ncu-device0/decode.ncu-rep
+ncu_rc=0
+phase=ncu done=2026-08-11T17:21:49Z

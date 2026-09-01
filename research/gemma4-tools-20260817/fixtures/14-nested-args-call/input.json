@@ -1,0 +1,93 @@
+{
+  "template": "official",
+  "request": {
+    "model": "g4",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Book it."
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "c1",
+            "function": {
+              "name": "book_trip",
+              "arguments": "{\"traveler\": {\"name\": \"Avi\", \"age\": 30}, \"legs\": [{\"frm\": \"TLV\", \"to\": \"CDG\"}, {\"frm\": \"CDG\", \"to\": \"OSL\"}], \"class\": \"business\", \"flexible\": true}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "booked: ref 88f3",
+        "tool_call_id": "c1"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "book_trip",
+          "description": "Book a multi-leg trip",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "traveler": {
+                "type": "object",
+                "description": "Who travels",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "age": {
+                    "type": "integer",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              },
+              "legs": {
+                "type": "array",
+                "description": "Trip legs in order",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "frm": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "frm",
+                    "to"
+                  ]
+                }
+              },
+              "class": {
+                "type": "string",
+                "enum": [
+                  "economy",
+                  "business"
+                ]
+              },
+              "flexible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "traveler",
+              "legs"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

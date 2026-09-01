@@ -1,0 +1,26 @@
+NOTICE: Existing SQLite export found: prof-nvfp4mix-q8rp.sqlite
+        It is assumed file was previously exported from: prof-nvfp4mix-q8rp.nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [prof-nvfp4mix-q8rp.sqlite] with [/opt/nvidia/nsight-compute/2025.4.1/host/target-linux-x64/reports/cuda_gpu_kern_sum.py]... 
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+39.8,424066621,7680,55217.0,60686.0,24735,85823,28194.2,qmatvec_nvfp4_mmvq_fused2_rp
+38.4,409398606,7104,57629.3,77407.0,15776,920239,87517.6,qmatvec_q8_0_mmvq_rp
+7.0,74178843,3840,19317.4,16831.0,16319,33023,5719.0,qmatvec_nvfp4_mmvq_mr2_rp
+3.1,33280136,7744,4297.5,4288.0,3775,5120,302.5,rms_norm_f32
+2.7,28787008,3200,8995.9,8960.0,8703,9696,164.2,fa_decode_vec_q_v4
+1.7,17866750,3776,4731.7,4736.0,3936,5408,199.7,add_scale_rms_norm_q8_1
+1.6,16596093,3840,4321.9,4320.0,4031,4704,132.3,gelu_tanh_mul_q8_1
+1.5,16025606,3840,4173.3,4160.0,3936,4672,105.8,add_rms_norm_f32
+1.1,11326522,3200,3539.5,3552.0,3327,3968,156.2,fa_decode_combine_f32
+1.0,10249547,640,16014.9,16000.0,15775,16416,117.2,fa_decode_vec_q_rows_v4_512_tb
+0.9,9173865,3840,2389.0,2336.0,2080,2880,123.1,rms_norm_qkv_rope_f32
+0.8,8944470,7744,1155.0,1152.0,1088,1248,28.3,quantize_q8_1
+0.3,3663841,3840,954.1,960.0,896,1056,19.3,append_quantize_kv_q8_0_q5_1
+0.2,2232421,640,3488.2,3520.0,3327,3808,109.7,fa_decode_combine_rows_dc
+0.0,455124,640,711.1,704.0,672,768,19.8,i32_set_k
+0.0,196219,64,3065.9,3040.0,3008,3232,44.5,rms_norm_q8_1
+0.0,104094,64,1626.5,1632.0,1376,1888,104.9,add_scale_f32
+0.0,92896,64,1451.5,1440.0,1408,1568,24.4,softcap_f32
+0.0,55231,64,863.0,864.0,832,896,12.7,scale_f32
+

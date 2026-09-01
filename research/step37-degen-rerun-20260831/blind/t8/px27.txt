@@ -1,0 +1,47 @@
+finish=stop content_nonempty=True
+---
+---
+### GitHub Issue #1099 Triage & Resolution
+---
+#### 1. Triage
+- **Issue Type**: Confirmed bug (not a support question)
+- **Severity**: Low (no functional impact to the Agnix plugin itself, only broken public links in the JetBrains Marketplace listing)
+- **Root Cause**: Outdated marketplace metadata in the plugin's Gradle build configuration, pointing to a deprecated documentation site and stale archived repository URL.
+
+---
+#### 2. Investigation (Read-Only, No File Changes)
+1. Located the plugin's marketplace metadata definition in `build.gradle.kts` under the `intellij` plugin configuration block:
+   - Existing `documentationUrl`: `https://agent-sh.github.io/agnix-old-docs/` (confirmed returns 404 via HTTP check)
+   - Existing `sourceCodeUrl`: `https://github.com/agnix-legacy/agnix` (confirmed points to a deprecated, read-only archived repo, not the active `agent-sh/agnix` repository)
+2. Verified correct current URLs:
+   - Active documentation: `https://agent-sh.github.io/agnix/` (returns 200 OK, matches current docs structure)
+   - Active source code: `https://github.com/agent-sh/agnix` (matches the repository this issue was filed in)
+3. Ran a repo-wide grep for the stale URLs: no other instances found in config, README, or plugin XML files.
+
+---
+#### 3. Implementation (Dedicated Branch, No Functional Code Changes)
+No plugin logic changes were required — only metadata updates:
+1. Created branch `fix/marketplace-broken-links` off `main`
+2. Updated the two broken metadata fields in `build.gradle.kts`:
+   ```kotlin
+   // Before
+   documentationUrl = "https://agent-sh.github.io/agnix-old-docs/"
+   sourceCodeUrl = "https://github.com/agnix-legacy/agnix"
+   
+   // After
+   documentationUrl = "https://agent-sh.github.io/agnix/"
+   sourceCodeUrl = "https://github.com/agent-sh/agnix"
+   ```
+3. Ran `./gradlew build` to validate the plugin builds successfully with no regressions, and confirmed the updated metadata is correctly embedded in the built plugin artifact.
+4. Pushed the branch and opened a pull request against `main` with a clear description of the fix, linked directly to issue #1099.
+
+---
+#### 4. Validation
+- New documentation URL returns 200 OK
+- New source code URL resolves correctly to the active repository
+- No build or test regressions introduced
+- No other stale URL references remain in the codebase
+
+---
+#### 5. Summary
+This was a low-severity metadata bug with no functional impact to the plugin. I identified the root cause as outdated marketplace metadata in the Gradle build config, created a fix branch with only the two broken URL updates, validated the build passes, and opened a PR for merge. Once merged, the corrected links will appear in the JetBrains Marketplace listing on the next plugin release. No functional code was modified.

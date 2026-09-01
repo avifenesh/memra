@@ -1,0 +1,113 @@
+=== arm=p0-tp2gate start=2026-08-31T11:38:27Z ===
+=== cmd: cd ~/memra && ./target/release/qwen4exp_real_gate ~/data/q48fn-nvfp4 ~/realgate/kvq2 --label r2base-tp2 --tp2 --goldens ~/realgate/dump --tp2-gate 24 ===
+# qwen4exp_real_gate	label=r2base-tp2	binary_sha256=c8b1af69dcc05e19c020bcb810a6d7d5f5445df7963716ab550654a0f63ff50e	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+# tp2-placement	strategy=even	entry_rank=0	experts=512	source=built-in (MEMRA_Q4E_EP_MAP unset)
+# load	170.0s
+# vram	post-load	0, 92755 MiB, 97887 MiB | 1, 40211 MiB, 97887 MiB
+# qwen4exp_real_gate	label=r2base-tp2	binary_sha256=c8b1af69dcc05e19c020bcb810a6d7d5f5445df7963716ab550654a0f63ff50e	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# tp2-gate: single-card vs TP2, same fed tokens (single-card argmax chain)
+step	fed	max_abs	max_rel	ref_absmax	top1_single	top1_tp2	match
+0	271	8.106e-6	6.676e-6	1.363e1	248045	248045	true
+1	248045	1.574e-5	1.374e-5	1.252e1	271	271	true
+2	271	8.345e-6	7.749e-6	1.546e1	248045	248045	true
+3	248045	1.764e-5	1.603e-5	1.459e1	271	271	true
+4	271	1.287e-5	1.264e-5	1.799e1	248045	248045	true
+5	248045	1.287e-5	1.276e-5	1.763e1	248046	248046	true
+6	248046	1.526e-5	1.127e-5	2.538e1	198	198	true
+7	198	1.085e-5	1.085e-5	3.000e1	248045	248045	true
+8	248045	8.106e-6	7.391e-6	2.373e1	846	846	true
+9	846	3.135e-5	3.016e-5	2.006e1	198	198	true
+10	198	1.955e-5	1.675e-5	1.544e1	248045	248045	true
+11	248045	2.933e-5	2.742e-5	1.631e1	248046	248046	true
+12	248046	1.287e-5	1.287e-5	3.618e1	198	198	true
+13	198	2.575e-5	1.740e-5	2.937e1	248045	248045	true
+14	248045	1.526e-5	8.643e-6	1.836e1	74455	74455	true
+15	74455	8.762e-6	8.762e-6	2.059e1	198	198	true
+16	198	2.468e-5	2.468e-5	3.215e1	248068	248068	true
+17	248068	3.052e-5	2.229e-5	2.496e1	198	198	true
+18	198	2.408e-5	2.408e-5	2.163e1	760	760	true
+19	760	1.335e-5	1.335e-5	2.170e1	1156	1156	true
+20	1156	9.596e-6	9.596e-6	2.159e1	682	682	true
+21	682	1.144e-5	1.085e-5	2.280e1	3106	3106	true
+22	3106	1.419e-5	1.305e-5	2.185e1	328	328	true
+23	328	1.639e-5	1.639e-5	1.969e1	248045	248045	true
+# verdict	steps=24	argmax_matches=24	worst_abs=3.135e-5	worst_rel=3.016e-5	policy=max_rel<=0.01+argmax	pass=true
+
+# tp2-gate receipt: /home/ubuntu/realgate/kvq2/tp2-gate-r2base-tp2.tsv
+# qwen4exp_real_gate	label=r2base-tp2	binary_sha256=c8b1af69dcc05e19c020bcb810a6d7d5f5445df7963716ab550654a0f63ff50e	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# load_seconds=170.0
+# vram	post-load	0, 92755 MiB, 97887 MiB | 1, 40211 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.27
+# vram	post-prefill	0, 92915 MiB, 97887 MiB | 1, 40211 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.069e-2	1.069e-2	6.315e-4	5.039e-1
+layer4	10	10240	2.400e-2	2.400e-2	8.802e-4	5.000e-1
+layer5	10	10240	4.044e-2	2.199e-2	1.002e-3	3.047e0
+layer6	10	10240	3.950e-2	2.825e-2	1.187e-3	3.078e0
+layer7	10	10240	3.766e-2	3.047e-2	1.342e-3	3.047e0
+layer8	10	10240	3.723e-2	3.028e-2	1.464e-3	3.062e0
+layer9	10	10240	3.919e-2	3.018e-2	1.565e-3	3.062e0
+layer10	10	10240	3.944e-2	3.034e-2	1.643e-3	3.125e0
+layer11	10	10240	4.564e-2	3.057e-2	1.741e-3	3.016e0
+layer12	10	10240	3.579e-2	3.108e-2	1.835e-3	2.953e0
+layer13	10	10240	3.742e-2	3.152e-2	1.919e-3	2.984e0
+layer14	10	10240	3.983e-2	3.028e-2	2.022e-3	3.016e0
+layer15	10	10240	3.942e-2	3.175e-2	2.104e-3	2.953e0
+layer16	10	10240	3.426e-2	3.027e-2	2.300e-3	2.938e0
+layer17	10	10240	3.720e-2	3.012e-2	2.368e-3	2.969e0
+layer18	10	10240	3.641e-2	3.641e-2	2.649e-3	2.969e0
+layer19	10	10240	3.828e-2	3.828e-2	2.727e-3	3.000e0
+layer20	10	10240	3.628e-2	3.628e-2	2.774e-3	2.938e0
+layer21	10	10240	3.821e-2	3.821e-2	2.970e-3	2.969e0
+layer22	10	10240	3.808e-2	3.808e-2	3.195e-3	2.969e0
+layer23	10	10240	4.135e-2	4.135e-2	3.286e-3	2.969e0
+layer24	10	10240	4.415e-2	4.415e-2	3.629e-3	3.828e0
+layer25	10	10240	4.598e-2	4.598e-2	3.749e-3	3.859e0
+layer26	10	10240	4.796e-2	4.796e-2	4.048e-3	5.062e0
+layer27	10	10240	5.241e-2	5.241e-2	4.362e-3	4.750e0
+layer28	10	10240	6.440e-2	6.440e-2	4.784e-3	4.531e0
+layer29	10	10240	7.918e-2	7.918e-2	5.283e-3	4.469e0
+layer30	10	10240	8.751e-2	8.751e-2	5.835e-3	4.438e0
+layer31	10	10240	1.252e-1	1.252e-1	6.236e-3	4.281e0
+layer32	10	10240	1.439e-1	1.439e-1	6.911e-3	3.891e0
+layer33	10	10240	1.524e-1	1.524e-1	7.579e-3	3.844e0
+layer34	10	10240	1.494e-1	1.494e-1	8.300e-3	3.828e0
+layer35	10	10240	1.632e-1	1.632e-1	9.258e-3	3.859e0
+layer36	10	10240	3.300e-1	3.300e-1	1.263e-2	6.844e0
+layer37	10	10240	3.278e-1	3.278e-1	1.420e-2	7.094e0
+layer38	10	10240	3.274e-1	3.274e-1	1.643e-2	7.094e0
+layer39	10	10240	3.848e-1	3.778e-1	1.920e-2	7.188e0
+layer40	10	10240	4.305e-1	4.217e-1	2.234e-2	7.219e0
+layer41	10	10240	4.475e-1	4.108e-1	2.430e-2	7.125e0
+layer42	10	10240	4.586e-1	3.913e-1	2.669e-2	7.156e0
+layer43	10	10240	4.799e-1	4.158e-1	2.980e-2	7.188e0
+layer44	10	10240	6.259e-1	6.259e-1	3.642e-2	1.162e1
+layer45	10	10240	7.158e-1	7.060e-1	4.507e-2	1.169e1
+layer46	10	10240	8.605e-1	8.605e-1	5.328e-2	1.350e1
+layer47	10	10240	9.034e-1	9.034e-1	5.724e-2	2.575e1
+exit_mixer	10	2560	1.279e1	6.599e0	4.373e-1	1.880e2
+logits	10	248320	6.183e0	4.901e0	2.689e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.553e-1	3.553e-1	1.231e1	20438	20438	true
+1	1.170e0	1.057e0	1.431e1	4087	4087	true
+2	1.182e0	1.046e0	1.800e1	37550	37550	true
+3	1.315e0	1.012e0	1.638e1	33075	33075	true
+4	1.883e0	1.825e0	1.888e1	888	888	true
+5	1.522e0	1.332e0	1.862e1	279	279	true
+6	2.620e0	1.682e0	1.950e1	15217	15217	true
+7	1.841e0	1.686e0	1.888e1	5388	5388	true
+8	1.908e0	1.846e0	1.575e1	13	13	true
+9	6.183e0	4.901e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/home/ubuntu/realgate/kvq2/probe-logits-r2base-tp2.bin	rows=10	vocab=248320
+
+# hidden receipt: /home/ubuntu/realgate/kvq2/hidden-gate-r2base-tp2.tsv
+=== arm=p0-tp2gate rc=0 end=2026-08-31T11:41:24Z ===

@@ -1,0 +1,23 @@
+BUILD_START=2026-08-12T22:08:03Z
+6c70dfdc4785bd0fdf679c4b24462a0783c83972
+?? research/fa3softmax-20260813/raw/build-baseline.log
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Tue_Dec_16_07:23:41_PM_PST_2025
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+error: failed to create directory `/data/codex-targets`
+
+Caused by:
+  Permission denied (os error 13)
+error: failed to create directory `/data/codex-targets`
+
+Caused by:
+  Permission denied (os error 13)
+sha256sum: /data/codex-targets/memra-fa3softmax-base-v0812/release/kernel-check: No such file or directory
+sha256sum: /data/codex-targets/memra-fa3softmax-base-v0812/release/run-gen: No such file or directory
+sha256sum: /data/codex-targets/memra-fa3softmax-base-v0812/release/run-spec: No such file or directory
+sha256sum: /data/codex-targets/memra-fa3softmax-base-v0812/release/memra-server: No such file or directory
+BUILD_END=2026-08-12T22:08:04Z

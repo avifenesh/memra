@@ -1,0 +1,26 @@
+# qwen4exp_real_gate	label=m11-ladder-thinkon	binary_sha256=acd01bd59269907617545d0731671bf9055805f8430fca700f02b0c4a34aa52c	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# defer-ab k=3 draft_head_rows=248320 pmin=0.3 adapt=Some(1): host vs deferred round readback, interleaved, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	chain_ms_per_round	verify_ms_per_round	guard_stops	zero_draft
+0	host	256	12.59	79.43	0.627	1.91	1.96	21.11	34	26
+0	defer	256	12.70	78.77	0.627	1.91	2.13	21.14	34	26
+0	defer-gsync	256	12.59	79.40	0.627	1.91	1.96	21.13	34	26
+1	host	256	12.64	79.08	0.627	1.91	1.96	21.21	34	26
+1	defer	256	12.63	79.17	0.627	1.91	2.13	21.02	34	26
+1	defer-gsync	256	12.56	79.63	0.627	1.91	1.96	21.05	34	26
+2	host	256	12.62	79.25	0.627	1.91	1.96	21.16	34	26
+2	defer	256	12.68	78.89	0.627	1.91	2.13	21.10	34	26
+2	defer-gsync	256	12.57	79.53	0.627	1.91	1.96	21.08	34	26
+3	host	256	12.62	79.26	0.627	1.91	1.97	21.16	34	26
+3	defer	256	12.62	79.24	0.627	1.91	2.13	21.00	34	26
+3	defer-gsync	256	12.56	79.64	0.627	1.91	1.96	21.05	34	26
+4	host	256	12.62	79.27	0.627	1.91	1.96	21.15	34	26
+4	defer	256	12.63	79.15	0.627	1.91	2.13	21.02	34	26
+4	defer-gsync	256	12.58	79.47	0.627	1.91	1.96	21.10	34	26
+# arm host	reps=5	median_ms=12.617	spread_abs_ms=0.056	spread_rel=0.4436%	mean_ms=12.617	tok_per_s=79.26
+# arm defer	reps=5	median_ms=12.634	spread_abs_ms=0.075	spread_rel=0.5976%	mean_ms=12.651	tok_per_s=79.15
+# arm defer-gsync	reps=5	median_ms=12.573	spread_abs_ms=0.038	spread_rel=0.3004%	mean_ms=12.573	tok_per_s=79.53
+# escalation	pair=host-vs-defer	rule=a+b	reps 3->5	spread_rel_host=0.4436%	spread_rel_arm=0.5036%	verdict_ms=0.058	pooled_spread_ms=0.060
+# escalation	pair=host-vs-defer-gsync	rule=b	reps 3->5	spread_rel_host=0.4436%	spread_rel_arm=0.2871%	verdict_ms=0.045	pooled_spread_ms=0.046
+# speedup_defer_over_host	0.9987	(decision medians)
+# identity	PASS

@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-45402e3e7be62c9c4adda75c733b4053",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 1032,
+    "completion_tokens": 256,
+    "total_tokens": 1288,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 2.075871535
+  },
+  "text": "The user wants me to add a sticky request inspector that explains TTFT (Time To First Token) separately from decode time. This means I need to create a panel that stays visible as the user scrolls through the request timeline, showing detailed breakdown of these two metrics.\n\nI'll add a fixed/sticky inspector panel that appears when a request is selected or hovered, showing:\n- Arrival time\n- Time to first token (TTFT)\n- Decode time (total - TTFT)\n- Generated token rate\n- Cache source\n- Queue delay\n- Completion state\n\nI'll make it sticky so it remains visible while viewing the timeline.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Inference Service Dashboard</title>\n    <style>\n        :root {\n            --bg-primary: #0f172a;\n            --bg-secondary: #1e293b;\n            --bg-tertiary: #334155;\n            --text-primary: #f1"
+}

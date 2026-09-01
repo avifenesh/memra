@@ -1,0 +1,2621 @@
+//! concat-prime-probe (lane/concat-prime-exact): solo-vs-concat batch-prime differential.
+//!
+//! The serve lane (research/ornith-serve-20260801 §2) pinned greedy c1-vs-c16 divergence on
+//! Ornith-35B/KAT to the batch-prime concat prefill (prime_cache_batch). This probe separates
+//! (a) the m=sum_T concat-GEMM FP-reduction class from (b) an indexing/masking/state defect
+//! in the concat path, and measures the near-tie margins that decide whether the FP class
+//! flips greedy argmax.
+//!
+//! modes (all greedy, all engine-level — no server):
+//!   repro   <model> repro   --prompt-a <txt> --prompt-b <txt> [--steps N] [--chat]
+//!           prime A solo vs A in concat [A,B]; lockstep greedy decode from both caches;
+//!           first-divergence step, top-2 margins both sides, full-vocab logit maxdiff.
+//!   posdiff <model> posdiff --prompt-a <txt> --prompt-b <txt> [--order ab|ba] [--chat]
+//!           per-POSITION prefill hidden + logit diff, solo vs concat (both sides' logits
+//!           computed by the SAME m=1 epilogue so the diff isolates the trunk). A defect
+//!           shows structured position/boundary-dependent divergence; FP noise scatters.
+//!   content <model> content --prompt-a <txt> --prompt-b <txt> --prompt-c <txt> [--chat]
+//!           leakage razor: B and C truncated to equal token length; A's concat outputs
+//!           must be BIT-IDENTICAL across co-batch content [A,B] vs [A,C] (row-independent
+//!           GEMMs + per-seq cores => only shapes may matter). Also determinism ([A,B] x2)
+//!           and offset variant ([B,A] vs [C,A]).
+//!   margins <model> margins --prompts-file <f> [--steps N] [--chat] [--jsonl <out>]
+//!           per-prompt greedy top1-top2 logit-gap distribution (prefill + every decode
+//!           step) — the near-tie density that converts FP perturbation into argmax flips.
+//!   twpos   <model> twpos --prompt-a <txt|@file> [--chat] [--every N]
+//!           SOLO batched-vs-tokenwise prime, per-POSITION logit diff/flip profile
+//!           (gap #46 differential — scattered near-tie flips = FP class, boundary or
+//!           wide-margin structure = defect).
+//!   causal  <model> causal --prompt-a <txt|@file> --suffix <txt|@file> [--chat]
+//!           chunk-boundary content razor: prime(P) vs prime(P+S) rows of P must be
+//!           BIT-IDENTICAL when the chunk boundary sits at |P|.
+//!   chunkinv <model> chunkinv --prompt-a <txt|@file> [--chunks 2048,64,32] [--steps N]
+//!           chunk-ORDER invariance: the same prompt primed at several MEMRA_PRIME_CHUNK
+//!           values (zero reuse) must give bit-identical prefill logits. Reports the first
+//!           diverging hidden-stack ROW so a boundary-localized leak is distinguishable
+//!           from a global one. Engine-level twin of the server-side chunk-order-probe.py.
+//!   tickinv <model> tickinv --prompt-a <txt|@file> [--budgets 0,1024,256,64] [--steps N]
+//!                           [--splits 64,256,512]
+//!           the SECOND segmentation axis, one level ABOVE chunkinv. `chunkinv` varies
+//!           MEMRA_PRIME_CHUNK *inside one* prime_cache call; serve additionally splits a
+//!           prompt across SEVERAL prime_cache CALLS — one per scheduler tick, `take` tokens
+//!           each (worker.rs:3555 / :3111, budget = MEMRA_PREFILL_TICK 1024 interactive,
+//!           MEMRA_PREFILL_JUDGE/HARVEST 256 dark-lane). Each CALL sees its own cache.pos, so
+//!           any per-call quantity (e.g. step35's seq_end arm predicate) can differ between
+//!           tick budgets even when every call is internally chunk-invariant. This mode
+//!           replicates that loop faithfully — including the tail-merge that keeps the last
+//!           chunk >= PRIME_MIN_T — and asserts the resulting logits/hiddens are
+//!           budget-independent. budget 0 = one monolithic call (the chunkinv regime).
+//!           --splits adds OFF-GRID-RESUME arms (vLLM #51113's second hole, upstream-sweeps
+//!           08-07): prime [0,L) then [L,T) as TWO calls — serve's prefix-cache LCP-split
+//!           shape, where the first call stops exactly at the snapshot boundary L regardless
+//!           of budget (worker.rs prefill_tick bound_rem) and the second call RESUMES at the
+//!           unaligned position L. Any LCP in [64, win=512] reproduced the FA-prefix defect
+//!           on an interactive request. Rows print as `sp<L>`.
+//!   primepath <model> primepath --prompt-a <txt|@file> [--suffix <txt|@file>] [--hist K]
+//!                               [--splits L1,L2,...] [--steps N] [--chat]
+//!           PRIME-PATH DIVERGENCE PROFILER (lane/spec-longctx-20260821 — the GATES-SMOKE
+//!           B3 class, with B1 folded in per FRSPEC-FIX §3.2): the same token sequence
+//!           primed through DIFFERENT prime programs — monolithic, stopped-at-a-boundary
+//!           (the parked-checkpoint / boundary-stop shape), and prime+decode+suffix (the
+//!           restored-entry twin: history rows computed by DECODE, then a suffix prime) —
+//!           and the honest discriminator for each divergence: near-tie FP class vs
+//!           structural defect. Per arm vs the monolithic reference it reports the hidden-
+//!           row divergence PROFILE (first row, count, p50/p99/max — a low-bit scatter is
+//!           the FP class; an O(1) step at a boundary is the 2026-08-05 defect signature),
+//!           the final-position full-vocab logit maxdiff (REPORT-ONLY: the deep-tail
+//!           maxdiff is 0.3-2.4 even between MATCHING configs — argmax-margin-probe law),
+//!           and at the first greedy flip the top-2 margins of both arms, the margin's
+//!           percentile within the reference stream's own margin distribution, and the
+//!           cross-arm logit delta at the two contending ids (a flip is POSSIBLE iff that
+//!           delta exceeds the margin). Verdict per arm: EXACT | NEAR-TIE-CLASS |
+//!           STRUCTURED (row diff or flip margin above --structured-row/--structured-margin,
+//!           default 0.5 — between the measured near-tie flips at 1e-3..1e-2 margins and
+//!           the measured chunk-class defect at O(1)=6.9). mono is run TWICE: the mono2 row
+//!           is the per-program determinism pin and must be EXACT.
+//!           --hist K (needs --suffix): sequence = prompt-a ++ K greedy tokens ++ suffix;
+//!           the hist arm keeps the live prime(A)+decode(K) cache and primes the suffix on
+//!           top (restored-conversation shape); mono re-renders the same bytes cold.
+
+use memra_engine::Engine;
+use memra_engine::cache::Cache;
+use memra_engine::forward::argmax;
+use memra_engine::hybrid::HybridModel;
+use memra_gguf::GgufFile;
+use memra_tokenizer::Tokenizer;
+
+fn top2(l: &[f32]) -> (usize, f32, usize, f32) {
+    let (mut i1, mut v1, mut i2, mut v2) = (0usize, f32::NEG_INFINITY, 0usize, f32::NEG_INFINITY);
+    for (i, &v) in l.iter().enumerate() {
+        if v > v1 {
+            i2 = i1;
+            v2 = v1;
+            i1 = i;
+            v1 = v;
+        } else if v > v2 {
+            i2 = i;
+            v2 = v;
+        }
+    }
+    (i1, v1, i2, v2)
+}
+
+fn maxdiff(a: &[f32], b: &[f32]) -> f32 {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0f32, f32::max)
+}
+
+fn arg(rest: &[String], key: &str) -> Option<String> {
+    rest.iter()
+        .position(|a| a == key)
+        .and_then(|i| rest.get(i + 1))
+        .cloned()
+}
+
+fn encode_prompt(tok: &Tokenizer, text: &str, chat: bool) -> Vec<u32> {
+    // exactly the server's chat arm (worker.rs:850): template + encode(parse_special)
+    if chat {
+        let rendered = tok.apply_chat_template(&[("user", text)], true);
+        tok.encode(&rendered, true)
+    } else {
+        tok.encode(text, true)
+    }
+}
+
+/// `--prompt-x` values starting with '@' name a FILE whose whole (multi-line) content is
+/// the prompt — the pp512-class probe prompts don't fit on a CLI line.
+fn text_arg(rest: &[String], key: &str) -> Option<String> {
+    let v = arg(rest, key)?;
+    match v.strip_prefix('@') {
+        Some(path) => Some(std::fs::read_to_string(path).expect("prompt file unreadable")),
+        None => Some(v),
+    }
+}
+
+struct Ctx {
+    e: Engine,
+    model: HybridModel,
+    tok: Tokenizer,
+    ctx_len: usize,
+}
+
+impl Ctx {
+    /// prime A solo; greedy-decode `steps`; return (streams, per-step margins, prefill logits)
+    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    fn solo_stream(
+        &self,
+        toks: &[u32],
+        steps: usize,
+    ) -> Result<(Vec<u32>, Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+        let mut c = Cache::new(&self.e, &self.model.cfg, self.ctx_len)?;
+        let (logits, _, _) = self.model.prime_cache(&self.e, toks, &mut c, 0)?;
+        let mut t = argmax(&logits) as u32;
+        let (_, v1, _, v2) = top2(&logits);
+        let mut margins = vec![v1 - v2];
+        let mut stream = vec![t];
+        for _ in 0..steps {
+            let (l, _) = self.model.decode_step_h(&self.e, t, &mut c)?;
+            t = argmax(&l) as u32;
+            let (_, v1, _, v2) = top2(&l);
+            margins.push(v1 - v2);
+            stream.push(t);
+        }
+        Ok((stream, margins, logits))
+    }
+}
+
+fn load(path: &str) -> Result<Ctx, Box<dyn std::error::Error>> {
+    let e = Engine::new(0)?;
+    let source_path = std::path::Path::new(path);
+    let (model, tok, source_name) = if source_path.is_dir() {
+        let source = memra_gguf::source::SafetensorsSource::open(source_path)?;
+        let model = HybridModel::load_from_source_without_mtp(&e, &source)?;
+        let tok = Tokenizer::from_hf_dir(source_path).map_err(|err| format!("tokenizer: {err}"))?;
+        (model, tok, "safetensors".to_string())
+    } else {
+        let g = GgufFile::open(path)?;
+        let source_name = g.arch().unwrap_or("?").to_string();
+        let model = HybridModel::load_without_mtp(&e, &g)?;
+        let tok = Tokenizer::from_gguf(&g).map_err(|err| format!("tokenizer: {err}"))?;
+        (model, tok, source_name)
+    };
+    eprintln!("loaded {} ({} layers)", source_name, model.layers.len());
+    Ok(Ctx {
+        e,
+        model,
+        tok,
+        ctx_len: 2048,
+    })
+}
+
+#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut args = std::env::args().skip(1);
+    let path = args
+        .next()
+        .expect("usage: concat-prime-probe <model.gguf|hf_dir> <mode> [opts]");
+    let mode = args.next().expect("mode: repro|posdiff|content|margins");
+    let rest: Vec<String> = args.collect();
+    let chat = rest.iter().any(|a| a == "--chat");
+    let cx = load(&path)?;
+
+    match mode.as_str() {
+        "repro" => {
+            let pa = arg(&rest, "--prompt-a").expect("--prompt-a");
+            let steps: usize = arg(&rest, "--steps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(96);
+            let slot: usize = arg(&rest, "--slot")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            // co-arrivals: --co-file (one prompt per line) or --prompt-b (single)
+            let co_texts: Vec<String> = if let Some(cf) = arg(&rest, "--co-file") {
+                std::fs::read_to_string(&cf)?
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect()
+            } else {
+                vec![arg(&rest, "--prompt-b").expect("--prompt-b or --co-file")]
+            };
+            let co_toks: Vec<Vec<u32>> = co_texts
+                .iter()
+                .map(|t| encode_prompt(&cx.tok, t, chat))
+                .collect();
+            let b = co_toks.len() + 1;
+            assert!(slot < b, "--slot must be < batch size {b}");
+            println!(
+                "repro: T_a={} b={b} slot={slot} co_T={:?} steps={steps} chat={chat}",
+                ta.len(),
+                co_toks.iter().map(|t| t.len()).collect::<Vec<_>>()
+            );
+
+            // solo reference for A
+            let (stream_solo, _m_solo, logits_solo) = cx.solo_stream(&ta, steps)?;
+
+            // concat prime with A at `slot`; decode A's cache greedily, lockstep vs solo
+            let mut batch_toks: Vec<&[u32]> = co_toks.iter().map(|t| t.as_slice()).collect();
+            batch_toks.insert(slot, &ta);
+            let mut caches: Vec<Cache> = (0..b)
+                .map(|_| Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len))
+                .collect::<Result<_, _>>()?;
+            let logits_batch = {
+                let mut cache_refs: Vec<&mut Cache> = caches.iter_mut().collect();
+                let mut outs = cx
+                    .model
+                    .prime_cache_batch(&cx.e, &batch_toks, &mut cache_refs)?;
+                outs.remove(slot).0
+            };
+            let mut ca = caches.remove(slot);
+            let (s1, sv1, _, sv2) = top2(&logits_solo);
+            let (b1, bv1, _, bv2) = top2(&logits_batch);
+            println!(
+                "prefill: solo argmax={s1} margin={:.6}  batch argmax={b1} margin={:.6}  \
+                      logit maxdiff={:.6e}  {}",
+                sv1 - sv2,
+                bv1 - bv2,
+                maxdiff(&logits_solo, &logits_batch),
+                if s1 == b1 { "MATCH" } else { "ARGMAX FLIP" }
+            );
+
+            let mut t_batch = b1 as u32;
+            let mut stream_batch = vec![t_batch];
+            let mut first_div: Option<usize> = None;
+            if stream_solo[0] != t_batch {
+                first_div = Some(0);
+            }
+            let mut prev_solo_logits = logits_solo.clone();
+            let mut prev_batch_logits = logits_batch.clone();
+            // replay solo stream against a re-primed solo cache in lockstep with the batch
+            // cache so per-step logit maxdiff is observable until divergence.
+            let mut c_solo = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+            let _ = cx.model.prime_cache(&cx.e, &ta, &mut c_solo, 0)?;
+            let mut t_solo = stream_solo[0];
+            for step in 1..=steps {
+                let (ls, _) = cx.model.decode_step_h(&cx.e, t_solo, &mut c_solo)?;
+                let (lb, _) = cx.model.decode_step_h(&cx.e, t_batch, &mut ca)?;
+                let ns = argmax(&ls) as u32;
+                let nb = argmax(&lb) as u32;
+                if first_div.is_none() {
+                    let md = maxdiff(&ls, &lb);
+                    if ns != nb {
+                        let (_, sv1, _, sv2) = top2(&ls);
+                        let (_, bv1, _, bv2) = top2(&lb);
+                        println!(
+                            "FIRST DIVERGENCE at decode step {step}: solo tok={ns} \
+                                  (margin {:.6}) batch tok={nb} (margin {:.6}) logit maxdiff={:.6e}",
+                            sv1 - sv2,
+                            bv1 - bv2,
+                            md
+                        );
+                        first_div = Some(step);
+                    } else if step <= 8 || step % 16 == 0 {
+                        let (_, v1, _, v2) = top2(&ls);
+                        println!(
+                            "  step {step}: agree tok={ns} solo-margin={:.6} maxdiff={:.6e}",
+                            v1 - v2,
+                            md
+                        );
+                    }
+                }
+                t_solo = ns;
+                t_batch = nb;
+                stream_batch.push(nb);
+                prev_solo_logits = ls;
+                prev_batch_logits = lb;
+            }
+            let _ = (prev_solo_logits, prev_batch_logits);
+            match first_div {
+                Some(0) => println!("verdict: DIVERGED at prefill argmax (step 0)"),
+                Some(s) => println!("verdict: DIVERGED at decode step {s}"),
+                None => println!("verdict: streams MATCH for {steps} steps"),
+            }
+            println!("solo : {}", cx.tok.decode(&stream_solo));
+            println!("batch: {}", cx.tok.decode(&stream_batch));
+        }
+
+        "posdiff" => {
+            let pa = arg(&rest, "--prompt-a").expect("--prompt-a");
+            let pb = arg(&rest, "--prompt-b").expect("--prompt-b");
+            let order = arg(&rest, "--order").unwrap_or_else(|| "ab".into());
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let tb = encode_prompt(&cx.tok, &pb, chat);
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let eps = cx.model.cfg.rms_eps;
+            println!(
+                "posdiff: T_a={} T_b={} order={order} chat={chat}",
+                ta.len(),
+                tb.len()
+            );
+
+            // solo hidden stack for A (pre-output-norm [T, n_embd])
+            let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+            let (_, _, hid_solo) = cx.model.prime_cache(&cx.e, &ta, &mut c, 0)?;
+            let h_solo = cx.e.dtoh(&hid_solo)?;
+
+            // concat hidden stack for A
+            let mut c1 = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+            let mut c2 = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+            let (prompts, a_idx): (Vec<&[u32]>, usize) = match order.as_str() {
+                "ba" => (vec![&tb, &ta], 1),
+                _ => (vec![&ta, &tb], 0),
+            };
+            let mut caches: Vec<&mut Cache> = vec![&mut c1, &mut c2];
+            let mut outs = cx.model.prime_cache_batch(&cx.e, &prompts, &mut caches)?;
+            let (_, _, hid_batch) = outs.remove(a_idx);
+            let h_batch = cx.e.dtoh(&hid_batch)?;
+            assert_eq!(h_solo.len(), ta.len() * n_embd);
+            assert_eq!(h_batch.len(), ta.len() * n_embd);
+
+            // identical m=1 epilogue on BOTH sides: rms_norm row + lm_head matvec
+            let logits_row =
+                |host: &[f32], p: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                    let row = &host[p * n_embd..(p + 1) * n_embd];
+                    let d = cx.e.htod(row)?;
+                    let mut hn = cx.e.uninit(n_embd)?;
+                    cx.e.rms_norm(
+                        &d,
+                        cx.model.output_norm.float_data(),
+                        &mut hn,
+                        n_embd,
+                        1,
+                        eps,
+                    )?;
+                    cx.e.dtoh(&cx.e.matmul(&cx.model.output, &hn, 1)?)
+                };
+            println!("pos | hid_maxdiff | hid_relrms | argmax s/b | margin_solo | logit_maxdiff");
+            let mut flips = 0usize;
+            for p in 0..ta.len() {
+                let rs = &h_solo[p * n_embd..(p + 1) * n_embd];
+                let rb = &h_batch[p * n_embd..(p + 1) * n_embd];
+                let md = maxdiff(rs, rb);
+                let (mut se, mut de) = (0f64, 0f64);
+                for (x, y) in rs.iter().zip(rb) {
+                    se += ((x - y) as f64).powi(2);
+                    de += (*x as f64).powi(2);
+                }
+                let relrms = (se / de.max(1e-30)).sqrt();
+                let ls = logits_row(&h_solo, p)?;
+                let lb = logits_row(&h_batch, p)?;
+                let (s1, sv1, _, sv2) = top2(&ls);
+                let (b1, _, _, _) = top2(&lb);
+                let flip = s1 != b1;
+                if flip {
+                    flips += 1;
+                }
+                println!(
+                    "{p:4} | {md:.6e} | {relrms:.6e} | {s1}/{b1}{} | {:.6} | {:.6e}",
+                    if flip { " FLIP" } else { "" },
+                    sv1 - sv2,
+                    maxdiff(&ls, &lb)
+                );
+            }
+            println!(
+                "posdiff summary: {}/{} per-position argmax flips",
+                flips,
+                ta.len()
+            );
+        }
+
+        "content" => {
+            let pa = arg(&rest, "--prompt-a").expect("--prompt-a");
+            let pb = arg(&rest, "--prompt-b").expect("--prompt-b");
+            let pc = arg(&rest, "--prompt-c").expect("--prompt-c");
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let mut tb = encode_prompt(&cx.tok, &pb, chat);
+            let mut tc = encode_prompt(&cx.tok, &pc, chat);
+            let l = tb.len().min(tc.len());
+            assert!(l >= 16, "co-prompts must be >= 16 tokens after truncation");
+            tb.truncate(l);
+            tc.truncate(l);
+            println!("content: T_a={} T_co={} chat={chat}", ta.len(), l);
+
+            let run = |first: &[u32],
+                       second: &[u32],
+                       want: usize|
+             -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+                let mut c1 = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+                let mut c2 = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+                let prompts: Vec<&[u32]> = vec![first, second];
+                let mut caches: Vec<&mut Cache> = vec![&mut c1, &mut c2];
+                let mut outs = cx.model.prime_cache_batch(&cx.e, &prompts, &mut caches)?;
+                let (logits, _, hid) = outs.remove(want);
+                Ok((logits, cx.e.dtoh(&hid)?))
+            };
+            let bits = |a: &[f32]| -> Vec<u32> { a.iter().map(|v| v.to_bits()).collect() };
+            let verdict = |name: &str, x: (&[f32], &[f32]), y: (&[f32], &[f32])| {
+                let li = bits(x.0) == bits(y.0);
+                let hi = bits(x.1) == bits(y.1);
+                println!(
+                    "{name}: logits {} (maxdiff {:.6e}), hidden {} (maxdiff {:.6e})",
+                    if li { "BIT-IDENTICAL" } else { "DIFFER" },
+                    maxdiff(x.0, y.0),
+                    if hi { "BIT-IDENTICAL" } else { "DIFFER" },
+                    maxdiff(x.1, y.1)
+                );
+            };
+
+            let (l1, h1) = run(&ta, &tb, 0)?; // [A,B] -> A
+            let (l1r, h1r) = run(&ta, &tb, 0)?; // determinism
+            let (l2, h2) = run(&ta, &tc, 0)?; // [A,C] -> A
+            verdict("determinism [A,B] x2      ", (&l1, &h1), (&l1r, &h1r));
+            verdict("content [A,B] vs [A,C] -> A", (&l1, &h1), (&l2, &h2));
+            let (l3, h3) = run(&tb, &ta, 1)?; // [B,A] -> A (offset)
+            let (l4, h4) = run(&tc, &ta, 1)?; // [C,A] -> A
+            verdict("content [B,A] vs [C,A] -> A", (&l3, &h3), (&l4, &h4));
+        }
+
+        "margins" => {
+            let pf = arg(&rest, "--prompts-file").expect("--prompts-file");
+            let steps: usize = arg(&rest, "--steps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(96);
+            let jsonl = arg(&rest, "--jsonl");
+            let prompts: Vec<String> = std::fs::read_to_string(&pf)?
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
+            let mut out = jsonl.as_ref().map(std::fs::File::create).transpose()?;
+            let mut all: Vec<f32> = Vec::new();
+            for (i, p) in prompts.iter().enumerate() {
+                let toks = encode_prompt(&cx.tok, p, chat);
+                let (_, margins, _) = cx.solo_stream(&toks, steps)?;
+                let mut sorted = margins.clone();
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let pn = |q: f64| sorted[((sorted.len() - 1) as f64 * q) as usize];
+                println!(
+                    "prompt {i:2}: prefill_margin={:.6} min={:.6} p10={:.6} p50={:.6} (T={} steps={})",
+                    margins[0],
+                    sorted[0],
+                    pn(0.10),
+                    pn(0.50),
+                    toks.len(),
+                    steps
+                );
+                if let Some(f) = out.as_mut() {
+                    use std::io::Write as _;
+                    let ms: Vec<String> = margins.iter().map(|m| format!("{m:.6}")).collect();
+                    writeln!(
+                        f,
+                        "{{\"i\":{i},\"t\":{},\"prefill_margin\":{:.6},\"min\":{:.6},\"p10\":{:.6},\"p50\":{:.6},\"margins\":[{}]}}",
+                        toks.len(),
+                        margins[0],
+                        sorted[0],
+                        pn(0.10),
+                        pn(0.50),
+                        ms.join(",")
+                    )?;
+                }
+                all.extend_from_slice(&margins);
+            }
+            all.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let pn = |q: f64| all[((all.len() - 1) as f64 * q) as usize];
+            println!(
+                "ALL ({} margins): min={:.6} p1={:.6} p5={:.6} p10={:.6} p50={:.6}",
+                all.len(),
+                all[0],
+                pn(0.01),
+                pn(0.05),
+                pn(0.10),
+                pn(0.50)
+            );
+        }
+
+        // (b)-vs-(a) RAZOR: shape-vs-content dependence of A's concat prime outputs.
+        //   r1 b=1 batch vs solo            : the batch code path at m=T_a (no concat)
+        //   r2 [A,A] slot0 vs slot1         : OFFSET invariance at identical content/shape
+        //   r3 [A,B] vs [A,C], len(B)==len(C): CO-BATCH CONTENT dependence at fixed shapes
+        //   r4 [A,B] x2                     : determinism
+        //   r5 [A,B] vs [A,B'] len(B')!=len(B): SHAPE dependence (the (a) knob)
+        // A defect (b) fails r2 or r3; the FP class (a) fails only r5 (and r1's m change).
+        "razor" => {
+            let pa = arg(&rest, "--prompt-a").expect("--prompt-a");
+            let pb = arg(&rest, "--prompt-b").expect("--prompt-b");
+            let pc = arg(&rest, "--prompt-c").expect("--prompt-c");
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let mut tb = encode_prompt(&cx.tok, &pb, chat);
+            let mut tc = encode_prompt(&cx.tok, &pc, chat);
+            let l = tb.len().min(tc.len());
+            assert!(l >= 16, "co-prompts must be >= 16 tokens after truncation");
+            tb.truncate(l);
+            tc.truncate(l);
+            let tb2: Vec<u32> = tb[..l - 1].to_vec(); // same content, T-1 (shape knob)
+            println!("razor: T_a={} T_co={} chat={chat}", ta.len(), l);
+
+            // returns (logits, hidden-stack) for the sequence at `want`
+            let batch = |seqs: &[&[u32]],
+                         want: usize|
+             -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
+                let mut cs: Vec<Cache> = (0..seqs.len())
+                    .map(|_| Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len))
+                    .collect::<Result<_, _>>()?;
+                let mut refs: Vec<&mut Cache> = cs.iter_mut().collect();
+                let mut outs = cx.model.prime_cache_batch(&cx.e, seqs, &mut refs)?;
+                let (logits, _, hid) = outs.remove(want);
+                Ok((logits, cx.e.dtoh(&hid)?))
+            };
+            let bits = |a: &[f32]| -> Vec<u32> { a.iter().map(|v| v.to_bits()).collect() };
+            let mut defect = 0usize;
+            let mut cmp = |name: &str,
+                           x: &(Vec<f32>, Vec<f32>),
+                           y: &(Vec<f32>, Vec<f32>),
+                           must_be_exact: bool| {
+                let li = bits(&x.0) == bits(&y.0);
+                let hi = x.1.len() == y.1.len() && bits(&x.1) == bits(&y.1);
+                let (a1, ..) = top2(&x.0);
+                let (b1, ..) = top2(&y.0);
+                let tag = if li && hi {
+                    "BIT-IDENTICAL"
+                } else if must_be_exact {
+                    defect += 1;
+                    "*** DIFFER (DEFECT) ***"
+                } else {
+                    "DIFFER (expected: numeric config change)"
+                };
+                println!(
+                    "{name}: {tag}  logit_maxdiff={:.6e} hid_maxdiff={:.6e} argmax {a1} vs {b1}{}",
+                    maxdiff(&x.0, &y.0),
+                    if x.1.len() == y.1.len() {
+                        maxdiff(&x.1, &y.1)
+                    } else {
+                        f32::NAN
+                    },
+                    if a1 == b1 { "" } else { " FLIP" }
+                );
+            };
+
+            let mut c_solo = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+            let (l_solo, _, h_solo) = cx.model.prime_cache(&cx.e, &ta, &mut c_solo, 0)?;
+            let solo = (l_solo, cx.e.dtoh(&h_solo)?);
+            let b1 = batch(&[&ta], 0)?;
+            let ab_a = batch(&[&ta, &tb], 0)?;
+            let ab_a_rep = batch(&[&ta, &tb], 0)?;
+            let ac_a = batch(&[&ta, &tc], 0)?;
+            let aa_s0 = batch(&[&ta, &ta], 0)?;
+            let aa_s1 = batch(&[&ta, &ta], 1)?;
+            let ab2_a = batch(&[&ta, &tb2], 0)?;
+            let ba_a = batch(&[&tb, &ta], 1)?;
+            let ca_a = batch(&[&tc, &ta], 1)?;
+
+            cmp("r4 determinism   [A,B] x2      ", &ab_a, &ab_a_rep, true);
+            cmp("r2 offset        [A,A] s0 vs s1", &aa_s0, &aa_s1, true);
+            cmp("r3 co-content    [A,B] vs [A,C]", &ab_a, &ac_a, true);
+            cmp("r3b co-content   [B,A] vs [C,A]", &ba_a, &ca_a, true);
+            cmp("r5 co-SHAPE      [A,B] vs [A,B-1]", &ab_a, &ab2_a, false);
+            cmp("r1 batch-path    solo vs b=1   ", &solo, &b1, false);
+            cmp("r6 concat        solo vs [A,B] ", &solo, &ab_a, false);
+            println!(
+                "razor verdict: {}",
+                if defect == 0 {
+                    "NO DEFECT — outputs depend on SHAPES only, not co-batch content or offset"
+                } else {
+                    "*** DEFECT: content/offset/determinism dependence found ***"
+                }
+            );
+        }
+
+        // B-SWEEP + per-B invariance razors. Co-arrivals are truncated to a COMMON length so
+        // every variant at a given B has an IDENTICAL shape multiset; only content/offset move.
+        //   perm : [A, co...] vs [A, reverse(co)...]   -> co-batch CONTENT invariance
+        //   tail : [A, co...] vs [co..., A]            -> A's OFFSET invariance
+        // Any DIFFER in perm/tail = defect (b). DIFFER only vs solo, growing with total m,
+        // with perm/tail exact = the m-dependent concat-GEMM FP class (a).
+        "sweep" => {
+            let pa = arg(&rest, "--prompt-a").expect("--prompt-a");
+            let cf = arg(&rest, "--co-file").expect("--co-file");
+            let bmax: usize = arg(&rest, "--bmax")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(6);
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let co_all: Vec<Vec<u32>> = std::fs::read_to_string(&cf)?
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .map(|t| encode_prompt(&cx.tok, &t, chat))
+                .collect();
+            let lmin = co_all.iter().map(|t| t.len()).min().unwrap();
+            let co: Vec<Vec<u32>> = co_all.iter().map(|t| t[..lmin].to_vec()).collect();
+            println!(
+                "sweep: T_a={} co_n={} co_T={lmin} bmax={bmax} chat={chat}",
+                ta.len(),
+                co.len(),
+            );
+
+            let mut c_solo = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+            let (l_solo, _, _) = cx.model.prime_cache(&cx.e, &ta, &mut c_solo, 0)?;
+            let (a_solo, sv1, _, sv2) = top2(&l_solo);
+            println!("solo: argmax={a_solo} margin={:.6}", sv1 - sv2);
+
+            let batch =
+                |seqs: &[&[u32]], want: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                    let mut cs: Vec<Cache> = (0..seqs.len())
+                        .map(|_| Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len))
+                        .collect::<Result<_, _>>()?;
+                    let mut refs: Vec<&mut Cache> = cs.iter_mut().collect();
+                    let mut outs = cx.model.prime_cache_batch(&cx.e, seqs, &mut refs)?;
+                    Ok(outs.remove(want).0)
+                };
+            let bits = |a: &[f32]| -> Vec<u32> { a.iter().map(|v| v.to_bits()).collect() };
+            let mut defects = 0usize;
+            println!(" B | total_m | argmax | flip | margin  | maxdiff_vs_solo | perm | tail");
+            for b in 2..=bmax.min(co.len() + 1) {
+                let cu: Vec<&[u32]> = co[..b - 1].iter().map(|t| t.as_slice()).collect();
+                let total = ta.len() + cu.iter().map(|s| s.len()).sum::<usize>();
+                let mut v1: Vec<&[u32]> = vec![&ta];
+                v1.extend(cu.iter().copied());
+                let mut v2: Vec<&[u32]> = vec![&ta];
+                v2.extend(cu.iter().rev().copied());
+                let mut v3: Vec<&[u32]> = cu.to_vec();
+                v3.push(&ta);
+                let o1 = batch(&v1, 0)?;
+                let o2 = batch(&v2, 0)?;
+                let o3 = batch(&v3, b - 1)?;
+                let perm_ok = bits(&o1) == bits(&o2);
+                let tail_ok = bits(&o1) == bits(&o3);
+                if !perm_ok || !tail_ok {
+                    defects += 1;
+                }
+                let (a1, v1t, _, v2t) = top2(&o1);
+                println!(
+                    "{b:2} | {total:7} | {a1:6} | {:4} | {:.6} | {:.9e} | {} | {}",
+                    if a1 == a_solo { "-" } else { "YES" },
+                    v1t - v2t,
+                    maxdiff(&l_solo, &o1),
+                    if perm_ok { "EXACT" } else { "DIFFER(defect)" },
+                    if tail_ok { "EXACT" } else { "DIFFER(defect)" }
+                );
+            }
+            println!(
+                "sweep verdict: {}",
+                if defects == 0 {
+                    "content/offset INVARIANT at every B (no indexing defect); \
+                                        solo-vs-concat differences are shape/m-driven"
+                } else {
+                    "*** DEFECT: content or offset dependence ***"
+                }
+            );
+        }
+
+        // m-BISECT at FIXED B=2: only the CO-SEQUENCE LENGTH moves, so b, dispatch arms and
+        // A's own content/offset are constant — every difference is a function of total m
+        // (= T_a + L). Locates the exact m where the trunk's GEMM reduction shape changes.
+        "mscan" => {
+            let pa = arg(&rest, "--prompt-a").expect("--prompt-a");
+            let pb = arg(&rest, "--prompt-b").expect("--prompt-b");
+            let lmin: usize = arg(&rest, "--lmin")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(16);
+            let lmax: usize = arg(&rest, "--lmax")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(80);
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let tb_full = encode_prompt(&cx.tok, &pb, chat);
+            let pad = arg(&rest, "--pad-token").and_then(|v| v.parse::<u32>().ok());
+            let mut tb = tb_full.clone();
+            if let Some(p) = pad {
+                while tb.len() < lmax {
+                    tb.push(p);
+                }
+            }
+            assert!(
+                tb.len() >= lmax,
+                "co prompt too short ({}) for --lmax {lmax}; use --pad-token",
+                tb.len()
+            );
+            let mut c_solo = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+            let (l_solo, _, _) = cx.model.prime_cache(&cx.e, &ta, &mut c_solo, 0)?;
+            let (a_solo, sv1, _, sv2) = top2(&l_solo);
+            println!(
+                "mscan: T_a={} co_max={} L={lmin}..{lmax} solo_argmax={a_solo} solo_margin={:.6}",
+                ta.len(),
+                tb.len(),
+                sv1 - sv2
+            );
+            let bits = |a: &[f32]| -> Vec<u32> { a.iter().map(|v| v.to_bits()).collect() };
+            let sb = bits(&l_solo);
+            let mut prev: Option<Vec<u32>> = None;
+            // --desc: descending L. If the threshold sits at the SAME total_m in both
+            // directions it is m-driven; if it moves with iteration count it is evolving
+            // process state (SLRU residency / scratch growth), not the concat shape.
+            let ls: Vec<usize> = if rest.iter().any(|a| a == "--desc") {
+                (lmin..=lmax).rev().collect()
+            } else {
+                (lmin..=lmax).collect()
+            };
+            println!("  L | total_m | argmax | exact_vs_solo | maxdiff_vs_solo | vs_prev_L");
+            for l in ls {
+                let co = &tb[..l];
+                let mut c1 = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+                let mut c2 = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+                let logits = {
+                    let seqs: Vec<&[u32]> = vec![&ta, co];
+                    let mut refs: Vec<&mut Cache> = vec![&mut c1, &mut c2];
+                    cx.model
+                        .prime_cache_batch(&cx.e, &seqs, &mut refs)?
+                        .remove(0)
+                        .0
+                };
+                let (a1, ..) = top2(&logits);
+                let cur = bits(&logits);
+                let vp = match &prev {
+                    None => "-".to_string(),
+                    Some(p) => {
+                        if *p == cur {
+                            "same".into()
+                        } else {
+                            "CHANGED".to_string()
+                        }
+                    }
+                };
+                println!(
+                    "{l:3} | {:7} | {a1:6} | {} | {:.9e} | {vp}",
+                    ta.len() + l,
+                    if cur == sb { "EXACT" } else { "differs" },
+                    maxdiff(&l_solo, &logits)
+                );
+                prev = Some(cur);
+            }
+        }
+
+        // KERNEL-LEVEL razor: the SAME activation rows are fed to matmul at m = T_a (solo
+        // shape) and as the first T_a rows of a taller m = T_a + L batch. If rows [0,T_a)
+        // of the tall GEMM differ from the m=T_a GEMM, the prefill GEMM is m-dependent —
+        // the concat prime's divergence is inherited from the GEMM, not from the batching
+        // logic. Weight = layer 0's wq (the first GEMM every prime executes).
+        "gemm" => {
+            let lmin: usize = arg(&rest, "--lmin")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(16);
+            let lmax: usize = arg(&rest, "--lmax")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(80);
+            let ta: usize = arg(&rest, "--ta")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(19);
+            let n_embd = cx.model.cfg.n_embd as usize;
+            // --weight router|head|wq : which prefill GEMM to probe. `router` = the MoE
+            // ffn_gate_inp (F32 -> cuBLASLt, the arm hybrid_forward.rs:2100 documents as
+            // n-DEPENDENT); head/wq are quantized weights on the MMQ/f16 lanes.
+            let which_w = arg(&rest, "--weight").unwrap_or_else(|| "head".into());
+            let mut il_probe = 0usize;
+            let w = match which_w.as_str() {
+                "router" => {
+                    let mut found = None;
+                    for (i, layer) in cx.model.layers.iter().enumerate() {
+                        if let memra_engine::hybrid::Ffn::Moe(m) = &layer.ffn {
+                            found = Some(&m.gate_inp);
+                            il_probe = i;
+                            break;
+                        }
+                    }
+                    found.expect("no MoE layer (router probe needs an MoE model)")
+                }
+                // first FULL-attn layer's wq (hybrid stacks put Linear mixers at layer 0)
+                "wq" => {
+                    let mut found = None;
+                    for (i, layer) in cx.model.layers.iter().enumerate() {
+                        if let memra_engine::hybrid::Mixer::Full(fa) = &layer.mixer {
+                            found = Some(&fa.wq);
+                            il_probe = i;
+                            break;
+                        }
+                    }
+                    found.expect("no full-attn layer")
+                }
+                // first Linear (GDN) mixer's fused qkv projection
+                "wqkv" => {
+                    let mut found = None;
+                    for (i, layer) in cx.model.layers.iter().enumerate() {
+                        if let memra_engine::hybrid::Mixer::Linear(la) = &layer.mixer {
+                            found = Some(&la.wqkv);
+                            il_probe = i;
+                            break;
+                        }
+                    }
+                    found.expect("no linear-attn layer")
+                }
+                // shared-expert FFN gate (the MoE layer's dense side)
+                "shexp" => {
+                    let mut found = None;
+                    for (i, layer) in cx.model.layers.iter().enumerate() {
+                        if let memra_engine::hybrid::Ffn::Moe(mm) = &layer.ffn
+                            && let Some(g) = mm.gate_shexp.as_ref()
+                        {
+                            found = Some(g);
+                            il_probe = i;
+                            break;
+                        }
+                    }
+                    found.expect("no shared-expert gate")
+                }
+                _ => &cx.model.output,
+            };
+            println!("gemm probe weight={which_w} (il={il_probe})");
+            let out_f = w.out_features();
+            // deterministic pseudo-random activations
+            let tot = (ta + lmax) * n_embd;
+            let mut xs = Vec::with_capacity(tot);
+            let mut s = 0x2545F4914F6CDD1Du64;
+            for _ in 0..tot {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                xs.push(((s >> 40) as f32 / 8192.0) - 1.5);
+            }
+            let xd = cx.e.htod(&xs)?;
+            println!("gemm razor: weight out_f={out_f} in_f={n_embd} base_m={ta} L={lmin}..{lmax}");
+            println!("  m | rows[0,{ta}) vs m={ta} | maxdiff");
+            // --gemv: probe the in-house router GEMV instead of matmul (the candidate
+            // m-INVARIANT replacement: one block per (expert,row), fixed per-row FP order).
+            let gemv = rest.iter().any(|a| a == "--gemv");
+            let run = |m: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                if gemv {
+                    let y = cx.e.router_gemv(w.float_data(), &xd, n_embd, out_f, m)?;
+                    cx.e.dtoh(&y)
+                } else {
+                    cx.e.dtoh(&cx.e.matmul(w, &xd, m)?)
+                }
+            };
+            let base = run(ta)?;
+            let mut first_change = None;
+            for l in lmin..=lmax {
+                let m = ta + l;
+                let y = run(m)?;
+                let head = &y[..ta * out_f];
+                let same = head
+                    .iter()
+                    .zip(&base)
+                    .all(|(a, b)| a.to_bits() == b.to_bits());
+                let md = maxdiff(head, &base);
+                if !same && first_change.is_none() {
+                    first_change = Some(m);
+                }
+                println!(
+                    "{m:4} | {} | {md:.6e}",
+                    if same { "BIT-IDENTICAL" } else { "DIFFER" }
+                );
+            }
+            match first_change {
+                Some(m) => println!(
+                    "gemm verdict: prefill GEMM is m-DEPENDENT (first change at m={m}) \
+                                     — existing rows' values move when the batch grows"
+                ),
+                None => println!("gemm verdict: prefill GEMM rows are m-INVARIANT over this range"),
+            }
+        }
+
+        // ROUTE mode: prime ONE configuration and exit, so an external MEMRA_MOE_TRACE /
+        // MEMRA_MOE_WEIGHT_TRACE file captures exactly that prime's router selections.
+        //   --which solo             : single prime of A            (rows = A's tokens)
+        //   --which batch --colen L  : concat prime [A, co[..L]]    (rows [0,T_a) = A's tokens)
+        // Comparing A's rows across the two traces shows whether the concat changes MoE
+        // expert SELECTION for A's own tokens (a top-k discontinuity), vs only weights.
+        "route" => {
+            let pa = arg(&rest, "--prompt-a").expect("--prompt-a");
+            let pb = arg(&rest, "--prompt-b").unwrap_or_default();
+            let which = arg(&rest, "--which").unwrap_or_else(|| "solo".into());
+            let colen: usize = arg(&rest, "--colen")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(56);
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            println!("route: which={which} T_a={} colen={colen}", ta.len());
+            if which == "solo" {
+                let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+                let (l, _, _) = cx.model.prime_cache(&cx.e, &ta, &mut c, 0)?;
+                let (a1, v1, _, v2) = top2(&l);
+                println!("solo argmax={a1} margin={:.6}", v1 - v2);
+            } else {
+                let tb = encode_prompt(&cx.tok, &pb, chat);
+                assert!(tb.len() >= colen, "co prompt shorter than --colen");
+                let co = &tb[..colen];
+                let mut c1 = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+                let mut c2 = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len)?;
+                let seqs: Vec<&[u32]> = vec![&ta, co];
+                let mut refs: Vec<&mut Cache> = vec![&mut c1, &mut c2];
+                let l = cx
+                    .model
+                    .prime_cache_batch(&cx.e, &seqs, &mut refs)?
+                    .remove(0)
+                    .0;
+                let (a1, v1, _, v2) = top2(&l);
+                println!(
+                    "batch argmax={a1} margin={:.6} (total_m={})",
+                    v1 - v2,
+                    ta.len() + colen
+                );
+            }
+        }
+
+        // ALL-WEIGHTS m-invariance census: for every distinct GEMM weight in layer `--il`
+        // (plus the lm_head and the router), feed identical activation rows at m=m0 and m=m1
+        // and report whether rows [0,m0) move. Names every m-DEPENDENT GEMM in the trunk.
+        "allw" => {
+            let m0: usize = arg(&rest, "--m0")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(74);
+            let m1: usize = arg(&rest, "--m1")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(75);
+            let base_rows: usize = arg(&rest, "--rows")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(19);
+            let nl: usize = arg(&rest, "--layers")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(4);
+            println!("allw: m0={m0} m1={m1} compare rows[0,{base_rows}) over first {nl} layers");
+            let mut rng = 0x9E3779B97F4A7C15u64;
+            let mut probe = |name: &str,
+                             w: &memra_engine::model::GpuTensor|
+             -> Result<(), Box<dyn std::error::Error>> {
+                let in_f = w.in_features();
+                let out_f = w.out_features();
+                let mut xs = Vec::with_capacity(m1 * in_f);
+                for _ in 0..m1 * in_f {
+                    rng ^= rng << 13;
+                    rng ^= rng >> 7;
+                    rng ^= rng << 17;
+                    xs.push(((rng >> 40) as f32 / 8192.0) - 1.5);
+                }
+                let xd = cx.e.htod(&xs)?;
+                let y0 = cx.e.dtoh(&cx.e.matmul(w, &xd, m0)?)?;
+                let y1 = cx.e.dtoh(&cx.e.matmul(w, &xd, m1)?)?;
+                let n = base_rows * out_f;
+                let same = y0[..n]
+                    .iter()
+                    .zip(&y1[..n])
+                    .all(|(a, b)| a.to_bits() == b.to_bits());
+                println!(
+                    "{:<28} in={in_f:6} out={out_f:7} {} maxdiff={:.6e}",
+                    name,
+                    if same {
+                        "m-INVARIANT"
+                    } else {
+                        "*** m-DEPENDENT ***"
+                    },
+                    maxdiff(&y0[..n], &y1[..n])
+                );
+                Ok(())
+            };
+            probe("lm_head", &cx.model.output)?;
+            // The shexp GATE is not a GpuTensor matmul but a raw cuBLASLt `linear` (out_f=1)
+            // at prefill / a fused sigmoid-dot at small t — probe both forms explicitly.
+            if let Some(memra_engine::hybrid::Ffn::Moe(mm)) =
+                cx.model.layers.iter().find_map(|l| match &l.ffn {
+                    f @ memra_engine::hybrid::Ffn::Moe(_) => Some(f),
+                    _ => None,
+                })
+                && let Some(gi) = mm.gate_inp_shexp.as_ref()
+            {
+                let in_f = cx.model.cfg.n_embd as usize;
+                let mut xs = Vec::with_capacity(m1 * in_f);
+                let mut r2 = 0xD1B54A32D192ED03u64;
+                for _ in 0..m1 * in_f {
+                    r2 ^= r2 << 13;
+                    r2 ^= r2 >> 7;
+                    r2 ^= r2 << 17;
+                    xs.push(((r2 >> 40) as f32 / 8192.0) - 1.5);
+                }
+                let xd = cx.e.htod(&xs)?;
+                let a =
+                    cx.e.dtoh(&cx.e.linear(&xd, gi.float_data(), m0, in_f, 1)?)?;
+                let b =
+                    cx.e.dtoh(&cx.e.linear(&xd, gi.float_data(), m1, in_f, 1)?)?;
+                let same = a[..base_rows]
+                    .iter()
+                    .zip(&b[..base_rows])
+                    .all(|(x, y)| x.to_bits() == y.to_bits());
+                println!(
+                    "{:<28} in={in_f:6} out={:7} {} maxdiff={:.6e}",
+                    "shexp_gate linear(cuBLASLt)",
+                    1,
+                    if same {
+                        "m-INVARIANT"
+                    } else {
+                        "*** m-DEPENDENT ***"
+                    },
+                    maxdiff(&a[..base_rows], &b[..base_rows])
+                );
+                let a2 =
+                    cx.e.dtoh(&cx.e.sigmoid_dot_rows(&xd, gi.float_data(), in_f, m0)?)?;
+                let b2 =
+                    cx.e.dtoh(&cx.e.sigmoid_dot_rows(&xd, gi.float_data(), in_f, m1)?)?;
+                let same2 = a2[..base_rows]
+                    .iter()
+                    .zip(&b2[..base_rows])
+                    .all(|(x, y)| x.to_bits() == y.to_bits());
+                println!(
+                    "{:<28} in={in_f:6} out={:7} {} maxdiff={:.6e}",
+                    "shexp_gate sigmoid_dot_rows",
+                    1,
+                    if same2 {
+                        "m-INVARIANT"
+                    } else {
+                        "*** m-DEPENDENT ***"
+                    },
+                    maxdiff(&a2[..base_rows], &b2[..base_rows])
+                );
+            }
+            for (i, layer) in cx.model.layers.iter().enumerate().take(nl) {
+                match &layer.mixer {
+                    memra_engine::hybrid::Mixer::Full(fa) => {
+                        probe(&format!("l{i}.attn.wq"), &fa.wq)?;
+                        probe(&format!("l{i}.attn.wk"), &fa.wk)?;
+                        probe(&format!("l{i}.attn.wv"), &fa.wv)?;
+                        probe(&format!("l{i}.attn.wo"), &fa.wo)?;
+                    }
+                    memra_engine::hybrid::Mixer::Linear(la) => {
+                        probe(&format!("l{i}.gdn.wqkv"), &la.wqkv)?;
+                        probe(&format!("l{i}.gdn.wqkv_gate"), &la.wqkv_gate)?;
+                        probe(&format!("l{i}.gdn.ssm_beta"), &la.ssm_beta)?;
+                        probe(&format!("l{i}.gdn.ssm_alpha"), &la.ssm_alpha)?;
+                        probe(&format!("l{i}.gdn.ssm_out"), &la.ssm_out)?;
+                    }
+                    memra_engine::hybrid::Mixer::Mla(_) => {}
+                    memra_engine::hybrid::Mixer::Kda(_) => {}
+                }
+                match &layer.ffn {
+                    memra_engine::hybrid::Ffn::Dense {
+                        ffn_gate,
+                        ffn_up,
+                        ffn_down,
+                    } => {
+                        probe(&format!("l{i}.ffn.gate"), ffn_gate)?;
+                        probe(&format!("l{i}.ffn.up"), ffn_up)?;
+                        probe(&format!("l{i}.ffn.down"), ffn_down)?;
+                    }
+                    memra_engine::hybrid::Ffn::Moe(mm) => {
+                        probe(&format!("l{i}.moe.router(gate_inp)"), &mm.gate_inp)?;
+                        if let Some(g) = mm.gate_shexp.as_ref() {
+                            probe(&format!("l{i}.moe.shexp_gate"), g)?;
+                        }
+                        if let Some(u) = mm.up_shexp.as_ref() {
+                            probe(&format!("l{i}.moe.shexp_up"), u)?;
+                        }
+                        if let Some(d) = mm.down_shexp.as_ref() {
+                            probe(&format!("l{i}.moe.shexp_down"), d)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        // SOLO batched-vs-tokenwise per-POSITION differential (gap #46, prime-path
+        // FP-composition family): the SAME prompt primed (1) tokenwise (decode_step loop,
+        // m=1 — the oracle-stream config) and (2) batched (prime_cache, prefill GEMMs).
+        // Per position: logit maxdiff + argmax flip + tokenwise margin, both sides through
+        // the SAME m=1 epilogue class (decode's rms_norm row + lm_head matvec). A defect
+        // shows structured position/boundary-dependent divergence (e.g. jumps at
+        // MEMRA_PRIME_CHUNK boundaries); the FP class scatters and flips only near-ties.
+        "twpos" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let every: usize = arg(&rest, "--every")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(32);
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let t = ta.len();
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let eps = cx.model.cfg.rms_eps;
+            println!(
+                "twpos: T={t} chat={chat} chunk_env={:?}",
+                std::env::var("MEMRA_PRIME_CHUNK").ok()
+            );
+
+            // batched prime -> full pre-output-norm hidden stack
+            let mut cb = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(t + 8))?;
+            let (_, _, hid) = cx.model.prime_cache(&cx.e, &ta, &mut cb, 0)?;
+            let h_batch = cx.e.dtoh(&hid)?;
+            assert_eq!(h_batch.len(), t * n_embd);
+            let logits_row =
+                |host: &[f32], p: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                    let d = cx.e.htod(&host[p * n_embd..(p + 1) * n_embd])?;
+                    let mut hn = cx.e.uninit(n_embd)?;
+                    cx.e.rms_norm(
+                        &d,
+                        cx.model.output_norm.float_data(),
+                        &mut hn,
+                        n_embd,
+                        1,
+                        eps,
+                    )?;
+                    cx.e.dtoh(&cx.e.matmul(&cx.model.output, &hn, 1)?)
+                };
+
+            // tokenwise loop, comparing on the fly (position p = logits after token p)
+            let mut ct = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(t + 8))?;
+            let mut flips: Vec<usize> = Vec::new();
+            let (mut md_max, mut md_max_pos) = (0.0f32, 0usize);
+            println!(" pos | maxdiff | argmax tw/bp | tw_margin");
+            for (p, &tk) in ta.iter().enumerate() {
+                let ltw = cx.model.decode_step(&cx.e, tk, &mut ct)?;
+                let lbp = logits_row(&h_batch, p)?;
+                let md = maxdiff(&ltw, &lbp);
+                let (a_tw, v1, _, v2) = top2(&ltw);
+                let (a_bp, ..) = top2(&lbp);
+                let flip = a_tw != a_bp;
+                if flip {
+                    flips.push(p);
+                }
+                if md > md_max {
+                    md_max = md;
+                    md_max_pos = p;
+                }
+                if flip || p % every == 0 || p + 1 == t {
+                    println!(
+                        "{p:4} | {md:.4e} | {a_tw}/{a_bp}{} | {:.6}",
+                        if flip { " FLIP" } else { "" },
+                        v1 - v2
+                    );
+                }
+            }
+            println!(
+                "twpos summary: {}/{t} argmax flips at positions {:?}",
+                flips.len(),
+                flips
+            );
+            println!(
+                "twpos summary: max maxdiff {md_max:.4e} at pos {md_max_pos} \
+                      (scattered small + near-tie-only flips = FP class; boundary-clustered \
+                      or wide-margin flips = structured)"
+            );
+        }
+
+        // SOLO CONTENT/CAUSALITY razor for the chunked prime: rows of a prefix P must be
+        // BIT-IDENTICAL between prime(P) and prime(P+S) when a chunk boundary falls exactly
+        // at |P| (chunk 0 processes P at identical m in both runs; S is later content and
+        // must be invisible backwards). The monolithic arm (one chunk over P+S) legally
+        // DIFFERs (m changes — numeric-config knob, the concat lane's r5 analog).
+        // QWEN-STACK ONLY: gemma4_prime ignores MEMRA_PRIME_CHUNK (monolithic v0), so the
+        // c1 arm's bit-identity demand does not apply there.
+        //   causal <model> causal --prompt-a <txt|@f> --suffix <txt|@f> [--chat]
+        "causal" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let ps = text_arg(&rest, "--suffix").expect("--suffix");
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let ts_ = cx.tok.encode(&ps, false);
+            assert!(
+                ts_.len() >= 16,
+                "suffix must be >= 16 tokens (chunker merges shorter tails)"
+            );
+            let t = ta.len();
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let eps = cx.model.cfg.rms_eps;
+            let mut cat = ta.clone();
+            cat.extend_from_slice(&ts_);
+            println!("causal: T_p={t} T_s={} chat={chat}", ts_.len());
+
+            let prime_hid = |toks: &[u32]| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(toks.len() + 8))?;
+                let (_, _, hid) = cx.model.prime_cache(&cx.e, toks, &mut c, 0)?;
+                cx.e.dtoh(&hid)
+            };
+            let logits_row =
+                |host: &[f32], p: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                    let d = cx.e.htod(&host[p * n_embd..(p + 1) * n_embd])?;
+                    let mut hn = cx.e.uninit(n_embd)?;
+                    cx.e.rms_norm(
+                        &d,
+                        cx.model.output_norm.float_data(),
+                        &mut hn,
+                        n_embd,
+                        1,
+                        eps,
+                    )?;
+                    cx.e.dtoh(&cx.e.matmul(&cx.model.output, &hn, 1)?)
+                };
+            let bits = |a: &[f32]| -> Vec<u32> { a.iter().map(|v| v.to_bits()).collect() };
+            let mut defect = 0usize;
+            let mut run_arm = |name: &str,
+                               chunk: &str,
+                               must_be_exact: bool|
+             -> Result<(), Box<dyn std::error::Error>> {
+                unsafe {
+                    std::env::set_var("MEMRA_PRIME_CHUNK", chunk);
+                }
+                let h_p = prime_hid(&ta)?;
+                let h_ps = prime_hid(&cat)?;
+                let head = &h_ps[..t * n_embd];
+                let hid_same = bits(head) == bits(&h_p);
+                let lp = logits_row(&h_p, t - 1)?;
+                let lps = logits_row(&h_ps, t - 1)?;
+                let log_same = bits(&lp) == bits(&lps);
+                let (a1, ..) = top2(&lp);
+                let (a2, ..) = top2(&lps);
+                let tag = if hid_same && log_same {
+                    "BIT-IDENTICAL"
+                } else if must_be_exact {
+                    defect += 1;
+                    "*** DIFFER (DEFECT) ***"
+                } else {
+                    "DIFFER (expected: numeric config change)"
+                };
+                println!(
+                    "{name}: {tag}  hid_maxdiff={:.4e} lastP_logit_maxdiff={:.4e} \
+                          argmax {a1} vs {a2}{}",
+                    maxdiff(head, &h_p),
+                    maxdiff(&lp, &lps),
+                    if a1 == a2 { "" } else { " FLIP" }
+                );
+                Ok(())
+            };
+            // chunk boundary exactly at |P|: P's rows/KV computed at identical m -> exact.
+            run_arm(
+                "c1 chunk@|P|  prime(P) vs prime(P+S) rows[0,|P|)",
+                &t.to_string(),
+                true,
+            )?;
+            // monolithic: P's rows inside an m=|P|+|S| pass — the legal m knob.
+            run_arm(
+                "c2 monolithic prime(P) vs prime(P+S) rows[0,|P|)",
+                "0",
+                false,
+            )?;
+            println!(
+                "causal verdict: {}",
+                if defect == 0 {
+                    "NO DEFECT — later content invisible across chunk \
+                                       boundary; only the GEMM m moves rows"
+                } else {
+                    "*** DEFECT: suffix content leaked backwards across a chunk \
+                             boundary ***"
+                }
+            );
+        }
+
+        // CHUNK-ORDER INVARIANCE (lane/chunk-invariance, 2026-08-05): the SAME prompt primed
+        // at several MEMRA_PRIME_CHUNK values with ZERO reuse. Reports, per chunk value vs the
+        // reference: prefill-logit bit-identity, the hidden stack's FIRST diverging position
+        // (which localizes the leak to a chunk boundary vs everywhere), argmax flip, and the
+        // greedy stream's first diverging step. This is the engine-level twin of
+        // research/session-affinity-20260805/chunk-order-probe.py (which needed a live server).
+        //   chunkinv <model> chunkinv --prompt-a <txt|@f> [--chunks 2048,64,32] [--steps N] [--chat]
+        "chunkinv" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let steps: usize = arg(&rest, "--steps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(48);
+            let chunks: Vec<String> = arg(&rest, "--chunks")
+                .unwrap_or_else(|| "2048,64,32".into())
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            let jsonl = arg(&rest, "--jsonl");
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let t = ta.len();
+            let n_embd = cx.model.cfg.n_embd as usize;
+            println!("chunkinv: T={t} chat={chat} chunks={chunks:?} steps={steps}");
+
+            // one arm = set MEMRA_PRIME_CHUNK, prime cold, greedy-decode `steps`.
+            // prime_cache reads the env var per call, so in-process switching is honest.
+            let arm =
+                |cv: &str| -> Result<(Vec<f32>, Vec<f32>, Vec<u32>), Box<dyn std::error::Error>> {
+                    // single-threaded probe main; no other thread reads the environment here.
+                    // `auto` = UNSET — the naked auto range schedule (PP-2 microchunk
+                    // geometry + MEMRA_PRIME_CHUNK_SCHED), the arm the GDN-grid alignment
+                    // cell (lane/hermes-perf-fixes, 2026-08-23) compares against monolithic.
+                    if cv == "auto" {
+                        unsafe { std::env::remove_var("MEMRA_PRIME_CHUNK") };
+                    } else {
+                        unsafe { std::env::set_var("MEMRA_PRIME_CHUNK", cv) };
+                    }
+                    let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(t + steps + 8))?;
+                    let (logits, _, hid) = cx.model.prime_cache(&cx.e, &ta, &mut c, 0)?;
+                    let h = cx.e.dtoh(&hid)?;
+                    let mut tk = argmax(&logits) as u32;
+                    let mut stream = vec![tk];
+                    for _ in 0..steps {
+                        let (l, _) = cx.model.decode_step_h(&cx.e, tk, &mut c)?;
+                        tk = argmax(&l) as u32;
+                        stream.push(tk);
+                    }
+                    Ok((logits, h, stream))
+                };
+            let bits = |a: &[f32]| -> Vec<u32> { a.iter().map(|v| v.to_bits()).collect() };
+            let (l_ref, h_ref, s_ref) = arm(&chunks[0])?;
+            let (a_ref, r1, _, r2) = top2(&l_ref);
+            println!(
+                "ref chunk={} argmax={a_ref} margin={:.6}",
+                chunks[0],
+                r1 - r2
+            );
+            let mut out = jsonl.as_ref().map(std::fs::File::create).transpose()?;
+            let mut defects = 0usize;
+            println!("  chunk | logits | first_div_pos | maxdiff   | argmax | stream_div");
+            for cv in &chunks[1..] {
+                let (l, h, s) = arm(cv)?;
+                let log_same = bits(&l) == bits(&l_ref);
+                // first diverging ROW of the hidden stack: a boundary-localized leak shows
+                // its first divergence at the first chunk boundary, not at row 0.
+                let mut first_div: i64 = -1;
+                for p in 0..t {
+                    let (x, y) = (
+                        &h[p * n_embd..(p + 1) * n_embd],
+                        &h_ref[p * n_embd..(p + 1) * n_embd],
+                    );
+                    if x.iter().zip(y).any(|(a, b)| a.to_bits() != b.to_bits()) {
+                        first_div = p as i64;
+                        break;
+                    }
+                }
+                let (a, ..) = top2(&l);
+                let sd = s.iter().zip(&s_ref).position(|(a, b)| a != b);
+                if !log_same {
+                    defects += 1;
+                }
+                // MECHANISM RAZOR: per-row maxdiff profile. A pure GEMM-m reduction-order
+                // effect is a flat small band across ALL rows; a PRECISION-CLASS change at a
+                // chunk boundary shows an order-of-magnitude STEP at that boundary (rows past
+                // the first boundary read the quantized cache instead of f32 K/V).
+                if rest.iter().any(|x| x == "--profile") {
+                    let cv_n: usize = cv.parse().unwrap_or(0);
+                    let rowmd: Vec<f32> = (0..t)
+                        .map(|p| {
+                            maxdiff(
+                                &h[p * n_embd..(p + 1) * n_embd],
+                                &h_ref[p * n_embd..(p + 1) * n_embd],
+                            )
+                        })
+                        .collect();
+                    let pre: f32 = rowmd[..cv_n.min(t)].iter().cloned().fold(0.0, f32::max);
+                    let post: f32 = rowmd[cv_n.min(t)..].iter().cloned().fold(0.0, f32::max);
+                    println!(
+                        "   profile chunk={cv}: rows[0,{cv_n}) maxdiff={pre:.3e} | \
+                              rows[{cv_n},{t}) maxdiff={post:.3e} | step={:.1}x",
+                        if pre > 0.0 { post / pre } else { f32::INFINITY }
+                    );
+                    let buckets: Vec<String> = rowmd
+                        .chunks(8)
+                        .map(|c| format!("{:.1e}", c.iter().cloned().fold(0.0, f32::max)))
+                        .collect();
+                    println!("   per-8-row maxdiff: {}", buckets.join(" "));
+                }
+                println!(
+                    "{cv:>7} | {} | {:13} | {:.3e} | {} | {}",
+                    if log_same { "EXACT" } else { "DIFFER" },
+                    first_div,
+                    maxdiff(&l, &l_ref),
+                    if a == a_ref { "-" } else { "FLIP" },
+                    match sd {
+                        None => "identical".to_string(),
+                        Some(i) => format!("step {i}"),
+                    }
+                );
+                if let Some(f) = out.as_mut() {
+                    use std::io::Write as _;
+                    writeln!(
+                        f,
+                        "{{\"chunk\":\"{cv}\",\"ref_chunk\":\"{}\",\"T\":{t},\
+                                 \"logits_exact\":{log_same},\"first_div_pos\":{first_div},\
+                                 \"logit_maxdiff\":{:.6e},\"argmax\":{a},\"argmax_ref\":{a_ref},\
+                                 \"stream_div_step\":{}}}",
+                        chunks[0],
+                        maxdiff(&l, &l_ref),
+                        match sd {
+                            None => "null".to_string(),
+                            Some(i) => i.to_string(),
+                        }
+                    )?;
+                }
+            }
+            println!(
+                "chunkinv verdict: {}",
+                if defects == 0 {
+                    "CHUNK-INVARIANT — prefill logits bit-identical at every \
+                                        chunk size"
+                } else {
+                    "*** CHUNK-DEPENDENT: prefill logits move with MEMRA_PRIME_CHUNK ***"
+                }
+            );
+        }
+
+        // TICK-BUDGET INVARIANCE (lane/step35-chunkfix, 2026-08-07): the segmentation axis one
+        // level ABOVE chunkinv. chunkinv varies the split INSIDE one prime_cache call; serve also
+        // splits a prompt across SEVERAL calls, one per scheduler tick. Each call has its own
+        // cache.pos, so a per-CALL quantity is free to differ between budgets even when every
+        // call is internally chunk-invariant — which is exactly the shape of the step35 defect,
+        // just one level out. This mode exists so that axis has a MEASURED receipt instead of an
+        // enumeration argument.
+        //   tickinv <model> tickinv --prompt-a <txt|@f> [--budgets 0,1024,256,64] [--steps N]
+        //                           [--splits 64,256,512]
+        "tickinv" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let steps: usize = arg(&rest, "--steps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(24);
+            let budgets: Vec<usize> = arg(&rest, "--budgets")
+                .unwrap_or_else(|| "0,1024,256,64".into())
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            let splits: Vec<usize> = arg(&rest, "--splits")
+                .unwrap_or_default()
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let t = ta.len();
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
+            println!(
+                "tickinv: T={t} chat={chat} budgets={budgets:?} splits={splits:?} \
+                      steps={steps} PRIME_MIN_T={min_t} (budget 0 = single monolithic call)"
+            );
+
+            // An arm is a SEGMENTATION of [0,T): either the worker's budget loop, or an
+            // explicit two-call split at L (the prefix-cache LCP shape — off-grid RESUME,
+            // vLLM #51113's second hole: call 2 starts at the unaligned position L).
+            enum Seg {
+                Budget(usize),
+                Split(usize),
+            }
+            // FAITHFUL replica of the worker's prefill tick loop (worker.rs:3551-3568): take
+            // min(queue, budget) per call, and if the remainder would fall below PRIME_MIN_T
+            // take the whole rest instead (the tail merge). Each `take` is ONE prime_cache call
+            // on the SAME cache, so cache.pos advances across calls exactly as it does in serve.
+            #[allow(clippy::type_complexity)]
+            // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+            let arm = |seg: &Seg| -> Result<
+                (Vec<f32>, Vec<f32>, Vec<u32>, usize),
+                Box<dyn std::error::Error>,
+            > {
+                let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(t + steps + 8))?;
+                let mut hid_all: Vec<f32> = Vec::with_capacity(t * n_embd);
+                let mut logits = Vec::new();
+                let mut fed = 0usize;
+                let mut calls = 0usize;
+                while fed < t {
+                    let q = t - fed;
+                    let mut take = match *seg {
+                        Seg::Budget(0) => q,
+                        Seg::Budget(b) => q.min(b),
+                        // LCP split: first call stops EXACTLY at L (worker.rs prefill_tick
+                        // bound_rem — the snapshot boundary overrides the budget), the second
+                        // call resumes at pos=L and takes the whole rest.
+                        Seg::Split(l) => {
+                            if fed == 0 {
+                                l.min(q)
+                            } else {
+                                q
+                            }
+                        }
+                    };
+                    if q - take > 0 && q - take < min_t {
+                        take = q;
+                    }
+                    // queued_after = the request's remainder — EXACTLY what the worker passes
+                    // (prefill_tick / step_session hand prime_cache their prefill_queue.len()
+                    // after the drain). The probe stays a faithful replica of serve.
+                    let (l, _, hid) = cx.model.prime_cache(
+                        &cx.e,
+                        &ta[fed..fed + take],
+                        &mut c,
+                        t - fed - take,
+                    )?;
+                    hid_all.extend_from_slice(&cx.e.dtoh(&hid)?);
+                    logits = l;
+                    fed += take;
+                    calls += 1;
+                }
+                let mut tk = argmax(&logits) as u32;
+                let mut stream = vec![tk];
+                for _ in 0..steps {
+                    let (l, _) = cx.model.decode_step_h(&cx.e, tk, &mut c)?;
+                    tk = argmax(&l) as u32;
+                    stream.push(tk);
+                }
+                Ok((logits, hid_all, stream, calls))
+            };
+            let bits = |a: &[f32]| -> Vec<u32> { a.iter().map(|v| v.to_bits()).collect() };
+            let (l_ref, h_ref, s_ref, c_ref) = arm(&Seg::Budget(budgets[0]))?;
+            println!(
+                "ref budget={} calls={c_ref} argmax={}",
+                budgets[0],
+                argmax(&l_ref)
+            );
+            let mut defects = 0usize;
+            println!(" budget | calls | logits | first_div_row | maxdiff   | argmax | stream_div");
+            let arms: Vec<(String, Seg)> = budgets[1..]
+                .iter()
+                .map(|&b| (format!("{b}"), Seg::Budget(b)))
+                .chain(
+                    splits
+                        .iter()
+                        .filter(|&&l| l >= min_t && l + min_t <= t)
+                        .map(|&l| (format!("sp{l}"), Seg::Split(l))),
+                )
+                .collect();
+            for (name, seg) in &arms {
+                let (l, h, s, calls) = arm(seg)?;
+                let log_same = bits(&l) == bits(&l_ref);
+                let mut first_div: i64 = -1;
+                for p in 0..t.min(h.len() / n_embd).min(h_ref.len() / n_embd) {
+                    let (x, y) = (
+                        &h[p * n_embd..(p + 1) * n_embd],
+                        &h_ref[p * n_embd..(p + 1) * n_embd],
+                    );
+                    if x.iter().zip(y).any(|(a, bb)| a.to_bits() != bb.to_bits()) {
+                        first_div = p as i64;
+                        break;
+                    }
+                }
+                if !log_same {
+                    defects += 1;
+                }
+                let sd = s.iter().zip(&s_ref).position(|(a, bb)| a != bb);
+                println!(
+                    "{name:>7} | {calls:>5} | {} | {:13} | {:.3e} | {} | {}",
+                    if log_same { "EXACT" } else { "DIFFER" },
+                    first_div,
+                    maxdiff(&l, &l_ref),
+                    if argmax(&l) == argmax(&l_ref) {
+                        "-"
+                    } else {
+                        "FLIP"
+                    },
+                    match sd {
+                        None => "identical".to_string(),
+                        Some(i) => format!("step {i}"),
+                    }
+                );
+            }
+            println!(
+                "tickinv verdict: {}",
+                if defects == 0 {
+                    "TICK-INVARIANT — prefill logits bit-identical at every \
+                                        per-tick prefill budget"
+                } else {
+                    "*** TICK-DEPENDENT: prefill logits move with the per-tick prefill \
+                             budget (MEMRA_PREFILL_TICK / _JUDGE / _HARVEST) ***"
+                }
+            );
+        }
+
+        // PRIME-PATH DIVERGENCE PROFILER — see the module doc. The GATES-SMOKE-20260821 B3
+        // shapes at engine level: monolithic vs boundary-stopped vs decode-history prime
+        // programs over ONE token sequence, with the near-tie-vs-defect discriminators.
+        "primepath" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let steps: usize = arg(&rest, "--steps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(48);
+            let splits: Vec<usize> = arg(&rest, "--splits")
+                .unwrap_or_default()
+                .split(',')
+                .filter_map(|s| s.trim().parse().ok())
+                .collect();
+            let hist_k: usize = arg(&rest, "--hist")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let suffix = text_arg(&rest, "--suffix");
+            let structured_row: f32 = arg(&rest, "--structured-row")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.5);
+            let structured_margin: f32 = arg(&rest, "--structured-margin")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.5);
+            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
+            let cap = |t: usize| cx.ctx_len.max(t + steps + hist_k + 8);
+
+            // The token sequence under test. --hist K: prompt-a ++ the model's OWN K greedy
+            // tokens (decoded on what becomes the hist arm's live cache) ++ suffix.
+            let mut hist_live: Option<Cache> = None;
+            let mut seq = ta.clone();
+            if hist_k > 0 {
+                let sb = suffix
+                    .as_ref()
+                    .expect("--hist needs --suffix (the next-turn bytes)");
+                let mut c = Cache::new(&cx.e, &cx.model.cfg, cap(ta.len() + 4096))?;
+                let (l0, _, _) = cx.model.prime_cache(&cx.e, &ta, &mut c, 0)?;
+                let mut tk = argmax(&l0) as u32;
+                let mut d = vec![tk];
+                for _ in 1..hist_k {
+                    let (l, _) = cx.model.decode_step_h(&cx.e, tk, &mut c)?;
+                    tk = argmax(&l) as u32;
+                    d.push(tk);
+                }
+                let tb = cx.tok.encode(sb, false);
+                assert!(
+                    tb.len() >= min_t,
+                    "suffix must be >= PRIME_MIN_T={min_t} tokens"
+                );
+                seq.extend_from_slice(&d);
+                seq.extend_from_slice(&tb);
+                hist_live = Some(c);
+            }
+            let t = seq.len();
+            println!(
+                "primepath: T={t} (prompt {} + hist {hist_k} + suffix {}) chat={chat} \
+                 splits={splits:?} steps={steps} structured-row={structured_row} \
+                 structured-margin={structured_margin}",
+                ta.len(),
+                t - ta.len() - hist_k,
+            );
+
+            // One prime PROGRAM = an ordered list of call lengths over seq (worker tail-merge
+            // law: a remainder below PRIME_MIN_T folds into the previous call). Returns the
+            // prefill hidden stack, the final-position logits, and the greedy walk (stream +
+            // per-step top-2 margins + per-step logits for the contending-id delta report).
+            #[allow(clippy::type_complexity)]
+            let run_program = |calls: &[usize],
+                               live: Option<Cache>|
+             -> Result<
+                (Vec<f32>, Vec<f32>, Vec<u32>, Vec<f32>, Vec<Vec<f32>>),
+                Box<dyn std::error::Error>,
+            > {
+                let (mut c, mut fed) = match live {
+                    Some(c) => {
+                        let pos = c.pos;
+                        (c, pos)
+                    }
+                    None => (Cache::new(&cx.e, &cx.model.cfg, cap(t))?, 0usize),
+                };
+                let mut hid_all: Vec<f32> = Vec::new();
+                let mut logits = Vec::new();
+                for &take in calls {
+                    let (l, _, hid) = cx.model.prime_cache(
+                        &cx.e,
+                        &seq[fed..fed + take],
+                        &mut c,
+                        t - fed - take,
+                    )?;
+                    hid_all.extend_from_slice(&cx.e.dtoh(&hid)?);
+                    logits = l;
+                    fed += take;
+                }
+                assert_eq!(fed, t, "program must cover the sequence");
+                let mut tk = argmax(&logits) as u32;
+                let (_, v1, _, v2) = top2(&logits);
+                let mut stream = vec![tk];
+                let mut margins = vec![v1 - v2];
+                let mut step_logits = vec![logits.clone()];
+                for _ in 0..steps {
+                    let (l, _) = cx.model.decode_step_h(&cx.e, tk, &mut c)?;
+                    tk = argmax(&l) as u32;
+                    let (_, v1, _, v2) = top2(&l);
+                    stream.push(tk);
+                    margins.push(v1 - v2);
+                    step_logits.push(l);
+                }
+                Ok((
+                    hid_all,
+                    step_logits[0].clone(),
+                    stream,
+                    margins,
+                    step_logits,
+                ))
+            };
+            let program_for_split = |l: usize| -> Vec<usize> {
+                if t - l < min_t {
+                    vec![t]
+                } else {
+                    vec![l, t - l]
+                }
+            };
+
+            let (h_ref, l_ref, s_ref, m_ref, sl_ref) = run_program(&[t], None)?;
+            // margin percentile helper: where does m sit within the ref stream's margins?
+            let pctl = |m: f32| -> f32 {
+                let below = m_ref.iter().filter(|&&x| x < m).count();
+                100.0 * below as f32 / m_ref.len().max(1) as f32
+            };
+
+            let report = |name: &str,
+                          h: &[f32],
+                          l: &[f32],
+                          s: &[u32],
+                          m: &[f32],
+                          sl: &[Vec<f32>],
+                          rows_valid: bool|
+             -> String {
+                let bits_eq = l.len() == l_ref.len()
+                    && l.iter()
+                        .zip(l_ref.iter())
+                        .all(|(a, b)| a.to_bits() == b.to_bits());
+                // hidden-row divergence profile (prime rows only; decode-history arms skip)
+                let mut first_row: i64 = -1;
+                let mut rows_diff = 0usize;
+                let mut diffs: Vec<f32> = Vec::new();
+                let nrows = (h.len() / n_embd).min(h_ref.len() / n_embd);
+                if rows_valid {
+                    for p in 0..nrows {
+                        let (x, y) = (
+                            &h[p * n_embd..(p + 1) * n_embd],
+                            &h_ref[p * n_embd..(p + 1) * n_embd],
+                        );
+                        let d = maxdiff(x, y);
+                        if x.iter().zip(y).any(|(a, b)| a.to_bits() != b.to_bits()) {
+                            if first_row < 0 {
+                                first_row = p as i64;
+                            }
+                            rows_diff += 1;
+                            diffs.push(d);
+                        }
+                    }
+                }
+                diffs.sort_by(|a, b| a.total_cmp(b));
+                let q = |f: f64| -> f32 {
+                    if diffs.is_empty() {
+                        0.0
+                    } else {
+                        diffs[((diffs.len() - 1) as f64 * f) as usize]
+                    }
+                };
+                let row_max = q(1.0);
+                let flip = s.iter().zip(s_ref.iter()).position(|(a, b)| a != b);
+                let flip_txt = match flip {
+                    None => "stream identical".to_string(),
+                    Some(i) => {
+                        let (i1, v1, i2, v2) = top2(&sl_ref[i]);
+                        let mr = v1 - v2;
+                        let ma = m[i];
+                        // the flip-possibility quantity: cross-arm delta at the two ids
+                        // contending in the REFERENCE arm (argmax-margin-probe law)
+                        let d1 = (sl[i][i1] - sl_ref[i][i1]).abs();
+                        let d2 = (sl[i][i2] - sl_ref[i][i2]).abs();
+                        format!(
+                            "flip step {i}: margin_ref {mr:.3e} (p{:.1} of {} ref margins) \
+                             margin_arm {ma:.3e} delta_at_ids {d1:.3e}/{d2:.3e}",
+                            pctl(mr),
+                            m_ref.len()
+                        )
+                    }
+                };
+                let flip_margin = flip.map(|i| {
+                    let (_, v1, _, v2) = top2(&sl_ref[i]);
+                    v1 - v2
+                });
+                let verdict = if bits_eq && flip.is_none() && (!rows_valid || rows_diff == 0) {
+                    "EXACT"
+                } else if row_max > structured_row
+                    || flip_margin.map(|m| m > structured_margin).unwrap_or(false)
+                {
+                    "STRUCTURED"
+                } else {
+                    "NEAR-TIE-CLASS"
+                };
+                println!(
+                    "arm {name}: logits {} | rows_diff {} | row_maxdiff p50 {:.3e} p99 {:.3e} \
+                     max {:.3e} | final_logit_maxdiff {:.3e} | {flip_txt}",
+                    if bits_eq { "EXACT" } else { "DIFFER" },
+                    if rows_valid {
+                        format!("{rows_diff}/{nrows} first {first_row}")
+                    } else {
+                        "n/a (decode-history arm)".to_string()
+                    },
+                    q(0.5),
+                    q(0.99),
+                    row_max,
+                    maxdiff(l, &l_ref),
+                );
+                println!("verdict {name}: {verdict}");
+                verdict.to_string()
+            };
+
+            // mono2: per-program determinism pin — must be EXACT.
+            let (h2, l2, s2, m2, sl2) = run_program(&[t], None)?;
+            let v = report("mono2", &h2, &l2, &s2, &m2, &sl2, true);
+            assert_eq!(
+                v, "EXACT",
+                "monolithic prime is nondeterministic across boots of the same program — \
+                 STOP: nothing downstream is interpretable"
+            );
+            for &l in splits.iter().filter(|&&l| l >= min_t && l < t) {
+                let (h, lg, s, m, sl) = run_program(&program_for_split(l), None)?;
+                report(&format!("sp{l}"), &h, &lg, &s, &m, &sl, true);
+            }
+            if let Some(c) = hist_live.take() {
+                let fed = c.pos;
+                let (h, lg, s, m, sl) = run_program(&[t - fed], Some(c))?;
+                report("hist", &h, &lg, &s, &m, &sl, false);
+            }
+        }
+
+        // NLL WINDOW THROUGH THE SERVING PRIME (lane/chunkinv-flip, 2026-08-05): mean token
+        // NLL over a frozen text window, computed from prime_cache's OWN hidden stack (the
+        // pass the grain-free fix changes). forward()/fp8_mmq_stream ride full_attn (fresh
+        // f32 prefill) and CANNOT see this change — this mode is the quality instrument for
+        // anything that moves prime arithmetic. Env decides the arm (MEMRA_PRIME_F32CHUNK0,
+        // MEMRA_PRIME_CHUNK); the mode itself is arm-neutral.
+        //   nllwin <model> nllwin --prompt-a <txt|@f> [--window 1024] [--chunk <c>]
+        "nllwin" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let window: usize = arg(&rest, "--window")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024);
+            if let Some(cv) = arg(&rest, "--chunk") {
+                unsafe { std::env::set_var("MEMRA_PRIME_CHUNK", &cv) };
+            }
+            let mut ids = cx.tok.encode(&pa, true);
+            ids.truncate(window.max(2));
+            let t = ids.len();
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let n_vocab = cx.model.output.out_features();
+            let mut c = Cache::new(&cx.e, &cx.model.cfg, t + 8)?;
+            let (_, _, hid) = cx.model.prime_cache(&cx.e, &ids, &mut c, 0)?;
+            // hid = [T, n_embd] pre-output-norm hiddens; lm_head each row like forward()
+            let mut hn = cx.e.uninit(t * n_embd)?;
+            cx.e.rms_norm(
+                &hid,
+                cx.model.output_norm.float_data(),
+                &mut hn,
+                n_embd,
+                t,
+                cx.model.cfg.rms_eps,
+            )?;
+            let logits = cx.e.matmul(&cx.model.output, &hn, t)?;
+            let all = cx.e.dtoh(&logits)?;
+            let mut sum = 0.0f64;
+            for p in 1..t {
+                let row = &all[(p - 1) * n_vocab..p * n_vocab];
+                let mx = row.iter().cloned().fold(f32::NEG_INFINITY, f32::max) as f64;
+                let lse = mx
+                    + row
+                        .iter()
+                        .map(|&v| ((v as f64) - mx).exp())
+                        .sum::<f64>()
+                        .ln();
+                sum += lse - row[ids[p] as usize] as f64;
+            }
+            let nll = sum / (t - 1) as f64;
+            println!(
+                "nllwin: tokens={t} chunk={} f32chunk0={} mean_nll={nll:.6} ppl={:.6}",
+                std::env::var("MEMRA_PRIME_CHUNK").unwrap_or_else(|_| "4096(default)".into()),
+                std::env::var("MEMRA_PRIME_F32CHUNK0").unwrap_or_else(|_| "0".into()),
+                nll.exp()
+            );
+        }
+
+        // TEACHER-FORCED ARM COMPARISON (lane/chunkinv-flip; the mmq-v2 flip protocol):
+        // prime the SAME window under the grain-free default and under the legacy seam
+        // (MEMRA_PRIME_F32CHUNK0=1), lm_head every row of both hidden stacks, and report the
+        // per-position argmax disagreement count + each flip's LEGACY-arm margin against the
+        // legacy margin distribution (median/percentile) — near-tie flips sit far below the
+        // median. Teacher-forced by construction: every row is conditioned on the true prefix.
+        //   tfcmp <model> tfcmp --prompt-a <txt|@f> [--window 1024] [--chunk <c>]
+        "tfcmp" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let window: usize = arg(&rest, "--window")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024);
+            if let Some(cv) = arg(&rest, "--chunk") {
+                unsafe { std::env::set_var("MEMRA_PRIME_CHUNK", &cv) };
+            }
+            let mut ids = cx.tok.encode(&pa, true);
+            ids.truncate(window.max(2));
+            let t = ids.len();
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let n_vocab = cx.model.output.out_features();
+            let run_arm = |seam: &str| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                unsafe { std::env::set_var("MEMRA_PRIME_F32CHUNK0", seam) };
+                let mut c = Cache::new(&cx.e, &cx.model.cfg, t + 8)?;
+                let (_, _, hid) = cx.model.prime_cache(&cx.e, &ids, &mut c, 0)?;
+                let mut hn = cx.e.uninit(t * n_embd)?;
+                cx.e.rms_norm(
+                    &hid,
+                    cx.model.output_norm.float_data(),
+                    &mut hn,
+                    n_embd,
+                    t,
+                    cx.model.cfg.rms_eps,
+                )?;
+                let logits = cx.e.matmul(&cx.model.output, &hn, t)?;
+                cx.e.dtoh(&logits)
+            };
+            let l_new = run_arm("0")?; // grain-free default
+            let l_old = run_arm("1")?; // legacy f32-chunk0 arithmetic
+            unsafe { std::env::remove_var("MEMRA_PRIME_F32CHUNK0") };
+            let mut legacy_margins: Vec<f32> = Vec::with_capacity(t);
+            let mut flips: Vec<(usize, f32)> = Vec::new();
+            for p in 0..t {
+                let ro = &l_old[p * n_vocab..(p + 1) * n_vocab];
+                let rn = &l_new[p * n_vocab..(p + 1) * n_vocab];
+                let (ao, v1, _, v2) = top2(ro);
+                let (an, ..) = top2(rn);
+                legacy_margins.push(v1 - v2);
+                if ao != an {
+                    flips.push((p, v1 - v2));
+                }
+            }
+            let mut sorted = legacy_margins.clone();
+            sorted.sort_by(f32::total_cmp);
+            let med = sorted[sorted.len() / 2];
+            println!(
+                "tfcmp: window={t} disagreements={} of {t} | legacy margin median={med:.4}",
+                flips.len()
+            );
+            for (p, m) in &flips {
+                let pct =
+                    sorted.iter().filter(|&&v| v < *m).count() as f64 / sorted.len() as f64 * 100.0;
+                println!(
+                    "  flip @pos {p}: legacy margin {m:.6} = {:.3}x median ({pct:.1}th pctile)",
+                    m / med
+                );
+            }
+        }
+
+        // PRIME-ONLY THROUGHPUT (lane/chunkinv-flip): timed prime_cache reps, fresh cache per
+        // rep, median tok/s — the SERVING prefill pass. run-gen's GGUF MEMRA_PP_ONLY times
+        // forward_last (fresh f32 attention, prime-dispatch-blind); this mode times the pass
+        // the grain-free fix actually changes. Env (MEMRA_PRIME_F32CHUNK0 / MEMRA_PRIME_CHUNK)
+        // selects the arm.
+        //   ppprime <model> ppprime --prompt-a <txt|@f> [--reps 3] [--warmup 1]
+        "ppprime" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let reps: usize = arg(&rest, "--reps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3);
+            let warmup: usize = arg(&rest, "--warmup")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1);
+            // --budget: time the SERVE-SHAPED multi-call prime (the worker's tick loop replica,
+            // incl. PRIME_MIN_T tail merge) instead of one monolithic call — the path the
+            // tick-seg fix changes. 0 (default) = monolithic, the pre-existing behavior.
+            let budget: usize = arg(&rest, "--budget")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let ids = cx.tok.encode(&pa, true);
+            let t = ids.len();
+            let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
+            let run = |c: &mut Cache| -> Result<(), Box<dyn std::error::Error>> {
+                let mut fed = 0usize;
+                while fed < t {
+                    let q = t - fed;
+                    let mut take = if budget == 0 { q } else { q.min(budget) };
+                    if q - take > 0 && q - take < min_t {
+                        take = q;
+                    }
+                    let _ =
+                        cx.model
+                            .prime_cache(&cx.e, &ids[fed..fed + take], c, t - fed - take)?;
+                    fed += take;
+                }
+                Ok(())
+            };
+            // STAGE-OWNED KV (lane/pp-leverb): pp::new_cache = Cache::new verbatim with the
+            // door shut; door-open it homes each stage's KV on its own card — the serving
+            // config. A plain Cache::new here would make the split prime peer-WRITE stage-1
+            // appends and understate the walker (the pp2-batch wrong-card-KV harness class).
+            for _ in 0..warmup {
+                let mut c = memra_engine::pp::new_cache(&cx.e, &cx.model.cfg, t + 8)?;
+                run(&mut c)?;
+            }
+            cx.e.stream().synchronize()?;
+            let mut times = Vec::with_capacity(reps);
+            for r in 0..reps {
+                let mut c = memra_engine::pp::new_cache(&cx.e, &cx.model.cfg, t + 8)?;
+                let t0 = std::time::Instant::now();
+                run(&mut c)?;
+                cx.e.stream().synchronize()?;
+                let dt = t0.elapsed().as_secs_f64();
+                println!(
+                    "ppprime rep {r}: {t} tok in {dt:.4}s = {:.1} tok/s",
+                    t as f64 / dt
+                );
+                times.push(dt);
+            }
+            times.sort_by(f64::total_cmp);
+            let med = times[times.len() / 2];
+            println!(
+                "ppprime MEDIAN: {t} tok in {med:.4}s = {:.1} tok/s (budget={budget} chunk={} \
+                      calllocal={})",
+                t as f64 / med,
+                std::env::var("MEMRA_PRIME_CHUNK").unwrap_or_else(|_| "4096(default)".into()),
+                std::env::var("MEMRA_PRIME_CALLLOCAL").unwrap_or_else(|_| "0".into())
+            );
+        }
+
+        // PRIME PIPELINE THROUGHPUT (lane/cx-pipeline-prime, 2026-08-08). Compare the
+        // serial and pipelined stage walkers over one sharded model load. Each repetition
+        // runs both arms, with order alternated to control clock drift. Liveness is part of
+        // the measurement contract: both arms must split, SERIAL must not overlap, and PIPE
+        // must overlap every adjacent internal chunk pair.
+        //   pppipeperf <model> pppipeperf --prompt-a <txt|@f> [--reps 5] [--warmup 1]
+        "pppipeperf" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let reps: usize = arg(&rest, "--reps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5);
+            let warmup: usize = arg(&rest, "--warmup")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1);
+            assert!(reps > 0, "pppipeperf --reps must be at least 1");
+            let ids = cx.tok.encode(&pa, true);
+            let t = ids.len();
+            let chunk = memra_engine::hybrid_forward::prime_chunk_tokens(t, cx.model.layers.len());
+            let ranges = memra_engine::hybrid_forward::prime_chunk_ranges(
+                t,
+                cx.model.layers.len(),
+                cx.model.gdn_prime_grid_on(),
+            );
+            let sizes: Vec<_> = ranges.iter().map(|(start, end)| end - start).collect();
+            let expected = ranges.len();
+            let expected_overlaps = expected.saturating_sub(1);
+            assert!(
+                memra_engine::pp::pp_cuts(cx.model.layers.len()).is_some(),
+                "pppipeperf requires an open PP door"
+            );
+            assert!(
+                expected >= 2,
+                "pppipeperf requires at least two internal chunks (T={t}, chunk={chunk})"
+            );
+            println!(
+                "pppipeperf: T={t} nominal_chunk={chunk} sizes={sizes:?} chunks={expected} \
+                 expected_overlaps={} reps={reps} warmup={warmup} devices={}",
+                expected_overlaps,
+                std::env::var("MEMRA_PP_DEVICES").unwrap_or_else(|_| "unset".into()),
+            );
+
+            let run_arm = |pipe: bool| -> Result<(f64, usize, usize), Box<dyn std::error::Error>> {
+                unsafe {
+                    std::env::remove_var("MEMRA_PRIME_PP");
+                    if pipe {
+                        std::env::remove_var("MEMRA_PRIME_PIPE");
+                    } else {
+                        std::env::set_var("MEMRA_PRIME_PIPE", "0");
+                    }
+                }
+                let split0 = memra_engine::pp::prime_split_chunks();
+                let overlap0 = memra_engine::pp::prime_pipe_overlaps();
+                let mut c = memra_engine::pp::new_cache(&cx.e, &cx.model.cfg, t + 8)?;
+                let t0 = std::time::Instant::now();
+                let _ = cx.model.prime_cache(&cx.e, &ids, &mut c, 0)?;
+                cx.e.stream().synchronize()?;
+                let dt = t0.elapsed().as_secs_f64();
+                Ok((
+                    dt,
+                    memra_engine::pp::prime_split_chunks() - split0,
+                    memra_engine::pp::prime_pipe_overlaps() - overlap0,
+                ))
+            };
+            let validate = |name: &str, split: usize, overlaps: usize| {
+                let live = split >= expected
+                    && if name == "PIPE" {
+                        overlaps >= expected_overlaps
+                    } else {
+                        overlaps == 0
+                    };
+                assert!(
+                    live,
+                    "{name} not live: split={split} overlaps={overlaps}, \
+                     need split>={expected} and overlaps{}",
+                    if name == "PIPE" {
+                        format!(">={expected_overlaps}")
+                    } else {
+                        "=0".into()
+                    }
+                );
+            };
+
+            for w in 0..warmup {
+                for (name, pipe) in [("SERIAL", false), ("PIPE", true)] {
+                    let (dt, split, overlaps) = run_arm(pipe)?;
+                    validate(name, split, overlaps);
+                    println!(
+                        "  warmup {} arm={name}: {t} tok in {dt:.4}s = {:.1} tok/s \
+                         split={split} overlaps={overlaps}",
+                        w + 1,
+                        t as f64 / dt,
+                    );
+                }
+            }
+
+            let mut serial_times = Vec::with_capacity(reps);
+            let mut pipe_times = Vec::with_capacity(reps);
+            for rep in 1..=reps {
+                let order = if rep % 2 == 1 {
+                    [("SERIAL", false), ("PIPE", true)]
+                } else {
+                    [("PIPE", true), ("SERIAL", false)]
+                };
+                for (name, pipe) in order {
+                    let (dt, split, overlaps) = run_arm(pipe)?;
+                    validate(name, split, overlaps);
+                    println!(
+                        "  rep {rep} arm={name}: {t} tok in {dt:.4}s = {:.1} tok/s \
+                         split={split} overlaps={overlaps}",
+                        t as f64 / dt,
+                    );
+                    if pipe {
+                        pipe_times.push(dt);
+                    } else {
+                        serial_times.push(dt);
+                    }
+                }
+            }
+            unsafe {
+                std::env::remove_var("MEMRA_PRIME_PP");
+                std::env::remove_var("MEMRA_PRIME_PIPE");
+            }
+            serial_times.sort_by(f64::total_cmp);
+            pipe_times.sort_by(f64::total_cmp);
+            let serial_med = serial_times[serial_times.len() / 2];
+            let pipe_med = pipe_times[pipe_times.len() / 2];
+            println!(
+                "pppipeperf MEDIAN: SERIAL {:.1} tok/s ({serial_med:.4}s) | \
+                 PIPE {:.1} tok/s ({pipe_med:.4}s) | speedup {:.3}x | N={reps} \
+                 alternating order, nominal_chunk={chunk}, sizes={sizes:?}",
+                t as f64 / serial_med,
+                t as f64 / pipe_med,
+                serial_med / pipe_med,
+            );
+        }
+
+        // DYNAMIC MICROCHUNK THROUGHPUT (lane/cx-dynamic-microchunk, 2026-08-08).
+        // Compare fixed and dynamic chunk boundaries with the PP-2 pipeline live in both
+        // arms. One sharded load, alternating order, and liveness on every sample make this
+        // a schedule-only measurement.
+        //   ppschedperf <model> ppschedperf --prompt-a <txt|@f> [--reps 5] [--warmup 1]
+        "ppschedperf" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let reps: usize = arg(&rest, "--reps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5);
+            let warmup: usize = arg(&rest, "--warmup")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1);
+            assert!(reps > 0, "ppschedperf --reps must be at least 1");
+            assert!(
+                std::env::var_os("MEMRA_PRIME_CHUNK").is_none(),
+                "ppschedperf requires naked auto geometry (unset MEMRA_PRIME_CHUNK)"
+            );
+            assert!(
+                memra_engine::pp::pp_cuts(cx.model.layers.len()).is_some(),
+                "ppschedperf requires an open PP door"
+            );
+            let ids = cx.tok.encode(&pa, true);
+            let t = ids.len();
+            let schedule = |name: &str| {
+                unsafe {
+                    std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", name);
+                }
+                memra_engine::hybrid_forward::prime_chunk_ranges(
+                    t,
+                    cx.model.layers.len(),
+                    cx.model.gdn_prime_grid_on(),
+                )
+            };
+            let fixed_ranges = schedule("fixed");
+            let dynamic_ranges = schedule("dynamic");
+            let fixed_sizes: Vec<_> = fixed_ranges
+                .iter()
+                .map(|(start, end)| end - start)
+                .collect();
+            let dynamic_sizes: Vec<_> = dynamic_ranges
+                .iter()
+                .map(|(start, end)| end - start)
+                .collect();
+            assert!(
+                fixed_ranges.len() >= 2,
+                "ppschedperf requires at least two internal chunks"
+            );
+            assert_eq!(
+                fixed_ranges.len(),
+                dynamic_ranges.len(),
+                "dynamic schedule must retain the fixed chunk count"
+            );
+            println!(
+                "ppschedperf: T={t} fixed={fixed_sizes:?} dynamic={dynamic_sizes:?} \
+                 chunks={} reps={reps} warmup={warmup} devices={}",
+                fixed_ranges.len(),
+                std::env::var("MEMRA_PP_DEVICES").unwrap_or_else(|_| "unset".into()),
+            );
+
+            let run_arm = |name: &str| -> Result<(f64, usize, usize), Box<dyn std::error::Error>> {
+                unsafe {
+                    std::env::remove_var("MEMRA_PRIME_CHUNK");
+                    std::env::remove_var("MEMRA_PRIME_PP");
+                    std::env::remove_var("MEMRA_PRIME_PIPE");
+                    std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", name);
+                }
+                let split0 = memra_engine::pp::prime_split_chunks();
+                let overlap0 = memra_engine::pp::prime_pipe_overlaps();
+                let mut c = memra_engine::pp::new_cache(&cx.e, &cx.model.cfg, t + 8)?;
+                let t0 = std::time::Instant::now();
+                let _ = cx.model.prime_cache(&cx.e, &ids, &mut c, 0)?;
+                cx.e.stream().synchronize()?;
+                Ok((
+                    t0.elapsed().as_secs_f64(),
+                    memra_engine::pp::prime_split_chunks() - split0,
+                    memra_engine::pp::prime_pipe_overlaps() - overlap0,
+                ))
+            };
+            let validate = |name: &str, split: usize, overlaps: usize| {
+                let expected = if name == "fixed" {
+                    fixed_ranges.len()
+                } else {
+                    dynamic_ranges.len()
+                };
+                assert!(
+                    split >= expected && overlaps >= expected - 1,
+                    "{name} not live: split={split} overlaps={overlaps}, \
+                     need split>={expected} overlaps>={}",
+                    expected - 1
+                );
+            };
+
+            for warmup_rep in 1..=warmup {
+                for name in ["fixed", "dynamic"] {
+                    let (dt, split, overlaps) = run_arm(name)?;
+                    validate(name, split, overlaps);
+                    println!(
+                        "  warmup {warmup_rep} arm={}: {t} tok in {dt:.4}s = {:.1} tok/s \
+                         split={split} overlaps={overlaps}",
+                        name.to_ascii_uppercase(),
+                        t as f64 / dt,
+                    );
+                }
+            }
+
+            let mut fixed_times = Vec::with_capacity(reps);
+            let mut dynamic_times = Vec::with_capacity(reps);
+            for rep in 1..=reps {
+                let order = if rep % 2 == 1 {
+                    ["fixed", "dynamic"]
+                } else {
+                    ["dynamic", "fixed"]
+                };
+                for name in order {
+                    let (dt, split, overlaps) = run_arm(name)?;
+                    validate(name, split, overlaps);
+                    println!(
+                        "  rep {rep} arm={}: {t} tok in {dt:.4}s = {:.1} tok/s \
+                         split={split} overlaps={overlaps}",
+                        name.to_ascii_uppercase(),
+                        t as f64 / dt,
+                    );
+                    if name == "fixed" {
+                        fixed_times.push(dt);
+                    } else {
+                        dynamic_times.push(dt);
+                    }
+                }
+            }
+            unsafe {
+                std::env::remove_var("MEMRA_PRIME_CHUNK_SCHED");
+                std::env::remove_var("MEMRA_PRIME_PP");
+                std::env::remove_var("MEMRA_PRIME_PIPE");
+            }
+            fixed_times.sort_by(f64::total_cmp);
+            dynamic_times.sort_by(f64::total_cmp);
+            let fixed_med = fixed_times[fixed_times.len() / 2];
+            let dynamic_med = dynamic_times[dynamic_times.len() / 2];
+            println!(
+                "ppschedperf MEDIAN: FIXED {:.1} tok/s ({fixed_med:.4}s) | \
+                 DYNAMIC {:.1} tok/s ({dynamic_med:.4}s) | speedup {:.3}x | N={reps} \
+                 alternating order, fixed={fixed_sizes:?}, dynamic={dynamic_sizes:?}",
+                t as f64 / fixed_med,
+                t as f64 / dynamic_med,
+                fixed_med / dynamic_med,
+            );
+        }
+
+        // PRIME PP SCHEDULE BIT-IDENTITY (lane/pp-leverb + lane/cx-pipeline-prime,
+        // lane/cx-dynamic-microchunk, 2026-08-08). Three arms in ONE process over the
+        // SAME sharded load (the door must be open BEFORE the probe starts — the
+        // gate script exports MEMRA_PP_STAGES/MEMRA_PP_DEVICES; a door-off load of a >VRAM
+        // SKU doesn't fit one card, so the reference is the door-open UNSPLIT walk, which
+        // prime deliberately keeps callable — its 22% amortized tax is this gate's reference
+        // arm, not a refusal case):
+        //   arm REF:    FIXED schedule + MEMRA_PRIME_PP=0 whole-trunk prime;
+        //   arm SERIAL: FIXED schedule + split walker with MEMRA_PRIME_PIPE=0;
+        //   arm PIPE:   DYNAMIC schedule + chunk pipeline live.
+        // Compared bit-for-bit: last-row logits, h_seed, the full [T, n_embd] hidden stack,
+        // and `--steps` TEACHER-FORCED decode steps replaying the reference greedy stream —
+        // the decode steps read the KV the prime WROTE, so a schedule that lands stage-1
+        // KV bytes wrong fails here even if its returned logits agree.
+        // LIVENESS TEETH: SERIAL and PIPE must both advance PRIME_SPLIT_CHUNKS; only PIPE
+        // may advance PRIME_PIPE_OVERLAPS, by at least chunks-1. `--force-serial-pipe`
+        // leaves the split live but runs the PIPE arm with MEMRA_PRIME_PIPE=0 — the direct
+        // canary for overlap liveness. `--force-unsplit` retains the older walker canary.
+        //   ppsplit <model> ppsplit --prompt-a <txt|@f> [--chunks auto,513] [--steps 8]
+        //                           [--soak 200] [--force-unsplit|--force-serial-pipe]
+        "ppsplit" => {
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let chunks_s = arg(&rest, "--chunks").unwrap_or_else(|| "auto,513".into());
+            let steps: usize = arg(&rest, "--steps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8);
+            let soak: usize = arg(&rest, "--soak")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1);
+            assert!(soak > 0, "ppsplit --soak must be at least 1");
+            let force_unsplit = rest.iter().any(|a| a == "--force-unsplit");
+            let force_serial_pipe = rest.iter().any(|a| a == "--force-serial-pipe");
+            let ids = cx.tok.encode(&pa, true);
+            let t = ids.len();
+            let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
+            assert!(t >= min_t, "ppsplit needs a prompt of >= {min_t} tokens");
+            let door_open = memra_engine::pp::pp_cuts(cx.model.layers.len()).is_some();
+            println!(
+                "ppsplit: T={t} steps={steps} chunks={chunks_s} soak={soak} door={} devices={} \
+                 force_unsplit={force_unsplit} force_serial_pipe={force_serial_pipe}",
+                if door_open { "OPEN" } else { "SHUT" },
+                std::env::var("MEMRA_PP_DEVICES").unwrap_or_else(|_| "unset".into())
+            );
+            if !door_open {
+                // A door-shut run compares the unsplit walk against itself — vacuously green.
+                // Refuse loudly instead of faking a PASS.
+                println!("ppsplit verdict: *** DOOR-SHUT (export MEMRA_PP_STAGES before load)");
+                std::process::exit(2);
+            }
+            let bits = |a: &[f32], b: &[f32]| {
+                a.iter()
+                    .zip(b)
+                    .filter(|(x, y)| x.to_bits() != y.to_bits())
+                    .count()
+            };
+            #[derive(Clone, Copy)]
+            enum PrimeArm {
+                Ref,
+                Serial,
+                Pipe,
+            }
+            struct ArmOut {
+                logits: Vec<f32>,
+                h_seed: Vec<f32>,
+                hidden: Vec<f32>,
+                decode: Vec<Vec<f32>>,
+                inputs: Vec<u32>,
+                split_chunks: usize,
+                pipe_overlaps: usize,
+            }
+            // `replay`: None = greedy self-feed (reference); Some = teacher-force (the split
+            // arms consume the reference stream so divergence cannot desync comparison).
+            let run_arm = |arm: PrimeArm,
+                           replay: Option<&[u32]>|
+             -> Result<ArmOut, Box<dyn std::error::Error>> {
+                unsafe {
+                    match arm {
+                        PrimeArm::Ref => {
+                            std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", "fixed");
+                            std::env::set_var("MEMRA_PRIME_PP", "0");
+                            std::env::set_var("MEMRA_PRIME_PIPE", "0");
+                        }
+                        PrimeArm::Serial => {
+                            std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", "fixed");
+                            if force_unsplit {
+                                std::env::set_var("MEMRA_PRIME_PP", "0");
+                            } else {
+                                std::env::remove_var("MEMRA_PRIME_PP");
+                            }
+                            std::env::set_var("MEMRA_PRIME_PIPE", "0");
+                        }
+                        PrimeArm::Pipe => {
+                            std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", "dynamic");
+                            if force_unsplit {
+                                std::env::set_var("MEMRA_PRIME_PP", "0");
+                            } else {
+                                std::env::remove_var("MEMRA_PRIME_PP");
+                            }
+                            if force_serial_pipe {
+                                std::env::set_var("MEMRA_PRIME_PIPE", "0");
+                            } else {
+                                std::env::remove_var("MEMRA_PRIME_PIPE");
+                            }
+                        }
+                    }
+                }
+                let split0 = memra_engine::pp::prime_split_chunks();
+                let pipe0 = memra_engine::pp::prime_pipe_overlaps();
+                let mut c = memra_engine::pp::new_cache(&cx.e, &cx.model.cfg, t + steps + 8)?;
+                let (logits, h_seed, hid) = cx.model.prime_cache(&cx.e, &ids, &mut c, 0)?;
+                let split_chunks = memra_engine::pp::prime_split_chunks() - split0;
+                let pipe_overlaps = memra_engine::pp::prime_pipe_overlaps() - pipe0;
+                let hid_h = cx.e.dtoh(&hid)?;
+                let hs_h = cx.e.dtoh(&h_seed)?;
+                let mut inputs: Vec<u32> = Vec::with_capacity(steps);
+                let mut dec: Vec<Vec<f32>> = Vec::with_capacity(steps);
+                let mut tok = argmax(&logits) as u32;
+                for s in 0..steps {
+                    let inp = replay.map(|r| r[s]).unwrap_or(tok);
+                    inputs.push(inp);
+                    let l = cx.model.decode_step(&cx.e, inp, &mut c)?;
+                    tok = argmax(&l) as u32;
+                    dec.push(l);
+                }
+                Ok(ArmOut {
+                    logits,
+                    h_seed: hs_h,
+                    hidden: hid_h,
+                    decode: dec,
+                    inputs,
+                    split_chunks,
+                    pipe_overlaps,
+                })
+            };
+            let mut fail = false;
+            for cv in chunks_s.split(',') {
+                let cv = cv.trim();
+                let chunk = if cv == "auto" {
+                    unsafe {
+                        std::env::remove_var("MEMRA_PRIME_CHUNK");
+                        std::env::remove_var("MEMRA_PRIME_PP");
+                        std::env::remove_var("MEMRA_PRIME_PIPE");
+                        std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", "dynamic");
+                    }
+                    memra_engine::hybrid_forward::prime_chunk_tokens(t, cx.model.layers.len())
+                } else {
+                    unsafe { std::env::set_var("MEMRA_PRIME_CHUNK", cv) };
+                    cv.parse().unwrap_or(0)
+                };
+                unsafe {
+                    std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", "fixed");
+                }
+                let fixed_ranges = memra_engine::hybrid_forward::prime_chunk_ranges(
+                    t,
+                    cx.model.layers.len(),
+                    cx.model.gdn_prime_grid_on(),
+                );
+                unsafe {
+                    std::env::set_var("MEMRA_PRIME_CHUNK_SCHED", "dynamic");
+                }
+                let dynamic_ranges = memra_engine::hybrid_forward::prime_chunk_ranges(
+                    t,
+                    cx.model.layers.len(),
+                    cx.model.gdn_prime_grid_on(),
+                );
+                let fixed_sizes: Vec<_> = fixed_ranges
+                    .iter()
+                    .map(|(start, end)| end - start)
+                    .collect();
+                let dynamic_sizes: Vec<_> = dynamic_ranges
+                    .iter()
+                    .map(|(start, end)| end - start)
+                    .collect();
+                let chunk_label = if cv == "auto" {
+                    format!("auto({chunk}) fixed={fixed_sizes:?} dynamic={dynamic_sizes:?}")
+                } else {
+                    format!("{cv} sizes={fixed_sizes:?}")
+                };
+                let fixed_expected = fixed_ranges.len();
+                let dynamic_expected = dynamic_ranges.len();
+                let expected_overlaps = dynamic_expected.saturating_sub(1);
+                let reference = run_arm(PrimeArm::Ref, None)?;
+                let serial = run_arm(PrimeArm::Serial, Some(&reference.inputs))?;
+                let pipe = run_arm(PrimeArm::Pipe, Some(&reference.inputs))?;
+                let serial_diff = (
+                    bits(&reference.logits, &serial.logits),
+                    bits(&reference.h_seed, &serial.h_seed),
+                    bits(&reference.hidden, &serial.hidden),
+                    reference
+                        .decode
+                        .iter()
+                        .zip(&serial.decode)
+                        .map(|(a, b)| bits(a, b))
+                        .sum::<usize>(),
+                );
+                let pipe_diff = (
+                    bits(&serial.logits, &pipe.logits),
+                    bits(&serial.h_seed, &pipe.h_seed),
+                    bits(&serial.hidden, &pipe.hidden),
+                    serial
+                        .decode
+                        .iter()
+                        .zip(&pipe.decode)
+                        .map(|(a, b)| bits(a, b))
+                        .sum::<usize>(),
+                );
+                let serial_exact =
+                    serial_diff.0 + serial_diff.1 + serial_diff.2 + serial_diff.3 == 0;
+                let pipe_exact = pipe_diff.0 + pipe_diff.1 + pipe_diff.2 + pipe_diff.3 == 0;
+                let serial_live = reference.split_chunks == 0
+                    && reference.pipe_overlaps == 0
+                    && serial.split_chunks >= fixed_expected
+                    && serial.pipe_overlaps == 0;
+                let pipe_live = dynamic_expected >= 2
+                    && pipe.split_chunks >= dynamic_expected
+                    && pipe.pipe_overlaps >= expected_overlaps;
+                let mut soak_exact_failures = usize::from(!pipe_exact);
+                let mut soak_live_failures = usize::from(!pipe_live);
+                for i in 1..soak {
+                    let sample = run_arm(PrimeArm::Pipe, Some(&reference.inputs))?;
+                    let sample_diff = (
+                        bits(&serial.logits, &sample.logits),
+                        bits(&serial.h_seed, &sample.h_seed),
+                        bits(&serial.hidden, &sample.hidden),
+                        serial
+                            .decode
+                            .iter()
+                            .zip(&sample.decode)
+                            .map(|(a, b)| bits(a, b))
+                            .sum::<usize>(),
+                    );
+                    let sample_exact =
+                        sample_diff.0 + sample_diff.1 + sample_diff.2 + sample_diff.3 == 0;
+                    let sample_live = sample.split_chunks >= dynamic_expected
+                        && sample.pipe_overlaps >= expected_overlaps;
+                    soak_exact_failures += usize::from(!sample_exact);
+                    soak_live_failures += usize::from(!sample_live);
+                    if !sample_exact || !sample_live {
+                        println!(
+                            "    soak {}/{}: diff L/H/S/D={}/{}/{}/{} split={} overlaps={} \
+                             need split>={dynamic_expected} overlaps>={expected_overlaps}",
+                            i + 1,
+                            soak,
+                            sample_diff.0,
+                            sample_diff.1,
+                            sample_diff.2,
+                            sample_diff.3,
+                            sample.split_chunks,
+                            sample.pipe_overlaps,
+                        );
+                    } else if (i + 1) % 10 == 0 || i + 1 == soak {
+                        println!(
+                            "    soak {}/{}: exact+live (exact_failures={} live_failures={})",
+                            i + 1,
+                            soak,
+                            soak_exact_failures,
+                            soak_live_failures,
+                        );
+                    }
+                }
+                let status = if !serial_exact || soak_exact_failures != 0 {
+                    "*** MISMATCH"
+                } else if !serial_live {
+                    "*** SPLIT-NOT-LIVE (bit-identity vacuous)"
+                } else if soak_live_failures != 0 {
+                    "*** PIPE-NOT-LIVE (serial split replayed)"
+                } else {
+                    "EXACT+SPLIT-LIVE+PIPE-LIVE"
+                };
+                println!(
+                    "  chunk {chunk_label} | serial-vs-ref diff L/H/S/D={}/{}/{}/{} | \
+                     pipe-vs-serial diff L/H/S/D={}/{}/{}/{} | split_chunks R/S/P={}/{}/{} \
+                     need S>={fixed_expected} P>={dynamic_expected} | \
+                     pipe_overlaps R/S/P={}/{}/{} need P>={} | \
+                     soak pipe_primes={} exact_failures={} live_failures={} | {status}",
+                    serial_diff.0,
+                    serial_diff.1,
+                    serial_diff.2,
+                    serial_diff.3,
+                    pipe_diff.0,
+                    pipe_diff.1,
+                    pipe_diff.2,
+                    pipe_diff.3,
+                    reference.split_chunks,
+                    serial.split_chunks,
+                    pipe.split_chunks,
+                    reference.pipe_overlaps,
+                    serial.pipe_overlaps,
+                    pipe.pipe_overlaps,
+                    expected_overlaps,
+                    soak,
+                    soak_exact_failures,
+                    soak_live_failures,
+                );
+                if !(serial_exact
+                    && serial_live
+                    && soak_exact_failures == 0
+                    && soak_live_failures == 0)
+                {
+                    fail = true;
+                }
+            }
+            unsafe {
+                std::env::remove_var("MEMRA_PRIME_CHUNK");
+                std::env::remove_var("MEMRA_PRIME_CHUNK_SCHED");
+                std::env::remove_var("MEMRA_PRIME_PP");
+                std::env::remove_var("MEMRA_PRIME_PIPE");
+            }
+            if fail {
+                println!(
+                    "ppsplit verdict: *** RED (split/pipeline absent, not live, or not bit-identical)"
+                );
+                std::process::exit(1);
+            }
+            println!(
+                "ppsplit verdict: UNSPLIT/SERIAL/PIPE BIT-IDENTICAL + LIVE \
+                 (T={t}, chunks={chunks_s}, {steps} decode steps, \
+                 {soak} pipelined primes per chunk)"
+            );
+        }
+
+        m => return Err(format!("unknown mode {m}").into()),
+    }
+    Ok(())
+}

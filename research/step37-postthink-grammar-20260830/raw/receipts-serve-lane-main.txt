@@ -1,0 +1,194 @@
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker]   loaded "step37": 48 layers, eos=128007
+[postthink] step37: think-forced template with a derivable close contract (ids [128799]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] step37: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=248 cached=224 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=248 cached=224 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=248 cached=224 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=187 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 1129 masked steps, mask total 3.43 ms (0.003 ms/step)
+[postthink] step37: think tokens 858, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=142 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.34 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=128 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.65 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=355 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.85 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=97 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 2694 masked steps, mask total 6.14 ms (0.002 ms/step)
+[postthink] step37: think tokens 1980, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=130 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.37 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=88 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 3787 masked steps, mask total 9.24 ms (0.002 ms/step)
+[postthink] step37: think tokens 3109, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=93 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 7.05 ms (0.002 ms/step)
+[postthink] step37: think tokens 3900, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 143 masked steps, mask total 0.85 ms (0.006 ms/step)
+[postthink] step37: think tokens 101, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 1795 masked steps, mask total 3.05 ms (0.002 ms/step)
+[postthink] step37: think tokens 1729, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=613 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 2385 masked steps, mask total 7.48 ms (0.003 ms/step)
+[postthink] step37: think tokens 1768, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=1480 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 3200 masked steps, mask total 10.03 ms (0.003 ms/step)
+[postthink] step37: think tokens 2119, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=4555 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 2081 masked steps, mask total 4.36 ms (0.002 ms/step)
+[postthink] step37: think tokens 1708, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=613 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 2475 masked steps, mask total 4.89 ms (0.002 ms/step)
+[postthink] step37: think tokens 2143, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=39546 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.74 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=35681 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.08 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=187 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 1393 masked steps, mask total 3.58 ms (0.003 ms/step)
+[postthink] step37: think tokens 1236, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=142 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.55 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=128 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 9.18 ms (0.002 ms/step)
+[postthink] step37: think tokens 3652, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=355 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.80 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=97 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 2104 masked steps, mask total 5.20 ms (0.002 ms/step)
+[postthink] step37: think tokens 1827, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=130 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.75 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=88 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 3791 masked steps, mask total 7.95 ms (0.002 ms/step)
+[postthink] step37: think tokens 3554, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=93 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.70 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 271 masked steps, mask total 1.87 ms (0.007 ms/step)
+[postthink] step37: think tokens 151, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 1278 masked steps, mask total 4.41 ms (0.003 ms/step)
+[postthink] step37: think tokens 942, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=613 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 2419 masked steps, mask total 5.12 ms (0.002 ms/step)
+[postthink] step37: think tokens 2200, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=1480 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.22 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=4555 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.56 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=613 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 1390 masked steps, mask total 4.31 ms (0.003 ms/step)
+[postthink] step37: think tokens 1145, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=39546 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.30 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=35681 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.70 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=93 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 15.77 ms (0.004 ms/step)
+[postthink] step37: think tokens 2883, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=88 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 6.02 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=97 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 3396 masked steps, mask total 8.23 ms (0.002 ms/step)
+[postthink] step37: think tokens 2481, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=130 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 13.37 ms (0.003 ms/step)
+[postthink] step37: think tokens 3435, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=93 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 9.17 ms (0.002 ms/step)
+[postthink] step37: think tokens 3291, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=88 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 3979 masked steps, mask total 9.79 ms (0.002 ms/step)
+[postthink] step37: think tokens 3269, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=97 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 3350 masked steps, mask total 8.07 ms (0.002 ms/step)
+[postthink] step37: think tokens 2574, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=130 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.72 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=187 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 64 masked steps, mask total 0.09 ms (0.001 ms/step)
+[postthink] step37: think tokens 64, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=142 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.30 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=613 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 1554 masked steps, mask total 3.54 ms (0.002 ms/step)
+[postthink] step37: think tokens 1156, close emitted by the model
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=128 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 4096 masked steps, mask total 5.38 ms (0.001 ms/step)
+[postthink] step37: think tokens 4096, close NEVER (generation ended inside think)
+[postthink] model="step37" armed: close=[128799] ceiling=0 (0=off) -- think unconstrained with 1 banned end ids, grammar engages at close, spec disengaged
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[constrained] step37: 1240 masked steps, mask total 3.83 ms (0.003 ms/step)
+[postthink] step37: think tokens 977, close emitted by the model
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=355 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=613 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2

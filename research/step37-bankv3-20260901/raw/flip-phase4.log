@@ -1,0 +1,116 @@
+##################### PHASE 4a: forced build flow (clean / teeth / clean) #####################
+### tree state before anything
+HEAD=afc681b1a step37 bank v3: down8 rides ON by default, coupled with the slot-
+### A) CLEAN build (tree as committed)
+    Finished `release` profile [optimized] target(s) in 4m 22s
+BUILT label=clean1 md5=31aee4279f1b0fcad2f686d22a612e8f
+### B) TEETH build: *1.5f on the per-slot scale inside the RESTORED _sel_v2 kernel
+injected *1.5f into _sel_v2 only
+ crates/memra-engine/cu/qmatvec.cu | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+    Finished `release` profile [optimized] target(s) in 4m 19s
+BUILT label=teethA md5=f099070fc55ad99364fa071cefe88293
+### C) REVERT and rebuild — must return to the clean md5
+Updated 1 path from the index
+    Finished `release` profile [optimized] target(s) in 4m 19s
+BUILT label=clean2 md5=94cbdc2da5c0cf72211572bfffb55cca
+### md5 census
+31aee4279f1b0fcad2f686d22a612e8f  /home/ubuntu/bankv3/bin-teeth/oracle-clean1
+f099070fc55ad99364fa071cefe88293  /home/ubuntu/bankv3/bin-teeth/oracle-teethA
+94cbdc2da5c0cf72211572bfffb55cca  /home/ubuntu/bankv3/bin-teeth/oracle-clean2
+ASSERT_OK  clean != teeth (the .cu edit reaches the binary)
+ASSERT_WARN clean1 != clean2 (not byte-reproducible; note it)
+### tree state after
+(empty = restored)
+TEETH_BUILD_DONE
+##################### PHASE 4b: CLEAN oracle, all four prefill tile forms #####################
+########## ORACLE clean1 form=hybrid env=default ##########
+arm policy: shape_sel=0 cross=64 deep_tail=true f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[decode gate_up P1_sel_v2_vs_sel] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P2_gu_gate_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P2_gu_up_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P3_down8] SKIPPED: nsb=128 > 32 — outside the launcher's reduce-identity class (this is the down geometry's gate, not gate/up's)
+[decode gate_up] guard: gu launcher refuses non-slot-major banks
+[decode down P1_sel_v2_vs_sel] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P2_gu_gate_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P2_gu_up_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P3_down8_vs_sweep_plus_axpy] in_f=640 out_f=4096 n_sel=8 elems=4096 nonzero_oracle=4096 finite=true DIFF=0 => IDENTICAL
+[decode down] guard: gu launcher refuses non-slot-major banks
+nvfp4-bank-oracle: PASS — every cell bit-identical
+EXIT_clean1_hybrid=0
+########## ORACLE clean1 form=SK128 env=MEMRA_F16G_SK=128 ##########
+arm policy: shape_sel=0 cross=1 deep_tail=true f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[decode gate_up P1_sel_v2_vs_sel] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P2_gu_gate_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P2_gu_up_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P3_down8] SKIPPED: nsb=128 > 32 — outside the launcher's reduce-identity class (this is the down geometry's gate, not gate/up's)
+[decode gate_up] guard: gu launcher refuses non-slot-major banks
+[decode down P1_sel_v2_vs_sel] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P2_gu_gate_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P2_gu_up_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P3_down8_vs_sweep_plus_axpy] in_f=640 out_f=4096 n_sel=8 elems=4096 nonzero_oracle=4096 finite=true DIFF=0 => IDENTICAL
+[decode down] guard: gu launcher refuses non-slot-major banks
+nvfp4-bank-oracle: PASS — every cell bit-identical
+EXIT_clean1_SK128=0
+########## ORACLE clean1 form=SK32 env=MEMRA_F16G_SK=32 ##########
+arm policy: shape_sel=0 cross=2147483647 deep_tail=true f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[decode gate_up P1_sel_v2_vs_sel] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P2_gu_gate_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P2_gu_up_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P3_down8] SKIPPED: nsb=128 > 32 — outside the launcher's reduce-identity class (this is the down geometry's gate, not gate/up's)
+[decode gate_up] guard: gu launcher refuses non-slot-major banks
+[decode down P1_sel_v2_vs_sel] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P2_gu_gate_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P2_gu_up_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P3_down8_vs_sweep_plus_axpy] in_f=640 out_f=4096 n_sel=8 elems=4096 nonzero_oracle=4096 finite=true DIFF=0 => IDENTICAL
+[decode down] guard: gu launcher refuses non-slot-major banks
+nvfp4-bank-oracle: PASS — every cell bit-identical
+EXIT_clean1_SK32=0
+########## ORACLE clean1 form=TAIL0 env=MEMRA_F16G_TAIL=0 ##########
+arm policy: shape_sel=0 cross=64 deep_tail=false f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[decode gate_up P1_sel_v2_vs_sel] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P2_gu_gate_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P2_gu_up_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P3_down8] SKIPPED: nsb=128 > 32 — outside the launcher's reduce-identity class (this is the down geometry's gate, not gate/up's)
+[decode gate_up] guard: gu launcher refuses non-slot-major banks
+[decode down P1_sel_v2_vs_sel] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P2_gu_gate_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P2_gu_up_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P3_down8_vs_sweep_plus_axpy] in_f=640 out_f=4096 n_sel=8 elems=4096 nonzero_oracle=4096 finite=true DIFF=0 => IDENTICAL
+[decode down] guard: gu launcher refuses non-slot-major banks
+nvfp4-bank-oracle: PASS — every cell bit-identical
+EXIT_clean1_TAIL0=0
+##################### PHASE 4c: TEETH oracle — must FAIL and LOCALIZE #####################
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+[decode gate_up P1_sel_v2_vs_sel] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=5120 => DEVIATION
+[decode gate_up P1_sel_v2_vs_sel] first deviation at 0: oracle=2.606930542e1 (0x41d08df0) arm=3.910391235e1 (0x421c6a68)
+[decode gate_up P2_gu_gate_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P2_gu_up_half] in_f=4096 out_f=640 n_sel=8 elems=5120 nonzero_oracle=5120 finite=true DIFF=0 => IDENTICAL
+[decode gate_up P3_down8] SKIPPED: nsb=128 > 32 — outside the launcher's reduce-identity class (this is the down geometry's gate, not gate/up's)
+[decode gate_up] guard: gu launcher refuses non-slot-major banks
+[decode down P1_sel_v2_vs_sel] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=32768 => DEVIATION
+[decode down P1_sel_v2_vs_sel] first deviation at 0: oracle=-1.533289642e2 (0xc3195437) arm=-2.299934387e2 (0xc365fe52)
+[decode down P2_gu_gate_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P2_gu_up_half] in_f=640 out_f=4096 n_sel=8 elems=32768 nonzero_oracle=32768 finite=true DIFF=0 => IDENTICAL
+[decode down P3_down8_vs_sweep_plus_axpy] in_f=640 out_f=4096 n_sel=8 elems=4096 nonzero_oracle=4096 finite=true DIFF=0 => IDENTICAL
+[decode down] guard: gu launcher refuses non-slot-major banks
+nvfp4-bank-oracle: FAIL — the slot-major bank is not a pure permutation on this arm
+EXIT_teethA=0  (a ZERO here is the alarm: the corruption control must FAIL)
+##################### PHASE 4d: md5 census + tree restored #####################
+31aee4279f1b0fcad2f686d22a612e8f  /home/ubuntu/bankv3/bin-teeth/oracle-clean1
+f099070fc55ad99364fa071cefe88293  /home/ubuntu/bankv3/bin-teeth/oracle-teethA
+94cbdc2da5c0cf72211572bfffb55cca  /home/ubuntu/bankv3/bin-teeth/oracle-clean2
+(empty above = the injection was reverted)
+afc681b1a step37 bank v3: down8 rides ON by default, coupled with the slot-major layout it cannot arm without
+0, 0 MiB
+1, 0 MiB
+===== PHASE 4 DONE =====

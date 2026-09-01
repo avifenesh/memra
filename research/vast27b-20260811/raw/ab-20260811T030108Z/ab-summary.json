@@ -1,0 +1,165 @@
+{
+  "all_self_consistent": true,
+  "contract": {
+    "A": "MEMRA_NVFP4_AUX_DUAL=0",
+    "B": "default-on",
+    "N_per_arm": 5,
+    "order": "A,B,B,A,A,B,B,A,A,B"
+  },
+  "distinct_acceptance": [
+    "42/63 = 66.7%   self-consistency: PASS (identical to plain target)"
+  ],
+  "distinct_spec_stats": [
+    "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000"
+  ],
+  "distinct_token_hashes": [
+    "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+  ],
+  "median_A_tok_s": 163.88,
+  "median_B_tok_s": 163.84,
+  "median_gain_pct": -0.024408103490358712,
+  "paired": [
+    {
+      "A": 164.03,
+      "B": 161.84,
+      "gain_pct": -1.3351216240931496,
+      "rep": 1
+    },
+    {
+      "A": 163.88,
+      "B": 163.84,
+      "gain_pct": -0.024408103490358712,
+      "rep": 2
+    },
+    {
+      "A": 163.9,
+      "B": 163.95,
+      "gain_pct": 0.03050640634532087,
+      "rep": 3
+    },
+    {
+      "A": 163.81,
+      "B": 164.06,
+      "gain_pct": 0.15261583541907875,
+      "rep": 4
+    },
+    {
+      "A": 161.84,
+      "B": 162.48,
+      "gain_pct": 0.3954522985664788,
+      "rep": 5
+    }
+  ],
+  "rows": [
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r01-A-base.log",
+      "rep": 1,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 164.03,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r01-B-auxdual.log",
+      "rep": 1,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 161.84,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r02-A-base.log",
+      "rep": 2,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.88,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r02-B-auxdual.log",
+      "rep": 2,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.84,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r03-A-base.log",
+      "rep": 3,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.9,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r03-B-auxdual.log",
+      "rep": 3,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.95,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r04-A-base.log",
+      "rep": 4,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.81,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r04-B-auxdual.log",
+      "rep": 4,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 164.06,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r05-A-base.log",
+      "rep": 5,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 161.84,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r05-B-auxdual.log",
+      "rep": 5,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 162.48,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    }
+  ]
+}

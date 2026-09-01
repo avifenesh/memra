@@ -1,0 +1,55 @@
+finish=length content_nonempty=False
+---
+Got it, let's tackle this GitHub issue step by step. First, the issue is about the JetBrains Marketplace listing for the Agnix plugin having two broken links: a 404 on the documentation link, and a stale source code repo URL.
+
+First, I need to outline what I'd do, since I can't directly access the repo, but I can provide the exact steps to fix it, plus the implementation if code changes are needed, and the summary.
+
+First, let's start with triage: this is a bug report, not a question, so it's actionable. The root cause is almost certainly that the plugin's marketplace metadata (usually in the plugin's build configuration, like build.gradle.kts for Gradle-based JetBrains plugins, or the plugin.xml manifest) has outdated URLs for the documentation and source code links.
+
+First step: Investigate the current repo structure. First, check the plugin's build configuration file (for a typical JetBrains plugin, that's `build.gradle.kts` or `build.gradle` in the root, or sometimes `plugin.xml` in the `resources/META-INF` directory) for the `pluginGroup`, `version`, and the marketplace metadata fields: `documentationUrl`, `sourceCodeUrl`, `changeNotes`, etc.
+
+Wait, also, the JetBrains Marketplace listing pulls these URLs from the plugin's Gradle build configuration (if using the Gradle IntelliJ Plugin) or from the plugin.xml manifest. So first, confirm where these URLs are defined.
+
+Then, fix the stale URLs:
+1. First, find the correct current documentation URL: likely the repo's GitHub Pages URL, or the docs folder in the repo, e.g., `https://agent-sh.github.io/agnix/` or `https://github.com/agent-sh/agnix/tree/main/docs` if there's no hosted docs site.
+2. Find the correct current source code URL: that's the current repo URL, which is `https://github.com/agent-sh/agnix` (since the issue is from that repo, so the stale one is probably an old org name, like `agent-sh/agnix-plugin` or something, or a previous repo URL).
+3. Update the relevant fields in the build config or plugin.xml.
+
+Also, if the plugin uses the Gradle IntelliJ Plugin, the fields are set in the `intellij` block in build.gradle.kts, like:
+```kotlin
+intellij {
+    // ... other config
+    updateSinceUntilBuild = true
+    plugins = listOf()
+    // Add these if missing, or update existing:
+    documentationUrl = "https://github.com/agent-sh/agnix#readme" // or correct docs URL
+    sourceCodeUrl = "https://github.com/agent-sh/agnix"
+}
+```
+Or if it's in plugin.xml, it's in the `<idea-plugin>` root element:
+```xml
+<idea-plugin>
+    <id>com.agent.agnix</id>
+    <name>Agnix</name>
+    <vendor>agent-sh</vendor>
+    <documentationUrl>https://github.com/agent-sh/agnix#readme</documentationUrl>
+    <sourceCodeUrl>https://github.com/agent-sh/agnix</sourceCodeUrl>
+    <!-- ... other config -->
+</idea-plugin>
+```
+
+Then, after updating the URLs, we need to validate: first, check that the new documentation URL doesn't return 404, and the source code URL points to the correct active repo. Then, if the plugin is built, we can run the Gradle task to verify the metadata is correct, like `./gradlew verifyPlugin` or `./gradlew build` to make sure the config is valid.
+
+Also, if the issue mentions that the links are stale, we should check if there was a repo rename or migration: for example, if the repo was previously under a different org or name, the old URL would be something like `https://github.com/agent-sh/agnix-plugin` which now redirects or 404s, so we update it to the current `https://github.com/agent-sh/agnix`.
+
+Then, the implementation steps:
+1. Create a new branch from main, e.g., `fix/marketplace-broken-links`.
+2. Locate the file with the marketplace metadata (build.gradle.kts or plugin.xml).
+3. Update the `documentationUrl` and `sourceCodeUrl` fields to the correct, active URLs.
+4. Commit the changes with a clear message: "fix: update stale JetBrains Marketplace documentation and source code links".
+5. Open a pull request against main, referencing issue #1099.
+6. Verify the PR passes any CI checks (like plugin validation, build checks).
+
+Then, the summary: what we did, why, and the outcome.
+
+Wait, also, the user

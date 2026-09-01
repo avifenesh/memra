@@ -1,0 +1,209 @@
+{
+  "aggregate_output_tok_s": 64.55635393067337,
+  "base": "http://127.0.0.1:8002",
+  "bos_garbage_count": 0,
+  "completion_tokens": 256,
+  "concurrency": 1,
+  "decode_tok_s_median": 75.07409444585078,
+  "decode_tok_s_values": [
+    75.07409444585078
+  ],
+  "duration_target_s": null,
+  "errors": [],
+  "expected_matches": null,
+  "expected_sha256": null,
+  "label": "step-decode-idle-r1",
+  "max_tokens": 256,
+  "metrics_after": {
+    "active_sessions": 0,
+    "admission_session_defers": 0,
+    "admission_vram_defers": 0,
+    "admitted": 3,
+    "cache_hit_token_ratio": 0.0,
+    "cached_tokens_in": 0,
+    "completed": 3,
+    "computed_tokens_in": 201,
+    "continuation_pool_entries": 3,
+    "continuation_pool_evictions": 0,
+    "continuation_pool_hits": 0,
+    "cuda_driver_free_bytes": 42796187648,
+    "cuda_pool_cached_bytes": 52469500,
+    "cuda_pool_reserved_bytes": 58384711680,
+    "cuda_pool_used_bytes": 58332242180,
+    "lcp_histogram": {
+      "counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edges": [
+        0,
+        1,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,
+        2048,
+        4096
+      ]
+    },
+    "plain_affinity_rewinds": 0,
+    "prefix_cache_bytes": 0,
+    "prefix_cache_entries": 0,
+    "prefix_cache_evictions": 0,
+    "prefix_cache_hit_tokens": 0,
+    "prefix_cache_hits": 0,
+    "prefix_cache_inserts": 0,
+    "prefix_cache_misses": 0,
+    "prompt_tokens_in": 201,
+    "queued_requests": 0,
+    "serve_idle_seconds": 0.001,
+    "spec_pool_affinity_rewinds": 0,
+    "spec_pool_entries": 0,
+    "spec_pool_evictions": 0,
+    "spec_pool_hits": 0,
+    "spec_pool_misses": 0,
+    "step_oom_parks": 0,
+    "step_p50_ms": 13.153517723083496,
+    "step_p99_ms": 16.14947509765625,
+    "tenants": {
+      "cx27-step-decode-idle-r1-1786382781316475473-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 171
+      },
+      "cx27-step-sanity-worker-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      },
+      "cx27-step-short-idle-r1-1786382780619360872-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      }
+    },
+    "tokens_out": 320
+  },
+  "metrics_before": {
+    "active_sessions": 0,
+    "admission_session_defers": 0,
+    "admission_vram_defers": 0,
+    "admitted": 2,
+    "cache_hit_token_ratio": 0.0,
+    "cached_tokens_in": 0,
+    "completed": 2,
+    "computed_tokens_in": 30,
+    "continuation_pool_entries": 2,
+    "continuation_pool_evictions": 0,
+    "continuation_pool_hits": 0,
+    "cuda_driver_free_bytes": 42896850944,
+    "cuda_pool_cached_bytes": 23232520,
+    "cuda_pool_reserved_bytes": 58284048384,
+    "cuda_pool_used_bytes": 58260815864,
+    "lcp_histogram": {
+      "counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edges": [
+        0,
+        1,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,
+        2048,
+        4096
+      ]
+    },
+    "plain_affinity_rewinds": 0,
+    "prefix_cache_bytes": 0,
+    "prefix_cache_entries": 0,
+    "prefix_cache_evictions": 0,
+    "prefix_cache_hit_tokens": 0,
+    "prefix_cache_hits": 0,
+    "prefix_cache_inserts": 0,
+    "prefix_cache_misses": 0,
+    "prompt_tokens_in": 30,
+    "queued_requests": 0,
+    "serve_idle_seconds": 0.064,
+    "spec_pool_affinity_rewinds": 0,
+    "spec_pool_entries": 0,
+    "spec_pool_evictions": 0,
+    "spec_pool_hits": 0,
+    "spec_pool_misses": 0,
+    "step_oom_parks": 0,
+    "step_p50_ms": 13.931722640991211,
+    "step_p99_ms": 16.436508178710938,
+    "tenants": {
+      "cx27-step-sanity-worker-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      },
+      "cx27-step-short-idle-r1-1786382780619360872-0-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 15
+      }
+    },
+    "tokens_out": 64
+  },
+  "metrics_expected_completed": 3,
+  "metrics_settled": true,
+  "model": "stepfun/step-3.7-flash",
+  "n": 1,
+  "n_error": 0,
+  "n_ok": 1,
+  "prompt_bytes": 915,
+  "prompt_kind": "workload",
+  "prompt_sha256": "4c35a940b701ed49b15fedc64e3ea00e97b71177eba70e6df165dffc4516e3dc",
+  "prompt_tokens_observed": [
+    171
+  ],
+  "requested_requests": 1,
+  "session_key": null,
+  "spec_metrics_delta": {
+    "acceptance_rate": null,
+    "accepted": 0,
+    "drafted": 0,
+    "rounds": 0
+  },
+  "temperature": 0.0,
+  "text_hash_counts": {
+    "80973c815cbddffef51b2ffcf4baf1025390e0d368c7e0147af49f2a6c13df98": 1
+  },
+  "text_prefixes": [
+    "Got it, let's tackle this. First, need exactly 4 concise bullets, one about memory, context is GPU background job (the lower-priority optimizer) yielding to interactive inference.\nFirst bullet: Latency priority. Wait, interactive inference is user-facing, right? So first point: Interactive inference is user-facing, so yielding to it avoids violating strict latency SLAs that background optimizer jobs don't have, since the operator measures latency as a key metric for interactive traffic. Wait no, make it cle"
+  ],
+  "ttft_p50_s": 0.5688831824809313,
+  "ttft_p99_s": 0.5688831824809313,
+  "ttft_values_s": [
+    0.5688831824809313
+  ],
+  "wall_s": 3.9655275493860245
+}

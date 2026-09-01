@@ -1,0 +1,76 @@
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[mtp-draft] loading external MTP draft: /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[opti-fork] armed mode=Alternate snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0
+[opti-fork-reconcile] generation=1 slot=1 miss_ms=0.069
+[opti-fork-reconcile] generation=3 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=5 slot=1 miss_ms=0.072
+[opti-fork-reconcile] generation=7 slot=1 miss_ms=0.070
+[opti-fork-reconcile] generation=9 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=11 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=13 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=15 slot=1 miss_ms=0.068
+[opti-fork-reconcile] generation=17 slot=1 miss_ms=0.072
+[opti-fork-reconcile] generation=19 slot=1 miss_ms=0.077
+[opti-fork-reconcile] generation=21 slot=1 miss_ms=0.079
+[opti-fork-reconcile] generation=23 slot=1 miss_ms=0.078
+[opti-fork-reconcile] generation=25 slot=1 miss_ms=0.077
+[opti-fork-reconcile] generation=27 slot=1 miss_ms=0.072
+[opti-fork-reconcile] generation=29 slot=1 miss_ms=0.068
+[opti-fork-reconcile] generation=31 slot=1 miss_ms=0.071
+[opti-fork-reconcile] generation=33 slot=1 miss_ms=0.074
+[opti-fork-reconcile] generation=35 slot=1 miss_ms=0.069
+[opti-fork-reconcile] generation=37 slot=1 miss_ms=0.074
+[opti-fork-reconcile] generation=39 slot=1 miss_ms=0.074
+[opti-fork-reconcile] generation=41 slot=1 miss_ms=0.074
+[opti-fork-reconcile] generation=43 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=45 slot=1 miss_ms=0.073
+[opti-fork-reconcile] generation=47 slot=1 miss_ms=0.072
+[opti-fork-reconcile] generation=49 slot=1 miss_ms=0.072
+[opti-fork-reconcile] generation=51 slot=1 miss_ms=0.066
+[opti-fork-reconcile] generation=53 slot=1 miss_ms=0.078
+[opti-fork-reconcile] generation=55 slot=1 miss_ms=0.073
+[opti-fork-reconcile] generation=57 slot=1 miss_ms=0.079
+[opti-fork-reconcile] generation=59 slot=1 miss_ms=0.069
+[opti-fork-reconcile] generation=61 slot=1 miss_ms=0.068
+[opti-fork-reconcile] generation=63 slot=1 miss_ms=0.073
+[opti-fork-reconcile] generation=65 slot=1 miss_ms=0.071
+[opti-fork-reconcile] generation=67 slot=1 miss_ms=0.074
+[opti-fork-reconcile] generation=69 slot=1 miss_ms=0.071
+[opti-fork-reconcile] generation=71 slot=1 miss_ms=0.061
+[opti-fork-reconcile] generation=73 slot=1 miss_ms=0.074
+[opti-fork-reconcile] generation=75 slot=1 miss_ms=0.066
+[opti-fork-reconcile] generation=77 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=79 slot=1 miss_ms=0.064
+[opti-fork-reconcile] generation=81 slot=1 miss_ms=0.069
+[opti-fork-reconcile] generation=83 slot=1 miss_ms=0.066
+[opti-fork-reconcile] generation=85 slot=1 miss_ms=0.074
+[opti-fork-reconcile] generation=87 slot=1 miss_ms=0.063
+[opti-fork-reconcile] generation=89 slot=1 miss_ms=0.062
+[opti-fork-reconcile] generation=91 slot=1 miss_ms=0.071
+[opti-fork-reconcile] generation=93 slot=1 miss_ms=0.074
+[opti-fork-reconcile] generation=95 slot=1 miss_ms=0.071
+[opti-fork-reconcile] generation=97 slot=1 miss_ms=0.072
+[opti-fork-reconcile] generation=99 slot=1 miss_ms=0.076
+[opti-fork-reconcile] generation=101 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=103 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=105 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=107 slot=1 miss_ms=0.077
+[opti-fork-reconcile] generation=109 slot=1 miss_ms=0.071
+[opti-fork-reconcile] generation=111 slot=1 miss_ms=0.072
+[opti-fork-reconcile] generation=113 slot=1 miss_ms=0.077
+[opti-fork-reconcile] generation=115 slot=1 miss_ms=0.069
+[opti-fork-reconcile] generation=117 slot=1 miss_ms=0.072
+[opti-fork-reconcile] generation=119 slot=1 miss_ms=0.069
+[opti-fork-reconcile] generation=121 slot=1 miss_ms=0.071
+[opti-fork-reconcile] generation=123 slot=1 miss_ms=0.075
+[opti-fork-reconcile] generation=125 slot=1 miss_ms=0.067
+[opti-fork-reconcile] generation=127 slot=1 miss_ms=0.078
+[opti-fork-reconcile] generation=129 slot=1 miss_ms=0.060
+[opti-fork-reconcile] generation=131 slot=1 miss_ms=0.070
+RECURRENT RESTORE PRIMITIVE: PASS elements=262144 hit-skip=count/bonus-miss-restore
+STATE IDENTITY: PASS mode=alternate cap=1024 generated=257 continuation=16 first=OptiForkStateIdentity { trunk_kv_bytes: 32071680, recurrent_bytes: 0, scratch_kv_bytes: 712704, hidden_bytes: 16384 } continued=OptiForkStateIdentity { trunk_kv_bytes: 33408000, recurrent_bytes: 0, scratch_kv_bytes: 742400, hidden_bytes: 16384 } stats=OptiForkGateStats { attempts: 132, hits: 66, misses: 66, abort_drains: 0, refusals: 0 }

@@ -1,0 +1,652 @@
+PREFLIGHT_OK arm=V3OFF bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a md5=0ab9551f60989821f15b9c69a34762de fp=memra-<fingerprint-scrubbed> mode=v3-off
+PREFLIGHT_OK arm=V3SM bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a md5=0ab9551f60989821f15b9c69a34762de fp=memra-<fingerprint-scrubbed> mode=v3-sm
+PREFLIGHT_OK arm=V3SMGU bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a md5=0ab9551f60989821f15b9c69a34762de fp=memra-<fingerprint-scrubbed> mode=v3-sm-gu
+PREFLIGHT_OK arm=V3SMGUD8 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a md5=0ab9551f60989821f15b9c69a34762de fp=memra-<fingerprint-scrubbed> mode=v3-sm-gu-d8
+2026-08-31T18:36:17Z RUN_START cell=price2 boots=[1 2 3] arms=V3OFF:/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a:v3-off V3SM:/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a:v3-sm V3SMGU:/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a:v3-sm-gu V3SMGUD8:/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a:v3-sm-gu-d8
+18:36:17Z BOOT_START V3OFF1 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-off
+BOOT_OK pid=47514 arm=V3OFF1 mode=v3-off
+arm=V3OFF1
+mode=v3-off
+boot_nonce=bv3-V3OFF1-1788201377-9938
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=47514
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3OFF1-1788201377-9938
+environ_mode=v3-off
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3OFF1.txt (41 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-off (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7704918032786885, "spec_rounds": 108, "wall_tok_s": 93.75, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 101.74 tok/s
+rep 1 wall=102.63 decode=108.34 ttft=0.2722 ct=512 acc=0.8066298342541437 finish=length
+rep 2 wall=101.8 decode=108.07 ttft=0.3012 ct=512 acc=0.793010752688172 finish=length
+rep 3 wall=100.56 decode=105.44 ttft=0.2454 ct=512 acc=0.775 finish=length
+rep 4 wall=99.96 decode=106.71 ttft=0.3334 ct=512 acc=0.7927170868347339 finish=length
+rep 5 wall=99.68 decode=104.13 ttft=0.2291 ct=512 acc=0.7670454545454546 finish=length
+rep 6 wall=101.94 decode=106.85 ttft=0.2406 ct=512 acc=0.8029850746268656 finish=length
+rep 7 wall=103.25 decode=107.27 ttft=0.195 ct=512 acc=0.7924528301886793 finish=length
+rep 8 wall=101.45 decode=106.01 ttft=0.2261 ct=512 acc=0.7816091954022989 finish=length
+BOOT_MEDIAN arm=V3OFF1 boot=1 wall_tok_s=101.62 decode_tok_s=106.78 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+18:39:48Z CYCLE_DONE V3OFF1
+18:39:48Z BOOT_START V3SM1 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm
+BOOT_OK pid=48492 arm=V3SM1 mode=v3-sm
+arm=V3SM1
+mode=v3-sm
+boot_nonce=bv3-V3SM1-1788201588-10409
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=48492
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SM1-1788201588-10409
+environ_mode=v3-sm
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SM1.txt (42 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2272 MHz
+1, 58515 MiB, 600.00 W, 2310 MHz
+ENV_VERIFIED mode=v3-sm (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7643979057591623, "spec_rounds": 104, "wall_tok_s": 92.83, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 100.99 tok/s
+rep 1 wall=102.97 decode=108.82 ttft=0.2766 ct=512 acc=0.7897435897435897 finish=length
+rep 2 wall=97.9 decode=103.74 ttft=0.3045 ct=512 acc=0.7466666666666667 finish=length
+rep 3 wall=103.91 decode=109.18 ttft=0.2467 ct=512 acc=0.8159340659340659 finish=length
+rep 4 wall=104.02 decode=111.52 ttft=0.3396 ct=512 acc=0.8480662983425414 finish=length
+rep 5 wall=101.14 decode=105.84 ttft=0.2345 ct=512 acc=0.7890173410404624 finish=length
+rep 6 wall=102.3 decode=107.35 ttft=0.2449 ct=512 acc=0.797752808988764 finish=length
+rep 7 wall=99.35 decode=103.71 ttft=0.2263 ct=512 acc=0.7447916666666666 finish=length
+rep 8 wall=103.78 decode=108.56 ttft=0.2264 ct=512 acc=0.8117977528089888 finish=length
+BOOT_MEDIAN arm=V3SM1 boot=1 wall_tok_s=102.63 decode_tok_s=107.95 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+18:43:35Z CYCLE_DONE V3SM1
+18:43:35Z BOOT_START V3SMGU1 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu
+BOOT_OK pid=49323 arm=V3SMGU1 mode=v3-sm-gu
+arm=V3SMGU1
+mode=v3-sm-gu
+boot_nonce=bv3-V3SMGU1-1788201815-27892
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=49323
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGU1-1788201815-27892
+environ_mode=v3-sm-gu
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGU1.txt (43 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm-gu (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7979274611398963, "spec_rounds": 94, "wall_tok_s": 97.36, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 102.02 tok/s
+rep 1 wall=107.31 decode=113.66 ttft=0.2754 ct=512 acc=0.856338028169014 finish=length
+rep 2 wall=101.38 decode=107.63 ttft=0.3024 ct=512 acc=0.7647058823529411 finish=length
+rep 3 wall=103.13 decode=108.32 ttft=0.2471 ct=512 acc=0.7891891891891892 finish=length
+rep 4 wall=98.21 decode=104.82 ttft=0.3381 ct=512 acc=0.7621776504297995 finish=length
+rep 5 wall=98.2 decode=102.59 ttft=0.233 ct=512 acc=0.7208672086720868 finish=length
+rep 6 wall=104.95 decode=110.23 ttft=0.2426 ct=512 acc=0.8252148997134671 finish=length
+rep 7 wall=104.49 decode=108.7 ttft=0.1989 ct=512 acc=0.7966573816155988 finish=length
+rep 8 wall=103.28 decode=108.05 ttft=0.2281 ct=512 acc=0.7835616438356164 finish=length
+BOOT_MEDIAN arm=V3SMGU1 boot=1 wall_tok_s=103.2 decode_tok_s=108.19 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+18:47:21Z CYCLE_DONE V3SMGU1
+18:47:21Z BOOT_START V3SMGUD81 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu-d8
+BOOT_OK pid=49635 arm=V3SMGUD81 mode=v3-sm-gu-d8
+arm=V3SMGUD81
+mode=v3-sm-gu-d8
+boot_nonce=bv3-V3SMGUD81-1788202041-31516
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=49635
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGUD81-1788202041-31516
+environ_mode=v3-sm-gu-d8
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGUD81.txt (44 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm-gu-d8 (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8=1 MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7435897435897436, "spec_rounds": 105, "wall_tok_s": 97.85, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 105.99 tok/s
+rep 1 wall=107.02 decode=113.35 ttft=0.2761 ct=512 acc=0.7988338192419825 finish=length
+rep 2 wall=111.02 decode=118.67 ttft=0.3057 ct=512 acc=0.8145161290322581 finish=length
+rep 3 wall=107.38 decode=113.01 ttft=0.2467 ct=512 acc=0.7650273224043715 finish=length
+rep 4 wall=110.2 decode=118.62 ttft=0.3384 ct=512 acc=0.8225806451612904 finish=length
+rep 5 wall=108.87 decode=114.32 ttft=0.2332 ct=512 acc=0.7942028985507247 finish=length
+rep 6 wall=109.92 decode=115.79 ttft=0.2448 ct=512 acc=0.8262195121951219 finish=length
+rep 7 wall=109.53 decode=114.15 ttft=0.1981 ct=512 acc=0.7660668380462725 finish=length
+rep 8 wall=109.93 decode=115.33 ttft=0.227 ct=512 acc=0.7927170868347339 finish=length
+BOOT_MEDIAN arm=V3SMGUD81 boot=1 wall_tok_s=109.72 decode_tok_s=114.82 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+18:51:04Z CYCLE_DONE V3SMGUD81
+18:51:04Z BOOT_START V3OFF2 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-off
+BOOT_OK pid=50011 arm=V3OFF2 mode=v3-off
+arm=V3OFF2
+mode=v3-off
+boot_nonce=bv3-V3OFF2-1788202264-21804
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=50011
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3OFF2-1788202264-21804
+environ_mode=v3-off
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3OFF2.txt (41 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-off (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8021978021978022, "spec_rounds": 102, "wall_tok_s": 95.88, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 94.51 tok/s
+rep 1 wall=95.87 decode=100.86 ttft=0.274 ct=512 acc=0.7105263157894737 finish=length
+rep 2 wall=100.79 decode=106.94 ttft=0.3016 ct=512 acc=0.7777777777777778 finish=length
+rep 3 wall=100.81 decode=105.72 ttft=0.2452 ct=512 acc=0.7727272727272727 finish=length
+rep 4 wall=100.37 decode=107.19 ttft=0.3342 ct=512 acc=0.8056338028169014 finish=length
+rep 5 wall=99.43 decode=103.88 ttft=0.2301 ct=512 acc=0.7652173913043478 finish=length
+rep 6 wall=105.98 decode=111.32 ttft=0.2406 ct=512 acc=0.8389830508474576 finish=length
+rep 7 wall=102.84 decode=107.46 ttft=0.2236 ct=512 acc=0.7956989247311828 finish=length
+rep 8 wall=101.02 decode=105.52 ttft=0.2257 ct=512 acc=0.7752808988764045 finish=length
+BOOT_MEDIAN arm=V3OFF2 boot=2 wall_tok_s=100.8 decode_tok_s=106.33 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+18:54:37Z CYCLE_DONE V3OFF2
+18:54:37Z BOOT_START V3SM2 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm
+BOOT_OK pid=50311 arm=V3SM2 mode=v3-sm
+arm=V3SM2
+mode=v3-sm
+boot_nonce=bv3-V3SM2-1788202477-4533
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=50311
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SM2-1788202477-4533
+environ_mode=v3-sm
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SM2.txt (42 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2325 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8167539267015707, "spec_rounds": 92, "wall_tok_s": 97.37, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 103.18 tok/s
+rep 1 wall=97.17 decode=102.31 ttft=0.2743 ct=512 acc=0.7420212765957447 finish=length
+rep 2 wall=101.69 decode=108.02 ttft=0.3041 ct=512 acc=0.787012987012987 finish=length
+rep 3 wall=99.35 decode=104.14 ttft=0.2467 ct=512 acc=0.7480916030534351 finish=length
+rep 4 wall=97.31 decode=103.77 ttft=0.3369 ct=512 acc=0.7573333333333333 finish=length
+rep 5 wall=96.63 decode=100.89 ttft=0.2338 ct=512 acc=0.7252747252747253 finish=length
+rep 6 wall=101.51 decode=106.47 ttft=0.2444 ct=512 acc=0.8163265306122449 finish=length
+rep 7 wall=103.15 decode=107.88 ttft=0.2271 ct=512 acc=0.8054054054054054 finish=length
+rep 8 wall=100.65 decode=105.19 ttft=0.229 ct=512 acc=0.7885714285714286 finish=length
+BOOT_MEDIAN arm=V3SM2 boot=2 wall_tok_s=100.0 decode_tok_s=104.66 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+18:58:29Z CYCLE_DONE V3SM2
+18:58:29Z BOOT_START V3SMGU2 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu
+BOOT_OK pid=50813 arm=V3SMGU2 mode=v3-sm-gu
+arm=V3SMGU2
+mode=v3-sm-gu
+boot_nonce=bv3-V3SMGU2-1788202709-16572
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=50813
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGU2-1788202709-16572
+environ_mode=v3-sm-gu
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGU2.txt (43 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm-gu (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7783783783783784, "spec_rounds": 104, "wall_tok_s": 94.77, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 99.06 tok/s
+rep 1 wall=102.39 decode=108.18 ttft=0.2768 ct=512 acc=0.7928176795580111 finish=length
+rep 2 wall=99.94 decode=106.08 ttft=0.3058 ct=512 acc=0.7648648648648648 finish=length
+rep 3 wall=106.54 decode=112.14 ttft=0.2488 ct=512 acc=0.8394366197183099 finish=length
+rep 4 wall=97.08 decode=103.51 ttft=0.3374 ct=512 acc=0.7542857142857143 finish=length
+rep 5 wall=99.57 decode=104.09 ttft=0.2328 ct=512 acc=0.7465181058495822 finish=length
+rep 6 wall=100.08 decode=104.89 ttft=0.2439 ct=512 acc=0.743455497382199 finish=length
+rep 7 wall=105.11 decode=109.36 ttft=0.1988 ct=512 acc=0.8142857142857143 finish=length
+rep 8 wall=99.46 decode=103.84 ttft=0.2269 ct=512 acc=0.7424657534246575 finish=length
+BOOT_MEDIAN arm=V3SMGU2 boot=2 wall_tok_s=100.01 decode_tok_s=105.48 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:02:16Z CYCLE_DONE V3SMGU2
+19:02:16Z BOOT_START V3SMGUD82 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu-d8
+BOOT_OK pid=51059 arm=V3SMGUD82 mode=v3-sm-gu-d8
+arm=V3SMGUD82
+mode=v3-sm-gu-d8
+boot_nonce=bv3-V3SMGUD82-1788202936-5710
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=51059
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGUD82-1788202936-5710
+environ_mode=v3-sm-gu-d8
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGUD82.txt (44 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2287 MHz
+1, 58515 MiB, 600.00 W, 2325 MHz
+ENV_VERIFIED mode=v3-sm-gu-d8 (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8=1 MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7978142076502732, "spec_rounds": 104, "wall_tok_s": 100.88, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 104.43 tok/s
+rep 1 wall=101.13 decode=106.73 ttft=0.2753 ct=512 acc=0.7027027027027027 finish=length
+rep 2 wall=110.28 decode=117.8 ttft=0.3048 ct=512 acc=0.8106666666666666 finish=length
+rep 3 wall=108.01 decode=113.75 ttft=0.2478 ct=512 acc=0.7849162011173184 finish=length
+rep 4 wall=110.56 decode=119.04 ttft=0.3381 ct=512 acc=0.8347107438016529 finish=length
+rep 5 wall=103.09 decode=107.95 ttft=0.2328 ct=512 acc=0.7135135135135136 finish=length
+rep 6 wall=107.06 decode=112.59 ttft=0.2437 ct=512 acc=0.7784090909090909 finish=length
+rep 7 wall=108.05 decode=112.58 ttft=0.1993 ct=512 acc=0.7604166666666666 finish=length
+rep 8 wall=106.18 decode=111.21 ttft=0.2272 ct=512 acc=0.7720797720797721 finish=length
+BOOT_MEDIAN arm=V3SMGUD82 boot=2 wall_tok_s=107.53 decode_tok_s=112.59 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:06:00Z CYCLE_DONE V3SMGUD82
+19:06:00Z BOOT_START V3OFF3 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-off
+BOOT_OK pid=51307 arm=V3OFF3 mode=v3-off
+arm=V3OFF3
+mode=v3-off
+boot_nonce=bv3-V3OFF3-1788203160-12495
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=51307
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3OFF3-1788203160-12495
+environ_mode=v3-off
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3OFF3.txt (41 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-off (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8360655737704918, "spec_rounds": 97, "wall_tok_s": 97.68, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 99.57 tok/s
+rep 1 wall=100.65 decode=106.13 ttft=0.2718 ct=512 acc=0.7702349869451697 finish=length
+rep 2 wall=100.66 decode=106.76 ttft=0.2999 ct=512 acc=0.8016997167138811 finish=length
+rep 3 wall=99.68 decode=104.46 ttft=0.2446 ct=512 acc=0.7651715039577837 finish=length
+rep 4 wall=100.81 decode=107.69 ttft=0.3339 ct=512 acc=0.8105849582172702 finish=length
+rep 5 wall=100.5 decode=105.04 ttft=0.23 ct=512 acc=0.7746478873239436 finish=length
+rep 6 wall=103.71 decode=108.81 ttft=0.2407 ct=512 acc=0.8318840579710145 finish=length
+rep 7 wall=103.76 decode=107.85 ttft=0.1963 ct=512 acc=0.8166189111747851 finish=length
+rep 8 wall=102.63 decode=107.27 ttft=0.225 ct=512 acc=0.8068181818181818 finish=length
+BOOT_MEDIAN arm=V3OFF3 boot=3 wall_tok_s=100.73 decode_tok_s=107.02 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:09:32Z CYCLE_DONE V3OFF3
+19:09:32Z BOOT_START V3SM3 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm
+BOOT_OK pid=51610 arm=V3SM3 mode=v3-sm
+arm=V3SM3
+mode=v3-sm
+boot_nonce=bv3-V3SM3-1788203372-24091
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=51610
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SM3-1788203372-24091
+environ_mode=v3-sm
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SM3.txt (42 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2310 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8705882352941177, "spec_rounds": 101, "wall_tok_s": 98.4, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 99.13 tok/s
+rep 1 wall=98.71 decode=104.05 ttft=0.2762 ct=512 acc=0.76 finish=length
+rep 2 wall=100.56 decode=106.8 ttft=0.3067 ct=512 acc=0.7886178861788617 finish=length
+rep 3 wall=98.16 decode=109.65 ttft=0.2482 ct=224 acc=0.863905325443787 finish=stop
+rep 4 wall=101.38 decode=108.46 ttft=0.3385 ct=512 acc=0.8169398907103825 finish=length
+rep 5 wall=96.96 decode=101.24 ttft=0.2331 ct=512 acc=0.7216216216216216 finish=length
+rep 6 wall=101.27 decode=106.17 ttft=0.2428 ct=512 acc=0.8023952095808383 finish=length
+rep 7 wall=103.25 decode=107.33 ttft=0.198 ct=512 acc=0.8080229226361032 finish=length
+rep 8 wall=103.88 decode=108.69 ttft=0.2274 ct=512 acc=0.8174157303370787 finish=length
+BOOT_MEDIAN arm=V3SM3 boot=3 wall_tok_s=100.91 decode_tok_s=107.06 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:13:21Z CYCLE_DONE V3SM3
+19:13:21Z BOOT_START V3SMGU3 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu
+BOOT_OK pid=51881 arm=V3SMGU3 mode=v3-sm-gu
+arm=V3SMGU3
+mode=v3-sm-gu
+boot_nonce=bv3-V3SMGU3-1788203601-7277
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=51881
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGU3-1788203601-7277
+environ_mode=v3-sm-gu
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGU3.txt (43 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2272 MHz
+1, 58515 MiB, 600.00 W, 2302 MHz
+ENV_VERIFIED mode=v3-sm-gu (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8218390804597702, "spec_rounds": 105, "wall_tok_s": 96.97, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 104.98 tok/s
+rep 1 wall=102.92 decode=108.71 ttft=0.2741 ct=512 acc=0.7777777777777778 finish=length
+rep 2 wall=100.87 decode=107.12 ttft=0.3055 ct=512 acc=0.7754010695187166 finish=length
+rep 3 wall=102.85 decode=110.47 ttft=0.2491 ct=358 acc=0.8064516129032258 finish=stop
+rep 4 wall=99.48 decode=106.26 ttft=0.3377 ct=512 acc=0.7805555555555556 finish=length
+rep 5 wall=98.2 decode=102.59 ttft=0.2329 ct=512 acc=0.7338935574229691 finish=length
+rep 6 wall=103.9 decode=109.12 ttft=0.2447 ct=512 acc=0.8200589970501475 finish=length
+rep 7 wall=107.83 decode=112.34 ttft=0.1995 ct=512 acc=0.8529411764705882 finish=length
+rep 8 wall=102.21 decode=106.86 ttft=0.2273 ct=512 acc=0.7835616438356164 finish=length
+BOOT_MEDIAN arm=V3SMGU3 boot=3 wall_tok_s=102.53 decode_tok_s=107.91 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:17:05Z CYCLE_DONE V3SMGU3
+19:17:05Z BOOT_START V3SMGUD83 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu-d8
+BOOT_OK pid=52130 arm=V3SMGUD83 mode=v3-sm-gu-d8
+arm=V3SMGUD83
+mode=v3-sm-gu-d8
+boot_nonce=bv3-V3SMGUD83-1788203825-2157
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=52130
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGUD83-1788203825-2157
+environ_mode=v3-sm-gu-d8
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGUD83.txt (44 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm-gu-d8 (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8=1 MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8685714285714285, "spec_rounds": 97, "wall_tok_s": 105.78, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 110.02 tok/s
+rep 1 wall=105.63 decode=111.74 ttft=0.274 ct=512 acc=0.751937984496124 finish=length
+rep 2 wall=106.07 decode=112.95 ttft=0.3028 ct=512 acc=0.7572559366754618 finish=length
+rep 3 wall=108.35 decode=114.09 ttft=0.2463 ct=512 acc=0.7686170212765957 finish=length
+rep 4 wall=109.82 decode=118.2 ttft=0.3392 ct=512 acc=0.8194070080862533 finish=length
+rep 5 wall=105.32 decode=110.39 ttft=0.2327 ct=512 acc=0.7528409090909091 finish=length
+rep 6 wall=111.39 decode=117.39 ttft=0.2435 ct=512 acc=0.8133704735376045 finish=length
+rep 7 wall=108.42 decode=112.96 ttft=0.1988 ct=512 acc=0.7580645161290323 finish=length
+rep 8 wall=104.91 decode=109.82 ttft=0.2276 ct=512 acc=0.75 finish=length
+BOOT_MEDIAN arm=V3SMGUD83 boot=3 wall_tok_s=107.21 decode_tok_s=112.95 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:20:49Z CYCLE_DONE V3SMGUD83
+2026-08-31T19:20:49Z RUN_DONE cell=price2
+PREFLIGHT_OK arm=V3OFF bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a md5=0ab9551f60989821f15b9c69a34762de fp=memra-<fingerprint-scrubbed> mode=v3-off
+PREFLIGHT_OK arm=V3SM bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a md5=0ab9551f60989821f15b9c69a34762de fp=memra-<fingerprint-scrubbed> mode=v3-sm
+PREFLIGHT_OK arm=V3SMGU bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a md5=0ab9551f60989821f15b9c69a34762de fp=memra-<fingerprint-scrubbed> mode=v3-sm-gu
+PREFLIGHT_OK arm=V3SMGUD8 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a md5=0ab9551f60989821f15b9c69a34762de fp=memra-<fingerprint-scrubbed> mode=v3-sm-gu-d8
+2026-08-31T19:22:48Z RUN_START cell=price2 boots=[4 5] arms=V3OFF:/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a:v3-off V3SM:/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a:v3-sm V3SMGU:/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a:v3-sm-gu V3SMGUD8:/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a:v3-sm-gu-d8
+19:22:48Z BOOT_START V3OFF4 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-off
+BOOT_OK pid=52642 arm=V3OFF4 mode=v3-off
+arm=V3OFF4
+mode=v3-off
+boot_nonce=bv3-V3OFF4-1788204168-25846
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=52642
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3OFF4-1788204168-25846
+environ_mode=v3-off
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3OFF4.txt (41 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2295 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=v3-off (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7421052631578947, "spec_rounds": 108, "wall_tok_s": 91.08, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 101.65 tok/s
+rep 1 wall=100.93 decode=106.44 ttft=0.2719 ct=512 acc=0.8040345821325648 finish=length
+rep 2 wall=97.43 decode=103.2 ttft=0.3033 ct=512 acc=0.7405541561712846 finish=length
+rep 3 wall=100.78 decode=105.7 ttft=0.246 ct=512 acc=0.7769028871391076 finish=length
+rep 4 wall=99.09 decode=105.74 ttft=0.3347 ct=512 acc=0.7927170868347339 finish=length
+rep 5 wall=96.4 decode=100.64 ttft=0.2335 ct=512 acc=0.7275362318840579 finish=length
+rep 6 wall=105.08 decode=110.34 ttft=0.2412 ct=512 acc=0.8541666666666666 finish=length
+rep 7 wall=100.13 decode=104.52 ttft=0.2245 ct=512 acc=0.7694369973190348 finish=length
+rep 8 wall=97.74 decode=101.98 ttft=0.2272 ct=512 acc=0.7324324324324324 finish=length
+BOOT_MEDIAN arm=V3OFF4 boot=4 wall_tok_s=99.61 decode_tok_s=105.11 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:26:31Z CYCLE_DONE V3OFF4
+19:26:31Z BOOT_START V3SM4 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm
+BOOT_OK pid=53050 arm=V3SM4 mode=v3-sm
+arm=V3SM4
+mode=v3-sm
+boot_nonce=bv3-V3SM4-1788204391-26253
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=53050
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SM4-1788204391-26253
+environ_mode=v3-sm
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SM4.txt (42 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7647058823529411, "spec_rounds": 106, "wall_tok_s": 92.49, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 102.72 tok/s
+rep 1 wall=97.47 decode=102.71 ttft=0.2778 ct=512 acc=0.739240506329114 finish=length
+rep 2 wall=99.08 decode=105.19 ttft=0.3093 ct=512 acc=0.772972972972973 finish=length
+rep 3 wall=100.55 decode=105.51 ttft=0.2487 ct=512 acc=0.7790055248618785 finish=length
+rep 4 wall=100.95 decode=108.01 ttft=0.3405 ct=512 acc=0.8087431693989071 finish=length
+rep 5 wall=99.33 decode=103.85 ttft=0.2342 ct=512 acc=0.768595041322314 finish=length
+rep 6 wall=101.07 decode=105.97 ttft=0.244 ct=512 acc=0.7959183673469388 finish=length
+rep 7 wall=103.71 decode=107.88 ttft=0.1997 ct=512 acc=0.8111111111111111 finish=length
+rep 8 wall=100.58 decode=105.09 ttft=0.2279 ct=512 acc=0.7844827586206896 finish=length
+BOOT_MEDIAN arm=V3SM4 boot=4 wall_tok_s=100.56 decode_tok_s=105.35 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:30:48Z CYCLE_DONE V3SM4
+19:30:48Z BOOT_START V3SMGU4 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu
+BOOT_OK pid=53316 arm=V3SMGU4 mode=v3-sm-gu
+arm=V3SMGU4
+mode=v3-sm-gu
+boot_nonce=bv3-V3SMGU4-1788204648-3477
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=53316
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGU4-1788204648-3477
+environ_mode=v3-sm-gu
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGU4.txt (43 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm-gu (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7562189054726368, "spec_rounds": 97, "wall_tok_s": 94.01, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 99.56 tok/s
+rep 1 wall=103.29 decode=109.12 ttft=0.2739 ct=512 acc=0.7962962962962963 finish=length
+rep 2 wall=101.39 decode=107.78 ttft=0.3083 ct=512 acc=0.784741144414169 finish=length
+rep 3 wall=100.78 decode=105.73 ttft=0.2474 ct=512 acc=0.7635869565217391 finish=length
+rep 4 wall=100.63 decode=107.6 ttft=0.3388 ct=512 acc=0.7961432506887053 finish=length
+rep 5 wall=97.82 decode=102.16 ttft=0.2324 ct=512 acc=0.7277628032345014 finish=length
+rep 6 wall=101.59 decode=106.56 ttft=0.2443 ct=512 acc=0.7728531855955678 finish=length
+rep 7 wall=102.78 decode=107.45 ttft=0.2258 ct=512 acc=0.7814207650273224 finish=length
+rep 8 wall=105.65 decode=110.65 ttft=0.2281 ct=512 acc=0.8209366391184573 finish=length
+BOOT_MEDIAN arm=V3SMGU4 boot=4 wall_tok_s=101.49 decode_tok_s=107.53 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:34:45Z CYCLE_DONE V3SMGU4
+19:34:45Z BOOT_START V3SMGUD84 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu-d8
+BOOT_OK pid=53639 arm=V3SMGUD84 mode=v3-sm-gu-d8
+arm=V3SMGUD84
+mode=v3-sm-gu-d8
+boot_nonce=bv3-V3SMGUD84-1788204885-13783
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=53639
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGUD84-1788204885-13783
+environ_mode=v3-sm-gu-d8
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGUD84.txt (44 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2310 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm-gu-d8 (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8=1 MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7553191489361702, "spec_rounds": 107, "wall_tok_s": 99.12, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 105.95 tok/s
+rep 1 wall=110.51 decode=117.29 ttft=0.276 ct=512 acc=0.7862595419847328 finish=length
+rep 2 wall=106.63 decode=113.61 ttft=0.304 ct=512 acc=0.7564102564102564 finish=length
+rep 3 wall=108.01 decode=113.75 ttft=0.2482 ct=512 acc=0.7648578811369509 finish=length
+rep 4 wall=103.47 decode=110.86 ttft=0.3388 ct=512 acc=0.771513353115727 finish=length
+rep 5 wall=104.86 decode=109.89 ttft=0.2329 ct=512 acc=0.7338935574229691 finish=length
+rep 6 wall=113.19 decode=119.38 ttft=0.2428 ct=512 acc=0.8305555555555556 finish=length
+rep 7 wall=109.9 decode=114.56 ttft=0.1983 ct=512 acc=0.7756756756756756 finish=length
+rep 8 wall=114.36 decode=120.24 ttft=0.2276 ct=512 acc=0.8522727272727273 finish=length
+BOOT_MEDIAN arm=V3SMGUD84 boot=4 wall_tok_s=108.96 decode_tok_s=114.16 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:38:33Z CYCLE_DONE V3SMGUD84
+19:38:33Z BOOT_START V3OFF5 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-off
+BOOT_OK pid=53890 arm=V3OFF5 mode=v3-off
+arm=V3OFF5
+mode=v3-off
+boot_nonce=bv3-V3OFF5-1788205113-22725
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=53890
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3OFF5-1788205113-22725
+environ_mode=v3-off
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3OFF5.txt (41 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-off (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8162162162162162, "spec_rounds": 97, "wall_tok_s": 96.59, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 101.14 tok/s
+rep 1 wall=102.49 decode=108.17 ttft=0.2715 ct=512 acc=0.7900262467191601 finish=length
+rep 2 wall=99.66 decode=105.71 ttft=0.3034 ct=512 acc=0.779891304347826 finish=length
+rep 3 wall=102.02 decode=106.99 ttft=0.2427 ct=512 acc=0.7774869109947644 finish=length
+rep 4 wall=100.36 decode=107.18 ttft=0.3339 ct=512 acc=0.8048780487804879 finish=length
+rep 5 wall=96.86 decode=101.11 ttft=0.2322 ct=512 acc=0.7135416666666666 finish=length
+rep 6 wall=105.5 decode=110.8 ttft=0.241 ct=512 acc=0.8404558404558404 finish=length
+rep 7 wall=103.87 decode=107.94 ttft=0.1952 ct=512 acc=0.8033240997229917 finish=length
+rep 8 wall=102.15 decode=106.76 ttft=0.226 ct=512 acc=0.8045977011494253 finish=length
+BOOT_MEDIAN arm=V3OFF5 boot=5 wall_tok_s=102.09 decode_tok_s=107.09 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:42:05Z CYCLE_DONE V3OFF5
+19:42:05Z BOOT_START V3SM5 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm
+BOOT_OK pid=54128 arm=V3SM5 mode=v3-sm
+arm=V3SM5
+mode=v3-sm
+boot_nonce=bv3-V3SM5-1788205325-15939
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=54128
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SM5-1788205325-15939
+environ_mode=v3-sm
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SM5.txt (42 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2325 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8323699421965318, "spec_rounds": 106, "wall_tok_s": 95.76, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 98.77 tok/s
+rep 1 wall=101.32 decode=106.98 ttft=0.2765 ct=512 acc=0.7864583333333334 finish=length
+rep 2 wall=98.68 decode=104.61 ttft=0.3034 ct=512 acc=0.7671232876712328 finish=length
+rep 3 wall=98.36 decode=103.05 ttft=0.2466 ct=512 acc=0.7382198952879581 finish=length
+rep 4 wall=102.2 decode=109.4 ttft=0.3392 ct=512 acc=0.8198924731182796 finish=length
+rep 5 wall=100.22 decode=104.84 ttft=0.2343 ct=512 acc=0.7844827586206896 finish=length
+rep 6 wall=97.92 decode=102.51 ttft=0.2442 ct=512 acc=0.739247311827957 finish=length
+rep 7 wall=101.24 decode=105.17 ttft=0.1989 ct=512 acc=0.7654986522911051 finish=length
+rep 8 wall=103.83 decode=108.63 ttft=0.2272 ct=512 acc=0.8179271708683473 finish=length
+BOOT_MEDIAN arm=V3SM5 boot=5 wall_tok_s=100.73 decode_tok_s=105.0 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:46:02Z CYCLE_DONE V3SM5
+19:46:02Z BOOT_START V3SMGU5 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu
+BOOT_OK pid=54448 arm=V3SMGU5 mode=v3-sm-gu
+arm=V3SMGU5
+mode=v3-sm-gu
+boot_nonce=bv3-V3SMGU5-1788205562-19164
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=54448
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGU5-1788205562-19164
+environ_mode=v3-sm-gu
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGU5.txt (43 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2310 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm-gu (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8138297872340425, "spec_rounds": 96, "wall_tok_s": 97.14, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 101.9 tok/s
+rep 1 wall=106.66 decode=112.97 ttft=0.2771 ct=512 acc=0.839142091152815 finish=length
+rep 2 wall=104.62 decode=111.43 ttft=0.3079 ct=512 acc=0.825136612021858 finish=length
+rep 3 wall=107.19 decode=112.89 ttft=0.2501 ct=512 acc=0.8497267759562842 finish=length
+rep 4 wall=105.97 decode=113.8 ttft=0.3412 ct=512 acc=0.8614958448753463 finish=length
+rep 5 wall=102.52 decode=107.32 ttft=0.2326 ct=512 acc=0.7845303867403315 finish=length
+rep 6 wall=106.04 decode=111.44 ttft=0.2426 ct=512 acc=0.8314606741573034 finish=length
+rep 7 wall=101.05 decode=105.57 ttft=0.2267 ct=512 acc=0.7579787234042553 finish=length
+rep 8 wall=98.52 decode=102.82 ttft=0.2274 ct=512 acc=0.7441176470588236 finish=length
+BOOT_MEDIAN arm=V3SMGU5 boot=5 wall_tok_s=105.3 decode_tok_s=111.44 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:49:53Z CYCLE_DONE V3SMGU5
+19:49:53Z BOOT_START V3SMGUD85 bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a mode=v3-sm-gu-d8
+BOOT_OK pid=54695 arm=V3SMGUD85 mode=v3-sm-gu-d8
+arm=V3SMGUD85
+mode=v3-sm-gu-d8
+boot_nonce=bv3-V3SMGUD85-1788205793-22456
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=54695
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-V3SMGUD85-1788205793-22456
+environ_mode=v3-sm-gu-d8
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-V3SMGUD85.txt (44 MEMRA_/BV3 vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=v3-sm-gu-d8 (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8=1 MEMRA_SERVE_SPEC=1 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7988826815642458, "spec_rounds": 105, "wall_tok_s": 101.4, "fingerprint": "memra-<fingerprint-scrubbed>"}
+WARMUP (discarded) 104.94 tok/s
+rep 1 wall=105.65 decode=111.81 ttft=0.2763 ct=512 acc=0.7642276422764228 finish=length
+rep 2 wall=104.58 decode=111.29 ttft=0.3043 ct=512 acc=0.7403598971722365 finish=length
+rep 3 wall=110.04 decode=116.03 ttft=0.2486 ct=512 acc=0.8021978021978022 finish=length
+rep 4 wall=108.26 decode=116.43 ttft=0.3405 ct=512 acc=0.817174515235457 finish=length
+rep 5 wall=107.24 decode=112.57 ttft=0.235 ct=512 acc=0.7673130193905817 finish=length
+rep 6 wall=110.28 decode=116.18 ttft=0.2442 ct=512 acc=0.7972602739726027 finish=length
+rep 7 wall=110.34 decode=115.09 ttft=0.2001 ct=512 acc=0.7821522309711286 finish=length
+rep 8 wall=106.49 decode=111.58 ttft=0.2283 ct=512 acc=0.754054054054054 finish=length
+BOOT_MEDIAN arm=V3SMGUD85 boot=5 wall_tok_s=107.75 decode_tok_s=113.83 n_kept=8 n_excluded=0
+STOPPED gpus drained (max 0 MiB)
+19:53:57Z CYCLE_DONE V3SMGUD85
+2026-08-31T19:53:57Z RUN_DONE cell=price2

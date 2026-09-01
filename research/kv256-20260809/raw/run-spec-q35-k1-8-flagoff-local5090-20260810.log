@@ -1,0 +1,36 @@
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.34GB (expert budget 19.74GB) -> RESIDENT
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-35b-moe/draft-35b-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.40, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[moe] resident-experts decision (dev0): experts 0.52GB + trunk 0.41GB vs free 7.06GB (expert budget 4.65GB) -> RESIDENT
+loaded qwen35moe (41 layers, nextn=1)
+text prompt (472 chars) -> 90 tokens
+prompt tokens: [760, 5638, 4534, 11147, 8232, 14855, 10480, 6009, 13914, 494, 23683, 7575, 1472, 46120, 3357, 26502, 888, 87567, 1083, 3545, 4779, 11, 1332, 9966, 1452, 5344, 3947, 61369, 23304, 1070, 13, 8618, 6228, 369, 16384, 3658, 440, 279, 3672, 11, 1521, 264, 10281, 9705, 628, 9959, 264, 795, 1395, 14043, 29551, 13, 58737, 11, 2923, 539, 2923, 11, 1204, 264, 20340, 8404, 17830, 15089, 23776, 47493, 321, 49703, 1141, 11312, 364, 264, 3074, 3817, 11, 321, 10033, 864, 6228, 80018, 37972, 948, 279, 6009, 5883, 34105, 3545, 4779, 13, 198]
+
+[generate]   31 tok in 0.170s = 182.25 tok/s (gen-only; this run's prime 0.052s)
+  tokens: [248046, 198, 248045, 74455, 248068, 198, 8160, 579, 264, 7047, 1817, 25, 271, 16, 13, 220, 2972, 1847, 7355, 279, 2570, 57491, 64700, 198, 256, 471, 2972, 1905, 64700, 14269, 4534, 11147]
+
+[generate_spec K=1] 32 tok in 0.132s = 234.68 tok/s (1.29x vs generate; this run's prime 0.052s)
+  acceptance: 15/16 = 93.8%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=2] 32 tok in 0.109s = 283.55 tok/s (1.56x vs generate; this run's prime 0.053s)
+  acceptance: 20/24 = 83.3%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=3] 32 tok in 0.116s = 268.33 tok/s (1.47x vs generate; this run's prime 0.053s)
+  acceptance: 21/33 = 63.6%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=4] 32 tok in 0.123s = 251.57 tok/s (1.38x vs generate; this run's prime 0.054s)
+  acceptance: 22/40 = 55.0%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=5] 32 tok in 0.137s = 226.01 tok/s (1.24x vs generate; this run's prime 0.053s)
+  acceptance: 22/50 = 44.0%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=6] 32 tok in 0.152s = 204.56 tok/s (1.12x vs generate; this run's prime 0.054s)
+  acceptance: 22/60 = 36.7%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=7] 32 tok in 0.166s = 186.84 tok/s (1.03x vs generate; this run's prime 0.054s)
+  acceptance: 22/70 = 31.4%   self-consistency: PASS (identical to generate)
+
+[generate_spec K=8] 32 tok in 0.182s = 170.60 tok/s (0.94x vs generate; this run's prime 0.054s)
+  acceptance: 22/80 = 27.5%   self-consistency: PASS (identical to generate)
+
+=== SELF-CONSISTENCY PASS ===

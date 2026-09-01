@@ -1,0 +1,6 @@
+door=hc-fused-pre expected=1 lines=1
+door=hc-decode-ws expected=0 lines=0
+door=kda-fused6-bf16 expected=0 lines=0
+door=kda-fused6-q8(forbidden-on-this-recipe) expected=0 lines=0
+door=mla-decode-split expected=0 lines=0
+[hc-fused-pre] engaged streams=4 hidden=4096 t=239 (one launch replaces rowsq_scale + sinkhorn + collapse per site; MEMRA_HC_FUSED_PRE=1)

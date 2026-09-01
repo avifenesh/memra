@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user wants me to check the open ports for \"node-MainThread\".\n\nLet me analyze the request. They want to check the open ports for \"node-MainThread\" processes.\n\nLooking at the output, I need to find all the open ports that are associated with \"node-MainThread\":\n\n1. **Open on :4173** - \"node-MainThread is open on :4173\" - listening on every interface\n2. **Open on :4321** - \"node-MainThread is open on :4321\" - listening on every interface\n\nSo there are 2 open ports",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user wants me to check the open ports for \"node-MainThread\".\n\nLet me analyze the request. They want to check the open ports for \"node-MainThread\" processes.\n\nLooking at the output, I need to find all the open ports that are associated with \"node-MainThread\":\n\n1. **Open on :4173** - \"node-MainThread is open on :4173\" - listening on every interface\n2. **Open on :4321** - \"node-MainThread is open on :4321\" - listening on every interface\n\nSo there are 2 open ports"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 281,
+  "completion_tokens": 128,
+  "total_tokens": 409,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.708094872,
+  "spec": {
+   "rounds": 57,
+   "drafted": 171,
+   "accepted": 71,
+   "acceptance_rate": 0.4152046783625731
+  }
+ },
+ "id": "chatcmpl-412546facc1d41961adc7bc2a68715d4",
+ "created": 1788081006,
+ "system_fingerprint": "REDACTED"
+}

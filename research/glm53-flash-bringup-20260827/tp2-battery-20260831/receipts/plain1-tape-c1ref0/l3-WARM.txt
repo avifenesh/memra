@@ -1,0 +1,5 @@
+The user is showing me grep output from some wiki files and asking me to summarize the state of the work in one short paragraph. Let me parse what's here.
+
+The content appears to be from a personal knowledge wiki about a project called "hqmtp" (some kind of speculative decoding / MTP head project for llama.cpp inference). Let me piece together the fragments:
+
+1. First fragment: Something about "1/3 the cost; heads train only on the model's own generations), and KD was **revived** after the subset-KL loss bug fix (top-64 gathered KL left ~32k logits unconstrained — pure-KD argmax had collapsed to 0.000). The locked recipe, naked KD → CE reinforce, reaches **chain 0.507 = 85.5% of teacher with slots 1–3 exceeding the teacher** at ~13% of draft compute (`hqmtp-project`, `draft-head-training-data`). The loss-bug

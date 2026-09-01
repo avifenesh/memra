@@ -1,0 +1,6 @@
+<|turn>system
+<|tool>declaration:book_trip{description:<|"|>Book a multi-leg trip<|"|>,parameters:{properties:{class:{enum:[<|"|>economy<|"|>,<|"|>business<|"|>],type:<|"|>STRING<|"|>},flexible:{type:<|"|>BOOLEAN<|"|>},legs:{description:<|"|>Trip legs in order<|"|>,items:{properties:{frm:{type:<|"|>STRING<|"|>},to:{type:<|"|>STRING<|"|>}},required:[<|"|>frm<|"|>,<|"|>to<|"|>],type:<|"|>OBJECT<|"|>},type:<|"|>ARRAY<|"|>},traveler:{description:<|"|>Who travels<|"|>,properties:{age:{nullable:true,type:<|"|>INTEGER<|"|>},name:{type:<|"|>STRING<|"|>}},required:[<|"|>name<|"|>],type:<|"|>OBJECT<|"|>}},required:[<|"|>traveler<|"|>,<|"|>legs<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+Book it.<turn|>
+<|turn>model
+<|tool_call>call:book_trip{class:<|"|>business<|"|>,flexible:true,legs:[{frm:<|"|>TLV<|"|>,to:<|"|>CDG<|"|>},{frm:<|"|>CDG<|"|>,to:<|"|>OSL<|"|>}],traveler:{age:30,name:<|"|>Avi<|"|>}}<tool_call|><|tool_response>response:book_trip{value:<|"|>booked: ref 88f3<|"|>}<tool_response|>

@@ -1,0 +1,94 @@
+arm=record mode=record kv_reuse=1 affinity=1 start=2026-08-09T19:53:20Z
+arm=record rc=0 complete=2026-08-09T19:53:27Z
+arm=aff-only mode=replay kv_reuse=1 affinity=1 start=2026-08-09T19:53:52Z
+arm=aff-only rc=0 complete=2026-08-09T19:53:59Z
+arm=cold-iso mode=replay kv_reuse=0 affinity=0 start=2026-08-09T19:54:24Z
+arm=cold-iso rc=0 complete=2026-08-09T19:54:32Z
+{
+  "requests_compared": 17,
+  "determinism_ok": true,
+  "determinism_arms": 1,
+  "no_new_divergence_ok": true,
+  "shallow_bugs": [],
+  "deep_divergences": 0,
+  "deep_divergence_detail": [],
+  "short_window_checked": 17,
+  "short_window_exact_ok": true,
+  "budget_ok": true,
+  "max_tokens": 8,
+  "plain_affinity_rewinds": 11,
+  "slope_on_ms_per_uncached_tok": -0.1428,
+  "slope_off_ms_per_uncached_tok": 0.0,
+  "slope_on_r2": 0.19929,
+  "slope_off_r2": 0.0,
+  "shallow_chars_floor": 32,
+  "learning_turns": 2,
+  "ttft_by_turn": {
+    "on": [
+      {
+        "turn": 0,
+        "ttft_s": 0.236009,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.074912,
+        "cached": 743
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.075295,
+        "cached": 779
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.076325,
+        "cached": 816
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.076039,
+        "cached": 855
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.076119,
+        "cached": 892
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.078094,
+        "cached": 925
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.075421,
+        "cached": 959
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.076824,
+        "cached": 1001
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.076977,
+        "cached": 1038
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.076263,
+        "cached": 1076
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.076189,
+        "cached": 1112
+      }
+    ],
+    "off": []
+  },
+  "failures": []
+}
+
+GATE GREEN: resume deterministic, no new divergence class vs cold, within budget, slope collapses with rewinds > 0

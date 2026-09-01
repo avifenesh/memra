@@ -1,0 +1,56 @@
+{
+  "n": 1,
+  "thermal_regime": "continuous one-second nvidia-smi sampling under one exclusive lock",
+  "server_ctx": 262144,
+  "requested_max_ctx": 262144,
+  "offered_concurrency": 24,
+  "capacity_result": {
+    "kind": "first_defer",
+    "sessions": 12
+  },
+  "first_defer": {
+    "line": 58,
+    "active": 12,
+    "effective_free_mb": 6129.0,
+    "cost_mb": 6123.0,
+    "reserve_mb": 1611.0
+  },
+  "requests_ok": 24,
+  "requests_n": 24,
+  "peak_active_sessions_sampled": 12,
+  "request_start_spread_ms": 3.151,
+  "request_cost_lines": [
+    {
+      "line": 23,
+      "effective_ctx_cap": 262144,
+      "path": "plain",
+      "bytes_per_token": 83520,
+      "fixed_mb": 0.0,
+      "cost_mb": 6123.0
+    }
+  ],
+  "admission_vram_defers_metric": 851,
+  "step_oom_parks": 0,
+  "nvidia_smi_peak": {
+    "per_gpu": {
+      "0": {
+        "used_mib": 81265.0,
+        "free_mib": 15988.0,
+        "temperature_c_at_peak": 37.0,
+        "timestamp": "2026/08/10 07:59:30.745",
+        "max_temperature_c": 39.0
+      },
+      "1": {
+        "used_mib": 91443.0,
+        "free_mib": 5810.0,
+        "temperature_c_at_peak": 37.0,
+        "timestamp": "2026/08/10 07:59:30.745",
+        "max_temperature_c": 41.0
+      }
+    },
+    "combined_peak_used_mib": 172708.0
+  },
+  "captured_failure_lines": [],
+  "failures": [],
+  "verdict": "PASS"
+}

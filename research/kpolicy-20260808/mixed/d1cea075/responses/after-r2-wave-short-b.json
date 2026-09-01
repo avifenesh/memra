@@ -1,0 +1,23 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "\"\"\"\n\nfrom typing import List, Optional, Any\n\n\nclass Node:\n    def __init__(self, data: Any):\n        self.data = data\n        self.prev: Optional['Node'] = None\n        self.next: Optional['Node'] = None\n\n\nclass DoublyLinkedList:\n    def __init__(self) -> None:\n        self.head: Optional[Node] = None\n        self.tail: Optional[Node] = None\n        self.size: int = 0\n\n    def insert(self, data: Any, pos: int = 0) -> None:\n        \"\"\"\n        Insert a new node with the given data at the specified position.\n        \n        Args:\n            data: The data to insert.\n            pos: The position to insert (0-based index).\n        \n        Raises:\n            IndexError: If pos is out of bounds.\n        \"\"\"\n        if pos < 0 or pos > self.size:\n            raise IndexError(\"Position out of bounds\")\n        \n        new_node = Node(data)\n        \n        if self.size == 0:\n            self.head = new_node\n            self.tail = new_node\n        elif pos == 0:\n            new_node.next ="
+    }
+  ],
+  "created": 1786212845,
+  "id": "cmpl-8d473dbf523f11d5540a3dced4d33bae",
+  "model": "q9",
+  "object": "text_completion",
+  "system_fingerprint": "memra-b6b1dbff90b8",
+  "usage": {
+    "completion_tokens": 256,
+    "elapsed_s": 2.544665165,
+    "prompt_tokens": 28,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "total_tokens": 284
+  }
+}

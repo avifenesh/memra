@@ -1,0 +1,72 @@
+[server] starting; models config = [("step", "/opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step" <- /opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step: regime draft attached (/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step": 45 layers, eos=128007
+[worker] step: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step: decode chunk cap 8
+[admission] "step": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step"]
+[server] listening on http://127.0.0.1:18244
+[meter] admit id=chatcmpl-19057a448e93b23e924bb4e8ab012f69 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-da700519c04043de01648dfe2f95e568 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-03cdcdc412ab0ccf69ced800f681b080 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-6150cea3501197f870281c0c2431e52d tenant=default lane=interactive model="step"
+[admission] request cost: model="step" ctx=32768 path=plain = 83520 B/token x ctx + 0MB fixed = 2737MB
+[meter] admit id=chatcmpl-b269a2618a6c160a5884ac4ecf0219b4 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-31c71f867f368cc794aeb9323886b11a tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-cd719dd8dc9c8a46922a214f89e6ff4d tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-872f903f5f53c7f3aefc49a792cf6aea tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-11401c00c7e5073ad0baca6f8dfbb5d6 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-078249a4fb8d95d1e6a7e0da5e460fab tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-93f2266293a0d0dd67209d2244fd38ef tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-574ec4a0ea4db031a9b399270fbf83c1 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-4737475557ecf62334e2bc038fbc06f2 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-a844aa27ddcccf36f88665ceccac3ed8 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-862e65fa35246a432bd2e65558479bf0 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-9f6a0457ee906292cfcda99e21d3f5a1 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-ed46ed609eb671b92f2fbb7063bd2c94 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-be99f912b99915b21829d6485b4ff51c tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-b058bc91e704ec7570d4a25a70e9fe01 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-a3fd9706442074722059a7e46128ad5d tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-deb46e4e578efe2de814975141420dc6 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-a79a4838496966ac192cf0b998a064b9 tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-dd6ea216737fa351836e8c8a36e9099d tenant=default lane=interactive model="step"
+[meter] admit id=chatcmpl-4a9888ff4354f8bbf5b8511e2b7d78f1 tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=17 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=18 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=19 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=20 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=21 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=22 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=23 placement=pp2-cross-device
+[spec-k] model="step" tenant="val256-capacity-32768" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=24 placement=pp2-cross-device
+[step35-batch] first B>1 batched step35 walk: B=8 layers=[0,22)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

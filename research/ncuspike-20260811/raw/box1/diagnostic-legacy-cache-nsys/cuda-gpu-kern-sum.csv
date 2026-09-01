@@ -1,0 +1,32 @@
+
+NOTICE: Existing SQLite export found: /opt/scratch/nvme/ncuspike-20260811/nsys/decode.sqlite
+        It is assumed file was previously exported from: /opt/scratch/nvme/ncuspike-20260811/nsys/decode.nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [/opt/scratch/nvme/ncuspike-20260811/nsys/decode.sqlite] with [/opt/nvidia/nsight-systems/2026.1.3/target-linux-x64/reports/cuda_gpu_kern_sum.py]... 
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+69.4,555919584,1440,386055.3,707422.5,11584,810974,365695.1,fa_decode_vec_q_v3
+11.3,90728577,10080,9000.9,4224.0,2016,23936,7645.2,qmatvec_iq4_XS_dp4a
+5.5,43850913,1280,34258.5,34271.0,33216,35904,350.4,moe_gate_up_silu8_dev_q8_v_rows
+3.6,28895677,1280,22574.7,22560.0,21183,23967,407.4,moe_down8_fma_dev_q8_rows_g
+1.7,13824341,1344,10286.0,10272.0,9792,11104,214.2,add_rms_norm_f32
+1.2,9689059,8192,1182.7,1184.0,1056,1504,47.4,quantize_q8_1
+1.2,9220941,32,288154.4,288111.5,287231,289120,456.2,qmatvec_q6_K_mmvq
+1.0,8167593,1344,6077.1,6080.0,5760,6624,116.8,moe_router_sigmoid_topk_f32
+1.0,7880966,1440,5472.9,5440.0,5024,6720,276.8,qmatvec_q5_K_mmvq_mr2_il
+0.8,6156588,1344,4580.8,4544.0,4288,5184,174.2,router_gemv_f32_w8
+0.6,4912044,1440,3411.1,3296.0,3168,4384,246.3,fa_decode_combine_f32
+0.6,4618749,2912,1586.1,1472.0,1344,10368,882.0,rms_norm_f32
+0.5,4170262,192,21720.1,19872.0,18975,26528,2881.0,moe_pairs_matvec_q8
+0.5,3941013,1472,2677.3,2688.0,2528,3072,70.4,add_rms_norm_q8_1
+0.3,2095610,1440,1455.3,1504.0,1280,1856,115.7,append_quantize_kv_q8_0_q5_1
+0.3,2011462,1440,1396.8,1376.0,1312,1695,47.4,attn_head_gate_f32
+0.2,1925786,1440,1337.4,1248.0,1152,1824,160.5,rope_neox2_f32
+0.2,1411676,1344,1050.4,1056.0,992,1280,31.3,add_scaled_rows_f32
+0.2,1380733,1280,1078.7,1120.0,960,1440,78.3,silu_mul_f32
+0.0,167872,64,2623.0,2624.0,2528,2912,68.9,rms_norm_q8_1
+0.0,131473,128,1027.1,959.5,832,1312,160.5,swiglu_clamped_mul_scaled_f32
+0.0,129824,96,1352.3,1312.0,1280,1536,57.7,silu_mul_scaled_q8_1
+0.0,87999,64,1375.0,1376.0,1280,1440,28.5,add_f32
+0.0,86033,64,1344.3,1343.0,1311,1504,27.3,moe_pairs_scatter
+

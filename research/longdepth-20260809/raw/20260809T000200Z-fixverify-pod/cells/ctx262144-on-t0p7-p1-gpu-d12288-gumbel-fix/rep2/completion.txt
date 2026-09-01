@@ -1,0 +1,406 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+:root{--bg:#f4f6f8;--surface:#ffffff;--text:#1a1a1a;--muted:#5a6573;--accent:#005f99;--border:#cfd8dc;--focus:#ffbf47;--danger:#c62828;--success:#2e7d32;--warn:#f9a825}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.45}
+a{color:var(--accent)}
+header{position:sticky;top:0;z-index:100;background:var(--surface);border-bottom:1px solid var(--border);padding:.75rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+header h1{font-size:1.1rem;margin:0}
+header .search{margin-left:auto}
+header input{padding:.45rem .6rem;border:1px solid var(--border);border-radius:4px;font:inherit;min-width:220px}
+header button{padding:.45rem .6rem;border:1px solid var(--border);background:var(--surface);border-radius:4px;cursor:pointer}
+header button:focus-visible,header input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+nav.sidebar{position:fixed;top:56px;left:0;bottom:0;width:260px;background:var(--surface);border-right:1px solid var(--border);overflow:auto;padding:.5rem}
+nav.sidebar a{display:block;padding:.35rem .5rem;text-decoration:none;color:var(--text);border-radius:4px}
+nav.sidebar a:hover,nav.sidebar a:focus-visible{background:#e3f2fd;outline:none}
+main{margin-left:260px;padding:1rem;max-width:1100px}
+section{padding:1rem;background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:1rem}
+h2{margin:0 0 .25rem;font-size:1.05rem}
+h2 .num{color:var(--muted);font-weight:400}
+section p{margin:.35rem 0}
+dl{margin:.5rem 0}
+dt{font-weight:600}
+dd{margin-left:1rem}
+table{border-collapse:collapse;width:100%;margin:.5rem 0;font-size:.95rem}
+th,td{border:1px solid var(--border);padding:.35rem .5rem;text-align:left}
+th{background:#eceff1}
+pre{background:#263238;color:#eceff1;padding:.6rem;border-radius:4px;overflow:auto}
+.actions{display:flex;gap:.5rem;margin-top:.5rem}
+.actions button{padding:.4rem .6rem;border:1px solid var(--border);border-radius:4px;cursor:pointer}
+.actions button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.status{padding:.5rem .75rem;border-radius:4px;background:#e3f2fd;border-left:4px solid var(--accent);margin-bottom:1rem}
+.status.ok{background:#e8f5e9;border-left-color:var(--success)}
+.status.warn{background:#fffde7;border-left-color:var(--warn)}
+.status.err{background:#ffebee;border-left-color:var(--danger)}
+.toast{position:fixed;right:1rem;bottom:1rem;background:#263238;color:#fff;padding:.6rem .9rem;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,.25);opacity:0;transition:opacity .2s}
+.toast.show{opacity:1}
+@media(max-width:800px){nav.sidebar{display:none}main{margin-left:0}header .search{width:100%}header input{width:100%}}
+</style>
+</head>
+<body>
+<header>
+<h1>Atlas Operations Manual</h1>
+<div class="search"><input type="search" id="search" placeholder="Search sections..."></div>
+<button id="themeToggle" aria-label="Toggle high contrast">Contrast</button>
+</header>
+<nav class="sidebar" id="sidebar">
+<a href="#s1">1</a><a href="#s2">2</a><a href="#s3">3</a><a href="#s4">4</a><a href="#s5">5</a><a href="#s6">6</a><a href="#s7">7</a><a href="#s8">8</a><a href="#s9">9</a><a href="#s10">10</a>
+<a href="#s11">11</a><a href="#s12">12</a><a href="#s13">13</a><a href="#s14">14</a><a href="#s15">15</a><a href="#s16">16</a><a href="#s17">17</a><a href="#s18">18</a><a href="#s19">19</a><a href="#s20">20</a>
+<a href="#s21">21</a><a href="#s22">22</a><a href="#s23">23</a><a href="#s24">24</a><a href="#s25">25</a><a href="#s26">26</a><a href="#s27">27</a><a href="#s28">28</a><a href="#s29">29</a><a href="#s30">30</a>
+<a href="#s31">31</a><a href="#s32">32</a><a href="#s33">33</a><a href="#s34">34</a><a href="#s35">35</a><a href="#s36">36</a><a href="#s37">37</a><a href="#s38">38</a><a href="#s39">39</a><a href="#s40">40</a>
+<a href="#s41">41</a><a href="#s42">42</a><a href="#s43">43</a><a href="#s44">44</a><a href="#s45">45</a><a href="#s46">46</a><a href="#s47">47</a><a href="#s48">48</a><a href="#s49">49</a><a href="#s50">50</a>
+<a href="#s51">51</a><a href="#s52">52</a><a href="#s53">53</a><a href="#s54">54</a><a href="#s55">55</a><a href="#s56">56</a><a href="#s57">57</a><a href="#s58">58</a><a href="#s59">59</a><a href="#s60">60</a>
+<a href="#s61">61</a><a href="#s62">62</a><a href="#s63">63</a><a href="#s64">64</a><a href="#s65">65</a><a href="#s66">66</a><a href="#s67">67</a><a href="#s68">68</a><a href="#s69">69</a><a href="#s70">70</a>
+<a href="#s71">71</a><a href="#s72">72</a><a href="#s73">73</a><a href="#s74">74</a><a href="#s75">75</a><a href="#s76">76</a><a href="#s77">77</a><a href="#s78">78</a><a href="#s79">79</a><a href="#s80">80</a>
+<a href="#s81">81</a><a href="#s82">82</a><a href="#s83">83</a><a href="#s84">84</a><a href="#s85">85</a><a href="#s86">86</a><a href="#s87">87</a><a href="#s88">88</a><a href="#s89">89</a><a href="#s90">90</a>
+<a href="#s91">91</a><a href="#s92">92</a><a href="#s93">93</a><a href="#s94">94</a><a href="#s95">95</a><a href="#s96">96</a><a href="#s97">97</a><a href="#s98">98</a><a href="#s99">99</a><a href="#s100">100</a>
+<a href="#s101">101</a><a href="#s102">102</a><a href="#s103">103</a><a href="#s104">104</a><a href="#s105">105</a><a href="#s106">106</a><a href="#s107">107</a><a href="#s108">108</a><a href="#s109">109</a><a href="#s110">110</a>
+<a href="#s111">111</a><a href="#s112">112</a><a href="#s113">113</a><a href="#s114">114</a><a href="#s115">115</a><a href="#s116">116</a><a href="#s117">117</a><a href="#s118">118</a><a href="#s119">119</a><a href="#s120">120</a>
+<a href="#s121">121</a><a href="#s122">122</a><a href="#s123">123</a><a href="#s124">124</a><a href="#s125">125</a><a href="#s126">126</a><a href="#s127">127</a><a href="#s128">128</a><a href="#s129">129</a><a href="#s130">130</a>
+<a href="#s131">131</a><a href="#s132">132</a><a href="#s133">133</a><a href="#s134">134</a><a href="#s135">135</a><a href="#s136">136</a><a href="#s137">137</a><a href="#s138">138</a><a href="#s139">139</a><a href="#s140">140</a>
+<a href="#s141">141</a><a href="#s142">142</a><a href="#s143">143</a><a href="#s144">144</a><a href="#s145">145</a><a href="#s146">146</a><a href="#s147">147</a><a href="#s148">148</a><a href="#s149">149</a><a href="#s150">150</a>
+<a href="#s151">151</a><a href="#s152">152</a><a href="#s153">153</a><a href="#s154">154</a><a href="#s155">155</a><a href="#s156">156</a><a href="#s157">157</a><a href="#s158">158</a><a href="#s159">159</a><a href="#s160">160</a>
+<a href="#s161">161</a><a href="#s162">162</a><a href="#s163">163</a><a href="#s164">164</a><a href="#s165">165</a><a href="#s166">166</a><a href="#s167">167</a><a href="#s168">168</a><a href="#s169">169</a><a href="#s170">170</a>
+<a href="#s171">171</a><a href="#s172">172</a><a href="#s173">173</a><a href="#s174">174</a><a href="#s175">175</a><a href="#s176">176</a><a href="#s177">177</a><a href="#s178">178</a><a href="#s179">179</a><a href="#s180">180</a>
+<a href="#s181">181</a><a href="#s182">182</a><a href="#s183">183</a><a href="#s184">184</a><a href="#s185">185</a><a href="#s186">186</a><a href="#s187">187</a><a href="#s188">188</a><a href="#s189">189</a><a href="#s190">190</a>
+<a href="#s191">191</a><a href="#s192">192</a><a href="#s193">193</a><a href="#s194">194</a><a href="#s195">195</a><a href="#s196">196</a><a href="#s197">197</a><a href="#s198">198</a><a href="#s199">199</a><a href="#s200">200</a>
+<a href="#s201">201</a><a href="#s202">202</a><a href="#s203">203</a><a href="#s204">204</a><a href="#s205">205</a><a href="#s206">206</a><a href="#s207">207</a><a href="#s208">208</a><a href="#s209">209</a><a href="#s210">210</a>
+<a href="#s211">211</a><a href="#s212">212</a><a href="#s213">213</a><a href="#s214">214</a><a href="#s215">215</a><a href="#s216">216</a><a href="#s217">217</a><a href="#s218">218</a><a href="#s219">219</a><a href="#s220">220</a>
+<a href="#s221">221</a><a href="#s222">222</a><a href="#s223">223</a><a href="#s224">224</a><a href="#s225">225</a><a href="#s226">226</a><a href="#s227">227</a><a href="#s228">228</a><a href="#s229">229</a><a href="#s230">230</a>
+<a href="#s231">231</a><a href="#s232">232</a><a href="#s233">233</a><a href="#s234">234</a><a href="#s235">235</a><a href="#s236">236</a><a href="#s237">237</a><a href="#s238">238</a><a href="#s239">239</a><a href="#s240">240</a>
+<a href="#s241">241</a><a href="#s242">242</a><a href="#s243">243</a><a href="#s244">244</a><a href="#s245">245</a><a href="#s246">246</a><a href="#s247">247</a><a href="#s248">248</a><a href="#s249">249</a><a href="#s250">250</a>
+<a href="#s251">251</a><a href="#s252">252</a><a href="#s253">253</a><a href="#s254">254</a><a href="#s255">255</a><a href="#s256">256</a><a href="#s257">257</a><a href="#s258">258</a><a href="#s259">259</a><a href="#s260">260</a>
+<a href="#s261">261</a><a href="#s262">262</a><a href="#s263">263</a><a href="#s264">264</a><a href="#s265">265</a><a href="#s266">266</a><a href="#s267">267</a><a href="#s268">268</a><a href="#s269">269</a><a href="#s270">270</a>
+<a href="#s271">271</a><a href="#s272">272</a><a href="#s273">273</a><a href="#s274">274</a><a href="#s275">275</a><a href="#s276">276</a><a href="#s277">277</a><a href="#s278">278</a><a href="#s279">279</a><a href="#s280">280</a>
+<a href="#s281">281</a><a href="#s282">282</a><a href="#s283">283</a><a href="#s284">284</a><a href="#s285">285</a><a href="#s286">286</a><a href="#s287">287</a><a href="#s288">288</a><a href="#s289">289</a><a href="#s290">290</a>
+<a href="#s291">291</a><a href="#s292">292</a><a href="#s293">293</a><a href="#s294">294</a><a href="#s295">295</a><a href="#s296">296</a><a href="#s297">297</a><a href="#s298">298</a><a href="#s299">299</a><a href="#s300">300</a>
+<a href="#s301">301</a><a href="#s302">302</a><a href="#s303">303</a><a href="#s304">304</a><a href="#s305">305</a><a href="#s306">306</a><a href="#s307">307</a><a href="#s308">308</a><a href="#s309">309</a><a href="#s310">310</a>
+<a href="#s311">311</a><a href="#s312">312</a><a href="#s313">313</a><a href="#s314">314</a><a href="#s315">315</a><a href="#s316">316</a><a href="#s317">317</a><a href="#s318">318</a><a href="#s319">319</a><a href="#s320">320</a>
+<a href="#s321">321</a><a href="#s322">322</a><a href="#s323">323</a><a href="#s324">324</a><a href="#s325">325</a><a href="#s326">326</a><a href="#s327">327</a><a href="#s328">328</a><a href="#s329">329</a><a href="#s330">330</a>
+<a href="#s331">331</a><a href="#s332">332</a><a href="#s333">333</a><a href="#s334">334</a><a href="#s335">335</a><a href="#s336">336</a><a href="#s337">337</a><a href="#s338">338</a><a href="#s339">339</a><a href="#s340">340</a>
+<a href="#s341">341</a><a href="#s342">342</a><a href="#s343">343</a><a href="#s344">344</a><a href="#s345">345</a><a href="#s346">346</a><a href="#s347">347</a><a href="#s348">348</a><a href="#s349">349</a><a href="#s350">350</a>
+<a href="#s351">351</a><a href="#s352">352</a><a href="#s353">353</a><a href="#s354">354</a><a href="#s355">355</a><a href="#s356">356</a><a href="#s357">357</a><a href="#s358">358</a><a href="#s359">359</a><a href="#s360">360</a>
+<a href="#s361">361</a><a href="#s362">362</a><a href="#s363">363</a><a href="#s364">364</a><a href="#s365">365</a><a href="#s366">366</a><a href="#s367">367</a><a href="#s368">368</a><a href="#s369">369</a><a href="#s370">370</a>
+<a href="#s371">371</a><a href="#s372">372</a><a href="#s373">373</a><a href="#s374">374</a><a href="#s375">375</a><a href="#s376">376</a><a href="#s377">377</a><a href="#s378">378</a><a href="#s379">379</a><a href="#s380">380</a>
+<a href="#s381">381</a><a href="#s382">382</a><a href="#s383">383</a><a href="#s384">384</a><a href="#s385">385</a><a href="#s386">386</a><a href="#s387">387</a><a href="#s388">388</a><a href="#s389">389</a><a href="#s390">390</a>
+<a href="#s391">391</a><a href="#s392">392</a><a href="#s393">393</a><a href="#s394">394</a><a href="#s395">395</a><a href="#s396">396</a><a href="#s397">397</a><a href="#s398">398</a><a href="#s399">399</a><a href="#s400">400</a>
+</nav>
+<main>
+<div class="status ok" id="statusBar">System ready. All 400 sections loaded.</div>
+
+<section id="s1">
+<h2><span class="num">Section 1.</span> Introduction and Scope</h2>
+<p>This manual establishes the baseline operating procedures, terminology, and safety requirements for all Atlas deployments. It applies to field technicians, control room operators, and engineering reviewers.</p>
+<p>Each numbered section is self-contained. Readers may jump to relevant topics using the sidebar or search field. Updates are versioned and tracked in Appendix Z.</p>
+<dl>
+<dt>Scope</dt><dd>All hardware and software subsystems.</dd>
+<dt>Audience</dt><dd>Operators, engineers, auditors.</dd>
+<dt>Revision</dt><dd>Annual or after major incident.</dd>
+<dt>Authority</dt><dd>Chief Systems Engineer.</dd>
+</dl>
+<table>
+<tr><th>ID</th><th>Name</th><th>Status</th><th>Owner</th><th>Last Review</th><th>Next Review</th></tr>
+<tr><td>1.1</td><td>Intro</td><td>Active</td><td>Ops</td><td>2024-01-15</td><td>2025-01-15</td></tr>
+<tr><td>1.2</td><td>Scope</td><td>Active</td><td>Ops</td><td>2024-01-15</td><td>2025-01-15</td></tr>
+<tr><td>1.3</td><td>Audience</td><td>Active</td><td>Ops</td><td>2024-01-15</td><td>2025-01-15</td></tr>
+<tr><td>1.4</td><td>Authority</td><td>Active</td><td>Ops</td><td>2024-01-15</td><td>2025-01-15</td></tr>
+<tr><td>1.5</td><td>Revision</td><td>Active</td><td>Ops</td><td>2024-01-15</td><td>2025-01-15</td></tr>
+<tr><td>1.6</td><td>Distribution</td><td>Active</td><td>Ops</td><td>2024-01-15</td><td>2025-01-15</td></tr>
+</table>
+<pre>ATLAS INIT --scope all --confirm yes</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s2">
+<h2><span class="num">Section 2.</span> Safety and Hazard Classification</h2>
+<p>Hazard levels range from L0 (informational) to L4 (catastrophic). Operators must verify PPE before engaging L2 or higher tasks. Log entries are mandatory for any deviation.</p>
+<p>The safety officer may elevate or reduce hazard levels based on situational assessment. All changes require a signed paper or digital record within 24 hours.</p>
+<dl>
+<dt>L0</dt><dd>Informational, no hazard.</dd>
+<dt>L1</dt><dd>Caution, minor risk.</dd>
+<dt>L2</dt><dd>Warning, possible injury.</dd>
+<dt>L3</dt><dd>Critical, severe injury likely.</dd>
+</dl>
+<table>
+<tr><th>Level</th><th>Color</th><th>PPE</th><th>Signage</th><th>Lockout</th><th>Escalation</th></tr>
+<tr><td>L0</td><td>Blue</td><td>None</td><td>None</td><td>No</td><td>None</td></tr>
+<tr><td>L1</td><td>Green</td><td>Safety shoes</td><td>Caution</td><td>No</td><td>Supervisor</td></tr>
+<tr><td>L2</td><td>Yellow</td><td>Gloves, glasses</td><td>Warning</td><td>Yes</td><td>Shift lead</td></tr>
+<tr><td>L3</td><td>Orange</td><td>Suit, respirator</td><td>Danger</td><td>Yes</td><td>Safety officer</td></tr>
+<tr><td>L4</td><td>Red</td><td>Full hazmat</td><td>Danger</td><td>Double</td><td>Commander</td></tr>
+<tr><td>L5</td><td>Black</td><td>Specialist</td><td>Restricted</td><td>Triple</td><td>Director</td></tr>
+</table>
+<pre>SAFETY CHECK --level 2 --log /var/log/safety.log</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s3">
+<h2><span class="num">Section 3.</span> Document Control</h2>
+<p>All sections carry a unique identifier and revision counter. The master repository stores approved versions. Drafts are marked clearly and never mixed with approved text.</p>
+<p>Requests for change follow RFC-ATLAS-00. Approval requires two signatures from different disciplines. Emergency changes may be provisionally accepted with retroactive review within 72 hours.</p>
+<dl>
+<dt>Identifier</dt><dd>Unique section code.</dd>
+<dt>Revision</dt><dd>Incremental integer.</dd>
+<dt>Status</dt><dd>Draft, Review, Approved, Superseded.</dd>
+<dt>Archive</dt><dd>Long-term storage location.</dd>
+</dl>
+<table>
+<tr><th>Field</th><th>Format</th><th>Required</th><th>Example</th><th>Owner</th><th>Review Cycle</th></tr>
+<tr><td>ID</td><td>sNNN</td><td>Yes</td><td>s001</td><td>Admin</td><td>Per change</td></tr>
+<tr><td>Title</td><td>Text</td><td>Yes</td><td>Intro</td><td>Author</td><td>Per change</td></tr>
+<tr><td>Rev</td><td>N.N</td><td>Yes</td><td>1.0</td><td>Admin</td><td>Monthly</td></tr>
+<tr><td>Date</td><td>YYYY-MM-DD</td><td>Yes</td><td>2024-01-15</td><td>Admin</td><td>Per change</td></tr>
+<tr><td>Auth</td><td>Name</td><td>Yes</td><td>J. Doe</td><td>Author</td><td>Per change</td></tr>
+<tr><td>Class</td><td>L0-L4</td><td>Yes</td><td>L1</td><td>Safety</td><td>Per change</td></tr>
+</table>
+<pre>DOC UPDATE --id s003 --rev 2.0 --auth "A. Smith"</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s4">
+<h2><span class="num">Section 4.</span> Terminology and Glossary</h2>
+<p>Standardized terms reduce miscommunication. Abbreviations must be spelled on first use. Acronyms are listed in Appendix B with definitions and context.</p>
+<p>Operators encountering undefined terms should request a glossary update via the change management system. Updates propagate within 48 hours.</p>
+<dl>
+<dt>Node</dt><dd>Processing unit in cluster.</dd>
+<dt>Link</dt><dd>Physical or logical connection.</dd>
+<dt>Shard</dt><dd>Data partition.</dd>
+<dt>Quorum</dt><dd>Majority consensus count.</dd>
+</dl>
+<table>
+<tr><th>Term</th><th>Abbrev</th><th>Definition</th><th>Source</th><th>Status</th><th>Notes</th></tr>
+<tr><td>Node</td><td>N</td><td>Compute unit</td><td>IEEE</td><td>Active</td><td>See 4.1</td></tr>
+<tr><td>Link</td><td>L</td><td>Connection</td><td>IEEE</td><td>Active</td><td>See 4.2</td></tr>
+<tr><td>Shard</td><td>S</td><td>Data slice</td><td>RFC</td><td>Active</td><td>See 4.3</td></tr>
+<tr><td>Quorum</td><td>Q</td><td>Majority</td><td>Dist</td><td>Active</td><td>See 4.4</td></tr>
+<tr><td>Token</td><td>T</td><td>Auth unit</td><td>Sec</td><td>Active</td><td>See 4.5</td></tr>
+<tr><td>Beacon</td><td>B</td><td>Heartbeat</td><td>Net</td><td>Active</td><td>See 4.6</td></tr>
+</table>
+<pre>GLOSSARY ADD --term "Beacon" --def "Heartbeat signal"</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s5">
+<h2><span class="num">Section 5.</span> System Overview</h2>
+<p>Atlas consists of control nodes, worker nodes, storage arrays, and network fabric. Each layer has independent monitoring and failover. The control plane manages orchestration.</p>
+<p>Uptime target is 99.99% annually. Planned maintenance windows are published quarterly. Emergency maintenance is logged and reviewed.</p>
+<dl>
+<dt>Control</dt><dd>Management layer.</dd>
+<dt>Worker</dt><dd>Compute layer.</dd>
+<dt>Storage</dt><dd>Data layer.</dd>
+<dt>Network</dt><dd>Connectivity layer.</dd>
+</dl>
+<table>
+<tr><th>Layer</th><th>Nodes</th><th>Redundancy</th><th>MTBF</th><th>MTTR</th><th>Owner</th></tr>
+<tr><td>Control</td><td>3</td><td>N+1</td><td>50000</td><td>15</td><td>Platform</td></tr>
+<tr><td>Worker</td><td>120</td><td>N+2</td><td>40000</td><td>10</td><td>Compute</td></tr>
+<tr><td>Storage</td><td>24</td><td>Erasure</td><td>60000</td><td>20</td><td>Storage</td></tr>
+<tr><td>Network</td><td>48</td><td>Mesh</td><td>80000</td><td>5</td><td>NetOps</td></tr>
+<tr><td>Power</td><td>2</td><td>Dual</td><td>100000</td><td>30</td><td>Facility</td></tr>
+<tr><td>Cooling</td><td>4</td><td>N+1</td><td>70000</td><td>25</td><td>Facility</td></tr>
+</table>
+<pre>ATLAS STATUS --layer all --detail full</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s6">
+<h2><span class="num">Section 6.</span> Access Control</h2>
+<p>Access uses role-based policies. Roles include viewer, operator, engineer, and admin. Permissions are granted by ticket with manager approval. Review occurs quarterly.</p>
+<p>Multi-factor authentication is mandatory for all privileged actions. Session timeouts default to 15 minutes. Audit logs are immutable.</p>
+<dl>
+<dt>Role</dt><dd>Permission set.</dd>
+<dt>Ticket</dt><dd>Authorization request.</dd>
+<dt>MFA</dt><dd>Multi-factor authentication.</dd>
+<dt>Audit</dt><dd>Immutable log.</dd>
+</dl>
+<table>
+<tr><th>Role</th><th>Read</th><th>Write</th><th>Delete</th><th>Admin</th><th>MFA</th><th>Timeout</th></tr>
+<tr><td>Viewer</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>No</td><td>30</td></tr>
+<tr><td>Operator</td><td>Yes</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>15</td></tr>
+<tr><td>Engineer</td><td>Yes</td><td>Yes</td><td>Yes</td><td>No</td><td>Yes</td><td>15</td></tr>
+<tr><td>Admin</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td><td>10</td></tr>
+<tr><td>Auditor</td><td>Yes</td><td>No</td><td>No</td><td>No</td><td>No</td><td>60</td></tr>
+<tr><td>Service</td><td>Yes</td><td>Yes</td><td>No</td><td>No</td><td>Yes</td><td>5</td></tr>
+</table>
+<pre>ACCESS GRANT --user alice --role operator --ttl 15m</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s7">
+<h2><span class="num">Section 7.</span> Incident Response</h2>
+<p>Incidents are classified P1 through P4. P1 requires immediate escalation to the incident commander. Response times are 15, 30, 120, and 720 minutes respectively.</p>
+<p>All incidents are recorded in the central tracker. Post-mortem reports are due within five business days. Action items are tracked to closure.</p>
+<dl>
+<dt>P1</dt><dd>Critical outage.</dd>
+<dt>P2</dt><dd>Major degradation.</dd>
+<dt>P3</dt><dd>Minor impact.</dd>
+<dt>P4</dt><dd>Informational.</dd>
+</dl>
+<table>
+<tr><th>Priority</th><th>Impact</th><th>Response</th><th>Escalation</th><th>Update Freq</th><th>Resolution</th></tr>
+<tr><td>P1</td><td>High</td><td>15m</td><td>Commander</td><td>15m</td><td>4h</td></tr>
+<tr><td>P2</td><td>Medium</td><td>30m</td><td>Manager</td><td>30m</td><td>8h</td></tr>
+<tr><td>P3</td><td>Low</td><td>120m</td><td>Lead</td><td>1h</td><td>24h</td></tr>
+<tr><td>P4</td><td>None</td><td>720m</td><td>Ticket</td><td>4h</td><td>72h</td></tr>
+<tr><td>P5</td><td>Planned</td><td>24h</td><td>Self</td><td>1d</td><td>7d</td></tr>
+<tr><td>P6</td><td>Training</td><td>48h</td><td>Mentor</td><td>1d</td><td>14d</td></tr>
+</table>
+<pre>INCIDENT CREATE --priority P1 --desc "Cluster down"</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s8">
+<h2><span class="num">Section 8.</span> Change Management</h2>
+<p>Changes are categorized as standard, normal, or emergency. Normal changes require CAB approval. Emergency changes need post-approval within 48 hours.</p>
+<p>All changes are scheduled in maintenance windows. Backout plans are mandatory. Risk ratings use likelihood and impact matrices.</p>
+<dl>
+<dt>CAB</dt><dd>Change Advisory Board.</dd>
+<dt>Backout</dt><dd>Reversal procedure.</dd>
+<dt>Risk</dt><dd>Likelihood x impact.</dd>
+<dt>Window</dt><dd>Scheduled maintenance period.</dd>
+</dl>
+<table>
+<tr><th>Type</th><th>Notice</th><th>Approval</th><th>Risk</th><th>Backout</th><th>Review</th></tr>
+<tr><td>Standard</td><td>None</td><td>Pre</td><td>Low</td><td>Auto</td><td>Monthly</td></tr>
+<tr><td>Normal</td><td>5 days</td><td>CAB</td><td>Medium</td><td>Required</td><td>Weekly</td></tr>
+<tr><td>Emergency</td><td>0</td><td>Post</td><td>High</td><td>Required</td><td>48h</td></tr>
+<tr><td>Expedited</td><td>1 day</td><td>Manager</td><td>Medium</td><td>Required</td><td>24h</td></tr>
+<tr><td>Major</td><td>30 days</td><td>Director</td><td>High</td><td>Required</td><td>Biweekly</td></tr>
+<tr><td>Routine</td><td>None</td><td>Lead</td><td>Low</td><td>Auto</td><td>Monthly</td></tr>
+</table>
+<pre>CHANGE CREATE --type normal --risk medium --window "Sat 02:00"</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s9">
+<h2><span class="num">Section 9.</span> Monitoring and Alerting</h2>
+<p>Monitoring covers metrics, logs, and traces. Alerts route to on-call via paging. Thresholds are tunable per service. SLOs define acceptable error budgets.</p>
+<p>Dashboards auto-refresh every 30 seconds. Historical data retention is 13 months. Alert fatigue is mitigated by severity grouping.</p>
+<dl>
+<dt>Metric</dt><dd>Quantitative measurement.</dd>
+<dt>Log</dt><dd>Timestamped event text.</dd>
+<dt>Trace</dt><dd>Request path across services.</dd>
+<dt>SLO</dt><dd>Service level objective.</dd>
+</dl>
+<table>
+<tr><th>Signal</th><th>Source</th><th>Threshold</th><th>Window</th><th>Severity</th><th>Action</th></tr>
+<tr><td>CPU</td><td>Node</td><td>>90%</td><td>5m</td><td>Warn</td><td>Scale</td></tr>
+<tr><td>Memory</td><td>Node</td><td>>85%</td><td>5m</td><td>Warn</td><td>Scale</td></tr>
+<tr><td>Disk</td><td>Node</td><td>>80%</td><td>10m</td><td>Crit</td><td>Cleanup</td></tr>
+<tr><td>Latency</td><td>Service</td><td>>200ms</td><td>1m</td><td>Warn</td><td>Investigate</td></tr>
+<tr><td>Errors</td><td>Service</td><td>>1%</td><td>2m</td><td>Crit</td><td>Rollback</td></tr>
+<tr><td>Queue</td><td>Broker</td><td>>1000</td><td>5m</td><td>Warn</td><td>Drain</td></tr>
+</table>
+<pre>MONITOR ALERT --metric cpu --threshold 90 --window 5m</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s10">
+<h2><span class="num">Section 10.</span> Backup and Recovery</h2>
+<p>Backups run daily with weekly archives. Recovery point objective is 4 hours. Recovery time objective is 2 hours for Tier 1 services.</p>
+<p>Backups are encrypted and stored offsite. Integrity checks run after each job. Restoration is tested quarterly.</p>
+<dl>
+<dt>RPO</dt><dd>Recovery point objective.</dd>
+<dt>RTO</dt><dd>Recovery time objective.</dd>
+<dt>Tier</dt><dd>Service criticality level.</dd>
+<dt>Archive</dt><dd>Long-term storage.</dd>
+</dl>
+<table>
+<tr><th>Tier</th><th>RPO</th><th>RTO</th><th>Backup</th><th>Retention</th><th>Test</th></tr>
+<tr><td>1</td><td>4h</td><td>2h</td><td>Daily</td><td>90d</td><td>Quarterly</td></tr>
+<tr><td>2</td><td>12h</td><td>4h</td><td>Daily</td><td>60d</td><td>Quarterly</td></tr>
+<tr><td>3</td><td>24h</td><td>8h</td><td>Weekly</td><td>30d</td><td>Semi-annual</td></tr>
+<tr><td>4</td><td>7d</td><td>24h</td><td>Weekly</td><td>14d</td><td>Annual</td></tr>
+<tr><td>5</td><td>30d</td><td>48h</td><td>Monthly</td><td>7d</td><td>Annual</td></tr>
+<tr><td>6</td><td>90d</td><td>72h</td><td>Monthly</td><td>1d</td><td>Biennial</td></tr>
+</table>
+<pre>BACKUP RUN --tier 1 --target /backup/atlas --verify yes</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s11">
+<h2><span class="num">Section 11.</span> Network Topology</h2>
+<p>The network uses a spine-leaf architecture with redundant fabrics. Each leaf has 48x 10GbE downlinks and 4x 40GbE uplinks. VLAN tagging isolates traffic types.</p>
+<p>Routing uses BGP with equal-cost multipath. ACLs enforce east-west restrictions. Spanning tree is disabled on trunk links.</p>
+<dl>
+<dt>Spine</dt><dd>Core aggregation switch.</dd>
+<dt>Leaf</dt><dd>Access distribution switch.</dd>
+<dt>VLAN</dt><dd>Virtual LAN tag.</dd>
+<dt>ACL</dt><dd>Access control list.</dd>
+</dl>
+<table>
+<tr><th>Switch</th><th>Type</th><th>Ports</th><th>Uplinks</th><th>Vendor</th><th>Firmware</th></tr>
+<tr><td>sw01</td><td>Spine</td><td>64</td><td>8x100G</td><td>Acme</td><td>3.2.1</td></tr>
+<tr><td>sw02</td><td>Spine</td><td>64</td><td>8x100G</td><td>Acme</td><td>3.2.1</td></tr>
+<tr><td>sw03</td><td>Leaf</td><td>48+4</td><td>4x40G</td><td>Acme</td><td>3.2.1</td></tr>
+<tr><td>sw04</td><td>Leaf</td><td>48+4</td><td>4x40G</td><td>Acme</td><td>3.2.1</td></tr>
+<tr><td>sw05</td><td>Leaf</td><td>48+4</td><td>4x40G</td><td>Beta</td><td>2.9.4</td></tr>
+<tr><td>sw06</td><td>Border</td><td>96</td><td>8x100G</td><td>Beta</td><td>2.9.4</td></tr>
+</table>
+<pre>NET SHOW TOPOLOGY --detail --format json</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s12">
+<h2><span class="num">Section 12.</span> Power Systems</h2>
+<p>Each rack has dual PDUs with automatic transfer switch. UPS capacity covers 15 minutes at full load. Generators start within 10 seconds of utility failure.</p>
+<p>Power usage effectiveness target is 1.4. Monitoring includes voltage, current, and temperature. Alarms trigger at 80% load.</p>
+<dl>
+<dt>PDU</dt><dd>Power distribution unit.</dd>
+<dt>UPS</dt><dd>Uninterruptible power supply.</dd>
+<dt>ATS</dt><dd>Automatic transfer switch.</dd>
+<dt>PUE</dt><dd>Power usage effectiveness.</dd>
+</dl>
+<table>
+<tr><th>Device</th><th>Capacity</th><th>Load</th><th>Runtime</th><th>Vendor</th><th>Status</th></tr>
+<tr><td>UPS-A</td><td>500kVA</td><td>320kVA</td><td>15m</td><td>PowerCo</td><td>OK</td></tr>
+<tr><td>UPS-B</td><td>500kVA</td><td>310kVA</td><td>15m</td><td>PowerCo</td><td>OK</td></tr>
+<tr><td>PDU-A1</td><td>32A</td><td>24A</td><td>-</td><td>PowerCo</td><td>OK</td></tr>
+<tr><td>PDU-A2</td><td>32A</td><td>22A</td><td>-</td><td>PowerCo</td><td>OK</td></tr>
+<tr><td>Gen-A</td><td>1000kW</td><td>600kW</td><td>8h</td><td>DieselCo</td><td>Standby</td></tr>
+<tr><td>Gen-B</td><td>1000kW</td><td>580kW</td><td>8h</td><td>DieselCo</td><td>Standby</td></tr>
+</table>
+<pre>POWER STATUS --detail --alarm-threshold 80</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s13">
+<h2><span class="num">Section 13.</span> Cooling Systems</h2>
+<p>CRAC units maintain 21C +/- 1C. Hot aisle containment improves efficiency. Leak detection under raised floors triggers immediate alerts.</p>
+<p>Chilled water setpoint is 12C. Free cooling is used when ambient temperature permits. Alarms include high humidity and high temperature.</p>
+<dl>
+<dt>CRAC</dt><dd>Computer room air conditioning.</dd>
+<dt>Hot aisle</dt><dd>Exhaust side containment.</dd>
+<dt>Leak</dt><dd>Water detection sensor.</dd>
+<dt>Setpoint</dt><dd>Target temperature.</dd>
+</dl>
+<table>
+<tr><th>Unit</th><th>Type</th><th>Temp</th><th>Humidity</th><th>Flow</th><th>Status</th></tr>
+<tr><td>crac01</td><td>Air</td><td>21C</td><td>45%</td><td>Normal</td><td>OK</td></tr>
+<tr><td>crac02</td><td>Air</td><td>21C</td><td>46%</td><td>Normal</td><td>OK</td></tr>
+<tr><td>crac03</td><td>Water</td><td>12C</td><td>44%</td><td>Normal</td><td>OK</td></tr>
+<tr><td>crac04</td><td>Water</td><td>12C</td><td>45%</td><td>Normal</td><td>OK</td></tr>
+<tr><td>leak01</td><td>Sensor</td><td>N/A</td><td>N/A</td><td>N/A</td><td>Dry</td></tr>
+<tr><td>leak02</td><td>Sensor</td><td>N/A</td><td>N/A</td><td>N/A</td><td>Dry</td></tr>
+</table>
+<pre>COOLING REPORT --unit all --format csv</pre>
+<div class="actions"><button data-action="ack">Acknowledge</button><button data-action="print">Print Section</button></div>
+</section>
+
+<section id="s14">
+<h2><span class="num">Section 14.</span> Physical Security</h2>
+<p>Facility access uses badge readers with anti-passback. Man traps prevent tailgating. CCTV covers all entrances and data halls. Guards patrol 24x7.</p>
+<p>Visitor logs are retained for one year. Biometric readers protect high-security zones. Alarms are linked to central station.</p>
+<dl>
+<dt>Badge</dt><dd>Access credential.</dd>
+<dt>Man trap</dt><dd>Double-door entry control.</dd>
+<dt>CCTV</dt><dd>Closed-circuit television.</dd>
+<dt>Anti-passback</dt><dd>Prevents badge sharing.</dd>
+</dl>
+<table>
+<tr><th>Zone</th><th>Access</th><th>Auth</th><th>

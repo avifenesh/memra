@@ -1,0 +1,95 @@
+dsv4-gpu-decode-gate | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | variant ref | n_new 260 (s_max 292) | max_seq 388 | devices [0, 1]
+checkpoints: 52 lengths; top-512 saturation (s >= 2052) NOT reachable at this length (say so, per the lane brief)
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=39s
+[load] layer 15 -> dev0 done t=52s
+[load] layer 19 -> dev0 done t=65s
+[load] layer 23 -> dev1 done t=78s
+[load] layer 27 -> dev1 done t=91s
+[load] layer 31 -> dev1 done t=104s
+[load] layer 35 -> dev1 done t=117s
+[load] layer 39 -> dev1 done t=130s
+[load] layer 42 -> dev1 done t=139s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path not wired (separate lane); trunk-only
+loaded: split at layer 22, t=140s
+[vram post-load] dev0 used 82.24/94.97 GiB (free 12.74) | dev1 used 78.64/94.97 GiB (free 16.33)
+[vram post-alloc] dev0 used 82.24/94.97 GiB (free 12.74) | dev1 used 78.67/94.97 GiB (free 16.30)
+[cache] allocated bytes per device: [14373888, 14441984] | design formula: [14373888, 14441984] | MATCH
+[vram post-prefill] dev0 used 82.27/94.97 GiB (free 12.70) | dev1 used 78.67/94.97 GiB (free 16.30)
+[run 0] prefill s=32 done t=0.4s
+[run 0] step 0: s=33 tok 2581 (24.9 ms/step) t=0.4s
+[run 0] step 200: s=233 tok 1512 (24.7 ms/step) t=5.5s
+[run 0] step 259: s=292 tok 20 (26.0 ms/step) t=7.0s
+[run 0] 260 steps in 7.0s (informational, single-run, not a perf claim); logits stream sha256 97ec528ee29c115f11ca29bddc0dd18383b051b4251306eecd4b7108f1d38213
+[vram post-run0] dev0 used 82.27/94.97 GiB (free 12.70) | dev1 used 78.67/94.97 GiB (free 16.30)
+banked /home/ubuntu/dsv4-0731-regate-out/dec-f32x/decode_seq_for_verify.json (CPU verifier input)
+[run 1] step 0: s=33 tok 2581 (24.5 ms/step) t=0.4s
+[run 1] step 200: s=233 tok 1512 (24.7 ms/step) t=5.4s
+[run 1] step 259: s=292 tok 20 (26.0 ms/step) t=7.0s
+[run 1] 260 steps in 7.0s (informational, single-run, not a perf claim); logits stream sha256 97ec528ee29c115f11ca29bddc0dd18383b051b4251306eecd4b7108f1d38213
+[vram post-run1] dev0 used 82.27/94.97 GiB (free 12.70) | dev1 used 78.67/94.97 GiB (free 16.30)
+GATE (d) determinism: tokens IDENTICAL | logits streams BYTE-IDENTICAL (sha 97ec528ee29c115f11ca29bddc0dd18383b051b4251306eecd4b7108f1d38213)
+GATE (b) RAW greedy identity vs lane-4 banked: 43/160 agree (positions after a first divergence are trajectory-shifted, not errors); first divergence: step 22 (decode 666 vs lane4 795)
+GATE (a1) decode vs re-prefill (pair bounds: thr = 2·C·√(2 ln n)·absmax_ref, bands = 2·3·√2·C·|boundary|; class C = 5.8073e-1 [NATIVE expert arm]):
+| s | max-abs | thr | m-floor | argmax d/r | in-band | top5 ovl/viol | top20 ovl/viol | verdict |
+| 33 | 2.462e0 | 2.146e2 | - | 1970/1970 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 34 | 1.469e0 | 2.348e2 | 0.00e0 | 304/304 | same | 5/5 v0 | 17/20 v0 | PASS |
+| 35 | 1.237e0 | 2.441e2 | 0.00e0 | 12827/12827 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 36 | 1.374e0 | 2.280e2 | 0.00e0 | 396/396 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 37 | 1.422e0 | 2.231e2 | 0.00e0 | 3517/3517 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 38 | 1.177e0 | 2.797e2 | 0.00e0 | 9884/9884 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 39 | 1.210e0 | 2.452e2 | 0.00e0 | 93/93 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 40 | 1.663e0 | 2.272e2 | 0.00e0 | 20/20 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 41 | 2.109e0 | 2.702e2 | 1.94e0 | 2913/2913 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 42 | 1.611e0 | 2.484e2 | 0.00e0 | 344/344 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 43 | 1.388e0 | 2.644e2 | 0.00e0 | 54195/54195 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 44 | 1.396e0 | 2.028e2 | 0.00e0 | 16/16 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 45 | 1.526e0 | 2.221e2 | 1.93e0 | 2143/2143 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 46 | 2.009e0 | 2.547e2 | 0.00e0 | 2581/2581 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 47 | 1.038e0 | 2.123e2 | 0.00e0 | 759/759 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 48 | 8.601e-1 | 2.151e2 | 0.00e0 | 696/696 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 49 | 1.345e0 | 2.179e2 | 1.19e0 | 566/566 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 50 | 1.358e0 | 2.187e2 | 0.00e0 | 513/513 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 51 | 1.249e0 | 2.226e2 | 0.00e0 | 53060/53060 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 52 | 4.089e0 | 2.063e2 | 0.00e0 | 339/339 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 53 | 1.383e0 | 2.523e2 | 0.00e0 | 36954/36954 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 54 | 3.106e0 | 2.758e2 | 0.00e0 | 666/795 | flip(in-band) | 5/5 v0 | 18/20 v0 | PASS |
+| 55 | 2.009e0 | 2.664e2 | 0.00e0 | 9832/9832 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 56 | 2.501e0 | 2.329e2 | 0.00e0 | 223/223 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 57 | 1.796e0 | 2.206e2 | 0.00e0 | 19/19 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 58 | 1.410e0 | 2.421e2 | 0.00e0 | 28/28 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 59 | 2.668e0 | 2.465e2 | 0.00e0 | 45773/45773 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 60 | 1.363e0 | 2.318e2 | 0.00e0 | 270/270 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 61 | 1.066e0 | 2.481e2 | 1.20e0 | 12236/12236 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 62 | 1.677e0 | 2.271e2 | 0.00e0 | 666/666 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 63 | 1.284e0 | 2.454e2 | 0.00e0 | 2143/2143 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 64 | 1.323e0 | 2.802e2 | 0.00e0 | 18444/18444 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 65 | 1.716e0 | 2.229e2 | 1.62e0 | 3517/3517 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 66 | 1.469e0 | 2.661e2 | 0.00e0 | 9884/9884 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 67 | 1.405e0 | 2.491e2 | 0.00e0 | 93/93 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 68 | 2.483e0 | 2.049e2 | 0.00e0 | 20/20 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 69 | 1.060e0 | 2.754e2 | 0.00e0 | 2913/2913 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 70 | 6.649e-1 | 2.459e2 | 0.00e0 | 344/344 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 71 | 7.862e-1 | 2.564e2 | 0.00e0 | 13445/13445 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 72 | 1.404e0 | 2.299e2 | 0.00e0 | 16/16 | same | 5/5 v0 | 17/20 v0 | PASS |
+| 126 | 1.369e0 | 2.336e2 | - | 14/14 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 127 | 1.928e0 | 2.289e2 | 0.00e0 | 5618/5618 | same | 5/5 v0 | 17/20 v0 | PASS |
+| 128 | 9.715e-1 | 2.532e2 | 0.00e0 | 11/11 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 129 | 1.157e0 | 2.374e2 | 1.03e0 | 438/438 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 130 | 9.901e-1 | 2.250e2 | 0.00e0 | 223/223 | same | 4/5 v0 | 17/20 v0 | PASS |
+| 131 | 1.382e0 | 2.064e2 | 0.00e0 | 19/19 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 132 | 8.176e-1 | 2.222e2 | 0.00e0 | 2201/2201 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 160 | 1.760e0 | 2.554e2 | - | 83/83 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 192 | 8.443e-1 | 2.659e2 | - | 82/82 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 255 | 1.494e0 | 2.720e2 | - | 2201/2201 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 256 | 8.132e-1 | 2.299e2 | 0.00e0 | 881/881 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 257 | 1.062e0 | 2.786e2 | 1.08e0 | 12601/12601 | same | 5/5 v0 | 20/20 v0 | PASS |
+checkpoint rows banked: decode_ckpt_logits.bin sha256 c0cf18dadc125e0ab1ae35d26c556ec97064a85fb09e850052b1b74867b1f102 | reprefill_ckpt_logits.bin sha256 72a296a3583f49fa59af00b639d2f6d89b93c2b014f36f86cb153c0cf81b3d9b
+step-equivalence summary: 0/52 checkpoints bit-exact; worst max-abs 4.089e0 at s=52
+GATE (c) short-probe (lane-7 protocol): n_new 260 >= 40, boundary checkpoints 127/128/129/256/257 ALL PRESENT (s >= 1024 and top-512 saturation NOT reachable at this length — covered by the lane-6 full-depth run; the caches are arm-independent)
+GATE (e) cache-alloc vs design math: measured [14373888, 14441984] vs formula [14373888, 14441984] -> MATCH
+informational (single-run, NOT perf claims): decode 25 ms/step at s in [190,210] (n=21), NaN ms/step at s in [1014,1034] (n=0) | lane-4 re-prefill was ~1100 ms/step at s in [190,210]
+DSV4 GPU DECODE GATE: PASS (a1/c/d/e) (a1 true | b-raw 43/160 [verdict via oracle-check] | c true | d true | e true) | total 199s

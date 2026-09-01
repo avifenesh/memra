@@ -1,0 +1,334 @@
+######## C3 BOOT plain1 ########
+[fb] no pidfile, nothing to stop
+[fb] launched pid=71851 boot=c3-plain1 nonce=d49cb626-ecb4-47e1-a156-e166655f8c73
+[fb] READY after 32s
+[fb] GATES GREEN boot=c3-plain1
+[sample] ok=True wall=2.5s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=0.359 tok/s=35.5 spec=None err=None
+[timed] d01-code ttft=0.384 tok/s=35.3 spec=None err=None
+[timed] d02-code ttft=0.465 tok/s=34.4 spec=None err=None
+[timed] d03-code ttft=0.434 tok/s=34.7 spec=None err=None
+[timed] d04-code ttft=0.453 tok/s=34.7 spec=None err=None
+[timed] d05-code ttft=0.34 tok/s=35.6 spec=None err=None
+[timed] d06-prose ttft=0.298 tok/s=35.9 spec=None err=None
+[timed] d07-prose ttft=0.364 tok/s=35.3 spec=None err=None
+[timed] d08-prose ttft=0.35 tok/s=35.5 spec=None err=None
+[timed] d09-prose ttft=0.299 tok/s=35.8 spec=None err=None
+[timed l3] l3-WARM ttft=0.421 tok/s=34.8 ptok=427 err=None
+[timed l3] l3-A4630 ttft=2.206 tok/s=30.1 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=2.535 tok/s=30.0 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=2.865 tok/s=29.9 ptok=6467 err=None
+[timed deep] l3-WARM ttft=0.422 err=None
+[timed deep] l3-A4630 ttft=2.206 err=None
+[timed vendor] d04-code tok/s=33.5 spec=None err=None
+engagement: glm5spec=0 acc=0
+C3_plain1_EXIT=0
+######## C3 BOOT k1-1 ########
+[fb] SIGTERM pid=71851 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=72190 boot=c3-k1-1 nonce=b768f6a4-e39f-4c6a-816a-bd1f04865edb
+[fb] READY after 38s
+[fb] GATES GREEN boot=c3-k1-1
+[sample] ok=True wall=2.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.379 tok/s=34.9 spec={'rounds': 138, 'drafted': 138, 'accepted': 117, 'acceptance_rate': 0.8478260869565217} err=None
+[timed] d01-code ttft=1.47 tok/s=32.8 spec={'rounds': 146, 'drafted': 146, 'accepted': 109, 'acceptance_rate': 0.7465753424657534} err=None
+[timed] d02-code ttft=1.551 tok/s=32.0 spec={'rounds': 144, 'drafted': 144, 'accepted': 112, 'acceptance_rate': 0.7777777777777778} err=None
+[timed] d03-code ttft=1.439 tok/s=31.9 spec={'rounds': 145, 'drafted': 145, 'accepted': 111, 'acceptance_rate': 0.7655172413793103} err=None
+[timed] d04-code ttft=1.595 tok/s=35.6 spec={'rounds': 122, 'drafted': 122, 'accepted': 109, 'acceptance_rate': 0.8934426229508197} err=None
+[timed] d05-code ttft=1.294 tok/s=35.3 spec={'rounds': 136, 'drafted': 136, 'accepted': 119, 'acceptance_rate': 0.875} err=None
+[timed] d06-prose ttft=1.302 tok/s=36.4 spec={'rounds': 134, 'drafted': 134, 'accepted': 121, 'acceptance_rate': 0.9029850746268657} err=None
+[timed] d07-prose ttft=1.45 tok/s=35.8 spec={'rounds': 135, 'drafted': 135, 'accepted': 120, 'acceptance_rate': 0.8888888888888888} err=None
+[timed] d08-prose ttft=1.426 tok/s=34.2 spec={'rounds': 141, 'drafted': 141, 'accepted': 115, 'acceptance_rate': 0.8156028368794326} err=None
+[timed] d09-prose ttft=1.363 tok/s=35.2 spec={'rounds': 139, 'drafted': 139, 'accepted': 116, 'acceptance_rate': 0.8345323741007195} err=None
+[timed l3] l3-WARM ttft=1.485 tok/s=36.4 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.987 tok/s=28.7 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.391 tok/s=28.6 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.74 tok/s=28.5 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.521 err=None
+[timed deep] l3-A4630 ttft=3.975 err=None
+[timed vendor] d04-code tok/s=35.7 spec={'rounds': 111, 'drafted': 111, 'accepted': 103, 'acceptance_rate': 0.9279279279279279} err=None
+engagement: glm5spec=19 acc=125
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[glm5-spec] route=spec K=1 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+C3_k1-1_EXIT=0
+######## C3 BOOT k2-1 ########
+[fb] SIGTERM pid=72190 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=72506 boot=c3-k2-1 nonce=1878663b-7336-40a5-96ee-0ae8eca9bebd
+[fb] READY after 40s
+[fb] GATES GREEN boot=c3-k2-1
+[sample] ok=True wall=3.0s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.433 tok/s=31.5 spec={'rounds': 110, 'drafted': 220, 'accepted': 145, 'acceptance_rate': 0.6590909090909091} err=None
+[timed] d01-code ttft=1.547 tok/s=29.9 spec={'rounds': 116, 'drafted': 232, 'accepted': 141, 'acceptance_rate': 0.6077586206896551} err=None
+[timed] d02-code ttft=1.523 tok/s=29.8 spec={'rounds': 111, 'drafted': 222, 'accepted': 144, 'acceptance_rate': 0.6486486486486487} err=None
+[timed] d03-code ttft=1.474 tok/s=30.2 spec={'rounds': 111, 'drafted': 222, 'accepted': 145, 'acceptance_rate': 0.6531531531531531} err=None
+[timed] d04-code ttft=1.59 tok/s=35.8 spec={'rounds': 88, 'drafted': 176, 'accepted': 144, 'acceptance_rate': 0.8181818181818182} err=None
+[timed] d05-code ttft=1.326 tok/s=34.6 spec={'rounds': 101, 'drafted': 202, 'accepted': 154, 'acceptance_rate': 0.7623762376237624} err=None
+[timed] d06-prose ttft=1.355 tok/s=37.3 spec={'rounds': 96, 'drafted': 192, 'accepted': 159, 'acceptance_rate': 0.828125} err=None
+[timed] d07-prose ttft=1.608 tok/s=35.4 spec={'rounds': 101, 'drafted': 202, 'accepted': 155, 'acceptance_rate': 0.7673267326732673} err=None
+[timed] d08-prose ttft=1.419 tok/s=34.4 spec={'rounds': 102, 'drafted': 204, 'accepted': 154, 'acceptance_rate': 0.7549019607843137} err=None
+[timed] d09-prose ttft=1.438 tok/s=34.8 spec={'rounds': 103, 'drafted': 206, 'accepted': 154, 'acceptance_rate': 0.7475728155339806} err=None
+[timed l3] l3-WARM ttft=1.456 tok/s=37.9 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.184 tok/s=28.0 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.388 tok/s=26.2 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.787 tok/s=28.5 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.492 err=None
+[timed deep] l3-A4630 ttft=4.177 err=None
+[timed vendor] d04-code tok/s=39.4 spec={'rounds': 62, 'drafted': 124, 'accepted': 109, 'acceptance_rate': 0.8790322580645161} err=None
+engagement: glm5spec=19 acc=124
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[glm5-spec] route=spec K=2 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+C3_k2-1_EXIT=0
+######## C3 BOOT k3-1 ########
+[fb] SIGTERM pid=72506 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=72841 boot=c3-k3-1 nonce=6e5f0221-917d-486a-9598-ee2884184812
+[fb] READY after 38s
+[fb] GATES GREEN boot=c3-k3-1
+[sample] ok=True wall=3.3s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.62 tok/s=30.5 spec={'rounds': 91, 'drafted': 273, 'accepted': 164, 'acceptance_rate': 0.6007326007326007} err=None
+[timed] d01-code ttft=1.863 tok/s=27.9 spec={'rounds': 100, 'drafted': 300, 'accepted': 157, 'acceptance_rate': 0.5233333333333333} err=None
+[timed] d02-code ttft=1.584 tok/s=26.0 spec={'rounds': 99, 'drafted': 297, 'accepted': 159, 'acceptance_rate': 0.5353535353535354} err=None
+[timed] d03-code ttft=1.535 tok/s=27.3 spec={'rounds': 96, 'drafted': 288, 'accepted': 162, 'acceptance_rate': 0.5625} err=None
+[timed] d04-code ttft=1.782 tok/s=34.0 spec={'rounds': 74, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d05-code ttft=1.488 tok/s=32.2 spec={'rounds': 86, 'drafted': 258, 'accepted': 170, 'acceptance_rate': 0.6589147286821705} err=None
+[timed] d06-prose ttft=1.435 tok/s=34.7 spec={'rounds': 81, 'drafted': 243, 'accepted': 176, 'acceptance_rate': 0.7242798353909465} err=None
+[timed] d07-prose ttft=1.841 tok/s=34.2 spec={'rounds': 84, 'drafted': 252, 'accepted': 172, 'acceptance_rate': 0.6825396825396826} err=None
+[timed] d08-prose ttft=1.5 tok/s=33.0 spec={'rounds': 84, 'drafted': 252, 'accepted': 174, 'acceptance_rate': 0.6904761904761905} err=None
+[timed] d09-prose ttft=1.644 tok/s=31.6 spec={'rounds': 90, 'drafted': 270, 'accepted': 168, 'acceptance_rate': 0.6222222222222222} err=None
+[timed l3] l3-WARM ttft=1.731 tok/s=39.2 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.595 tok/s=25.6 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.883 tok/s=24.6 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.751 tok/s=26.8 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.774 err=None
+[timed deep] l3-A4630 ttft=4.612 err=None
+[timed vendor] d04-code tok/s=32.1 spec={'rounds': 83, 'drafted': 249, 'accepted': 172, 'acceptance_rate': 0.6907630522088354} err=None
+engagement: glm5spec=19 acc=125
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+C3_k3-1_EXIT=0
+######## C3 BOOT plain2 ########
+[fb] SIGTERM pid=72841 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=73181 boot=c3-plain2 nonce=1b980050-3c49-4671-a5d1-79f6871f66d3
+[fb] READY after 32s
+[fb] GATES GREEN boot=c3-plain2
+[sample] ok=True wall=2.5s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=0.36 tok/s=35.5 spec=None err=None
+[timed] d01-code ttft=0.384 tok/s=35.3 spec=None err=None
+[timed] d02-code ttft=0.465 tok/s=34.4 spec=None err=None
+[timed] d03-code ttft=0.434 tok/s=34.7 spec=None err=None
+[timed] d04-code ttft=0.454 tok/s=34.7 spec=None err=None
+[timed] d05-code ttft=0.34 tok/s=35.6 spec=None err=None
+[timed] d06-prose ttft=0.298 tok/s=35.8 spec=None err=None
+[timed] d07-prose ttft=0.364 tok/s=35.3 spec=None err=None
+[timed] d08-prose ttft=0.35 tok/s=35.5 spec=None err=None
+[timed] d09-prose ttft=0.299 tok/s=35.8 spec=None err=None
+[timed l3] l3-WARM ttft=0.422 tok/s=34.7 ptok=427 err=None
+[timed l3] l3-A4630 ttft=2.21 tok/s=30.0 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=2.539 tok/s=30.0 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=2.869 tok/s=29.9 ptok=6467 err=None
+[timed deep] l3-WARM ttft=0.422 err=None
+[timed deep] l3-A4630 ttft=2.208 err=None
+[timed vendor] d04-code tok/s=33.5 spec=None err=None
+engagement: glm5spec=0 acc=0
+C3_plain2_EXIT=0
+######## C3 BOOT k1-2 ########
+[fb] SIGTERM pid=73181 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=73483 boot=c3-k1-2 nonce=ba3c0dcc-ed8b-4737-8615-f54067ac7eb3
+[fb] READY after 41s
+[fb] GATES GREEN boot=c3-k1-2
+[sample] ok=True wall=2.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.379 tok/s=34.9 spec={'rounds': 138, 'drafted': 138, 'accepted': 117, 'acceptance_rate': 0.8478260869565217} err=None
+[timed] d01-code ttft=1.47 tok/s=32.8 spec={'rounds': 146, 'drafted': 146, 'accepted': 109, 'acceptance_rate': 0.7465753424657534} err=None
+[timed] d02-code ttft=1.552 tok/s=32.0 spec={'rounds': 144, 'drafted': 144, 'accepted': 112, 'acceptance_rate': 0.7777777777777778} err=None
+[timed] d03-code ttft=1.44 tok/s=31.9 spec={'rounds': 145, 'drafted': 145, 'accepted': 111, 'acceptance_rate': 0.7655172413793103} err=None
+[timed] d04-code ttft=1.595 tok/s=35.6 spec={'rounds': 122, 'drafted': 122, 'accepted': 109, 'acceptance_rate': 0.8934426229508197} err=None
+[timed] d05-code ttft=1.294 tok/s=35.3 spec={'rounds': 136, 'drafted': 136, 'accepted': 119, 'acceptance_rate': 0.875} err=None
+[timed] d06-prose ttft=1.302 tok/s=36.4 spec={'rounds': 134, 'drafted': 134, 'accepted': 121, 'acceptance_rate': 0.9029850746268657} err=None
+[timed] d07-prose ttft=1.45 tok/s=35.8 spec={'rounds': 135, 'drafted': 135, 'accepted': 120, 'acceptance_rate': 0.8888888888888888} err=None
+[timed] d08-prose ttft=1.426 tok/s=34.2 spec={'rounds': 141, 'drafted': 141, 'accepted': 115, 'acceptance_rate': 0.8156028368794326} err=None
+[timed] d09-prose ttft=1.363 tok/s=35.2 spec={'rounds': 139, 'drafted': 139, 'accepted': 116, 'acceptance_rate': 0.8345323741007195} err=None
+[timed l3] l3-WARM ttft=1.485 tok/s=36.4 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.989 tok/s=28.7 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.397 tok/s=28.6 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.755 tok/s=28.5 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.524 err=None
+[timed deep] l3-A4630 ttft=3.982 err=None
+[timed vendor] d04-code tok/s=34.0 spec={'rounds': 135, 'drafted': 135, 'accepted': 120, 'acceptance_rate': 0.8888888888888888} err=None
+engagement: glm5spec=19 acc=126
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[glm5-spec] route=spec K=1 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+C3_k1-2_EXIT=0
+######## C3 BOOT k2-2 ########
+[fb] SIGTERM pid=73483 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=73803 boot=c3-k2-2 nonce=07e65ca5-2ff4-4445-aea0-b563e578f70c
+[fb] READY after 38s
+[fb] GATES GREEN boot=c3-k2-2
+[sample] ok=True wall=3.0s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.434 tok/s=31.6 spec={'rounds': 110, 'drafted': 220, 'accepted': 145, 'acceptance_rate': 0.6590909090909091} err=None
+[timed] d01-code ttft=1.547 tok/s=29.9 spec={'rounds': 116, 'drafted': 232, 'accepted': 141, 'acceptance_rate': 0.6077586206896551} err=None
+[timed] d02-code ttft=1.522 tok/s=29.7 spec={'rounds': 111, 'drafted': 222, 'accepted': 144, 'acceptance_rate': 0.6486486486486487} err=None
+[timed] d03-code ttft=1.473 tok/s=30.2 spec={'rounds': 111, 'drafted': 222, 'accepted': 145, 'acceptance_rate': 0.6531531531531531} err=None
+[timed] d04-code ttft=1.589 tok/s=35.8 spec={'rounds': 88, 'drafted': 176, 'accepted': 144, 'acceptance_rate': 0.8181818181818182} err=None
+[timed] d05-code ttft=1.326 tok/s=34.6 spec={'rounds': 101, 'drafted': 202, 'accepted': 154, 'acceptance_rate': 0.7623762376237624} err=None
+[timed] d06-prose ttft=1.356 tok/s=37.3 spec={'rounds': 96, 'drafted': 192, 'accepted': 159, 'acceptance_rate': 0.828125} err=None
+[timed] d07-prose ttft=1.609 tok/s=35.4 spec={'rounds': 101, 'drafted': 202, 'accepted': 155, 'acceptance_rate': 0.7673267326732673} err=None
+[timed] d08-prose ttft=1.419 tok/s=34.4 spec={'rounds': 102, 'drafted': 204, 'accepted': 154, 'acceptance_rate': 0.7549019607843137} err=None
+[timed] d09-prose ttft=1.438 tok/s=34.8 spec={'rounds': 103, 'drafted': 206, 'accepted': 154, 'acceptance_rate': 0.7475728155339806} err=None
+[timed l3] l3-WARM ttft=1.455 tok/s=37.9 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.181 tok/s=28.0 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.39 tok/s=26.2 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.796 tok/s=28.4 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.492 err=None
+[timed deep] l3-A4630 ttft=4.176 err=None
+[timed vendor] d04-code tok/s=33.8 spec={'rounds': 98, 'drafted': 196, 'accepted': 158, 'acceptance_rate': 0.8061224489795918} err=None
+engagement: glm5spec=19 acc=126
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[glm5-spec] route=spec K=2 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+C3_k2-2_EXIT=0
+######## C3 BOOT k3-2 ########
+[fb] SIGTERM pid=73803 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=74133 boot=c3-k3-2 nonce=0c356ce5-8c16-4840-9fc2-959a0e7f4659
+[fb] READY after 38s
+[fb] GATES GREEN boot=c3-k3-2
+[sample] ok=True wall=3.3s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.62 tok/s=30.4 spec={'rounds': 91, 'drafted': 273, 'accepted': 164, 'acceptance_rate': 0.6007326007326007} err=None
+[timed] d01-code ttft=1.863 tok/s=27.8 spec={'rounds': 100, 'drafted': 300, 'accepted': 157, 'acceptance_rate': 0.5233333333333333} err=None
+[timed] d02-code ttft=1.584 tok/s=26.0 spec={'rounds': 99, 'drafted': 297, 'accepted': 159, 'acceptance_rate': 0.5353535353535354} err=None
+[timed] d03-code ttft=1.534 tok/s=27.3 spec={'rounds': 96, 'drafted': 288, 'accepted': 162, 'acceptance_rate': 0.5625} err=None
+[timed] d04-code ttft=1.78 tok/s=34.0 spec={'rounds': 74, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d05-code ttft=1.488 tok/s=32.2 spec={'rounds': 86, 'drafted': 258, 'accepted': 170, 'acceptance_rate': 0.6589147286821705} err=None
+[timed] d06-prose ttft=1.436 tok/s=34.7 spec={'rounds': 81, 'drafted': 243, 'accepted': 176, 'acceptance_rate': 0.7242798353909465} err=None
+[timed] d07-prose ttft=1.841 tok/s=34.1 spec={'rounds': 84, 'drafted': 252, 'accepted': 172, 'acceptance_rate': 0.6825396825396826} err=None
+[timed] d08-prose ttft=1.508 tok/s=33.0 spec={'rounds': 84, 'drafted': 252, 'accepted': 174, 'acceptance_rate': 0.6904761904761905} err=None
+[timed] d09-prose ttft=1.644 tok/s=31.6 spec={'rounds': 90, 'drafted': 270, 'accepted': 168, 'acceptance_rate': 0.6222222222222222} err=None
+[timed l3] l3-WARM ttft=1.731 tok/s=39.2 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.594 tok/s=25.6 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.882 tok/s=24.5 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.742 tok/s=26.8 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.772 err=None
+[timed deep] l3-A4630 ttft=4.601 err=None
+[timed vendor] d04-code tok/s=27.6 spec={'rounds': 84, 'drafted': 252, 'accepted': 136, 'acceptance_rate': 0.5396825396825397} err=None
+engagement: glm5spec=19 acc=124
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+C3_k3-2_EXIT=0
+######## C3 BOOT plain3 ########
+[fb] SIGTERM pid=74133 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=74449 boot=c3-plain3 nonce=29ecd314-8cee-453f-91f7-b8dd793163d1
+[fb] READY after 32s
+[fb] GATES GREEN boot=c3-plain3
+[sample] ok=True wall=2.5s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=0.36 tok/s=35.5 spec=None err=None
+[timed] d01-code ttft=0.384 tok/s=35.3 spec=None err=None
+[timed] d02-code ttft=0.465 tok/s=34.3 spec=None err=None
+[timed] d03-code ttft=0.434 tok/s=34.7 spec=None err=None
+[timed] d04-code ttft=0.454 tok/s=34.7 spec=None err=None
+[timed] d05-code ttft=0.34 tok/s=35.6 spec=None err=None
+[timed] d06-prose ttft=0.298 tok/s=35.8 spec=None err=None
+[timed] d07-prose ttft=0.364 tok/s=35.3 spec=None err=None
+[timed] d08-prose ttft=0.35 tok/s=35.5 spec=None err=None
+[timed] d09-prose ttft=0.299 tok/s=35.8 spec=None err=None
+[timed l3] l3-WARM ttft=0.422 tok/s=34.7 ptok=427 err=None
+[timed l3] l3-A4630 ttft=2.21 tok/s=30.0 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=2.539 tok/s=30.0 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=2.869 tok/s=29.9 ptok=6467 err=None
+[timed deep] l3-WARM ttft=0.422 err=None
+[timed deep] l3-A4630 ttft=2.208 err=None
+[timed vendor] d04-code tok/s=33.9 spec=None err=None
+engagement: glm5spec=0 acc=0
+C3_plain3_EXIT=0
+######## C3 BOOT k1-3 ########
+[fb] SIGTERM pid=74449 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=74748 boot=c3-k1-3 nonce=3ed135c1-ed15-446f-a011-1904f67059e8
+[fb] READY after 41s
+[fb] GATES GREEN boot=c3-k1-3
+[sample] ok=True wall=2.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.379 tok/s=34.9 spec={'rounds': 138, 'drafted': 138, 'accepted': 117, 'acceptance_rate': 0.8478260869565217} err=None
+[timed] d01-code ttft=1.47 tok/s=32.8 spec={'rounds': 146, 'drafted': 146, 'accepted': 109, 'acceptance_rate': 0.7465753424657534} err=None
+[timed] d02-code ttft=1.553 tok/s=32.0 spec={'rounds': 144, 'drafted': 144, 'accepted': 112, 'acceptance_rate': 0.7777777777777778} err=None
+[timed] d03-code ttft=1.439 tok/s=31.9 spec={'rounds': 145, 'drafted': 145, 'accepted': 111, 'acceptance_rate': 0.7655172413793103} err=None
+[timed] d04-code ttft=1.594 tok/s=35.6 spec={'rounds': 122, 'drafted': 122, 'accepted': 109, 'acceptance_rate': 0.8934426229508197} err=None
+[timed] d05-code ttft=1.293 tok/s=35.3 spec={'rounds': 136, 'drafted': 136, 'accepted': 119, 'acceptance_rate': 0.875} err=None
+[timed] d06-prose ttft=1.302 tok/s=36.4 spec={'rounds': 134, 'drafted': 134, 'accepted': 121, 'acceptance_rate': 0.9029850746268657} err=None
+[timed] d07-prose ttft=1.45 tok/s=35.8 spec={'rounds': 135, 'drafted': 135, 'accepted': 120, 'acceptance_rate': 0.8888888888888888} err=None
+[timed] d08-prose ttft=1.434 tok/s=34.2 spec={'rounds': 141, 'drafted': 141, 'accepted': 115, 'acceptance_rate': 0.8156028368794326} err=None
+[timed] d09-prose ttft=1.364 tok/s=35.2 spec={'rounds': 139, 'drafted': 139, 'accepted': 116, 'acceptance_rate': 0.8345323741007195} err=None
+[timed l3] l3-WARM ttft=1.484 tok/s=36.4 ptok=427 err=None
+[timed l3] l3-A4630 ttft=3.979 tok/s=28.7 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.389 tok/s=28.6 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.748 tok/s=28.5 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.523 err=None
+[timed deep] l3-A4630 ttft=3.978 err=None
+[timed vendor] d04-code tok/s=34.3 spec={'rounds': 134, 'drafted': 134, 'accepted': 122, 'acceptance_rate': 0.9104477611940298} err=None
+engagement: glm5spec=19 acc=126
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[glm5-spec] route=spec K=1 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+C3_k1-3_EXIT=0
+######## C3 BOOT k2-3 ########
+[fb] SIGTERM pid=74748 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=75084 boot=c3-k2-3 nonce=65c4a71b-b6f2-4ded-8a34-b7cc93be7e20
+[fb] READY after 40s
+[fb] GATES GREEN boot=c3-k2-3
+[sample] ok=True wall=3.0s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.434 tok/s=31.6 spec={'rounds': 110, 'drafted': 220, 'accepted': 145, 'acceptance_rate': 0.6590909090909091} err=None
+[timed] d01-code ttft=1.547 tok/s=29.9 spec={'rounds': 116, 'drafted': 232, 'accepted': 141, 'acceptance_rate': 0.6077586206896551} err=None
+[timed] d02-code ttft=1.522 tok/s=29.7 spec={'rounds': 111, 'drafted': 222, 'accepted': 144, 'acceptance_rate': 0.6486486486486487} err=None
+[timed] d03-code ttft=1.473 tok/s=30.2 spec={'rounds': 111, 'drafted': 222, 'accepted': 145, 'acceptance_rate': 0.6531531531531531} err=None
+[timed] d04-code ttft=1.588 tok/s=35.8 spec={'rounds': 88, 'drafted': 176, 'accepted': 144, 'acceptance_rate': 0.8181818181818182} err=None
+[timed] d05-code ttft=1.325 tok/s=34.6 spec={'rounds': 101, 'drafted': 202, 'accepted': 154, 'acceptance_rate': 0.7623762376237624} err=None
+[timed] d06-prose ttft=1.355 tok/s=37.3 spec={'rounds': 96, 'drafted': 192, 'accepted': 159, 'acceptance_rate': 0.828125} err=None
+[timed] d07-prose ttft=1.609 tok/s=35.4 spec={'rounds': 101, 'drafted': 202, 'accepted': 155, 'acceptance_rate': 0.7673267326732673} err=None
+[timed] d08-prose ttft=1.419 tok/s=34.4 spec={'rounds': 102, 'drafted': 204, 'accepted': 154, 'acceptance_rate': 0.7549019607843137} err=None
+[timed] d09-prose ttft=1.438 tok/s=34.8 spec={'rounds': 103, 'drafted': 206, 'accepted': 154, 'acceptance_rate': 0.7475728155339806} err=None
+[timed l3] l3-WARM ttft=1.456 tok/s=37.8 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.193 tok/s=28.0 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.403 tok/s=26.2 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.803 tok/s=28.4 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.496 err=None
+[timed deep] l3-A4630 ttft=4.184 err=None
+[timed vendor] d04-code tok/s=44.6 spec={'rounds': 36, 'drafted': 72, 'accepted': 60, 'acceptance_rate': 0.8333333333333334} err=None
+engagement: glm5spec=19 acc=121
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[glm5-spec] route=spec K=2 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+C3_k2-3_EXIT=0
+######## C3 BOOT k3-3 ########
+[fb] SIGTERM pid=75084 exe=/root/memra/target/release/memra-server
+[fb] stopped
+[fb] launched pid=75404 boot=c3-k3-3 nonce=8709aea8-d9ba-4875-95db-bc7e922380b4
+[fb] READY after 40s
+[fb] GATES GREEN boot=c3-k3-3
+[sample] ok=True wall=3.3s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.62 tok/s=30.5 spec={'rounds': 91, 'drafted': 273, 'accepted': 164, 'acceptance_rate': 0.6007326007326007} err=None
+[timed] d01-code ttft=1.862 tok/s=27.9 spec={'rounds': 100, 'drafted': 300, 'accepted': 157, 'acceptance_rate': 0.5233333333333333} err=None
+[timed] d02-code ttft=1.584 tok/s=26.0 spec={'rounds': 99, 'drafted': 297, 'accepted': 159, 'acceptance_rate': 0.5353535353535354} err=None
+[timed] d03-code ttft=1.535 tok/s=27.3 spec={'rounds': 96, 'drafted': 288, 'accepted': 162, 'acceptance_rate': 0.5625} err=None
+[timed] d04-code ttft=1.782 tok/s=34.0 spec={'rounds': 74, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[timed] d05-code ttft=1.488 tok/s=32.2 spec={'rounds': 86, 'drafted': 258, 'accepted': 170, 'acceptance_rate': 0.6589147286821705} err=None
+[timed] d06-prose ttft=1.436 tok/s=34.7 spec={'rounds': 81, 'drafted': 243, 'accepted': 176, 'acceptance_rate': 0.7242798353909465} err=None
+[timed] d07-prose ttft=1.841 tok/s=34.1 spec={'rounds': 84, 'drafted': 252, 'accepted': 172, 'acceptance_rate': 0.6825396825396826} err=None
+[timed] d08-prose ttft=1.508 tok/s=33.0 spec={'rounds': 84, 'drafted': 252, 'accepted': 174, 'acceptance_rate': 0.6904761904761905} err=None
+[timed] d09-prose ttft=1.644 tok/s=31.6 spec={'rounds': 90, 'drafted': 270, 'accepted': 168, 'acceptance_rate': 0.6222222222222222} err=None
+[timed l3] l3-WARM ttft=1.732 tok/s=39.2 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.602 tok/s=25.6 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.886 tok/s=24.5 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.751 tok/s=26.8 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.772 err=None
+[timed deep] l3-A4630 ttft=4.599 err=None
+[timed vendor] d04-code tok/s=32.5 spec={'rounds': 82, 'drafted': 246, 'accepted': 174, 'acceptance_rate': 0.7073170731707317} err=None
+engagement: glm5spec=19 acc=125
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+C3_k3-3_EXIT=0
+[fb] SIGTERM pid=75404 exe=/root/memra/target/release/memra-server
+[fb] stopped
+=== LOOP-LAW SCREEN (all c3 tapes) ===
+[loop-law] screened=168 flagged=0
+C3_ROUNDS_DONE: 1 2 3

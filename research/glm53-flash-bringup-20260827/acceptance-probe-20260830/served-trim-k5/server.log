@@ -1,0 +1,411 @@
+[server] starting; models config = [("zai/glm-5.3-flash", "/root/models/glm53-nvfp4", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=5: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "zai/glm-5.3-flash" <- /root/models/glm53-nvfp4
+[loader-law] WARNING: output.weight loads as 2D Float ne=[4096, 154880] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_b.weight loads as 2D Float ne=[4096, 64] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[8192, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_q_b.weight loads as 2D Float ne=[1536, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk3-gate: 1296 MiB in 0.1s (20185 MiB/s)
+[st-spill] free_pinnable_ram=450642 MiB
+[slab-populate] blk3-up: 1296 MiB in 0.1s (20513 MiB/s)
+[slab-populate] blk3-down: 1296 MiB in 0.1s (20528 MiB/s)
+[slab-populate] blk4-gate: 1296 MiB in 0.1s (20557 MiB/s)
+[slab-populate] blk4-up: 1296 MiB in 0.1s (20480 MiB/s)
+[slab-populate] blk4-down: 1296 MiB in 0.1s (20520 MiB/s)
+[slab-populate] blk5-gate: 1296 MiB in 0.1s (20591 MiB/s)
+[slab-populate] blk5-up: 1296 MiB in 0.1s (20564 MiB/s)
+[slab-populate] blk5-down: 1296 MiB in 0.1s (20494 MiB/s)
+[slab-populate] blk6-gate: 1296 MiB in 0.1s (20504 MiB/s)
+[slab-populate] blk6-up: 1296 MiB in 0.1s (20496 MiB/s)
+[slab-populate] blk6-down: 1296 MiB in 0.1s (20437 MiB/s)
+[slab-populate] blk7-gate: 1296 MiB in 0.1s (20792 MiB/s)
+[slab-populate] blk7-up: 1296 MiB in 0.1s (20446 MiB/s)
+[slab-populate] blk7-down: 1296 MiB in 0.1s (20735 MiB/s)
+[slab-populate] blk8-gate: 1296 MiB in 0.1s (20518 MiB/s)
+[slab-populate] blk8-up: 1296 MiB in 0.1s (20266 MiB/s)
+[slab-populate] blk8-down: 1296 MiB in 0.1s (20457 MiB/s)
+[slab-populate] blk9-gate: 1296 MiB in 0.1s (20292 MiB/s)
+[slab-populate] blk9-up: 1296 MiB in 0.1s (20447 MiB/s)
+[slab-populate] blk9-down: 1296 MiB in 0.1s (20450 MiB/s)
+[slab-populate] blk10-gate: 1296 MiB in 0.1s (20572 MiB/s)
+[slab-populate] blk10-up: 1296 MiB in 0.1s (20384 MiB/s)
+[slab-populate] blk10-down: 1296 MiB in 0.1s (20488 MiB/s)
+[slab-populate] blk11-gate: 1296 MiB in 0.1s (20812 MiB/s)
+[slab-populate] blk11-up: 1296 MiB in 0.1s (20526 MiB/s)
+[slab-populate] blk11-down: 1296 MiB in 0.1s (20437 MiB/s)
+[slab-populate] blk12-gate: 1296 MiB in 0.1s (20289 MiB/s)
+[slab-populate] blk12-up: 1296 MiB in 0.1s (20522 MiB/s)
+[slab-populate] blk12-down: 1296 MiB in 0.1s (20482 MiB/s)
+[slab-populate] blk13-gate: 1296 MiB in 0.1s (20644 MiB/s)
+[slab-populate] blk13-up: 1296 MiB in 0.1s (20494 MiB/s)
+[slab-populate] blk13-down: 1296 MiB in 0.1s (20485 MiB/s)
+[slab-populate] blk14-gate: 1296 MiB in 0.1s (20485 MiB/s)
+[slab-populate] blk14-up: 1296 MiB in 0.1s (20493 MiB/s)
+[slab-populate] blk14-down: 1296 MiB in 0.1s (20530 MiB/s)
+[slab-populate] blk15-gate: 1296 MiB in 0.1s (20753 MiB/s)
+[slab-populate] blk15-up: 1296 MiB in 0.1s (20393 MiB/s)
+[slab-populate] blk15-down: 1296 MiB in 0.1s (20450 MiB/s)
+[slab-populate] blk16-gate: 1296 MiB in 0.1s (20542 MiB/s)
+[slab-populate] blk16-up: 1296 MiB in 0.1s (20433 MiB/s)
+[slab-populate] blk16-down: 1296 MiB in 0.1s (20699 MiB/s)
+[slab-populate] blk17-gate: 1296 MiB in 0.1s (20446 MiB/s)
+[slab-populate] blk17-up: 1296 MiB in 0.1s (20496 MiB/s)
+[slab-populate] blk17-down: 1296 MiB in 0.1s (20394 MiB/s)
+[slab-populate] blk18-gate: 1296 MiB in 0.1s (20406 MiB/s)
+[slab-populate] blk18-up: 1296 MiB in 0.1s (20387 MiB/s)
+[slab-populate] blk18-down: 1296 MiB in 0.1s (20229 MiB/s)
+[slab-populate] blk19-gate: 1296 MiB in 0.1s (20525 MiB/s)
+[slab-populate] blk19-up: 1296 MiB in 0.1s (20427 MiB/s)
+[slab-populate] blk19-down: 1296 MiB in 0.1s (20404 MiB/s)
+[slab-populate] blk20-gate: 1296 MiB in 0.1s (20413 MiB/s)
+[slab-populate] blk20-up: 1296 MiB in 0.1s (20491 MiB/s)
+[slab-populate] blk20-down: 1296 MiB in 0.1s (20424 MiB/s)
+[slab-populate] blk21-gate: 1296 MiB in 0.1s (20504 MiB/s)
+[slab-populate] blk21-up: 1296 MiB in 0.1s (20451 MiB/s)
+[slab-populate] blk21-down: 1296 MiB in 0.1s (20664 MiB/s)
+[slab-populate] blk22-gate: 1296 MiB in 0.1s (20546 MiB/s)
+[slab-populate] blk22-up: 1296 MiB in 0.1s (20509 MiB/s)
+[slab-populate] blk22-down: 1296 MiB in 0.1s (20453 MiB/s)
+[slab-populate] blk23-gate: 1296 MiB in 0.1s (20853 MiB/s)
+[slab-populate] blk23-up: 1296 MiB in 0.1s (20520 MiB/s)
+[slab-populate] blk23-down: 1296 MiB in 0.1s (20586 MiB/s)
+[slab-populate] blk24-gate: 1296 MiB in 0.1s (20591 MiB/s)
+[slab-populate] blk24-up: 1296 MiB in 0.1s (20394 MiB/s)
+[slab-populate] blk24-down: 1296 MiB in 0.1s (20396 MiB/s)
+[slab-populate] blk25-gate: 1296 MiB in 0.1s (20543 MiB/s)
+[slab-populate] blk25-up: 1296 MiB in 0.1s (20510 MiB/s)
+[slab-populate] blk25-down: 1296 MiB in 0.1s (20577 MiB/s)
+[slab-populate] blk26-gate: 1296 MiB in 0.1s (20565 MiB/s)
+[slab-populate] blk26-up: 1296 MiB in 0.1s (20453 MiB/s)
+[slab-populate] blk26-down: 1296 MiB in 0.1s (20426 MiB/s)
+[slab-populate] blk27-gate: 1296 MiB in 0.1s (20990 MiB/s)
+[slab-populate] blk27-up: 1296 MiB in 0.1s (20566 MiB/s)
+[slab-populate] blk27-down: 1296 MiB in 0.1s (20538 MiB/s)
+[slab-populate] blk28-gate: 1296 MiB in 0.1s (20496 MiB/s)
+[slab-populate] blk28-up: 1296 MiB in 0.1s (20248 MiB/s)
+[slab-populate] blk28-down: 1296 MiB in 0.1s (20738 MiB/s)
+[slab-populate] blk29-gate: 1296 MiB in 0.1s (20554 MiB/s)
+[slab-populate] blk29-up: 1296 MiB in 0.1s (20020 MiB/s)
+[slab-populate] blk29-down: 1296 MiB in 0.1s (20498 MiB/s)
+[slab-populate] blk30-gate: 1296 MiB in 0.1s (20555 MiB/s)
+[slab-populate] blk30-up: 1296 MiB in 0.1s (20548 MiB/s)
+[slab-populate] blk30-down: 1296 MiB in 0.1s (20603 MiB/s)
+[slab-populate] blk31-gate: 1296 MiB in 0.1s (20640 MiB/s)
+[slab-populate] blk31-up: 1296 MiB in 0.1s (20271 MiB/s)
+[slab-populate] blk31-down: 1296 MiB in 0.1s (20686 MiB/s)
+[slab-populate] blk32-gate: 1296 MiB in 0.1s (20546 MiB/s)
+[slab-populate] blk32-up: 1296 MiB in 0.1s (20637 MiB/s)
+[slab-populate] blk32-down: 1296 MiB in 0.1s (20563 MiB/s)
+[slab-populate] blk33-gate: 1296 MiB in 0.1s (20441 MiB/s)
+[slab-populate] blk33-up: 1296 MiB in 0.1s (20492 MiB/s)
+[slab-populate] blk33-down: 1296 MiB in 0.1s (20524 MiB/s)
+[slab-populate] blk34-gate: 1296 MiB in 0.1s (20528 MiB/s)
+[slab-populate] blk34-up: 1296 MiB in 0.1s (20675 MiB/s)
+[slab-populate] blk34-down: 1296 MiB in 0.1s (20550 MiB/s)
+[slab-populate] blk35-gate: 1296 MiB in 0.1s (20690 MiB/s)
+[slab-populate] blk35-up: 1296 MiB in 0.1s (20689 MiB/s)
+[slab-populate] blk35-down: 1296 MiB in 0.1s (20530 MiB/s)
+[slab-populate] blk36-gate: 1296 MiB in 0.1s (20109 MiB/s)
+[slab-populate] blk36-up: 1296 MiB in 0.1s (20118 MiB/s)
+[slab-populate] blk36-down: 1296 MiB in 0.1s (20597 MiB/s)
+[slab-populate] blk37-gate: 1296 MiB in 0.1s (20574 MiB/s)
+[slab-populate] blk37-up: 1296 MiB in 0.1s (20561 MiB/s)
+[slab-populate] blk37-down: 1296 MiB in 0.1s (20693 MiB/s)
+[slab-populate] blk38-gate: 1296 MiB in 0.1s (20591 MiB/s)
+[slab-populate] blk38-up: 1296 MiB in 0.1s (20382 MiB/s)
+[slab-populate] blk38-down: 1296 MiB in 0.1s (20637 MiB/s)
+[slab-populate] blk39-gate: 1296 MiB in 0.1s (20757 MiB/s)
+[slab-populate] blk39-up: 1296 MiB in 0.1s (20552 MiB/s)
+[slab-populate] blk39-down: 1296 MiB in 0.1s (20574 MiB/s)
+[slab-populate] blk40-gate: 1296 MiB in 0.1s (20677 MiB/s)
+[slab-populate] blk40-up: 1296 MiB in 0.1s (20510 MiB/s)
+[slab-populate] blk40-down: 1296 MiB in 0.1s (20472 MiB/s)
+[slab-populate] blk41-gate: 1296 MiB in 0.1s (20619 MiB/s)
+[slab-populate] blk41-up: 1296 MiB in 0.1s (20420 MiB/s)
+[slab-populate] blk41-down: 1296 MiB in 0.1s (20298 MiB/s)
+[slab-populate] blk42-gate: 1296 MiB in 0.1s (20197 MiB/s)
+[slab-populate] blk42-up: 1296 MiB in 0.1s (20576 MiB/s)
+[slab-populate] blk42-down: 1296 MiB in 0.1s (20674 MiB/s)
+[slab-populate] blk43-gate: 1296 MiB in 0.1s (20726 MiB/s)
+[slab-populate] blk43-up: 1296 MiB in 0.1s (20483 MiB/s)
+[slab-populate] blk43-down: 1296 MiB in 0.1s (20847 MiB/s)
+[slab-populate] blk44-gate: 1296 MiB in 0.1s (20558 MiB/s)
+[slab-populate] blk44-up: 1296 MiB in 0.1s (20796 MiB/s)
+[slab-populate] blk44-down: 1296 MiB in 0.1s (20535 MiB/s)
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[loader-law] WARNING: blk.*.nextn.eh_proj.weight loads as 2D Float ne=[8192, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk45-gate: 1296 MiB in 0.1s (20678 MiB/s)
+[slab-populate] blk45-up: 1296 MiB in 0.1s (20747 MiB/s)
+[slab-populate] blk45-down: 1296 MiB in 0.1s (20916 MiB/s)
+[frspec-trim] self-trimmed head: 32768 rows of main output.weight (BF16)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[glm5-spec] serve route ARMED: MTP head loaded; draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[worker]   loaded "zai/glm-5.3-flash": 46 layers, eos=154820, stop=[154820, 154827, 154829]
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[prefix-cache] on: budget 305MB (305266688 B, derived: 2 x 152633344 B max entry for model "zai/glm-5.3-flash" at MEMRA_CTX=8192, requested 305266688 B; boot driver free 76273942528 B, post-reserve clamp 74663329792 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "zai/glm-5.3-flash": plain 0 B/token, spec 0 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["zai/glm-5.3-flash"]
+[server] listening on http://127.0.0.1:18500
+[meter] admit id=chatcmpl-e83c76f832eac89ca5fdfa9e6dd5ab75 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=431 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[moe-grouped-prefill] flag=on t=239 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[glm5-acc] ctx=239 burst=18/65 cum=18/65=0.277
+[glm5-acc] ctx=271 burst=24/55 cum=42/120=0.350
+[glm5-acc] ctx=306 burst=20/70 cum=62/190=0.326
+[glm5-acc] ctx=340 burst=16/60 cum=78/250=0.312
+[moe-cache] snapshot hits=454152 misses=102720 hit_rate=81.554 staged_bytes=484693770240 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-dbdda3871d351ba1070266064be914b3 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=239 burst=20/60 cum=20/60=0.333
+[glm5-acc] ctx=272 burst=21/60 cum=41/120=0.342
+[glm5-acc] ctx=305 burst=19/65 cum=60/185=0.324
+[glm5-acc] ctx=337 burst=20/50 cum=80/235=0.340
+[moe-cache] snapshot hits=889785 misses=205455 hit_rate=81.241 staged_bytes=969458319360 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-f5325a6975b004687ba6a5ab29d70a0c tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=481 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=289 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=289 burst=17/80 cum=17/80=0.212
+[glm5-acc] ctx=323 burst=18/75 cum=35/155=0.226
+[glm5-acc] ctx=356 burst=17/80 cum=52/235=0.221
+[glm5-acc] ctx=389 burst=15/65 cum=67/300=0.223
+[moe-cache] snapshot hits=1448436 misses=316692 hit_rate=82.058 staged_bytes=1494340337664 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-4eb8fd9c09b592d7e09f0b1cd27a13e8 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=289 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=289 burst=18/75 cum=18/75=0.240
+[glm5-acc] ctx=323 burst=17/75 cum=35/150=0.233
+[glm5-acc] ctx=355 burst=18/70 cum=53/220=0.241
+[glm5-acc] ctx=387 burst=19/55 cum=72/275=0.262
+[moe-cache] snapshot hits=1972515 misses=431781 hit_rate=82.041 staged_bytes=2037398372352 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-9e4b709aed07b5a9e8068ad3fd04d7bb tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=755 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=563 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=563 burst=20/65 cum=20/65=0.308
+[glm5-acc] ctx=597 burst=19/65 cum=39/130=0.300
+[glm5-acc] ctx=629 burst=21/65 cum=60/195=0.308
+[glm5-acc] ctx=663 burst=17/55 cum=77/250=0.308
+[moe-cache] snapshot hits=2754021 misses=541491 hit_rate=83.569 staged_bytes=2555075100672 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-d2d78d8dd0928fc1b534ac46a302c53d tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=563 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=563 burst=19/60 cum=19/60=0.317
+[glm5-acc] ctx=595 burst=21/60 cum=40/120=0.333
+[glm5-acc] ctx=628 burst=18/70 cum=58/190=0.305
+[glm5-acc] ctx=660 burst=10/105 cum=68/295=0.231
+[moe-cache] snapshot hits=3578268 misses=663732 hit_rate=84.353 staged_bytes=3131880505344 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-66d91ce3727ff8e1c45e0e40213b04f9 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=645 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=453 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=453 burst=18/75 cum=18/75=0.240
+[glm5-acc] ctx=487 burst=19/70 cum=37/145=0.255
+[glm5-acc] ctx=520 burst=21/55 cum=58/200=0.290
+[glm5-acc] ctx=552 burst=16/65 cum=74/265=0.279
+[moe-cache] snapshot hits=4271463 misses=766665 hit_rate=84.783 staged_bytes=3617579335680 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-7e208a99b484beb477ca6c6713bab9bc tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=453 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=453 burst=19/65 cum=19/65=0.292
+[glm5-acc] ctx=486 burst=20/65 cum=39/130=0.300
+[glm5-acc] ctx=519 burst=19/65 cum=58/195=0.297
+[glm5-acc] ctx=551 burst=19/55 cum=77/250=0.308
+[moe-cache] snapshot hits=4932717 misses=883083 hit_rate=84.816 staged_bytes=4166908379136 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-31abd6976a71b2c890d797cb8a7d26fa tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=712 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=520 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=520 burst=22/60 cum=22/60=0.367
+[glm5-acc] ctx=555 burst=16/80 cum=38/140=0.271
+[glm5-acc] ctx=587 burst=15/90 cum=53/230=0.230
+[glm5-acc] ctx=620 burst=19/50 cum=72/280=0.257
+[moe-cache] snapshot hits=5705313 misses=994167 hit_rate=85.161 staged_bytes=4691068452864 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-42961d03e228e512b9eac489f5de1cdb tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=520 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=520 burst=18/70 cum=18/70=0.257
+[glm5-acc] ctx=553 burst=15/85 cum=33/155=0.213
+[glm5-acc] ctx=585 burst=18/75 cum=51/230=0.222
+[glm5-acc] ctx=618 burst=20/55 cum=71/285=0.249
+[moe-cache] snapshot hits=6478863 misses=1110465 hit_rate=85.368 staged_bytes=5239831265280 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-8599af64b8786940612250c3fcfa0efb tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=384 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=192 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=192 burst=14/90 cum=14/90=0.156
+[glm5-acc] ctx=225 burst=18/70 cum=32/160=0.200
+[glm5-acc] ctx=257 burst=18/70 cum=50/230=0.217
+[glm5-acc] ctx=289 burst=19/75 cum=69/305=0.226
+[moe-cache] snapshot hits=6952806 misses=1212474 hit_rate=85.151 staged_bytes=5721170116608 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-f45341472e94d72cb5a87e87f23f4841 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=192 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=192 burst=16/75 cum=16/75=0.213
+[glm5-acc] ctx=224 burst=19/70 cum=35/145=0.241
+[glm5-acc] ctx=257 burst=17/80 cum=52/225=0.231
+[glm5-acc] ctx=290 burst=17/70 cum=69/295=0.234
+[moe-cache] snapshot hits=7408077 misses=1320819 hit_rate=84.868 staged_bytes=6232405966848 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-6a856ac4638f82bd304c2a113135a144 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=323 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=131 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=131 burst=17/75 cum=17/75=0.227
+[glm5-acc] ctx=164 burst=18/75 cum=35/150=0.233
+[glm5-acc] ctx=197 burst=22/50 cum=57/200=0.285
+[glm5-acc] ctx=229 burst=19/65 cum=76/265=0.287
+[moe-cache] snapshot hits=7769514 misses=1423206 hit_rate=84.518 staged_bytes=6715528445952 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-0eee9f8a91483e1628919c358ba5eafe tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=131 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=131 burst=20/60 cum=20/60=0.333
+[glm5-acc] ctx=164 burst=15/95 cum=35/155=0.226
+[glm5-acc] ctx=198 burst=17/80 cum=52/235=0.221
+[glm5-acc] ctx=231 burst=17/60 cum=69/295=0.234
+[moe-cache] snapshot hits=8156640 misses=1536792 hit_rate=84.146 staged_bytes=7251494436864 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-2383a198fab37d0b66bb3fdf032b3eec tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=473 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=281 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=281 burst=18/70 cum=18/70=0.257
+[glm5-acc] ctx=314 burst=21/55 cum=39/125=0.312
+[glm5-acc] ctx=346 burst=21/55 cum=60/180=0.333
+[glm5-acc] ctx=378 burst=19/60 cum=79/240=0.329
+[moe-cache] snapshot hits=8645040 misses=1636272 hit_rate=84.085 staged_bytes=7720899969024 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-d98bb7c5f76fdb32fb32c95f2763f7ca tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=281 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=281 burst=20/60 cum=20/60=0.333
+[glm5-acc] ctx=314 burst=19/70 cum=39/130=0.300
+[glm5-acc] ctx=347 burst=21/65 cum=60/195=0.308
+[glm5-acc] ctx=381 burst=17/60 cum=77/255=0.302
+[moe-cache] snapshot hits=9144702 misses=1742970 hit_rate=83.991 staged_bytes=8224364298240 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-d1278dc2f8c7f50d32664f10bfe40a72 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=417 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=225 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=225 burst=20/65 cum=20/65=0.308
+[glm5-acc] ctx=259 burst=22/55 cum=42/120=0.350
+[glm5-acc] ctx=292 burst=18/80 cum=60/200=0.300
+[glm5-acc] ctx=326 burst=18/45 cum=78/245=0.318
+[moe-cache] snapshot hits=9581610 misses=1842318 hit_rate=83.873 staged_bytes=8693146976256 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-785d09ecf8b5b786ced05c4ae731075a tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=225 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=225 burst=18/70 cum=18/70=0.257
+[glm5-acc] ctx=258 burst=22/50 cum=40/120=0.333
+[glm5-acc] ctx=290 burst=19/65 cum=59/185=0.319
+[glm5-acc] ctx=322 burst=19/60 cum=78/245=0.318
+[moe-cache] snapshot hits=10008225 misses=1951959 hit_rate=83.680 staged_bytes=9210498121728 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-132656adabbb02dd9d85adb4885fcf18 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=332 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=140 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=140 burst=15/85 cum=15/85=0.176
+[glm5-acc] ctx=173 burst=21/70 cum=36/155=0.232
+[glm5-acc] ctx=208 burst=18/70 cum=54/225=0.240
+[glm5-acc] ctx=240 burst=17/60 cum=71/285=0.249
+[moe-cache] snapshot hits=10404042 misses=2053854 hit_rate=83.514 staged_bytes=9691299053568 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-9b0146703e3e8482fc67f372d8efa84b tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=140 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=140 burst=18/70 cum=18/70=0.257
+[glm5-acc] ctx=173 burst=19/65 cum=37/135=0.274
+[glm5-acc] ctx=205 burst=18/75 cum=55/210=0.262
+[glm5-acc] ctx=238 burst=19/60 cum=74/270=0.274
+[moe-cache] snapshot hits=10776735 misses=2160441 hit_rate=83.301 staged_bytes=10194239619072 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-dff5fffd9abf4ac8acae5911f1036bb1 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=4818 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=4626 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=4626 burst=20/55 cum=20/55=0.364
+[glm5-acc] ctx=4658 burst=17/75 cum=37/130=0.285
+[glm5-acc] ctx=4690 burst=21/55 cum=58/185=0.314
+[glm5-acc] ctx=4722 burst=21/70 cum=79/255=0.310
+[moe-cache] snapshot hits=15721422 misses=2306154 hit_rate=87.208 staged_bytes=10881799815168 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-6699ace0ffdbb5b157c690d4a738f24e tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=4626 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=4626 burst=20/65 cum=20/65=0.308
+[glm5-acc] ctx=4660 burst=18/80 cum=38/145=0.262
+[glm5-acc] ctx=4694 burst=19/70 cum=57/215=0.265
+[glm5-acc] ctx=4727 burst=15/60 cum=72/275=0.262
+[moe-cache] snapshot hits=20678781 misses=2463747 hit_rate=89.354 staged_bytes=11625416884224 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-c1724fcde50f0fbe148767e7b9dc1b0c tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=5739 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=5547 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=5547 burst=21/55 cum=21/55=0.382
+[glm5-acc] ctx=5580 burst=21/75 cum=42/130=0.323
+[glm5-acc] ctx=5616 burst=21/60 cum=63/190=0.332
+[glm5-acc] ctx=5649 burst=16/60 cum=79/250=0.316
+[moe-cache] snapshot hits=26571201 misses=2606055 hit_rate=91.068 staged_bytes=12296910274560 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-355c19de48074a3ff6db5062f7c2bcf7 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=5547 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=5547 burst=20/60 cum=20/60=0.333
+[glm5-acc] ctx=5580 burst=19/65 cum=39/125=0.312
+[glm5-acc] ctx=5612 burst=19/65 cum=58/190=0.305
+[glm5-acc] ctx=5644 burst=21/70 cum=79/260=0.304
+[moe-cache] snapshot hits=32467350 misses=2756922 hit_rate=92.173 staged_bytes=13008790093824 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-4b88ca3b12a1274ecc70dc4097b6a9b6 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=6659 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=6467 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=6467 burst=19/60 cum=19/60=0.317
+[glm5-acc] ctx=6499 burst=19/65 cum=38/125=0.304
+[glm5-acc] ctx=6531 burst=21/60 cum=59/185=0.319
+[glm5-acc] ctx=6564 burst=21/50 cum=80/235=0.340
+[moe-cache] snapshot hits=39293430 misses=2896530 hit_rate=93.135 staged_bytes=13667543285760 slots=12000
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-ee4a0eeb8bfa8b9316483df5f5011262 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=6467 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=6467 burst=19/65 cum=19/65=0.292
+[glm5-acc] ctx=6500 burst=18/70 cum=37/135=0.274
+[glm5-acc] ctx=6532 burst=18/75 cum=55/210=0.262
+[glm5-acc] ctx=6565 burst=16/70 cum=71/280=0.254
+[moe-cache] snapshot hits=46151070 misses=3059874 hit_rate=93.782 staged_bytes=14438296977408 slots=12000
+[moe-fused-epi] snapshot dispatches=0

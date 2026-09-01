@@ -1,0 +1,37 @@
+=== TTFD s / prefill tok/s / decode tok/s, median [min..max], x5 ===
+         A4630 A: n=5 ttfd=7.51 [7.42..7.74] pf=616.23 [597.47..623.27] dec=21.34 [19.41..21.44]
+         A4630 B: n=5 ttfd=7.46 [7.43..7.80] pf=620.52 [592.98..622.66] dec=26.06 [25.73..26.11]
+         A4630 C: n=5 ttfd=6.81 [6.79..7.11] pf=678.92 [650.87..681.57] dec=26.14 [25.05..26.22]
+
+         B5550 A: n=5 ttfd=8.86 [8.85..8.89] pf=625.98 [623.92..627.07] dec=22.00 [20.73..22.13]
+         B5550 B: n=5 ttfd=8.89 [8.86..9.00] pf=623.72 [616.37..625.74] dec=26.05 [25.97..26.12]
+         B5550 C: n=5 ttfd=8.17 [8.13..8.35] pf=678.96 [664.32..682.55] dec=26.15 [26.00..26.17]
+
+         C6470 A: n=5 ttfd=10.43 [10.24..10.48] pf=619.84 [617.08..631.34] dec=21.95 [20.70..22.03]
+         C6470 B: n=5 ttfd=10.26 [10.24..10.62] pf=630.25 [609.18..631.55] dec=25.98 [25.92..26.08]
+         C6470 C: n=5 ttfd=9.41 [9.38..9.42] pf=687.29 [686.27..689.48] dec=26.06 [25.56..26.12]
+
+ A4630-sampled A: n=5 ttfd=7.23 [7.21..7.24] pf=640.27 [639.25..641.34] dec=21.50 [20.25..21.59]
+ A4630-sampled B: n=5 ttfd=7.25 [7.24..7.26] pf=638.38 [637.28..639.14] dec=25.34 [24.94..25.87]
+ A4630-sampled C: n=5 ttfd=6.62 [6.61..6.63] pf=698.76 [697.42..699.53] dec=25.50 [24.68..25.92]
+
+=== argmax gate (greedy first token per boot) ===
+  A4630 A: first_tokens=['The', 'The', 'The', 'The', 'The'] distinct_text_shas=1 ['3d00b7d9c4ff62b6']
+  A4630 B: first_tokens=['The', 'The', 'The', 'The', 'The'] distinct_text_shas=1 ['7323f8adf3222d2d']
+  A4630 C: first_tokens=['The', 'The', 'The', 'The', 'The'] distinct_text_shas=1 ['0908061a3fdaddab']
+        B-vs-A: MATCH   C-vs-B: MATCH
+
+  B5550 A: first_tokens=['The', 'The', 'The', 'The', 'The'] distinct_text_shas=1 ['6a2a054aa8026114']
+  B5550 B: first_tokens=['The', 'The', 'The', 'The', 'The'] distinct_text_shas=1 ['9ddac423d45f8e15']
+  B5550 C: first_tokens=['The', 'The', 'The', 'The', 'The'] distinct_text_shas=1 ['3ad5d2889683a115']
+        B-vs-A: MATCH   C-vs-B: MATCH
+
+  C6470 A: first_tokens=['The', 'The', 'The', 'The', 'The'] distinct_text_shas=1 ['b68df3f95bfc103c']
+  C6470 B: first_tokens=['The', 'The', 'The', 'The', 'The'] distinct_text_shas=1 ['b68df3f95bfc103c']
+  C6470 C: first_tokens=['The', 'The', 'The', 'The', 'The'] distinct_text_shas=1 ['dfab5cc3dfbfda25']
+        B-vs-A: MATCH   C-vs-B: MATCH
+
+=== decode C-vs-B stop condition (greedy rows pooled) ===
+A4630: B=26.06 [25.73..26.11]  C=26.14 [25.05..26.22]
+B5550: B=26.05 [25.97..26.12]  C=26.15 [26.00..26.17]
+C6470: B=25.98 [25.92..26.08]  C=26.06 [25.56..26.12]

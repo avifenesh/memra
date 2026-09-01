@@ -1,0 +1,48 @@
+ANON=nx21 TURN=8 CHARS=4396 FINISH=length REPEAT60=1
+======================================================================
+context: GitHub task, JetBrains Marketplace listing issue, Documentation link returns 404, Source Code link references stale repository URL, investigate and handle it. First, I need to understand the problem: the user is reporting that on the JetBrains Marketplace listing for some product (probably a plugin), the Documentation link is returning 404, and the Source Code link is pointing to a stale GitHub repository URL. They want me to investigate and fix this.
+
+First, I need to outline the steps to resolve this. Since I don't have direct access to the JetBrains Marketplace backend, I can guide the user through the process of updating their plugin's metadata on the JetBrains Marketplace, and also fix the stale repository URL.
+
+Wait, but the user said "Take care of this GitHub task" — maybe they want me to act as if I'm handling it, or provide a solution. Let's break it down:
+
+1. First, identify the plugin in question. The user mentions "JetBrains Marketplace listing", "Documentation link returns 404", "Source Code link references stale repository URL". So the plugin's listing on JetBrains Marketplace has incorrect links.
+
+2. Steps to fix:
+   a. Log in to the JetBrains Marketplace developer portal (https://plugins.jetbrains.com/developers/).
+   b. Navigate to the plugin's page.
+   c. Update the Documentation link to the correct URL (probably the new location of the docs, maybe GitHub Pages or a dedicated docs site).
+   d. Update the Source Code link to the current, active GitHub repository URL (not the stale one).
+   e. Save the changes.
+
+3. Additionally, if the stale repository URL is on GitHub itself (like in the plugin's README or metadata), update those as well.
+
+But wait, the user also mentioned "GitHub task" — maybe the issue is that the GitHub repository's URL is stale in the JetBrains Marketplace listing, so we need to update both the GitHub repo (if it's moved) and the JetBrains listing.
+
+Wait, the user's message is a bit fragmented: "Take care of this GitHub task: [Bug] JetBrains Marketplace listing. Documentation link returns 404, Source Code link references stale repository URL — https://github.com/agent-sh/agnix/issues/1099. Investigate and handle it. answer-triage if it is a question, implement on a branch if code is needed, summarize what you did."
+
+Ah, so the GitHub issue is at https://github.com/agent-sh/agnix/issues/1099. So the repository is agent-sh/agnix, issue 1099. The problem is that the JetBrains Marketplace listing for the agnix plugin has a broken Documentation link (404) and a stale Source Code link.
+
+So first, I need to investigate the issue:
+
+1. Check the current JetBrains Marketplace listing for the agnix plugin. Let's assume the plugin is "Agnix" (maybe a JetBrains plugin). The current Documentation link is probably pointing to an old URL that's now 404. The Source Code link is pointing to an old GitHub repo URL that's stale.
+
+2. Fix steps:
+   a. Update the Documentation link to the correct URL. Let's check where the docs are now. Maybe the docs are in the current repo's wiki, or a docs folder, or a separate site. For example, if the docs are now at https://agent-sh.github.io/agnix/, then update the link to that.
+   b. Update the Source Code link to the current repo URL: https://github.com/agent-sh/agnix (assuming that's the current repo, not a stale one like an old organization or renamed repo).
+   c. If the plugin's code in the repo has references to the old repo URL (like in README, build files), update those too.
+
+3. Since this is a GitHub task, maybe we need to create a PR or commit to fix the stale links in the repo, and also update the JetBrains Marketplace listing.
+
+Wait, but the user said "answer-triage if it is a question, implement on a branch if code is needed, summarize what you did."
+
+So first, triage: this is a bug report about broken links in the JetBrains Marketplace listing. It's not a question, so we proceed to implement a fix.
+
+Implementation steps:
+
+1. First, check the current state of the agnix repo and the JetBrains listing.
+   - The JetBrains Marketplace listing for Agnix: let's assume the current links are:
+     - Documentation: https://old-url.com/agnix-docs (404)
+     - Source Code: https://github.com/old-org/agnix (stale, redirects or invalid)
+   - The correct links should be:
+     - Documentation: https://agent-sh.github.io/agnix/ (or the repo's wiki: https

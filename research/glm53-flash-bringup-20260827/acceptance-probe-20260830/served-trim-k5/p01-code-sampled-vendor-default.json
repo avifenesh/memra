@@ -1,0 +1,36 @@
+{
+ "name": "p01-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 289,
+   "completion_tokens": 128,
+   "total_tokens": 417,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 23.672171827,
+   "spec": {
+    "rounds": 55,
+    "drafted": 275,
+    "accepted": 72,
+    "acceptance_rate": 0.26181818181818184
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "Let me parse what the user wants. They have some kind of autonomous agent system (likely a scheduled agent system - sounds like they're running something like OpenClaw / autonomous agents / cron-style agents that \"wake up\" at certain hours). They describe:\n\n1. They already like \"active research\" (an existing feature presumably).\n2. They want to replace the digest with a **twice-a-day researched thing**.\n3. Add the MCP for search (they provided the config for `open-websearch` MCP server).\n4. Add an **md file per 12 hours** \u2014 i.e., a markdown file generated every"
+    }
+   }
+  ]
+ }
+}

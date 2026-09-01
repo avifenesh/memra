@@ -1,0 +1,21 @@
+{"cached_tokens": 0, "completion_tokens": 256, "decode_s_after_first": 3.794006, "decode_tok_s_after_first": 67.211283, "finish_reason": "length", "phase": "sequential", "phase_index": 0, "prompt_chars": 116407, "prompt_sha256": "aec058a1c8fdc2b511d908a3f86db429c5fb26ff1a01361165d29eaa32ea4dfc", "prompt_tokens": 37823, "request_index": 0, "session_id": "cachespec-main", "started_at": "2026-08-09T15:15:57.101879+00:00", "text_chars": 836, "text_sha256": "0da8f28baaf209cf35d53035713b1bec02000c3d74c751f4150ef41c13b0dc54", "ttft_s": 101.987561, "type": "request", "wall_s": 105.796439}
+{"cached_tokens": 0, "completion_tokens": 256, "decode_s_after_first": 3.81506, "decode_tok_s_after_first": 66.840369, "finish_reason": "length", "phase": "sequential", "phase_index": 1, "prompt_chars": 120719, "prompt_sha256": "c3685e5e6c0322e34c61da99847f9d63db7d859adaf8d692f05a85dc3836739b", "prompt_tokens": 39159, "request_index": 1, "session_id": "cachespec-main", "started_at": "2026-08-09T15:17:42.899600+00:00", "text_chars": 987, "text_sha256": "6370e1dc98d99c7944f28466a366bfdc2804bcf1929c353d02196e13dcc844aa", "ttft_s": 105.789819, "type": "request", "wall_s": 109.619757}
+{"cached_tokens": 0, "completion_tokens": 256, "decode_s_after_first": 3.795954, "decode_tok_s_after_first": 67.176795, "finish_reason": "length", "phase": "sequential", "phase_index": 2, "prompt_chars": 125031, "prompt_sha256": "9f2a405a35ef6535a03f6d80b173e3e2ff81a700273f283c4fa99b24c5915a77", "prompt_tokens": 40495, "request_index": 2, "session_id": "cachespec-main", "started_at": "2026-08-09T15:19:32.520576+00:00", "text_chars": 952, "text_sha256": "e291d9e45c009052daaf3b8dcd8e97a117dc9543d282e190f03e5c33252fd9b1", "ttft_s": 109.930467, "type": "request", "wall_s": 113.74122}
+Traceback (most recent call last):
+  File "/opt/scratch/nvme/memra-cx-val256/research/val256-20260809/deep_affinity_replay.py", line 59, in <module>
+    raise SystemExit(REPLAY.main())
+                     ^^^^^^^^^^^^^
+  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 561, in main
+    replay_workload(args, workload, args.out, args.raw_dir)
+  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 498, in replay_workload
+    result, receipt = issue_sequential(
+                      ^^^^^^^^^^^^^^^^^
+  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 347, in issue_sequential
+    result = stream_request(args, prompt, session_id, request_index)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 274, in stream_request
+    result = read_stream(response, started_ns)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/scratch/nvme/memra-cx-val256/research/cachespec-20260809/replay.py", line 220, in read_stream
+    raise RuntimeError(json.dumps(event["error"], sort_keys=True))
+RuntimeError: {"code": "overloaded", "message": "cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")", "param": null, "type": "server_error"}

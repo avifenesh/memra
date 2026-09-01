@@ -1,0 +1,10 @@
+The user is asking me to resume and complete an "independent audit" — apparently of some document (PDFs, PNG renders). They reference "the original prompt" with specific requirements: PASS/FAIL, exact field map, ranked defects, deliberate blanks, and concrete corrections.
+
+However, I have no prior context in this conversation. This is the first message in the conversation. There's no prior shell calls, no original prompt visible to me, no files mentioned by path, no working directory context. The user says "Your prior shell calls were cancelled only because permission mode was wrong" — but I have no memory of any prior session. This appears to be a continuation of a conversation that I don't have access to, or the user believes I have context I don't have.
+
+What should I do? I genuinely lack:
+1. The original prompt describing what audit is being performed (what document, what fields, what the audit criteria are).
+2. Any file paths.
+3. Any prior findings.
+
+I could try to explore the working directory to find files. But wait — do I have tool access? In this environment, I don't have any tools available. The system prompt doesn't include tool definitions. The user says "You now have auto-approved tool use

@@ -1,0 +1,73 @@
+{
+  "categories": {
+    "chat": 96,
+    "code": 96,
+    "if": 96,
+    "math": 96
+  },
+  "chunks": 6,
+  "end": 384,
+  "format": "memra-dspark-corpus-summary-v1",
+  "label": "smoke",
+  "manifest_fingerprint": "ad4623e72a3ee5b1cf8625eb592a4a3fe06f7992428a5b2ed8658a30a33c5c3e",
+  "manifests": [
+    {
+      "chunk": "smoke-00000-00064",
+      "sha256": "bd2135c3b83d21f97f12b8fedc4a8e847b47eb336bed05133080170f2c510f1b"
+    },
+    {
+      "chunk": "smoke-00064-00128",
+      "sha256": "eeb9cc87d03d9a6fa0af9bc1aae9986078994d08ba73baf83d271e9135d6f0ec"
+    },
+    {
+      "chunk": "smoke-00128-00192",
+      "sha256": "0ba56059ebb0966c82412e286a542445c26634764c582afe6315f83f99487805"
+    },
+    {
+      "chunk": "smoke-00192-00256",
+      "sha256": "6fa769fc888b3f8085464dcba7fbd6c526067d454af91b0b3c2fc90ec204e294"
+    },
+    {
+      "chunk": "smoke-00256-00320",
+      "sha256": "924abe06929383ba3d42352d27590434b7bb5708c7c500cb8a921aeffa243c1b"
+    },
+    {
+      "chunk": "smoke-00320-00384",
+      "sha256": "8f1adc138709938800233e6a2fd9507dcb0e00c1d8ea3396eea5244ad4f82ce5"
+    }
+  ],
+  "modes": {
+    "nothink": 192,
+    "think": 192
+  },
+  "pairs": 384,
+  "prompt_tokens": {
+    "max": 2953,
+    "min": 18,
+    "p50": 73,
+    "p95": 538,
+    "total": 55498
+  },
+  "records": 1533,
+  "response_tokens": {
+    "max": 512,
+    "max_new_512_count": 284,
+    "min": 5,
+    "p50": 512,
+    "p95": 512,
+    "total": 175313
+  },
+  "skipped_short_pairs": 0,
+  "splits": {
+    "heldout": 20,
+    "train": 364
+  },
+  "start": 0,
+  "validation": {
+    "max_logit_probability_ratio_error": 9.598196157867278e-07,
+    "max_probability_mass_error": 3.398456094316771e-08,
+    "sampled_token_top64_rate": 0.9996086105675147,
+    "tail_mass_max": 0.06595248728990555,
+    "tail_mass_mean": 0.0001529782281999139
+  }
+}

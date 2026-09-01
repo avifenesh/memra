@@ -1,0 +1,21 @@
+[2026-08-31T21:03:09Z] families under test: qwen/qwen3.5-9b ornith/ornith-1.5-9b
+[2026-08-31T21:03:09Z] NOT COVERED HERE: glm5 (no full artifact on this host) — its arm runs in the Box B window
+[2026-08-31T21:03:09Z] single-L3 host (0-23 covers all 24 cpus): 'ccx' would not narrow, so the ON arm uses the explicit list 0-5
+[2026-08-31T21:03:09Z] rig GPU lock held (exactness only — this gate never reports a timing number)
+[2026-08-31T21:03:09Z] === qwen/qwen3.5-9b ===
+[2026-08-31T21:03:13Z] qwen/qwen3.5-9b/off: [worker-affinity] off (MEMRA_WORKER_AFFINITY unset or =0)
+[2026-08-31T21:03:17Z] qwen/qwen3.5-9b/on: [worker-affinity] engaged request=0-5 effective=0-5 cpus=6 l3_domains=1
+[2026-08-31T21:03:17Z] qwen/qwen3.5-9b/on: effective mask narrowed to 6 of 24 cpus
+[2026-08-31T21:03:18Z] PASS qwen/qwen3.5-9b: 24-step greedy BYTE-IDENTICAL across the affinity arms (sha16 3305599fc784d782)
+[2026-08-31T21:03:18Z] === ornith/ornith-1.5-9b ===
+[2026-08-31T21:03:24Z] ornith/ornith-1.5-9b/off: [worker-affinity] off (MEMRA_WORKER_AFFINITY unset or =0)
+[2026-08-31T21:03:28Z] ornith/ornith-1.5-9b/on: [worker-affinity] engaged request=0-5 effective=0-5 cpus=6 l3_domains=1
+[2026-08-31T21:03:28Z] ornith/ornith-1.5-9b/on: effective mask narrowed to 6 of 24 cpus
+[2026-08-31T21:03:28Z] PASS ornith/ornith-1.5-9b: 24-step greedy BYTE-IDENTICAL across the affinity arms (sha16 392d5ca969e4b8ce)
+[2026-08-31T21:03:29Z] GATE GREEN: affinity is non-numeric on every family tested
+
+== provenance ==
+run 2026-08-31T21:03Z, rig (5090 laptop, single L3 domain 0-23, 24 threads) — EXACTNESS ONLY, no timing claim
+binary: target/release/memra-server; its system_fingerprint is stamped from the BASE commit 216ffd114, not from the lane commit (literal value omitted: a live serving fingerprint is private-surface material). It carries the lane change - see the LANE.md provenance note.
+lane head at bank time: f65802ffe
+the four preceding RED runs and their traps are written up in LANE.md

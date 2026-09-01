@@ -1,0 +1,20 @@
+kernel-check: ALL GREEN (106 cells, 1 skipped)
+prime-gate: ALL GREEN
+run-spec K=1..8 self-consistency: PASS (Qwen 35B, 8/8)
+run-gen argmax: MATCH (31B)
+VERIFY-GATE K=7 depth: PASS (31B)
+spec self-consistency 64/64: PASS (31B)
+run-gen argmax depth: MATCH (12B)
+VERIFY-GATE K=7 depth: PASS (12B)
+decode-batch-gate config B=8: ALL GREEN (9B NVFP4)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B NVFP4)
+decode-batch-gate config B=8: ALL GREEN (9B Q8_0)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B Q8_0)
+== graph-warmup-stress gate: /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf cycles=10 warmups=1 ==
+ALL GREEN: graph-warmup-stress gate (10 cycles + canary)
+correctness stage: GREEN
+serve-smoke: 0 failed
+== serve-stress-gate: c=64 staggered short streams (128-256 tok) ==
+serve-stress-gate: ALL GREEN (c=64 complete, streams well-formed, worker alive, log clean)
+== accept-gate: served-spec acceptance + long-text assertion ==
+accept-gate: 1 pass, 0 fail, 0 unpinned, 0 skip

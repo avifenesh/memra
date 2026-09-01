@@ -1,0 +1,45 @@
+You are repairing two Israeli tax-registration PDF draft overlays in this
+directory. Work only on these local files:
+
+- work/fill_tax_forms.py
+- work/form_data.private.json
+- work/vat-821.pdf (official source)
+- work/itc-5329.pdf (official source)
+- work/vat-821-draft.pdf
+- work/income-tax-5329-draft.pdf
+- outputs/tiyuvta-vat-821-draft.pdf
+- outputs/tiyuvta-income-tax-5329-draft.pdf
+
+The form facts in form_data.private.json are verified. Do not change the
+business facts, do not fill signatures or dates in declaration sections, and
+do not submit anything to any authority.
+
+The user visually identified four VAT Form 821 layout defects:
+1. Expected annual turnover "150,000" is above its intended box.
+2. The business opening date is above its intended boxes.
+3. The apartment owners/landlords are in the wrong property row; their second
+   line appears in the bottom box.
+4. The employee-count "1" is above its intended box.
+
+Inspect the official source and current output visually by rendering to PNG
+(use pdftoppm or equivalent). Correct the coordinates in fill_tax_forms.py so
+each value is centered vertically within its exact printed field and does not
+overlap labels or adjacent fields. Pay special attention to the property
+section: the renter/tenant name belongs in "בהשכרה ל", while the landlord
+names and IDs belong in the ownership row "בבעלות של"; do not wrap or put any
+landlord text into the annual-rent/bottom field.
+
+Also visually inspect both pages of the Income Tax Form 5329. Preserve any
+correct placement and only repair a genuine overlap or clearly misplaced
+value. Unsupported declarations and signatures must stay blank.
+
+Use the existing bundled Python runtime if the system Python lacks required
+modules. Regenerate work/vat-821-draft.pdf and
+work/income-tax-5329-draft.pdf, visually verify all four final pages, then
+copy the final verified PDFs to:
+
+- outputs/tiyuvta-vat-821-draft.pdf
+- outputs/tiyuvta-income-tax-5329-draft.pdf
+
+Finish with a concise report listing each correction and the render/validation
+commands you used. Do not make unrelated changes.

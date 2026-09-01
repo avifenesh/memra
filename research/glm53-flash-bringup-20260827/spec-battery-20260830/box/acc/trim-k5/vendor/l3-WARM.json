@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is showing me grep output from what appears to be wiki files for a project. They want a summary of the state of work. Let me parse the content carefully.\n\nFrom the first excerpt (appears to be about draft head training / KD - knowledge distillation):\n- Some approach cost 1/3, heads train only on the model's own generations\n- KD was \"revived\" after a subset-KL loss bug fix \u2014 top-64 gathered KL left ~32k logits unconstrained, pure-KD argmax had collapsed to 0.000\n- The locked recipe: \"naked KD \u2192 CE reinforce",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is showing me grep output from what appears to be wiki files for a project. They want a summary of the state of work. Let me parse the content carefully.\n\nFrom the first excerpt (appears to be about draft head training / KD - knowledge distillation):\n- Some approach cost 1/3, heads train only on the model's own generations\n- KD was \"revived\" after a subset-KL loss bug fix \u2014 top-64 gathered KL left ~32k logits unconstrained, pure-KD argmax had collapsed to 0.000\n- The locked recipe: \"naked KD \u2192 CE reinforce"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 427,
+  "completion_tokens": 128,
+  "total_tokens": 555,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 8.688022393,
+  "spec": {
+   "rounds": 52,
+   "drafted": 260,
+   "accepted": 76,
+   "acceptance_rate": 0.2923076923076923
+  }
+ },
+ "id": "chatcmpl-96a50d14138141d7b4d7851b453706aa",
+ "created": 1788082709,
+ "system_fingerprint": "REDACTED"
+}

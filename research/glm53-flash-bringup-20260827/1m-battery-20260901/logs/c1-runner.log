@@ -1,0 +1,90 @@
+2026-08-31T16:32:39Z
+######## CELL 1: BOOT + 1M PLAIN PRIME (timed) ########
+[1m] no pidfile, nothing to stop
+[1m] launched pid=173040 boot=c1-plain nonce=b028c630-a85c-4b08-80ee-a2246b63df74 extras=
+[1m] READY after 107s
+boot=c1-plain pid=173040 nonce=b028c630-a85c-4b08-80ee-a2246b63df74 spec_env=0
+stage_lines=9
+--- ctx / window ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / placement ---
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=6 skipped=0 mismatches=0 elapsed_ms=4.966
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev1->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev2->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=2 dev2->dev3 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=2 dev3->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=24 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=2377.330
+--- prefix-cache ---
+--- spec ---
+--- vram-at-ready (index, used MiB, total MiB) ---
+0, 7126 MiB, 97887 MiB
+1, 6934 MiB, 97887 MiB
+2, 6934 MiB, 97887 MiB
+3, 5942 MiB, 97887 MiB
+[1m] GATES GREEN boot=c1-plain
+vramwatch pid 173483
+
+=== W1K warm rung (greedy, 32 tok): arena populate + session-1 VRAM ===
+vramwatch pid 173483 -> /root/out-1m/receipts/c1/vram.csv every 5s
+### RUNG W1K mode=greedy chars=4200 maxtok=32 boot=c1-plain start=2026-08-31T16:34:26Z
+[W1K] mode=greedy status=200 pt=1108 ct=32
+  TTFD=8.551s (129.58 tok/s prefill)  decode span=24.01 steady_p50=24.42 tok/s  wall=9.9s arrivals=31
+  output[:300]: 'The corpus contains *War and Peace* by Leo Tolstoy (translated by Aylmer and Louise Maude), which is the sole work represented here'
+  rung wall 10s rc=0 end=2026-08-31T16:34:36Z
+--- [glm5-acc] acceptance lines for this request ---
+--- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
+--- error census (must be 0) ---
+0
+--- errors, if any ---
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+  vram after: 0, 40026 MiB 1, 39322 MiB|2, 39258 MiB 3, 38490 MiB
+
+=== ENGAGE gate (announces print at first engagement, so AFTER the first request) ===
+engage=mla-tc-prefill(DEFAULT ON, the re-priced lever) expected=1 lines=1
+engage=mla-tc-prefill DECLINED (a cuBLASLt shape decline) expected=0 lines=0
+engage=moe-grouped-prefill(needs a resident slab; expected ABSENT on capped-SLRU) lines=0
+engage=door T bf16-tcols-wide(default-on) expected=0 lines=0
+engage=door X bf16-tcols-x1(default-on) expected=0 lines=0
+engage=door K topk-shards(default-on) expected=0 lines=0
+engage=door W glm5-verify-ws(default-on) expected=0 lines=0
+engage=door D (default OFF, never set) expected=0 lines=0
+engage=door R (default OFF, never set) expected=0 lines=0
+--- mla-tc-prefill announce ---
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+--- accept lines ---
+0
+--- ADMISSION cost model + any reject (the 1M capacity receipt) ---
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 18MB (observed 45MB at ctx 1148 path=plain)
+--- bf16-mmv resident census (must be 0 on the demo-exact 1M posture) ---
+0
+[1m] ENGAGE GREEN boot=c1-plain
+
+=== R1M PLAIN greedy: THE PRIME (demo baseline 6,419.8 s @ 161.28 tok/s) ===
+### RUNG R1M mode=greedy chars=4282700 maxtok=256 boot=c1-plain start=2026-08-31T16:34:36Z
+[R1M] mode=greedy status=200 pt=1035357 ct=182
+  TTFD=5300.551s (195.33 tok/s prefill)  decode span=16.26 steady_p50=16.61 tok/s  wall=5311.7s arrivals=180
+  output[:300]: "The corpus contains Leo Tolstoy's *War and Peace* and Alexandre Dumas' *The Count of Monte Cristo*. A theme they share is vengeance: in *War and Peace*, characters grapple with impulses toward retribution—most notably Prince Andrew's obsessive desire to confront Anatole Kurágin after Natásha's betra"
+  rung wall 5312s rc=0 end=2026-08-31T18:03:08Z
+--- [glm5-acc] acceptance lines for this request ---
+--- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
+--- error census (must be 0) ---
+0
+--- errors, if any ---
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+  vram after: 0, 52218 MiB 1, 50938 MiB|2, 50970 MiB 3, 66202 MiB
+
+=== R1M PLAIN vendor-default sampled twin (serving law: never greedy-only) ===
+### RUNG R1M mode=vendor chars=4282700 maxtok=256 boot=c1-plain start=2026-08-31T18:03:08Z
+Terminated
+  rung wall 102s rc=143 end=2026-08-31T18:04:50Z
+--- [glm5-acc] acceptance lines for this request ---
+--- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
+--- error census (must be 0) ---
+0
+--- errors, if any ---
+  vram after: 0, 55418 MiB 1, 54746 MiB|2, 54746 MiB 3, 69850 MiB

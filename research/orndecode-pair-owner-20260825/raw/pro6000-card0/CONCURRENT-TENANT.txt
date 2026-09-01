@@ -1,0 +1,10 @@
+Qualification host preflight observation, 2026-08-25 UTC:
+
+- target card 0: idle before every lane process
+- other card: an unrelated memra process held 16,106 MiB and was executing a load-test run
+- host lock file existed but the unrelated process did not hold it
+
+The user constrained this lane to card 0, and no lane process selected the other card.
+Correctness cells are short non-timed pass/fail checks. All timed card-0 observations are
+discarded under CLAUDE.md's one-scored-campaign-per-multi-card-box rule because the second
+tenant changes the shared host/PCIe regime.

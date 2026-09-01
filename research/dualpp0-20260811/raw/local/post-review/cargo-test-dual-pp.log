@@ -1,0 +1,13 @@
+warning: memra-engine@0.76.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.76.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.76.0 (/home/avifenesh/projects/wt-cx-dualpp0/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.22s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-6567d1443c87cce9)
+
+running 4 tests
+test pp::host_bounce_tests::dual_pp_refuses_single_slot_and_non_pp2_shapes ... ok
+test pp::host_bounce_tests::dual_pp_refuses_unvalidated_host_bounce_transport ... ok
+test pp::host_bounce_tests::dual_pp_split_is_honest_at_one_and_ceil_first_afterward ... ok
+test pp::host_bounce_tests::dual_pp_timing_error_is_counted_without_recording_a_sample ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 62 filtered out; finished in 0.00s

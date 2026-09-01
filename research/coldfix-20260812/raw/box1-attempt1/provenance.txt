@@ -1,0 +1,22 @@
+runtime_source=065a705d63461b2e3a7d945f824024fe0c482886
+shape=physical GPU0 only; one model resident at a time
+model_boot_order=odd repetitions q27,q35; even repetitions q35,q27
+q27_levels=1,2,4,8,12,16,20
+q35_levels=1,2,4,8,16,32,40,48
+repetitions=5
+MEMRA_PRIME_BATCH=<unset>; naked shipping default
+<private-host-redacted>
+Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+065a705d (HEAD) fix(server): fence cold prime regressions
+c192cc62 data(coldfix): open P0 exactness investigation
+9b43b556 Merge lane/cx-probeready: peer-integrity self-recovery + readyz visibility (hermes ca1f63cd) — /readyz detail exposes peer-integrity state (ok/deferred/degraded, advisory), after the alarm bound NEW spec admissions soft-refuse until a completed re-probe clears the streak (existing sessions finish; plain unaffected; no-force-probe-under-UVA preserved); 439 tests, locked local-ci green
+453ba294 data(probeready): record peer recovery gates
+bb047e2d feat(server): self-recover deferred peer probes
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 595.71.05, 97887 MiB

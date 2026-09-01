@@ -1,0 +1,34 @@
+2026-08-13T16:21:06+03:00
+manifest PASS research/apifix-20260813/raw/local-admission-run2
+manifest PASS research/apifix-20260813/raw/local-admission
+manifest PASS research/apifix-20260813/raw/local-long-generation-constraint-fail
+manifest PASS research/apifix-20260813/raw/local-long-generation-probe
+manifest PASS research/apifix-20260813/raw/local-long-generation
+manifest PASS research/apifix-20260813/raw/local-long-prompt-token-ids
+manifest PASS research/apifix-20260813/raw/local-long-prompt
+manifest PASS research/apifix-20260813/raw/local-metadata-limits
+manifest PASS research/apifix-20260813/raw/local-metadata-limits-final
+manifest PASS research/apifix-20260813/raw/local-public-gate
+manifest PASS research/apifix-20260813/raw/local-public-gate-final
+JSON and JSONL parse PASS
+summary PASS local-long-prompt: 1/1
+summary PASS local-long-generation: 1/1
+summary PASS local-metadata-limits-final: 3/3
+summary PASS local-public-gate-final: 21/21
+long generation exact count PASS
+UTF-8 long prompt exact count PASS
+public gate accounting equality PASS
+cutover bash block 1 syntax PASS
+cutover bash block 2 syntax PASS
+cutover bash block 3 syntax PASS
+cutover bash block 4 syntax PASS
+cutover bash block 5 syntax PASS
+RESULTS local links PASS (12 unique)
+launcher shellcheck and bash -n PASS
+long-limit harness compile/help PASS
+retained Rust 258/258 and Python 9/9 test receipts PASS
+git diff --check PASS
+secret scan PASS gate-api-key
+secret scan PASS long-api-key
+secret scan PASS metrics-token
+placeholder scan PASS

@@ -1,0 +1,7 @@
+<|turn>system
+Be terse.<|tool>declaration:get_weather{description:<|"|>Get current weather for a location<|"|>,parameters:{properties:{location:{description:<|"|>City name<|"|>,type:<|"|>STRING<|"|>},unit:{enum:[<|"|>celsius<|"|>,<|"|>fahrenheit<|"|>],type:<|"|>STRING<|"|>}},required:[<|"|>location<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+Weather in Paris?<turn|>
+<|turn>model
+<|channel>thought
+<channel|>

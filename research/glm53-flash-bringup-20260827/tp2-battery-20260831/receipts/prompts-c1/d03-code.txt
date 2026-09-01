@@ -1,0 +1,13 @@
+you crashed Root cause
+.venv was deleted while the gateway process (started May 10) was still running. The Python binary kept executing via mmap, but lazy open() on files inside the venv (like certifi/cacert.pem) failed → FileNotFoundError from ssl.create_default_context inside httpx, on every new AnthropicBedrock client init.
+What I did
+1. Recreated the venv: uv sync --frozen --all-extras (full --all-extras failed on mistralai resolver — used frozen lockfile to bypass).
+2. Killed the broken process (PID 3879941) with SIGKILL after SIGTERM didn't take.
+3. Relaunched in a new detached tmux session hermes-gateway (was running in a ghostty terminal scope before — would have died if you closed that window).
+Status
+New PID 1112071, Telegram connected, cron ticker started, 1 platform live. Logs flowing to /home/avifenesh/.hermes/logs/gateway.log.
+Useful follow-ups (not done — your call)
+Attach to watch it: tmux attach -t hermes-gateway (Ctrl-b d to detach)
+Make this permanent: wrap it in a ~/.config/systemd/user/hermes-gateway.service so it survives reboots and auto-restarts. The tmux session won't survive a reboot.
+Better error surface: the catch-all in gateway/run.py:7152 strips the file path from FileNotFoundError. Worth changing str(e)[:300] to also include getattr(e, 'filename', '') so you don't have to dig through logs next time.
+--all-extras resolve failure — your lockfile's exclude-newer cutoff (2026-05-05) blocks a re-resolve when Python 3.14 is in the supported set; pre-existing issue, only bit because uv sync tried to re-resolve. --frozen sidesteps it.

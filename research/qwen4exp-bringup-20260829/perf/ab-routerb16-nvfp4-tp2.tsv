@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=nvfp4-tp2	binary_sha256=abcd0971f810bd80d1928646007f7b165a256c2a04c2824d6e292d4dd438229e	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ab-routerb16: fresh state + probe prefill per arm, 4 warmup steps excluded per arm
+rep	arm	steps	mean_ms	median_ms	tok_per_s
+0	router_f32	40	13.44	13.44	74.41
+0	router_bf16	40	13.35	13.38	74.89
+1	router_f32	40	13.44	13.45	74.40
+1	router_bf16	40	13.36	13.38	74.83
+2	router_f32	40	13.49	13.49	74.16
+2	router_bf16	40	13.39	13.41	74.70
+3	router_f32	40	13.48	13.49	74.20
+3	router_bf16	40	13.35	13.35	74.92
+4	router_f32	40	13.49	13.47	74.14
+4	router_bf16	40	13.36	13.37	74.85
+# arm router_f32	mean_of_means_ms=13.47	min=13.44	max=13.49	tok_per_s=74.26
+# arm router_bf16	mean_of_means_ms=13.36	min=13.35	max=13.39	tok_per_s=74.84
+# rep0_arm_chain_first_divergence	-1
+# rep0_router_f32	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310
+# rep0_router_bf16	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310

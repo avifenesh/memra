@@ -1,0 +1,394 @@
+[server] starting; models config = [("q27", "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", Some("/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27" <- /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q27: regime draft attached (/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[server] worker ready; serving models: ["q27"]
+[worker] q27: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 537MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] listening on http://127.0.0.1:8189
+[meter] admit id=chatcmpl-9baa54e849c2f6452a76af75172958e1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="serve5090-onpolicy-r1-developer" K=3 source=cold-short prompt=27 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q27": 336MB (admission gate = 2x)
+[spec-acc] ctx=27 burst=6/6 cum=6/6=1.000
+[meter] admit id=chatcmpl-950cf49720fcbb9ba2c2f7145fb699bd tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-onpolicy-r1-short-warmup-0-1786227768617675969" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=6/6 cum=6/6=1.000
+[meter] admit id=chatcmpl-536773832d04aa8e34b1a36f5f5d8b8e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-onpolicy-r1-short-measured-0-1786227768874669712" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=6/6 cum=6/6=1.000
+[meter] admit id=chatcmpl-2dddbf52c59ba3341ba751b9dad412e0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-onpolicy-r1-4k-warmup-0-1786227769221955475" K=3 source=cold-long prompt=4104 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=4104 burst=6/6 cum=6/6=1.000
+[meter] admit id=chatcmpl-4f654d6626fd9714114793cac5035803 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-onpolicy-r1-4k-measured-0-1786227772277014720" K=3 source=cold-long prompt=4104 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=4104 burst=6/6 cum=6/6=1.000
+[meter] admit id=cmpl-82e5e78bab99b93e3334fcc4126969d5 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-onpolicy-r1-cached-continuation" K=3 source=cold-long prompt=4094 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=4094 burst=20/39 cum=20/39=0.513
+[spec-acc] ctx=4128 burst=24/24 cum=44/63=0.698
+[meter] admit id=cmpl-6b64cde40142f84b8e85ddd8300ea908 tenant=default lane=interactive model="q27"
+[worker] spec-reuse: 4160 committed tokens resumed (model q27)
+[spec-k] model="q27" tenant="q27-onpolicy-r1-cached-continuation" K=2 source=cached-long prompt=4179 cached=4160 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=19 burst=6/6 cum=6/6=1.000
+[meter] admit id=chatcmpl-081c9626c5cb9f518972ccced7e59fd2 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=12/12 cum=12/12=1.000
+[meter] admit id=chatcmpl-4d50b943f8e7f724836db2c41fb15a59 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 1 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=259 burst=22/27 cum=46/51=0.902
+[spec-acc] ctx=291 burst=23/24 cum=69/75=0.920
+[spec-acc] ctx=323 burst=19/39 cum=88/114=0.772
+[meter] admit id=chatcmpl-2d3e2818a565b3c1e5f4a1dbcee562c2 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=24/27 cum=24/27=0.889
+[spec-acc] ctx=260 burst=23/30 cum=47/57=0.825
+[spec-acc] ctx=294 burst=23/27 cum=70/84=0.833
+[spec-acc] ctx=327 burst=17/30 cum=87/114=0.763
+[meter] admit id=chatcmpl-3b43b51799479f3a8de0edffa19103f9 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=259 burst=22/27 cum=46/51=0.902
+[spec-acc] ctx=291 burst=23/27 cum=69/78=0.885
+[spec-acc] ctx=324 burst=22/27 cum=91/105=0.867
+[meter] admit id=chatcmpl-d71caee381a9178d95339085fbb5a29b tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=259 burst=21/33 cum=45/57=0.789
+[spec-acc] ctx=292 burst=21/30 cum=66/87=0.759
+[spec-acc] ctx=324 burst=20/27 cum=86/114=0.754
+[meter] admit id=chatcmpl-51146ca971d23e4e80b4dcd17e5a52f3 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=24/27 cum=24/27=0.889
+[spec-acc] ctx=260 burst=23/27 cum=47/54=0.870
+[spec-acc] ctx=293 burst=24/30 cum=71/84=0.845
+[spec-acc] ctx=328 burst=16/27 cum=87/111=0.784
+[meter] admit id=chatcmpl-a2a465c2dbbda7847bd81c2627e89d4c tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=24/27 cum=24/27=0.889
+[spec-acc] ctx=260 burst=23/27 cum=47/54=0.870
+[spec-acc] ctx=293 burst=24/30 cum=71/84=0.845
+[spec-acc] ctx=328 burst=17/24 cum=88/108=0.815
+[meter] admit id=chatcmpl-edd34fe02a3e5ab53e1c1b717f18288a tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=24/27 cum=24/27=0.889
+[spec-acc] ctx=260 burst=22/30 cum=46/57=0.807
+[spec-acc] ctx=293 burst=23/24 cum=69/81=0.852
+[spec-acc] ctx=325 burst=17/33 cum=86/114=0.754
+[meter] admit id=chatcmpl-cf0adc540c50b19b3ed5df280c3d3e14 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=259 burst=22/27 cum=46/51=0.902
+[spec-acc] ctx=291 burst=23/27 cum=69/78=0.885
+[spec-acc] ctx=324 burst=20/36 cum=89/114=0.781
+[meter] admit id=chatcmpl-d9ac8ec3d7ba416128297ef6bf5cfc44 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=12/12 cum=12/12=1.000
+[meter] admit id=chatcmpl-999bf24366d1349267bbb2578cec3e1f tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-974f0ee4728667ec0be3b893f7643eb3 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 465MB (driver + 370MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=226 burst=24/24 cum=24/24=1.000
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=259 burst=22/27 cum=46/51=0.902
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=291 burst=23/24 cum=69/75=0.920
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=323 burst=19/39 cum=88/114=0.772
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[meter] admit id=chatcmpl-5141a5406512800d7aa8c93403e21bcd tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=260 burst=23/30 cum=46/57=0.807
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=294 burst=23/27 cum=69/84=0.821
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=327 burst=17/30 cum=86/114=0.754
+[meter] admit id=chatcmpl-872a58a2dab87d8e32ceaad221bcd1e6 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=227 burst=23/24 cum=23/24=0.958
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=259 burst=22/27 cum=45/51=0.882
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=291 burst=23/27 cum=68/78=0.872
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=324 burst=18/33 cum=86/111=0.775
+[meter] admit id=chatcmpl-2a3905034db256b0126a100471d74ffe tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=227 burst=23/24 cum=23/24=0.958
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=259 burst=21/33 cum=44/57=0.772
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=292 burst=22/27 cum=66/84=0.786
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=324 burst=22/27 cum=88/111=0.793
+[meter] admit id=chatcmpl-b77c89e003f3816d6f6dab7e1f81eb6e tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=260 burst=23/27 cum=46/54=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=293 burst=24/30 cum=70/84=0.833
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 210MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24293MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=328 burst=16/27 cum=86/111=0.775
+[meter] admit id=chatcmpl-33b8a1f14566c74f9351807e2db2d3a7 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=260 burst=23/27 cum=46/54=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=293 burst=24/30 cum=70/84=0.833
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=328 burst=19/24 cum=89/108=0.824
+[meter] admit id=chatcmpl-a675340716f84e74601b56a4040b077f tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=260 burst=22/30 cum=45/57=0.789
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=293 burst=23/24 cum=68/81=0.840
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 0]
+[spec-acc] ctx=325 burst=18/33 cum=86/114=0.754
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=259 burst=22/27 cum=46/51=0.902
+[spec-acc] ctx=291 burst=23/27 cum=69/78=0.885
+[spec-acc] ctx=324 burst=20/36 cum=89/114=0.781
+[meter] admit id=chatcmpl-d3a47b56cc2ad9f804ab68007de0faa0 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=226 burst=12/12 cum=12/12=1.000
+[meter] admit id=chatcmpl-2b20ddd3c8be7eef9fe43c8c0e7ac66b tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-23200dc5b1aa8e3192e19dea2d55597b tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-06d1f6b758cf502d29a505460bd55b20 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-2aa80f041d00fb472bb19329e2ecef64 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 465MB (driver + 403MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=226 burst=24/24 cum=24/24=1.000
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 244MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=259 burst=22/27 cum=46/51=0.902
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 244MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=291 burst=23/24 cum=69/75=0.920
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 244MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=323 burst=19/39 cum=88/114=0.772
+[meter] admit id=chatcmpl-c741c54d391a46a21ca02ae78c581205 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 465MB (driver + 403MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 244MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 244MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=260 burst=23/30 cum=46/57=0.807
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 244MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=294 burst=23/27 cum=69/84=0.821
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 244MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24083MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=327 burst=17/30 cum=86/114=0.754
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[meter] admit id=chatcmpl-97657af6493159926a5f1859fef1d228 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 403MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/24 cum=23/24=0.958
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=259 burst=21/33 cum=44/57=0.772
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=292 burst=22/27 cum=66/84=0.786
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=324 burst=22/27 cum=88/111=0.793
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[meter] admit id=chatcmpl-9d978fbf8da77883325c48016d159b64 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 403MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/24 cum=23/24=0.958
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=259 burst=22/27 cum=45/51=0.882
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=291 burst=23/27 cum=68/78=0.872
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=324 burst=18/33 cum=86/111=0.775
+[meter] admit id=chatcmpl-f0918871b3d050ce3d8700323e55a78f tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 403MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=260 burst=23/27 cum=46/54=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=293 burst=24/30 cum=70/84=0.833
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=328 burst=16/27 cum=86/111=0.775
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[meter] admit id=chatcmpl-378b30859a397e71a8272ed8f3b7402c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 403MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=260 burst=23/27 cum=46/54=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=293 burst=24/30 cum=70/84=0.833
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 243MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=328 burst=19/24 cum=89/108=0.824
+[meter] admit id=chatcmpl-cb77fde35d99be92a0521ad8785a186a tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 403MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24327MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=260 burst=22/30 cum=45/57=0.789
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=293 burst=23/24 cum=68/81=0.840
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=325 burst=18/33 cum=86/114=0.754
+[meter] admit id=chatcmpl-bbcf02ae5ef42a65c9514ae9e4eaf8d6 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/24 cum=23/24=0.958
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=259 burst=22/27 cum=45/51=0.882
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=291 burst=23/27 cum=68/78=0.872
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=324 burst=20/36 cum=88/114=0.772
+[meter] admit id=chatcmpl-5aca4f6ae024e6c4e30ec8e8a1a666f3 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=260 burst=22/33 cum=45/60=0.750
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=294 burst=21/33 cum=66/93=0.710
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=327 burst=17/27 cum=83/120=0.692
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[meter] admit id=chatcmpl-7a368f211780cd26f3933328c71569e5 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=260 burst=23/27 cum=46/54=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=293 burst=23/27 cum=69/81=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=326 burst=16/33 cum=85/114=0.746
+[meter] admit id=chatcmpl-a7be8f0372978ace1250f197aedbdee0 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/27 cum=23/27=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=260 burst=24/27 cum=47/54=0.870
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=294 burst=22/27 cum=69/81=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=326 burst=19/33 cum=88/114=0.772
+[meter] admit id=chatcmpl-c6ccc9ad12d256d84e67ff17bf4d15f2 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/24 cum=23/24=0.958
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=259 burst=23/30 cum=46/54=0.852
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=293 burst=22/30 cum=68/84=0.810
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=326 burst=16/33 cum=84/117=0.718
+[meter] admit id=chatcmpl-0cb95e84cd6497459cf459b63b26c7c2 tenant=default lane=interactive model="q27"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=227 burst=23/24 cum=23/24=0.958
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=259 burst=22/27 cum=45/51=0.882
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=291 burst=23/27 cum=68/78=0.872
+[admit-oom] VRAM defer: 1 active, effective free 305MB (driver + 277MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 24084MB; parked spec sessions 8; plain reuse 0; queue 2]
+[spec-acc] ctx=324 burst=21/27 cum=89/105=0.848
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 464MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] step OOM parked session back to queue (model q27, retry 1/3, 1 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=oom-replay prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 498MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] step OOM parked session back to queue (model q27, retry 2/3, 1 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=oom-replay prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 498MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] step OOM parked session back to queue (model q27, retry 3/3, 1 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=oom-replay prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 498MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 1]
+[admit-oom] step OOM NOT parked (model q27, retries 3/3, generated 0): reporting honestly
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 498MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 0]
+[admit-oom] step OOM parked session back to queue (model q27, retry 1/3, 1 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=oom-replay prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 498MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 0]
+[admit-oom] step OOM parked session back to queue (model q27, retry 2/3, 1 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=oom-replay prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 498MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 0]
+[admit-oom] step OOM parked session back to queue (model q27, retry 3/3, 1 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=oom-replay prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 498MB (driver + 436MB pool-cached) < cost 336MB + reserve 1611MB — queueing (FIFO) [pool res 24361MB used 23924MB; parked spec sessions 8; plain reuse 0; queue 0]
+[admit-oom] step OOM NOT parked (model q27, retries 3/3, generated 0): reporting honestly
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=cold-short prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] step OOM parked session back to queue (model q27, retry 1/3, 1 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=oom-replay prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] step OOM parked session back to queue (model q27, retry 2/3, 1 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=oom-replay prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] step OOM parked session back to queue (model q27, retry 3/3, 1 active): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[worker] spec-affinity: declined (empty suffix; 2 parked, 226 prompt tokens; model q27)
+[spec-k] model="q27" tenant="" K=3 source=oom-replay prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] step OOM NOT parked (model q27, retries 3/3, generated 0): reporting honestly
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

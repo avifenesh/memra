@@ -1,0 +1,31 @@
+git_head=fb6e5abf77e1d0f7fe61c491f8d8fc2685a3bd1d branch=lane/step37-reasoning-effort-20260829
+bin_md5=dd62e8cbb97ff143283279f61ea582e0
+server_pid=72644
+HEALTH=200
+refuse/none: http=400 err={"error": {"message": "model \"step37\" cannot disable reasoning: its chat template opens a think tail uncondi
+refuse/minimal: http=400 err={"error": {"message": "model \"step37\" cannot disable reasoning: its chat template opens a think tail uncondi
+refuse/banana: http=400 err={"error": {"message": "bad reasoning_effort \"banana\" (none|minimal|low|medium|high; xhigh/max/ultra clamp to
+refuse/enabled_false: http=400 err={"error": {"message": "model \"step37\" cannot disable reasoning: its chat template opens a think tail uncondi
+refuse/enable_thinking_false: http=400 err={"error": {"message": "model \"step37\" cannot disable reasoning: its chat template opens a think tail uncondi
+mul/ABSENT: greedy_rchars=237 sampled_n=8 median_rchars=229 all=[311, 210, 225, 212, 229, 542, 216, 303]
+mul/low: greedy_rchars=80 sampled_n=8 median_rchars=80 all=[71, 103, 80, 71, 105, 71, 108, 48]
+mul/medium: greedy_rchars=71 sampled_n=8 median_rchars=83 all=[108, 78, 78, 73, 73, 116, 84, 83]
+mul/high: greedy_rchars=71 sampled_n=8 median_rchars=84 all=[71, 78, 71, 53, 84, 85, 137, 129]
+mul/xhigh: greedy_rchars=71 sampled_n=8 median_rchars=79 all=[71, 80, 54, 71, 108, 85, 79, 78]
+plan/ABSENT: greedy_rchars=1544 sampled_n=8 median_rchars=1531 all=[1429, 1677, 1108, 1841, 1531, 1629, 1266, 1302]
+plan/low: greedy_rchars=248 sampled_n=8 median_rchars=272 all=[220, 272, 201, 113, 292, 329, 312, 267]
+plan/medium: greedy_rchars=378 sampled_n=8 median_rchars=373 all=[464, 373, 597, 359, 169, 383, 358, 169]
+plan/high: greedy_rchars=174 sampled_n=8 median_rchars=175 all=[177, 287, 158, 135, 169, 175, 270, 160]
+plan/xhigh: greedy_rchars=174 sampled_n=8 median_rchars=190 all=[165, 190, 202, 182, 183, 361, 303, 135]
+code/ABSENT: greedy_rchars=2455 sampled_n=8 median_rchars=2723 all=[3677, 2143, 1580, 3605, 2723, 1655, 3698, 1720]
+code/low: greedy_rchars=404 sampled_n=8 median_rchars=263 all=[218, 263, 271, 188, 189, 443, 181, 288]
+code/medium: greedy_rchars=582 sampled_n=8 median_rchars=992 all=[658, 1156, 992, 463, 887, 1242, 375, 1658]
+code/high: greedy_rchars=624 sampled_n=8 median_rchars=529 all=[1147, 453, 329, 457, 479, 529, 622, 893]
+code/xhigh: greedy_rchars=624 sampled_n=8 median_rchars=818 all=[317, 822, 914, 685, 1075, 466, 479, 818]
+WROTE /home/ubuntu/re-lane/cell12-rows.json
+PROBE_RC=0
+ILLEGAL=0 hash87=0 panic=0
+[spec-acc] ctx=242 burst=23/25 cum=151/172=0.878
+[spec-acc] ctx=276 burst=23/24 cum=174/196=0.888
+SERVER_GONE
+CELL12_DONE

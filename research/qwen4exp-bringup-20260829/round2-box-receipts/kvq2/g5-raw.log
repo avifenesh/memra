@@ -1,0 +1,16 @@
+# qwen4exp_real_gate	label=g5-raw	binary_sha256=3b7bc92936580b3da7518f27df0273453708f78695fefff6a7f9a5a6b53cea1e	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=f32	idxq=f32	golden_pin=true	seams_env=idxsel
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+# load	148.4s
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+# greedy prompt 0: first_divergence=-1 matched=64/64 prefill=0.27s mean_decode=13.4ms
+# greedy prompt 1: first_divergence=8 matched=8/64 prefill=0.14s mean_decode=13.3ms
+# greedy prompt 2: first_divergence=-1 matched=64/64 prefill=0.15s mean_decode=13.3ms
+# greedy prompt 3: first_divergence=48 matched=48/64 prefill=0.23s mean_decode=13.4ms
+# greedy receipt: /home/ubuntu/realgate/kvq2/greedy-gate-g5-raw.tsv
+# spec-gate prompt 0: first_divergence=-1 accept_rate=0.861 mean_len=4.41 spec=7.5ms plain=14.1ms
+# spec-gate prompt 1: first_divergence=-1 accept_rate=0.486 mean_len=1.90 spec=12.2ms plain=14.0ms
+# spec-gate prompt 2: first_divergence=-1 accept_rate=0.701 mean_len=3.01 spec=9.2ms plain=14.1ms
+# spec-gate prompt 3: first_divergence=-1 accept_rate=0.675 mean_len=2.81 spec=9.4ms plain=14.1ms
+# spec-gate receipt: /home/ubuntu/realgate/kvq2/spec-gate-k5-g5-raw.tsv

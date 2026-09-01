@@ -1,0 +1,26 @@
+target loaded (65 layers); dspark draft: block 7, taps [4, 16, 28, 40, 52], markov true, yarn true
+[dspark-q38] acceptance 19/230 = 0.083 rounds=110 draft=297.2ms snap=84.3ms verify=1933.2ms rollback+replay=42.8ms ingest=29.7ms
+own-01.txt: prompt 196 -> gen 129 | plain 63.3 tok/s | spec 53.6 tok/s | DIVERGED at Some(128) (got len 129, want len 128)
+[dspark-q38] acceptance 39/195 = 0.200 rounds=89 draft=334.7ms snap=68.3ms verify=1579.1ms rollback+replay=31.4ms ingest=24.2ms
+own-02.txt: prompt 983 -> gen 128 | plain 60.9 tok/s | spec 62.3 tok/s | EXACT
+[dspark-q38] acceptance 37/201 = 0.184 rounds=91 draft=622.0ms snap=241.7ms verify=3788.9ms rollback+replay=198.8ms ingest=220.8ms
+own-03.txt: prompt 41 -> gen 128 | plain 36.0 tok/s | spec 25.2 tok/s | EXACT
+[dspark-q38] acceptance 41/189 = 0.217 rounds=88 draft=555.4ms snap=208.2ms verify=3390.0ms rollback+replay=184.4ms ingest=193.4ms
+own-04.txt: prompt 26 -> gen 129 | plain 30.7 tok/s | spec 28.4 tok/s | DIVERGED at Some(128) (got len 129, want len 128)
+[dspark-q38] acceptance 33/207 = 0.159 rounds=96 draft=323.7ms snap=72.8ms verify=1696.3ms rollback+replay=35.0ms ingest=26.1ms
+own-05.txt: prompt 685 -> gen 128 | plain 62.5 tok/s | spec 59.0 tok/s | EXACT
+[dspark-q38] acceptance 42/192 = 0.219 rounds=87 draft=306.2ms snap=66.6ms verify=1546.4ms rollback+replay=30.2ms ingest=23.6ms
+own-06.txt: prompt 793 -> gen 129 | plain 61.8 tok/s | spec 64.9 tok/s | DIVERGED at Some(128) (got len 129, want len 128)
+[dspark-q38] acceptance 35/204 = 0.172 rounds=94 draft=675.6ms snap=248.1ms verify=3664.9ms rollback+replay=207.6ms ingest=227.0ms
+own-07.txt: prompt 321 -> gen 128 | plain 46.9 tok/s | spec 25.4 tok/s | EXACT
+[dspark-q38] acceptance 36/199 = 0.181 rounds=92 draft=785.6ms snap=162.5ms verify=2725.0ms rollback+replay=122.7ms ingest=121.4ms
+own-08.txt: prompt 1797 -> gen 128 | plain 25.7 tok/s | spec 32.5 tok/s | EXACT
+[dspark-q38] acceptance 46/186 = 0.247 rounds=82 draft=283.2ms snap=62.7ms verify=1471.1ms rollback+replay=27.9ms ingest=22.4ms
+own-09.txt: prompt 749 -> gen 128 | plain 62.5 tok/s | spec 68.0 tok/s | EXACT
+[dspark-q38] acceptance 49/182 = 0.269 rounds=80 draft=325.3ms snap=61.5ms verify=1437.4ms rollback+replay=26.2ms ingest=21.8ms
+own-10.txt: prompt 1199 -> gen 128 | plain 58.3 tok/s | spec 67.8 tok/s | EXACT
+[dspark-q38] acceptance 47/183 = 0.257 rounds=81 draft=531.0ms snap=208.0ms verify=3320.0ms rollback+replay=166.3ms ingest=192.2ms
+own-11.txt: prompt 20 -> gen 128 | plain 35.3 tok/s | spec 28.9 tok/s | EXACT
+[dspark-q38] acceptance 38/198 = 0.192 rounds=90 draft=716.6ms snap=236.5ms verify=3512.4ms rollback+replay=200.9ms ingest=209.7ms
+own-12.txt: prompt 967 -> gen 128 | plain 30.5 tok/s | spec 26.2 tok/s | EXACT
+== dspark_q38_gate: FAIL | mean plain 47.9 tok/s | mean spec 45.2 tok/s | 1539 tokens ==

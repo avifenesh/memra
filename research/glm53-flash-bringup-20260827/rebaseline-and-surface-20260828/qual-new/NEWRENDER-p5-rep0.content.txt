@@ -1,0 +1,19 @@
+Got it — here's what I've recorded:
+
+**Inference work:**
+- Current inference work is **full** — no new inference projects needed.
+- **memra** (BW24 successor) now replaces llama as your default. Runs on BW50 series and H100, beats llama and vLLM on supported models. New inference ideas go to memra, not llama.
+- Only remaining inference pain point: keeping full benchmark correctness without rerunning the whole bench on every change (incremental/full-bench caching problem).
+
+**Focus shift:**
+- Your ML interest is now on the **model side**, not inference:
+  - Improving training
+  - Making models smarter
+  - Next-gen models addressing what current LLMs are missing
+
+**Frozen:**
+- **eigen** is under re-work, frozen until the re-work is done and it's actually better. You'll share the pain points after fixes land.
+
+**Best-guess skill status (tell me if wrong):** itch skill should reflect memra-first, llama deprecated, inference closed to new work, model-side ML as the active frontier, eigen on hold.
+
+If I've missed any nuance (e.g., whether llama is just deprecated vs fully dead for you), say so and I'll fold it in.

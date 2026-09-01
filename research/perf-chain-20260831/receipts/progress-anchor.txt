@@ -1,0 +1,294 @@
+PREFLIGHT_OK arm=ODX bin=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b md5=3ef8b83b2a521fa5f05646ecbf23174d fp=fp/c9a617ca994b mode=era-nodoors
+PREFLIGHT_OK arm=S04A bin=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31 md5=115a27353ed4e2083787b1a3170fbf8d fp=fp/3d52b8531a31 mode=era-nodoors
+PREFLIGHT_OK arm=S44A bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 md5=dd421c2958ab9d87adf8cdc46055588a fp=fp/3999a92a6e18 mode=era-nodoors
+2026-08-31T13:01:12Z RUN_START cell=anchor boots=[1 2 3] arms=ODX:/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b:era-nodoors S04A:/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31:era-nodoors S44A:/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18:era-nodoors
+13:01:12Z BOOT_START ODX1 bin=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b mode=era-nodoors
+BOOT_OK pid=13398 arm=ODX1 mode=era-nodoors
+arm=ODX1
+mode=era-nodoors
+boot_nonce=pc37-ODX1-1788181272-29346
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b
+bin_md5=3ef8b83b2a521fa5f05646ecbf23174d
+bin_fingerprint=fp/c9a617ca994b
+built_from=c9a617ca994bf6e70cab4e6c55f30e0a9208fe6b
+git_log_1=c9a617ca994bf6e70cab4e6c55f30e0a9208fe6b SWA-ring checkpoint restore: copy the window, not the absolute length
+server_pid=13398
+exe=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b
+environ_nonce=pc37-ODX1-1788181272-29346
+environ_mode=era-nodoors
+environ_census=/home/ubuntu/perf-chain/receipts/environ-ODX1.txt (38 MEMRA_/PC vars)
+0, 74067 MiB, 600.00 W, 2325 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=era-nodoors (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8210526315789474, "spec_rounds": 92, "wall_tok_s": 80.51, "fingerprint": "fp/c9a617ca994b"}
+WARMUP (discarded) 100.71 tok/s
+rep 1 wall_tok_s=107.92 ttft=0.4276 ct=512 acc=0.9173333333333333 finish=length
+rep 2 wall_tok_s=111.06 ttft=0.4217 ct=512 acc=0.941952506596306 finish=length
+rep 3 wall_tok_s=110.5 ttft=0.421 ct=512 acc=0.9538043478260869 finish=length
+rep 4 wall_tok_s=112.01 ttft=0.4204 ct=512 acc=0.9545454545454546 finish=length
+rep 5 wall_tok_s=104.72 ttft=0.4266 ct=512 acc=0.8776041666666666 finish=length
+rep 6 wall_tok_s=109.23 ttft=0.4281 ct=512 acc=0.9313984168865436 finish=length
+rep 7 wall_tok_s=100.9 ttft=0.4169 ct=512 acc=0.8427835051546392 finish=length
+rep 8 wall_tok_s=109.94 ttft=0.4285 ct=512 acc=0.9433962264150944 finish=length
+BOOT_MEDIAN arm=ODX1 boot=1 wall_tok_s=109.58500000000001 n=8
+STOPPED gpus drained (max 0 MiB)
+13:04:41Z CYCLE_DONE ODX1
+13:04:41Z BOOT_START S04A1 bin=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31 mode=era-nodoors
+BOOT_OK pid=13633 arm=S04A1 mode=era-nodoors
+arm=S04A1
+mode=era-nodoors
+boot_nonce=pc37-S04A1-1788181481-19398
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31
+bin_md5=115a27353ed4e2083787b1a3170fbf8d
+bin_fingerprint=fp/3d52b8531a31
+built_from=3d52b8531a319354846ee6d346837e28c9c933ce
+git_log_1=3d52b8531a319354846ee6d346837e28c9c933ce refactor(server): split memra-server into lib + thin bin
+server_pid=13633
+exe=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31
+environ_nonce=pc37-S04A1-1788181481-19398
+environ_mode=era-nodoors
+environ_census=/home/ubuntu/perf-chain/receipts/environ-S04A1.txt (38 MEMRA_/PC vars)
+0, 74067 MiB, 600.00 W, 2317 MHz
+1, 58291 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=era-nodoors (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.7969543147208121, "spec_rounds": 93, "wall_tok_s": 85.71, "fingerprint": "fp/3d52b8531a31"}
+WARMUP (discarded) 114.78 tok/s
+rep 1 wall_tok_s=110.5 ttft=0.1753 ct=512 acc=0.8805194805194805 finish=length
+rep 2 wall_tok_s=113.92 ttft=0.1752 ct=512 acc=0.9153439153439153 finish=length
+rep 3 wall_tok_s=116.88 ttft=0.176 ct=512 acc=0.9487870619946092 finish=length
+rep 4 wall_tok_s=115.72 ttft=0.1745 ct=512 acc=0.9338624338624338 finish=length
+rep 5 wall_tok_s=117.12 ttft=0.175 ct=512 acc=0.9521276595744681 finish=length
+rep 6 wall_tok_s=117.44 ttft=0.1759 ct=512 acc=0.9473684210526315 finish=length
+rep 7 wall_tok_s=117.71 ttft=0.1755 ct=512 acc=0.959349593495935 finish=length
+rep 8 wall_tok_s=114.55 ttft=0.1748 ct=512 acc=0.9162303664921466 finish=length
+BOOT_MEDIAN arm=S04A1 boot=1 wall_tok_s=116.3 n=8
+STOPPED gpus drained (max 0 MiB)
+13:08:08Z CYCLE_DONE S04A1
+13:08:08Z BOOT_START S44A1 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=era-nodoors
+BOOT_OK pid=13868 arm=S44A1 mode=era-nodoors
+arm=S44A1
+mode=era-nodoors
+boot_nonce=pc37-S44A1-1788181688-6485
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=13868
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-S44A1-1788181688-6485
+environ_mode=era-nodoors
+environ_census=/home/ubuntu/perf-chain/receipts/environ-S44A1.txt (38 MEMRA_/PC vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=era-nodoors (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8256410256410256, "spec_rounds": 90, "wall_tok_s": 95.63, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 116.14 tok/s
+rep 1 wall_tok_s=119.12 ttft=0.1776 ct=512 acc=0.9522546419098143 finish=length
+rep 2 wall_tok_s=115.55 ttft=0.1776 ct=512 acc=0.9263157894736842 finish=length
+rep 3 wall_tok_s=116.84 ttft=0.1763 ct=512 acc=0.9298701298701298 finish=length
+rep 4 wall_tok_s=114.86 ttft=0.176 ct=512 acc=0.9186351706036745 finish=length
+rep 5 wall_tok_s=117.42 ttft=0.1768 ct=512 acc=0.9514824797843666 finish=length
+rep 6 wall_tok_s=115.15 ttft=0.1775 ct=512 acc=0.9184210526315789 finish=length
+rep 7 wall_tok_s=118.66 ttft=0.1767 ct=512 acc=0.9595687331536388 finish=length
+rep 8 wall_tok_s=119.86 ttft=0.1766 ct=512 acc=0.9701897018970189 finish=length
+BOOT_MEDIAN arm=S44A1 boot=1 wall_tok_s=117.13 n=8
+STOPPED gpus drained (max 0 MiB)
+13:11:33Z CYCLE_DONE S44A1
+13:11:33Z BOOT_START ODX2 bin=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b mode=era-nodoors
+BOOT_OK pid=14311 arm=ODX2 mode=era-nodoors
+arm=ODX2
+mode=era-nodoors
+boot_nonce=pc37-ODX2-1788181893-2670
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b
+bin_md5=3ef8b83b2a521fa5f05646ecbf23174d
+bin_fingerprint=fp/c9a617ca994b
+built_from=c9a617ca994bf6e70cab4e6c55f30e0a9208fe6b
+git_log_1=c9a617ca994bf6e70cab4e6c55f30e0a9208fe6b SWA-ring checkpoint restore: copy the window, not the absolute length
+server_pid=14311
+exe=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b
+environ_nonce=pc37-ODX2-1788181893-2670
+environ_mode=era-nodoors
+environ_census=/home/ubuntu/perf-chain/receipts/environ-ODX2.txt (38 MEMRA_/PC vars)
+0, 74067 MiB, 600.00 W, 2325 MHz
+1, 58291 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=era-nodoors (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.842391304347826, "spec_rounds": 93, "wall_tok_s": 80.89, "fingerprint": "fp/c9a617ca994b"}
+WARMUP (discarded) 109.34 tok/s
+rep 1 wall_tok_s=109.41 ttft=0.4375 ct=512 acc=0.926509186351706 finish=length
+rep 2 wall_tok_s=102.28 ttft=0.4192 ct=512 acc=0.8567708333333334 finish=length
+rep 3 wall_tok_s=111.06 ttft=0.413 ct=512 acc=0.9491978609625669 finish=length
+rep 4 wall_tok_s=109.32 ttft=0.4131 ct=512 acc=0.935656836461126 finish=length
+rep 5 wall_tok_s=109.66 ttft=0.4188 ct=512 acc=0.9295039164490861 finish=length
+rep 6 wall_tok_s=111.0 ttft=0.4251 ct=512 acc=0.944 finish=length
+rep 7 wall_tok_s=111.28 ttft=0.4186 ct=512 acc=0.9498680738786279 finish=length
+rep 8 wall_tok_s=104.64 ttft=0.4186 ct=512 acc=0.8803191489361702 finish=length
+BOOT_MEDIAN arm=ODX2 boot=2 wall_tok_s=109.535 n=8
+STOPPED gpus drained (max 0 MiB)
+13:15:02Z CYCLE_DONE ODX2
+13:15:02Z BOOT_START S04A2 bin=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31 mode=era-nodoors
+BOOT_OK pid=14543 arm=S04A2 mode=era-nodoors
+arm=S04A2
+mode=era-nodoors
+boot_nonce=pc37-S04A2-1788182102-4643
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31
+bin_md5=115a27353ed4e2083787b1a3170fbf8d
+bin_fingerprint=fp/3d52b8531a31
+built_from=3d52b8531a319354846ee6d346837e28c9c933ce
+git_log_1=3d52b8531a319354846ee6d346837e28c9c933ce refactor(server): split memra-server into lib + thin bin
+server_pid=14543
+exe=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31
+environ_nonce=pc37-S04A2-1788182102-4643
+environ_mode=era-nodoors
+environ_census=/home/ubuntu/perf-chain/receipts/environ-S04A2.txt (38 MEMRA_/PC vars)
+0, 74067 MiB, 600.00 W, 2310 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=era-nodoors (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.9239130434782609, "spec_rounds": 80, "wall_tok_s": 93.64, "fingerprint": "fp/3d52b8531a31"}
+WARMUP (discarded) 113.42 tok/s
+rep 1 wall_tok_s=115.61 ttft=0.1752 ct=512 acc=0.9232804232804233 finish=length
+rep 2 wall_tok_s=113.41 ttft=0.176 ct=512 acc=0.910761154855643 finish=length
+rep 3 wall_tok_s=110.79 ttft=0.1757 ct=512 acc=0.881578947368421 finish=length
+rep 4 wall_tok_s=118.39 ttft=0.1762 ct=512 acc=0.9543010752688172 finish=length
+rep 5 wall_tok_s=116.25 ttft=0.1751 ct=512 acc=0.9312169312169312 finish=length
+rep 6 wall_tok_s=115.01 ttft=0.1743 ct=512 acc=0.9306666666666666 finish=length
+rep 7 wall_tok_s=119.18 ttft=0.1756 ct=512 acc=0.9622641509433962 finish=length
+rep 8 wall_tok_s=117.21 ttft=0.1742 ct=512 acc=0.9490616621983914 finish=length
+BOOT_MEDIAN arm=S04A2 boot=2 wall_tok_s=115.93 n=8
+STOPPED gpus drained (max 0 MiB)
+13:18:28Z CYCLE_DONE S04A2
+13:18:28Z BOOT_START S44A2 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=era-nodoors
+BOOT_OK pid=14781 arm=S44A2 mode=era-nodoors
+arm=S44A2
+mode=era-nodoors
+boot_nonce=pc37-S44A2-1788182308-29837
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=14781
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-S44A2-1788182308-29837
+environ_mode=era-nodoors
+environ_census=/home/ubuntu/perf-chain/receipts/environ-S44A2.txt (38 MEMRA_/PC vars)
+0, 76855 MiB, 600.00 W, 2310 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=era-nodoors (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8449197860962567, "spec_rounds": 90, "wall_tok_s": 98.01, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 117.71 tok/s
+rep 1 wall_tok_s=116.82 ttft=0.1778 ct=512 acc=0.9361702127659575 finish=length
+rep 2 wall_tok_s=119.66 ttft=0.1766 ct=512 acc=0.967654986522911 finish=length
+rep 3 wall_tok_s=116.47 ttft=0.1761 ct=512 acc=0.9340369393139841 finish=length
+rep 4 wall_tok_s=116.81 ttft=0.177 ct=512 acc=0.9361702127659575 finish=length
+rep 5 wall_tok_s=116.05 ttft=0.1766 ct=512 acc=0.9366754617414248 finish=length
+rep 6 wall_tok_s=119.49 ttft=0.1774 ct=512 acc=0.967828418230563 finish=length
+rep 7 wall_tok_s=112.39 ttft=0.1769 ct=512 acc=0.89501312335958 finish=length
+rep 8 wall_tok_s=115.5 ttft=0.1762 ct=512 acc=0.9253333333333333 finish=length
+BOOT_MEDIAN arm=S44A2 boot=2 wall_tok_s=116.64 n=8
+STOPPED gpus drained (max 0 MiB)
+13:21:54Z CYCLE_DONE S44A2
+13:21:54Z BOOT_START ODX3 bin=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b mode=era-nodoors
+BOOT_OK pid=15077 arm=ODX3 mode=era-nodoors
+arm=ODX3
+mode=era-nodoors
+boot_nonce=pc37-ODX3-1788182514-16330
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b
+bin_md5=3ef8b83b2a521fa5f05646ecbf23174d
+bin_fingerprint=fp/c9a617ca994b
+built_from=c9a617ca994bf6e70cab4e6c55f30e0a9208fe6b
+git_log_1=c9a617ca994bf6e70cab4e6c55f30e0a9208fe6b SWA-ring checkpoint restore: copy the window, not the absolute length
+server_pid=15077
+exe=/home/ubuntu/perf-chain/bin/memra-server-c9a617ca994b
+environ_nonce=pc37-ODX3-1788182514-16330
+environ_mode=era-nodoors
+environ_census=/home/ubuntu/perf-chain/receipts/environ-ODX3.txt (38 MEMRA_/PC vars)
+0, 74067 MiB, 600.00 W, 2317 MHz
+1, 58291 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=era-nodoors (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.9447513812154696, "spec_rounds": 78, "wall_tok_s": 86.39, "fingerprint": "fp/c9a617ca994b"}
+WARMUP (discarded) 108.67 tok/s
+rep 1 wall_tok_s=105.84 ttft=0.4153 ct=512 acc=0.8811369509043928 finish=length
+rep 2 wall_tok_s=112.34 ttft=0.4212 ct=512 acc=0.9602122015915119 finish=length
+rep 3 wall_tok_s=112.55 ttft=0.4271 ct=512 acc=0.9602122015915119 finish=length
+rep 4 wall_tok_s=97.12 ttft=0.4326 ct=512 acc=0.7848101265822784 finish=length
+rep 5 wall_tok_s=106.33 ttft=0.4258 ct=512 acc=0.8983957219251337 finish=length
+rep 6 wall_tok_s=110.57 ttft=0.4216 ct=512 acc=0.9410187667560321 finish=length
+rep 7 wall_tok_s=110.44 ttft=0.4208 ct=512 acc=0.9466666666666667 finish=length
+rep 8 wall_tok_s=111.49 ttft=0.4265 ct=512 acc=0.9522546419098143 finish=length
+BOOT_MEDIAN arm=ODX3 boot=3 wall_tok_s=110.505 n=8
+STOPPED gpus drained (max 0 MiB)
+13:25:23Z CYCLE_DONE ODX3
+13:25:23Z BOOT_START S04A3 bin=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31 mode=era-nodoors
+BOOT_OK pid=15310 arm=S04A3 mode=era-nodoors
+arm=S04A3
+mode=era-nodoors
+boot_nonce=pc37-S04A3-1788182723-31070
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31
+bin_md5=115a27353ed4e2083787b1a3170fbf8d
+bin_fingerprint=fp/3d52b8531a31
+built_from=3d52b8531a319354846ee6d346837e28c9c933ce
+git_log_1=3d52b8531a319354846ee6d346837e28c9c933ce refactor(server): split memra-server into lib + thin bin
+server_pid=15310
+exe=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31
+environ_nonce=pc37-S04A3-1788182723-31070
+environ_mode=era-nodoors
+environ_census=/home/ubuntu/perf-chain/receipts/environ-S04A3.txt (38 MEMRA_/PC vars)
+0, 74067 MiB, 600.00 W, 2317 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=era-nodoors (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.9032258064516129, "spec_rounds": 80, "wall_tok_s": 92.96, "fingerprint": "fp/3d52b8531a31"}
+WARMUP (discarded) 117.85 tok/s
+rep 1 wall_tok_s=113.71 ttft=0.1751 ct=512 acc=0.9191374663072777 finish=length
+rep 2 wall_tok_s=106.44 ttft=0.1756 ct=512 acc=0.8225 finish=length
+rep 3 wall_tok_s=117.38 ttft=0.1762 ct=512 acc=0.9540540540540541 finish=length
+rep 4 wall_tok_s=112.44 ttft=0.1759 ct=512 acc=0.9042553191489362 finish=length
+rep 5 wall_tok_s=115.31 ttft=0.1761 ct=512 acc=0.9201030927835051 finish=length
+rep 6 wall_tok_s=115.78 ttft=0.1751 ct=512 acc=0.9287598944591029 finish=length
+rep 7 wall_tok_s=116.69 ttft=0.1757 ct=512 acc=0.937007874015748 finish=length
+rep 8 wall_tok_s=115.06 ttft=0.1748 ct=512 acc=0.9247311827956989 finish=length
+BOOT_MEDIAN arm=S04A3 boot=3 wall_tok_s=115.185 n=8
+STOPPED gpus drained (max 0 MiB)
+13:28:50Z CYCLE_DONE S04A3
+13:28:50Z BOOT_START S44A3 bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18 mode=era-nodoors
+BOOT_OK pid=15540 arm=S44A3 mode=era-nodoors
+arm=S44A3
+mode=era-nodoors
+boot_nonce=pc37-S44A3-1788182930-17952
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+bin_md5=dd421c2958ab9d87adf8cdc46055588a
+bin_fingerprint=fp/3999a92a6e18
+built_from=3999a92a6e18a231ce8e18fb2b6f37997b00e882
+git_log_1=3999a92a6e18a231ce8e18fb2b6f37997b00e882 Restore kv-flex (Arc G, c98718841/70f32a41a) dropped by merge 18d71a159: that m
+server_pid=15540
+exe=/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18
+environ_nonce=pc37-S44A3-1788182930-17952
+environ_mode=era-nodoors
+environ_census=/home/ubuntu/perf-chain/receipts/environ-S44A3.txt (38 MEMRA_/PC vars)
+0, 76855 MiB, 600.00 W, 2317 MHz
+1, 58515 MiB, 600.00 W, 2332 MHz
+ENV_VERIFIED mode=era-nodoors (MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8! MEMRA_STEP_VISION_DIR! MEMRA_SPEC_GRAPH_FILTERED! MEMRA_MTP_CHAIN_GRAPH! MEMRA_STEP35_DRAFT_DCW!)
+SMOKE SPEC-ENGAGED {"spec_acc": 0.8541666666666666, "spec_rounds": 86, "wall_tok_s": 97.93, "fingerprint": "fp/3999a92a6e18"}
+WARMUP (discarded) 110.08 tok/s
+rep 1 wall_tok_s=116.08 ttft=0.1774 ct=512 acc=0.9278074866310161 finish=length
+rep 2 wall_tok_s=117.57 ttft=0.1781 ct=512 acc=0.9447368421052632 finish=length
+rep 3 wall_tok_s=114.89 ttft=0.1771 ct=512 acc=0.9257294429708223 finish=length
+rep 4 wall_tok_s=111.51 ttft=0.1772 ct=512 acc=0.8859416445623343 finish=length
+rep 5 wall_tok_s=118.0 ttft=0.1777 ct=512 acc=0.9472295514511874 finish=length
+rep 6 wall_tok_s=115.71 ttft=0.1767 ct=512 acc=0.926509186351706 finish=length
+rep 7 wall_tok_s=116.48 ttft=0.1786 ct=512 acc=0.9238845144356955 finish=length
+rep 8 wall_tok_s=117.75 ttft=0.1769 ct=512 acc=0.956989247311828 finish=length
+BOOT_MEDIAN arm=S44A3 boot=3 wall_tok_s=116.28 n=8
+STOPPED gpus drained (max 0 MiB)
+13:32:16Z CYCLE_DONE S44A3
+2026-08-31T13:32:16Z RUN_DONE cell=anchor
+CHAIN4_DONE 2026-08-31T13:32:16Z

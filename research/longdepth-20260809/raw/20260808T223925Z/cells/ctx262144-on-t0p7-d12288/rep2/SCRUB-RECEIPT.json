@@ -1,0 +1,29 @@
+{
+  "format": "memra-posthoc-receipt-scrub-v1",
+  "applied_at": "2026-08-25",
+  "reason": "provider-specific compute terminology removed from tracked text by owner request",
+  "transform": {
+    "replacement": "cloud compute",
+    "replacement_count_per_text_copy": 1
+  },
+  "token_stream": {
+    "status": "original pre-scrub model token stream retained as immutable provenance",
+    "matches_sanitized_text": false,
+    "n_tokens": 11222,
+    "tokens_sha256": "258fd8b5ce9625ffd363ced954146baa4ded62a11f034d338ae42e29e4fbf846"
+  },
+  "files": {
+    "completion.txt": {
+      "pre_scrub_sha256": "d981aca7e89e288b0fc9da2339313227b0b609e2a8c44655a0cb7f88e94f91f7",
+      "sanitized_sha256": "5d9cb87ddc037466277100421975a08c4a70bae50770b0f312135b8bfcd53dcd"
+    },
+    "response.raw": {
+      "pre_scrub_sha256": "39a0d30b000b9cc321961f39ab8586a6dfd63aab7d039d27a4b0832eb02e296b",
+      "sanitized_sha256": "31ae95f2630bb8e03c63e3d96be68e9ec12f9a25877985f6dbf4cd75d8f43818"
+    },
+    "response.json": {
+      "pre_scrub_sha256": "2f3005319843d20b20b542672a985e6817b2a7784568be93d218f106c92b0b37",
+      "sanitized_with_annotation_sha256": "6aebb875b07dfa98a3fc73e13689e74f9715c963bb903f2e3f38e9d87ee1628c"
+    }
+  }
+}

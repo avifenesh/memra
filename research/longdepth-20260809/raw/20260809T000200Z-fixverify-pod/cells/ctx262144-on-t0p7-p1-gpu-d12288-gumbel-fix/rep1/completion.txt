@@ -1,0 +1,783 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;color:#1a1a1a;background:#f5f7fa;display:flex;flex-direction:column;min-height:100vh}
+a{color:#0b5cff;text-decoration:none}
+a:focus,a:hover{text-decoration:underline}
+header{position:sticky;top:0;z-index:100;background:#0f172a;color:#fff;padding:0.75rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+header h1{font-size:1.25rem;font-weight:700;letter-spacing:0.02em}
+header .search{display:flex;align-items:center;gap:0.5rem}
+header input[type="search"]{padding:0.45rem 0.6rem;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#f1f5f9;min-width:220px}
+header button{background:#0b5cff;color:#fff;border:none;padding:0.45rem 0.7rem;border-radius:4px;cursor:pointer;font-weight:600}
+header button:focus{outline:2px solid #93c5fd;outline-offset:2px}
+.layout{display:flex;flex:1}
+.sidebar{width:260px;background:#fff;border-right:1px solid #e2e8f0;padding:1rem;position:sticky;top:56px;height:calc(100vh - 56px);overflow:auto}
+.sidebar nav ul{list-style:none}
+.sidebar nav li{margin:0.25rem 0}
+.sidebar nav a{display:block;padding:0.35rem 0.5rem;border-radius:4px;color:#334155}
+.sidebar nav a:focus,.sidebar nav a:hover{background:#eef2ff;text-decoration:none}
+.sidebar nav a.active{background:#e0e7ff;color:#1e40af;font-weight:600}
+main{flex:1;padding:1.5rem;max-width:1200px}
+section{margin-bottom:2.5rem;padding:1.25rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.03)}
+section h2{font-size:1.15rem;margin-bottom:0.5rem;color:#0f172a}
+section p{margin:0.35rem 0;color:#334155}
+section dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.5rem 1rem;margin:0.75rem 0}
+section dt{font-weight:600;color:#0f172a}
+section dd{color:#475569}
+section table{width:100%;border-collapse:collapse;margin:0.75rem 0;font-size:0.95rem}
+section table caption{font-weight:600;text-align:left;margin-bottom:0.4rem}
+section th,section td{border:1px solid #cbd5e1;padding:0.4rem 0.6rem;text-align:left}
+section th{background:#f8fafc;font-weight:600}
+section tr:nth-child(even){background:#f8fafc}
+section pre{background:#0f172a;color:#e2e8f0;padding:0.75rem;border-radius:6px;overflow:auto;font-size:0.9rem;line-height:1.4}
+section .actions{display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap}
+section button{padding:0.45rem 0.75rem;border:none;border-radius:4px;cursor:pointer;font-weight:600;background:#0f172a;color:#fff}
+section button:focus{outline:2px solid #0b5cff;outline-offset:2px}
+section button.secondary{background:#fff;color:#0f172a;border:1px solid #cbd5e1}
+.status{padding:0.5rem 0.75rem;border-radius:6px;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;margin-bottom:1rem;display:inline-flex;align-items:center;gap:0.5rem}
+.status::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981}
+.toast{position:fixed;bottom:1rem;right:1rem;background:#0f172a;color:#fff;padding:0.6rem 0.9rem;border-radius:6px;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+.appendix table{font-size:0.9rem}
+.appendix th{background:#f1f5f9}
+@media (max-width:800px){
+  .layout{flex-direction:column}
+  .sidebar{width:100%;height:auto;position:static;border-right:none;border-bottom:1px solid #e2e8f0}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Atlas Operations Manual</h1>
+<div class="search">
+<input type="search" id="search" placeholder="Search sections..." aria-label="Search sections">
+<button id="clearSearch">Clear</button>
+</div>
+<div class="status" id="systemStatus">System nominal</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Section navigation">
+<nav>
+<ul id="toc"></ul>
+</nav>
+</aside>
+<main id="content">
+<section id="s1">
+<h2>1. Introduction</h2>
+<p>This manual describes operational procedures for the Atlas platform. It is intended for engineers, operators, and auditors who require precise guidance.</p>
+<p>All numbered sections must be reviewed in order. Deviations require documented approval from the operations lead.</p>
+<dl>
+<dt>Scope</dt><dd>Core platform operations and maintenance</dd>
+<dt>Audience</dt><dd>Engineers and operators</dd>
+<dt>Version</dt><dd>4.2.1</dd>
+<dt>Contact</dt><dd>ops@atlas.example</dd>
+</dl>
+<table>
+<caption>Revision history</caption>
+<thead><tr><th>Rev</th><th>Date</th><th>Author</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>4.2</td><td>2024-11-02</td><td>A. Chen</td><td>Updated safety protocols</td></tr>
+<tr><td>4.1</td><td>2024-09-18</td><td>M. Lopez</td><td>Added section 400</td></tr>
+<tr><td>4.0</td><td>2024-07-01</td><td>J. Kim</td><td>Major rewrite</td></tr>
+<tr><td>3.9</td><td>2024-05-20</td><td>S. Patel</td><td>Patch fixes</td></tr>
+<tr><td>3.8</td><td>2024-03-11</td><td>R. Gomez</td><td>UI updates</td></tr>
+<tr><td>3.7</td><td>2024-01-04</td><td>T. Nguyen</td><td>Initial release</td></tr>
+</tbody>
+</table>
+<pre>atlas init --profile=ops --region=N-Virginia</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s2">
+<h2>2. Safety Overview</h2>
+<p>Safety is the primary concern during all operations. Personnel must wear appropriate protective equipment and follow lockout procedures.</p>
+<p>Emergency stop locations are marked on facility maps. Conduct drills quarterly and log attendance.</p>
+<dl>
+<dt>Hazard level</dt><dd>Class III industrial</dd>
+<dt>PPE</dt><dd>Helmet, gloves, goggles</dd>
+<dt>Reporting</dt><dd>Within 24 hours</dd>
+<dt>Training</dt><dd>Annual certification</dd>
+</dl>
+<table>
+<caption>Safety contacts</caption>
+<thead><tr><th>Role</th><th>Name</th><th>Phone</th><th>Email</th></tr></thead>
+<tbody>
+<tr><td>Safety officer</td><td>L. Reed</td><td>555-0101</td><td>reed@atlas.example</td></tr>
+<tr><td>Shift lead</td><td>P. Yang</td><td>555-0102</td><td>yang@atlas.example</td></tr>
+<tr><td>Medic</td><td>K. Sato</td><td>555-0103</td><td>sato@atlas.example</td></tr>
+<tr><td>Security</td><td>D. Ivanov</td><td>555-0104</td><td>ivanov@atlas.example</td></tr>
+<tr><td>Environmental</td><td>M. Costa</td><td>555-0105</td><td>costa@atlas.example</td></tr>
+<tr><td>HR liaison</td><td>J. Miller</td><td>555-0106</td><td>miller@atlas.example</td></tr>
+</tbody>
+</table>
+<pre>atlas safety status --verbose</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s3">
+<h2>3. System Architecture</h2>
+<p>The Atlas platform uses a microservices architecture with event-driven communication between components.</p>
+<p>Each service maintains its own data store and exposes a versioned API. Circuit breakers prevent cascading failures.</p>
+<dl>
+<dt>Core</dt><dd>API gateway</dd>
+<dt>Storage</dt><dd>Distributed object store</dd>
+<dt>Compute</dt><dd>Container orchestration</dd>
+<dt>Network</dt><dd>Software-defined mesh</dd>
+</dl>
+<table>
+<caption>Service inventory</caption>
+<thead><tr><th>Service</th><th>Port</th><th>Protocol</th><th>Owner</th></tr></thead>
+<tbody>
+<tr><td>gateway</td><td>8443</td><td>HTTPS</td><td>Platform</td></tr>
+<tr><td>auth</td><td>8080</td><td>HTTP</td><td>Identity</td></tr>
+<tr><td>ingest</td><td>9090</td><td>HTTP</td><td>Data</td></tr>
+<tr><td>query</td><td>8081</td><td>HTTP</td><td>Search</td></tr>
+<tr><td>notify</td><td>5672</td><td>AMQP</td><td>Messaging</td></tr>
+<tr><td>storage</td><td>9000</td><td>HTTP</td><td>Storage</td></tr>
+</tbody>
+</table>
+<pre>atlas service list --json</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s4">
+<h2>4. Deployment Pipeline</h2>
+<p>All changes must flow through the CI/CD pipeline. Code reviews and automated tests gate promotion to production.</p>
+<p>Infrastructure changes require separate approval. Use change tickets linked to deployment identifiers.</p>
+<dl>
+<dt>CI</dt><dd>GitHub Actions</dd>
+<dt>CD</dt><dd>Argo Rollouts</dd>
+<dt>Artifacts</dt><dd>Container registry</dd>
+<dt>Secrets</dt><dd>Vault</dd>
+</dl>
+<table>
+<caption>Pipeline stages</caption>
+<thead><tr><th>Stage</th><th>Tool</th><th>Timeout</th><th>Retries</th></tr></thead>
+<tbody>
+<tr><td>Build</td><td>Docker</td><td>20m</td><td>2</td></tr>
+<tr><td>Test</td><td>Jest</td><td>15m</td><td>1</td></tr>
+<tr><td>Scan</td><td>Trivy</td><td>10m</td><td>1</td></tr>
+<tr><td>Staging</td><td>Argo</td><td>30m</td><td>3</td></tr>
+<tr><td>Prod</td><td>Argo</td><td>45m</td><td>2</td></tr>
+<tr><td>Verify</td><td>Prometheus</td><td>5m</td><td>1</td></tr>
+</tbody>
+</table>
+<pre>atlas deploy --service=ingest --env=staging</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s5">
+<h2>5. Monitoring Strategy</h2>
+<p>Monitoring covers metrics, logs, and traces. Alerts are tiered by severity and routed to on-call rotations.</p>
+<p>Dashboards are maintained per service. SLOs define error budget and burn rates.</p>
+<dl>
+<dt>Metrics</dt><dd>Prometheus</dd>
+<dt>Logs</dt><dd>Loki</dd>
+<dt>Traces</dt><dd>Tempo</dd>
+<dt>Alerts</dt><dd>Alertmanager</dd>
+</dl>
+<table>
+<caption>SLO targets</caption>
+<thead><tr><th>Service</th><th>Latency p99</th><th>Availability</th><th>Error budget</th></tr></thead>
+<tbody>
+<tr><td>gateway</td><td>200ms</td><td>99.95%</td><td>43.2m/month</td></tr>
+<tr><td>auth</td><td>150ms</td><td>99.99%</td><td>4.32m/month</td></tr>
+<tr><td>ingest</td><td>300ms</td><td>99.9%</td><td>43.2m/month</td></tr>
+<tr><td>query</td><td>250ms</td><td>99.95%</td><td>43.2m/month</td></tr>
+<tr><td>notify</td><td>100ms</td><td>99.99%</td><td>4.32m/month</td></tr>
+<tr><td>storage</td><td>400ms</td><td>99.9%</td><td>43.2m/month</td></tr>
+</tbody>
+</table>
+<pre>atlas monitor slo list --service=gateway</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s6">
+<h2>6. Incident Response</h2>
+<p>Incidents are classified by impact and urgency. The incident commander coordinates communication and remediation.</p>
+<p>Postmortems are due within five business days. Action items are tracked to closure.</p>
+<dl>
+<dt>SEV1</dt><dd>Critical outage</dd>
+<dt>SEV2</dt><dd>Major degradation</dd>
+<dt>SEV3</dt><dd>Minor impact</dd>
+<dt>SEV4</dt><dd>Informational</dd>
+</dl>
+<table>
+<caption>Response team</caption>
+<thead><tr><th>Role</th><th>Contact</th><th>Escalation</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>IC</td><td>oncall-ic@atlas.example</td><td>Manager</td><td>Overall lead</td></tr>
+<tr><td>Comms</td><td>status@atlas.example</td><td>PR</td><td>External updates</td></tr>
+<tr><td>Tech</td><td>oncall-tech@atlas.example</td><td>IC</td><td>Debugging</td></tr>
+<tr><td>Data</td><td>oncall-data@atlas.example</td><td>IC</td><td>Metrics</td></tr>
+<tr><td>Security</td><td>security@atlas.example</td><td>CISO</td><td>Threats</td></tr>
+<tr><td>Legal</td><td>legal@atlas.example</td><td>GC</td><td>Compliance</td></tr>
+</tbody>
+</table>
+<pre>atlas incident create --sev=1 --summary="Outage"</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s7">
+<h2>7. Change Management</h2>
+<p>All changes require a record in the change management system. Emergency changes follow an expedited workflow.</p>
+<p>Change advisory board meets weekly to review standard changes and approve major ones.</p>
+<dl>
+<dt>Standard</dt><dd>Preapproved</dd>
+<dt>Normal</dt><dd> CAB review</dd>
+<dt>Emergency</dt><dd>Post approval</dd>
+<dt>Exempt</dt><dd>Security patches</dd>
+</dl>
+<table>
+<caption>Change types</caption>
+<thead><tr><th>Type</th><th>Lead time</th><th>Approval</th><th>Risk</th></tr></thead>
+<tbody>
+<tr><td>Standard</td><td>None</td><td>Predefined</td><td>Low</td></tr>
+<tr><td>Normal</td><td>5 days</td><td>CAB</td><td>Medium</td></tr>
+<tr><td>Emergency</td><td>4 hours</td><td>IC</td><td>High</td></tr>
+<tr><td>Exempt</td><td>None</td><td>CISO</td><td>Variable</td></tr>
+<tr><td>Patch</td><td>24 hours</td><td>Manager</td><td>Low</td></tr>
+<tr><td>Config</td><td>2 days</td><td>Owner</td><td>Medium</td></tr>
+</tbody>
+</table>
+<pre>atlas change create --type=normal --desc="Upgrade"</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s8">
+<h2>8. Access Control</h2>
+<p>Access follows least privilege. Roles are defined in the identity provider and mapped to policies.</p>
+<p>Privileged access requires justification and time-limited grants. All access is audited.</p>
+<dl>
+<dt>Admin</dt><dd>Full control</dd>
+<dt>Operator</dt><dd>Runtime access</dd>
+<dt>Developer</dt><dd>Read and debug</dd>
+<dt>Auditor</dt><dd>Read only</dd>
+</dl>
+<table>
+<caption>Role matrix</caption>
+<thead><tr><th>Resource</th><th>Admin</th><th>Operator</th><th>Developer</th></tr></thead>
+<tbody>
+<tr><td>Cluster</td><td>RW</td><td>R</td><td>None</td></tr>
+<tr><td>Secrets</td><td>RW</td><td>R</td><td>None</td></tr>
+<tr><td>Config</td><td>RW</td><td>RW</td><td>R</td></tr>
+<tr><td>Logs</td><td>RW</td><td>RW</td><td>R</td></tr>
+<tr><td>Metrics</td><td>RW</td><td>R</td><td>R</td></tr>
+<tr><td>Billing</td><td>R</td><td>None</td><td>None</td></tr>
+</tbody>
+</table>
+<pre>atlas iam role list --service=gateway</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s9">
+<h2>9. Backup Procedures</h2>
+<p>Backups are taken daily and retained for thirty days. Critical data uses point-in-time recovery.</p>
+<p>Restore tests are performed monthly. Backup integrity is verified with checksums.</p>
+<dl>
+<dt>Frequency</dt><dd>Daily at 02:00 UTC</dd>
+<dt>Retention</dt><dd>30 days</dd>
+<dt>Encryption</dt><dd>AES-256</dd>
+<dt>Location</dt><dd>Offsite vault</dd>
+</dl>
+<table>
+<caption>Backup schedule</caption>
+<thead><tr><th>Dataset</th><th>Type</th><th>Size</th><th>Owner</th></tr></thead>
+<tbody>
+<tr><td>User profiles</td><td>Full</td><td>500 GB</td><td>Identity</td></tr>
+<tr><td>Events</td><td>Incremental</td><td>2 TB</td><td>Data</td></tr>
+<tr><td>Metrics</td><td>Snapshot</td><td>1 TB</td><td>Monitoring</td></tr>
+<tr><td>Config</td><td>Full</td><td>10 GB</td><td>Platform</td></tr>
+<tr><td>Logs</td><td>Archive</td><td>5 TB</td><td>Logging</td></tr>
+<tr><td>Images</td><td>Full</td><td>3 TB</td><td>Storage</td></tr>
+</tbody>
+</table>
+<pre>atlas backup run --dataset=events</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s10">
+<h2>10. Disaster Recovery</h2>
+<p>Disaster recovery plans are tested semi-annually. Recovery time objective is four hours; recovery point objective is fifteen minutes.</p>
+<p>Failover to the secondary region is automated for critical services. Manual intervention is required for data consistency checks.</p>
+<dl>
+<dt>RTO</dt><dd>4 hours</dd>
+<dt>RPO</dt><dd>15 minutes</dd>
+<dt>Testing</dt><dd>Semi-annual</dd>
+<dt>Automation</dt><dd>Partial</dd>
+</dl>
+<table>
+<caption>DR scenarios</caption>
+<thead><tr><th>Scenario</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr></thead>
+<tbody>
+<tr><td>Region outage</td><td>Low</td><td>High</td><td>Failover</td></tr>
+<tr><td>Data corruption</td><td>Medium</td><td>High</td><td>Restore</td></tr>
+<tr><td>DDoS</td><td>Medium</td><td>Medium</td><td>Scrubbing</td></tr>
+<tr><td>Power loss</td><td>Low</td><td>High</td><td>UPS</td></tr>
+<tr><td>Network split</td><td>Low</td><td>Medium</td><td>Mesh</td></tr>
+<tr><td>Key loss</td><td>Very low</td><td>Critical</td><td>Sharding</td></tr>
+</tbody>
+</table>
+<pre>atlas dr failover --region=Oregon</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s11">
+<h2>11. Network Configuration</h2>
+<p>Network policies enforce microsegmentation. Only required ports are open between services.</p>
+<p>DNS records are managed through Infrastructure as Code. Changes require peer review.</p>
+<dl>
+<dt>Subnet</dt><dd>10.0.0.0/16</dd>
+<dt>Gateway</dt><dd>10.0.0.1</dd>
+<dt>VPN</dt><dd>IPsec tunnels</dd>
+<dt>Firewall</dt><dd>Zero trust</dd>
+</dl>
+<table>
+<caption>Port assignments</caption>
+<thead><tr><th>Service</th><th>Port</th><th>Protocol</th><th>Direction</th></tr></thead>
+<tbody>
+<tr><td>gateway</td><td>443</td><td>TCP</td><td>Inbound</td></tr>
+<tr><td>gateway</td><td>8443</td><td>TCP</td><td>Internal</td></tr>
+<tr><td>auth</td><td>8080</td><td>TCP</td><td>Internal</td></tr>
+<tr><td>ingest</td><td>9090</td><td>TCP</td><td>Internal</td></tr>
+<tr><td>query</td><td>8081</td><td>TCP</td><td>Internal</td></tr>
+<tr><td>notify</td><td>5672</td><td>TCP</td><td>Internal</td></tr>
+</tbody>
+</table>
+<pre>atlas network policy apply --file=ingress.yaml</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s12">
+<h2>12. Data Governance</h2>
+<p>Data classifications determine handling requirements. Sensitive data must be encrypted at rest and in transit.</p>
+<p>Retention policies are enforced automatically. Legal holds override automated deletion.</p>
+<dl>
+<dt>Public</dt><dd>No restrictions</dd>
+<dt>Internal</dt><dd>Need to know</dd>
+<dt>Confidential</dt><dd>Encryption required</dd>
+<dt>Restricted</dt><dd>MFA and logging</dd>
+</dl>
+<table>
+<caption>Retention schedule</caption>
+<thead><tr><th>Data type</th><th>Retention</th><th>Archive</th><th>Delete</th></tr></thead>
+<tbody>
+<tr><td>Audit logs</td><td>7 years</td><td>Cold</td><td>Shred</td></tr>
+<tr><td>User data</td><td>Account life</td><td>Cold</td><td>Anonymize</td></tr>
+<tr><td>Metrics</td><td>13 months</td><td>Cold</td><td>Purge</td></tr>
+<tr><td>Backups</td><td>30 days</td><td>None</td><td>Overwrite</td></tr>
+<tr><td>Traces</td><td>30 days</td><td>None</td><td>Purge</td></tr>
+<tr><td>Temp files</td><td>24 hours</td><td>None</td><td>Delete</td></tr>
+</tbody>
+</table>
+<pre>atlas data classify --path=/data/users</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s13">
+<h2>13. Authentication</h2>
+<p>Authentication uses OIDC with hardware-backed keys for privileged users. Session lifetimes are short.</p>
+<p>Password policies enforce complexity and rotation. MFA is mandatory for all admin access.</p>
+<dl>
+<dt>Protocol</dt><dd>OIDC / SAML</dd>
+<dt>MFA</dt><dd>TOTP and hardware</dd>
+<dt>Session</dt><dd>8 hours max</dd>
+<dt>Lockout</dt><dd>5 attempts</dd>
+</dl>
+<table>
+<caption>Auth providers</caption>
+<thead><tr><th>Provider</th><th>Type</th><th>Users</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>Okta</td><td>SAML</td><td>1200</td><td>Active</td></tr>
+<tr><td>Azure AD</td><td>OIDC</td><td>300</td><td>Active</td></tr>
+<tr><td>Google</td><td>OIDC</td><td>150</td><td>Beta</td></tr>
+<tr><td>Local</td><td>DB</td><td>20</td><td>Deprecated</td></tr>
+<tr><td>LDAP</td><td>Bind</td><td>50</td><td>Legacy</td></tr>
+<tr><td>Radius</td><td>PAP</td><td>10</td><td>Disabled</td></tr>
+</tbody>
+</table>
+<pre>atlas auth login --provider=okta</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s14">
+<h2>14. Authorization</h2>
+<p>Authorization uses attribute-based access control. Policies are stored in a central registry.</p>
+<p>Role assignments are reviewed quarterly. Orphaned permissions are removed automatically.</p>
+<dl>
+<dt>Model</dt><dd>ABAC</dd>
+<dt>Policy</dt><dd>Rego</dd>
+<dt>Registry</dt><dd>OPA</dd>
+<dt>Review</dt><dd>Quarterly</dd>
+</dl>
+<table>
+<caption>Permission examples</caption>
+<thead><tr><th>Action</th><th>Resource</th><th>Effect</th><th>Condition</th></tr></thead>
+<tbody>
+<tr><td>read</td><td>logs</td><td>Allow</td><td>time 9-17</td></tr>
+<tr><td>write</td><td>config</td><td>Allow</td><td>role=admin</td></tr>
+<tr><td>delete</td><td>backup</td><td>Deny</td><td>env=prod</td></tr>
+<tr><td>deploy</td><td>service</td><td>Allow</td><td>change=approved</td></tr>
+<tr><td>audit</td><td>all</td><td>Allow</td><td>role=auditor</td></tr>
+<tr><td>admin</td><td>iam</td><td>Allow</td><td>mfa=true</td></tr>
+</tbody>
+</table>
+<pre>atlas authz policy list --service=gateway</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s15">
+<h2>15. Configuration Management</h2>
+<p>Configuration is stored in versioned repositories. Changes trigger automated validation.</p>
+<p>Secrets never appear in config files. Dynamic secret injection is used at runtime.</p>
+<dl>
+<dt>Format</dt><dd>YAML / JSON</dd>
+<dt>Validation</dt><dd>JSON Schema</dd>
+<dt>Storage</dt><dd>Git</dd>
+<dt>Injection</dt><dd>Vault agent</dd>
+</dl>
+<table>
+<caption>Config layers</caption>
+<thead><tr><th>Layer</th><th>Source</th><th>Priority</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td>Defaults</td><td>Repo</td><td>1</td><td>base.yaml</td></tr>
+<tr><td>Environment</td><td>Repo</td><td>2</td><td>prod.yaml</td></tr>
+<tr><td>Overrides</td><td>Vault</td><td>3</td><td>DB password</td></tr>
+<tr><td>Runtime</td><td>K8s</td><td>4</td><td>Replicas</td></tr>
+<tr><td>Feature flags</td><td>LaunchDarkly</td><td>5</td><td>New UI</td></tr>
+<tr><td>CLI</td><td>User</td><td>6</td><td>Debug mode</td></tr>
+</tbody>
+</table>
+<pre>atlas config get --key=service.replicas</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s16">
+<h2>16. Logging Standards</h2>
+<p>Logs must include correlation identifiers. Sensitive fields are redacted before transmission.</p>
+<p>Log rotation is automatic. Retention follows governance policies. Structured logging is required.</p>
+<dl>
+<dt>Format</dt><dd>JSON</dd>
+<dt>Levels</dt><dd>debug, info, warn, error</dd>
+<dt>Redaction</dt><dd>Automatic</dd>
+<dt>Retention</dt><dd>13 months</dd>
+</dl>
+<table>
+<caption>Log fields</caption>
+<thead><tr><th>Field</th><th>Type</th><th>Example</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>timestamp</td><td>ISO8601</td><td>2024-11-02T12:00:00Z</td><td>UTC</td></tr>
+<tr><td>level</td><td>String</td><td>info</td><td>Lowercase</td></tr>
+<tr><td>service</td><td>String</td><td>gateway</td><td>Name</td></tr>
+<tr><td>trace_id</td><td>UUID</td><td>abc-123</td><td>W3C format</td></tr>
+<tr><td>span_id</td><td>UUID</td><td>def-456</td><td>W3C format</td></tr>
+<tr><td>message</td><td>String</td><td>Request handled</td><td>Human readable</td></tr>
+</tbody>
+</table>
+<pre>atlas log query --service=gateway --level=error</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s17">
+<h2>17. Metrics Collection</h2>
+<p>Metrics are collected at the infrastructure and application layers. Cardinality limits prevent metric explosion.</p>
+<p>Histograms summarize latency distributions. Counters track events and errors.</p>
+<dl>
+<dt>System</dt><dd>Node exporter</dd>
+<dt>App</dt><dd>Prometheus client</dd>
+<dt>Storage</dt><dd>Prometheus TSDB</dd>
+<dt>Retention</dt><dd>13 months</dd>
+</dl>
+<table>
+<caption>Key metrics</caption>
+<thead><tr><th>Metric</th><th>Type</th><th>Unit</th><th>Aggregation</th></tr></thead>
+<tbody>
+<tr><td>http_requests_total</td><td>Counter</td><td>requests</td><td>sum</td></tr>
+<tr><td>http_request_duration_seconds</td><td>Histogram</td><td>seconds</td><td>quantile</td></tr>
+<tr><td>process_cpu_seconds_total</td><td>Counter</td><td>seconds</td><td>avg</td></tr>
+<tr><td>node_memory_MemAvailable_bytes</td><td>Gauge</td><td>bytes</td><td>avg</td></tr>
+<tr><td>container_network_receive_bytes_total</td><td>Counter</td><td>bytes</td><td>sum</td></tr>
+<tr><td>up</td><td>Gauge</td><td>1=up</td><td>min</td></tr>
+</tbody>
+</table>
+<pre>atlas metrics query --expr='rate(http_requests_total[5m])'</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s18">
+<h2>18. Tracing Standards</h2>
+<p>Traces capture request lifecycles across services. Sampling rates balance cost and observability.</p>
+<p>Baggage propagates context. Span attributes include business metadata.</p>
+<dl>
+<dt>Format</dt><dd>W3C Trace Context</dd>
+<dt>Sampling</dt><dd>Adaptive</dd>
+<dt>Backend</dt><dd>Tempo</dd>
+<dt>Retention</dt><dd>30 days</dd>
+</dl>
+<table>
+<caption>Span attributes</caption>
+<thead><tr><th>Attribute</th><th>Type</th><th>Example</th><th>Required</th></tr></thead>
+<tbody>
+<tr><td>http.method</td><td>String</td><td>GET</td><td>Yes</td></tr>
+<tr><td>http.status_code</td><td>Int</td><td>200</td><td>Yes</td></tr>
+<tr><td>db.system</td><td>String</td><td>postgresql</td><td>No</td></tr>
+<tr><td>user.id</td><td>String</td><td>u-123</td><td>No</td></tr>
+<tr><td>tenant.id</td><td>String</td><td>t-456</td><td>No</td></tr>
+<tr><td>error.type</td><td>String</td><td>timeout</td><td>Conditional</td></tr>
+</tbody>
+</table>
+<pre>atlas trace search --service=gateway --duration=5m</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s19">
+<h2>19. Alerting Policy</h2>
+<p>Alerts must be actionable. Noise is reduced by tuning thresholds and using multi-window checks.</p>
+<p>Runbooks accompany each alert. Escalation paths are defined with timeouts.</p>
+<dl>
+<dt>Critical</dt><dd>Page on-call</dd>
+<dt>Warning</dt><dd>Ticket and notify</dd>
+<dt>Info</dt><dd>Log only</dd>
+<dt>Silence</dt><dd>Planned maintenance</dd>
+</dl>
+<table>
+<caption>Escalation tiers</caption>
+<thead><tr><th>Tier</th><th>Response</th><th>Timeout</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>15m</td><td>On-call</td><td>Acknowledge</td></tr>
+<tr><td>2</td><td>30m</td><td>Manager</td><td>Escalate</td></tr>
+<tr><td>3</td><td>1h</td><td>Director</td><td>War room</td></tr>
+<tr><td>4</td><td>2h</td><td>VP</td><td>Executive</td></tr>
+<tr><td>5</td><td>4h</td><td>CEO</td><td>Business</td></tr>
+<tr><td>6</td><td>8h</td><td>Board</td><td>Legal</td></tr>
+</tbody>
+</table>
+<pre>atlas alert silence --id=alert-123 --duration=1h</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s20">
+<h2>20. Capacity Planning</h2>
+<p>Capacity is reviewed monthly. Forecasting uses historical trends and business projections.</p>
+<p>Scaling policies are adjusted proactively. Resource quotas prevent overcommitment.</p>
+<dl>
+<dt>Review</dt><dd>Monthly</dd>
+<dt>Forecast</dt><dd>Quarterly</dd>
+<dt>Threshold</dt><dd>70% utilization</dd>
+<dt>Action</dt><dd>Scale ahead</dd>
+</dl>
+<table>
+<caption>Resource limits</caption>
+<thead><tr><th>Resource</th><th>Current</th><th>Max</th><th>Alert</th></tr></thead>
+<tbody>
+<tr><td>CPU</td><td>60%</td><td>80%</td><td>75%</td></tr>
+<tr><td>Memory</td><td>55%</td><td>75%</td><td>70%</td></tr>
+<tr><td>Disk</td><td>40%</td><td>85%</td><td>80%</td></tr>
+<tr><td>Network</td><td>30%</td><td>70%</td><td>65%</td></tr>
+<tr><td>Connections</td><td>10k</td><td>50k</td><td>45k</td></tr>
+<tr><td>Queue depth</td><td>200</td><td>1000</td><td>800</td></tr>
+</tbody>
+</table>
+<pre>atlas capacity report --service=gateway</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s21">
+<h2>21. Patch Management</h2>
+<p>Patches are classified by severity. Critical patches are deployed within 48 hours.</p>
+<p>Testing in staging is mandatory. Rollback plans are documented for each patch.</p>
+<dl>
+<dt>Critical</dt><dd>48 hours</dd>
+<dt>High</dt><dd>7 days</dd>
+<dt>Medium</dt><dd>30 days</dd>
+<dt>Low</dt><dd>90 days</dd>
+</dl>
+<table>
+<caption>Patch status</caption>
+<thead><tr><th>Patch</th><th>Severity</th><th>Service</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>P-2024-001</td><td>Critical</td><td>gateway</td><td>Deployed</td></tr>
+<tr><td>P-2024-002</td><td>High</td><td>auth</td><td>Testing</td></tr>
+<tr><td>P-2024-003</td><td>Medium</td><td>ingest</td><td>Scheduled</td></tr>
+<tr><td>P-2024-004</td><td>Low</td><td>query</td><td>Backlog</td></tr>
+<tr><td>P-2024-005</td><td>Critical</td><td>notify</td><td>Deployed</td></tr>
+<tr><td>P-2024-006</td><td>High</td><td>storage</td><td>Testing</td></tr>
+</tbody>
+</table>
+<pre>atlas patch list --severity=critical</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s22">
+<h2>22. Vulnerability Management</h2>
+<p>Vulnerabilities are scanned continuously. Remediation follows CVSS scoring.</p>
+<p>Exceptions require risk acceptance. Compensating controls are documented.</p>
+<dl>
+<dt>Scanning</dt><dd>Daily</dd>
+<dt>Scoring</dt><dd>CVSS v3.1</dd>
+<dt>Remediation</dt><dd>SLA based</dd>
+<dt>Exceptions</dt><dd>Risk accepted</dd>
+</dl>
+<table>
+<caption>Remediation SLAs</caption>
+<thead><tr><th>Score</th><th>SLA</th><th>Owner</th><th>Review</th></tr></thead>
+<tbody>
+<tr><td>9.0-10</td><td>48h</td><td>Security</td><td>Daily</td></tr>
+<tr><td>7.0-8.9</td><td>7 days</td><td>Team</td><td>Weekly</td></tr>
+<tr><td>4.0-6.9</td><td>30 days</td><td>Team</td><td>Monthly</td></tr>
+<tr><td>0.1-3.9</td><td>90 days</td><td>Team</td><td>Quarterly</td></tr>
+<tr><td>None</td><td>N/A</td><td>None</td><td>None</td></tr>
+<tr><td>Accepted</td><td>None</td><td>Risk</td><td>Annual</td></tr>
+</tbody>
+</table>
+<pre>atlas vuln list --min-score=7.0</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s23">
+<h2>23. Compliance</h2>
+<p>Compliance is verified through audits. Evidence is collected automatically.</p>
+<p>Regulatory changes are tracked. Training ensures awareness.</p>
+<dl>
+<dt>Framework</dt><dd>SOC 2 Type II</dd>
+<dt>Auditor</dt><dd>External firm</dd>
+<dt>Frequency</dt><dd>Annual</dd>
+<dt>Evidence</dt><dd>Automated</dd>
+</dl>
+<table>
+<caption>Controls</caption>
+<thead><tr><th>Control</th><th>Status</th><th>Owner</th><th>Last tested</th></tr></thead>
+<tbody>
+<tr><td>CC6.1</td><td>Pass</td><td>Security</td><td>2024-10-01</td></tr>
+<tr><td>CC6.2</td><td>Pass</td><td>Platform</td><td>2024-09-15</td></tr>
+<tr><td>CC6.3</td><td>Fail</td><td>Data</td><td>2024-08-20</td></tr>
+<tr><td>CC6.4</td><td>Pass</td><td>Identity</td><td>2024-07-30</td></tr>
+<tr><td>CC6.5</td><td>Pass</td><td>Operations</td><td>2024-10-05</td></tr>
+<tr><td>CC6.6</td><td>Pass</td><td>Engineering</td><td>2024-09-01</td></tr>
+</tbody>
+</table>
+<pre>atlas compliance report --framework=soc2</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s24">
+<h2>24. Audit Logging</h2>
+<p>Audit logs capture administrative actions. Tamper-evident storage prevents alteration.</p>
+<p>Retention meets legal requirements. Search is available via the compliance portal.</p>
+<dl>
+<dt>Capture</dt><dd>All admin actions</dd>
+<dt>Storage</dt><dd>Immutable</dd>
+<dt>Retention</dt><dd>7 years</dd>
+<dt>Access</dt><dd>Compliance only</dd>
+</dl>
+<table>
+<caption>Audit events</caption>
+<thead><tr><th>Event</th><th>Source</th><th>Frequency</th><th>Retention</th></tr></thead>
+<tbody>
+<tr><td>Login</td><td>Auth service</td><td>High</td><td>7 years</td></tr>
+<tr><td>Config change</td><td>CI/CD</td><td>Medium</td><td>7 years</td></tr>
+<tr><td>Permission grant</td><td>IAM</td><td>Low</td><td>7 years</td></tr>
+<tr><td>Data export</td><td>Various</td><td>Medium</td><td>7 years</td></tr>
+<tr><td>Backup restore</td><td>Backup</td><td>Low</td><td>7 years</td></tr>
+<tr><td>Policy change</td><td>Governance</td><td>Low</td><td>7 years</td></tr>
+</tbody>
+</table>
+<pre>atlas audit query --actor=admin --action=config.change</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s25">
+<h2>25. Key Management</h2>
+<p>Cryptographic keys are rotated regularly. Root keys are stored in hardware security modules.</p>
+<p>Key access is logged. Compromise triggers immediate revocation.</p>
+<dl>
+<dt>Algorithm</dt><dd>AES-256-GCM</dd>
+<dt>Rotation</dt><dd>90 days</dd>
+<dt>Storage</dt><dd>HSM</dd>
+<dt>Access</dt><dd>Need to know</dd>
+</dl>
+<table>
+<caption>Key inventory</caption>
+<thead><tr><th>Key</th><th>Purpose</th><th>Age</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>K-001</td><td>Data at rest</td><td>60 days</td><td>Active</td></tr>
+<tr><td>K-002</td><td>TLS</td><td>30 days</td><td>Active</td></tr>
+<tr><td>K-003</td><td>Signing</td><td>120 days</td><td>Pending rotation</td></tr>
+<tr><td>K-004</td><td>Backup</td><td>15 days</td><td>Active</td></tr>
+<tr><td>K-005</td><td>Legacy</td><td>365 days</td><td>Deprecated</td></tr>
+<tr><td>K-006</td><td>Test</td><td>5 days</td><td>Active</td></tr>
+</tbody>
+</table>
+<pre>atlas key rotate --id=K-003</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print section</button>
+</div>
+</section>
+<section id="s26">
+<h2>26. Encryption Standards</h2>
+<p>Encryption protects data at rest, in transit, and in use. Approved algorithms are listed in the standards catalog.</p>
+<p>Key lengths meet current recommendations. Deprecated algorithms are removed.</p>
+<dl>
+<dt>At rest</dt><td>AES-256</dd>
+<dt>In transit</dt><dd>TLS 1.3</dd>
+<dt>In use</dt><dd>Confidential VMs</dd>
+<dt>Hashing</dt><dd>SHA-256</dd>
+</dl>
+<table>
+<caption>Algorithm status</caption>
+<thead><tr><th>Algorithm</th><th>Status</th><th>Use case</th><th>Notes</th></tr></thead>
+<tbody>

@@ -1,0 +1,37 @@
+[server] starting; models config = [("m", "/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "m" <- /scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] m: regime draft attached (/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "m": 33 layers, eos=248046
+[worker] m: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] m: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["m"]
+[server] listening on http://127.0.0.1:8317
+[meter] admit id=cmpl-04a24e5062cb2e84e6eb33e246f804e0 tenant=default lane=interactive model="m"
+[spec-k] model="m" tenant="" K=3 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=28 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=62 burst=23/33 cum=44/69=0.638
+[spec-acc] ctx=96 burst=26/27 cum=70/96=0.729
+[spec-acc] ctx=131 burst=19/27 cum=89/123=0.724
+[meter] admit id=cmpl-d87826d08ae7eca5e11273d483174d52 tenant=default lane=interactive model="m"
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 28; 1 parked, 1845 prompt tokens; model m)
+[spec-k] model="m" tenant="" K=3 source=operator-pin prompt=1845 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "m": 201MB (admission gate = 2x)
+[spec-acc] ctx=1845 burst=20/33 cum=20/33=0.606
+[spec-acc] ctx=1877 burst=17/45 cum=37/78=0.474
+[spec-acc] ctx=1909 burst=20/39 cum=57/117=0.487
+[spec-acc] ctx=1942 burst=21/33 cum=78/150=0.520
+[meter] admit id=cmpl-308c97c62f3ebfc0466d65e1509a11be tenant=default lane=interactive model="m"
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 1845; 1 parked, 5411 prompt tokens; model m)
+[spec-k] model="m" tenant="" K=3 source=operator-pin prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=5411 burst=22/33 cum=22/33=0.667
+[spec-acc] ctx=5445 burst=21/36 cum=43/69=0.623
+[spec-acc] ctx=5478 burst=19/39 cum=62/108=0.574
+[spec-acc] ctx=5510 burst=19/30 cum=81/138=0.587
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

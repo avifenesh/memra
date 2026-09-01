@@ -1,0 +1,4 @@
+DEVIATION: SPLITS 24->23 — at 24 the stage split is 97.84/89.69 GB of experts; the per-layer expert stride (~4.1-4.3 GB) means one layer off dev0 balances both stages to ~93.8 GB, keeping BOTH devices RESIDENT under the 98 budget while restoring ~4-5 GiB/card prefill headroom. RESIDENT_GB stays 98 because it is a per-device all-or-nothing residency gate (r92 receipt): the balancing lever is the split.
+NOTE: SPLITS=23 is a DIFFERENT NUMERIC PROGRAM than the L2-adopted 24; within-boot C1 identity is the bar; cross-posture sha equality is NOT expected and its absence is not a finding.
+Boot acceptance gate: both PP devs -> RESIDENT and >=3.5 GiB free per card before any battery row.
+Commit bec785165b3badd9c6e72ec8f65e07fc5288b9ab.

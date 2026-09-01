@@ -1,0 +1,122 @@
+2026-08-31T18:37:42Z
+######## CELL 3a: PP4-vs-PP3 SPEC ENGAGEMENT A/B (untimed, one variable) ########
+
+######## ARM pp4 ########
+[1m] no pidfile, nothing to stop
+[1m] launched pid=188018 boot=ppab-pp4 nonce=8d024af3-a711-46b9-a30d-e9bdd12be87b extras=MEMRA_GLM5_DFLASH=/root/models/glm53-dflash2 MEMRA_GLM5_SPEC=1 MEMRA_SPEC_PMIN=0.7 MEMRA_SPEC_STATS=1 CUDA_VISIBLE_DEVICES=0,1,2,3 MEMRA_PP_STAGES=4 MEMRA_PP_DEVICES=0,1,2,3 MEMRA_PP_SPLITS=13,26,39 MEMRA_CTX=131072
+[1m] READY after 115s
+[1m] live MEMRA_CTX=131072
+boot=ppab-pp4 pid=188018 nonce=8d024af3-a711-46b9-a30d-e9bdd12be87b spec_env=1
+stage_lines=9
+--- ctx / window ---
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / placement ---
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=6 skipped=0 mismatches=0 elapsed_ms=5.146
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev1->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev2->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=2 dev2->dev3 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=2 dev3->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=24 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=2416.806
+--- prefix-cache ---
+--- spec ---
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+--- vram-at-ready (index, used MiB, total MiB) ---
+0, 7126 MiB, 97887 MiB
+1, 6934 MiB, 97887 MiB
+2, 6934 MiB, 97887 MiB
+3, 6518 MiB, 97887 MiB
+[1m] GATES GREEN boot=ppab-pp4
+### RUNG A16K mode=greedy chars=64400 maxtok=128 boot=ppab-pp4 start=2026-08-31T18:39:37Z
+[A16K] mode=greedy status=200 pt=15766 ct=128
+  TTFD=76.463s (206.19 tok/s prefill)  decode span=23.1 steady_p50=23.77 tok/s  wall=82.0s arrivals=127
+  output[:300]: "The corpus consists of Leo Tolstoy's *War and Peace* (translated by Aylmer and Louise Maude), though within its opening chapters two other works are explicitly referenced: Julius Caesar's *Commentaries* (which Pierre reads in Prince Andrew's study) and Rousseau's *The Social Contract* (cited during "
+  rung wall 82s rc=0 end=2026-08-31T18:40:59Z
+--- [glm5-acc] acceptance lines for this request ---
+--- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
+--- error census (must be 0) ---
+0
+--- errors, if any ---
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+  vram after: 0, 41658 MiB 1, 41178 MiB|2, 41146 MiB 3, 40794 MiB
+--- SPEC ENGAGEMENT VERDICT for pp4 ---
+  \[glm5-acc\]                           0
+  verify walk BATCHED per layer          0
+  \[glm5-vrows\]                         0
+  PMIN=0.700                             0
+  \[bf16-tcols-wide\] engaged            0
+  \[bf16-tcols-x1\] engaged              0
+  \[topk-shards\] engaged                0
+  \[glm5-verify-ws\] engaged             0
+  SPEC EVIDENCE TOTAL for pp4 = 0   (0 = the route refused and served plain)
+  stage fence lines:
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[1m] SIGTERM pid=188018 exe=/root/memra-1m/target/release/memra-server
+[1m] stopped
+
+######## ARM pp3 ########
+[1m] no pidfile, nothing to stop
+[1m] launched pid=188974 boot=ppab-pp3 nonce=b3247470-ad58-4d0c-b548-db0ce88afdad extras=MEMRA_GLM5_DFLASH=/root/models/glm53-dflash2 MEMRA_GLM5_SPEC=1 MEMRA_SPEC_PMIN=0.7 MEMRA_SPEC_STATS=1 CUDA_VISIBLE_DEVICES=0,1,2 MEMRA_PP_STAGES=3 MEMRA_PP_DEVICES=0,1,2 MEMRA_PP_SPLITS=15,30 MEMRA_CTX=131072
+[1m] READY after 109s
+[1m] live MEMRA_CTX=131072
+boot=ppab-pp3 pid=188974 nonce=b3247470-ad58-4d0c-b548-db0ce88afdad spec_env=1
+stage_lines=7
+--- ctx / window ---
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / placement ---
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=4 skipped=0 mismatches=0 elapsed_ms=2.782
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev1->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev2->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=16 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=1614.975
+--- prefix-cache ---
+--- spec ---
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+--- vram-at-ready (index, used MiB, total MiB) ---
+0, 8212 MiB, 97887 MiB
+1, 7636 MiB, 97887 MiB
+2, 10678 MiB, 97887 MiB
+3, 1 MiB, 97887 MiB
+[1m] GATES GREEN boot=ppab-pp3
+### RUNG A16K mode=greedy chars=64400 maxtok=128 boot=ppab-pp3 start=2026-08-31T18:43:26Z
+[A16K] mode=greedy status=200 pt=15766 ct=128
+  TTFD=81.082s (194.45 tok/s prefill)  decode span=27.23 steady_p50=50393.7 tok/s  wall=85.7s arrivals=127
+  output[:300]: "The corpus consists of Leo Tolstoy's *War and Peace* (translated by Aylmer and Louise Maude), though within its opening chapters two other works are explicitly referenced: Julius Caesar's *Commentaries* (which Pierre reads in Prince Andrew's study) and Rousseau's *The Social Contract* (cited during "
+  rung wall 86s rc=0 end=2026-08-31T18:44:52Z
+--- [glm5-acc] acceptance lines for this request ---
+[glm5-acc] ctx=15766 burst=17/29 cum=17/29=0.586
+[glm5-acc] ctx=15798 burst=18/30 cum=35/59=0.593
+[glm5-acc] ctx=15831 burst=22/31 cum=57/90=0.633
+[glm5-acc] ctx=15866 burst=15/24 cum=72/114=0.632
+--- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
+--- error census (must be 0) ---
+0
+--- errors, if any ---
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+  vram after: 0, 42358 MiB 1, 41494 MiB|2, 44844 MiB 3, 1 MiB
+--- SPEC ENGAGEMENT VERDICT for pp3 ---
+  \[glm5-acc\]                           4
+  verify walk BATCHED per layer          1
+  \[glm5-vrows\]                         0
+  PMIN=0.700                             1
+  \[bf16-tcols-wide\] engaged            0
+  \[bf16-tcols-x1\] engaged              0
+  \[topk-shards\] engaged                1
+  \[glm5-verify-ws\] engaged             1
+  SPEC EVIDENCE TOTAL for pp3 = 8   (0 = the route refused and served plain)
+  stage fence lines:
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2]; weight home: per-stage (sharded loader))
+[1m] SIGTERM pid=188974 exe=/root/memra-1m/target/release/memra-server
+[1m] stopped
+
+=== SIDE BY SIDE (decode tok/s at the same 16k prompt, same binary, same spec env) ===
+  pp4: pt=15766 TTFD=76.463s prefill=206.19 decode_span=23.1 steady_p50=23.77 ct=128
+  pp3: pt=15766 TTFD=81.082s prefill=194.45 decode_span=27.23 steady_p50=50393.7 ct=128
+2026-08-31T18:45:30Z
+C3A_DONE

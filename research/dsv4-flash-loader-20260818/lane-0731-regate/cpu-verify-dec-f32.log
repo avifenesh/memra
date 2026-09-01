@@ -1,0 +1,20 @@
+dsv4-greedy-verify | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | variant ref | prompt 32 + gpu tokens 260 = 292
+layer 3 done t=23s
+layer 7 done t=50s
+layer 11 done t=77s
+layer 15 done t=110s
+layer 19 done t=138s
+layer 23 done t=166s
+layer 27 done t=192s
+layer 31 done t=220s
+layer 35 done t=246s
+layer 39 done t=273s
+layer 42 done t=291s
+head: decoding + 260 position logits (t=291s)
+logits done t=296s
+class: NATIVE expert arm — oracle ran the quantized expert GEMMs; disagreements adjudicated in-band vs band = 3·√2·(C_gpu + C_cpu)·|top1|
+  disagreement at position 64 (gpu step 33): cpu argmax 14 vs gpu token 3517 | cpu margin 0.0162 vs band 196.8907 -> in-band
+  disagreement at position 77 (gpu step 46): cpu argmax 979 vs gpu token 2143 | cpu margin 0.0413 vs band 183.5491 -> in-band
+
+CPU TEACHER-FORCING VERIFY [ref]: 258/260 positions agree | first divergence: position 64 (gpu step 33) | elapsed 299s
+NATIVE-CLASS VERDICT: PASS (2 disagreements, 0 out-of-band)

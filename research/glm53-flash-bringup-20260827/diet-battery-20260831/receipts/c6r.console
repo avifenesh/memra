@@ -1,0 +1,28 @@
+[dd] no pidfile, nothing to stop
+[dd] launched pid=116998 boot=c6r-don-k3 nonce=1b9f39dc-522a-4dfb-8005-8c29b7e19ada
+[dd] READY after 40s
+[dd] GATES GREEN boot=c6r-don-k3
+[sample] ok=True wall=2.6s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (implying pre"
+door=hc-fused-pre expected=1 lines=1
+door=hc-decode-ws expected=optional-on-spec lines=0
+door=kda-fused6-bf16 expected=1 lines=1
+door=kda-fused6-q8(forbidden-on-this-recipe) expected=0 lines=0
+door=mla-decode-split expected=1 lines=1
+door=verify-walk-batched expected=1 lines=1
+door=verify-walk-per-row expected=0 lines=0
+[hc-fused-pre] engaged streams=4 hidden=4096 t=239 (one launch replaces rowsq_scale + sinkhorn + collapse per site; MEMRA_HC_FUSED_PRE=1)
+[kda-fused6] engaged arm=bf16 in_f=4096 out=[8192, 8192, 8192, 128, 128, 64] t=4 (one launch replaces the six-projection group on the bf16-resident serving recipe; MEMRA_KDA_FUSED_PROJ=1)
+[mla-decode-split] engaged absorb_q t=4 heads=64 split=4 (output-range split of the (token, head) blocks; MEMRA_MLA_DECODE_SPLIT=1)
+[dd] DOORS GREEN boot=c6r-don-k3
+[cell greedy k=None] d00-code wall=7.2s spec={'rounds': 82, 'drafted': 246, 'accepted': 173, 'acceptance_rate': 0.7032520325203252} err=None
+[cell greedy k=None] d02-code wall=6.6s spec={'rounds': 72, 'drafted': 216, 'accepted': 147, 'acceptance_rate': 0.6805555555555556} err=None
+[cell greedy k=None] d06-prose wall=7.0s spec={'rounds': 80, 'drafted': 240, 'accepted': 176, 'acceptance_rate': 0.7333333333333333} err=None
+[cell greedy k=None] l3-A4630 wall=11.8s spec={'rounds': 100, 'drafted': 300, 'accepted': 158, 'acceptance_rate': 0.5266666666666666} err=None
+[cell] done rows=4 errors=0
+=== C6R IDENTITY don-k3 vs don-plain ===
+[compare] c6/don-plain vs c6/don-k3: shared=4 identical=4 diverged=0
+engagement: glm5spec=7 acc=33
+[dd] SIGTERM pid=116998 exe=/root/memra-diet/target/release/memra-server
+[dd] stopped
+[loop-law] screened=4 flagged=0
+C6R_DONE

@@ -1,0 +1,10 @@
+SOURCE: owner-supplied live pi server-log excerpt, 2026-08-09
+SHAPE: pod; MEMRA_CTX=262144; PP-2; conversation grew from about 12.3k to 20.8k prompt tokens
+
+[worker] plain-affinity: declined (no room (cap 35336 < need 45472); 2 parked, 12640 prompt tokens)
+[worker] plain-affinity: declined (no room (cap 45064 < need 45522); 2 parked, 12690 prompt tokens)
+[worker] plain-affinity: declined (no room (cap 45416 < need 45575); 2 parked, 12743 prompt tokens)
+[worker] plain-affinity: declined (no room (cap 45466 < need 53555); 2 parked, 20723 prompt tokens)
+
+plain_affinity_rewinds=0 across 9 requests
+cache_hit_token_ratio=0.108

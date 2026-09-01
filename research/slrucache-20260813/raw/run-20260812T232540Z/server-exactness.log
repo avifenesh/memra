@@ -1,0 +1,75 @@
+[server] starting; models config = [("q36-35b", "/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q36-35b" <- /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.21GB (expert budget 19.61GB) -> RESIDENT
+[worker]   loaded "q36-35b": 41 layers, eos=248046
+[worker] q36-35b: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q36-35b: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 820MB (MEMRA_PREFIX_CACHE_MB), byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens
+[admission] "q36-35b": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q36-35b"]
+[server] listening on http://127.0.0.1:18514
+[meter] admit id=cmpl-d23593f453a40bc229482265b7ca4c5d tenant=default lane=interactive model="q36-35b"
+[admission] request cost: model="q36-35b" ctx=344 path=plain = 10208 B/token x ctx + 0MB fixed = 4MB
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r1" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q36-35b" 129MB (observed 132MB at ctx 288 path=plain)
+[prefix-cache] insert probation (seed): 272 tokens, 68.4MB (resident 68.4MB / 820MB, model q36-35b, ns "evictchurn-exact-r1")
+[meter] admit id=cmpl-58981d4d50de3b381a925c18f7b11c3d tenant=default lane=interactive model="q36-35b"
+[admission] request cost: model="q36-35b" ctx=344 path=plain = 10208 B/token x ctx + 129MB fixed = 132MB
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r1" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=256 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (lcp-split): 256 tokens, 68.2MB (resident 136.6MB / 820MB, model q36-35b, ns "evictchurn-exact-r1")
+[meter] admit id=cmpl-6fef7530a1f8dcca2f1adb000560b248 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r1" K=0 source=eligibility-fallback prompt=272 cached=256 lcp=256 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-71b260091582cc0c10f32578e0e13a3e tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 272 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r1" K=0 source=eligibility-fallback prompt=272 cached=272 lcp=272 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-567d9fbf0fc9b54425a647021dc48283 tenant=default lane=interactive model="q36-35b"
+[meter] admit id=cmpl-deefb4304eaf24508ea55be08bc57ef5 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 272 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r1" K=0 source=eligibility-fallback prompt=272 cached=272 lcp=272 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 272 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r1" K=0 source=eligibility-fallback prompt=272 cached=272 lcp=272 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-2eea7744c5e5071fac1f617ef01d4c42 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r2" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 272 tokens, 68.4MB (resident 205.0MB / 820MB, model q36-35b, ns "evictchurn-exact-r2")
+[meter] admit id=cmpl-70ce3460f0451f08f2fc9d051d36c00a tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r2" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=256 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (lcp-split): 256 tokens, 68.2MB (resident 273.3MB / 820MB, model q36-35b, ns "evictchurn-exact-r2")
+[meter] admit id=cmpl-4ffc5f6d92008f3514ee9c31c01f875c tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r2" K=0 source=eligibility-fallback prompt=272 cached=256 lcp=256 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-0fbbb3a41e506e7eeb336415d9b1ae39 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 272 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r2" K=0 source=eligibility-fallback prompt=272 cached=272 lcp=272 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-182f8266620f1c6d003e273200514085 tenant=default lane=interactive model="q36-35b"
+[meter] admit id=cmpl-967bc2d8b08b1a17576539514a53671c tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 272 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r2" K=0 source=eligibility-fallback prompt=272 cached=272 lcp=272 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 272 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r2" K=0 source=eligibility-fallback prompt=272 cached=272 lcp=272 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-e7b8a52f4c18931ac5b42c5dcb72071e tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r3" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 272 tokens, 68.4MB (resident 341.6MB / 820MB, model q36-35b, ns "evictchurn-exact-r3")
+[meter] admit id=cmpl-599b004e271fca8bec35fd16c211881d tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r3" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=256 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (lcp-split): 256 tokens, 68.2MB (resident 409.9MB / 820MB, model q36-35b, ns "evictchurn-exact-r3")
+[meter] admit id=cmpl-bda8e1d96d84ce6a6743f0dc1e12d9b9 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r3" K=0 source=eligibility-fallback prompt=272 cached=256 lcp=256 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-2a992720ab7845e2c00f971dd2512d28 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 272 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r3" K=0 source=eligibility-fallback prompt=272 cached=272 lcp=272 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-20a122091ae7fbce023a4e7cf895e64b tenant=default lane=interactive model="q36-35b"
+[meter] admit id=cmpl-51f36e960704bc20be45ac080343a0c1 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 272 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r3" K=0 source=eligibility-fallback prompt=272 cached=272 lcp=272 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 272 of 272 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-exact-r3" K=0 source=eligibility-fallback prompt=272 cached=272 lcp=272 active=2 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

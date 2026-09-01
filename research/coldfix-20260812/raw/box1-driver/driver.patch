@@ -1,0 +1,23 @@
+--- /opt/scratch/nvme/cx-requal2/harness/run-box1.sh	2026-08-12 16:32:43.000000000 +0000
++++ /opt/scratch/nvme/cx-requal2/harness-coldfix-065a705d6/run-box1.sh	2026-08-12 18:21:06.955803070 +0000
+@@ -228,7 +228,19 @@
+     stop_server
+     assert_server_clean "$run_dir/server.log"
+     grep -c '^\[prime-batch\]' "$run_dir/server.log" >"$run_dir/prime-batch-count.txt" || true
+-    test "$(<"$run_dir/prime-batch-count.txt")" -gt 0
++    if test "$target" = q27; then
++        # Dense Q27 must still exercise continuation prime batching: preserving its c16 knee
++        # is an explicit cold-fix acceptance criterion.
++        test "$(<"$run_dir/prime-batch-count.txt")" -gt 0
++    else
++        # The hotfix intentionally excludes routed-MoE carried chunks. A whole-fresh batch is
++        # still allowed, but the frozen arrival shape need not form one; require the safety
++        # contract directly instead of the stale all-model positive-count assertion.
++        if grep -Eq '^\[prime-batch\].*carried=[1-9]' "$run_dir/server.log"; then
++            echo "FAIL: Q35 entered a carried prime batch"
++            return 1
++        fi
++    fi
+     test -z "$(compute_apps_gpu0)" || { compute_apps_gpu0; echo "FAIL: GPU0 process remained"; return 1; }
+     echo "MODEL_REP_COMPLETE target=$target rep=$rep verdict=$verdict ts=$(date -u +%FT%TZ)"
+ }

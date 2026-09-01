@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=nvfp4	binary_sha256=a487e9129fec9af3a5235cbe8a8c52c7015a5f634c20e1d3fa1525bdb0e5fd8e	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ab-hc: fresh state + probe prefill per arm, 4 warmup steps excluded per arm
+rep	arm	steps	mean_ms	median_ms	tok_per_s
+0	hc_unfused	40	40.39	40.40	24.76
+0	hc_fused	40	28.81	28.82	34.71
+1	hc_unfused	40	40.43	40.41	24.73
+1	hc_fused	40	28.82	28.83	34.70
+2	hc_unfused	40	40.44	40.45	24.73
+2	hc_fused	40	28.85	28.89	34.66
+3	hc_unfused	40	40.39	40.39	24.76
+3	hc_fused	40	28.84	28.85	34.68
+4	hc_unfused	40	40.38	40.38	24.76
+4	hc_fused	40	28.86	28.85	34.65
+# arm hc_unfused	mean_of_means_ms=40.41	min=40.38	max=40.44	tok_per_s=24.75
+# arm hc_fused	mean_of_means_ms=28.84	min=28.81	max=28.86	tok_per_s=34.68
+# rep0_arm_chain_first_divergence	-1
+# rep0_hc_unfused	198,760,1156,682,3106,728,264,1575,20654,93530,2319,471,328,760,3841,13477,37550,33075,888,279,15217,5388,1149,1061,11316,5435,1396,6321,314,279,6163,26887,506,3140,2957,13,1049,579,16138,1429
+# rep0_hc_fused	198,760,1156,682,3106,728,264,1575,20654,93530,2319,471,328,760,3841,13477,37550,33075,888,279,15217,5388,1149,1061,11316,5435,1396,6321,314,279,6163,26887,506,3140,2957,13,1049,579,16138,1429

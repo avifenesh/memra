@@ -1,0 +1,201 @@
+PERF_LOCK_ACQUIRED 2026-08-11T03:33:08Z
+host=<private-host-redacted> source_commit=62b0d6291f6fbfdfcce88d6b11bd87a5f4914eb4
+## lane/cx-sigrouter...origin/lane/cx-sigrouter [ahead 10]
+?? research/sigrouter-20260811/raw/box1-arm-expf-build-env-failure.log
+?? research/sigrouter-20260811/raw/box1-arm-expf-build-target-failure.log
+?? research/sigrouter-20260811/raw/box1-arm-expf-build.log
+?? research/sigrouter-20260811/raw/box1-correctness-arm-expf/
+?? research/sigrouter-20260811/raw/box1-perf-arm-expf/
+arm=r1-default start=2026-08-11T03:33:38Z
+point=r1-default-c1 start=2026-08-11T03:34:09Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.052324818039779, "decode_window_tok_s": 84.4303660763373, "finish_reasons": ["length"], "kind": "summary", "label": "r1-default-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:34:09Z", "total_window_tok_s": 80.9190949995411, "ttft_max_s": 0.2748484119656496, "ttft_min_s": 0.2748484119656496, "ttft_p50_s": 0.2748484119656496, "wall_s": 6.327307540981565}
+point=r1-default-c1 done=2026-08-11T03:34:16Z
+point=r1-default-c8 start=2026-08-11T03:34:16Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 25.084449151996523, "decode_window_tok_s": 162.96949457527265, "finish_reasons": ["length"], "kind": "summary", "label": "r1-default-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:34:16Z", "total_window_tok_s": 151.90646758472295, "ttft_max_s": 1.9796429310226813, "ttft_min_s": 1.8785106079885736, "ttft_p50_s": 1.978399334475398, "wall_s": 26.96396055497462}
+point=r1-default-c8 done=2026-08-11T03:34:43Z
+arm=r1-default done=2026-08-11T03:34:49Z
+arm=r1-rollback start=2026-08-11T03:34:49Z
+point=r1-rollback-c8 start=2026-08-11T03:35:22Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 26.129295867984183, "decode_window_tok_s": 156.4527425711828, "finish_reasons": ["length"], "kind": "summary", "label": "r1-rollback-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:35:22Z", "total_window_tok_s": 145.66647012401745, "ttft_max_s": 2.090402696048841, "ttft_min_s": 1.9890077509917319, "ttft_p50_s": 2.0893661190057173, "wall_s": 28.11903107498074}
+point=r1-rollback-c8 done=2026-08-11T03:35:50Z
+point=r1-rollback-c1 start=2026-08-11T03:35:50Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.138574747019447, "decode_window_tok_s": 83.24407880642218, "finish_reasons": ["length"], "kind": "summary", "label": "r1-rollback-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:35:50Z", "total_window_tok_s": 80.09073796296668, "ttft_max_s": 0.25401907099876553, "ttft_min_s": 0.25401907099876553, "ttft_p50_s": 0.25401907099876553, "wall_s": 6.392749187012669}
+point=r1-rollback-c1 done=2026-08-11T03:35:57Z
+arm=r1-rollback done=2026-08-11T03:36:03Z
+arm=r2-rollback start=2026-08-11T03:36:03Z
+point=r2-rollback-c1 start=2026-08-11T03:36:35Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.120021725015249, "decode_window_tok_s": 83.49643562723247, "finish_reasons": ["length"], "kind": "summary", "label": "r2-rollback-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:36:35Z", "total_window_tok_s": 79.89828161026662, "ttft_max_s": 0.2879814059706405, "ttft_min_s": 0.2879814059706405, "ttft_p50_s": 0.2879814059706405, "wall_s": 6.408147830981761}
+point=r2-rollback-c1 done=2026-08-11T03:36:41Z
+point=r2-rollback-c8 start=2026-08-11T03:36:41Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 26.14746605802793, "decode_window_tok_s": 156.34402167030947, "finish_reasons": ["length"], "kind": "summary", "label": "r2-rollback-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:36:41Z", "total_window_tok_s": 145.77107891459016, "ttft_max_s": 2.0516793340211734, "ttft_min_s": 1.950986105017364, "ttft_p50_s": 2.051157521957066, "wall_s": 28.09885219001444}
+point=r2-rollback-c8 done=2026-08-11T03:37:09Z
+arm=r2-rollback done=2026-08-11T03:37:15Z
+arm=r2-default start=2026-08-11T03:37:15Z
+point=r2-default-c8 start=2026-08-11T03:37:47Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 25.14860694395611, "decode_window_tok_s": 162.55373544586956, "finish_reasons": ["length"], "kind": "summary", "label": "r2-default-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:37:48Z", "total_window_tok_s": 151.4610070399208, "ttft_max_s": 1.9937650570063852, "ttft_min_s": 1.8928943439968862, "ttft_p50_s": 1.993444438005099, "wall_s": 27.043264006031677}
+point=r2-default-c8 done=2026-08-11T03:38:15Z
+point=r2-default-c1 start=2026-08-11T03:38:15Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.053001686988864, "decode_window_tok_s": 84.4209247617446, "finish_reasons": ["length"], "kind": "summary", "label": "r2-default-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:38:15Z", "total_window_tok_s": 81.3451852981875, "ttft_max_s": 0.24102479498833418, "ttft_min_s": 0.24102479498833418, "ttft_p50_s": 0.24102479498833418, "wall_s": 6.294164775987156}
+point=r2-default-c1 done=2026-08-11T03:38:21Z
+arm=r2-default done=2026-08-11T03:38:26Z
+arm=r3-default start=2026-08-11T03:38:26Z
+point=r3-default-c1 start=2026-08-11T03:38:59Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.055426853999961, "decode_window_tok_s": 84.38711461974887, "finish_reasons": ["length"], "kind": "summary", "label": "r3-default-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:38:59Z", "total_window_tok_s": 80.8691587716396, "ttft_max_s": 0.27565122197847813, "ttft_min_s": 0.27565122197847813, "ttft_p50_s": 0.27565122197847813, "wall_s": 6.3312146160169505}
+point=r3-default-c1 done=2026-08-11T03:39:05Z
+point=r3-default-c8 start=2026-08-11T03:39:05Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 25.074554412974976, "decode_window_tok_s": 163.03380441666553, "finish_reasons": ["length"], "kind": "summary", "label": "r3-default-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:39:06Z", "total_window_tok_s": 152.08173329621405, "ttft_max_s": 1.9584210789762437, "ttft_min_s": 1.8567312320228666, "ttft_p50_s": 1.957243043492781, "wall_s": 26.932886095019057}
+point=r3-default-c8 done=2026-08-11T03:39:33Z
+arm=r3-default done=2026-08-11T03:39:39Z
+arm=r3-rollback start=2026-08-11T03:39:39Z
+point=r3-rollback-c8 start=2026-08-11T03:40:10Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 26.135792773973662, "decode_window_tok_s": 156.4138511256823, "finish_reasons": ["length"], "kind": "summary", "label": "r3-rollback-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:40:11Z", "total_window_tok_s": 145.62988115793706, "ttft_max_s": 2.090401719964575, "ttft_min_s": 1.989698727033101, "ttft_p50_s": 2.0895872299734037, "wall_s": 28.126095876970794}
+point=r3-rollback-c8 done=2026-08-11T03:40:39Z
+point=r3-rollback-c1 start=2026-08-11T03:40:39Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.145043924043421, "decode_window_tok_s": 83.15644384585025, "finish_reasons": ["length"], "kind": "summary", "label": "r3-rollback-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:40:39Z", "total_window_tok_s": 80.01917899675314, "ttft_max_s": 0.2532800689805299, "ttft_min_s": 0.2532800689805299, "ttft_p50_s": 0.2532800689805299, "wall_s": 6.398466048005503}
+point=r3-rollback-c1 done=2026-08-11T03:40:45Z
+arm=r3-rollback done=2026-08-11T03:40:52Z
+arm=r4-rollback start=2026-08-11T03:40:52Z
+point=r4-rollback-c1 start=2026-08-11T03:41:23Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.131611960998271, "decode_window_tok_s": 83.33860708250127, "finish_reasons": ["length"], "kind": "summary", "label": "r4-rollback-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:41:23Z", "total_window_tok_s": 79.74593735587098, "ttft_max_s": 0.28863180498592556, "ttft_min_s": 0.28863180498592556, "ttft_p50_s": 0.28863180498592556, "wall_s": 6.4203897650004365}
+point=r4-rollback-c1 done=2026-08-11T03:41:30Z
+point=r4-rollback-c8 start=2026-08-11T03:41:30Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 26.156671611010097, "decode_window_tok_s": 156.2889981108775, "finish_reasons": ["length"], "kind": "summary", "label": "r4-rollback-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:41:30Z", "total_window_tok_s": 145.6963927589593, "ttft_max_s": 2.0579855969990604, "ttft_min_s": 1.9547770940116607, "ttft_p50_s": 2.0570382764854003, "wall_s": 28.11325608298648}
+point=r4-rollback-c8 done=2026-08-11T03:41:58Z
+arm=r4-rollback done=2026-08-11T03:42:03Z
+arm=r4-default start=2026-08-11T03:42:03Z
+point=r4-default-c8 start=2026-08-11T03:42:35Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 25.08092489995761, "decode_window_tok_s": 162.99239427198754, "finish_reasons": ["length"], "kind": "summary", "label": "r4-default-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:42:35Z", "total_window_tok_s": 151.83016301270706, "ttft_max_s": 1.9958578759687953, "ttft_min_s": 1.8959638820379041, "ttft_p50_s": 1.9948221890081186, "wall_s": 26.977511706005316}
+point=r4-default-c8 done=2026-08-11T03:43:02Z
+point=r4-default-c1 start=2026-08-11T03:43:02Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.045905570033938, "decode_window_tok_s": 84.5200101259821, "finish_reasons": ["length"], "kind": "summary", "label": "r4-default-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:43:02Z", "total_window_tok_s": 81.437116908448, "ttft_max_s": 0.2410146520123817, "ttft_min_s": 0.2410146520123817, "ttft_p50_s": 0.2410146520123817, "wall_s": 6.287059505993966}
+point=r4-default-c1 done=2026-08-11T03:43:09Z
+arm=r4-default done=2026-08-11T03:43:15Z
+arm=r5-default start=2026-08-11T03:43:15Z
+point=r5-default-c1 start=2026-08-11T03:43:47Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.047349097963888, "decode_window_tok_s": 84.49983484036851, "finish_reasons": ["length"], "kind": "summary", "label": "r5-default-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:43:47Z", "total_window_tok_s": 80.97223746344078, "ttft_max_s": 0.27566917502554134, "ttft_min_s": 0.27566917502554134, "ttft_p50_s": 0.27566917502554134, "wall_s": 6.323154899000656}
+point=r5-default-c1 done=2026-08-11T03:43:53Z
+point=r5-default-c8 start=2026-08-11T03:43:53Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 25.058780115970876, "decode_window_tok_s": 163.13643286229117, "finish_reasons": ["length"], "kind": "summary", "label": "r5-default-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:43:53Z", "total_window_tok_s": 152.1436426949341, "ttft_max_s": 1.9625493019702844, "ttft_min_s": 1.862570837023668, "ttft_p50_s": 1.9618070565338712, "wall_s": 26.92192672297824}
+point=r5-default-c8 done=2026-08-11T03:44:20Z
+arm=r5-default done=2026-08-11T03:44:26Z
+arm=r5-rollback start=2026-08-11T03:44:26Z
+point=r5-rollback-c8 start=2026-08-11T03:44:58Z
+{"cached_tokens": [0], "completion_tokens_total": 4096, "concurrency": 8, "decode_window_s": 26.277433074021246, "decode_window_tok_s": 155.57075108837532, "finish_reasons": ["length"], "kind": "summary", "label": "r5-rollback-c8", "max_tokens": 512, "n_error": 0, "n_ok": 8, "n_requests": 8, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:44:58Z", "total_window_tok_s": 144.84737378031906, "ttft_max_s": 2.10070414096117, "ttft_min_s": 1.9994271519826725, "ttft_p50_s": 2.0995952429948375, "wall_s": 28.278041176032275}
+point=r5-rollback-c8 done=2026-08-11T03:45:26Z
+point=r5-rollback-c1 start=2026-08-11T03:45:26Z
+{"cached_tokens": [0], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 6.179892691026907, "decode_window_tok_s": 82.68751992117319, "finish_reasons": ["length"], "kind": "summary", "label": "r5-rollback-c1", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "prompt_tokens": [43], "shape": "decode", "started_utc": "2026-08-11T03:45:27Z", "total_window_tok_s": 79.55325571537728, "ttft_max_s": 0.25579594197915867, "ttft_min_s": 0.25579594197915867, "ttft_p50_s": 0.25579594197915867, "wall_s": 6.435940244002268}
+point=r5-rollback-c1 done=2026-08-11T03:45:33Z
+arm=r5-rollback done=2026-08-11T03:45:39Z
+{
+  "metric": "decode_window_tok_s",
+  "points": {
+    "c1": {
+      "default_median_tok_s": 84.4303660763373,
+      "default_tok_s": [
+        84.4303660763373,
+        84.4209247617446,
+        84.38711461974887,
+        84.5200101259821,
+        84.49983484036851
+      ],
+      "median_of_arm_medians_delta_pct": 1.425071052409299,
+      "paired_delta_median_pct": 1.425071052409299,
+      "paired_delta_pct": [
+        1.425071052409299,
+        1.1072198801868494,
+        1.479946372141594,
+        1.4175939397586657,
+        2.191763546570291
+      ],
+      "paired_wins": 5,
+      "rollback_median_tok_s": 83.24407880642218,
+      "rollback_tok_s": [
+        83.24407880642218,
+        83.49643562723247,
+        83.15644384585025,
+        83.33860708250127,
+        82.68751992117319
+      ]
+    },
+    "c8": {
+      "default_median_tok_s": 162.99239427198754,
+      "default_tok_s": [
+        162.96949457527265,
+        162.55373544586956,
+        163.03380441666553,
+        162.99239427198754,
+        163.13643286229117
+      ],
+      "median_of_arm_medians_delta_pct": 4.252399631690307,
+      "paired_delta_median_pct": 4.232331883231977,
+      "paired_delta_pct": [
+        4.165316565879218,
+        3.9718268144942837,
+        4.232331883231977,
+        4.289103034849839,
+        4.863177506688254
+      ],
+      "paired_wins": 5,
+      "rollback_median_tok_s": 156.34402167030947,
+      "rollback_tok_s": [
+        156.4527425711828,
+        156.34402167030947,
+        156.4138511256823,
+        156.2889981108775,
+        155.57075108837532
+      ]
+    }
+  },
+  "runs_per_arm": 5,
+  "schema": "memra.sigrouter.perf.v1",
+  "thermal_regime": "one exclusive GPU-lock hold; fresh server per arm; one warmup burst; default and rollback order alternated by repetition; c1 and c8 order reversed between arms; continuous 250 ms NVML sampling"
+}
+trace=default start=2026-08-11T03:45:39Z
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.87GB (expert budget 94.95GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.74GB (expert budget 94.82GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 trunk layers; optional MTP skipped)
+prompt text: "The storage-to-compute pipeline moves expert weights from NVMe through pinned host buffers over PCIe into device memory, where quantized matvec kernels consume them. Each stage is measured together with the others, because a faster kernel can hide a data-movement regression. Describe, step by step, how a mixture-of-experts decoder selects and executes its experts for a single token, and explain which stage dominates latency when the expert bank exceeds device memory.\n"
+prompt tokens: [0, 671, 8412, 6005, 15246, 39105, 28499, 14712, 8739, 23997, 538, 60944, 9130, 1407, 83119, 5908, 84152, 1060, 63310, 71, 1055, 5291, 6464, 14, 1479, 5059, 1766, 1781, 8086, 87375, 28907, 1066, 16, 8829, 6632, 344, 9720, 3672, 418, 270, 3628, 14, 1754, 260, 13058, 29009, 588, 20118, 260, 1499, 2641, 105209, 18103, 16, 39843, 14, 3132, 513, 3132, 14, 1192, 260, 13376, 9934, 86473, 1648, 67940, 63203, 305, 74638, 1009, 13523, 362, 260, 4031, 17840, 14, 305, 8470, 778, 6632, 81252, 52636, 1082, 270, 8739, 6939, 38504, 5291, 6464, 603]
+prefill argmax=128799  decode argmax=128799  logit maxdiff=1.983e0  MATCH
+batched-prime argmax=128799  tokenwise argmax=128799  logit maxdiff=1.945e0  MATCH
+prefill 91 tok in 1.0372s = 87.7 tok/s (pp91)
+generated 1 tokens in 0.081s = 12.39 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.255s) [stop: MaxNew]
+tokens: [128799]
+MoE cache: 15343 slots | cumulative hits=18624 misses=9312 (hit-rate=66.7%) | Stage-1 baseline = 2678 MB/decode-token (every block, every layer, every token)
+MoE cache STEADY-STATE (32 tokens after warmup): hit-rate=0.0% | 0.0 MB/decode-token (vs 2678 MB/token Stage-1 => infx less PCIe)
+OUTPUT TEXT: "</think>"
+--- generated text ---
+</think>
+Collecting data...
+Generating '/tmp/nsys-report-a617.qdstrm'
+[1/1] [0%                          ] nsys-default.nsys-rep[1/1] [0%                          ] nsys-default.nsys-rep[1/1] [5%                          ] nsys-default.nsys-rep[1/1] [==21%                       ] nsys-default.nsys-rep[1/1] [=16%                        ] nsys-default.nsys-rep[1/1] [13%                         ] nsys-default.nsys-rep[1/1] [10%                         ] nsys-default.nsys-rep[1/1] [==19%                       ] nsys-default.nsys-rep[1/1] [=16%                        ] nsys-default.nsys-rep[1/1] [14%                         ] nsys-default.nsys-rep[1/1] [12%                         ] nsys-default.nsys-rep[1/1] [11%                         ] nsys-default.nsys-rep[1/1] [10%                         ] nsys-default.nsys-rep[1/1] [9%                          ] nsys-default.nsys-rep[1/1] [8%                          ] nsys-default.nsys-rep[1/1] [7%                          ] nsys-default.nsys-rep[1/1] [6%                          ] nsys-default.nsys-rep[1/1] [5%                          ] nsys-default.nsys-rep[1/1] [0%                          ] nsys-default.nsys-rep[1/1] [5%                          ] nsys-default.nsys-rep[1/1] [6%                          ] nsys-default.nsys-rep[1/1] [7%                          ] nsys-default.nsys-rep[1/1] [8%                          ] nsys-default.nsys-rep[1/1] [9%                          ] nsys-default.nsys-rep[1/1] [10%                         ] nsys-default.nsys-rep[1/1] [11%                         ] nsys-default.nsys-rep[1/1] [12%                         ] nsys-default.nsys-rep[1/1] [13%                         ] nsys-default.nsys-rep[1/1] [14%                         ] nsys-default.nsys-rep[1/1] [=15%                        ] nsys-default.nsys-rep[1/1] [=16%                        ] nsys-default.nsys-rep[1/1] [=17%                        ] nsys-default.nsys-rep[1/1] [==18%                       ] nsys-default.nsys-rep[1/1] [==19%                       ] nsys-default.nsys-rep[1/1] [==20%                       ] nsys-default.nsys-rep[1/1] [==21%                       ] nsys-default.nsys-rep[1/1] [===22%                      ] nsys-default.nsys-rep[1/1] [===23%                      ] nsys-default.nsys-rep[1/1] [===24%                      ] nsys-default.nsys-rep[1/1] [====25%                     ] nsys-default.nsys-rep[1/1] [====26%                     ] nsys-default.nsys-rep[1/1] [====27%                     ] nsys-default.nsys-rep[1/1] [====28%                     ] nsys-default.nsys-rep[1/1] [=====29%                    ] nsys-default.nsys-rep[1/1] [=====30%                    ] nsys-default.nsys-rep[1/1] [=====31%                    ] nsys-default.nsys-rep[1/1] [=====32%                    ] nsys-default.nsys-rep[1/1] [======33%                   ] nsys-default.nsys-rep[1/1] [======34%                   ] nsys-default.nsys-rep[1/1] [======35%                   ] nsys-default.nsys-rep[1/1] [=======36%                  ] nsys-default.nsys-rep[1/1] [=======37%                  ] nsys-default.nsys-rep[1/1] [=======38%                  ] nsys-default.nsys-rep[1/1] [=======39%                  ] nsys-default.nsys-rep[1/1] [========40%                 ] nsys-default.nsys-rep[1/1] [========41%                 ] nsys-default.nsys-rep[1/1] [========42%                 ] nsys-default.nsys-rep[1/1] [=========43%                ] nsys-default.nsys-rep[1/1] [=========44%                ] nsys-default.nsys-rep[1/1] [=========45%                ] nsys-default.nsys-rep[1/1] [=========46%                ] nsys-default.nsys-rep[1/1] [==========47%               ] nsys-default.nsys-rep[1/1] [==========48%               ] nsys-default.nsys-rep[1/1] [==========49%               ] nsys-default.nsys-rep[1/1] [===========50%              ] nsys-default.nsys-rep[1/1] [========================100%] nsys-default.nsys-rep[1/1] [========================100%] nsys-default.nsys-rep
+Generated:
+	/home/ubuntu/memra-cx-sigrouter/research/sigrouter-20260811/raw/box1-perf-arm-expf/nsys-default.nsys-rep
+trace=default done=2026-08-11T03:46:50Z
+trace=rollback start=2026-08-11T03:46:50Z
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.87GB (expert budget 94.95GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.74GB (expert budget 94.82GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 trunk layers; optional MTP skipped)
+prompt text: "The storage-to-compute pipeline moves expert weights from NVMe through pinned host buffers over PCIe into device memory, where quantized matvec kernels consume them. Each stage is measured together with the others, because a faster kernel can hide a data-movement regression. Describe, step by step, how a mixture-of-experts decoder selects and executes its experts for a single token, and explain which stage dominates latency when the expert bank exceeds device memory.\n"
+prompt tokens: [0, 671, 8412, 6005, 15246, 39105, 28499, 14712, 8739, 23997, 538, 60944, 9130, 1407, 83119, 5908, 84152, 1060, 63310, 71, 1055, 5291, 6464, 14, 1479, 5059, 1766, 1781, 8086, 87375, 28907, 1066, 16, 8829, 6632, 344, 9720, 3672, 418, 270, 3628, 14, 1754, 260, 13058, 29009, 588, 20118, 260, 1499, 2641, 105209, 18103, 16, 39843, 14, 3132, 513, 3132, 14, 1192, 260, 13376, 9934, 86473, 1648, 67940, 63203, 305, 74638, 1009, 13523, 362, 260, 4031, 17840, 14, 305, 8470, 778, 6632, 81252, 52636, 1082, 270, 8739, 6939, 38504, 5291, 6464, 603]
+prefill argmax=128799  decode argmax=128799  logit maxdiff=1.983e0  MATCH
+batched-prime argmax=128799  tokenwise argmax=128799  logit maxdiff=1.945e0  MATCH
+prefill 91 tok in 1.0721s = 84.9 tok/s (pp91)
+generated 1 tokens in 0.081s = 12.35 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.287s) [stop: MaxNew]
+tokens: [128799]
+MoE cache: 15343 slots | cumulative hits=18624 misses=9312 (hit-rate=66.7%) | Stage-1 baseline = 2678 MB/decode-token (every block, every layer, every token)
+MoE cache STEADY-STATE (32 tokens after warmup): hit-rate=0.0% | 0.0 MB/decode-token (vs 2678 MB/token Stage-1 => infx less PCIe)
+OUTPUT TEXT: "</think>"
+--- generated text ---
+</think>
+Collecting data...
+Generating '/tmp/nsys-report-1dd3.qdstrm'
+[1/1] [0%                          ] nsys-rollback.nsys-rep[1/1] [0%                          ] nsys-rollback.nsys-rep[1/1] [5%                          ] nsys-rollback.nsys-rep[1/1] [=16%                        ] nsys-rollback.nsys-rep[1/1] [12%                         ] nsys-rollback.nsys-rep[1/1] [10%                         ] nsys-rollback.nsys-rep[1/1] [==18%                       ] nsys-rollback.nsys-rep[1/1] [=16%                        ] nsys-rollback.nsys-rep[1/1] [14%                         ] nsys-rollback.nsys-rep[1/1] [12%                         ] nsys-rollback.nsys-rep[1/1] [11%                         ] nsys-rollback.nsys-rep[1/1] [10%                         ] nsys-rollback.nsys-rep[1/1] [9%                          ] nsys-rollback.nsys-rep[1/1] [8%                          ] nsys-rollback.nsys-rep[1/1] [7%                          ] nsys-rollback.nsys-rep[1/1] [6%                          ] nsys-rollback.nsys-rep[1/1] [5%                          ] nsys-rollback.nsys-rep[1/1] [5%                          ] nsys-rollback.nsys-rep[1/1] [6%                          ] nsys-rollback.nsys-rep[1/1] [7%                          ] nsys-rollback.nsys-rep[1/1] [8%                          ] nsys-rollback.nsys-rep[1/1] [9%                          ] nsys-rollback.nsys-rep[1/1] [10%                         ] nsys-rollback.nsys-rep[1/1] [11%                         ] nsys-rollback.nsys-rep[1/1] [12%                         ] nsys-rollback.nsys-rep[1/1] [13%                         ] nsys-rollback.nsys-rep[1/1] [14%                         ] nsys-rollback.nsys-rep[1/1] [=15%                        ] nsys-rollback.nsys-rep[1/1] [=16%                        ] nsys-rollback.nsys-rep[1/1] [=17%                        ] nsys-rollback.nsys-rep[1/1] [==18%                       ] nsys-rollback.nsys-rep[1/1] [==19%                       ] nsys-rollback.nsys-rep[1/1] [==20%                       ] nsys-rollback.nsys-rep[1/1] [==21%                       ] nsys-rollback.nsys-rep[1/1] [===22%                      ] nsys-rollback.nsys-rep[1/1] [===23%                      ] nsys-rollback.nsys-rep[1/1] [===24%                      ] nsys-rollback.nsys-rep[1/1] [====25%                     ] nsys-rollback.nsys-rep[1/1] [====26%                     ] nsys-rollback.nsys-rep[1/1] [====27%                     ] nsys-rollback.nsys-rep[1/1] [====28%                     ] nsys-rollback.nsys-rep[1/1] [=====29%                    ] nsys-rollback.nsys-rep[1/1] [=====30%                    ] nsys-rollback.nsys-rep[1/1] [=====31%                    ] nsys-rollback.nsys-rep[1/1] [=====32%                    ] nsys-rollback.nsys-rep[1/1] [======33%                   ] nsys-rollback.nsys-rep[1/1] [======34%                   ] nsys-rollback.nsys-rep[1/1] [======35%                   ] nsys-rollback.nsys-rep[1/1] [=======36%                  ] nsys-rollback.nsys-rep[1/1] [=======37%                  ] nsys-rollback.nsys-rep[1/1] [=======38%                  ] nsys-rollback.nsys-rep[1/1] [=======39%                  ] nsys-rollback.nsys-rep[1/1] [========40%                 ] nsys-rollback.nsys-rep[1/1] [========41%                 ] nsys-rollback.nsys-rep[1/1] [========42%                 ] nsys-rollback.nsys-rep[1/1] [=========43%                ] nsys-rollback.nsys-rep[1/1] [=========44%                ] nsys-rollback.nsys-rep[1/1] [=========45%                ] nsys-rollback.nsys-rep[1/1] [=========46%                ] nsys-rollback.nsys-rep[1/1] [==========47%               ] nsys-rollback.nsys-rep[1/1] [==========48%               ] nsys-rollback.nsys-rep[1/1] [==========49%               ] nsys-rollback.nsys-rep[1/1] [===========50%              ] nsys-rollback.nsys-rep[1/1] [========================100%] nsys-rollback.nsys-rep[1/1] [========================100%] nsys-rollback.nsys-rep
+Generated:
+	/home/ubuntu/memra-cx-sigrouter/research/sigrouter-20260811/raw/box1-perf-arm-expf/nsys-rollback.nsys-rep
+trace=rollback done=2026-08-11T03:48:02Z
+PERF_PASS 2026-08-11T03:48:02Z

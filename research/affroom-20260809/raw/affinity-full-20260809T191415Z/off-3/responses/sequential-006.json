@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-d0d590fe0d3f03c78655a6e1b51f1d0c",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 1859,
+    "completion_tokens": 256,
+    "total_tokens": 2115,
+    "prompt_tokens_details": {
+      "cached_tokens": 746
+    },
+    "elapsed_s": 2.099169722
+  },
+  "text": "The user wants me to add a comparison drawer that allows comparing speculative vs default (plain) measurements. This should be a new interactive component that shows side-by-side or toggleable views of the metrics.\n\nI need to:\n1. Add a comparison drawer/panel\n2. Make it toggleable or expandable\n3. Show spec-default vs spec-off measurements\n4. Keep it accessible and keyboard navigable\n5. Maintain the existing dashboard structure\n\nLet me create a complete HTML document with this new feature integrated.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-tertiary: #334155;\n      --text-primary: #f1f5f9;\n      --text-secondary: #94a3b8;\n      --accent"
+}

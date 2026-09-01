@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-45e76b5f4a61a9cc4b2ab85ae111ea33",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 1209,
+    "completion_tokens": 256,
+    "total_tokens": 1465,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 2.14749833
+  },
+  "text": "The user wants me to add an accessible cache-tier legend to the dashboard. This should explain the different cache tiers (continuation, speculative, prefix reuse) in an accessible way. I need to add this to the existing dashboard while maintaining all previous functionality.\n\nLet me add a legend component that:\n1. Is accessible (proper labels, ARIA attributes)\n2. Explains the three cache tiers: continuation, speculative, and prefix reuse\n3. Integrates with the existing cache hit-rate chart\n4. Uses semantic HTML and accessible labels\n\nI'll add this as a new panel or section in the dashboard, likely near the cache hit-rate chart.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-tertiary: #334155;\n      --text"
+}

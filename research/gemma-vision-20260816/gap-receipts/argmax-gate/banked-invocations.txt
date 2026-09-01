@@ -1,0 +1,58 @@
+===== invocation-default.txt =====
+INVOCATION: env CUDA_VISIBLE_DEVICES=1  tools/argmax-margin-gate.sh /data/memra/models/gemma4-31b/gemma-4-31B-it-shipQ6K-downQ6K.gguf --logdir /data/memra/evidence/gemma-fused2-ab/argmax-gate (HEAD c7024849)
+argmax-margin-gate: model=gemma-4-31B-it-shipQ6K-downQ6K.gguf prompt=board-2048.txt window=12 canary=0
+  explained pos=2093 margin=0.1351 < delta=3.0316
+  explained pos=2094 margin=0.1989 < delta=0.3279
+  SUMMARY flips=2 bad=0
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: /data/memra/evidence/gemma-fused2-ab/argmax-gate/gate-gemma-4-31B-it-shipQ6K-downQ6K-board-2048.log
+EXIT: 0
+===== invocation-q8rp0.txt =====
+INVOCATION: env CUDA_VISIBLE_DEVICES=1 MEMRA_Q8RP=0 tools/argmax-margin-gate.sh /data/memra/models/gemma4-31b/gemma-4-31B-it-shipQ6K-downQ6K.gguf --logdir /data/memra/evidence/gemma-fused2-ab/argmax-gate (HEAD c7024849)
+argmax-margin-gate: model=gemma-4-31B-it-shipQ6K-downQ6K.gguf prompt=board-2048.txt window=12 canary=0
+  explained pos=2093 margin=0.1351 < delta=3.0316
+  explained pos=2094 margin=0.1989 < delta=0.3279
+  SUMMARY flips=2 bad=0
+  PASS: every prefill/decode argmax flip is explained by a margin the config spread covers
+  raw: /data/memra/evidence/gemma-fused2-ab/argmax-gate/gate-gemma-4-31B-it-shipQ6K-downQ6K-board-2048.log
+EXIT: 0
+===== invocation-canary.txt =====
+argmax-margin-gate: model=gemma-4-31B-it-shipQ6K-downQ6K.gguf prompt=board-2048.txt window=12 canary=1
+  [canary] injected a WIDE-margin flip (pos 9999, margin 5.0000, delta 0.1000)
+           — a disagreement the config spread cannot explain; must be rejected
+  explained pos=2093 margin=0.1351 < delta=3.0316
+  explained pos=2094 margin=0.1989 < delta=0.3279
+  UNEXPLAINED pos=9999 margin=5.0000 delta=0.1000
+  SUMMARY flips=3 bad=1
+  CANARY PASS: the injected wide-margin flip broke the assertion as required (teeth)
+  raw: /data/memra/evidence/gemma-fused2-ab/argmax-gate/gate-gemma-4-31B-it-shipQ6K-downQ6K-board-2048.canary.log
+CANARY-EXIT: 0 (nonzero = teeth intact)
+===== gate-gemma-4-31B-it-shipQ6K-downQ6K-board-2048.log =====
+[q4f16] prefill fp16 mirrors built: 110 dense trunk tensors
+argmax-margin-probe: T=2103 window=12 sm_count=188 model=/data/memra/models/gemma4-31b/gemma-4-31B-it-shipQ6K-downQ6K.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+2091     5532          14.1989      5532         15.1544      1.2261         yes
+2092     236929        6.4938       236929       6.3801       0.2081         yes
+2093     6744          0.1351       235342       0.1674       3.0316         NO <-- FLIP
+2094     223205        0.1989       236773       0.2933       0.3279         NO <-- FLIP
+2095     1638          0.1141       1638         0.4098       0.5613         yes
+2096     715           6.0483       715          5.8228       0.3079         yes
+2097     236768        1.7265       236768       1.7412       0.0313         yes
+2098     107           2.3447       107          2.2832       0.6286         yes
+2099     496           2.5122       496          3.4054       1.3075         yes
+2100     6477          3.1303       6477         1.4412       3.7464         yes
+2101     34246         2.0809       34246        2.5457       0.2477         yes
+2102     707           1.9728       707          2.0690       0.2790         yes
+
+margin distribution (decode config, 12 positions): min 0.1674  p10 0.2933  p50 2.2832  p90 6.3801  max 15.1544
+margin distribution (prefill config): min 0.1141  p50 2.3447  max 14.1989
+DECISION POSITION (the gate's): prefill_top1=707 decode_top1=707 margin_p=1.9728 margin_d=2.0690 config_delta_at_ids=0.2790
+  -> the decision margin is BELOW 5/12 sampled positions' margins (rank 6 of 12)
+  -> flip is ARITHMETICALLY POSSIBLE iff config_delta > margin: 0.2790 > 1.9728 = false
+agreement across sampled positions: 10/12 (2 flip(s))
+flip@2093: margin 0.1351 vs config spread 3.0316 -> margin-EXPLAINED (near-tie coin)
+flip@2094: margin 0.1989 vs config spread 0.3279 -> margin-EXPLAINED (near-tie coin)
+flip budget: 2 flip(s) vs budget 3 (calibration row: gemma4-31B (3/12-window))
+VERDICT-INPUT: NEAR-TIE class — every flip sits at a margin the config spread covers, within the model's calibrated budget (documented cross-config drift, not a numeric defect)

@@ -1,0 +1,60 @@
+[sb] no pidfile, nothing to stop
+[sb] launched pid=157070 boot=c2-dedup nonce=7d13c552-61bb-4f4e-baff-61c3a082dd07
+[sb] READY after 40s
+[sb] GATES GREEN boot=c2-dedup
+[sample] ok=True wall=1.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+engage=bf16-tcols-wide(T,default-on) expected=1 lines=1
+engage=bf16-tcols-x1(X,default-on) expected=1 lines=1
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=1 lines=1
+engage=glm5-verify-ws(W,default-on) expected=1 lines=1
+engage=moe-vrows-dev-tables(D) expected=0 lines=0
+engage=moe-vrows-dedup(S) expected=1 lines=27
+engage=verify-walk-batched expected=1 lines=1
+engage=verify-walk-per-row expected=0 lines=0
+engage=glm5-vrows expected=1 lines=1
+[moe-vrows-dedup] layer-calls=1 visits=24 distinct=21 repeat=12.50% = the cross-row expert-slab dedup ceiling on the vrows pair (MEMRA_MOE_VROWS_DEDUP_STAT=1)
+[sb] ENGAGE GREEN boot=c2-dedup
+PHASE_SNAP post-sample: [moe-vrows-dedup] layer-calls=1093 visits=28576 distinct=22299 repeat=21.97% = the cross-row expert-slab dedup ceiling on the vrows pair (MEMRA_MOE_VROWS_DEDUP_STAT=1)
+[cell greedy k=None] d00-code wall=4.7s spec={'rounds': 97, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[cell greedy k=None] d01-code wall=5.0s spec={'rounds': 103, 'drafted': 235, 'accepted': 152, 'acceptance_rate': 0.6468085106382979} err=None
+[cell greedy k=None] d02-code wall=5.2s spec={'rounds': 107, 'drafted': 219, 'accepted': 151, 'acceptance_rate': 0.6894977168949772} err=None
+[cell greedy k=None] d03-code wall=5.2s spec={'rounds': 105, 'drafted': 236, 'accepted': 153, 'acceptance_rate': 0.6483050847457628} err=None
+[cell greedy k=None] d04-code wall=4.3s spec={'rounds': 81, 'drafted': 202, 'accepted': 151, 'acceptance_rate': 0.7475247524752475} err=None
+[cell greedy k=None] d05-code wall=4.4s spec={'rounds': 91, 'drafted': 206, 'accepted': 165, 'acceptance_rate': 0.8009708737864077} err=None
+[cell greedy k=None] d06-prose wall=4.2s spec={'rounds': 87, 'drafted': 202, 'accepted': 170, 'acceptance_rate': 0.8415841584158416} err=None
+[cell greedy k=None] d07-prose wall=4.4s spec={'rounds': 88, 'drafted': 215, 'accepted': 168, 'acceptance_rate': 0.7813953488372093} err=None
+[cell greedy k=None] d08-prose wall=4.6s spec={'rounds': 93, 'drafted': 227, 'accepted': 165, 'acceptance_rate': 0.7268722466960352} err=None
+[cell greedy k=None] d09-prose wall=4.5s spec={'rounds': 96, 'drafted': 208, 'accepted': 162, 'acceptance_rate': 0.7788461538461539} err=None
+[cell greedy k=None] l3-WARM wall=4.0s spec={'rounds': 73, 'drafted': 202, 'accepted': 183, 'acceptance_rate': 0.905940594059406} err=None
+[cell greedy k=None] l3-A4630 wall=7.8s spec={'rounds': 101, 'drafted': 222, 'accepted': 156, 'acceptance_rate': 0.7027027027027027} err=None
+[cell greedy k=None] l3-B5550 wall=8.3s spec={'rounds': 101, 'drafted': 223, 'accepted': 155, 'acceptance_rate': 0.695067264573991} err=None
+[cell greedy k=None] l3-C6470 wall=8.5s spec={'rounds': 94, 'drafted': 218, 'accepted': 163, 'acceptance_rate': 0.7477064220183486} err=None
+[cell] done rows=14 errors=0
+PHASE_SNAP post-greedy-pools: [moe-vrows-dedup] layer-calls=56407 visits=1491192 distinct=1159183 repeat=22.26% = the cross-row expert-slab dedup ceiling on the vrows pair (MEMRA_MOE_VROWS_DEDUP_STAT=1)
+[cell vendor k=None] d00-code wall=5.2s spec={'rounds': 113, 'drafted': 224, 'accepted': 143, 'acceptance_rate': 0.6383928571428571} err=None
+[cell vendor k=None] d01-code wall=4.7s spec={'rounds': 98, 'drafted': 210, 'accepted': 157, 'acceptance_rate': 0.7476190476190476} err=None
+[cell vendor k=None] d02-code wall=5.5s spec={'rounds': 114, 'drafted': 217, 'accepted': 141, 'acceptance_rate': 0.6497695852534562} err=None
+[cell vendor k=None] d03-code wall=5.6s spec={'rounds': 121, 'drafted': 209, 'accepted': 134, 'acceptance_rate': 0.6411483253588517} err=None
+[cell vendor k=None] d04-code wall=4.6s spec={'rounds': 91, 'drafted': 202, 'accepted': 119, 'acceptance_rate': 0.5891089108910891} err=None
+[cell vendor k=None] d05-code wall=5.1s spec={'rounds': 111, 'drafted': 219, 'accepted': 147, 'acceptance_rate': 0.6712328767123288} err=None
+[cell vendor k=None] d06-prose wall=4.2s spec={'rounds': 87, 'drafted': 199, 'accepted': 168, 'acceptance_rate': 0.8442211055276382} err=None
+[cell vendor k=None] d07-prose wall=5.0s spec={'rounds': 108, 'drafted': 218, 'accepted': 150, 'acceptance_rate': 0.6880733944954128} err=None
+[cell vendor k=None] d08-prose wall=4.3s spec={'rounds': 86, 'drafted': 211, 'accepted': 170, 'acceptance_rate': 0.8056872037914692} err=None
+[cell vendor k=None] d09-prose wall=4.8s spec={'rounds': 103, 'drafted': 217, 'accepted': 152, 'acceptance_rate': 0.7004608294930875} err=None
+[cell] done rows=10 errors=0
+PHASE_SNAP post-vendor-pool: [moe-vrows-dedup] layer-calls=99751 visits=2552608 distinct=1992046 repeat=21.96% = the cross-row expert-slab dedup ceiling on the vrows pair (MEMRA_MOE_VROWS_DEDUP_STAT=1)
+2376 /root/out-struct/c2/dedup-lines.txt
+[sb] SIGTERM pid=157070 exe=/root/memra-struct/target/release/memra-server
+[sb] stopped
+=== LOOP-LAW SCREEN (c2 tapes; greedy-loop rows would bias routing counts) ===
+[loop-law] screened=24 flagged=0
+=== C2 DEDUP VERDICT ARITHMETIC (cumulative + per-phase deltas) ===
+FINAL cumulative: layer-calls=99751 visits=2552608 distinct=1992046 repeat_fraction=0.2196 (21.96%)
+SNAP post-sample: layer-calls=1093 visits=28576 distinct=22299 repeat=0.2197
+PHASE post-greedy-pools: dvisits=1462616 ddistinct=1136884 repeat=0.2227 (22.27%)
+SNAP post-greedy-pools: layer-calls=56407 visits=1491192 distinct=1159183 repeat=0.2226
+PHASE post-vendor-pool: dvisits=1061416 ddistinct=832863 repeat=0.2153 (21.53%)
+SNAP post-vendor-pool: layer-calls=99751 visits=2552608 distinct=1992046 repeat=0.2196
+bounds for the verdict (moe-loc LANE §1.6): independent-routing 3.2% -> +0.9% ship; 10% -> +2.7%; 20% -> +5.6%; 33% -> +9.5%; 70.1% structural ceiling -> +22.7%
+C2_DONE

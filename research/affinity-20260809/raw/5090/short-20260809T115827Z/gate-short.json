@@ -1,0 +1,139 @@
+{
+  "requests_compared": 17,
+  "determinism_ok": true,
+  "determinism_arms": 1,
+  "no_new_divergence_ok": true,
+  "shallow_bugs": [],
+  "deep_divergences": 5,
+  "deep_divergence_detail": [
+    {
+      "request": [
+        "sequential",
+        1,
+        1
+      ],
+      "shared_prefix_chars": 182,
+      "on_chars": 246,
+      "cold_chars": 254
+    },
+    {
+      "request": [
+        "sequential",
+        2,
+        2
+      ],
+      "shared_prefix_chars": 217,
+      "on_chars": 249,
+      "cold_chars": 247
+    },
+    {
+      "request": [
+        "sequential",
+        3,
+        3
+      ],
+      "shared_prefix_chars": 187,
+      "on_chars": 233,
+      "cold_chars": 236
+    },
+    {
+      "request": [
+        "sequential",
+        8,
+        8
+      ],
+      "shared_prefix_chars": 136,
+      "on_chars": 264,
+      "cold_chars": 226
+    },
+    {
+      "request": [
+        "sequential",
+        10,
+        10
+      ],
+      "shared_prefix_chars": 149,
+      "on_chars": 253,
+      "cold_chars": 256
+    }
+  ],
+  "short_window_checked": 17,
+  "short_window_exact_ok": false,
+  "budget_ok": true,
+  "max_tokens": 48,
+  "plain_affinity_rewinds": 11,
+  "slope_on_ms_per_uncached_tok": -0.0463,
+  "slope_off_ms_per_uncached_tok": 0.0,
+  "slope_on_r2": 0.00092,
+  "slope_off_r2": 0.0,
+  "shallow_chars_floor": 32,
+  "learning_turns": 2,
+  "ttft_by_turn": {
+    "on": [
+      {
+        "turn": 0,
+        "ttft_s": 0.232289,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.078046,
+        "cached": 743
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.081477,
+        "cached": 819
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.07759,
+        "cached": 896
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.080927,
+        "cached": 975
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.07855,
+        "cached": 1052
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.078235,
+        "cached": 1125
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.080393,
+        "cached": 1199
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.079008,
+        "cached": 1281
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.080383,
+        "cached": 1358
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.091132,
+        "cached": 1436
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.080994,
+        "cached": 1512
+      }
+    ],
+    "off": []
+  },
+  "failures": [
+    "SHORT-WINDOW: 5/17 short-generation resumes NOT byte-identical to cold \u2014 the resumed STATE is wrong (near-ties cannot cascade in a short window) \u2014 [['sequential', 1, 1], ['sequential', 2, 2], ['sequential', 3, 3]]"
+  ]
+}

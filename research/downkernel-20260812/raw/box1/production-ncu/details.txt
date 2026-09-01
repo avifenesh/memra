@@ -1,0 +1,68 @@
+[956577] run-gen@127.0.0.1
+  moe_down8_fma_dev_q8_rows_w8 (4096, 1, 1)x(32, 8, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------ ----------- ------------
+    Metric Name                                                              Metric Unit Metric Value
+    ------------------------------------------------------------------------ ----------- ------------
+    dram__bytes.sum.per_second                                                   Gbyte/s       916.89
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                             %        57.56
+    gpu__time_duration.avg                                                            us        24.35
+    sm__warps_active.avg.pct_of_peak_sustained_active                                  %        74.85
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio        inst        17.25
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio           inst         1.09
+    ------------------------------------------------------------------------ ----------- ------------
+
+    Section: Launch Statistics
+    -------------------------------- --------------- ---------------
+    Metric Name                          Metric Unit    Metric Value
+    -------------------------------- --------------- ---------------
+    Block Size                                                   256
+    Cluster Scheduling Policy                           PolicySpread
+    Cluster Size                                                   0
+    Function Cache Configuration                     CachePreferNone
+    Grid Size                                                   4096
+    Preferred Cluster Size                                         0
+    Registers Per Thread             register/thread              48
+    Shared Memory Configuration Size           Kbyte           16.38
+    Driver Shared Memory Per Block       Kbyte/block            1.02
+    Dynamic Shared Memory Per Block       byte/block               0
+    Static Shared Memory Per Block        byte/block              32
+    # SMs                                         SM             188
+    Stack Size                                                  1024
+    Threads                                   thread         1048576
+    # TPCs                                                        94
+    Enabled TPC IDs                                              all
+    Uses Green Context                                             0
+    Waves Per SM                                                4.36
+    -------------------------------- --------------- ---------------
+
+    OPT   Est. Speedup: 20%                                                                                             
+          A wave of thread blocks is defined as the maximum number of blocks that can be executed in parallel on the    
+          target GPU. The number of blocks in a wave depends on the number of multiprocessors and the theoretical       
+          occupancy of the kernel. This kernel launch results in 4 full waves and a partial wave of 337 thread blocks.  
+          Under the assumption of a uniform execution duration of all thread blocks, this partial wave may account for  
+          up to 20.0% of the total runtime of this kernel. Try launching a grid with no partial wave. The overall       
+          impact of this tail effect also lessens with the number of full waves executed for a grid. See the Hardware   
+          Model (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-hw-model) description for     
+          more details on launch configurations.                                                                        
+
+    Section: Occupancy
+    ------------------------------- ----------- ------------
+    Metric Name                     Metric Unit Metric Value
+    ------------------------------- ----------- ------------
+    Max Active Clusters                 cluster            0
+    Max Cluster Size                      block            8
+    Overall GPU Occupancy                     %            0
+    Cluster Occupancy                         %            0
+    Block Limit Barriers                  block           24
+    Block Limit SM                        block           24
+    Block Limit Registers                 block            5
+    Block Limit Shared Mem                block           14
+    Block Limit Warps                     block            6
+    Theoretical Active Warps per SM        warp           40
+    Theoretical Occupancy                     %        83.33
+    Achieved Occupancy                        %        74.85
+    Achieved Active Warps Per SM           warp        35.93
+    ------------------------------- ----------- ------------
+

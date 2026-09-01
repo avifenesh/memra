@@ -1,0 +1,141 @@
+##### receipts/c1a-bf16-refusal/R1M-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 39044MB -> 39090MB
+[admit-oom] VRAM reject: model="zai/glm-5.3-flash" ctx=1035677 has no attainable admission headroom (available 39090MB) — HTTP 429
+##### receipts/c1a-bf16-refusal/W1K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 18MB (observed 45MB at ctx 1148 path=plain)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### receipts/c1/W1K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 18MB (observed 45MB at ctx 1148 path=plain)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### receipts/c1/R1M-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+##### receipts/c1/R1M-vendor.serverlog
+##### receipts/c1b-arena-refusal/R1M-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 36694MB -> 36740MB
+[admit-oom] VRAM reject: model="zai/glm-5.3-flash" ctx=1035677 has no attainable admission headroom (available 36740MB) — HTTP 429
+##### receipts/c1b-arena-refusal/W1K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 18MB (observed 45MB at ctx 1148 path=plain)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### receipts/c3/W1K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 18MB (observed 45MB at ctx 1148 path=plain)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### receipts/c3/R16K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 18MB fixed = 5093MB
+##### receipts/c3/R16K-vendor.serverlog
+##### receipts/c3/R1M-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+##### receipts/c3diag/poolvar-autok/D16K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=64, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=4096 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### receipts/c3diag/poolvar-k3/D16K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=64, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=4096 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### receipts/c3a-ppab/pp4/A16K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=64, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=4096 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### receipts/c3a-ppab/pp3/A16K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=64, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=4096 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[glm5-acc] ctx=15766 burst=17/29 cum=17/29=0.586
+[glm5-acc] ctx=15798 burst=18/30 cum=35/59=0.593
+[glm5-acc] ctx=15831 burst=22/31 cum=57/90=0.633
+[glm5-acc] ctx=15866 burst=15/24 cum=72/114=0.632
+##### receipts/c3b-ship-pp3/W1K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[glm5-acc] ctx=1108 burst=19/24 cum=19/24=0.792
+##### receipts/c3b-ship-pp3/B16K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[glm5-acc] ctx=15766 burst=17/29 cum=17/29=0.586
+[glm5-acc] ctx=15798 burst=18/30 cum=35/59=0.593
+[glm5-acc] ctx=15831 burst=22/31 cum=57/90=0.633
+[glm5-acc] ctx=15866 burst=15/24 cum=72/114=0.632
+##### receipts/c3b-ship-pp3/B16K-vendor.serverlog
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[glm5-acc] ctx=15766 burst=14/27 cum=14/27=0.519
+[glm5-acc] ctx=15798 burst=18/23 cum=32/50=0.640
+[glm5-acc] ctx=15830 burst=18/24 cum=50/74=0.676
+[glm5-acc] ctx=15862 burst=14/27 cum=64/101=0.634
+##### receipts/c3b-ship-pp3/B131K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=128758 path=plain = 23936 B/token x ctx + 7004MB prefill-workspace + 0MB fixed = 10085MB
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[glm5-acc] ctx=128566 burst=14/35 cum=14/35=0.400
+[glm5-acc] ctx=128598 burst=16/31 cum=30/66=0.455
+[glm5-acc] ctx=128630 burst=17/30 cum=47/96=0.490
+[glm5-acc] ctx=128663 burst=9/13 cum=56/109=0.514
+##### receipts/c3b-ship-pp3/B131K-vendor.serverlog
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+##### receipts/c3b-ship-pp3/plain/W1K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 86MB (observed 113MB at ctx 1148 path=plain)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### receipts/c3b-ship-pp3/plain/P16K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 86MB fixed = 5161MB
+##### receipts/c3b-ship-pp3/plain/P131K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=128758 path=plain = 23936 B/token x ctx + 7004MB prefill-workspace + 86MB fixed = 10171MB
+##### receipts/c4/W1K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[glm5-phase] rounds=12 k=3 total=1649.66ms | draft=66.31 verify=1579.63 accept=0.47 roll=1.70 maint=1.55 | per-round ms: draft=5.526 verify=131.636 accept=0.040 roll=0.141 maint=0.129 total=137.472
+[glm5-phase-v] rounds=12 k=3 | per-round ms: vkda=45.515 (scan=0.365) vmla=8.443 vrest=77.677 (vffn=66.093)
+[glm5-acc] ctx=1108 burst=19/24 cum=19/24=0.792
+##### receipts/c4/T16K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[glm5-phase] rounds=14 k=3 total=2082.72ms | draft=191.01 verify=1886.88 accept=0.52 roll=2.92 maint=1.39 | per-round ms: draft=13.643 verify=134.777 accept=0.037 roll=0.209 maint=0.099 total=148.766
+[glm5-phase-v] rounds=14 k=3 | per-round ms: vkda=45.885 (scan=0.368) vmla=12.312 vrest=76.580 (vffn=64.852)
+[glm5-acc] ctx=15766 burst=17/29 cum=17/29=0.586
+[glm5-phase] rounds=15 k=3 total=1742.46ms | draft=85.63 verify=1651.77 accept=0.58 roll=2.94 maint=1.55 | per-round ms: draft=5.709 verify=110.118 accept=0.039 roll=0.196 maint=0.103 total=116.164
+[glm5-phase-v] rounds=15 k=3 | per-round ms: vkda=44.852 (scan=0.365) vmla=12.194 vrest=53.072 (vffn=41.566)
+[glm5-acc] ctx=15798 burst=18/30 cum=35/59=0.593
+[glm5-phase] rounds=13 k=3 total=1621.92ms | draft=74.20 verify=1543.28 accept=0.50 roll=2.48 maint=1.47 | per-round ms: draft=5.707 verify=118.714 accept=0.039 roll=0.190 maint=0.113 total=124.763
+[glm5-phase-v] rounds=13 k=3 | per-round ms: vkda=50.297 (scan=0.378) vmla=12.802 vrest=55.614 (vffn=43.297)
+[glm5-acc] ctx=15831 burst=22/31 cum=57/90=0.633
+[glm5-phase] rounds=13 k=3 total=1359.28ms | draft=74.18 verify=1280.92 accept=0.46 roll=2.43 maint=1.29 | per-round ms: draft=5.706 verify=98.532 accept=0.035 roll=0.187 maint=0.099 total=104.560
+[glm5-phase-v] rounds=13 k=3 | per-round ms: vkda=42.657 (scan=0.359) vmla=11.876 vrest=43.999 (vffn=32.860)
+[glm5-acc] ctx=15866 burst=15/24 cum=72/114=0.632
+##### receipts/c4/T131K-greedy.serverlog
+[admission] request cost: model="zai/glm-5.3-flash" ctx=128758 path=plain = 23936 B/token x ctx + 7004MB prefill-workspace + 0MB fixed = 10085MB
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[glm5-phase] rounds=17 k=3 total=3276.02ms | draft=1010.91 verify=2257.70 accept=0.63 roll=5.02 maint=1.75 | per-round ms: draft=59.465 verify=132.806 accept=0.037 roll=0.295 maint=0.103 total=192.707
+[glm5-phase-v] rounds=17 k=3 | per-round ms: vkda=45.733 (scan=0.370) vmla=18.129 vrest=68.944 (vffn=57.229)
+[glm5-acc] ctx=128566 burst=14/35 cum=14/35=0.400
+[glm5-phase] rounds=16 k=3 total=1873.23ms | draft=91.67 verify=1775.28 accept=0.57 roll=4.15 maint=1.56 | per-round ms: draft=5.729 verify=110.955 accept=0.035 roll=0.259 maint=0.098 total=117.077
+[glm5-phase-v] rounds=16 k=3 | per-round ms: vkda=44.003 (scan=0.373) vmla=17.603 vrest=49.349 (vffn=37.950)
+[glm5-acc] ctx=128598 burst=16/31 cum=30/66=0.455
+[glm5-phase] rounds=16 k=3 total=1802.39ms | draft=91.72 verify=1704.41 accept=0.58 roll=4.10 maint=1.58 | per-round ms: draft=5.733 verify=106.525 accept=0.036 roll=0.256 maint=0.099 total=112.649
+[glm5-phase-v] rounds=16 k=3 | per-round ms: vkda=43.103 (scan=0.360) vmla=17.617 vrest=45.806 (vffn=34.548)
+[glm5-acc] ctx=128630 burst=17/30 cum=47/96=0.490
+[glm5-phase] rounds=6 k=3 total=712.24ms | draft=34.42 verify=675.57 accept=0.23 roll=1.40 maint=0.62 | per-round ms: draft=5.737 verify=112.595 accept=0.039 roll=0.234 maint=0.103 total=118.706
+[glm5-phase-v] rounds=6 k=3 | per-round ms: vkda=47.248 (scan=0.373) vmla=18.387 vrest=46.960 (vffn=35.038)
+[glm5-acc] ctx=128663 burst=9/13 cum=56/109=0.514

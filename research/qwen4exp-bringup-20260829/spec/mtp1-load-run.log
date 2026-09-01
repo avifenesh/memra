@@ -1,0 +1,245 @@
+warning: function `expected_census` is never used
+   --> crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:288:15
+    |
+288 | pub(crate) fn expected_census(config: &ModelConfig) -> BTreeMap<String, TensorSpec> {
+    |               ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning
+   Compiling memra-reference v0.119.0 (/home/ubuntu/memra/crates/memra-reference)
+warning: memra-engine@0.119.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.119.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.119.0 (/home/ubuntu/memra/crates/memra-engine)
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/hybrid_forward.rs:9288:17
+     |
+9288 |             let mut up = |src: &CudaSlice<u8>,
+     |                 ----^^
+     |                 |
+     |                 help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `eps`
+     --> crates/memra-engine/src/hybrid_forward.rs:19532:13
+      |
+19532 |         let eps = self.cfg.rms_eps;
+      |             ^^^ help: if this is intentional, prefix it with an underscore: `_eps`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:2719:9
+     |
+2719 |     let mut check = |name: &str, a: &[f32], b: &[f32], worst: &mut f32| -> Res<()> {
+     |         ----^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:2779:9
+     |
+2779 |     let mut check = |name: &str, a: &[f32], b: &[f32], worst: &mut f32| -> Res<()> {
+     |         ----^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/spec.rs:3753:13
+     |
+3753 |         let mut anat_mark = |i: usize,
+     |             ----^^^^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/spec.rs:5715:25
+     |
+5715 |                     let mut ffn_col =
+     |                         ----^^^^^^^
+     |                         |
+     |                         help: remove this `mut`
+
+warning: unused variable: `mtp`
+    --> crates/memra-engine/src/spec.rs:8972:17
+     |
+8972 |             let mtp = self.mtp.as_ref().expect("mtp checked above");
+     |                 ^^^ help: if this is intentional, prefix it with an underscore: `_mtp`
+
+warning: method `matvec_bf16_dual` is never used
+     --> crates/memra-engine/src/lib.rs:18948:19
+      |
+ 1335 | impl Engine {
+      | ----------- method in this implementation
+...
+18948 |     pub(crate) fn matvec_bf16_dual(
+      |                   ^^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `step35_spec_fa2_precheck` and `step35_verify_spec_fa2_join` are never used
+     --> crates/memra-engine/src/hybrid_forward.rs:16474:19
+      |
+14899 | impl HybridModel {
+      | ---------------- methods in this implementation
+...
+16474 |     pub(crate) fn step35_spec_fa2_precheck(
+      |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+17212 |     pub(crate) fn step35_verify_spec_fa2_join(
+      |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `decode_v2_spec_fa2_join` is never used
+    --> crates/memra-engine/src/tp.rs:5806:19
+     |
+1443 | impl TpE4m3HostBounce {
+     | --------------------- method in this implementation
+...
+5806 |     pub(crate) fn decode_v2_spec_fa2_join(
+     |                   ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `out_stage_mut` is never used
+    --> crates/memra-engine/src/tp.rs:8991:19
+     |
+8984 | impl Nvfp4DeviceRoutesWorkspace {
+     | ------------------------------- method in this implementation
+...
+8991 |     pub(crate) fn out_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
+     |                   ^^^^^^^^^^^^^
+
+warning: field `graph` is never read
+     --> crates/memra-engine/src/tp.rs:13062:5
+      |
+13061 | struct TokenGraphChild {
+      |        --------------- field in this struct
+13062 |     graph: cudarc::driver::CudaGraph,
+      |     ^^^^^
+
+warning: calls to `std::mem::drop` with a value that implements `Copy` does nothing
+    --> crates/memra-engine/src/spec.rs:5816:21
+     |
+5816 |                     drop(ffn_col);
+     |                     ^^^^^-------^
+     |                          |
+     |                          argument has type `{closure@crates/memra-engine/src/spec.rs:5716:25: 5719:67}`
+     |
+     = note: `#[warn(dropping_copy_types)]` on by default
+help: use `let _ = ...` to ignore the expression or result
+     |
+5816 -                     drop(ffn_col);
+5816 +                     let _ = ffn_col;
+     |
+
+warning: `memra-engine` (lib) generated 13 warnings (run `cargo fix --lib -p memra-engine` to apply 7 suggestions)
+    Finished `release` profile [optimized] target(s) in 37.83s
+b4ef62af1d2efb0623612ca6f6a8a1e513d0a845c81b9dd91407cc4822b68448  target/release/qwen4exp_real_gate
+# qwen4exp_real_gate	label=nvfp4-mtp	binary_sha256=b4ef62af1d2efb0623612ca6f6a8a1e513d0a845c81b9dd91407cc4822b68448	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+# load	208.4s
+# vram	post-load	0, 95283 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+# qwen4exp_real_gate	label=nvfp4-mtp	binary_sha256=b4ef62af1d2efb0623612ca6f6a8a1e513d0a845c81b9dd91407cc4822b68448	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# draft-gate: engine draft vs host reference MTP twin, 10 probe rows, host_twin_seconds=5.9
+phase	row	max_abs	max_rel	ref_absmax	kl	top1_ref	top1_ours	match
+batched	0	7.129e-5	6.866e-5	1.371e1	0.00000	525	525	true
+batched	1	3.386e-5	3.237e-5	1.517e1	0.00000	9559	9559	true
+batched	2	3.767e-5	3.189e-5	1.926e1	0.00000	37550	37550	true
+batched	3	7.725e-5	6.914e-5	1.760e1	0.00000	287	287	true
+batched	4	5.674e-5	4.798e-5	1.976e1	0.00000	888	888	true
+batched	5	5.287e-5	5.287e-5	1.849e1	0.00000	279	279	true
+batched	6	7.391e-5	6.691e-5	1.776e1	0.00000	15217	15217	true
+batched	7	1.354e-4	1.198e-4	2.168e1	0.00000	5388	5388	true
+batched	8	8.988e-5	8.731e-5	1.399e1	0.00000	13	13	true
+batched	9	7.892e-5	7.892e-5	1.270e1	0.00000	198	198	true
+step	0	7.057e-5	6.759e-5	1.371e1	0.00000	525	525	true
+step	1	3.719e-5	3.338e-5	1.517e1	0.00000	9559	9559	true
+step	2	3.815e-5	2.611e-5	1.926e1	0.00000	37550	37550	true
+step	3	7.439e-5	6.413e-5	1.760e1	0.00000	287	287	true
+step	4	6.223e-5	5.525e-5	1.976e1	0.00000	888	888	true
+step	5	5.531e-5	5.388e-5	1.849e1	0.00000	279	279	true
+step	6	7.105e-5	6.050e-5	1.776e1	0.00000	15217	15217	true
+step	7	1.118e-4	9.893e-5	2.168e1	0.00000	5388	5388	true
+step	8	8.726e-5	7.876e-5	1.399e1	0.00000	13	13	true
+step	9	8.547e-5	8.005e-5	1.270e1	0.00000	198	198	true
+# carrier	max_abs=8.202e-5	max_rel=5.090e-5	ref_absmax=1.644e1
+# verdict	rows=20	argmax_matches=20	worst_abs=1.354e-4	worst_rel=1.198e-4	policy=max_rel<=0.01+argmax	pass=true
+
+# draft-gate receipt: /home/ubuntu/realgate/mtp1/draft-gate-nvfp4-mtp.tsv
+# qwen4exp_real_gate	label=nvfp4-mtp	binary_sha256=b4ef62af1d2efb0623612ca6f6a8a1e513d0a845c81b9dd91407cc4822b68448	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# load_seconds=208.4
+# vram	post-load	0, 95283 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.29
+# vram	post-prefill	0, 95443 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.069e-2	1.069e-2	6.315e-4	5.039e-1
+layer4	10	10240	2.400e-2	2.400e-2	8.802e-4	5.000e-1
+layer5	10	10240	4.044e-2	2.199e-2	1.002e-3	3.047e0
+layer6	10	10240	3.950e-2	2.825e-2	1.187e-3	3.078e0
+layer7	10	10240	3.766e-2	3.047e-2	1.342e-3	3.047e0
+layer8	10	10240	3.723e-2	3.028e-2	1.464e-3	3.062e0
+layer9	10	10240	3.919e-2	3.018e-2	1.565e-3	3.062e0
+layer10	10	10240	3.944e-2	3.034e-2	1.643e-3	3.125e0
+layer11	10	10240	4.564e-2	3.057e-2	1.741e-3	3.016e0
+layer12	10	10240	3.579e-2	3.108e-2	1.835e-3	2.953e0
+layer13	10	10240	3.742e-2	3.152e-2	1.919e-3	2.984e0
+layer14	10	10240	3.983e-2	3.028e-2	2.022e-3	3.016e0
+layer15	10	10240	3.942e-2	3.175e-2	2.104e-3	2.953e0
+layer16	10	10240	3.426e-2	3.027e-2	2.300e-3	2.938e0
+layer17	10	10240	3.720e-2	3.012e-2	2.368e-3	2.969e0
+layer18	10	10240	3.641e-2	3.641e-2	2.649e-3	2.969e0
+layer19	10	10240	3.828e-2	3.828e-2	2.727e-3	3.000e0
+layer20	10	10240	3.628e-2	3.628e-2	2.774e-3	2.938e0
+layer21	10	10240	3.821e-2	3.821e-2	2.970e-3	2.969e0
+layer22	10	10240	3.808e-2	3.808e-2	3.195e-3	2.969e0
+layer23	10	10240	4.135e-2	4.135e-2	3.286e-3	2.969e0
+layer24	10	10240	4.415e-2	4.415e-2	3.629e-3	3.828e0
+layer25	10	10240	4.598e-2	4.598e-2	3.749e-3	3.859e0
+layer26	10	10240	4.796e-2	4.796e-2	4.048e-3	5.062e0
+layer27	10	10240	5.241e-2	5.241e-2	4.362e-3	4.750e0
+layer28	10	10240	6.440e-2	6.440e-2	4.784e-3	4.531e0
+layer29	10	10240	7.918e-2	7.918e-2	5.283e-3	4.469e0
+layer30	10	10240	8.751e-2	8.751e-2	5.835e-3	4.438e0
+layer31	10	10240	1.252e-1	1.252e-1	6.236e-3	4.281e0
+layer32	10	10240	1.439e-1	1.439e-1	6.911e-3	3.891e0
+layer33	10	10240	1.524e-1	1.524e-1	7.579e-3	3.844e0
+layer34	10	10240	1.494e-1	1.494e-1	8.300e-3	3.828e0
+layer35	10	10240	1.632e-1	1.632e-1	9.258e-3	3.859e0
+layer36	10	10240	3.300e-1	3.300e-1	1.263e-2	6.844e0
+layer37	10	10240	3.278e-1	3.278e-1	1.420e-2	7.094e0
+layer38	10	10240	3.274e-1	3.274e-1	1.643e-2	7.094e0
+layer39	10	10240	3.848e-1	3.778e-1	1.920e-2	7.188e0
+layer40	10	10240	4.305e-1	4.217e-1	2.234e-2	7.219e0
+layer41	10	10240	4.475e-1	4.108e-1	2.430e-2	7.125e0
+layer42	10	10240	4.586e-1	3.913e-1	2.669e-2	7.156e0
+layer43	10	10240	4.799e-1	4.158e-1	2.980e-2	7.188e0
+layer44	10	10240	6.259e-1	6.259e-1	3.642e-2	1.162e1
+layer45	10	10240	7.158e-1	7.060e-1	4.507e-2	1.169e1
+layer46	10	10240	8.605e-1	8.605e-1	5.328e-2	1.350e1
+layer47	10	10240	9.034e-1	9.034e-1	5.724e-2	2.575e1
+exit_mixer	10	2560	1.279e1	6.599e0	4.373e-1	1.880e2
+logits	10	248320	6.183e0	4.901e0	2.689e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.553e-1	3.553e-1	1.231e1	20438	20438	true
+1	1.170e0	1.057e0	1.431e1	4087	4087	true
+2	1.182e0	1.046e0	1.800e1	37550	37550	true
+3	1.315e0	1.012e0	1.638e1	33075	33075	true
+4	1.883e0	1.825e0	1.888e1	888	888	true
+5	1.522e0	1.332e0	1.862e1	279	279	true
+6	2.620e0	1.682e0	1.950e1	15217	15217	true
+7	1.841e0	1.686e0	1.888e1	5388	5388	true
+8	1.908e0	1.846e0	1.575e1	13	13	true
+9	6.183e0	4.901e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/home/ubuntu/realgate/mtp1/probe-logits-nvfp4-mtp.bin	rows=10	vocab=248320
+# decode_timing	steps=8	mean_ms=14.4	median_ms=14.4	p90_ms=20.5	tok_per_s_untuned=69.51
+# decode_continuation_ids	271,248045,271,248045,271,248045,248046,198,248045
+# vram	post-decode	0, 95453 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+
+# hidden receipt: /home/ubuntu/realgate/mtp1/hidden-gate-nvfp4-mtp.tsv

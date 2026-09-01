@@ -1,0 +1,76 @@
+=== oracle corruption-arm receipt: 2026-08-31T20:02:17Z ===
+repo=/root/memra-bankfix lane sha=68d18bd162a9ebd57e11028e7454104d593a96e0
+toolchain: rustc 1.98.0 (88d9e12ae 2026-08-18) | release 12.8, V12.8.93
+cards before: 0, 1 MiB 1, 1 MiB 2, 1 MiB 3, 1 MiB 
+arm card: CUDA_VISIBLE_DEVICES=0
+
+=== STEP 1: DELIBERATE CORRUPTION (*1.5f on the v2 scale read) — the oracle MUST FAIL ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+diff --git a/crates/memra-engine/cu/moe_f16_grouped.cu b/crates/memra-engine/cu/moe_f16_grouped.cu
+index 1dc857c12..b99f55ed2 100644
+--- a/crates/memra-engine/cu/moe_f16_grouped.cu
++++ b/crates/memra-engine/cu/moe_f16_grouped.cu
+@@ -1025,7 +1025,7 @@ __device__ __forceinline__ KqRaw kq_fetch(const uint8_t* __restrict__ wrow, int
+         // The 16-value window is one 16-value sub-block, so it never crosses a scale.
+         const int n_slots = in_f >> 5;
+         const int g = k0v >> 5, sub = (k0v >> 4) & 1;
+-        r.f1 = g_ue4m3_to_float(wrow[(size_t)n_slots * 16 + g * 2 + sub]);
++        r.f1 = 1.5f * g_ue4m3_to_float(wrow[(size_t)n_slots * 16 + g * 2 + sub]);  // DELIBERATE CORRUPTION (void-gate control)
+         r.f2 = 0.0f;
+         r.sel = 0;
+         const uint8_t* qsp = wrow + (size_t)g * 16 + sub * 8;
+---- build corrupt ----
+corrupt binary sha256: 6d3d0f83cd74eebd4eb7ef08cb6728f84beb0cd145a62b0f753d863ae431f3c7
+corrupt binary md5:    f7a64addbec76fbc99aa9bb2c4e26896
+corrupt kernel .o md5: 2b1fe53f0edef62077861dc9934207eb
+corrupt finished: 5 log lines, 4m 46s
+OK: corrupt/hybrid exit=1 (want 1)
+    corrupt/hybrid [cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.069158e3 maxrel=5.000e-1 => DEVIATION
+    corrupt/hybrid [cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=-7.633102417e2 (0xc43ed3db)
+    corrupt/hybrid [cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=4.644921e2 maxrel=5.000e-1 => DEVIATION
+    corrupt/hybrid [cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-3.993620911e2 (0xc3c7ae59)
+OK: corrupt/sk128 exit=1 (want 1)
+    corrupt/sk128 [cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.069158e3 maxrel=5.000e-1 => DEVIATION
+    corrupt/sk128 [cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=-7.633102417e2 (0xc43ed3db)
+    corrupt/sk128 [cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=4.644921e2 maxrel=5.000e-1 => DEVIATION
+    corrupt/sk128 [cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-3.993620911e2 (0xc3c7ae59)
+OK: corrupt/sk32 exit=1 (want 1)
+    corrupt/sk32 [cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.069158e3 maxrel=5.000e-1 => DEVIATION
+    corrupt/sk32 [cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=-7.633102417e2 (0xc43ed3db)
+    corrupt/sk32 [cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=4.644921e2 maxrel=5.000e-1 => DEVIATION
+    corrupt/sk32 [cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-3.993620911e2 (0xc3c7ae59)
+OK: corrupt/tail0 exit=1 (want 1)
+    corrupt/tail0 [cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.069158e3 maxrel=5.000e-1 => DEVIATION
+    corrupt/tail0 [cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=-7.633102417e2 (0xc43ed3db)
+    corrupt/tail0 [cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=4.644921e2 maxrel=5.000e-1 => DEVIATION
+    corrupt/tail0 [cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-3.993620911e2 (0xc3c7ae59)
+arms log: /root/out-bankfix/oracle-corrupt-4arms.log
+
+=== STEP 2: REVERT the corruption ===
+tree clean after revert; crates/memra-engine/cu/moe_f16_grouped.cu back to 68d18bd16
+
+=== STEP 3: THE TRUE FIX STATE — binary sha MUST DIFFER, 4 arms MUST PASS ===
+---- build fixed ----
+fixed binary sha256: be44f028f68b2a3cb7913d123e6a70f61f0dcc03ad37ddcaa135a62594e1e727
+fixed binary md5:    4aa708265c7b21a293d815a21d1944fd
+fixed kernel .o md5: ee8b9d5a00e69b4f2f9d5ee4dbaa8d05
+fixed finished: 5 log lines, 4m 45s
+OK: binary sha differs across the two kernel states (corrupt 6d3d0f83cd74eebd4eb7ef08cb6728f84beb0cd145a62b0f753d863ae431f3c7 != fixed be44f028f68b2a3cb7913d123e6a70f61f0dcc03ad37ddcaa135a62594e1e727)
+OK: kernel object md5 differs (corrupt 2b1fe53f0edef62077861dc9934207eb != fixed ee8b9d5a00e69b4f2f9d5ee4dbaa8d05) — nvcc re-ran on the source change
+OK: fixed/hybrid exit=0 (want 0)
+    fixed/hybrid [cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+    fixed/hybrid [cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+OK: fixed/sk128 exit=0 (want 0)
+    fixed/sk128 [cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+    fixed/sk128 [cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+OK: fixed/sk32 exit=0 (want 0)
+    fixed/sk32 [cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+    fixed/sk32 [cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+OK: fixed/tail0 exit=0 (want 0)
+    fixed/tail0 [cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+    fixed/tail0 [cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=0 maxabs=0.000000e0 maxrel=0.000e0 => IDENTICAL
+arms log: /root/out-bankfix/oracle-fixed-4arms.log
+
+cards after: 0, 1 MiB 1, 1 MiB 2, 1 MiB 3, 1 MiB 
+==========================================================
+ORACLE CORRUPTION-ARM RECEIPT: VALID — corrupted state FAILED 4/4, fixed state PASSED 4/4, shas differ

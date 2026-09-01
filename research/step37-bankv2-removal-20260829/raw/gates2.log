@@ -1,0 +1,87 @@
+corrected_env=MEMRA_OPROJ_TAIL=1 MEMRA_DEV1_ROUTER=1 MEMRA_LEN_MIRROR_LAZY=1 MEMRA_ASYNC_CHAIN=8 MEMRA_SHEXP_OVERLAP=1 MEMRA_ROUTES_PRESTAGE=1 MEMRA_MOE_DIRECT=1 MEMRA_OPROJ_DIRECT=1 MEMRA_STEP_TP=0-44@0,1 MEMRA_STEP_TP_NATIVE_P2P=1 MEMRA_STEP_NVFP4_DEV_ROUTES=1 MEMRA_STEP_TP_DECODE_V2=1 MEMRA_STEP_TP_QKV_FUSED=1 MEMRA_BF16_MMV=1 MEMRA_STEP_TP_DEV_ROUTER=1 MEMRA_STEP_TP_DCW=1 MEMRA_RMS_BLOCK=1024 MEMRA_SIG_EXPF_DEV=1 MEMRA_HEAD_SPLIT=1 MEMRA_FA_DCW_MEMSET=0 MEMRA_NO_LOCAL_SHADOW=1 MEMRA_FUSE_ROPE_APPEND=1 MEMRA_SEL_MIRROR=1 MEMRA_FA_COMBINE_S=1 MEMRA_MAX_CTX=262144
+=========== CELL A1v2: baseline byte arm ===========
+boot bin=/home/ubuntu/bankv2-lane/baseline/memra-server md5=0a850b582b6fd559c6d0e5518c4f17eb extra='' log=/home/ubuntu/bankv2-lane/v2-a1-baseline.log
+server_pid=88777
+HEALTH=200 after 155s listener_pid=88777 booted_pid=88777
+ARM_IDENTITY_OK
+A1base/mul/r0: pt=25 HIT=True R="Got it, let's calculate 17 times 23. First, 17*20 is 34" C='391'
+A1base/mul/r1: pt=25 HIT=True R="Got it, let's calculate 17 times 23. First, 17*20 is 34" C='391'
+A1base/cap/r0: pt=24 HIT=True R='We need to answer: "What is the capital of France? Repl' C='Paris'
+A1base/cap/r1: pt=24 HIT=True R='We need to answer: "What is the capital of France? Repl' C='Paris'
+A1base/count/r0: pt=27 HIT=True R='We need to answer: "How many days are in a leap year? R' C='366'
+A1base/count/r1: pt=27 HIT=True R='We need to answer: "How many days are in a leap year? R' C='366'
+A1base/word/r0: pt=23 HIT=False R="Got it, let's see. The word is stressed, reverse it. Le" C=''
+A1base/word/r1: pt=23 HIT=False R="Got it, let's see. The word is stressed, reverse it. Le" C=''
+WROTE /home/ubuntu/bankv2-lane/v2-a1-baseline-rows.json
+[A1] ILLEGAL=0 hash87=0 panic=0
+server 88777 gone
+vram_drained=0MiB after 2s
+=========== CELL A2v2: removal byte arm ===========
+boot bin=/home/ubuntu/bankv2-lane/removal/memra-server md5=34192b3fcb3afb6bb52a6fe99e208c7a extra='' log=/home/ubuntu/bankv2-lane/v2-a2-removal.log
+server_pid=88970
+HEALTH=200 after 155s listener_pid=88970 booted_pid=88970
+ARM_IDENTITY_OK
+A2rem/mul/r0: pt=25 HIT=True R="Got it, let's calculate 17 times 23. First, 17*20 is 34" C='391'
+A2rem/mul/r1: pt=25 HIT=True R="Got it, let's calculate 17 times 23. First, 17*20 is 34" C='391'
+A2rem/cap/r0: pt=24 HIT=True R='We need to answer: "What is the capital of France? Repl' C='Paris'
+A2rem/cap/r1: pt=24 HIT=True R='We need to answer: "What is the capital of France? Repl' C='Paris'
+A2rem/count/r0: pt=27 HIT=True R='We need to answer: "How many days are in a leap year? R' C='366'
+A2rem/count/r1: pt=27 HIT=True R='We need to answer: "How many days are in a leap year? R' C='366'
+A2rem/word/r0: pt=23 HIT=False R="Got it, let's see. The word is stressed, reverse it. Le" C=''
+A2rem/word/r1: pt=23 HIT=False R="Got it, let's see. The word is stressed, reverse it. Le" C=''
+WROTE /home/ubuntu/bankv2-lane/v2-a2-removal-rows.json
+[A2] ILLEGAL=0 hash87=0 panic=0
+=========== CELL D: vendor-default sampled on removal (same boot) ===========
+D_HTTP 200 spec_rounds 66 drafted 152 accepted 128 rate 0.8421052631578947 reasoning_len 648
+[spec-acc] ctx=162 burst=19/28 cum=106/128=0.828
+[spec-acc] ctx=195 burst=22/24 cum=128/152=0.842
+[A2+D] ILLEGAL=0 hash87=0 panic=0
+server 88970 gone
+vram_drained=0MiB after 2s
+=========== CELL C1: removal + MEMRA_NVFP4_BANK_V2=1 must refuse ===========
+C1 exited rc=1 after <=2s
+C1 health_after=000
+[server] FATAL: worker init failed: MEMRA_NVFP4_BANK_V2=1 is set, but these flags were REMOVED from the engine on 2026-08-29: the slot-major v2 TP bank layout changed generated text in serving (bisected in research/step37-reasoning-effort-20260829; removal receipts in research/step37-bankv2-removal-20260829) and MEMRA_SEL_DOWN8 required it. The binary no longer contains the code paths these flags armed. Remove them from the launch recipe to boot; the default path already serves the correct text.
+C1 removed_msg_count=1
+C1 load_attempts(before refusal, want 0)=0
+[C1] ILLEGAL=0 hash87=0 panic=0
+vram_drained=0MiB after 2s
+=========== CELL C2: removal + MEMRA_SEL_DOWN8=1 must refuse ===========
+C2 exited rc=1 after <=2s
+C2 health_after=000
+[server] FATAL: worker init failed: MEMRA_SEL_DOWN8=1 is set, but these flags were REMOVED from the engine on 2026-08-29: the slot-major v2 TP bank layout changed generated text in serving (bisected in research/step37-reasoning-effort-20260829; removal receipts in research/step37-bankv2-removal-20260829) and MEMRA_SEL_DOWN8 required it. The binary no longer contains the code paths these flags armed. Remove them from the launch recipe to boot; the default path already serves the correct text.
+C2 removed_msg_count=1
+C2 load_attempts(before refusal, want 0)=0
+[C2] ILLEGAL=0 hash87=0 panic=0
+vram_drained=0MiB after 2s
+=========== CELL C3: removal + MEMRA_NVFP4_BANK_V2=1 MEMRA_SEL_DOWN8=1 must refuse ===========
+C3 exited rc=1 after <=2s
+C3 health_after=000
+[server] FATAL: worker init failed: MEMRA_NVFP4_BANK_V2=1 and MEMRA_SEL_DOWN8=1 are set, but these flags were REMOVED from the engine on 2026-08-29: the slot-major v2 TP bank layout changed generated text in serving (bisected in research/step37-reasoning-effort-20260829; removal receipts in research/step37-bankv2-removal-20260829) and MEMRA_SEL_DOWN8 required it. The binary no longer contains the code paths these flags armed. Remove them from the launch recipe to boot; the default path already serves the correct text.
+C3 removed_msg_count=1
+C3 load_attempts(before refusal, want 0)=0
+[C3] ILLEGAL=0 hash87=0 panic=0
+vram_drained=0MiB after 2s
+=========== BYTE COMPARE A1v2 vs A2v2 ===========
+mul/r0: bytes_identical=True base_len=240 rem_len=240
+mul/r1: bytes_identical=True base_len=240 rem_len=240
+cap/r0: bytes_identical=True base_len=131 rem_len=131
+cap/r1: bytes_identical=True base_len=131 rem_len=131
+count/r0: bytes_identical=True base_len=212 rem_len=212
+count/r1: bytes_identical=True base_len=212 rem_len=212
+word/r0: bytes_identical=True base_len=870 rem_len=870
+word/r1: bytes_identical=True base_len=870 rem_len=870
+base mul r0==r1: True
+base cap r0==r1: True
+base count r0==r1: True
+base word r0==r1: True
+rem mul r0==r1: True
+rem cap r0==r1: True
+rem count r0==r1: True
+rem word r0==r1: True
+BYTE_GATE_PASS
+final GPU state:
+index, memory.used [MiB]
+0, 0 MiB
+1, 0 MiB
+GATES2_DONE

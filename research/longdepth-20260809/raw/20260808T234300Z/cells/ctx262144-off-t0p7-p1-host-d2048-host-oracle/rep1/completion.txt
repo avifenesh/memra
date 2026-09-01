@@ -1,0 +1,119 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; color: #222; background: #f5f5f5; }
+header { position: sticky; top: 0; background: #003366; color: #fff; padding: 0.5rem 1rem; display: flex; align-items: center; justify-content: space-between; z-index: 100; }
+header h1 { font-size: 1.2rem; margin: 0; }
+header input { padding: 0.4rem; width: 200px; border: none; border-radius: 2px; }
+.sidebar { position: fixed; top: 2.5rem; left: 0; width: 220px; background: #e8e8e8; padding: 1rem; overflow-y: auto; max-height: calc(100vh - 2.5rem); }
+.sidebar a { display: block; margin: 0.2rem 0; color: #003366; text-decoration: none; }
+.sidebar a:hover { text-decoration: underline; }
+main { margin-left: 220px; padding: 1rem; }
+section { background: #fff; margin-bottom: 1rem; padding: 1rem; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+section h2 { margin-top: 0; color: #003366; }
+section:focus-within { outline: 2px solid #003366; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; }
+th, td { border: 1px solid #ccc; padding: 0.4rem; text-align: left; }
+th { background: #003366; color: #fff; }
+pre { background: #f0f0f0; padding: 0.5rem; overflow-x: auto; }
+button { margin: 0.2rem; padding: 0.4rem 0.8rem; cursor: pointer; }
+button:focus { outline: 2px solid #003366; }
+.status { font-weight: bold; color: #006600; }
+@media (max-width: 700px) {
+  .sidebar { display: none; }
+  main { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Atlas Operations Manual</h1>
+<input type="search" id="search" placeholder="Search sections...">
+</header>
+<nav class="sidebar" id="sidebar"></nav>
+<main id="content"></main>
+<script>
+(function() {
+  var sidebar = document.getElementById('sidebar');
+  var content = document.getElementById('content');
+  var search = document.getElementById('search');
+  var sections = [];
+  function addSection(id, title) {
+    var s = document.createElement('section');
+    s.id = id;
+    s.innerHTML = '<h2>' + title + '</h2>' +
+      '<p>This is the first paragraph of section ' + title + '. It provides context and background information for the topic.</p>' +
+      '<p>This is the second paragraph of section ' + title + '. It elaborates on procedures and guidelines.</p>' +
+      '<dl>' +
+      '<dt>Term A</dt><dd>Definition A</dd>' +
+      '<dt>Term B</dt><dd>Definition B</dd>' +
+      '<dt>Term C</dt><dd>Definition C</dd>' +
+      '<dt>Term D</dt><dd>Definition D</dd>' +
+      '</dl>' +
+      '<table><tr><th>Col1</th><th>Col2</th><th>Col3</th></tr>' +
+      '<tr><td>R1C1</td><td>R1C2</td><td>R1C3</td></tr>' +
+      '<tr><td>R2C1</td><td>R2C2</td><td>R2C3</td></tr>' +
+      '<tr><td>R3C1</td><td>R3C2</td><td>R3C3</td></tr>' +
+      '<tr><td>R4C1</td><td>R4C2</td><td>R4C3</td></tr>' +
+      '<tr><td>R5C1</td><td>R5C2</td><td>R5C3</td></tr>' +
+      '<tr><td>R6C1</td><td>R6C2</td><td>R6C3</td></tr>' +
+      '</table>' +
+      '<pre>command --option ' + title.toLowerCase().replace(/[^a-z0-9]/g, '-') + '</pre>' +
+      '<button onclick="alert(\'Action ' + title + '\')">Action</button>' +
+      '<button onclick="alert(\'Info ' + title + '\')">Info</button>';
+    content.appendChild(s);
+    sidebar.innerHTML += '<a href="#' + id + '">' + title + '</a>';
+    sections.push({id: id, title: title});
+  }
+  for (var i = 1; i <= 400; i++) {
+    addSection('section-' + i, 'Section ' + i);
+  }
+  search.addEventListener('input', function() {
+    var q = search.value.toLowerCase();
+    sections.forEach(function(sec) {
+      var el = document.getElementById(sec.id);
+      if (sec.title.toLowerCase().indexOf(q) !== -1) {
+        el.style.display = '';
+      } else {
+        el.style.display = 'none';
+      }
+    });
+  });
+})();
+</script>
+<section id="appendix-a" style="margin-left:220px; padding:1rem;">
+<h2>Appendix A: Extended Reference Tables</h2>
+<p>This appendix contains additional reference material for operations. All data is presented in ASCII-only format for compatibility.</p>
+<p>The tables below provide detailed metrics, configuration parameters, and historical logs. Use them for cross-referencing during troubleshooting.</p>
+<dl>
+<dt>Metric Alpha</dt><dd>Measurement of system throughput.</dd>
+<dt>Metric Beta</dt><dd>Latency statistics across nodes.</dd>
+<dt>Metric Gamma</dt><dd>Error rate percentages.</dd>
+<dt>Metric Delta</dt><dd>Resource utilization indices.</dd>
+</dl>
+<table>
+<tr><th>ID</th><th>Name</th><th>Value</th><th>Unit</th><th>Timestamp</th><th>Status</th></tr>
+<tr><td>A001</td><td>Node-Alpha</td><td>1024</td><td>MB</td><td>2025-01-01T00:00:00Z</td><td>OK</td></tr>
+<tr><td>A002</td><td>Node-Beta</td><td>2048</td><td>MB</td><td>2025-01-01T01:00:00Z</td><td>OK</td></tr>
+<tr><td>A003</td><td>Node-Gamma</td><td>512</td><td>MB</td><td>2025-01-01T02:00:00Z</td><td>WARN</td></tr>
+<tr><td>A004</td><td>Node-Delta</td><td>4096</td><td>MB</td><td>2025-01-01T03:00:00Z</td><td>OK</td></tr>
+<tr><td>A005</td><td>Node-Epsilon</td><td>256</td><td>MB</td><td>2025-01-01T04:00:00Z</td><td>ERR</td></tr>
+<tr><td>A006</td><td>Node-Zeta</td><td>8192</td><td>MB</td><td>2025-01-01T05:00:00Z</td><td>OK</td></tr>
+</table>
+<pre>atlas-cli --list-metrics --verbose</pre>
+<button onclick="alert('Appendix A action')">A-Action</button>
+<button onclick="alert('Appendix A info')">A-Info</button>
+</section>
+<section id="appendix-b" style="margin-left:220px; padding:1rem;">
+<h2>Appendix B: Configuration Parameters</h2>
+<p>This section details all configurable parameters for the Atlas system. Parameters are grouped by subsystem.</p>
+<p>Each entry includes the parameter name, allowed values, default value, and a brief description of its effect on system behavior.</p>
+<dl>
+<dt>Param Alpha</dt><dd>Controls maximum connection pool size.</dd>
+<dt>Param Beta</dt><dd>Sets timeout duration in milliseconds.</dd>
+<dt>Param Gamma</dt><dd>Enables or disables debug logging.</dd>
+<dt>Param Delta</dt><dd>

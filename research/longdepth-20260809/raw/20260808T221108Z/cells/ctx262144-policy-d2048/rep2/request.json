@@ -1,0 +1,16 @@
+{
+  "cache_salt": "longdepth-ctx262144-policy-d2048-rep2",
+  "chat": false,
+  "frequency_penalty": 0.0,
+  "max_tokens": 2048,
+  "min_p": 0.0,
+  "model": "step35",
+  "presence_penalty": 0.0,
+  "prompt": "<|im_start|>system\nReasoning: low\n\n<|im_end|>\n<|im_start|>user\nWrite one standalone production-quality HTML5 document for a fictional web application named\n\"Atlas Operations Manual\".\n\nHard requirements:\n\n- Output source code only. Do not use a Markdown fence and do not add an explanation before or\n  after the document.\n- Use ASCII characters only, including all visible copy, identifiers, comments, CSS, and\n  JavaScript strings.\n- Begin with <!doctype html> and include explicit html, head, style, body, and script elements.\n- Use only vanilla HTML, CSS, and JavaScript. Do not load external assets or libraries.\n- Make the page responsive and accessible, with a sidebar, sticky header, search field, status\n  summary, tables, forms, keyboard focus styles, and a small amount of working interaction.\n- Write at least 400 numbered section elements literally in the HTML markup. Do not use a loop,\n  template, generated placeholder, ellipsis, or JavaScript to create or stand in for sections.\n- Give every section a unique ASCII id, a numbered h2, two informative paragraphs, a definition\n  list with four entries, a six-row table, a preformatted command example, and two buttons.\n- Keep all non-void tags explicitly balanced. Quote every attribute value. End every CSS rule and\n  JavaScript statement cleanly.\n- The document must be longer than 20000 output tokens. Do not conclude early. After section 400,\n  continue with detailed ASCII-only appendix tables until the output limit is reached.\n\nThe purpose of the task is to exercise a long continuous code generation. Continue emitting valid\nHTML source without summaries, shortcuts, omitted sections, or prose outside the document.\n<|im_end|>\n<|im_start|>assistant\n<think>\n</think>\n<!doctype html>\n",
+  "repetition_penalty": 1.0,
+  "seed": 20260809,
+  "stream": false,
+  "temperature": 0.0,
+  "top_k": 0,
+  "top_p": 1.0
+}

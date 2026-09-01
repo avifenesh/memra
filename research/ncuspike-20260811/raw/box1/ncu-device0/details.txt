@@ -1,0 +1,277 @@
+[845265] ncuspike-profile@127.0.0.1
+  qmatvec_iq4_XS_dp4a (8192, 1, 1)x(128, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Gbyte/s       902.06
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        55.77
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        56.59
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %        56.59
+    gpu__time_duration.avg                                                                 us        19.78
+    launch__registers_per_thread                                              register/thread           43
+    launch__waves_per_multiprocessor                                                                  4.36
+    sm__maximum_warps_per_active_cycle_pct                                                  %        83.33
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        51.82
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        74.01
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         3.23
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst        12.30
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         1.45
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         1.82
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.54
+    ------------------------------------------------------------------------- --------------- ------------
+
+  qmatvec_iq4_XS_dp4a (1024, 1, 1)x(128, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Gbyte/s       282.45
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        17.35
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        17.81
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %        17.81
+    gpu__time_duration.avg                                                                 us         7.94
+    launch__registers_per_thread                                              register/thread           43
+    launch__waves_per_multiprocessor                                                                  0.54
+    sm__maximum_warps_per_active_cycle_pct                                                  %        83.33
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        16.20
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        43.57
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         2.22
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst        18.00
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         0.64
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         3.06
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.55
+    ------------------------------------------------------------------------- --------------- ------------
+
+  qmatvec_iq4_XS_dp4a (64, 1, 1)x(128, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Gbyte/s        26.68
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %         5.09
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %         5.09
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %         1.69
+    gpu__time_duration.avg                                                                 us         5.73
+    launch__registers_per_thread                                              register/thread           43
+    launch__waves_per_multiprocessor                                                                  0.03
+    sm__maximum_warps_per_active_cycle_pct                                                  %        83.33
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %         1.36
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %         8.14
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         0.00
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst         9.92
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst            0
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         2.98
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.49
+    ------------------------------------------------------------------------- --------------- ------------
+
+  fa_decode_vec_q_v3 (8, 33, 1)x(32, 8, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Gbyte/s        69.08
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        14.35
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        16.14
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %         4.35
+    gpu__time_duration.avg                                                                 us        14.72
+    launch__registers_per_thread                                              register/thread           40
+    launch__waves_per_multiprocessor                                                                  0.23
+    sm__maximum_warps_per_active_cycle_pct                                                  %          100
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        16.14
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        23.11
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         0.05
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst         7.88
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         0.45
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         2.02
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.51
+    ------------------------------------------------------------------------- --------------- ------------
+
+  qmatvec_iq4_XS_dp4a (4096, 1, 1)x(128, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Gbyte/s       878.17
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        51.83
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        55.13
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %        55.13
+    gpu__time_duration.avg                                                                 us        20.32
+    launch__registers_per_thread                                              register/thread           43
+    launch__waves_per_multiprocessor                                                                  2.18
+    sm__maximum_warps_per_active_cycle_pct                                                  %        83.33
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        46.69
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        74.20
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         3.69
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst        16.82
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         1.12
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         1.11
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.43
+    ------------------------------------------------------------------------- --------------- ------------
+
+  qmatvec_iq4_XS_dp4a (11264, 1, 1)x(128, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Tbyte/s         1.02
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        62.66
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        63.73
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %        63.73
+    gpu__time_duration.avg                                                                 us        24.16
+    launch__registers_per_thread                                              register/thread           43
+    launch__waves_per_multiprocessor                                                                  5.99
+    sm__maximum_warps_per_active_cycle_pct                                                  %        83.33
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        58.20
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        74.07
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         2.77
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst        10.95
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         1.55
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         1.77
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.54
+    ------------------------------------------------------------------------- --------------- ------------
+
+  qmatvec_iq4_XS_dp4a (12288, 1, 1)x(128, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Tbyte/s         1.06
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        64.92
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        66.24
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %        66.24
+    gpu__time_duration.avg                                                                 us        25.31
+    launch__registers_per_thread                                              register/thread           43
+    launch__waves_per_multiprocessor                                                                  6.54
+    sm__maximum_warps_per_active_cycle_pct                                                  %        83.33
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        60.30
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        73.89
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         2.82
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst        10.13
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         1.47
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         1.71
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.54
+    ------------------------------------------------------------------------- --------------- ------------
+
+  qmatvec_iq4_XS_dp4a (96, 1, 1)x(128, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Gbyte/s        38.79
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %         5.06
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %         5.06
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %         2.44
+    gpu__time_duration.avg                                                                 us         5.73
+    launch__registers_per_thread                                              register/thread           43
+    launch__waves_per_multiprocessor                                                                  0.05
+    sm__maximum_warps_per_active_cycle_pct                                                  %        83.33
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %         2.04
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %         8.14
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         0.00
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst        10.17
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst            0
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         3.00
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.49
+    ------------------------------------------------------------------------- --------------- ------------
+
+  fa_decode_vec_q_v3 (8, 32, 1)x(32, 12, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Gbyte/s        66.81
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        17.48
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        22.21
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %         4.20
+    gpu__time_duration.avg                                                                 us        15.33
+    launch__registers_per_thread                                              register/thread           40
+    launch__waves_per_multiprocessor                                                                  0.34
+    sm__maximum_warps_per_active_cycle_pct                                                  %          100
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        22.21
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        34.18
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         0.05
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst         8.18
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         0.82
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         2.14
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.53
+    ------------------------------------------------------------------------- --------------- ------------
+
+  moe_gate_up_silu8_dev_q8_v_rows (1280, 8, 1)x(32, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Tbyte/s         1.13
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        37.38
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        71.11
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %        71.11
+    gpu__time_duration.avg                                                                 us        39.36
+    launch__registers_per_thread                                              register/thread           64
+    launch__waves_per_multiprocessor                                                                  2.27
+    sm__maximum_warps_per_active_cycle_pct                                                  %           50
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        17.56
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        43.38
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         0.09
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst        20.88
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         0.29
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         0.78
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.68
+    ------------------------------------------------------------------------- --------------- ------------
+
+  moe_down8_fma_dev_q8_rows_g (4096, 1, 1)x(32, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Gbyte/s       588.19
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        21.23
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        36.90
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %        36.90
+    gpu__time_duration.avg                                                                 us        37.95
+    launch__registers_per_thread                                              register/thread           44
+    launch__waves_per_multiprocessor                                                                  0.91
+    sm__maximum_warps_per_active_cycle_pct                                                  %           50
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        17.05
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        44.91
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         0.02
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst        18.96
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         0.61
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         0.88
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.96
+    ------------------------------------------------------------------------- --------------- ------------
+
+  qmatvec_iq4_XS_dp4a (1280, 1, 1)x(128, 1, 1), Context 1, Stream 16, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------- --------------- ------------
+    Metric Name                                                                   Metric Unit Metric Value
+    ------------------------------------------------------------------------- --------------- ------------
+    dram__bytes.sum.per_second                                                        Gbyte/s       336.43
+    gpu__compute_memory_access_throughput.avg.pct_of_peak_sustained_elapsed                 %        20.26
+    gpu__compute_memory_throughput.avg.pct_of_peak_sustained_elapsed                        %        21.17
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                                  %        21.17
+    gpu__time_duration.avg                                                                 us         8.32
+    launch__registers_per_thread                                              register/thread           43
+    launch__waves_per_multiprocessor                                                                  0.68
+    sm__maximum_warps_per_active_cycle_pct                                                  %        83.33
+    sm__throughput.avg.pct_of_peak_sustained_elapsed                                        %        18.92
+    sm__warps_active.avg.pct_of_peak_sustained_active                                       %        54.98
+    smsp__average_warps_issue_stalled_lg_throttle_per_issue_active.ratio                 inst         2.92
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio             inst        21.14
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio                inst         0.89
+    smsp__average_warps_issue_stalled_short_scoreboard_per_issue_active.ratio            inst         3.02
+    smsp__average_warps_issue_stalled_wait_per_issue_active.ratio                        inst         1.56
+    ------------------------------------------------------------------------- --------------- ------------
+

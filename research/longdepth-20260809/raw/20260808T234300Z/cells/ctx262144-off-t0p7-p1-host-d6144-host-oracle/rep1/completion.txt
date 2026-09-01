@@ -1,0 +1,273 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; color: #222; background: #f5f5f5; }
+header { position: sticky; top: 0; background: #003366; color: #fff; padding: 0.5rem 1rem; display: flex; align-items: center; justify-content: space-between; z-index: 100; }
+header h1 { font-size: 1.2rem; margin: 0; }
+header input { padding: 0.4rem; width: 200px; border: none; border-radius: 2px; }
+.sidebar { position: fixed; top: 2.5rem; left: 0; width: 220px; background: #e8e8e8; padding: 1rem; overflow-y: auto; max-height: calc(100vh - 2.5rem); }
+.sidebar a { display: block; margin: 0.2rem 0; color: #003366; text-decoration: none; }
+.sidebar a:hover { text-decoration: underline; }
+main { margin-left: 220px; padding: 1rem; }
+section { background: #fff; margin-bottom: 1rem; padding: 1rem; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+section h2 { margin-top: 0; color: #003366; }
+section:focus-within { outline: 2px solid #003366; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; }
+th, td { border: 1px solid #ccc; padding: 0.4rem; text-align: left; }
+th { background: #003366; color: #fff; }
+pre { background: #f0f0f0; padding: 0.5rem; overflow-x: auto; }
+button { margin: 0.2rem; padding: 0.4rem 0.8rem; cursor: pointer; }
+button:focus { outline: 2px solid #003366; }
+.status { font-weight: bold; color: #006600; }
+@media (max-width: 700px) {
+  .sidebar { display: none; }
+  main { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Atlas Operations Manual</h1>
+<input type="search" id="search" placeholder="Search sections...">
+</header>
+<nav class="sidebar" id="sidebar"></nav>
+<main id="content"></main>
+<script>
+(function() {
+  var sidebar = document.getElementById('sidebar');
+  var content = document.getElementById('content');
+  var search = document.getElementById('search');
+  var sections = [];
+  function addSection(id, title) {
+    var s = document.createElement('section');
+    s.id = id;
+    s.innerHTML = '<h2>' + title + '</h2>' +
+      '<p>This is the first paragraph of section ' + title + '. It provides context and background information for the topic.</p>' +
+      '<p>This is the second paragraph of section ' + title + '. It elaborates on procedures and guidelines.</p>' +
+      '<dl>' +
+      '<dt>Term A</dt><dd>Definition A</dd>' +
+      '<dt>Term B</dt><dd>Definition B</dd>' +
+      '<dt>Term C</dt><dd>Definition C</dd>' +
+      '<dt>Term D</dt><dd>Definition D</dd>' +
+      '</dl>' +
+      '<table><tr><th>Col1</th><th>Col2</th><th>Col3</th></tr>' +
+      '<tr><td>R1C1</td><td>R1C2</td><td>R1C3</td></tr>' +
+      '<tr><td>R2C1</td><td>R2C2</td><td>R2C3</td></tr>' +
+      '<tr><td>R3C1</td><td>R3C2</td><td>R3C3</td></tr>' +
+      '<tr><td>R4C1</td><td>R4C2</td><td>R4C3</td></tr>' +
+      '<tr><td>R5C1</td><td>R5C2</td><td>R5C3</td></tr>' +
+      '<tr><td>R6C1</td><td>R6C2</td><td>R6C3</td></tr>' +
+      '</table>' +
+      '<pre>command --option ' + title.toLowerCase().replace(/[^a-z0-9]/g, '-') + '</pre>' +
+      '<button onclick="alert(\'Action ' + title + '\')">Action</button>' +
+      '<button onclick="alert(\'Info ' + title + '\')">Info</button>';
+    content.appendChild(s);
+    sidebar.innerHTML += '<a href="#' + id + '">' + title + '</a>';
+    sections.push({id: id, title: title});
+  }
+  for (var i = 1; i <= 400; i++) {
+    addSection('section-' + i, 'Section ' + i);
+  }
+  search.addEventListener('input', function() {
+    var q = search.value.toLowerCase();
+    sections.forEach(function(sec) {
+      var el = document.getElementById(sec.id);
+      if (sec.title.toLowerCase().indexOf(q) !== -1) {
+        el.style.display = '';
+      } else {
+        el.style.display = 'none';
+      }
+    });
+  });
+})();
+</script>
+<section id="appendix-a" style="margin-left:220px; padding:1rem;">
+<h2>Appendix A: Extended Reference Tables</h2>
+<p>This appendix contains additional reference material for operations. All data is presented in ASCII-only format for compatibility.</p>
+<p>The tables below provide detailed metrics, configuration parameters, and historical logs. Use them for cross-referencing during troubleshooting.</p>
+<dl>
+<dt>Metric Alpha</dt><dd>Measurement of system throughput.</dd>
+<dt>Metric Beta</dt><dd>Latency statistics across nodes.</dd>
+<dt>Metric Gamma</dt><dd>Error rate percentages.</dd>
+<dt>Metric Delta</dt><dd>Resource utilization indices.</dd>
+</dl>
+<table>
+<tr><th>ID</th><th>Name</th><th>Value</th><th>Unit</th><th>Timestamp</th><th>Status</th></tr>
+<tr><td>A001</td><td>Node-Alpha</td><td>1024</td><td>MB</td><td>2025-01-01T00:00:00Z</td><td>OK</td></tr>
+<tr><td>A002</td><td>Node-Beta</td><td>2048</td><td>MB</td><td>2025-01-01T01:00:00Z</td><td>OK</td></tr>
+<tr><td>A003</td><td>Node-Gamma</td><td>512</td><td>MB</td><td>2025-01-01T02:00:00Z</td><td>WARN</td></tr>
+<tr><td>A004</td><td>Node-Delta</td><td>4096</td><td>MB</td><td>2025-01-01T03:00:00Z</td><td>OK</td></tr>
+<tr><td>A005</td><td>Node-Epsilon</td><td>256</td><td>MB</td><td>2025-01-01T04:00:00Z</td><td>ERR</td></tr>
+<tr><td>A006</td><td>Node-Zeta</td><td>8192</td><td>MB</td><td>2025-01-01T05:00:00Z</td><td>OK</td></tr>
+</table>
+<pre>atlas-cli --list-metrics --verbose</pre>
+<button onclick="alert('Appendix A action')">A-Action</button>
+<button onclick="alert('Appendix A info')">A-Info</button>
+</section>
+<section id="appendix-b" style="margin-left:220px; padding:1rem;">
+<h2>Appendix B: Configuration Parameters</h2>
+<p>This section details all configurable parameters for the Atlas system. Parameters are grouped by subsystem.</p>
+<p>Each entry includes the parameter name, allowed values, default value, and a brief description of its effect on system behavior.</p>
+<dl>
+<dt>Param Alpha</dt><dd>Controls maximum connection pool size.</dd>
+<dt>Param Beta</dt><dd>Sets timeout duration in milliseconds.</dd>
+<dt>Param Gamma</dt><dd>Enables or disables debug logging.</dd>
+<dt>Param Delta</dt><dd>Specifies retry attempt count.</dd>
+</dl>
+<table>
+<tr><th>Parameter</th><th>Allowed</th><th>Default</th><th>Description</th><th>Subsystem</th><th>Impact</th></tr>
+<tr><td>max_conn</td><td>1-1000</td><td>100</td><td>Max connections</td><td>Network</td><td>High</td></tr>
+<tr><td>timeout_ms</td><td>100-60000</td><td>5000</td><td>Timeout</td><td>Network</td><td>Medium</td></tr>
+<tr><td>debug_log</td><td>true/false</td><td>false</td><td>Debug logging</td><td>Logging</td><td>Low</td></tr>
+<tr><td>retry_cnt</td><td>0-10</td><td>3</td><td>Retry count</td><td>Resilience</td><td>Medium</td></tr>
+<tr><td>cache_ttl</td><td>0-86400</td><td>3600</td><td>Cache TTL</td><td>Cache</td><td>Low</td></tr>
+<tr><td>batch_sz</td><td>1-5000</td><td>500</td><td>Batch size</td><td>Processing</td><td>High</td></tr>
+</table>
+<pre>atlas-config set max_conn 200</pre>
+<button onclick="alert('Appendix B action')">B-Action</button>
+<button onclick="alert('Appendix B info')">B-Info</button>
+</section>
+<section id="appendix-c" style="margin-left:220px; padding:1rem;">
+<h2>Appendix C: Historical Logs</h2>
+<p>This appendix presents a chronological list of significant events in the Atlas system history.</p>
+<p>Logs include timestamps, event types, affected components, and resolution status. Use these for audit trails.</p>
+<dl>
+<dt>Event Alpha</dt><dd>System startup sequence.</dd>
+<dt>Event Beta</dt><dd>Configuration reload.</dd>
+<dt>Event Gamma</dt><dd>Node failure and recovery.</dd>
+<dt>Event Delta</dt><dd>Security patch applied.</dd>
+</dl>
+<table>
+<tr><th>Timestamp</th><th>Event</th><th>Component</th><th>Status</th><th>Operator</th><th>Notes</th></tr>
+<tr><td>2025-01-01T00:00:00Z</td><td>Startup</td><td>Core</td><td>Success</td><td>system</td><td>Normal</td></tr>
+<tr><td>2025-01-01T01:00:00Z</td><td>Reload</td><td>Config</td><td>Success</td><td>admin</td><td>No issues</td></tr>
+<tr><td>2025-01-01T02:00:00Z</td><td>Failure</td><td>Node-Gamma</td><td>Recovered</td><td>ops</td><td>Auto-restart</td></tr>
+<tr><td>2025-01-01T03:00:00Z</td><td>Patch</td><td>Security</td><td>Applied</td><td>security</td><td>v2.3.1</td></tr>
+<tr><td>2025-01-01T04:00:00Z</td><td>Upgrade</td><td>Database</td><td>Pending</td><td>dba</td><td>Scheduled</td></tr>
+<tr><td>2025-01-01T05:00:00Z</td><td>Backup</td><td>Storage</td><td>Completed</td><td>backup</td><td>Full</td></tr>
+</table>
+<pre>atlas-log --filter event=failure --tail 100</pre>
+<button onclick="alert('Appendix C action')">C-Action</button>
+<button onclick="alert('Appendix C info')">C-Info</button>
+</section>
+<section id="appendix-d" style="margin-left:220px; padding:1rem;">
+<h2>Appendix D: Command Reference</h2>
+<p>This appendix lists all available commands for the Atlas CLI. Each command is described with syntax, options, and examples.</p>
+<p>Commands are organized by functional area: system, network, storage, security, and user management.</p>
+<dl>
+<dt>atlas-status</dt><dd>Shows overall system health.</dd>
+<dt>atlas-config</dt><dd>Manages configuration parameters.</dd>
+<dt>atlas-log</dt><dd>Retrieves and filters logs.</dd>
+<dt>atlas-backup</dt><dd>Controls backup operations.</dd>
+</dl>
+<table>
+<tr><th>Command</th><th>Syntax</th><th>Options</th><th>Output</th><th>Permissions</th><th>Notes</th></tr>
+<tr><td>status</td><td>atlas-status</td><td>--json</td><td>Health JSON</td><td>user</td><td>Read-only</td></tr>
+<tr><td>config</td><td>atlas-config set key val</td><td>--force</td><td>Confirmation</td><td>admin</td><td>Restart may req.</td></tr>
+<tr><td>log</td><td>atlas-log --filter k=v</td><td>--tail N</td><td>Log lines</td><td>user</td><td>Large output</td></tr>
+<tr><td>backup</td><td>atlas-backup start</td><td>--type full</td><td>Job ID</td><td>admin</td><td>Long running</td></tr>
+<tr><td>restore</td><td>atlas-backup restore jobid</td><td>--dry-run</td><td>Plan</td><td>admin</td><td>Destructive</td></tr>
+<tr><td>version</td><td>atlas-version</td><td>--short</td><td>Version string</td><td>user</td><td>Static</td></tr>
+</table>
+<pre>atlas-config set debug_log true --force</pre>
+<button onclick="alert('Appendix D action')">D-Action</button>
+<button onclick="alert('Appendix D info')">D-Info</button>
+</section>
+<section id="appendix-e" style="margin-left:220px; padding:1rem;">
+<h2>Appendix E: Troubleshooting Guide</h2>
+<p>This appendix provides step-by-step procedures for diagnosing and resolving common issues in the Atlas system.</p>
+<p>Each procedure includes symptoms, probable causes, diagnostic commands, and remediation steps.</p>
+<dl>
+<dt>Symptom Alpha</dt><dd>High latency on API endpoints.</dd>
+<dt>Symptom Beta</dt><dd>Frequent node disconnections.</dd>
+<dt>Symptom Gamma</dt><dd>Disk space alerts.</dd>
+<dt>Symptom Delta</dt><dd>Authentication failures.</dd>
+</dl>
+<table>
+<tr><th>Symptom</th><th>Cause</th><th>Diagnostic</th><th>Fix</th><th>Escalation</th><th>Ref</th></tr>
+<tr><td>Latency</td><td>Network congestion</td><td>ping, traceroute</td><td>Throttle traffic</td><td>Net team</td><td>KB-101</td></tr>
+<tr><td>Disconnect</td><td>Hardware fault</td><td>dmesg, ipmitool</td><td>Replace component</td><td>Hardware</td><td>KB-102</td></tr>
+<tr><td>Disk full</td><td>Log accumulation</td><td>df -h</td><td>Rotate logs</td><td>Ops</td><td>KB-103</td></tr>
+<tr><td>Auth fail</td><td>Expired cert</td><td>openssl s_client</td><td>Renew cert</td><td>Security</td><td>KB-104</td></tr>
+<tr><td>Memory</td><td>Leak in service</td><td>valgrind</td><td>Patch service</td><td>Dev</td><td>KB-105</td></tr>
+<tr><td>CPU spike</td><td>Batch job overload</td><td>top, ps</td><td>Reschedule job</td><td>Scheduler</td><td>KB-106</td></tr>
+</table>
+<pre>atlas-diag --check network --verbose</pre>
+<button onclick="alert('Appendix E action')">E-Action</button>
+<button onclick="alert('Appendix E info')">E-Info</button>
+</section>
+<section id="appendix-f" style="margin-left:220px; padding:1rem;">
+<h2>Appendix F: Security Protocols</h2>
+<p>This appendix details security protocols enforced across the Atlas infrastructure. Compliance is mandatory for all operators.</p>
+<p>Protocols cover access control, data encryption, audit logging, and incident response procedures.</p>
+<dl>
+<dt>Protocol Alpha</dt><dd>Multi-factor authentication requirement.</dd>
+<dt>Protocol Beta</dt><dd>Encryption at rest using AES-256.</dd>
+<dt>Protocol Gamma</dt><dd>Network segmentation rules.</dd>
+<dt>Protocol Delta</dt><dd>Incident response timeline.</dd>
+</dl>
+<table>
+<tr><th>Protocol</th><th>Scope</th><th>Implementation</th><th>Enforcement</th><th>Audit</th><th>Exceptions</th></tr>
+<tr><td>MFA</td><td>All users</td><td>TOTP</td><td>Automated</td><td>Monthly</td><td>Break-glass</td></tr>
+<tr><td>Encryption</td><td>Data stores</td><td>AES-256</td><td>Automated</td><td>Quarterly</td><td>None</td></tr>
+<tr><td>Segmentation</td><td>Network</td><td>VLANs</td><td>Firewall</td><td>Continuous</td><td>Dev env</td></tr>
+<tr><td>Incident</td><td>Security</td><td>Runbook</td><td>Manual</td><td>Per event</td><td>None</td></tr>
+<tr><td>Patching</td><td>Systems</td><td>Auto</td><td>Scheduled</td><td>Weekly</td><td>Critical</td></tr>
+<tr><td>Monitoring</td><td>All</td><td>SIEM</td><td>24/7</td><td>Real-time</td><td>None</td></tr>
+</table>
+<pre>atlas-security audit --protocol mfa --report</pre>
+<button onclick="alert('Appendix F action')">F-Action</button>
+<button onclick="alert('Appendix F info')">F-Info</button>
+</section>
+<section id="appendix-g" style="margin-left:220px; padding:1rem;">
+<h2>Appendix G: Maintenance Windows</h2>
+<p>This appendix defines scheduled maintenance windows for the Atlas platform. Downtime is minimized during these periods.</p>
+<p>Windows are communicated in UTC and include expected impact, rollback procedures, and contact information.</p>
+<dl>
+<dt>Window Alpha</dt><dd>Weekly patch deployment.</dd>
+<dt>Window Beta</dt><dd>Monthly hardware inspection.</dd>
+<dt>Window Gamma</dt><dd>Quarterly disaster recovery test.</dd>
+<dt>Window Delta</dt><dd>Annual security audit.</dd>
+</dl>
+<table>
+<tr><th>Window</th><th>Schedule</th><th>Duration</th><th>Impact</th><th>Contact</th><th>Rollback</th></tr>
+<tr><td>Weekly</td><td>Sun 02:00-04:00 UTC</td><td>2h</td><td>Low</td><td>ops@atlas</td><td>Auto</td></tr>
+<tr><td>Monthly</td><td>First Sat 00:00-06:00 UTC</td><td>6h</td><td>Medium</td><td>hw@atlas</td><td>Manual</td></tr>
+<tr><td>Quarterly</td><td>Last Sun 00:00-12:00 UTC</td><td>12h</td><td>High</td><td>dr@atlas</td><td>Full</td></tr>
+<tr><td>Annual</td><td>Second Mon 00:00-23:59 UTC</td><td>24h</td><td>Variable</td><td>security@atlas</td><td>N/A</td></tr>
+<tr><td>Emergency</td><td>As needed</td><td>Variable</td><td>High</td><td>oncall@atlas</td><td>N/A</td></tr>
+<tr><td>Upgrade</td><td>Bi-weekly Wed 03:00-05:00 UTC</td><td>2h</td><td>Low</td><td>release@atlas</td><td>Auto</td></tr>
+</table>
+<pre>atlas-maint schedule --window weekly --notify</pre>
+<button onclick="alert('Appendix G action')">G-Action</button>
+<button onclick="alert('Appendix G info')">G-Info</button>
+</section>
+<section id="appendix-h" style="margin-left:220px; padding:1rem;">
+<h2>Appendix H: Glossary of Terms</h2>
+<p>This appendix provides definitions for technical terms used throughout the Atlas Operations Manual.</p>
+<p>Terms are listed alphabetically with concise explanations to ensure consistent understanding among operators.</p>
+<dl>
+<dt>API</dt><dd>Application Programming Interface.</dd>
+<dt>CLI</dt><dd>Command Line Interface.</dd>
+<dt>DR</dt><dd>Disaster Recovery.</dd>
+<dt>HA</dt><dd>High Availability.</dd>
+</dl>
+<table>
+<tr><th>Term</th><th>Definition</th><th>Context</th><th>Example</th><th>Related</th><th>Source</th></tr>
+<tr><td>API</td><td>Interface for software interaction</td><td>Integration</td><td>REST endpoint</td><td>SDK</td><td>Internal</td></tr>
+<tr><td>CLI</td><td>Text-based command interface</td><td>Operations</td><td>atlas-cli</td><td>Shell</td><td>Internal</td></tr>
+<tr><td>DR</td><td>Recovery after major outage</td><td>Resilience</td><td>Failover site</td><td>Backup</td><td>NIST</td></tr>
+<tr><td>HA</td><td>Continuous operation capability</td><td>Design</td><td>Cluster</td><td>Load balancer</td><td>Internal</td></tr>
+<tr><td>MTTR</td><td>Mean time to repair</td><td>Metrics</td><td>4 hours</td><td>SLA</td><td>ITIL</td></tr>
+<tr><td>SLA</td><td>Service level agreement</td><td>Contract</td><td>99.9% uptime</td><td>MTTR</td><td>ITIL</td></tr>
+</table>
+<pre>atlas-glossary --term API</pre>
+<button onclick="alert('Appendix H action')">H-Action</button>
+<button onclick="alert('Appendix H info')">H-Info</button>
+</section>
+</body>
+</html>

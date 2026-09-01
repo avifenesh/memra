@@ -1,0 +1,34 @@
+# Tags that are NOT release baselines. tools/changelog.sh skips these when it picks the
+# "changes since" starting point, so release notes are measured from the last tag that actually
+# became a release.
+#
+# Why this file exists: v0.106.0's auto-drafted notes said "Changes since v0.105.0" and covered
+# 48 commits. v0.105.0 is a tag whose release run FAILED — it has no GitHub release at all — and
+# the last real release was v0.103.0, 236 non-merge commits back. So the public change record
+# would have omitted four fifths of the release. `git describe` cannot tell the difference
+# between a tag that shipped and a tag that died; nothing in git records that. This file does.
+#
+# Annotated-vs-lightweight is NOT a usable proxy (it was considered): v0.103.0 is annotated and
+# shipped, the v0.102/v0.104.x races were lightweight and did not — but v0.106.0 is annotated
+# and also did not ship. Nor is a live GitHub API lookup: changelog.sh runs in the release job
+# and locally, and a network call that fails would silently widen or narrow the range.
+#
+# One tag per line. Add a tag here the moment it is abandoned, with the reason.
+
+# 2026-08-22 tag races — Cargo.toml still said an older version, so the binaries under these
+# names self-report the wrong version. All three are "[SKIPPED — version mismatch]" prereleases.
+v0.102.0
+v0.104.0
+v0.104.1
+
+# 2026-08-22 — release run 32581590491 FAILED (sm_89 link error: cu/mmq_fp8_blk_stub.cu had lost
+# ABI parity with cu/mmq_fp8_blk.cu). No GitHub release exists. Note this was NOT a version-
+# discipline failure, though it was filed as one at first; its Cargo mismatch was a second,
+# independent problem.
+v0.105.0
+
+# 2026-08-23 — release run 32608092743 FAILED with the identical sm_89 link error, and publish
+# run 32608092737 half-finished (6 of 9 crates live at 0.106.0, engine/lanes/server missing).
+# No GitHub release, no assets. The claim branch release/claim-v0.106.0 is deliberately KEPT on
+# origin so the number can never be claimed again — see docs/RELEASING.md.
+v0.106.0

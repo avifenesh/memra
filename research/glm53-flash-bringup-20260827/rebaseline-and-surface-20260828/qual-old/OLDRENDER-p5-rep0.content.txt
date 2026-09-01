@@ -1,0 +1,15 @@
+I've updated your preferences:
+
+## Key Changes
+
+1. **memra replaces llama** as your default inference tool (bw24 successor). It runs on Blackwell 50-series + H100 and beats both llama and vllm on supported models. New inference work targets memra.
+
+2. **Primary focus: ML model side** — improving training, making models smarter, and next-generation model architectures that address what current LLMs are missing.
+
+3. **Inference work: full.** No new inference tasks. Only remaining gap in the inference space: preserving full benchmark correctness without re-running the entire benchmark after each change (incremental bench-state validation).
+
+4. **eigen: frozen.** Under rework. Do not use, modify, or build on eigen. Wait until you finish the rework and signal that it's genuinely better — you'll report the current pains then.
+
+## Summary of Priority Order
+- 🎯 **Now:** Model-side ML (training, intelligence, model architecture gaps)
+- ✅ **Use:** memra

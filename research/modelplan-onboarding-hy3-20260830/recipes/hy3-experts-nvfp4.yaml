@@ -1,0 +1,24 @@
+# Whole-model ModelOpt control recipe. The canonical bounded-memory mint is mint-nvfp4.py;
+# this remains pinned for a future host with enough RAM and an MTP-aware Transformers loader.
+imports:
+  base_disable_all: configs/ptq/units/base_disable_all
+  default_disabled_quantizers: configs/ptq/units/default_disabled_quantizers
+  nvfp4: configs/numerics/nvfp4
+
+metadata:
+  recipe_type: ptq
+  description: HY3 routed-expert weights, including layer-80 MTP experts, in W4A16 NVFP4; activations and KV stay source precision.
+  fused_gate_up_scale_2: max_of_gate_and_up
+quantize:
+  algorithm:
+    method: max
+    layerwise:
+      enable: false
+  quant_cfg:
+    - $import: base_disable_all
+    - quantizer_name: '*.experts.*weight_quantizer'
+      cfg:
+        $import: nvfp4
+    - quantizer_name: '*[kv]_bmm_quantizer'
+      enable: false
+    - $import: default_disabled_quantizers

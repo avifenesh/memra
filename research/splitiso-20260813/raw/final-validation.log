@@ -1,0 +1,380 @@
++ date -Is
+2026-08-13T08:48:15+03:00
++ python3 -m py_compile research/lcprestore-20260813/split_exactness.py research/lcprestore-20260813/verify_split_receipts.py research/splitiso-20260813/analyze_split_detail.py research/splitiso-20260813/normalize_map_receipts.py research/splitiso-20260813/reduce_boundary_map.py
++ python3 research/lcprestore-20260813/split_exactness.py --help
++ python3 research/lcprestore-20260813/verify_split_receipts.py --help
++ python3 research/splitiso-20260813/analyze_split_detail.py --help
++ python3 research/splitiso-20260813/normalize_map_receipts.py --help
++ python3 research/splitiso-20260813/reduce_boundary_map.py --help
++ bash -n research/splitiso-20260813/run-box1-cell.sh research/splitiso-20260813/run-local-cell.sh research/splitiso-20260813/run-local-smoke.sh
++ shellcheck research/splitiso-20260813/run-box1-cell.sh research/splitiso-20260813/run-local-cell.sh research/splitiso-20260813/run-local-smoke.sh
++ jq -e $'\n  .verdict == "COMPLETE" and\n  (.table | length) == 69 and\n  ([.table[] | select(.verdict == "PASS")] | length) == 51 and\n  ([.table[] | select(.verdict == "FAIL")] | length) == 18 and\n  (.missing_dense_splits | length) == 0 and\n  (.failures | length) == 0\n' research/splitiso-20260813/DENSE-MAP.json
++ jq -e $'\n  .verdict == "COMPLETE" and\n  (.table | length) == 116 and\n  ([.table[] | select(.verdict == "PASS")] | length) == 80 and\n  ([.table[] | select(.verdict == "FAIL")] | length) == 36 and\n  (.missing_dense_splits | length) == 0 and\n  (.failures | length) == 0\n' research/splitiso-20260813/FROZEN-TARGETED-MAP.json
++ jq -e $'\n  .verdict == "COMPLETE" and\n  (.table | length) == 106 and\n  ([.table[] | select(.verdict == "PASS")] | length) == 92 and\n  ([.table[] | select(.verdict == "FAIL")] | length) == 14 and\n  (.target_prompt_ids_sha256_canonical_json == ["21ef4227fcb0993c341e03c4df6bf01b27f6012021c881fc4a8f451364495397"]) and\n  (.missing_dense_splits | length) == 0 and\n  (.named_boundary_candidates | length) == 0 and\n  (.exact_discriminators | length) == 0 and\n  (.failures | length) == 0\n' research/splitiso-20260813/FIXED-TARGET-MAP.json
++ jq -e $'\n  .verdict == "COMPLETE" and\n  (.failures | length) == 0 and\n  all(.splits[];\n    .first_logical_model_state_difference.field == "kv.layer.1.first_suffix_k_sha256" and\n    .comparison_matrix.prefix_kv_equal == true and\n    .comparison_matrix.first_suffix_kv_equal == false and\n    .comparison_matrix.recurrent_and_spare_equal == true and\n    .comparison_matrix.cache_pos_equal == true and\n    .comparison_matrix.rope_position_equal == true and\n    .comparison_matrix.sampler_equal == true and\n    .comparison_matrix.engine_scoped_flags_equal == true and\n    .comparison_matrix.decode_batch_provenance_equal == true and\n    .comparison_matrix.boundary_logits_equal == false and\n    .comparison_matrix.selected_first_token_equal == true)\n' research/splitiso-20260813/FIELD-COMPARISON.json
++ for map in FROZEN-TARGETED-MAP FIXED-TARGET-MAP
++ total=0
++ read -r req
+++ jq -r '.source_requests[]' research/splitiso-20260813/FROZEN-TARGETED-MAP.json
++ dir=research/splitiso-20260813/raw/box1-smoke-original-four
++ rec=research/splitiso-20260813/raw/box1-smoke-original-four/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/box1-smoke-original-four/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/box1-smoke-original-four/split-state-receipts.json
++ n=4
++ total=4
++ read -r req
++ dir=research/splitiso-20260813/raw/dense-seg01-attempt1
++ rec=research/splitiso-20260813/raw/dense-seg01-attempt1/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/dense-seg01-attempt1/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/dense-seg01-attempt1/split-state-receipts.json
++ n=10
++ total=14
++ read -r req
++ dir=research/splitiso-20260813/raw/dense-seg02
++ rec=research/splitiso-20260813/raw/dense-seg02/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/dense-seg02/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/dense-seg02/split-state-receipts.json
++ n=11
++ total=25
++ read -r req
++ dir=research/splitiso-20260813/raw/dense-seg03
++ rec=research/splitiso-20260813/raw/dense-seg03/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/dense-seg03/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/dense-seg03/split-state-receipts.json
++ n=11
++ total=36
++ read -r req
++ dir=research/splitiso-20260813/raw/dense-seg04
++ rec=research/splitiso-20260813/raw/dense-seg04/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/dense-seg04/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/dense-seg04/split-state-receipts.json
++ n=11
++ total=47
++ read -r req
++ dir=research/splitiso-20260813/raw/dense-seg05
++ rec=research/splitiso-20260813/raw/dense-seg05/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/dense-seg05/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/dense-seg05/split-state-receipts.json
++ n=11
++ total=58
++ read -r req
++ dir=research/splitiso-20260813/raw/dense-seg06
++ rec=research/splitiso-20260813/raw/dense-seg06/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/dense-seg06/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/dense-seg06/split-state-receipts.json
++ n=11
++ total=69
++ read -r req
++ dir=research/splitiso-20260813/raw/frozen-targeted-seg01
++ rec=research/splitiso-20260813/raw/frozen-targeted-seg01/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/frozen-targeted-seg01/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/frozen-targeted-seg01/split-state-receipts.json
++ n=10
++ total=79
++ read -r req
++ dir=research/splitiso-20260813/raw/frozen-targeted-seg02
++ rec=research/splitiso-20260813/raw/frozen-targeted-seg02/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/frozen-targeted-seg02/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/frozen-targeted-seg02/split-state-receipts.json
++ n=10
++ total=89
++ read -r req
++ dir=research/splitiso-20260813/raw/frozen-targeted-seg03
++ rec=research/splitiso-20260813/raw/frozen-targeted-seg03/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/frozen-targeted-seg03/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/frozen-targeted-seg03/split-state-receipts.json
++ n=9
++ total=98
++ read -r req
++ dir=research/splitiso-20260813/raw/frozen-targeted-seg04
++ rec=research/splitiso-20260813/raw/frozen-targeted-seg04/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/frozen-targeted-seg04/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/frozen-targeted-seg04/split-state-receipts.json
++ n=9
++ total=107
++ read -r req
++ dir=research/splitiso-20260813/raw/frozen-targeted-seg05
++ rec=research/splitiso-20260813/raw/frozen-targeted-seg05/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/frozen-targeted-seg05/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/frozen-targeted-seg05/split-state-receipts.json
++ n=9
++ total=116
++ read -r req
++ expected=116
++ test FROZEN-TARGETED-MAP = FIXED-TARGET-MAP
++ test 116 -eq 116
++ printf '%s state receipts verified: %s\n' FROZEN-TARGETED-MAP 116
+FROZEN-TARGETED-MAP state receipts verified: 116
++ for map in FROZEN-TARGETED-MAP FIXED-TARGET-MAP
++ total=0
++ read -r req
+++ jq -r '.source_requests[]' research/splitiso-20260813/FIXED-TARGET-MAP.json
++ dir=research/splitiso-20260813/raw/fixed-dense-seg01
++ rec=research/splitiso-20260813/raw/fixed-dense-seg01/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-dense-seg01/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-dense-seg01/split-state-receipts.json
++ n=12
++ total=12
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-dense-seg02
++ rec=research/splitiso-20260813/raw/fixed-dense-seg02/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-dense-seg02/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-dense-seg02/split-state-receipts.json
++ n=11
++ total=23
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-dense-seg03
++ rec=research/splitiso-20260813/raw/fixed-dense-seg03/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-dense-seg03/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-dense-seg03/split-state-receipts.json
++ n=12
++ total=35
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-dense-seg04
++ rec=research/splitiso-20260813/raw/fixed-dense-seg04/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-dense-seg04/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-dense-seg04/split-state-receipts.json
++ n=11
++ total=46
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-dense-seg05
++ rec=research/splitiso-20260813/raw/fixed-dense-seg05/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-dense-seg05/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-dense-seg05/split-state-receipts.json
++ n=11
++ total=57
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-dense-seg06
++ rec=research/splitiso-20260813/raw/fixed-dense-seg06/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-dense-seg06/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-dense-seg06/split-state-receipts.json
++ n=12
++ total=69
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-targeted-seg01
++ rec=research/splitiso-20260813/raw/fixed-targeted-seg01/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-targeted-seg01/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-targeted-seg01/split-state-receipts.json
++ n=9
++ total=78
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-targeted-seg02
++ rec=research/splitiso-20260813/raw/fixed-targeted-seg02/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-targeted-seg02/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-targeted-seg02/split-state-receipts.json
++ n=9
++ total=87
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-targeted-seg03
++ rec=research/splitiso-20260813/raw/fixed-targeted-seg03/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-targeted-seg03/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-targeted-seg03/split-state-receipts.json
++ n=9
++ total=96
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-targeted-seg04
++ rec=research/splitiso-20260813/raw/fixed-targeted-seg04/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-targeted-seg04/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-targeted-seg04/split-state-receipts.json
++ n=9
++ total=105
++ read -r req
++ dir=research/splitiso-20260813/raw/fixed-named-global510
++ rec=research/splitiso-20260813/raw/fixed-named-global510/split-state-receipts.json
++ jq -e $'\n      .verdict == "MAP-VERIFIED" and\n      ((.failures // []) | length) == 0 and\n      all(.splits[]; .source_restore_equal == true)\n    ' research/splitiso-20260813/raw/fixed-named-global510/split-state-receipts.json
+++ jq '.splits | length' research/splitiso-20260813/raw/fixed-named-global510/split-state-receipts.json
++ n=1
++ total=106
++ read -r req
++ expected=116
++ test FIXED-TARGET-MAP = FIXED-TARGET-MAP
++ expected=106
++ test 106 -eq 106
++ printf '%s state receipts verified: %s\n' FIXED-TARGET-MAP 106
+FIXED-TARGET-MAP state receipts verified: 106
++ jq -r '.source_requests[]' research/splitiso-20260813/FROZEN-TARGETED-MAP.json
++ read -r req
++ sort -u
++ read -r dir
++ jq -r '.source_requests[]' research/splitiso-20260813/FIXED-TARGET-MAP.json
++ dirname research/splitiso-20260813/raw/box1-smoke-original-four/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/dense-seg01-attempt1/requests-map-valid.jsonl
++ printf '%s\n' research/splitiso-20260813/raw/fixed-pilot/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/dense-seg02/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/dense-seg03/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/dense-seg04/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/dense-seg05/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/dense-seg06/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/frozen-targeted-seg01/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/frozen-targeted-seg02/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/frozen-targeted-seg03/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/frozen-targeted-seg04/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/frozen-targeted-seg05/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-dense-seg01/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-dense-seg02/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-dense-seg03/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-dense-seg04/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-dense-seg05/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-dense-seg06/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-targeted-seg01/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-targeted-seg02/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-targeted-seg03/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-targeted-seg04/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-named-global510/requests.jsonl
++ read -r req
++ dirname research/splitiso-20260813/raw/fixed-pilot/requests.jsonl
++ read -r req
++ test -f research/splitiso-20260813/raw/box1-smoke-original-four/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/box1-smoke-original-four/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/box1-smoke-original-four/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/box1-smoke-original-four/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/dense-seg01-attempt1/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/dense-seg01-attempt1/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/dense-seg01-attempt1/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/dense-seg01-attempt1/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/dense-seg02/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/dense-seg02/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/dense-seg02/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/dense-seg02/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/dense-seg03/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/dense-seg03/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/dense-seg03/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/dense-seg03/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/dense-seg04/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/dense-seg04/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/dense-seg04/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/dense-seg04/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/dense-seg05/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/dense-seg05/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/dense-seg05/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/dense-seg05/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/dense-seg06/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/dense-seg06/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/dense-seg06/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/dense-seg06/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-dense-seg01/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-dense-seg01/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-dense-seg01/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-dense-seg01/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-dense-seg02/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-dense-seg02/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-dense-seg02/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-dense-seg02/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-dense-seg03/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-dense-seg03/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-dense-seg03/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-dense-seg03/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-dense-seg04/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-dense-seg04/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-dense-seg04/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-dense-seg04/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-dense-seg05/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-dense-seg05/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-dense-seg05/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-dense-seg05/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-dense-seg06/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-dense-seg06/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-dense-seg06/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-dense-seg06/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-named-global510/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-named-global510/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-named-global510/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-named-global510/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-pilot/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-pilot/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-pilot/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-pilot/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-targeted-seg01/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-targeted-seg01/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-targeted-seg01/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-targeted-seg01/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-targeted-seg02/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-targeted-seg02/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-targeted-seg02/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-targeted-seg02/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-targeted-seg03/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-targeted-seg03/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-targeted-seg03/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-targeted-seg03/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/fixed-targeted-seg04/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/fixed-targeted-seg04/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/fixed-targeted-seg04/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/fixed-targeted-seg04/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/frozen-targeted-seg01/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/frozen-targeted-seg01/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/frozen-targeted-seg01/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/frozen-targeted-seg01/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/frozen-targeted-seg02/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/frozen-targeted-seg02/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/frozen-targeted-seg02/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/frozen-targeted-seg02/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/frozen-targeted-seg03/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/frozen-targeted-seg03/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/frozen-targeted-seg03/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/frozen-targeted-seg03/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/frozen-targeted-seg04/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/frozen-targeted-seg04/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/frozen-targeted-seg04/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/frozen-targeted-seg04/candidate-server.log
++ read -r dir
++ test -f research/splitiso-20260813/raw/frozen-targeted-seg05/candidate-server.log
++ grep -qx compute_apps=none research/splitiso-20260813/raw/frozen-targeted-seg05/compute-apps-preflight.log
++ test '!' -s research/splitiso-20260813/raw/frozen-targeted-seg05/compute-apps-cleanup.log
++ grep -Ein 'CUDA_ERROR|out of memory|panicked at|worker.*died|illegal memory access|ILLEGAL_ADDRESS' research/splitiso-20260813/raw/frozen-targeted-seg05/candidate-server.log
++ read -r dir
++ printf 'accepted server logs: preflight, cleanup, and fatal-marker checks passed\n'
+accepted server logs: preflight, cleanup, and fatal-marker checks passed
++ env DOCS_RS=1 TMPDIR=/home/avifenesh/tmp-lanes CARGO_BUILD_JOBS=1 cargo check -p memra-server
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
++ python3 tools/update-perf-board.py --check
+perf board is up to date
++ git diff --cached --check
++ git status --short
+M  research/splitiso-20260813/PROGRESS.md
+A  research/splitiso-20260813/RESULTS.md
+?? research/splitiso-20260813/raw/final-validation-attempt1.log
+?? research/splitiso-20260813/raw/final-validation.log

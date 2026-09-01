@@ -1,0 +1,56 @@
+# GENERATED from shared/facts/facts.json by tools/render-facts.mjs — edit the
+# facts file and re-render; hand edits here are overwritten. Pricing decided 2026-08-31
+# (owner call): $0.20 in (the board) / $0.04 cached (board match, raised from launch's
+# $0.033) / $1.00 out (under the board's $1.15).
+
+[provider]
+id = "tiyuvta"
+status_url = "https://status.tiyuvta.ai"
+support_contact = "mailto:support@tiyuvta.ai"
+incident_contact = "mailto:incident@tiyuvta.ai"
+regions = ["eu-central"]
+
+[models."stepfun/step-3.7-flash"]
+hugging_face_id = "stepfun-ai/Step-3.7-Flash"
+owned_by = "stepfun"
+description = "Step-3.7-Flash (196B-A11B MoE) at its full native 262,144-token context from the official StepFun NVFP4 checkpoint, served by memra, an open-source Rust+CUDA engine with exactness-gated serving: speculative, batched, and session-reuse paths are verified against plain decode before anything ships."
+quantization = "nvfp4"
+created = 1787961600
+max_prompt_length = 262144
+max_output_length = 262144
+default_output_length = 32768
+# VENDOR SAMPLING DEFAULTS — these numbers belong to STEPFUN, not to us. Source: the
+# stepfun-ai Step-3.7-Flash model card's recommended inference settings: temperature=0.5,
+# top_p=0.9 (pinned by the serving lane; see the facts entry's _defaultSamplingNote).
+# The vendor recommends nothing for top_k, min_p or the penalties, so those are
+# deliberately absent rather than invented. They apply ONLY to fields a request omitted;
+# an explicit client value always wins.
+#
+# DEPLOY ORDER: memra parses this block with deny_unknown_fields — binary first, then config.
+default_temperature = 0.5
+default_top_p = 0.9
+is_ready = true
+datacenters = [{ country_code = "US" }]
+# input_modalities lists EXTRA modalities beyond implicit text (memra main.rs); text-only = [].
+input_modalities = ["image"]
+zdr = true
+
+[models."stepfun/step-3.7-flash".pricing]
+prompt = "0.0000002"
+cached_prompt = "0.00000004"
+completion = "0.000001"
+
+[models."stepfun/step-3.7-flash".capacity]
+prompt_tpm = 150000
+completion_tpm = 12000
+request_rpm = 100
+concurrency = 8
+
+[models."stepfun/step-3.7-flash".lifecycle]
+status = "active"
+
+[models."stepfun/step-3.7-flash".reliability]
+first_token_timeout_seconds = 90
+completion_timeout_seconds = 7200
+stream_idle_timeout_seconds = 60
+capacity_scope = "model_region"

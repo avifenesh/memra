@@ -1,0 +1,19 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running unittests src/main.rs (target/debug/deps/memra_server-82ac615fd504334f)
+
+running 13 tests
+test worker::tests::prefix_cache_pin_refcount_blocks_eviction_until_last_release ... ok
+test worker::tests::prefix_cache_emergency_flush_preserves_inflight_pins ... ok
+test worker::tests::retiring_session_releases_prefix_pin_in_release ... ok
+test worker::tests::prefix_fanout_groups_only_inside_exact_model_tenant_and_salt ... ok
+test worker::tests::prefix_fanout_rewrites_one_provisional_miss_exactly_once ... ok
+test worker::tests::prefix_cache_same_namespace_same_prefix_hits ... ok
+test worker::tests::prefix_cache_namespaces_isolate_both_directions ... ok
+test worker::tests::prefix_cache_default_namespace_preserves_single_tenant_behavior ... ok
+test worker::tests::prefix_cache_touch_rescues_the_would_be_victim ... ok
+test auth::tests::revoke_key_flips_enabled_by_prefix_exactly_once ... ok
+test worker::tests::prefix_cache_eviction_matches_old_policy_on_recorded_pattern ... ok
+test tests::prefix_aggregate_metrics_are_operator_only_but_tenant_ratio_remains ... ok
+test worker::tests::prefix_cache_eviction_large_pool_flush_smoke ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 178 filtered out; finished in 0.43s

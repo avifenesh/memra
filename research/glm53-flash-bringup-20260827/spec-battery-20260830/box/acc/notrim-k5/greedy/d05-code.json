@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is telling me about updates to their skills and preferred work areas. Let me parse what they're saying:\n\n1. **Inference work is full** - no need for more inference work\n2. **memra** (bw24 successor) is a replacement for llama - works on BW 50 series (Blackwell B50? or GB50? Actually \"bw 50 series\" likely means Blackwell B200/B50... probably means Blackwell 50 series like B50, or maybe they mean the B200/GB200 family) and on H100, beats llama and vLLM on supported models\n3",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is telling me about updates to their skills and preferred work areas. Let me parse what they're saying:\n\n1. **Inference work is full** - no need for more inference work\n2. **memra** (bw24 successor) is a replacement for llama - works on BW 50 series (Blackwell B50? or GB50? Actually \"bw 50 series\" likely means Blackwell B200/B50... probably means Blackwell 50 series like B50, or maybe they mean the B200/GB200 family) and on H100, beats llama and vLLM on supported models\n3"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 192,
+  "completion_tokens": 128,
+  "total_tokens": 320,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 8.482637482,
+  "spec": {
+   "rounds": 52,
+   "drafted": 260,
+   "accepted": 75,
+   "acceptance_rate": 0.28846153846153844
+  }
+ },
+ "id": "chatcmpl-d0d898bed4d2e358704ced50e5849539",
+ "created": 1788081173,
+ "system_fingerprint": "REDACTED"
+}

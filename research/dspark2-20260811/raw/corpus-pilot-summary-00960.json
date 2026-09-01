@@ -1,0 +1,142 @@
+{
+  "anchor_sampling": {
+    "actual_records": 3808,
+    "deficient_records": 32,
+    "deficient_records_by_cell": {
+      "chat/nothink/train": 32
+    },
+    "max_per_pair": 4,
+    "maximum_records": 3840,
+    "min_per_pair": 0,
+    "pairs_below_requested": 8,
+    "requested_per_pair": 4,
+    "zero_anchor_pairs_by_cell": {
+      "chat/nothink/train": 8
+    }
+  },
+  "assignment_cells": {
+    "chat/nothink/heldout": 9,
+    "chat/nothink/train": 119,
+    "chat/think/heldout": 2,
+    "chat/think/train": 110,
+    "code/nothink/heldout": 5,
+    "code/nothink/train": 111,
+    "code/think/heldout": 8,
+    "code/think/train": 116,
+    "if/nothink/heldout": 9,
+    "if/nothink/train": 110,
+    "if/think/heldout": 10,
+    "if/think/train": 111,
+    "math/nothink/heldout": 6,
+    "math/nothink/train": 125,
+    "math/think/heldout": 6,
+    "math/think/train": 103
+  },
+  "categories": {
+    "chat": 240,
+    "code": 240,
+    "if": 240,
+    "math": 240
+  },
+  "chunks": 15,
+  "end": 960,
+  "format": "memra-dspark-corpus-summary-v2",
+  "label": "pilot",
+  "manifest_fingerprint": "0db9b2b280fb2c5856abe7f70ac1718373ec6314a316f1a82ca56e69d729b340",
+  "manifests": [
+    {
+      "chunk": "pilot-00000-00064",
+      "sha256": "1b589df5717a718613487d0b86239bf43c4b319985e5e92a71384ac8d944c0eb"
+    },
+    {
+      "chunk": "pilot-00064-00128",
+      "sha256": "b29097411b1e859ac4809508766f137efeecb686b944815316a5ab2364e09465"
+    },
+    {
+      "chunk": "pilot-00128-00192",
+      "sha256": "94a307096fedee84a545728c3f3fae9dce30144349cc2231f727a9a8bf9abc70"
+    },
+    {
+      "chunk": "pilot-00192-00256",
+      "sha256": "b51ef7a7644a0f3d916214f5410d6a7ddaaf1c6a18331c0d6e25cc6befdb0e9d"
+    },
+    {
+      "chunk": "pilot-00256-00320",
+      "sha256": "be0f2a4dc00ff8ea4cf5af0a33be2378d65074701d6d82abd8c3de86c137d304"
+    },
+    {
+      "chunk": "pilot-00320-00384",
+      "sha256": "b130b6fec32a20ec2a648c5d85b5cc04be73d5a9ab8304b06226e12e86fa9f56"
+    },
+    {
+      "chunk": "pilot-00384-00448",
+      "sha256": "ae4b9d3ed758fdd90e733c3f67e1d792ba64b80eb4626ffebb15278d40e776e2"
+    },
+    {
+      "chunk": "pilot-00448-00512",
+      "sha256": "501cf9081b454c5a3845b317b4240d38784d96c24e1b2fd46359a22a038def0c"
+    },
+    {
+      "chunk": "pilot-00512-00576",
+      "sha256": "d576dd2ec6b234faf0a66e0262db3e84a9c42021503afc135aa60716593d8a69"
+    },
+    {
+      "chunk": "pilot-00576-00640",
+      "sha256": "38bf5bc4893d8b17f28e7bcb02a6cb86955f72fff33ac6be4f8da1abe33addc2"
+    },
+    {
+      "chunk": "pilot-00640-00704",
+      "sha256": "f4450b13601a0d5466fd9dd382ec5e47841c8c135ae621d177d6595d715d689b"
+    },
+    {
+      "chunk": "pilot-00704-00768",
+      "sha256": "da83e16e39de046ae7e908e60bfc76f4e30d11fa4131da3a91a9fcd217f09b55"
+    },
+    {
+      "chunk": "pilot-00768-00832",
+      "sha256": "7a5eb93f3497f820c99540b0559a20f89150b2fa9d4e8490eb3152df6fc413a2"
+    },
+    {
+      "chunk": "pilot-00832-00896",
+      "sha256": "5eec4d1e4a9e441a6721a3bfd2caaabca87a3b02fbb0aa32a1617c03f8c68b88"
+    },
+    {
+      "chunk": "pilot-00896-00960",
+      "sha256": "de94614179486ff7fa3fd8c5c310d237dd2fc5526885f36640c84182fcc95f6a"
+    }
+  ],
+  "modes": {
+    "nothink": 494,
+    "think": 466
+  },
+  "pairs": 960,
+  "prompt_tokens": {
+    "max": 2953,
+    "min": 14,
+    "p50": 69,
+    "p95": 520,
+    "total": 126216
+  },
+  "records": 3808,
+  "response_tokens": {
+    "max": 512,
+    "max_new_512_count": 731,
+    "min": 2,
+    "p50": 512,
+    "p95": 512,
+    "total": 433941
+  },
+  "skipped_short_pairs": 8,
+  "splits": {
+    "heldout": 55,
+    "train": 905
+  },
+  "start": 0,
+  "validation": {
+    "max_logit_probability_ratio_error": 9.598196157867278e-07,
+    "max_probability_mass_error": 4.291310506943091e-08,
+    "sampled_token_top64_rate": 0.9998424369747899,
+    "tail_mass_max": 0.10399816930294037,
+    "tail_mass_mean": 0.00013443220623632555
+  }
+}

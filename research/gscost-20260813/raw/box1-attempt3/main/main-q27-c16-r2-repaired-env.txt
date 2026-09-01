@@ -1,0 +1,15 @@
+label=main/main-q27-c16-r2-repaired
+model=q27
+model_path=/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+policy_arm=repaired
+MEMRA_SERVE_B1FAST=<unset>
+MEMRA_SERVE_GS=<unset>
+MEMRA_GS_MIN=<unset; default 384>
+MEMRA_SERVE_SPEC=0
+MEMRA_PREFIX_CACHE_MB=4096
+MEMRA_PREFIX_DEDUP=1
+MEMRA_REUSE_POOL=0
+MEMRA_AFFINITY=0
+MEMRA_CTX=8192
+MEMRA_MAX_SESSIONS=96
+MEMRA_GRAPH_CENSUS=<unset>

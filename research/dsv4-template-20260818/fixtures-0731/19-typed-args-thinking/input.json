@@ -1,0 +1,64 @@
+{
+  "turns": [
+    {
+      "role": "system",
+      "content": "Use tools."
+    },
+    {
+      "role": "user",
+      "content": "Weather in Beijing for 3 days, metric on."
+    },
+    {
+      "role": "assistant",
+      "reasoning": "call get_weather with typed args",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"location\": \"Beijing\", \"days\": 3, \"metric\": true, \"tags\": [\"a\", \"b\"]}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "c1",
+      "content": "ok"
+    }
+  ],
+  "think": "thinking",
+  "reasoning_effort": null,
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a specific location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city name"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "celsius",
+                "fahrenheit"
+              ],
+              "description": "Temperature unit"
+            }
+          },
+          "required": [
+            "location"
+          ]
+        }
+      }
+    }
+  ],
+  "add_generation_prompt": true
+}

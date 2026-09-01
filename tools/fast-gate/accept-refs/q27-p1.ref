@@ -1,0 +1,11 @@
+# accept-ref q27-p1 @ b61313a885 2026-08-21T09:12:23Z
+# ACCEPTANCE + LONG-TEXT reference for a SERVED spec config (tools/accept-gate.sh).
+# Minted only from committed crates/ on the naked default build. Counts are EXACT
+# assertions: temperature 0 => deterministic drafting => hard integers.
+cfg	model=Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf draft=draft-daily-owntrim-nvfp4head-q4blk.gguf k=3 ngen=128 prompt=research/e2e/prompts/p1-code-short.txt
+cfg_fp	d8a8f2f7b734fe363057aff57dad63665527034e00a72db376b2776aae551b4f
+spec	{"accepted": 86, "drafted": 126, "rounds": 42}
+acceptance_rate	0.6825396825396826
+prompt_tokens	28
+completion_tokens	128
+text_sha256	0a9f2028325d96c03f5b90b1116d76d51c4a0a6fe863e989f4223b7836d5391a

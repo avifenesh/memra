@@ -1,0 +1,12 @@
+devices: 2
+cuDeviceCanAccessPeer(0 -> 1) = 1
+cuDeviceCanAccessPeer(1 -> 0) = 1
+peer-arm copy skipped: MEMRA_PP_HOST_BOUNCE=1
+[pp] cross-device transport: stage0=dev1 stage1=dev0 (HOST-STAGED pinned D2H -> H2D per cross boundary; MEMRA_PP_HOST_BOUNCE=1; peer access and peer-pool grants bypassed; weight home: per-stage (sharded loader))
+[pp] host-bounce staging ready: n_embd=4096 max_tokens=4096 slot_bytes=67108864 slots_per_cross_boundary=2
+Pp2Rt built: cross_device=true
+boundary roundtrip step 0 slot 0: bytediff=0 OK
+boundary roundtrip step 1 slot 1: bytediff=0 OK
+boundary roundtrip step 2 slot 0: bytediff=0 OK
+boundary roundtrip step 3 slot 1: bytediff=0 OK
+pp-transport-smoke PASS

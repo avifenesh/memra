@@ -1,0 +1,290 @@
+{
+  "arms": {
+    "eager": "MEMRA_SERVE_B1FAST=1 and MEMRA_SERVE_GS=1",
+    "repaired": "MEMRA_SERVE_B1FAST and MEMRA_SERVE_GS unset"
+  },
+  "binary_sha256": "1b460e29f642b93e86ed287c144129e6c5b3a6c1cca56abf2aacff92393b809c",
+  "binary_source_commit": "57ebcf8d319dc8ea9bb351b39fc1ab28d18c20db",
+  "full_hit": {
+    "decode_window": {
+      "4": {
+        "comparison": {
+          "eager_delta_vs_repaired_pct": 0.2240066871754598,
+          "paired_delta_pct": [
+            0.12598603614792925,
+            -0.08008889549396825,
+            0.10642083524199375,
+            0.2059286510162961,
+            15.80500409941823
+          ],
+          "paired_delta_pct_median": 0.12598603614792925,
+          "ranges_overlap": true,
+          "verdict": "FLAT"
+        },
+        "eager": {
+          "N": 5,
+          "max_tok_s": 85.24768520698022,
+          "median_tok_s": 85.1706539804457,
+          "min_tok_s": 84.98292421517765,
+          "samples_tok_s": [
+            85.20678304597742,
+            85.1706539804457,
+            85.07072917960153,
+            84.98292421517765,
+            85.24768520698022
+          ]
+        },
+        "repaired": {
+          "N": 5,
+          "max_tok_s": 85.23892089071806,
+          "median_tok_s": 84.98029244259304,
+          "min_tok_s": 73.61312740319525,
+          "samples_tok_s": [
+            85.09956947162117,
+            85.23892089071806,
+            84.98029244259304,
+            84.80827966890534,
+            73.61312740319525
+          ]
+        }
+      }
+    },
+    "end_to_end": {
+      "4": {
+        "comparison": {
+          "eager_delta_vs_repaired_pct": 0.2346171747157788,
+          "paired_delta_pct": [
+            0.12189332635641481,
+            -0.07550446722823789,
+            0.1222487037973341,
+            0.2034834059796653,
+            15.789474503009227
+          ],
+          "paired_delta_pct_median": 0.1222487037973341,
+          "ranges_overlap": true,
+          "verdict": "FLAT"
+        },
+        "eager": {
+          "N": 5,
+          "max_tok_s": 85.39038648592509,
+          "median_tok_s": 85.32029148325482,
+          "min_tok_s": 85.13469659069023,
+          "samples_tok_s": [
+            85.35106431980918,
+            85.32029148325482,
+            85.22464278460636,
+            85.13469659069023,
+            85.39038648592509
+          ]
+        },
+        "repaired": {
+          "N": 5,
+          "max_tok_s": 85.38476079198492,
+          "median_tok_s": 85.12058397403338,
+          "min_tok_s": 73.74624235271565,
+          "samples_tok_s": [
+            85.24715372850534,
+            85.38476079198492,
+            85.12058397403338,
+            84.96181339900384,
+            73.74624235271565
+          ]
+        }
+      }
+    },
+    "exactness": {
+      "1": {
+        "hashes_by_arm": {
+          "eager": [
+            "c1491b4b22305fb2e74aa77fb111a7a4dfb6f4832c69a1239210be2831dbf1e3"
+          ],
+          "repaired": [
+            "210933f9d1c2e8e111b6a633829934d518f149d5c92204ffa70d1933f2e1e70e"
+          ]
+        },
+        "mismatch_reps": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "requests": 10,
+        "requests_by_arm": {
+          "eager": 5,
+          "repaired": 5
+        },
+        "requests_not_matching_stable_repaired_hash_by_arm": {
+          "eager": 5,
+          "repaired": 0
+        },
+        "verdict": "BYTE MISMATCH; throughput withheld"
+      },
+      "16": {
+        "hashes_by_arm": {
+          "eager": [
+            "210933f9d1c2e8e111b6a633829934d518f149d5c92204ffa70d1933f2e1e70e",
+            "3130013ced5bbd4c62067c13eef0909ea0c029aaa00d8ef58f56396dbaceba10"
+          ],
+          "repaired": [
+            "210933f9d1c2e8e111b6a633829934d518f149d5c92204ffa70d1933f2e1e70e"
+          ]
+        },
+        "mismatch_reps": [
+          1,
+          4
+        ],
+        "requests": 160,
+        "requests_by_arm": {
+          "eager": 80,
+          "repaired": 80
+        },
+        "requests_not_matching_stable_repaired_hash_by_arm": {
+          "eager": 2,
+          "repaired": 0
+        },
+        "verdict": "BYTE MISMATCH; throughput withheld"
+      },
+      "4": {
+        "hashes_by_arm": {
+          "eager": [
+            "210933f9d1c2e8e111b6a633829934d518f149d5c92204ffa70d1933f2e1e70e"
+          ],
+          "repaired": [
+            "210933f9d1c2e8e111b6a633829934d518f149d5c92204ffa70d1933f2e1e70e"
+          ]
+        },
+        "mismatch_reps": [],
+        "requests": 40,
+        "requests_by_arm": {
+          "eager": 20,
+          "repaired": 20
+        },
+        "requests_not_matching_stable_repaired_hash_by_arm": {
+          "eager": 0,
+          "repaired": 0
+        },
+        "verdict": "BYTE IDENTICAL across arms and reps"
+      }
+    },
+    "primary_metric": "aggregate tokens after first visible token / shared decode window",
+    "receipt": {
+      "errors": 0,
+      "points": 30,
+      "requests": 210
+    },
+    "shape": "fully restored long-form chat, 512 completion tokens per request",
+    "throughput_withheld_concurrency": [
+      1,
+      16
+    ]
+  },
+  "mixed90": {
+    "exactness": {
+      "hashes_by_arm": {
+        "eager": [
+          "5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66",
+          "9e3551d020a7f94379717a5b816e8a3a02d379b5b7bd873d0ae1cb9cd3b23755"
+        ],
+        "repaired": [
+          "200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7",
+          "5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66"
+        ]
+      },
+      "hashes_by_arm_and_cache_role": {
+        "eager": {
+          "hit": [
+            "5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66",
+            "9e3551d020a7f94379717a5b816e8a3a02d379b5b7bd873d0ae1cb9cd3b23755"
+          ],
+          "miss": [
+            "5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66"
+          ]
+        },
+        "repaired": {
+          "hit": [
+            "5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66"
+          ],
+          "miss": [
+            "200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7",
+            "5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66"
+          ]
+        }
+      },
+      "pair_mismatch_reps": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "requests": 200,
+      "requests_by_arm": {
+        "eager": 100,
+        "repaired": 100
+      },
+      "restored_hit_golden": {
+        "eager": {
+          "mismatches": 90,
+          "requests": 90
+        },
+        "repaired": {
+          "mismatches": 0,
+          "requests": 90
+        }
+      },
+      "restored_hit_golden_mismatch_cells_by_arm": {
+        "eager": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "repaired": []
+      },
+      "seed_hashes_by_arm": {
+        "eager": [
+          "200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7"
+        ],
+        "repaired": [
+          "5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66"
+        ]
+      },
+      "verdict": "BYTE MISMATCH; EAGER restored-hit golden mismatches 90/90; throughput withheld"
+    },
+    "output_window": {},
+    "primary_metric": "completion tokens / full mixed-cell wall time",
+    "receipt": {
+      "errors": 0,
+      "points": 10,
+      "requests": 200
+    },
+    "shape": "frozen 4860+60 prompt; 90% full hits / 10% real cold misses at c=4",
+    "throughput_withheld": true
+  },
+  "protocol": "one /tmp/memra-5090.lock hold; fresh server per point; N=5; odd reps REPAIRED-first, even reps EAGER-first; no clock changes or artificial cooldown",
+  "rig": "local NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, sm_120 / 82 SM",
+  "schema": "memra.armrig5090.summary.v1",
+  "thermal": {
+    "active_power_w_max": 102.68,
+    "active_power_w_min": 21.42,
+    "active_samples": 10438,
+    "active_sm_clock_mhz_max": 1200.0,
+    "active_sm_clock_mhz_min": 180.0,
+    "busy_power_w_max": 102.68,
+    "busy_power_w_min": 21.42,
+    "busy_samples": 10287,
+    "busy_sm_clock_mhz_max": 1200.0,
+    "busy_sm_clock_mhz_min": 180.0,
+    "clock_cap": "owner-declared 210-1200 MHz; no clock-changing command run; telemetry ceiling verified at 1200 MHz",
+    "memory_used_mib_max": 21656.0,
+    "power_limit_raw_values": [
+      "[N/A]"
+    ],
+    "power_limit_w_values": [],
+    "samples": 10701,
+    "temperature_c_max": 67.0,
+    "temperature_c_min": 50.0,
+    "utilization_pct_max": 100.0
+  }
+}

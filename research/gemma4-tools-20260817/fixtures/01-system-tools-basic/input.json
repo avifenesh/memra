@@ -1,0 +1,44 @@
+{
+  "template": "official",
+  "request": {
+    "model": "g4",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a terse weather bot."
+      },
+      {
+        "role": "user",
+        "content": "Weather in Paris?"
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get current weather for a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "City name"
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "celsius",
+                  "fahrenheit"
+                ]
+              }
+            },
+            "required": [
+              "location"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

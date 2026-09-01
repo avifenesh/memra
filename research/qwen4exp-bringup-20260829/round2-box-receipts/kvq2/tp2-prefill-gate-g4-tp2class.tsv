@@ -1,0 +1,31 @@
+# qwen4exp_real_gate	label=g4-tp2class	binary_sha256=2eeda2dfb36e35d3f34c47c7410be7a0c230259ae67a47cb653a8fedce77f633	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=f32	idxq=f32	golden_pin=true	seams_env=(unset)
+# tp2-prefill-class-gate: single-card vs TP2, same fed tokens
+# regimes: PRIME t>=10 (all rows, one full-head forward per route) + CHUNKED prefill last row (chunk=10) + DECODE t==1 x 8
+# policy: prime max_rel<=1.4e-4, decode max_rel<=1.6e-4, greedy TAPE identity, peer-engagement non-vacuity; red arms must exceed 1.0e-3 or break the tape
+# metric: max_rel = max|a-b|/max(|a|,1.0) — the same compare() units as --tp2-gate's 3.0e-5 and as the borrowed glm5 band; elem_rel (floor 1e-6) is a DIAGNOSTIC column, never the bar
+# prime regime runs the single-card side on the GROUPED MoE executor (set_prefill_grouped_all) so the comparison isolates the TP2 expert-half split instead of straddling it and the grouped-vs-per-expert difference
+# red_arm=none	calibrate_only=false
+regime	row	fed	max_abs	max_rel	elem_rel	ref_absmax	bit_equal	top1_single	top1_tp2	tape_ok
+prime	0	760	4.292e-6	3.815e-6	1.732e-2	1.222e1	false	20438	20438	true
+prime	1	3841	4.292e-6	4.113e-6	2.757e-1	1.446e1	false	4087	4087	true
+prime	2	13477	5.007e-6	4.530e-6	3.175e-2	1.817e1	false	37550	37550	true
+prime	3	37550	4.530e-6	3.815e-6	1.324e-1	1.657e1	false	33075	33075	true
+prime	4	33075	7.868e-6	6.378e-6	3.068e-2	1.933e1	false	888	888	true
+prime	5	888	6.676e-6	5.782e-6	1.900e-1	1.892e1	false	279	279	true
+prime	6	279	6.199e-6	5.126e-6	2.500e-1	1.956e1	false	15217	15217	true
+prime	7	15217	9.298e-6	8.166e-6	1.107e-1	1.875e1	false	5388	5388	true
+prime	8	5388	7.033e-6	6.437e-6	2.428e-2	1.537e1	false	13	13	true
+prime	9	13	1.454e-5	1.359e-5	2.339e-1	1.703e1	false	271	271	true
+chunked	-1	0	1.431e-5	1.383e-5	2.661e-1	1.703e1	false	271	271	true
+decode	0	271	9.775e-6	9.298e-6	1.685e-1	1.388e1	false	248045	248045	true
+decode	1	248045	1.359e-5	1.198e-5	8.246e-2	1.351e1	false	74455	74455	true
+decode	2	74455	8.583e-6	7.093e-6	1.499e-1	1.319e1	false	198	198	true
+decode	3	198	7.629e-6	7.391e-6	5.169e-2	2.488e1	false	248068	248068	true
+decode	4	248068	1.621e-5	1.574e-5	3.944e-2	2.542e1	false	198	198	true
+decode	5	198	1.335e-5	1.269e-5	4.682e-2	2.353e1	false	760	760	true
+decode	6	760	1.240e-5	9.894e-6	2.512e0	2.394e1	false	1156	1156	true
+decode	7	1156	7.629e-6	6.557e-6	3.118e-1	2.326e1	false	682	682	true
+# expert-split	peer_slots=6908	home_slots=6532	peer_slot_fraction=0.5140	layer_tokens=1344	both_card_rows=1343	both_card_fraction=0.9993	engaged=true
+# verdict	rows=19	argmax_matches=19	prime_worst_rel=1.383e-5	prime_band=1.4e-4	decode_worst_rel=1.574e-5	decode_band=1.6e-4	decode_byte_identical=false	worst_elemrel=2.512e0	tape_ok=true	peer_engaged=true	red_arm=none	red_floor=1.0e-3	loud=false	calibrate_only=false	pass=true

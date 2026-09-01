@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse this. The user is presenting what looks like an incident report \u2014 a \"you crashed\" postmortem describing a root cause analysis and remediation that was apparently already done. This reads like an operator's incident summary, possibly something a previous session (or a subagent, or an assistant instance) produced, and now they're sharing it with me.\n\nWait \u2014 \"you crashed\" \u2014 the user is telling me *I* crashed. It seems like I (the assistant, possibly as \"Hermes gateway\" or a similar agent running with a venv) crashed because the .venv was deleted underneath the running",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse this. The user is presenting what looks like an incident report \u2014 a \"you crashed\" postmortem describing a root cause analysis and remediation that was apparently already done. This reads like an operator's incident summary, possibly something a previous session (or a subagent, or an assistant instance) produced, and now they're sharing it with me.\n\nWait \u2014 \"you crashed\" \u2014 the user is telling me *I* crashed. It seems like I (the assistant, possibly as \"Hermes gateway\" or a similar agent running with a venv) crashed because the .venv was deleted underneath the running"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 453,
+  "completion_tokens": 128,
+  "total_tokens": 581,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 7.25649815,
+  "spec": {
+   "rounds": 58,
+   "drafted": 174,
+   "accepted": 72,
+   "acceptance_rate": 0.41379310344827586
+  }
+ },
+ "id": "chatcmpl-4ea4992e6b37d42d2a2717dc1ba5cca9",
+ "created": 1788080980,
+ "system_fingerprint": "REDACTED"
+}

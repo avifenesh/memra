@@ -1,0 +1,59 @@
+dsv4-dspark-gate | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | mode components | fixtures /home/ubuntu/dsv4-dspark/fixtures/dsv4_dspark_fixtures_clamp.json | first_pos 32 last_pos 190 | torch accept_mean 3.7673
+npz integrity: 51 arrays sha-verified
+model loaded t=58s
+prefill(32) + ring prime done (argmax 2581) t=138s
+pos 51 done (9 arrays pass, 0 fail, 0 in-band id flips) t=364s
+pos 71 done (18 arrays pass, 0 fail, 0 in-band id flips) t=590s
+pos 91 done (18 arrays pass, 0 fail, 0 in-band id flips) t=819s
+pos 111 done (27 arrays pass, 0 fail, 0 in-band id flips) t=1046s
+pos 131 done (27 arrays pass, 0 fail, 0 in-band id flips) t=1273s
+pos 151 done (36 arrays pass, 0 fail, 0 in-band id flips) t=1503s
+pos 171 done (36 arrays pass, 0 fail, 0 in-band id flips) t=1731s
+  [PASS] pos32_main_hidden: max-abs 1.526e-5 vs thr 5.137e-2 (clamp: thr = 1e-3*absmax arm; absmax 51.370)
+  [PASS] pos32_main_x: max-abs 2.980e-7 vs thr 2.896e-4 (clamp: thr = 1e-3*absmax arm; absmax 0.290)
+  [PASS] pos32_block0_out: max-abs 5.841e-6 vs thr 6.199e-3 (clamp: thr = 1e-3*absmax arm; absmax 6.199)
+  [PASS] pos32_block1_out: max-abs 1.001e-5 vs thr 1.494e-2 (clamp: thr = 1e-3*absmax arm; absmax 14.943)
+  [PASS] pos32_block2_out: max-abs 4.959e-5 vs thr 1.911e-1 (clamp: thr = 1e-3*absmax arm; absmax 191.051)
+  [PASS] pos32_x_collapsed: max-abs 1.848e-6 vs thr 8.663e-3 (clamp: thr = 1e-3*absmax arm; absmax 8.663)
+  [PASS] pos32_logits_pre: max-abs 2.003e-5 vs thr 2.812e-2 (clamp: thr = 1e-3*absmax arm; absmax 28.118)
+  [PASS] pos32_logits_post[..5]: max-abs 1.907e-5 vs thr 3.591e-2 (clamp: thr = 1e-3*absmax arm; absmax 35.910)
+  [PASS] pos32_markov_embed[..5]: max-abs 0.000e0 vs thr 2.141e-3 (clamp: thr = 1e-3*absmax arm; absmax 2.141)
+  [PASS] pos70_main_hidden: max-abs 1.907e-5 vs thr 6.651e-2 (clamp: thr = 1e-3*absmax arm; absmax 66.514)
+  [PASS] pos70_main_x: max-abs 2.831e-7 vs thr 2.920e-4 (clamp: thr = 1e-3*absmax arm; absmax 0.292)
+  [PASS] pos70_block0_out: max-abs 5.126e-6 vs thr 7.988e-3 (clamp: thr = 1e-3*absmax arm; absmax 7.988)
+  [PASS] pos70_block1_out: max-abs 8.106e-6 vs thr 2.002e-2 (clamp: thr = 1e-3*absmax arm; absmax 20.017)
+  [PASS] pos70_block2_out: max-abs 1.221e-4 vs thr 3.356e-1 (clamp: thr = 1e-3*absmax arm; absmax 335.557)
+  [PASS] pos70_x_collapsed: max-abs 7.629e-6 vs thr 1.029e-2 (clamp: thr = 1e-3*absmax arm; absmax 10.289)
+  [PASS] pos70_logits_pre: max-abs 1.812e-5 vs thr 2.771e-2 (clamp: thr = 1e-3*absmax arm; absmax 27.708)
+  [PASS] pos70_logits_post[..5]: max-abs 1.907e-5 vs thr 4.078e-2 (clamp: thr = 1e-3*absmax arm; absmax 40.781)
+  [PASS] pos70_markov_embed[..5]: max-abs 0.000e0 vs thr 2.844e-3 (clamp: thr = 1e-3*absmax arm; absmax 2.844)
+  [PASS] pos110_main_hidden: max-abs 3.052e-5 vs thr 1.152e-1 (clamp: thr = 1e-3*absmax arm; absmax 115.170)
+  [PASS] pos110_main_x: max-abs 2.459e-7 vs thr 2.510e-4 (clamp: thr = 1e-3*absmax arm; absmax 0.251)
+  [PASS] pos110_block0_out: max-abs 4.411e-6 vs thr 7.049e-3 (clamp: thr = 1e-3*absmax arm; absmax 7.049)
+  [PASS] pos110_block1_out: max-abs 1.097e-5 vs thr 1.244e-2 (clamp: thr = 1e-3*absmax arm; absmax 12.438)
+  [PASS] pos110_block2_out: max-abs 1.068e-4 vs thr 2.734e-1 (clamp: thr = 1e-3*absmax arm; absmax 273.364)
+  [PASS] pos110_x_collapsed: max-abs 4.768e-6 vs thr 8.046e-3 (clamp: thr = 1e-3*absmax arm; absmax 8.046)
+  [PASS] pos110_logits_pre: max-abs 1.526e-5 vs thr 2.917e-2 (clamp: thr = 1e-3*absmax arm; absmax 29.174)
+  [PASS] pos110_logits_post[..5]: max-abs 1.526e-5 vs thr 4.273e-2 (clamp: thr = 1e-3*absmax arm; absmax 42.728)
+  [PASS] pos110_markov_embed[..5]: max-abs 0.000e0 vs thr 2.406e-3 (clamp: thr = 1e-3*absmax arm; absmax 2.406)
+  [PASS] pos150_main_hidden: max-abs 2.289e-5 vs thr 6.657e-2 (clamp: thr = 1e-3*absmax arm; absmax 66.570)
+  [PASS] pos150_main_x: max-abs 2.533e-7 vs thr 2.898e-4 (clamp: thr = 1e-3*absmax arm; absmax 0.290)
+  [PASS] pos150_block0_out: max-abs 5.484e-6 vs thr 6.541e-3 (clamp: thr = 1e-3*absmax arm; absmax 6.541)
+  [PASS] pos150_block1_out: max-abs 1.097e-5 vs thr 1.190e-2 (clamp: thr = 1e-3*absmax arm; absmax 11.896)
+  [PASS] pos150_block2_out: max-abs 9.155e-5 vs thr 2.603e-1 (clamp: thr = 1e-3*absmax arm; absmax 260.337)
+  [PASS] pos150_x_collapsed: max-abs 3.815e-6 vs thr 1.037e-2 (clamp: thr = 1e-3*absmax arm; absmax 10.368)
+  [PASS] pos150_logits_pre: max-abs 1.907e-5 vs thr 3.986e-2 (clamp: thr = 1e-3*absmax arm; absmax 39.863)
+  [PASS] pos150_logits_post[..5]: max-abs 1.907e-5 vs thr 5.987e-2 (clamp: thr = 1e-3*absmax arm; absmax 59.873)
+  [PASS] pos150_markov_embed[..5]: max-abs 0.000e0 vs thr 2.844e-3 (clamp: thr = 1e-3*absmax arm; absmax 2.844)
+  [PASS] pos190_main_hidden: max-abs 2.289e-5 vs thr 6.455e-2 (clamp: thr = 1e-3*absmax arm; absmax 64.550)
+  [PASS] pos190_main_x: max-abs 2.459e-7 vs thr 2.634e-4 (clamp: thr = 1e-3*absmax arm; absmax 0.263)
+  [PASS] pos190_block0_out: max-abs 6.914e-6 vs thr 7.606e-3 (clamp: thr = 1e-3*absmax arm; absmax 7.606)
+  [PASS] pos190_block1_out: max-abs 9.537e-6 vs thr 1.435e-2 (clamp: thr = 1e-3*absmax arm; absmax 14.351)
+  [PASS] pos190_block2_out: max-abs 8.392e-5 vs thr 9.835e-2 (clamp: thr = 1e-3*absmax arm; absmax 98.350)
+  [PASS] pos190_x_collapsed: max-abs 1.049e-5 vs thr 1.287e-2 (clamp: thr = 1e-3*absmax arm; absmax 12.867)
+  [PASS] pos190_logits_pre: max-abs 2.193e-5 vs thr 3.423e-2 (clamp: thr = 1e-3*absmax arm; absmax 34.234)
+  [PASS] pos190_logits_post[..5]: max-abs 2.193e-5 vs thr 4.189e-2 (clamp: thr = 1e-3*absmax arm; absmax 41.892)
+  [PASS] pos190_markov_embed[..5]: max-abs 0.000e0 vs thr 2.359e-3 (clamp: thr = 1e-3*absmax arm; absmax 2.359)
+
+COMPONENTS GATE [clamp-only arm] [PASS]: arrays 45 PASS / 0 FAIL | trunk flips in-band 0 (budget 8) | draft-id flips in-band 0 (budget 5) | accept rows exact 159/159 | confidence worst 1.526e-5 (thr 1.950e-2) | determinism sha256 9087767501295269ded4fe64d26c9bc9bbdf70e713bcfac66350362c0739219f
+elapsed 1949s

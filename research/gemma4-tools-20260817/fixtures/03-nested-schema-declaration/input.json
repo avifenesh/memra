@@ -1,0 +1,116 @@
+{
+  "template": "official",
+  "request": {
+    "model": "g4",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Book me a trip."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "book_trip",
+          "description": "Book a multi-leg trip",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "traveler": {
+                "type": "object",
+                "description": "Who travels",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "age": {
+                    "type": "integer",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              },
+              "legs": {
+                "type": "array",
+                "description": "Trip legs in order",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "frm": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "frm",
+                    "to"
+                  ]
+                }
+              },
+              "class": {
+                "type": "string",
+                "enum": [
+                  "economy",
+                  "business"
+                ]
+              },
+              "flexible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "traveler",
+              "legs"
+            ]
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "ping",
+          "description": "Liveness probe",
+          "parameters": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      },
+      {
+        "type": "function",
+        "function": {
+          "name": "shell",
+          "description": "Runs a shell command and returns its output",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The command to execute"
+              },
+              "timeout_ms": {
+                "type": "number",
+                "description": "Timeout in milliseconds",
+                "nullable": true
+              },
+              "with_escalated_permissions": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "command"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

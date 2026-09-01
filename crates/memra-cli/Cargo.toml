@@ -1,0 +1,19 @@
+[package]
+name = "memra-cli"
+description = "Model onboarding compiler for the memra inference engine"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[dependencies]
+memra-gguf = { workspace = true }
+memra-reference = { workspace = true }
+sha2 = "0.10"
+
+[[bin]]
+name = "memra"
+path = "src/main.rs"

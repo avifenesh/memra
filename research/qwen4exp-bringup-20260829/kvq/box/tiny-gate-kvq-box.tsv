@@ -1,0 +1,302 @@
+# qwen4exp-gpu-gate	binary_sha256=e39da337aaee1aba332d8fa1d63688afe813fc596274dae34649cd422fdada2d	policy=max_abs<=0.01 max_rel<=0.01 argmax	prompt_len=18	decode_steps=7	vocab=64	plan=tiny(qwen4_exp pack)	arms=fixture,mtp-fixture,dir-bf16,dir-nvfp4-stacked,dir-nvfp4-perexpert,mtp-dir-bf16,mtp-spec-tiny,mtp-spec-defer,mtp-spec-defer-dirbf16,mtp-armed-prefill-bit,fixture-yarn,yarn-identity	tokens=[1, 7, 13, 2, 41, 9, 30, 5, 22, 63, 11, 3, 47, 8, 19, 26, 4, 35, 12, 55, 63, 6, 28, 40, 17]
+fixture	prefill	row=0	max_abs=1.364e-4	max_rel=1.364e-4	ref_absmax=3.548e-1	argmax_match=true	pass=true
+fixture	prefill	row=1	max_abs=1.920e-4	max_rel=1.920e-4	ref_absmax=5.781e-1	argmax_match=true	pass=true
+fixture	prefill	row=2	max_abs=2.219e-4	max_rel=2.219e-4	ref_absmax=4.774e-1	argmax_match=true	pass=true
+fixture	prefill	row=3	max_abs=5.083e-4	max_rel=5.083e-4	ref_absmax=4.678e-1	argmax_match=true	pass=true
+fixture	prefill	row=4	max_abs=1.605e-4	max_rel=1.605e-4	ref_absmax=6.485e-1	argmax_match=true	pass=true
+fixture	prefill	row=5	max_abs=3.218e-4	max_rel=3.218e-4	ref_absmax=3.304e-1	argmax_match=true	pass=true
+fixture	prefill	row=6	max_abs=1.818e-4	max_rel=1.818e-4	ref_absmax=4.845e-1	argmax_match=true	pass=true
+fixture	prefill	row=7	max_abs=1.998e-4	max_rel=1.998e-4	ref_absmax=2.527e-1	argmax_match=true	pass=true
+fixture	prefill	row=8	max_abs=1.635e-4	max_rel=1.635e-4	ref_absmax=3.660e-1	argmax_match=true	pass=true
+fixture	prefill	row=9	max_abs=1.481e-4	max_rel=1.481e-4	ref_absmax=5.774e-1	argmax_match=true	pass=true
+fixture	prefill	row=10	max_abs=2.635e-4	max_rel=2.635e-4	ref_absmax=2.463e-1	argmax_match=true	pass=true
+fixture	prefill	row=11	max_abs=2.422e-4	max_rel=2.422e-4	ref_absmax=4.141e-1	argmax_match=true	pass=true
+fixture	prefill	row=12	max_abs=1.141e-4	max_rel=1.141e-4	ref_absmax=4.303e-1	argmax_match=true	pass=true
+fixture	prefill	row=13	max_abs=4.796e-4	max_rel=4.796e-4	ref_absmax=3.842e-1	argmax_match=true	pass=true
+fixture	prefill	row=14	max_abs=2.247e-4	max_rel=2.247e-4	ref_absmax=3.082e-1	argmax_match=true	pass=true
+fixture	prefill	row=15	max_abs=1.504e-4	max_rel=1.504e-4	ref_absmax=5.218e-1	argmax_match=true	pass=true
+fixture	prefill	row=16	max_abs=3.244e-4	max_rel=3.244e-4	ref_absmax=3.845e-1	argmax_match=true	pass=true
+fixture	prefill	row=17	max_abs=2.589e-4	max_rel=2.589e-4	ref_absmax=3.701e-1	argmax_match=true	pass=true
+fixture	decode-step	row=18	max_abs=1.158e-4	max_rel=1.158e-4	ref_absmax=4.642e-1	argmax_match=true	pass=true
+fixture	decode-step	row=19	max_abs=8.337e-5	max_rel=8.337e-5	ref_absmax=5.174e-1	argmax_match=true	pass=true
+fixture	decode-step	row=20	max_abs=5.263e-5	max_rel=5.263e-5	ref_absmax=3.328e-1	argmax_match=true	pass=true
+fixture	decode-step	row=21	max_abs=4.687e-5	max_rel=4.687e-5	ref_absmax=3.948e-1	argmax_match=true	pass=true
+fixture	decode-step	row=22	max_abs=3.561e-5	max_rel=3.561e-5	ref_absmax=2.910e-1	argmax_match=true	pass=true
+fixture	decode-step	row=23	max_abs=7.336e-5	max_rel=7.336e-5	ref_absmax=2.996e-1	argmax_match=true	pass=true
+fixture	decode-step	row=24	max_abs=3.964e-5	max_rel=3.964e-5	ref_absmax=5.206e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=0	max_abs=1.977e-4	max_rel=1.977e-4	ref_absmax=2.151e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=1	max_abs=1.839e-4	max_rel=1.839e-4	ref_absmax=2.148e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=2	max_abs=2.454e-4	max_rel=2.454e-4	ref_absmax=2.027e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=3	max_abs=2.474e-4	max_rel=2.474e-4	ref_absmax=2.147e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=4	max_abs=1.906e-4	max_rel=1.906e-4	ref_absmax=2.403e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=5	max_abs=2.390e-4	max_rel=2.390e-4	ref_absmax=1.901e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=6	max_abs=1.501e-4	max_rel=1.501e-4	ref_absmax=1.695e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=7	max_abs=2.015e-4	max_rel=2.015e-4	ref_absmax=2.572e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=8	max_abs=2.416e-4	max_rel=2.416e-4	ref_absmax=2.232e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=9	max_abs=1.730e-4	max_rel=1.730e-4	ref_absmax=1.362e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=10	max_abs=2.090e-4	max_rel=2.090e-4	ref_absmax=1.799e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=11	max_abs=2.444e-4	max_rel=2.444e-4	ref_absmax=2.057e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=12	max_abs=1.874e-4	max_rel=1.874e-4	ref_absmax=2.255e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=13	max_abs=2.216e-4	max_rel=2.216e-4	ref_absmax=2.158e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=14	max_abs=2.507e-4	max_rel=2.507e-4	ref_absmax=2.060e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=15	max_abs=2.176e-4	max_rel=2.176e-4	ref_absmax=2.248e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=16	max_abs=2.368e-4	max_rel=2.368e-4	ref_absmax=2.224e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-batched	row=17	max_abs=2.317e-4	max_rel=2.317e-4	ref_absmax=1.878e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=0	max_abs=3.672e-4	max_rel=3.112e-4	ref_absmax=3.080e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=1	max_abs=4.013e-4	max_rel=2.944e-4	ref_absmax=3.175e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=2	max_abs=5.238e-4	max_rel=5.061e-4	ref_absmax=2.768e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=3	max_abs=3.588e-4	max_rel=3.588e-4	ref_absmax=3.461e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=4	max_abs=5.543e-4	max_rel=4.064e-4	ref_absmax=2.861e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=5	max_abs=6.118e-4	max_rel=6.118e-4	ref_absmax=2.791e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=6	max_abs=7.938e-4	max_rel=7.938e-4	ref_absmax=2.617e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=7	max_abs=5.567e-4	max_rel=4.189e-4	ref_absmax=2.906e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=8	max_abs=7.861e-4	max_rel=4.991e-4	ref_absmax=3.062e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=9	max_abs=4.466e-4	max_rel=3.473e-4	ref_absmax=2.847e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=10	max_abs=4.835e-4	max_rel=4.835e-4	ref_absmax=3.058e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=11	max_abs=6.913e-4	max_rel=3.766e-4	ref_absmax=2.440e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=12	max_abs=3.270e-4	max_rel=3.270e-4	ref_absmax=2.830e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=13	max_abs=3.938e-4	max_rel=3.938e-4	ref_absmax=2.526e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=14	max_abs=5.577e-4	max_rel=4.123e-4	ref_absmax=2.439e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=15	max_abs=4.843e-4	max_rel=4.843e-4	ref_absmax=2.873e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=16	max_abs=6.847e-4	max_rel=6.847e-4	ref_absmax=3.058e0	argmax_match=true	pass=true
+mtp-fixture	mtp-carrier	row=17	max_abs=3.974e-4	max_rel=3.974e-4	ref_absmax=2.694e0	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=0	max_abs=3.113e-5	max_rel=3.113e-5	ref_absmax=2.151e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=1	max_abs=2.399e-5	max_rel=2.399e-5	ref_absmax=2.148e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=2	max_abs=4.079e-5	max_rel=4.079e-5	ref_absmax=2.027e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=3	max_abs=3.394e-5	max_rel=3.394e-5	ref_absmax=2.147e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=4	max_abs=2.827e-5	max_rel=2.827e-5	ref_absmax=2.403e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=5	max_abs=3.243e-5	max_rel=3.243e-5	ref_absmax=1.901e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=6	max_abs=5.065e-5	max_rel=5.065e-5	ref_absmax=1.695e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=7	max_abs=2.497e-5	max_rel=2.497e-5	ref_absmax=2.572e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=8	max_abs=3.338e-5	max_rel=3.338e-5	ref_absmax=2.232e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=9	max_abs=3.368e-5	max_rel=3.368e-5	ref_absmax=1.362e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=10	max_abs=4.900e-5	max_rel=4.900e-5	ref_absmax=1.799e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=11	max_abs=4.948e-5	max_rel=4.948e-5	ref_absmax=2.057e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=12	max_abs=1.807e-5	max_rel=1.807e-5	ref_absmax=2.255e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=13	max_abs=4.567e-5	max_rel=4.567e-5	ref_absmax=2.158e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=14	max_abs=3.061e-5	max_rel=3.061e-5	ref_absmax=2.060e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=15	max_abs=2.710e-5	max_rel=2.710e-5	ref_absmax=2.248e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=16	max_abs=6.290e-5	max_rel=6.290e-5	ref_absmax=2.224e-1	argmax_match=true	pass=true
+mtp-fixture	mtp-step	row=17	max_abs=5.412e-5	max_rel=5.412e-5	ref_absmax=1.878e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=0	max_abs=1.006e-5	max_rel=1.006e-5	ref_absmax=4.264e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=1	max_abs=5.710e-5	max_rel=5.710e-5	ref_absmax=5.922e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=2	max_abs=2.509e-5	max_rel=2.509e-5	ref_absmax=7.806e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=3	max_abs=3.448e-5	max_rel=3.448e-5	ref_absmax=8.160e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=4	max_abs=4.804e-5	max_rel=4.804e-5	ref_absmax=7.501e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=5	max_abs=1.711e-5	max_rel=1.711e-5	ref_absmax=5.741e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=6	max_abs=3.025e-5	max_rel=3.025e-5	ref_absmax=5.704e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=7	max_abs=1.252e-5	max_rel=1.252e-5	ref_absmax=5.255e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=8	max_abs=1.553e-5	max_rel=1.553e-5	ref_absmax=8.097e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=9	max_abs=1.357e-5	max_rel=1.357e-5	ref_absmax=6.472e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=10	max_abs=2.107e-5	max_rel=2.107e-5	ref_absmax=2.908e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=11	max_abs=2.968e-5	max_rel=2.968e-5	ref_absmax=1.049e0	argmax_match=true	pass=true
+dir-bf16	prefill	row=12	max_abs=2.453e-5	max_rel=2.453e-5	ref_absmax=2.663e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=13	max_abs=4.637e-5	max_rel=4.637e-5	ref_absmax=8.497e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=14	max_abs=9.717e-5	max_rel=9.717e-5	ref_absmax=6.656e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=15	max_abs=1.308e-5	max_rel=1.308e-5	ref_absmax=4.896e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=16	max_abs=2.356e-5	max_rel=2.356e-5	ref_absmax=7.245e-1	argmax_match=true	pass=true
+dir-bf16	prefill	row=17	max_abs=6.869e-6	max_rel=6.869e-6	ref_absmax=5.093e-1	argmax_match=true	pass=true
+dir-bf16	decode-step	row=18	max_abs=1.015e-5	max_rel=1.015e-5	ref_absmax=4.494e-1	argmax_match=true	pass=true
+dir-bf16	decode-step	row=19	max_abs=1.739e-5	max_rel=1.739e-5	ref_absmax=4.252e-1	argmax_match=true	pass=true
+dir-bf16	decode-step	row=20	max_abs=1.288e-5	max_rel=1.288e-5	ref_absmax=4.609e-1	argmax_match=true	pass=true
+dir-bf16	decode-step	row=21	max_abs=1.490e-6	max_rel=1.490e-6	ref_absmax=6.715e-1	argmax_match=true	pass=true
+dir-bf16	decode-step	row=22	max_abs=2.369e-6	max_rel=2.369e-6	ref_absmax=6.582e-1	argmax_match=true	pass=true
+dir-bf16	decode-step	row=23	max_abs=3.591e-6	max_rel=3.591e-6	ref_absmax=6.586e-1	argmax_match=true	pass=true
+dir-bf16	decode-step	row=24	max_abs=1.445e-6	max_rel=1.445e-6	ref_absmax=6.873e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=0	max_abs=3.556e-5	max_rel=3.556e-5	ref_absmax=3.217e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=1	max_abs=4.241e-5	max_rel=4.241e-5	ref_absmax=5.840e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=2	max_abs=1.644e-5	max_rel=1.644e-5	ref_absmax=7.229e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=3	max_abs=1.985e-5	max_rel=1.985e-5	ref_absmax=7.653e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=4	max_abs=8.726e-5	max_rel=8.726e-5	ref_absmax=6.657e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=5	max_abs=4.721e-5	max_rel=4.721e-5	ref_absmax=4.281e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=6	max_abs=7.749e-6	max_rel=7.749e-6	ref_absmax=5.525e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=7	max_abs=1.778e-5	max_rel=1.778e-5	ref_absmax=5.649e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=8	max_abs=2.050e-5	max_rel=2.050e-5	ref_absmax=8.162e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=9	max_abs=7.272e-6	max_rel=7.272e-6	ref_absmax=6.422e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=10	max_abs=2.146e-5	max_rel=2.146e-5	ref_absmax=2.774e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=11	max_abs=2.229e-5	max_rel=2.229e-5	ref_absmax=1.009e0	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=12	max_abs=3.120e-5	max_rel=3.120e-5	ref_absmax=3.750e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=13	max_abs=4.202e-5	max_rel=4.202e-5	ref_absmax=8.893e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=14	max_abs=1.657e-5	max_rel=1.657e-5	ref_absmax=5.301e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=15	max_abs=1.568e-5	max_rel=1.568e-5	ref_absmax=4.968e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=16	max_abs=2.654e-5	max_rel=2.654e-5	ref_absmax=6.004e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	prefill	row=17	max_abs=4.306e-6	max_rel=4.306e-6	ref_absmax=5.546e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	decode-step	row=18	max_abs=7.331e-6	max_rel=7.331e-6	ref_absmax=3.908e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	decode-step	row=19	max_abs=1.043e-5	max_rel=1.043e-5	ref_absmax=3.641e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	decode-step	row=20	max_abs=3.289e-5	max_rel=3.289e-5	ref_absmax=5.204e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	decode-step	row=21	max_abs=1.684e-6	max_rel=1.684e-6	ref_absmax=7.385e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	decode-step	row=22	max_abs=4.917e-7	max_rel=4.917e-7	ref_absmax=6.626e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	decode-step	row=23	max_abs=1.490e-6	max_rel=1.490e-6	ref_absmax=7.083e-1	argmax_match=true	pass=true
+dir-nvfp4-stacked	decode-step	row=24	max_abs=5.215e-7	max_rel=5.215e-7	ref_absmax=7.654e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=0	max_abs=8.106e-6	max_rel=8.106e-6	ref_absmax=4.643e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=1	max_abs=1.871e-5	max_rel=1.871e-5	ref_absmax=6.948e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=2	max_abs=1.699e-5	max_rel=1.699e-5	ref_absmax=5.145e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=3	max_abs=9.030e-6	max_rel=9.030e-6	ref_absmax=7.026e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=4	max_abs=1.392e-5	max_rel=1.392e-5	ref_absmax=1.175e0	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=5	max_abs=4.902e-6	max_rel=4.902e-6	ref_absmax=6.140e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=6	max_abs=1.788e-6	max_rel=1.788e-6	ref_absmax=5.534e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=7	max_abs=3.286e-5	max_rel=3.286e-5	ref_absmax=6.003e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=8	max_abs=1.453e-6	max_rel=1.453e-6	ref_absmax=4.855e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=9	max_abs=2.727e-6	max_rel=2.727e-6	ref_absmax=4.787e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=10	max_abs=7.495e-6	max_rel=7.495e-6	ref_absmax=4.379e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=11	max_abs=1.818e-6	max_rel=1.818e-6	ref_absmax=7.901e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=12	max_abs=7.749e-6	max_rel=7.749e-6	ref_absmax=7.579e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=13	max_abs=2.199e-5	max_rel=2.199e-5	ref_absmax=8.002e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=14	max_abs=1.668e-5	max_rel=1.668e-5	ref_absmax=6.762e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=15	max_abs=6.437e-6	max_rel=6.437e-6	ref_absmax=4.871e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=16	max_abs=4.143e-6	max_rel=4.143e-6	ref_absmax=6.243e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	prefill	row=17	max_abs=5.722e-6	max_rel=5.722e-6	ref_absmax=6.314e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	decode-step	row=18	max_abs=6.557e-7	max_rel=6.557e-7	ref_absmax=3.366e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	decode-step	row=19	max_abs=2.533e-6	max_rel=2.533e-6	ref_absmax=5.237e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	decode-step	row=20	max_abs=1.222e-6	max_rel=1.222e-6	ref_absmax=6.947e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	decode-step	row=21	max_abs=2.623e-6	max_rel=2.623e-6	ref_absmax=8.886e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	decode-step	row=22	max_abs=1.863e-6	max_rel=1.863e-6	ref_absmax=4.145e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	decode-step	row=23	max_abs=4.768e-7	max_rel=4.768e-7	ref_absmax=5.199e-1	argmax_match=true	pass=true
+dir-nvfp4-perexpert	decode-step	row=24	max_abs=6.407e-7	max_rel=6.407e-7	ref_absmax=4.307e-1	argmax_match=true	pass=true
+trunk-diet	freed_bytes=23296	bits_identical=true	pass=true
+mtp-dir-bf16	mtp-batched	row=0	max_abs=5.156e-6	max_rel=5.156e-6	ref_absmax=6.720e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=1	max_abs=2.161e-6	max_rel=2.161e-6	ref_absmax=4.009e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=2	max_abs=1.281e-6	max_rel=1.281e-6	ref_absmax=6.323e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=3	max_abs=9.537e-7	max_rel=9.537e-7	ref_absmax=4.340e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=4	max_abs=6.855e-7	max_rel=6.855e-7	ref_absmax=5.161e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=5	max_abs=3.844e-6	max_rel=3.844e-6	ref_absmax=3.919e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=6	max_abs=1.639e-6	max_rel=1.639e-6	ref_absmax=2.237e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=7	max_abs=8.382e-7	max_rel=8.382e-7	ref_absmax=4.568e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=8	max_abs=2.071e-6	max_rel=2.071e-6	ref_absmax=3.503e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=9	max_abs=3.502e-7	max_rel=3.502e-7	ref_absmax=1.616e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=10	max_abs=6.855e-7	max_rel=6.855e-7	ref_absmax=3.059e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=11	max_abs=8.792e-7	max_rel=8.792e-7	ref_absmax=3.920e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=12	max_abs=1.207e-6	max_rel=1.207e-6	ref_absmax=5.278e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=13	max_abs=1.535e-6	max_rel=1.535e-6	ref_absmax=4.668e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=14	max_abs=2.950e-6	max_rel=2.950e-6	ref_absmax=5.470e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=15	max_abs=5.066e-7	max_rel=5.066e-7	ref_absmax=3.667e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=16	max_abs=7.823e-7	max_rel=7.823e-7	ref_absmax=1.666e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-batched	row=17	max_abs=2.354e-6	max_rel=2.354e-6	ref_absmax=3.459e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=0	max_abs=3.576e-7	max_rel=2.986e-7	ref_absmax=1.474e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=1	max_abs=4.172e-7	max_rel=4.172e-7	ref_absmax=2.375e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=2	max_abs=7.749e-7	max_rel=7.749e-7	ref_absmax=2.245e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=3	max_abs=7.153e-7	max_rel=7.153e-7	ref_absmax=2.056e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=4	max_abs=7.153e-7	max_rel=4.172e-7	ref_absmax=2.458e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=5	max_abs=2.831e-7	max_rel=2.831e-7	ref_absmax=2.284e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=6	max_abs=3.576e-7	max_rel=2.725e-7	ref_absmax=2.181e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=7	max_abs=4.768e-7	max_rel=2.198e-7	ref_absmax=2.176e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=8	max_abs=3.576e-7	max_rel=2.668e-7	ref_absmax=2.237e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=9	max_abs=4.768e-7	max_rel=2.980e-7	ref_absmax=2.510e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=10	max_abs=2.384e-7	max_rel=2.384e-7	ref_absmax=2.753e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=11	max_abs=3.576e-7	max_rel=3.576e-7	ref_absmax=1.939e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=12	max_abs=4.768e-7	max_rel=3.704e-7	ref_absmax=2.366e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=13	max_abs=4.768e-7	max_rel=3.336e-7	ref_absmax=2.336e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=14	max_abs=4.172e-7	max_rel=4.172e-7	ref_absmax=2.181e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=15	max_abs=4.768e-7	max_rel=4.768e-7	ref_absmax=2.179e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=16	max_abs=5.960e-7	max_rel=5.812e-7	ref_absmax=2.055e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-carrier	row=17	max_abs=4.172e-7	max_rel=4.172e-7	ref_absmax=2.258e0	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=0	max_abs=1.192e-7	max_rel=1.192e-7	ref_absmax=6.720e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=1	max_abs=8.941e-8	max_rel=8.941e-8	ref_absmax=4.009e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=2	max_abs=8.941e-8	max_rel=8.941e-8	ref_absmax=6.323e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=3	max_abs=1.490e-7	max_rel=1.490e-7	ref_absmax=4.340e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=4	max_abs=1.192e-7	max_rel=1.192e-7	ref_absmax=5.161e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=5	max_abs=8.941e-8	max_rel=8.941e-8	ref_absmax=3.919e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=6	max_abs=8.941e-8	max_rel=8.941e-8	ref_absmax=2.237e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=7	max_abs=9.686e-8	max_rel=9.686e-8	ref_absmax=4.568e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=8	max_abs=4.470e-8	max_rel=4.470e-8	ref_absmax=3.503e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=9	max_abs=9.686e-8	max_rel=9.686e-8	ref_absmax=1.616e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=10	max_abs=9.686e-8	max_rel=9.686e-8	ref_absmax=3.059e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=11	max_abs=8.941e-8	max_rel=8.941e-8	ref_absmax=3.920e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=12	max_abs=7.451e-8	max_rel=7.451e-8	ref_absmax=5.278e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=13	max_abs=8.941e-8	max_rel=8.941e-8	ref_absmax=4.668e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=14	max_abs=1.192e-7	max_rel=1.192e-7	ref_absmax=5.470e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=15	max_abs=1.192e-7	max_rel=1.192e-7	ref_absmax=3.667e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=16	max_abs=7.451e-8	max_rel=7.451e-8	ref_absmax=1.666e-1	argmax_match=true	pass=true
+mtp-dir-bf16	mtp-step	row=17	max_abs=1.192e-7	max_rel=1.192e-7	ref_absmax=3.459e-1	argmax_match=true	pass=true
+mtp-spec-defer-dirbf16	pmin0	host	k=3	tokens=24	rounds=23	drafted=69	accepted=0	guard_stops=0	zero_draft=0	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer-dirbf16	pmin0	defer	k=3	tokens=24	rounds=23	drafted=69	accepted=0	guard_stops=0	zero_draft=0	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer-dirbf16	pmin0.5	host	k=3	tokens=24	rounds=23	drafted=0	accepted=0	guard_stops=23	zero_draft=23	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer-dirbf16	pmin0.5	defer	k=3	tokens=24	rounds=23	drafted=0	accepted=0	guard_stops=23	zero_draft=23	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer-dirbf16	pmin0.5	defer-gsync	k=3	tokens=24	rounds=23	drafted=0	accepted=0	guard_stops=23	zero_draft=23	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer-dirbf16	midchain-pmin	NONE	covered_by=guard-trunc-pin+box-defer-ab	(no swept (k,pmin) mixes on the deterministic fixture)
+mtp-spec-defer-dirbf16	guard-trunc-pin	6 windows incl. mid-chain dip	pass=true
+mtp-spec-tiny	byte-identity	k=3	tokens=24	rounds=23	accepted=0/69	spec=[61, 61, 52, 57, 47, 57, 52, 52, 47, 47, 52, 57, 52, 52, 52, 52, 52, 52, 47, 47, 47, 47, 47, 52]	plain=[61, 61, 52, 57, 47, 57, 52, 52, 47, 47, 52, 57, 52, 52, 52, 52, 52, 52, 47, 47, 47, 47, 47, 52]	pass=true
+mtp-spec-defer	pmin0	host	k=3	tokens=24	rounds=23	drafted=69	accepted=0	guard_stops=0	zero_draft=0	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer	pmin0	defer	k=3	tokens=24	rounds=23	drafted=69	accepted=0	guard_stops=0	zero_draft=0	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer	pmin0.5	host	k=3	tokens=24	rounds=23	drafted=0	accepted=0	guard_stops=23	zero_draft=23	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer	pmin0.5	defer	k=3	tokens=24	rounds=23	drafted=0	accepted=0	guard_stops=23	zero_draft=23	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer	pmin0.5	defer-gsync	k=3	tokens=24	rounds=23	drafted=0	accepted=0	guard_stops=23	zero_draft=23	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer	midchain-pmin	NONE	covered_by=guard-trunc-pin+box-defer-ab	(no swept (k,pmin) mixes on the deterministic fixture)
+mtp-spec-defer	guard-trunc-pin	6 windows incl. mid-chain dip	pass=true
+mtp-spec-defer	trim-rev+pmin0.5	host	k=3	tokens=24	rounds=23	drafted=0	accepted=0	guard_stops=23	zero_draft=23	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer	trim-rev+pmin0.5	defer	k=3	tokens=24	rounds=23	drafted=0	accepted=0	guard_stops=23	zero_draft=23	vs_plain=true	vs_host=true	pass=true
+mtp-spec-defer	trim-rev+pmin0.5	defer-gsync	k=3	tokens=24	rounds=23	drafted=0	accepted=0	guard_stops=23	zero_draft=23	vs_plain=true	vs_host=true	pass=true
+mtp-armed-prefill-bit	prompt_len=3	k_cap=4	prefill_bits=true	step_bits=true	pass=true
+mtp-rewind	keep=1	max_abs=1.981e-4	max_rel=1.981e-4	pass=true
+mtp-rewind	keep=2	max_abs=2.027e-4	max_rel=2.027e-4	pass=true
+mtp-rewind	keep=3	max_abs=2.328e-4	max_rel=2.328e-4	pass=true
+kvq-fixture	deterministic=true	finite=true	envelope_abs=1.475e-3	envelope_rel=1.475e-3	argmax_flips=0/25	pass=true
+kvq-spec-byte-identity	k=3	tokens=24	accepted=0/69	pass=true
+idxq-q8-interleave	idxcache_on_vs_off_bits=true	pass=true
+idxq-q8-envelope	abs=0.000e0	rel=0.000e0	argmax_flips=0/25
+idxq-bf16-interleave	idxcache_on_vs_off_bits=true	pass=true
+idxq-bf16-envelope	abs=0.000e0	rel=0.000e0	argmax_flips=0/25
+idxq-q8-spec-byte-identity	k=3	tokens=24	accepted=0/69	pass=true
+fixture-yarn	prefill	row=0	max_abs=1.364e-4	max_rel=1.364e-4	ref_absmax=3.548e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=1	max_abs=1.557e-4	max_rel=1.557e-4	ref_absmax=5.784e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=2	max_abs=1.952e-4	max_rel=1.952e-4	ref_absmax=4.775e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=3	max_abs=5.170e-4	max_rel=5.170e-4	ref_absmax=4.679e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=4	max_abs=2.415e-4	max_rel=2.415e-4	ref_absmax=6.488e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=5	max_abs=3.199e-4	max_rel=3.199e-4	ref_absmax=3.304e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=6	max_abs=2.085e-4	max_rel=2.085e-4	ref_absmax=4.845e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=7	max_abs=2.763e-4	max_rel=2.763e-4	ref_absmax=2.530e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=8	max_abs=2.513e-4	max_rel=2.513e-4	ref_absmax=3.661e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=9	max_abs=1.670e-4	max_rel=1.670e-4	ref_absmax=5.774e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=10	max_abs=2.115e-4	max_rel=2.115e-4	ref_absmax=2.464e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=11	max_abs=2.033e-4	max_rel=2.033e-4	ref_absmax=4.142e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=12	max_abs=1.204e-4	max_rel=1.204e-4	ref_absmax=4.302e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=13	max_abs=5.439e-4	max_rel=5.439e-4	ref_absmax=3.842e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=14	max_abs=2.245e-4	max_rel=2.245e-4	ref_absmax=3.085e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=15	max_abs=1.421e-4	max_rel=1.421e-4	ref_absmax=5.217e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=16	max_abs=2.564e-4	max_rel=2.564e-4	ref_absmax=3.845e-1	argmax_match=true	pass=true
+fixture-yarn	prefill	row=17	max_abs=2.663e-4	max_rel=2.663e-4	ref_absmax=3.701e-1	argmax_match=true	pass=true
+fixture-yarn	decode-step	row=18	max_abs=1.159e-4	max_rel=1.159e-4	ref_absmax=4.641e-1	argmax_match=true	pass=true
+fixture-yarn	decode-step	row=19	max_abs=8.326e-5	max_rel=8.326e-5	ref_absmax=5.176e-1	argmax_match=true	pass=true
+fixture-yarn	decode-step	row=20	max_abs=5.239e-5	max_rel=5.239e-5	ref_absmax=3.329e-1	argmax_match=true	pass=true
+fixture-yarn	decode-step	row=21	max_abs=4.698e-5	max_rel=4.698e-5	ref_absmax=3.948e-1	argmax_match=true	pass=true
+fixture-yarn	decode-step	row=22	max_abs=3.549e-5	max_rel=3.549e-5	ref_absmax=2.906e-1	argmax_match=true	pass=true
+fixture-yarn	decode-step	row=23	max_abs=7.316e-5	max_rel=7.316e-5	ref_absmax=2.996e-1	argmax_match=true	pass=true
+fixture-yarn	decode-step	row=24	max_abs=3.973e-5	max_rel=3.973e-5	ref_absmax=5.208e-1	argmax_match=true	pass=true
+yarn-identity	rows=25	bit_identical=true	pass=true
+mtp-spec-ring	byte-identity	chunk=8	ring=16	tokens=24	rounds=23	spec=[61, 61, 52, 57, 47, 57, 52, 52, 47, 47, 52, 57, 52, 52, 52, 52, 52, 52, 47, 47, 47, 47, 47, 52]	plain=[61, 61, 52, 57, 47, 57, 52, 52, 47, 47, 52, 57, 52, 52, 52, 52, 52, 52, 47, 47, 47, 47, 47, 52]	pass=true
+fixture-longatt	rows=25	bit_identical=true	pass=true
+prefill-extend	chunk=5	max_abs=1.865e-4	max_rel=1.865e-4	pass=true
+# summary	nvfp4-sel-matvec kernel oracle: worst abs 7.629e-6 rel 3.099e-6 over gate_up+down v1/v2/v3 modes, NaN scales + non-pow2 macros + duplicate slots; gufuse BIT-IDENTICAL to the v3+silu chain incl. the count-gated pack twin + the tok_map verify merge
+# summary	bf16-matvec kernel oracle: worst abs 1.192e-7 rel 1.192e-7 over per-batch + shared-x modes, batch>1, t>1, signed/denormal bf16; mt weight-shared twin BIT-IDENTICAL at t 5; sel grouped twin BIT-IDENTICAL to the off_into chain (shared-x + slot-x, duplicate slots)
+# summary	hc-micro real-geometry oracle: streams 4 hidden 2560 t 10, worst rel 1.652e-6 over norm/inject/write vs the classic composition
+# summary	gdn-step kernel oracle: scan step twin worst rel 1.192e-7 over artifact + hk32 geometries; rms_sigmul bit-identical to the norm/sigmoid/mul chain (48x128)
+# summary	hc-diet real-geometry oracle: streams 4 hidden 2560 rank 320, worst rel 2.369e-6 vs the classic fused chain at t 1; t 3 token-dim AND the mt weight-shared stages BIT-IDENTICAL to per-token t 1 launches
+# summary	route oracle: device selection ids+order EXACT vs host twin over 35 rows (real 512/10 + tie straddle/all-equal/underflow + geometry edges), worst weight ULP 0 (bound 2), tok map exact
+# summary	kvq kernel oracles: quant+dequant twins dim 512: BYTE/BIT-IDENTICAL; quant+dequant twins dim 40: BYTE/BIT-IDENTICAL; fused q8q5 blocklist vs dequant+f32 composition: BIT-IDENTICAL over 18432 values; idx q8/bf16 appenders vs host twins: BYTE-IDENTICAL
+# summary	fixture: prefill worst abs 5.083e-4 rel 5.083e-4; decode worst abs 1.158e-4 rel 1.158e-4
+# summary	mtp-fixture: draft parity worst abs 7.938e-4 rel 7.938e-4 over batched+carrier+steps
+# summary	dir-bf16: prefill worst abs 9.717e-5 rel 9.717e-5; decode worst abs 1.739e-5 rel 1.739e-5
+# summary	dir-nvfp4-stacked: prefill worst abs 8.726e-5 rel 8.726e-5; decode worst abs 3.289e-5 rel 3.289e-5
+# summary	dir-nvfp4-perexpert: prefill worst abs 3.286e-5 rel 3.286e-5; decode worst abs 2.623e-6 rel 2.623e-6
+# summary	trunk-diet: dir-bf16 pre/post rows BIT-IDENTICAL (freed 23296 bytes)
+# summary	mtp-dir-bf16: draft parity worst abs 5.156e-6 rel 5.156e-6 over batched+carrier+steps
+# summary	mtp-spec-defer-dirbf16: deferred-round identity over 6 arms (byte identity vs plain + counter identity vs host, incl. a mid-chain guard stop)
+# summary	mtp-spec-tiny: spec-vs-plain byte-identity PASS (k=3, 24 tokens, accepted 0/69 over 23 rounds)
+# summary	mtp-spec-defer: deferred-round identity over 9 arms (byte identity vs plain + counter identity vs host, incl. a mid-chain guard stop)
+# summary	mtp-armed-prefill-bit: short-prompt armed vs unarmed prefill BIT-IDENTICAL (prefill rows + 1 step, bitwise)
+# summary	mtp-rewind keep=1: chunk+rewind+decode vs reference worst abs 1.981e-4 rel 1.981e-4 (PASS)
+# summary	mtp-rewind keep=2: chunk+rewind+decode vs reference worst abs 2.027e-4 rel 2.027e-4 (PASS)
+# summary	mtp-rewind keep=3: chunk+rewind+decode vs reference worst abs 2.328e-4 rel 2.328e-4 (PASS)
+# summary	kvq-fixture: determinism PASS / finite PASS; envelope vs f32 twin abs 1.475e-3 rel 1.475e-3, argmax flips 0/25 (REPORT — the hard cross-config gate is the real checkpoint)
+# summary	kvq-spec: spec-vs-plain byte identity PASS with the quantized cache on BOTH arms (k=3, 24 tokens, accepted 0/69)
+# summary	idxq-q8: idxcache ON vs OFF (host- vs device-quantized rows) BIT-IDENTICAL
+# summary	idxq-bf16: idxcache ON vs OFF (host- vs device-quantized rows) BIT-IDENTICAL
+# summary	idxq-q8-spec: spec-vs-plain byte identity PASS (quantized raw-key cache both arms)
+# summary	fixture-yarn (factor 2, mscale 1.0693): prefill worst abs 5.439e-4 rel 5.439e-4; decode worst abs 1.159e-4 rel 1.159e-4
+# summary	yarn-identity: factor-1.0 yarn vs plain rope BIT-IDENTICAL (25 rows bit-compared)
+# summary	sdpa-blocklist oracle: BIT-IDENTICAL to the masked kernel over 18432 values (t_kv 4096, full+stride selections); past the mask bound (t_kv 16384) worst rel 2.142e-5 vs the host twin
+# summary	qsa-index-score oracle: device scores BIT-IDENTICAL to the host twin over 8 rows (4096 + 1031 blocks, real 4x128 geometry) and top-512 sets equal
+# summary	mtp-spec-ring: chunked co-prefill (8) + wide ring (16) spec-vs-plain byte-identity PASS (23 rounds)
+# summary	fixture-longatt: forced block-list attention vs masked BIT-IDENTICAL (25 rows bit-compared)
+# summary	prefill-extend: chunked (5) vs one-shot prefill + decode worst abs 1.865e-4 rel 1.865e-4 (PASS)
+# verdict	failures=0

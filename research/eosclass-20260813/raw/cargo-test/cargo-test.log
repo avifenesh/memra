@@ -1,0 +1,98 @@
+   Compiling memra-engine v0.81.3 (/home/avifenesh/projects/wt-cx-eosclass/crates/memra-engine)
+error: linking with `cc` failed: exit status: 1
+  |
+  = note:  "cc" "-m64" "/home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/rustc7K5jZx/symbols.o" "<21 object files omitted>" "-Wl,--as-needed" "-Wl,-Bstatic" "/home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/{libmemra_engine-df2200f487096124,libmemra_sampling-93facf4992aa0473,libmemra_kv-d56a247fa26e3840,libmemra_runtime-13101c4bb609f8fc,libmemra_gguf-04886838ebd6227f,libmemmap2-9707f1dde6d4e17f,liblibc-a999844c5a16455b,libcudarc-2ea26b0fe079a73e,liblibloading-c8f0319f128c97ec,libcfg_if-72a7719c5a503f05}.rlib" "<sysroot>/lib/rustlib/x86_64-unknown-linux-gnu/lib/{libstd-*,libpanic_unwind-*,libobject-*,libmemchr-*,libaddr2line-*,libgimli-*,libcfg_if-*,librustc_demangle-*,libstd_detect-*,libhashbrown-*,librustc_std_workspace_alloc-*,libminiz_oxide-*,libadler2-*,libunwind-*,liblibc-*,librustc_std_workspace_core-*,liballoc-*,libcore-*,libcompiler_builtins-*}.rlib" "-Wl,-Bdynamic" "-ldl" "-lgcc_s" "-lutil" "-lrt" "-lpthread" "-lm" "-ldl" "-lc" "-L" "/home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/rustc7K5jZx/raw-dylibs" "-B<sysroot>/lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld" "-fuse-ld=lld" "-Wl,--eh-frame-hdr" "-Wl,-z,noexecstack" "-L" "<sysroot>/lib/rustlib/x86_64-unknown-linux-gnu/lib" "-o" "/home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/decode_dc_gate-0f7a2dc750fecec1" "-Wl,--gc-sections" "-pie" "-Wl,-z,relro,-z,now" "-nodefaultlibs"
+  = note: some arguments are omitted. use `--verbose` to show all linker arguments
+  = note: rust-lld: error: undefined symbol: memra_fp8_pp_gemm
+          >>> referenced by fp8_ffi.rs:194 (crates/memra-engine/src/fp8_ffi.rs:194)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::try_fp8_gemm) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_moe_f16g_gemm
+          >>> referenced by mmq_ffi.rs:1506 (crates/memra-engine/src/mmq_ffi.rs:1506)
+          >>>               memra_engine-df2200f487096124.7soe2itojr4a4meofeb41ak6l.0iyxzuw.rcgu.o:(<memra_engine::Engine>::moe_f16_grouped::{closure#1}::{closure#0}) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+          >>> referenced by mmq_ffi.rs:1554 (crates/memra-engine/src/mmq_ffi.rs:1554)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::moe_f16_grouped) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_moe_f16g_gather_act
+          >>> referenced by mmq_ffi.rs:1416 (crates/memra-engine/src/mmq_ffi.rs:1416)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::moe_f16g_act) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_iq_experts
+          >>> referenced by mmq_ffi.rs:1367 (crates/memra-engine/src/mmq_ffi.rs:1367)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::mmq_iq_experts) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_moe_f16g_dequant
+          >>> referenced by mmq_ffi.rs:1528 (crates/memra-engine/src/mmq_ffi.rs:1528)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::moe_f16_grouped) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_moe_f16g_h2f_scaled
+          >>> referenced by mmq_ffi.rs:1561 (crates/memra-engine/src/mmq_ffi.rs:1561)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::moe_f16_grouped) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_moe_f16g_gemm_sk
+          >>> referenced by mmq_ffi.rs:1542 (crates/memra-engine/src/mmq_ffi.rs:1542)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::moe_f16_grouped) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_moe_f16g_h2f
+          >>> referenced by mmq_ffi.rs:1588 (crates/memra-engine/src/mmq_ffi.rs:1588)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::moe_f16_grouped) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+          >>> referenced by mmq_ffi.rs:1590 (crates/memra-engine/src/mmq_ffi.rs:1590)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::moe_f16_grouped) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_moe_kq_gemm_sk
+          >>> referenced by mmq_ffi.rs:1478 (crates/memra-engine/src/mmq_ffi.rs:1478)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::moe_f16_grouped) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_fp8_blk_count_nan
+          >>> referenced by mmq_ffi.rs:1252 (crates/memra-engine/src/mmq_ffi.rs:1252)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::fp8_blk_nan_count) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_iq_experts_act_bytes
+          >>> referenced by mmq_ffi.rs:1274 (crates/memra-engine/src/mmq_ffi.rs:1274)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::mmq_iq_quantize_act) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+          >>> referenced by mmq_ffi.rs:634 (crates/memra-engine/src/mmq_ffi.rs:634)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::qmatvec_mmq_iq4xs_raw) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+          >>> referenced by mmq_ffi.rs:1309 (crates/memra-engine/src/mmq_ffi.rs:1309)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::mmq_iq_fused_act_quant) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_iq_quantize_act
+          >>> referenced by mmq_ffi.rs:1281 (crates/memra-engine/src/mmq_ffi.rs:1281)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::mmq_iq_quantize_act) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_q45k_act_bytes
+          >>> referenced by mmq_ffi.rs:680 (crates/memra-engine/src/mmq_ffi.rs:680)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::qmatvec_mmq_q45k_raw) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_q5_K
+          >>> referenced by mmq_ffi.rs:691 (crates/memra-engine/src/mmq_ffi.rs:691)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::qmatvec_mmq_q45k_raw) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_q4_K
+          >>> referenced by mmq_ffi.rs:689 (crates/memra-engine/src/mmq_ffi.rs:689)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::qmatvec_mmq_q45k_raw) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_q4_0_act_bytes
+          >>> referenced by mmq_ffi.rs:850 (crates/memra-engine/src/mmq_ffi.rs:850)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::qmatvec_mmq_q4_0_raw) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_q4_0_quant_act
+          >>> referenced by mmq_ffi.rs:855 (crates/memra-engine/src/mmq_ffi.rs:855)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::qmatvec_mmq_q4_0_raw) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_q4_0_gemm
+          >>> referenced by mmq_ffi.rs:925 (crates/memra-engine/src/mmq_ffi.rs:925)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::qmatvec_mmq_q4_0_raw) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_q4_0_fixup_bytes
+          >>> referenced by mmq_ffi.rs:907 (crates/memra-engine/src/mmq_ffi.rs:907)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::qmatvec_mmq_q4_0_raw) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: undefined symbol: memra_mmq_q4_0_gemm_sk
+          >>> referenced by mmq_ffi.rs:912 (crates/memra-engine/src/mmq_ffi.rs:912)
+          >>>               memra_engine-df2200f487096124.82vd1uuptryrmrsd8v097gmq6.0iyxzuw.rcgu.o:(<memra_engine::Engine>::qmatvec_mmq_q4_0_raw) in archive /home/avifenesh/projects/wt-cx-eosclass/target/debug/deps/libmemra_engine-df2200f487096124.rlib
+
+          rust-lld: error: too many errors emitted, stopping now (use --error-limit=0 to see all errors)
+          collect2: error: ld returned 1 exit status
+
+
+error: could not compile `memra-engine` (bin "decode-dc-gate") due to 1 previous error

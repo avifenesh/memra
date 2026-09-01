@@ -1,0 +1,30 @@
+dsv4-gpu-tf-gate | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | variant ref | banked source sha 920901870d3a0925d595c3d1f0190f5c9aa443426d074455a02660efbc3eb030 | prompt 32 + 160 banked tokens | devices [0, 1]
+seams: MEMRA_DSV4_EXPERT_ARM='native' MEMRA_DSV4_DECODE_PATH='device' MEMRA_DSV4_DOTS_ARM='f32x'
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=39s
+[load] layer 15 -> dev0 done t=52s
+[load] layer 19 -> dev0 done t=66s
+[load] layer 23 -> dev1 done t=79s
+[load] layer 27 -> dev1 done t=92s
+[load] layer 31 -> dev1 done t=105s
+[load] layer 35 -> dev1 done t=118s
+[load] layer 39 -> dev1 done t=132s
+[load] layer 42 -> dev1 done t=141s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path not wired (separate lane); trunk-only
+loaded: split at layer 22, t=142s
+[vram post-load] dev0 used 82.24/94.97 GiB (free 12.74) | dev1 used 78.64/94.97 GiB (free 16.33)
+band rule: 3·√2·(C_gpu + C_cpu)·|cpu top1| = 4.9229·|top1| (dsv4-greedy-verify native class)
+[vram post-prefill] dev0 used 82.27/94.97 GiB (free 12.70) | dev1 used 78.67/94.97 GiB (free 16.30)
+[run 0] 160 teacher-forced positions in 146.7s | logits stream sha256 ded1cc58c93a83339cff1563e513b517b2b59edd5b549c8553b8edd525d2d77b
+[vram post-run0] dev0 used 82.27/94.97 GiB (free 12.70) | dev1 used 78.67/94.97 GiB (free 16.30)
+[run 1] 160 teacher-forced positions in 151.0s | logits stream sha256 ded1cc58c93a83339cff1563e513b517b2b59edd5b549c8553b8edd525d2d77b
+[vram post-run1] dev0 used 82.27/94.97 GiB (free 12.70) | dev1 used 78.67/94.97 GiB (free 16.30)
+determinism: picks IDENTICAL | logits streams BYTE-IDENTICAL (sha ded1cc58c93a83339cff1563e513b517b2b59edd5b549c8553b8edd525d2d77b)
+  disagreement at step 22: gpu 666 vs banked 795 | cpu margin 0.0738 vs band 213.5006 -> in-band near-tie
+  disagreement at step 134: gpu 75242 vs banked 18426 | cpu margin 0.1579 vs band 203.5972 -> in-band near-tie
+informational (single-run, NOT a perf claim): mean 24.8 ms/step over 159 teacher-forced decode steps
+
+GPU TEACHER-FORCING GATE [ref]: PASS — 158/160 agree, 2 in-band near-tie(s), 0 out-of-band, 0 unresolved | determinism true | elapsed 151s

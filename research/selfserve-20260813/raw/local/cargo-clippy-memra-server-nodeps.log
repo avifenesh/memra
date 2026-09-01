@@ -1,0 +1,50 @@
+    Checking memra-gguf v0.81.2 (/home/avifenesh/projects/wt-cx-selfserve/crates/memra-gguf)
+   Compiling memra-engine v0.81.2 (/home/avifenesh/projects/wt-cx-selfserve/crates/memra-engine)
+    Checking memra-validate v0.81.2 (/home/avifenesh/projects/wt-cx-selfserve/crates/memra-validate)
+   Compiling memra-server v0.81.2 (/home/avifenesh/projects/wt-cx-selfserve/crates/memra-server)
+    Checking memra-sampling v0.81.2 (/home/avifenesh/projects/wt-cx-selfserve/crates/memra-sampling)
+    Checking memra-lanes v0.81.2 (/home/avifenesh/projects/wt-cx-selfserve/crates/memra-lanes)
+    Checking memra-kv v0.81.2 (/home/avifenesh/projects/wt-cx-selfserve/crates/memra-kv)
+    Checking memra-runtime v0.81.2 (/home/avifenesh/projects/wt-cx-selfserve/crates/memra-runtime)
+    Checking memra-tokenizer v0.81.2 (/home/avifenesh/projects/wt-cx-selfserve/crates/memra-tokenizer)
+warning: memra-engine@0.81.2: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.2: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+crates/memra-server/src/constrained.rs:22:5: warning: doc list item without indentation
+crates/memra-server/src/health.rs:581:5: warning: doc list item without indentation
+crates/memra-server/src/health.rs:582:5: warning: doc list item without indentation
+crates/memra-server/src/worker.rs:3188:15: warning: very complex type used. Consider factoring parts into `type` definitions
+crates/memra-server/src/worker.rs:4068:22: warning: the loop variable `i` is used to index `active`
+crates/memra-server/src/worker.rs:4103:26: warning: the loop variable `i` is used to index `active`
+crates/memra-server/src/worker.rs:4356:30: warning: the loop variable `i` is used to index `active`
+crates/memra-server/src/worker.rs:4735:30: warning: the loop variable `i` is used to index `active`
+crates/memra-server/src/worker.rs:4859:22: warning: the loop variable `i` is used to index `active`
+crates/memra-server/src/worker.rs:4909:22: warning: the loop variable `i` is used to index `active`
+crates/memra-server/src/worker.rs:5116:26: warning: the loop variable `i` is used to index `active`
+crates/memra-server/src/worker.rs:5180:22: warning: the loop variable `i` is used to index `active`
+crates/memra-server/src/worker.rs:6722:51: warning: unnecessary use of `to_vec`: help: use: `prompt[spec_resumed..].iter().copied()`
+crates/memra-server/src/worker.rs:6814:1: warning: this function has too many arguments (8/7)
+crates/memra-server/src/worker.rs:7096:5: warning: doc list item without indentation
+crates/memra-server/src/worker.rs:7097:5: warning: doc list item without indentation
+crates/memra-server/src/worker.rs:7571:1: warning: this function has too many arguments (8/7)
+crates/memra-server/src/worker.rs:7822:24: warning: very complex type used. Consider factoring parts into `type` definitions
+crates/memra-server/src/worker.rs:7849:9: warning: call to `std::mem::drop` with a value that does not implement `Drop`. Dropping such a type only extends its contained lifetimes
+crates/memra-server/src/worker.rs:8140:16: warning: unnecessary closure used with `bool::then`
+crates/memra-server/src/worker.rs:8225:5: warning: doc list item without indentation
+crates/memra-server/src/worker.rs:8226:5: warning: doc list item without indentation
+crates/memra-server/src/main.rs:703:44: warning: the `Err`-variant returned from this function is very large: the `Err`-variant is at least 128 bytes
+crates/memra-server/src/main.rs:1134:5: warning: doc list item without indentation
+crates/memra-server/src/main.rs:1135:5: warning: doc list item without indentation
+crates/memra-server/src/main.rs:1136:5: warning: doc list item without indentation
+crates/memra-server/src/main.rs:1376:1: warning: this function has too many arguments (8/7)
+crates/memra-server/src/main.rs:1840:9: warning: this can be `std::io::Error::other(_)`
+crates/memra-server/src/main.rs:3125:61: warning: the `Err`-variant returned from this function is very large: the `Err`-variant is at least 128 bytes
+crates/memra-server/src/main.rs:3161:6: warning: the `Err`-variant returned from this function is very large: the `Err`-variant is at least 128 bytes
+crates/memra-server/src/main.rs:3210:8: warning: the `Err`-variant returned from this function is very large: the `Err`-variant is at least 128 bytes
+crates/memra-server/src/main.rs:3987:1: warning: this function has too many arguments (8/7)
+crates/memra-server/src/main.rs:4074:63: warning: unnecessary use of `to_string`: help: use: `"[DONE]"`
+crates/memra-server/src/main.rs:4092:63: warning: unnecessary use of `to_string`: help: use: `"[DONE]"`
+crates/memra-server/src/main.rs:4171:63: warning: unnecessary use of `to_string`: help: use: `"[DONE]"`
+crates/memra-server/src/main.rs:4197:59: warning: unnecessary use of `to_string`: help: use: `"[DONE]"`
+crates/memra-server/src/main.rs:4240:59: warning: unnecessary use of `to_string`: help: use: `"[DONE]"`
+warning: `memra-server` (bin "memra-server") generated 37 warnings (run `cargo clippy --fix --bin "memra-server" -p memra-server -- --no-deps` to apply 7 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 08s

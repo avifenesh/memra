@@ -1,0 +1,3357 @@
+{
+  "schema": "memra.ncuspike.box1.v1",
+  "nsys": {
+    "n_tokens": 32,
+    "context_depth": 512,
+    "window_selection": "exact_cuda_profiler_api_range",
+    "raw_trace_activities": 50400,
+    "raw_full_vocab_dtoh_endpoints": 0,
+    "selected_trace_activities": 50400,
+    "selected_full_vocab_dtoh_endpoints": 0,
+    "excluded_post_generation_decode_endpoints": 0,
+    "logged_gen_seconds": 0.301,
+    "logged_gen_tok_s": 106.3,
+    "trace_span_ms": 300.842602,
+    "wall_per_token_ms": 9.401331,
+    "gpu_sum_ms": 283.169109,
+    "kernel_sum_ms": 278.756743,
+    "gpu_busy_union_ms": 283.084742,
+    "gpu_busy_per_token_ms": 8.846398,
+    "launch_gap_ms": 17.75786,
+    "launch_gap_per_token_ms": 0.554933,
+    "launch_gap_pct": 5.902708,
+    "gpu_overlap_ms": 0.084367,
+    "per_device_busy_ms": {
+      "0": 131.107302,
+      "1": 151.991279
+    },
+    "per_device": {
+      "0": {
+        "busy_ms": 131.107302,
+        "busy_per_token_ms": 4.097103,
+        "categories": [
+          {
+            "name": "trunk/shared/head matvec",
+            "launches": 5632,
+            "launches_per_token": 176.0,
+            "total_ms": 50.181838,
+            "per_token_ms": 1.568182,
+            "wall_share_pct": 16.680429
+          },
+          {
+            "name": "norm/quant/activation glue",
+            "launches": 10176,
+            "launches_per_token": 318.0,
+            "total_ms": 24.753103,
+            "per_token_ms": 0.773534,
+            "wall_share_pct": 8.227925
+          },
+          {
+            "name": "routed expert gate/up/SwiGLU",
+            "launches": 608,
+            "launches_per_token": 19.0,
+            "total_ms": 20.796551,
+            "per_token_ms": 0.649892,
+            "wall_share_pct": 6.912768
+          },
+          {
+            "name": "routed expert weighted-down",
+            "launches": 608,
+            "launches_per_token": 19.0,
+            "total_ms": 13.683998,
+            "per_token_ms": 0.427625,
+            "wall_share_pct": 4.548557
+          },
+          {
+            "name": "attention decode",
+            "launches": 1408,
+            "launches_per_token": 44.0,
+            "total_ms": 11.353313,
+            "per_token_ms": 0.354791,
+            "wall_share_pct": 3.773838
+          },
+          {
+            "name": "other GPU kernels",
+            "launches": 1312,
+            "launches_per_token": 41.0,
+            "total_ms": 3.718842,
+            "per_token_ms": 0.116214,
+            "wall_share_pct": 1.236142
+          },
+          {
+            "name": "device sigmoid router",
+            "launches": 608,
+            "launches_per_token": 19.0,
+            "total_ms": 3.677461,
+            "per_token_ms": 0.114921,
+            "wall_share_pct": 1.222387
+          },
+          {
+            "name": "CUDA memcpy/memset",
+            "launches": 2816,
+            "launches_per_token": 88.0,
+            "total_ms": 2.024728,
+            "per_token_ms": 0.063273,
+            "wall_share_pct": 0.673019
+          },
+          {
+            "name": "KV append",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 0.951516,
+            "per_token_ms": 0.029735,
+            "wall_share_pct": 0.316284
+          }
+        ],
+        "kernels": [
+          {
+            "name": "qmatvec_iq4_XS_dp4a",
+            "launches": 4928,
+            "launches_per_token": 154.0,
+            "total_ms": 46.342402,
+            "per_token_ms": 1.4482,
+            "wall_share_pct": 15.404202
+          },
+          {
+            "name": "moe_gate_up_silu8_dev_q8_v_rows",
+            "launches": 608,
+            "launches_per_token": 19.0,
+            "total_ms": 20.796551,
+            "per_token_ms": 0.649892,
+            "wall_share_pct": 6.912768
+          },
+          {
+            "name": "moe_down8_fma_dev_q8_rows_g",
+            "launches": 608,
+            "launches_per_token": 19.0,
+            "total_ms": 13.683998,
+            "per_token_ms": 0.427625,
+            "wall_share_pct": 4.548557
+          },
+          {
+            "name": "fa_decode_vec_q_v3",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 8.965287,
+            "per_token_ms": 0.280165,
+            "wall_share_pct": 2.980059
+          },
+          {
+            "name": "rms_norm_f32",
+            "launches": 2112,
+            "launches_per_token": 66.0,
+            "total_ms": 8.931125,
+            "per_token_ms": 0.279098,
+            "wall_share_pct": 2.968704
+          },
+          {
+            "name": "add_rms_norm_f32",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 7.180745,
+            "per_token_ms": 0.224398,
+            "wall_share_pct": 2.386878
+          },
+          {
+            "name": "quantize_q8_1",
+            "launches": 4640,
+            "launches_per_token": 145.0,
+            "total_ms": 5.401003,
+            "per_token_ms": 0.168781,
+            "wall_share_pct": 1.795292
+          },
+          {
+            "name": "qmatvec_q5_K_mmvq_mr2_il",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 3.839436,
+            "per_token_ms": 0.119982,
+            "wall_share_pct": 1.276227
+          },
+          {
+            "name": "moe_router_sigmoid_topk_f32",
+            "launches": 608,
+            "launches_per_token": 19.0,
+            "total_ms": 3.677461,
+            "per_token_ms": 0.114921,
+            "wall_share_pct": 1.222387
+          },
+          {
+            "name": "router_gemv_f32_w8",
+            "launches": 608,
+            "launches_per_token": 19.0,
+            "total_ms": 2.759991,
+            "per_token_ms": 0.08625,
+            "wall_share_pct": 0.91742
+          },
+          {
+            "name": "fa_decode_combine_f32",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 2.388026,
+            "per_token_ms": 0.074626,
+            "wall_share_pct": 0.793779
+          },
+          {
+            "name": "[CUDA memset]",
+            "launches": 2112,
+            "launches_per_token": 66.0,
+            "total_ms": 1.572504,
+            "per_token_ms": 0.049141,
+            "wall_share_pct": 0.5227
+          },
+          {
+            "name": "rope_neox2_f32",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 0.969567,
+            "per_token_ms": 0.030299,
+            "wall_share_pct": 0.322284
+          },
+          {
+            "name": "attn_head_gate_f32",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 0.958851,
+            "per_token_ms": 0.029964,
+            "wall_share_pct": 0.318722
+          },
+          {
+            "name": "append_quantize_kv_q8_0_q5_1",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 0.951516,
+            "per_token_ms": 0.029735,
+            "wall_share_pct": 0.316284
+          },
+          {
+            "name": "add_f32",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 0.837247,
+            "per_token_ms": 0.026164,
+            "wall_share_pct": 0.278301
+          },
+          {
+            "name": "silu_mul_f32",
+            "launches": 704,
+            "launches_per_token": 22.0,
+            "total_ms": 0.807273,
+            "per_token_ms": 0.025227,
+            "wall_share_pct": 0.268337
+          },
+          {
+            "name": "add_scaled_rows_f32",
+            "launches": 608,
+            "launches_per_token": 19.0,
+            "total_ms": 0.626143,
+            "per_token_ms": 0.019567,
+            "wall_share_pct": 0.20813
+          },
+          {
+            "name": "[CUDA memcpy Host-to-Device]",
+            "launches": 672,
+            "launches_per_token": 21.0,
+            "total_ms": 0.428512,
+            "per_token_ms": 0.013391,
+            "wall_share_pct": 0.142437
+          },
+          {
+            "name": "[CUDA memcpy Peer-to-Peer]",
+            "launches": 32,
+            "launches_per_token": 1.0,
+            "total_ms": 0.023712,
+            "per_token_ms": 0.000741,
+            "wall_share_pct": 0.007882
+          }
+        ]
+      },
+      "1": {
+        "busy_ms": 151.991279,
+        "busy_per_token_ms": 4.749727,
+        "categories": [
+          {
+            "name": "trunk/shared/head matvec",
+            "launches": 5920,
+            "launches_per_token": 185.0,
+            "total_ms": 57.68316,
+            "per_token_ms": 1.802599,
+            "wall_share_pct": 19.173867
+          },
+          {
+            "name": "norm/quant/activation glue",
+            "launches": 11040,
+            "launches_per_token": 345.0,
+            "total_ms": 27.030917,
+            "per_token_ms": 0.844716,
+            "wall_share_pct": 8.98507
+          },
+          {
+            "name": "routed expert gate/up/SwiGLU",
+            "launches": 672,
+            "launches_per_token": 21.0,
+            "total_ms": 23.149462,
+            "per_token_ms": 0.723421,
+            "wall_share_pct": 7.694875
+          },
+          {
+            "name": "routed expert weighted-down",
+            "launches": 672,
+            "launches_per_token": 21.0,
+            "total_ms": 15.258927,
+            "per_token_ms": 0.476841,
+            "wall_share_pct": 5.072063
+          },
+          {
+            "name": "attention decode",
+            "launches": 1472,
+            "launches_per_token": 46.0,
+            "total_ms": 12.072024,
+            "per_token_ms": 0.377251,
+            "wall_share_pct": 4.012738
+          },
+          {
+            "name": "other GPU kernels",
+            "launches": 1664,
+            "launches_per_token": 52.0,
+            "total_ms": 4.679169,
+            "per_token_ms": 0.146224,
+            "wall_share_pct": 1.555355
+          },
+          {
+            "name": "device sigmoid router",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 4.480951,
+            "per_token_ms": 0.14003,
+            "wall_share_pct": 1.489467
+          },
+          {
+            "name": "clamped routed-expert tail",
+            "launches": 256,
+            "launches_per_token": 8.0,
+            "total_ms": 4.258632,
+            "per_token_ms": 0.133082,
+            "wall_share_pct": 1.415568
+          },
+          {
+            "name": "CUDA memcpy/memset",
+            "launches": 3360,
+            "launches_per_token": 105.0,
+            "total_ms": 2.387638,
+            "per_token_ms": 0.074614,
+            "wall_share_pct": 0.79365
+          },
+          {
+            "name": "KV append",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 1.026879,
+            "per_token_ms": 0.03209,
+            "wall_share_pct": 0.341334
+          }
+        ],
+        "kernels": [
+          {
+            "name": "qmatvec_iq4_XS_dp4a",
+            "launches": 5152,
+            "launches_per_token": 161.0,
+            "total_ms": 44.418871,
+            "per_token_ms": 1.38809,
+            "wall_share_pct": 14.764821
+          },
+          {
+            "name": "moe_gate_up_silu8_dev_q8_v_rows",
+            "launches": 672,
+            "launches_per_token": 21.0,
+            "total_ms": 23.149462,
+            "per_token_ms": 0.723421,
+            "wall_share_pct": 7.694875
+          },
+          {
+            "name": "moe_down8_fma_dev_q8_rows_g",
+            "launches": 672,
+            "launches_per_token": 21.0,
+            "total_ms": 15.258927,
+            "per_token_ms": 0.476841,
+            "wall_share_pct": 5.072063
+          },
+          {
+            "name": "rms_norm_f32",
+            "launches": 2240,
+            "launches_per_token": 70.0,
+            "total_ms": 9.803479,
+            "per_token_ms": 0.306359,
+            "wall_share_pct": 3.258674
+          },
+          {
+            "name": "fa_decode_vec_q_v3",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 9.515998,
+            "per_token_ms": 0.297375,
+            "wall_share_pct": 3.163115
+          },
+          {
+            "name": "qmatvec_q6_K_mmvq",
+            "launches": 32,
+            "launches_per_token": 1.0,
+            "total_ms": 9.220584,
+            "per_token_ms": 0.288143,
+            "wall_share_pct": 3.06492
+          },
+          {
+            "name": "add_rms_norm_f32",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 7.606186,
+            "per_token_ms": 0.237693,
+            "wall_share_pct": 2.528294
+          },
+          {
+            "name": "quantize_q8_1",
+            "launches": 5184,
+            "launches_per_token": 162.0,
+            "total_ms": 6.166125,
+            "per_token_ms": 0.192691,
+            "wall_share_pct": 2.049618
+          },
+          {
+            "name": "moe_router_sigmoid_topk_f32",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 4.480951,
+            "per_token_ms": 0.14003,
+            "wall_share_pct": 1.489467
+          },
+          {
+            "name": "moe_pairs_matvec_q8",
+            "launches": 192,
+            "launches_per_token": 6.0,
+            "total_ms": 4.165266,
+            "per_token_ms": 0.130165,
+            "wall_share_pct": 1.384533
+          },
+          {
+            "name": "qmatvec_q5_K_mmvq_mr2_il",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 4.043705,
+            "per_token_ms": 0.126366,
+            "wall_share_pct": 1.344126
+          },
+          {
+            "name": "router_gemv_f32_w8",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 3.395355,
+            "per_token_ms": 0.106105,
+            "wall_share_pct": 1.128615
+          },
+          {
+            "name": "fa_decode_combine_f32",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 2.556026,
+            "per_token_ms": 0.079876,
+            "wall_share_pct": 0.849622
+          },
+          {
+            "name": "[CUDA memset]",
+            "launches": 2240,
+            "launches_per_token": 70.0,
+            "total_ms": 1.686618,
+            "per_token_ms": 0.052707,
+            "wall_share_pct": 0.560631
+          },
+          {
+            "name": "attn_head_gate_f32",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 1.04972,
+            "per_token_ms": 0.032804,
+            "wall_share_pct": 0.348927
+          },
+          {
+            "name": "rope_neox2_f32",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 1.034079,
+            "per_token_ms": 0.032315,
+            "wall_share_pct": 0.343728
+          },
+          {
+            "name": "append_quantize_kv_q8_0_q5_1",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 1.026879,
+            "per_token_ms": 0.03209,
+            "wall_share_pct": 0.341334
+          },
+          {
+            "name": "add_f32",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 0.887421,
+            "per_token_ms": 0.027732,
+            "wall_share_pct": 0.294979
+          },
+          {
+            "name": "add_scaled_rows_f32",
+            "launches": 736,
+            "launches_per_token": 23.0,
+            "total_ms": 0.780381,
+            "per_token_ms": 0.024387,
+            "wall_share_pct": 0.259398
+          },
+          {
+            "name": "silu_mul_f32",
+            "launches": 672,
+            "launches_per_token": 21.0,
+            "total_ms": 0.753246,
+            "per_token_ms": 0.023539,
+            "wall_share_pct": 0.250379
+          },
+          {
+            "name": "[CUDA memcpy Host-to-Device]",
+            "launches": 1024,
+            "launches_per_token": 32.0,
+            "total_ms": 0.63043,
+            "per_token_ms": 0.019701,
+            "wall_share_pct": 0.209555
+          },
+          {
+            "name": "swiglu_clamped_mul_scaled_f32",
+            "launches": 128,
+            "launches_per_token": 4.0,
+            "total_ms": 0.127983,
+            "per_token_ms": 0.003999,
+            "wall_share_pct": 0.042542
+          },
+          {
+            "name": "moe_pairs_scatter",
+            "launches": 64,
+            "launches_per_token": 2.0,
+            "total_ms": 0.093366,
+            "per_token_ms": 0.002918,
+            "wall_share_pct": 0.031035
+          },
+          {
+            "name": "argmax_partial_f32",
+            "launches": 32,
+            "launches_per_token": 1.0,
+            "total_ms": 0.066848,
+            "per_token_ms": 0.002089,
+            "wall_share_pct": 0.02222
+          },
+          {
+            "name": "[CUDA memcpy Device-to-Device]",
+            "launches": 64,
+            "launches_per_token": 2.0,
+            "total_ms": 0.05683,
+            "per_token_ms": 0.001776,
+            "wall_share_pct": 0.01889
+          },
+          {
+            "name": "argmax_final_f32",
+            "launches": 32,
+            "launches_per_token": 1.0,
+            "total_ms": 0.039263,
+            "per_token_ms": 0.001227,
+            "wall_share_pct": 0.013051
+          },
+          {
+            "name": "[CUDA memcpy Device-to-Host]",
+            "launches": 32,
+            "launches_per_token": 1.0,
+            "total_ms": 0.01376,
+            "per_token_ms": 0.00043,
+            "wall_share_pct": 0.004574
+          }
+        ]
+      }
+    },
+    "categories": [
+      {
+        "name": "trunk/shared/head matvec",
+        "launches": 11552,
+        "launches_per_token": 361.0,
+        "total_ms": 107.864998,
+        "per_token_ms": 3.370781,
+        "wall_share_pct": 35.854296
+      },
+      {
+        "name": "norm/quant/activation glue",
+        "launches": 21216,
+        "launches_per_token": 663.0,
+        "total_ms": 51.78402,
+        "per_token_ms": 1.618251,
+        "wall_share_pct": 17.212994
+      },
+      {
+        "name": "routed expert gate/up/SwiGLU",
+        "launches": 1280,
+        "launches_per_token": 40.0,
+        "total_ms": 43.946013,
+        "per_token_ms": 1.373313,
+        "wall_share_pct": 14.607643
+      },
+      {
+        "name": "routed expert weighted-down",
+        "launches": 1280,
+        "launches_per_token": 40.0,
+        "total_ms": 28.942925,
+        "per_token_ms": 0.904466,
+        "wall_share_pct": 9.62062
+      },
+      {
+        "name": "attention decode",
+        "launches": 2880,
+        "launches_per_token": 90.0,
+        "total_ms": 23.425337,
+        "per_token_ms": 0.732042,
+        "wall_share_pct": 7.786576
+      },
+      {
+        "name": "other GPU kernels",
+        "launches": 2976,
+        "launches_per_token": 93.0,
+        "total_ms": 8.398011,
+        "per_token_ms": 0.262438,
+        "wall_share_pct": 2.791497
+      },
+      {
+        "name": "device sigmoid router",
+        "launches": 1344,
+        "launches_per_token": 42.0,
+        "total_ms": 8.158412,
+        "per_token_ms": 0.25495,
+        "wall_share_pct": 2.711854
+      },
+      {
+        "name": "CUDA memcpy/memset",
+        "launches": 6176,
+        "launches_per_token": 193.0,
+        "total_ms": 4.412366,
+        "per_token_ms": 0.137886,
+        "wall_share_pct": 1.466669
+      },
+      {
+        "name": "clamped routed-expert tail",
+        "launches": 256,
+        "launches_per_token": 8.0,
+        "total_ms": 4.258632,
+        "per_token_ms": 0.133082,
+        "wall_share_pct": 1.415568
+      },
+      {
+        "name": "KV append",
+        "launches": 1440,
+        "launches_per_token": 45.0,
+        "total_ms": 1.978395,
+        "per_token_ms": 0.061825,
+        "wall_share_pct": 0.657618
+      }
+    ],
+    "kernels": [
+      {
+        "name": "qmatvec_iq4_XS_dp4a",
+        "launches": 10080,
+        "launches_per_token": 315.0,
+        "total_ms": 90.761273,
+        "per_token_ms": 2.83629,
+        "wall_share_pct": 30.169023
+      },
+      {
+        "name": "moe_gate_up_silu8_dev_q8_v_rows",
+        "launches": 1280,
+        "launches_per_token": 40.0,
+        "total_ms": 43.946013,
+        "per_token_ms": 1.373313,
+        "wall_share_pct": 14.607643
+      },
+      {
+        "name": "moe_down8_fma_dev_q8_rows_g",
+        "launches": 1280,
+        "launches_per_token": 40.0,
+        "total_ms": 28.942925,
+        "per_token_ms": 0.904466,
+        "wall_share_pct": 9.62062
+      },
+      {
+        "name": "rms_norm_f32",
+        "launches": 4352,
+        "launches_per_token": 136.0,
+        "total_ms": 18.734604,
+        "per_token_ms": 0.585456,
+        "wall_share_pct": 6.227377
+      },
+      {
+        "name": "fa_decode_vec_q_v3",
+        "launches": 1440,
+        "launches_per_token": 45.0,
+        "total_ms": 18.481285,
+        "per_token_ms": 0.57754,
+        "wall_share_pct": 6.143174
+      },
+      {
+        "name": "add_rms_norm_f32",
+        "launches": 1440,
+        "launches_per_token": 45.0,
+        "total_ms": 14.786931,
+        "per_token_ms": 0.462092,
+        "wall_share_pct": 4.915172
+      },
+      {
+        "name": "quantize_q8_1",
+        "launches": 9824,
+        "launches_per_token": 307.0,
+        "total_ms": 11.567128,
+        "per_token_ms": 0.361473,
+        "wall_share_pct": 3.84491
+      },
+      {
+        "name": "qmatvec_q6_K_mmvq",
+        "launches": 32,
+        "launches_per_token": 1.0,
+        "total_ms": 9.220584,
+        "per_token_ms": 0.288143,
+        "wall_share_pct": 3.06492
+      },
+      {
+        "name": "moe_router_sigmoid_topk_f32",
+        "launches": 1344,
+        "launches_per_token": 42.0,
+        "total_ms": 8.158412,
+        "per_token_ms": 0.25495,
+        "wall_share_pct": 2.711854
+      },
+      {
+        "name": "qmatvec_q5_K_mmvq_mr2_il",
+        "launches": 1440,
+        "launches_per_token": 45.0,
+        "total_ms": 7.883141,
+        "per_token_ms": 0.246348,
+        "wall_share_pct": 2.620354
+      },
+      {
+        "name": "router_gemv_f32_w8",
+        "launches": 1344,
+        "launches_per_token": 42.0,
+        "total_ms": 6.155346,
+        "per_token_ms": 0.192355,
+        "wall_share_pct": 2.046035
+      },
+      {
+        "name": "fa_decode_combine_f32",
+        "launches": 1440,
+        "launches_per_token": 45.0,
+        "total_ms": 4.944052,
+        "per_token_ms": 0.154502,
+        "wall_share_pct": 1.643402
+      },
+      {
+        "name": "moe_pairs_matvec_q8",
+        "launches": 192,
+        "launches_per_token": 6.0,
+        "total_ms": 4.165266,
+        "per_token_ms": 0.130165,
+        "wall_share_pct": 1.384533
+      },
+      {
+        "name": "[CUDA memset]",
+        "launches": 4352,
+        "launches_per_token": 136.0,
+        "total_ms": 3.259122,
+        "per_token_ms": 0.101848,
+        "wall_share_pct": 1.083331
+      },
+      {
+        "name": "attn_head_gate_f32",
+        "launches": 1440,
+        "launches_per_token": 45.0,
+        "total_ms": 2.008571,
+        "per_token_ms": 0.062768,
+        "wall_share_pct": 0.667648
+      },
+      {
+        "name": "rope_neox2_f32",
+        "launches": 1440,
+        "launches_per_token": 45.0,
+        "total_ms": 2.003646,
+        "per_token_ms": 0.062614,
+        "wall_share_pct": 0.666011
+      },
+      {
+        "name": "append_quantize_kv_q8_0_q5_1",
+        "launches": 1440,
+        "launches_per_token": 45.0,
+        "total_ms": 1.978395,
+        "per_token_ms": 0.061825,
+        "wall_share_pct": 0.657618
+      },
+      {
+        "name": "add_f32",
+        "launches": 1440,
+        "launches_per_token": 45.0,
+        "total_ms": 1.724668,
+        "per_token_ms": 0.053896,
+        "wall_share_pct": 0.573279
+      },
+      {
+        "name": "silu_mul_f32",
+        "launches": 1376,
+        "launches_per_token": 43.0,
+        "total_ms": 1.560519,
+        "per_token_ms": 0.048766,
+        "wall_share_pct": 0.518716
+      },
+      {
+        "name": "add_scaled_rows_f32",
+        "launches": 1344,
+        "launches_per_token": 42.0,
+        "total_ms": 1.406524,
+        "per_token_ms": 0.043954,
+        "wall_share_pct": 0.467528
+      },
+      {
+        "name": "[CUDA memcpy Host-to-Device]",
+        "launches": 1696,
+        "launches_per_token": 53.0,
+        "total_ms": 1.058942,
+        "per_token_ms": 0.033092,
+        "wall_share_pct": 0.351992
+      },
+      {
+        "name": "swiglu_clamped_mul_scaled_f32",
+        "launches": 128,
+        "launches_per_token": 4.0,
+        "total_ms": 0.127983,
+        "per_token_ms": 0.003999,
+        "wall_share_pct": 0.042542
+      },
+      {
+        "name": "moe_pairs_scatter",
+        "launches": 64,
+        "launches_per_token": 2.0,
+        "total_ms": 0.093366,
+        "per_token_ms": 0.002918,
+        "wall_share_pct": 0.031035
+      },
+      {
+        "name": "argmax_partial_f32",
+        "launches": 32,
+        "launches_per_token": 1.0,
+        "total_ms": 0.066848,
+        "per_token_ms": 0.002089,
+        "wall_share_pct": 0.02222
+      },
+      {
+        "name": "[CUDA memcpy Device-to-Device]",
+        "launches": 64,
+        "launches_per_token": 2.0,
+        "total_ms": 0.05683,
+        "per_token_ms": 0.001776,
+        "wall_share_pct": 0.01889
+      },
+      {
+        "name": "argmax_final_f32",
+        "launches": 32,
+        "launches_per_token": 1.0,
+        "total_ms": 0.039263,
+        "per_token_ms": 0.001227,
+        "wall_share_pct": 0.013051
+      },
+      {
+        "name": "[CUDA memcpy Peer-to-Peer]",
+        "launches": 32,
+        "launches_per_token": 1.0,
+        "total_ms": 0.023712,
+        "per_token_ms": 0.000741,
+        "wall_share_pct": 0.007882
+      },
+      {
+        "name": "[CUDA memcpy Device-to-Host]",
+        "launches": 32,
+        "launches_per_token": 1.0,
+        "total_ms": 0.01376,
+        "per_token_ms": 0.00043,
+        "wall_share_pct": 0.004574
+      }
+    ],
+    "launch_configs": [
+      {
+        "kernel": "moe_gate_up_silu8_dev_q8_v_rows",
+        "device": "1",
+        "grid": [
+          1280,
+          8,
+          1
+        ],
+        "block": [
+          32,
+          1,
+          1
+        ],
+        "category": "routed expert gate/up/SwiGLU",
+        "launches": 672,
+        "total_ms": 23.149462,
+        "per_token_ms": 0.723421,
+        "avg_us": 34.448604,
+        "min_us": 33.599,
+        "max_us": 35.775
+      },
+      {
+        "kernel": "moe_gate_up_silu8_dev_q8_v_rows",
+        "device": "0",
+        "grid": [
+          1280,
+          8,
+          1
+        ],
+        "block": [
+          32,
+          1,
+          1
+        ],
+        "category": "routed expert gate/up/SwiGLU",
+        "launches": 608,
+        "total_ms": 20.796551,
+        "per_token_ms": 0.649892,
+        "avg_us": 34.204854,
+        "min_us": 33.279,
+        "max_us": 36.032
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 1408,
+        "total_ms": 19.320975,
+        "per_token_ms": 0.60378,
+        "avg_us": 13.722283,
+        "min_us": 5.248,
+        "max_us": 22.527
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "1",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 1472,
+        "total_ms": 19.007084,
+        "per_token_ms": 0.593971,
+        "avg_us": 12.912421,
+        "min_us": 5.28,
+        "max_us": 23.168
+      },
+      {
+        "kernel": "moe_down8_fma_dev_q8_rows_g",
+        "device": "1",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          1,
+          1
+        ],
+        "category": "routed expert weighted-down",
+        "launches": 672,
+        "total_ms": 15.258927,
+        "per_token_ms": 0.476841,
+        "avg_us": 22.706737,
+        "min_us": 21.631,
+        "max_us": 23.935
+      },
+      {
+        "kernel": "moe_down8_fma_dev_q8_rows_g",
+        "device": "0",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          1,
+          1
+        ],
+        "category": "routed expert weighted-down",
+        "launches": 608,
+        "total_ms": 13.683998,
+        "per_token_ms": 0.427625,
+        "avg_us": 22.506576,
+        "min_us": 21.344,
+        "max_us": 24.256
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "1",
+        "grid": [
+          12288,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 544,
+        "total_ms": 11.76308,
+        "per_token_ms": 0.367596,
+        "avg_us": 21.623309,
+        "min_us": 20.992,
+        "max_us": 23.327
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          12288,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 512,
+        "total_ms": 10.930276,
+        "per_token_ms": 0.341571,
+        "avg_us": 21.348195,
+        "min_us": 20.767,
+        "max_us": 22.464
+      },
+      {
+        "kernel": "qmatvec_q6_K_mmvq",
+        "device": "1",
+        "grid": [
+          32224,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          4,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 32,
+        "total_ms": 9.220584,
+        "per_token_ms": 0.288143,
+        "avg_us": 288.14325,
+        "min_us": 287.36,
+        "max_us": 289.183
+      },
+      {
+        "kernel": "add_rms_norm_f32",
+        "device": "1",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 736,
+        "total_ms": 7.606186,
+        "per_token_ms": 0.237693,
+        "avg_us": 10.334492,
+        "min_us": 9.856,
+        "max_us": 10.976
+      },
+      {
+        "kernel": "rms_norm_f32",
+        "device": "1",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 768,
+        "total_ms": 7.574492,
+        "per_token_ms": 0.236703,
+        "avg_us": 9.86262,
+        "min_us": 9.504,
+        "max_us": 10.528
+      },
+      {
+        "kernel": "add_rms_norm_f32",
+        "device": "0",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 704,
+        "total_ms": 7.180745,
+        "per_token_ms": 0.224398,
+        "avg_us": 10.199922,
+        "min_us": 9.76,
+        "max_us": 10.88
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "1",
+        "grid": [
+          8,
+          32,
+          1
+        ],
+        "block": [
+          32,
+          12,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 544,
+        "total_ms": 7.180453,
+        "per_token_ms": 0.224389,
+        "avg_us": 13.199362,
+        "min_us": 12.8,
+        "max_us": 13.663
+      },
+      {
+        "kernel": "rms_norm_f32",
+        "device": "0",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 704,
+        "total_ms": 6.832027,
+        "per_token_ms": 0.213501,
+        "avg_us": 9.704584,
+        "min_us": 9.312,
+        "max_us": 10.304
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "0",
+        "grid": [
+          8,
+          32,
+          1
+        ],
+        "block": [
+          32,
+          12,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 512,
+        "total_ms": 6.653483,
+        "per_token_ms": 0.207921,
+        "avg_us": 12.995084,
+        "min_us": 12.608,
+        "max_us": 13.343
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "1",
+        "grid": [
+          1280,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 1472,
+        "total_ms": 6.225337,
+        "per_token_ms": 0.194542,
+        "avg_us": 4.229169,
+        "min_us": 4.032,
+        "max_us": 5.056
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          1280,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 1216,
+        "total_ms": 5.086033,
+        "per_token_ms": 0.158939,
+        "avg_us": 4.182593,
+        "min_us": 4.031,
+        "max_us": 4.607
+      },
+      {
+        "kernel": "moe_router_sigmoid_topk_f32",
+        "device": "1",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          288,
+          1,
+          1
+        ],
+        "category": "device sigmoid router",
+        "launches": 736,
+        "total_ms": 4.480951,
+        "per_token_ms": 0.14003,
+        "avg_us": 6.088249,
+        "min_us": 5.824,
+        "max_us": 6.72
+      },
+      {
+        "kernel": "qmatvec_q5_K_mmvq_mr2_il",
+        "device": "1",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          4,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 736,
+        "total_ms": 4.043705,
+        "per_token_ms": 0.126366,
+        "avg_us": 5.494164,
+        "min_us": 5.056,
+        "max_us": 6.176
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          11264,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 192,
+        "total_ms": 3.884824,
+        "per_token_ms": 0.121401,
+        "avg_us": 20.233458,
+        "min_us": 19.712,
+        "max_us": 21.024
+      },
+      {
+        "kernel": "qmatvec_q5_K_mmvq_mr2_il",
+        "device": "0",
+        "grid": [
+          128,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          4,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 704,
+        "total_ms": 3.839436,
+        "per_token_ms": 0.119982,
+        "avg_us": 5.453744,
+        "min_us": 5.088,
+        "max_us": 6.144
+      },
+      {
+        "kernel": "moe_router_sigmoid_topk_f32",
+        "device": "0",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          288,
+          1,
+          1
+        ],
+        "category": "device sigmoid router",
+        "launches": 608,
+        "total_ms": 3.677461,
+        "per_token_ms": 0.114921,
+        "avg_us": 6.048456,
+        "min_us": 5.824,
+        "max_us": 6.624
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "1",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 2976,
+        "total_ms": 3.503478,
+        "per_token_ms": 0.109484,
+        "avg_us": 1.177244,
+        "min_us": 1.12,
+        "max_us": 1.408
+      },
+      {
+        "kernel": "router_gemv_f32_w8",
+        "device": "1",
+        "grid": [
+          288,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          8,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 736,
+        "total_ms": 3.395355,
+        "per_token_ms": 0.106105,
+        "avg_us": 4.613254,
+        "min_us": 4.32,
+        "max_us": 5.216
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "0",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 2624,
+        "total_ms": 3.033237,
+        "per_token_ms": 0.094789,
+        "avg_us": 1.155959,
+        "min_us": 1.088,
+        "max_us": 1.216
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "1",
+        "grid": [
+          8192,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 192,
+        "total_ms": 2.957267,
+        "per_token_ms": 0.092415,
+        "avg_us": 15.402432,
+        "min_us": 14.848,
+        "max_us": 16.768
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          8192,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 192,
+        "total_ms": 2.908021,
+        "per_token_ms": 0.090876,
+        "avg_us": 15.145943,
+        "min_us": 14.624,
+        "max_us": 16.064
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "1",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 736,
+        "total_ms": 2.81036,
+        "per_token_ms": 0.087824,
+        "avg_us": 3.818424,
+        "min_us": 3.68,
+        "max_us": 4.16
+      },
+      {
+        "kernel": "router_gemv_f32_w8",
+        "device": "0",
+        "grid": [
+          288,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          8,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 608,
+        "total_ms": 2.759991,
+        "per_token_ms": 0.08625,
+        "avg_us": 4.539459,
+        "min_us": 4.256,
+        "max_us": 5.056
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 704,
+        "total_ms": 2.651353,
+        "per_token_ms": 0.082855,
+        "avg_us": 3.766126,
+        "min_us": 3.648,
+        "max_us": 4.159
+      },
+      {
+        "kernel": "moe_pairs_matvec_q8",
+        "device": "1",
+        "grid": [
+          320,
+          8,
+          1
+        ],
+        "block": [
+          32,
+          4,
+          1
+        ],
+        "category": "clamped routed-expert tail",
+        "launches": 128,
+        "total_ms": 2.520855,
+        "per_token_ms": 0.078777,
+        "avg_us": 19.69418,
+        "min_us": 19.136,
+        "max_us": 20.511
+      },
+      {
+        "kernel": "fa_decode_combine_f32",
+        "device": "1",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 544,
+        "total_ms": 1.819196,
+        "per_token_ms": 0.05685,
+        "avg_us": 3.34411,
+        "min_us": 3.295,
+        "max_us": 3.648
+      },
+      {
+        "kernel": "fa_decode_combine_f32",
+        "device": "0",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 512,
+        "total_ms": 1.665628,
+        "per_token_ms": 0.052051,
+        "avg_us": 3.25318,
+        "min_us": 3.104,
+        "max_us": 3.328
+      },
+      {
+        "kernel": "moe_pairs_matvec_q8",
+        "device": "1",
+        "grid": [
+          1024,
+          8,
+          1
+        ],
+        "block": [
+          32,
+          4,
+          1
+        ],
+        "category": "clamped routed-expert tail",
+        "launches": 64,
+        "total_ms": 1.644411,
+        "per_token_ms": 0.051388,
+        "avg_us": 25.693922,
+        "min_us": 25.44,
+        "max_us": 26.112
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "1",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 544,
+        "total_ms": 1.243622,
+        "per_token_ms": 0.038863,
+        "avg_us": 2.28607,
+        "min_us": 2.208,
+        "max_us": 2.559
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "1",
+        "grid": [
+          8,
+          34,
+          1
+        ],
+        "block": [
+          32,
+          8,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 96,
+        "total_ms": 1.168095,
+        "per_token_ms": 0.036503,
+        "avg_us": 12.167656,
+        "min_us": 11.84,
+        "max_us": 12.512
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "0",
+        "grid": [
+          8,
+          34,
+          1
+        ],
+        "block": [
+          32,
+          8,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 96,
+        "total_ms": 1.157501,
+        "per_token_ms": 0.036172,
+        "avg_us": 12.057302,
+        "min_us": 11.776,
+        "max_us": 12.448
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 512,
+        "total_ms": 1.151799,
+        "per_token_ms": 0.035994,
+        "avg_us": 2.249607,
+        "min_us": 2.176,
+        "max_us": 2.495
+      },
+      {
+        "kernel": "rms_norm_f32",
+        "device": "1",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 736,
+        "total_ms": 1.06579,
+        "per_token_ms": 0.033306,
+        "avg_us": 1.448084,
+        "min_us": 1.376,
+        "max_us": 1.696
+      },
+      {
+        "kernel": "append_quantize_kv_q8_0_q5_1",
+        "device": "1",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          1,
+          1
+        ],
+        "category": "KV append",
+        "launches": 736,
+        "total_ms": 1.026879,
+        "per_token_ms": 0.03209,
+        "avg_us": 1.395216,
+        "min_us": 1.344,
+        "max_us": 1.6
+      },
+      {
+        "kernel": "rms_norm_f32",
+        "device": "0",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 704,
+        "total_ms": 1.008446,
+        "per_token_ms": 0.031514,
+        "avg_us": 1.432452,
+        "min_us": 1.344,
+        "max_us": 1.728
+      },
+      {
+        "kernel": "append_quantize_kv_q8_0_q5_1",
+        "device": "0",
+        "grid": [
+          32,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          1,
+          1
+        ],
+        "category": "KV append",
+        "launches": 704,
+        "total_ms": 0.951516,
+        "per_token_ms": 0.029735,
+        "avg_us": 1.351585,
+        "min_us": 1.248,
+        "max_us": 1.6
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "1",
+        "grid": [
+          10,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 736,
+        "total_ms": 0.903259,
+        "per_token_ms": 0.028227,
+        "avg_us": 1.227254,
+        "min_us": 1.184,
+        "max_us": 1.312
+      },
+      {
+        "kernel": "add_f32",
+        "device": "1",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 736,
+        "total_ms": 0.887421,
+        "per_token_ms": 0.027732,
+        "avg_us": 1.205735,
+        "min_us": 1.152,
+        "max_us": 1.472
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "1",
+        "grid": [
+          8,
+          33,
+          1
+        ],
+        "block": [
+          32,
+          8,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 72,
+        "total_ms": 0.87558,
+        "per_token_ms": 0.027362,
+        "avg_us": 12.160833,
+        "min_us": 11.84,
+        "max_us": 12.512
+      },
+      {
+        "kernel": "rms_norm_f32",
+        "device": "1",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 544,
+        "total_ms": 0.86984,
+        "per_token_ms": 0.027182,
+        "avg_us": 1.598971,
+        "min_us": 1.535,
+        "max_us": 1.824
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "0",
+        "grid": [
+          8,
+          33,
+          1
+        ],
+        "block": [
+          32,
+          8,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 72,
+        "total_ms": 0.864927,
+        "per_token_ms": 0.027029,
+        "avg_us": 12.012875,
+        "min_us": 11.744,
+        "max_us": 12.288
+      },
+      {
+        "kernel": "add_f32",
+        "device": "0",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 704,
+        "total_ms": 0.837247,
+        "per_token_ms": 0.026164,
+        "avg_us": 1.189271,
+        "min_us": 1.12,
+        "max_us": 1.344
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "1",
+        "grid": [
+          2,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 736,
+        "total_ms": 0.827741,
+        "per_token_ms": 0.025867,
+        "avg_us": 1.124648,
+        "min_us": 1.087,
+        "max_us": 1.152
+      },
+      {
+        "kernel": "rms_norm_f32",
+        "device": "0",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 512,
+        "total_ms": 0.803322,
+        "per_token_ms": 0.025104,
+        "avg_us": 1.568988,
+        "min_us": 1.472,
+        "max_us": 1.824
+      },
+      {
+        "kernel": "add_scaled_rows_f32",
+        "device": "1",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 736,
+        "total_ms": 0.780381,
+        "per_token_ms": 0.024387,
+        "avg_us": 1.0603,
+        "min_us": 1.024,
+        "max_us": 1.216
+      },
+      {
+        "kernel": "attn_head_gate_f32",
+        "device": "1",
+        "grid": [
+          12,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 544,
+        "total_ms": 0.772926,
+        "per_token_ms": 0.024154,
+        "avg_us": 1.42082,
+        "min_us": 1.375,
+        "max_us": 1.791
+      },
+      {
+        "kernel": "silu_mul_f32",
+        "device": "1",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 672,
+        "total_ms": 0.753246,
+        "per_token_ms": 0.023539,
+        "avg_us": 1.120902,
+        "min_us": 1.056,
+        "max_us": 1.344
+      },
+      {
+        "kernel": "fa_decode_combine_f32",
+        "device": "1",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 192,
+        "total_ms": 0.73683,
+        "per_token_ms": 0.023026,
+        "avg_us": 3.837656,
+        "min_us": 3.616,
+        "max_us": 4.288
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "0",
+        "grid": [
+          10,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 608,
+        "total_ms": 0.735386,
+        "per_token_ms": 0.022981,
+        "avg_us": 1.209516,
+        "min_us": 1.183,
+        "max_us": 1.248
+      },
+      {
+        "kernel": "fa_decode_combine_f32",
+        "device": "0",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 192,
+        "total_ms": 0.722398,
+        "per_token_ms": 0.022575,
+        "avg_us": 3.76249,
+        "min_us": 3.52,
+        "max_us": 4.224
+      },
+      {
+        "kernel": "rope_neox2_f32",
+        "device": "1",
+        "grid": [
+          104,
+          1,
+          1
+        ],
+        "block": [
+          64,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 544,
+        "total_ms": 0.717023,
+        "per_token_ms": 0.022407,
+        "avg_us": 1.318057,
+        "min_us": 1.279,
+        "max_us": 1.728
+      },
+      {
+        "kernel": "attn_head_gate_f32",
+        "device": "0",
+        "grid": [
+          12,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 512,
+        "total_ms": 0.697793,
+        "per_token_ms": 0.021806,
+        "avg_us": 1.362877,
+        "min_us": 1.312,
+        "max_us": 1.407
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "1",
+        "grid": [
+          12,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 544,
+        "total_ms": 0.695647,
+        "per_token_ms": 0.021739,
+        "avg_us": 1.278763,
+        "min_us": 1.216,
+        "max_us": 1.536
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "0",
+        "grid": [
+          2,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 608,
+        "total_ms": 0.670237,
+        "per_token_ms": 0.020945,
+        "avg_us": 1.102363,
+        "min_us": 1.056,
+        "max_us": 1.152
+      },
+      {
+        "kernel": "silu_mul_f32",
+        "device": "0",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 608,
+        "total_ms": 0.668733,
+        "per_token_ms": 0.020898,
+        "avg_us": 1.09989,
+        "min_us": 1.024,
+        "max_us": 1.408
+      },
+      {
+        "kernel": "rope_neox2_f32",
+        "device": "0",
+        "grid": [
+          104,
+          1,
+          1
+        ],
+        "block": [
+          64,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 512,
+        "total_ms": 0.656415,
+        "per_token_ms": 0.020513,
+        "avg_us": 1.282061,
+        "min_us": 1.247,
+        "max_us": 1.472
+      },
+      {
+        "kernel": "add_scaled_rows_f32",
+        "device": "0",
+        "grid": [
+          4,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 608,
+        "total_ms": 0.626143,
+        "per_token_ms": 0.019567,
+        "avg_us": 1.02984,
+        "min_us": 0.992,
+        "max_us": 1.184
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "0",
+        "grid": [
+          12,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 512,
+        "total_ms": 0.614207,
+        "per_token_ms": 0.019194,
+        "avg_us": 1.199623,
+        "min_us": 1.184,
+        "max_us": 1.248
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "1",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 192,
+        "total_ms": 0.412121,
+        "per_token_ms": 0.012879,
+        "avg_us": 2.146464,
+        "min_us": 2.111,
+        "max_us": 2.399
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "category": "trunk/shared/head matvec",
+        "launches": 192,
+        "total_ms": 0.409121,
+        "per_token_ms": 0.012785,
+        "avg_us": 2.130839,
+        "min_us": 2.079,
+        "max_us": 2.336
+      },
+      {
+        "kernel": "rope_neox2_f32",
+        "device": "1",
+        "grid": [
+          72,
+          1,
+          1
+        ],
+        "block": [
+          64,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 192,
+        "total_ms": 0.317056,
+        "per_token_ms": 0.009908,
+        "avg_us": 1.651333,
+        "min_us": 1.568,
+        "max_us": 1.952
+      },
+      {
+        "kernel": "rope_neox2_f32",
+        "device": "0",
+        "grid": [
+          72,
+          1,
+          1
+        ],
+        "block": [
+          64,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 192,
+        "total_ms": 0.313152,
+        "per_token_ms": 0.009786,
+        "avg_us": 1.631,
+        "min_us": 1.568,
+        "max_us": 1.92
+      },
+      {
+        "kernel": "rms_norm_f32",
+        "device": "1",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 192,
+        "total_ms": 0.293357,
+        "per_token_ms": 0.009167,
+        "avg_us": 1.527901,
+        "min_us": 1.472,
+        "max_us": 1.824
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "1",
+        "grid": [
+          8,
+          35,
+          1
+        ],
+        "block": [
+          32,
+          8,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 24,
+        "total_ms": 0.29187,
+        "per_token_ms": 0.009121,
+        "avg_us": 12.16125,
+        "min_us": 11.936,
+        "max_us": 12.544
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "0",
+        "grid": [
+          8,
+          35,
+          1
+        ],
+        "block": [
+          32,
+          8,
+          1
+        ],
+        "category": "attention decode",
+        "launches": 24,
+        "total_ms": 0.289376,
+        "per_token_ms": 0.009043,
+        "avg_us": 12.057333,
+        "min_us": 11.744,
+        "max_us": 12.288
+      },
+      {
+        "kernel": "rms_norm_f32",
+        "device": "0",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 192,
+        "total_ms": 0.28733,
+        "per_token_ms": 0.008979,
+        "avg_us": 1.49651,
+        "min_us": 1.44,
+        "max_us": 1.664
+      },
+      {
+        "kernel": "attn_head_gate_f32",
+        "device": "1",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 192,
+        "total_ms": 0.276794,
+        "per_token_ms": 0.00865,
+        "avg_us": 1.441635,
+        "min_us": 1.376,
+        "max_us": 1.727
+      },
+      {
+        "kernel": "attn_head_gate_f32",
+        "device": "0",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 192,
+        "total_ms": 0.261058,
+        "per_token_ms": 0.008158,
+        "avg_us": 1.359677,
+        "min_us": 1.311,
+        "max_us": 1.6
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "1",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 192,
+        "total_ms": 0.236,
+        "per_token_ms": 0.007375,
+        "avg_us": 1.229167,
+        "min_us": 1.216,
+        "max_us": 1.248
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "0",
+        "grid": [
+          8,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 192,
+        "total_ms": 0.229184,
+        "per_token_ms": 0.007162,
+        "avg_us": 1.193667,
+        "min_us": 1.152,
+        "max_us": 1.216
+      },
+      {
+        "kernel": "silu_mul_f32",
+        "device": "0",
+        "grid": [
+          3,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 96,
+        "total_ms": 0.13854,
+        "per_token_ms": 0.004329,
+        "avg_us": 1.443125,
+        "min_us": 1.376,
+        "max_us": 1.504
+      },
+      {
+        "kernel": "quantize_q8_1",
+        "device": "0",
+        "grid": [
+          11,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "norm/quant/activation glue",
+        "launches": 96,
+        "total_ms": 0.118752,
+        "per_token_ms": 0.003711,
+        "avg_us": 1.237,
+        "min_us": 1.216,
+        "max_us": 1.28
+      },
+      {
+        "kernel": "moe_pairs_scatter",
+        "device": "1",
+        "grid": [
+          16,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "clamped routed-expert tail",
+        "launches": 64,
+        "total_ms": 0.093366,
+        "per_token_ms": 0.002918,
+        "avg_us": 1.458844,
+        "min_us": 1.375,
+        "max_us": 1.695
+      },
+      {
+        "kernel": "swiglu_clamped_mul_scaled_f32",
+        "device": "1",
+        "grid": [
+          10,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 64,
+        "total_ms": 0.071343,
+        "per_token_ms": 0.002229,
+        "avg_us": 1.114734,
+        "min_us": 0.992,
+        "max_us": 1.311
+      },
+      {
+        "kernel": "argmax_partial_f32",
+        "device": "1",
+        "grid": [
+          256,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 32,
+        "total_ms": 0.066848,
+        "per_token_ms": 0.002089,
+        "avg_us": 2.089,
+        "min_us": 1.952,
+        "max_us": 2.304
+      },
+      {
+        "kernel": "swiglu_clamped_mul_scaled_f32",
+        "device": "1",
+        "grid": [
+          2,
+          1,
+          1
+        ],
+        "block": [
+          1024,
+          1,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 64,
+        "total_ms": 0.05664,
+        "per_token_ms": 0.00177,
+        "avg_us": 0.885,
+        "min_us": 0.832,
+        "max_us": 0.928
+      },
+      {
+        "kernel": "argmax_final_f32",
+        "device": "1",
+        "grid": [
+          1,
+          1,
+          1
+        ],
+        "block": [
+          256,
+          1,
+          1
+        ],
+        "category": "other GPU kernels",
+        "launches": 32,
+        "total_ms": 0.039263,
+        "per_token_ms": 0.001227,
+        "avg_us": 1.226969,
+        "min_us": 1.184,
+        "max_us": 1.376
+      }
+    ]
+  },
+  "sol_comparison": {
+    "receipt": "raw/box1/sigrouter-perf-receipt/summary.json",
+    "runs_per_arm": 5,
+    "active_expert_bytes_per_token": 6101901312,
+    "increment1_median_tok_s": 84.52049,
+    "resident_median_tok_s": 101.281657,
+    "relative_gain_pct": 19.830892,
+    "paired_wins": 5,
+    "denominators": [
+      {
+        "name": "frozen_sol_model_1.79_TBps",
+        "bandwidth_gbs": 1790.0,
+        "sol_tok_s": 293.351188,
+        "increment1_pct_of_sol": 28.81205,
+        "resident_pct_of_sol": 34.525736,
+        "resident_delta_pct_points": 5.713686
+      },
+      {
+        "name": "rtx_pro_6000_server_edition_1.597_TBps",
+        "bandwidth_gbs": 1597.0,
+        "sol_tok_s": 261.721703,
+        "increment1_pct_of_sol": 32.294032,
+        "resident_pct_of_sol": 38.698226,
+        "resident_delta_pct_points": 6.404195
+      }
+    ],
+    "server_card_memory": "GDDR7",
+    "server_spec_url": "https://www.nvidia.com/en-us/data-center/rtx-pro-6000-blackwell-server-edition/"
+  },
+  "ncu": {
+    "counter_sources": [
+      "raw/box1/ncu-device0/raw.csv"
+    ],
+    "profiled_devices": [
+      "0"
+    ],
+    "selected_symbols": [
+      "fa_decode_vec_q_v3",
+      "moe_down8_fma_dev_q8_rows_g",
+      "moe_gate_up_silu8_dev_q8_v_rows",
+      "qmatvec_iq4_XS_dp4a"
+    ],
+    "selected_symbol_coverage_pct_of_kernel_time": 65.337073,
+    "selected_symbol_coverage_pct_of_wall": 60.54046,
+    "selected_counter_coverage_pct_of_kernel_time": 31.691201,
+    "selected_counter_coverage_pct_of_selected_symbol_time": 48.504165,
+    "by_kernel": [
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "launch_shapes": 8,
+        "nsys_total_ms": 46.342402,
+        "nsys_per_token_ms": 1.4482,
+        "sm_pct": 44.887172,
+        "memory_pct": 51.015925,
+        "memory_access_pct": 49.062749,
+        "dram_pct": 50.920932,
+        "dram_gbs": 811.378899,
+        "dram_pct_of_1597": 50.806443,
+        "occupancy_pct": 68.016202,
+        "theoretical_occupancy_pct": 83.333333,
+        "waves_per_sm": 3.334158
+      },
+      {
+        "kernel": "moe_gate_up_silu8_dev_q8_v_rows",
+        "launch_shapes": 1,
+        "nsys_total_ms": 20.796551,
+        "nsys_per_token_ms": 0.649892,
+        "sm_pct": 17.561627,
+        "memory_pct": 71.114148,
+        "memory_access_pct": 37.384381,
+        "dram_pct": 71.114148,
+        "dram_gbs": 1133.756,
+        "dram_pct_of_1597": 70.992862,
+        "occupancy_pct": 43.377825,
+        "theoretical_occupancy_pct": 50.0,
+        "waves_per_sm": 2.27
+      },
+      {
+        "kernel": "moe_down8_fma_dev_q8_rows_g",
+        "launch_shapes": 1,
+        "nsys_total_ms": 13.683998,
+        "nsys_per_token_ms": 0.427625,
+        "sm_pct": 17.045787,
+        "memory_pct": 36.903694,
+        "memory_access_pct": 21.227181,
+        "dram_pct": 36.903694,
+        "dram_gbs": 588.189,
+        "dram_pct_of_1597": 36.83087,
+        "occupancy_pct": 44.905339,
+        "theoretical_occupancy_pct": 50.0,
+        "waves_per_sm": 0.91
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "launch_shapes": 2,
+        "nsys_total_ms": 7.51841,
+        "nsys_per_token_ms": 0.23495,
+        "sm_pct": 21.511843,
+        "memory_pct": 21.511843,
+        "memory_access_pct": 17.116784,
+        "dram_pct": 4.218998,
+        "dram_gbs": 67.067374,
+        "dram_pct_of_1597": 4.199585,
+        "occupancy_pct": 32.907981,
+        "theoretical_occupancy_pct": 100.0,
+        "waves_per_sm": 0.327345
+      }
+    ],
+    "by_kernel_device": [
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "launch_shapes": 8,
+        "nsys_total_ms": 46.342402,
+        "nsys_per_token_ms": 1.4482,
+        "sm_pct": 44.887172,
+        "memory_pct": 51.015925,
+        "memory_access_pct": 49.062749,
+        "dram_pct": 50.920932,
+        "dram_gbs": 811.378899,
+        "dram_pct_of_1597": 50.806443,
+        "occupancy_pct": 68.016202,
+        "theoretical_occupancy_pct": 83.333333,
+        "waves_per_sm": 3.334158
+      },
+      {
+        "kernel": "moe_gate_up_silu8_dev_q8_v_rows",
+        "device": "0",
+        "launch_shapes": 1,
+        "nsys_total_ms": 20.796551,
+        "nsys_per_token_ms": 0.649892,
+        "sm_pct": 17.561627,
+        "memory_pct": 71.114148,
+        "memory_access_pct": 37.384381,
+        "dram_pct": 71.114148,
+        "dram_gbs": 1133.756,
+        "dram_pct_of_1597": 70.992862,
+        "occupancy_pct": 43.377825,
+        "theoretical_occupancy_pct": 50.0,
+        "waves_per_sm": 2.27
+      },
+      {
+        "kernel": "moe_down8_fma_dev_q8_rows_g",
+        "device": "0",
+        "launch_shapes": 1,
+        "nsys_total_ms": 13.683998,
+        "nsys_per_token_ms": 0.427625,
+        "sm_pct": 17.045787,
+        "memory_pct": 36.903694,
+        "memory_access_pct": 21.227181,
+        "dram_pct": 36.903694,
+        "dram_gbs": 588.189,
+        "dram_pct_of_1597": 36.83087,
+        "occupancy_pct": 44.905339,
+        "theoretical_occupancy_pct": 50.0,
+        "waves_per_sm": 0.91
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "0",
+        "launch_shapes": 2,
+        "nsys_total_ms": 7.51841,
+        "nsys_per_token_ms": 0.23495,
+        "sm_pct": 21.511843,
+        "memory_pct": 21.511843,
+        "memory_access_pct": 17.116784,
+        "dram_pct": 4.218998,
+        "dram_gbs": 67.067374,
+        "dram_pct_of_1597": 4.199585,
+        "occupancy_pct": 32.907981,
+        "theoretical_occupancy_pct": 100.0,
+        "waves_per_sm": 0.327345
+      }
+    ],
+    "launch_configs": [
+      {
+        "kernel": "moe_gate_up_silu8_dev_q8_v_rows",
+        "device": "0",
+        "grid": [
+          1280,
+          8,
+          1
+        ],
+        "block": [
+          32,
+          1,
+          1
+        ],
+        "nsys_total_ms": 20.796551,
+        "nsys_per_token_ms": 0.649892,
+        "ncu_duration_us": 39.36,
+        "sm_pct": 17.561627,
+        "memory_pct": 71.114148,
+        "memory_access_pct": 37.384381,
+        "dram_pct": 71.114148,
+        "dram_gbs": 1133.756,
+        "occupancy_pct": 43.377825,
+        "theoretical_occupancy_pct": 50.0,
+        "registers_per_thread": 64.0,
+        "waves_per_sm": 2.27,
+        "stall_lg_throttle": 0.088862,
+        "stall_long_scoreboard": 20.879529,
+        "stall_not_selected": 0.285202,
+        "stall_short_scoreboard": 0.784217,
+        "stall_wait": 1.684859,
+        "dram_pct_of_1597": 70.992862,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 20.879529
+          },
+          {
+            "name": "wait",
+            "warps_per_issue": 1.684859
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 0.784217
+          }
+        ]
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "nsys_total_ms": 19.320975,
+        "nsys_per_token_ms": 0.60378,
+        "ncu_duration_us": 20.32,
+        "sm_pct": 46.692848,
+        "memory_pct": 55.132403,
+        "memory_access_pct": 51.834454,
+        "dram_pct": 55.132403,
+        "dram_gbs": 878.173,
+        "occupancy_pct": 74.197232,
+        "theoretical_occupancy_pct": 83.333333,
+        "registers_per_thread": 43.0,
+        "waves_per_sm": 2.18,
+        "stall_lg_throttle": 3.687413,
+        "stall_long_scoreboard": 16.81829,
+        "stall_not_selected": 1.124944,
+        "stall_short_scoreboard": 1.106095,
+        "stall_wait": 1.432504,
+        "dram_pct_of_1597": 54.988917,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 16.81829
+          },
+          {
+            "name": "lg_throttle",
+            "warps_per_issue": 3.687413
+          },
+          {
+            "name": "wait",
+            "warps_per_issue": 1.432504
+          }
+        ]
+      },
+      {
+        "kernel": "moe_down8_fma_dev_q8_rows_g",
+        "device": "0",
+        "grid": [
+          4096,
+          1,
+          1
+        ],
+        "block": [
+          32,
+          1,
+          1
+        ],
+        "nsys_total_ms": 13.683998,
+        "nsys_per_token_ms": 0.427625,
+        "ncu_duration_us": 37.952,
+        "sm_pct": 17.045787,
+        "memory_pct": 36.903694,
+        "memory_access_pct": 21.227181,
+        "dram_pct": 36.903694,
+        "dram_gbs": 588.189,
+        "occupancy_pct": 44.905339,
+        "theoretical_occupancy_pct": 50.0,
+        "registers_per_thread": 44.0,
+        "waves_per_sm": 0.91,
+        "stall_lg_throttle": 0.0228,
+        "stall_long_scoreboard": 18.955222,
+        "stall_not_selected": 0.608027,
+        "stall_short_scoreboard": 0.878315,
+        "stall_wait": 1.959575,
+        "dram_pct_of_1597": 36.83087,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 18.955222
+          },
+          {
+            "name": "wait",
+            "warps_per_issue": 1.959575
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 0.878315
+          }
+        ]
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          12288,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "nsys_total_ms": 10.930276,
+        "nsys_per_token_ms": 0.341571,
+        "ncu_duration_us": 25.312,
+        "sm_pct": 60.303014,
+        "memory_pct": 66.239224,
+        "memory_access_pct": 64.923131,
+        "dram_pct": 66.239224,
+        "dram_gbs": 1056.88,
+        "occupancy_pct": 73.892946,
+        "theoretical_occupancy_pct": 83.333333,
+        "registers_per_thread": 43.0,
+        "waves_per_sm": 6.54,
+        "stall_lg_throttle": 2.823561,
+        "stall_long_scoreboard": 10.129373,
+        "stall_not_selected": 1.470634,
+        "stall_short_scoreboard": 1.714593,
+        "stall_wait": 1.54019,
+        "dram_pct_of_1597": 66.179086,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 10.129373
+          },
+          {
+            "name": "lg_throttle",
+            "warps_per_issue": 2.823561
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 1.714593
+          }
+        ]
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "0",
+        "grid": [
+          8,
+          32,
+          1
+        ],
+        "block": [
+          32,
+          12,
+          1
+        ],
+        "nsys_total_ms": 6.653483,
+        "nsys_per_token_ms": 0.207921,
+        "ncu_duration_us": 15.328,
+        "sm_pct": 22.209548,
+        "memory_pct": 22.209548,
+        "memory_access_pct": 17.476269,
+        "dram_pct": 4.201681,
+        "dram_gbs": 66.806,
+        "occupancy_pct": 34.181758,
+        "theoretical_occupancy_pct": 100.0,
+        "registers_per_thread": 40.0,
+        "waves_per_sm": 0.34,
+        "stall_lg_throttle": 0.053896,
+        "stall_long_scoreboard": 8.183607,
+        "stall_not_selected": 0.817268,
+        "stall_short_scoreboard": 2.139163,
+        "stall_wait": 1.525438,
+        "dram_pct_of_1597": 4.183219,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 8.183607
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 2.139163
+          },
+          {
+            "name": "wait",
+            "warps_per_issue": 1.525438
+          }
+        ]
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          1280,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "nsys_total_ms": 5.086033,
+        "nsys_per_token_ms": 0.158939,
+        "ncu_duration_us": 8.32,
+        "sm_pct": 18.919594,
+        "memory_pct": 21.170229,
+        "memory_access_pct": 20.261273,
+        "dram_pct": 21.170229,
+        "dram_gbs": 336.431,
+        "occupancy_pct": 54.975077,
+        "theoretical_occupancy_pct": 83.333333,
+        "registers_per_thread": 43.0,
+        "waves_per_sm": 0.68,
+        "stall_lg_throttle": 2.923705,
+        "stall_long_scoreboard": 21.135102,
+        "stall_not_selected": 0.88734,
+        "stall_short_scoreboard": 3.020729,
+        "stall_wait": 1.555655,
+        "dram_pct_of_1597": 21.066437,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 21.135102
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 3.020729
+          },
+          {
+            "name": "lg_throttle",
+            "warps_per_issue": 2.923705
+          }
+        ]
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          11264,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "nsys_total_ms": 3.884824,
+        "nsys_per_token_ms": 0.121401,
+        "ncu_duration_us": 24.16,
+        "sm_pct": 58.203716,
+        "memory_pct": 63.734831,
+        "memory_access_pct": 62.663639,
+        "dram_pct": 63.734831,
+        "dram_gbs": 1015.057,
+        "occupancy_pct": 74.070173,
+        "theoretical_occupancy_pct": 83.333333,
+        "registers_per_thread": 43.0,
+        "waves_per_sm": 5.99,
+        "stall_lg_throttle": 2.765988,
+        "stall_long_scoreboard": 10.94869,
+        "stall_not_selected": 1.550834,
+        "stall_short_scoreboard": 1.770189,
+        "stall_wait": 1.541237,
+        "dram_pct_of_1597": 63.560238,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 10.94869
+          },
+          {
+            "name": "lg_throttle",
+            "warps_per_issue": 2.765988
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 1.770189
+          }
+        ]
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          8192,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "nsys_total_ms": 2.908021,
+        "nsys_per_token_ms": 0.090876,
+        "ncu_duration_us": 19.776,
+        "sm_pct": 51.821946,
+        "memory_pct": 56.591086,
+        "memory_access_pct": 55.767825,
+        "dram_pct": 56.591086,
+        "dram_gbs": 902.058,
+        "occupancy_pct": 74.005451,
+        "theoretical_occupancy_pct": 83.333333,
+        "registers_per_thread": 43.0,
+        "waves_per_sm": 4.36,
+        "stall_lg_throttle": 3.231438,
+        "stall_long_scoreboard": 12.296817,
+        "stall_not_selected": 1.454177,
+        "stall_short_scoreboard": 1.816046,
+        "stall_wait": 1.542862,
+        "dram_pct_of_1597": 56.484534,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 12.296817
+          },
+          {
+            "name": "lg_throttle",
+            "warps_per_issue": 3.231438
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 1.816046
+          }
+        ]
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          1024,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "nsys_total_ms": 2.651353,
+        "nsys_per_token_ms": 0.082855,
+        "ncu_duration_us": 7.936,
+        "sm_pct": 16.203464,
+        "memory_pct": 17.814128,
+        "memory_access_pct": 17.349617,
+        "dram_pct": 17.814128,
+        "dram_gbs": 282.452,
+        "occupancy_pct": 43.574169,
+        "theoretical_occupancy_pct": 83.333333,
+        "registers_per_thread": 43.0,
+        "waves_per_sm": 0.54,
+        "stall_lg_throttle": 2.219383,
+        "stall_long_scoreboard": 18.002681,
+        "stall_not_selected": 0.639785,
+        "stall_short_scoreboard": 3.059031,
+        "stall_wait": 1.553999,
+        "dram_pct_of_1597": 17.686412,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 18.002681
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 3.059031
+          },
+          {
+            "name": "lg_throttle",
+            "warps_per_issue": 2.219383
+          }
+        ]
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          96,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "nsys_total_ms": 1.151799,
+        "nsys_per_token_ms": 0.035994,
+        "ncu_duration_us": 5.728,
+        "sm_pct": 2.036211,
+        "memory_pct": 5.055093,
+        "memory_access_pct": 5.055093,
+        "dram_pct": 2.439299,
+        "dram_gbs": 38.793,
+        "occupancy_pct": 8.140278,
+        "theoretical_occupancy_pct": 83.333333,
+        "registers_per_thread": 43.0,
+        "waves_per_sm": 0.05,
+        "stall_lg_throttle": 0.001189,
+        "stall_long_scoreboard": 10.166545,
+        "stall_not_selected": 0.0,
+        "stall_short_scoreboard": 3.003837,
+        "stall_wait": 1.491276,
+        "dram_pct_of_1597": 2.429117,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 10.166545
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 3.003837
+          },
+          {
+            "name": "wait",
+            "warps_per_issue": 1.491276
+          }
+        ]
+      },
+      {
+        "kernel": "fa_decode_vec_q_v3",
+        "device": "0",
+        "grid": [
+          8,
+          33,
+          1
+        ],
+        "block": [
+          32,
+          8,
+          1
+        ],
+        "nsys_total_ms": 0.864927,
+        "nsys_per_token_ms": 0.027029,
+        "ncu_duration_us": 14.72,
+        "sm_pct": 16.144718,
+        "memory_pct": 16.144718,
+        "memory_access_pct": 14.351432,
+        "dram_pct": 4.352209,
+        "dram_gbs": 69.078,
+        "occupancy_pct": 23.109401,
+        "theoretical_occupancy_pct": 100.0,
+        "registers_per_thread": 40.0,
+        "waves_per_sm": 0.23,
+        "stall_lg_throttle": 0.045549,
+        "stall_long_scoreboard": 7.881235,
+        "stall_not_selected": 0.451906,
+        "stall_short_scoreboard": 2.024934,
+        "stall_wait": 1.513751,
+        "dram_pct_of_1597": 4.325485,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 7.881235
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 2.024934
+          },
+          {
+            "name": "wait",
+            "warps_per_issue": 1.513751
+          }
+        ]
+      },
+      {
+        "kernel": "qmatvec_iq4_XS_dp4a",
+        "device": "0",
+        "grid": [
+          64,
+          1,
+          1
+        ],
+        "block": [
+          128,
+          1,
+          1
+        ],
+        "nsys_total_ms": 0.409121,
+        "nsys_per_token_ms": 0.012785,
+        "ncu_duration_us": 5.728,
+        "sm_pct": 1.361041,
+        "memory_pct": 5.090326,
+        "memory_access_pct": 5.090326,
+        "dram_pct": 1.694482,
+        "dram_gbs": 26.682,
+        "occupancy_pct": 8.140667,
+        "theoretical_occupancy_pct": 83.333333,
+        "registers_per_thread": 43.0,
+        "waves_per_sm": 0.03,
+        "stall_lg_throttle": 0.001016,
+        "stall_long_scoreboard": 9.923281,
+        "stall_not_selected": 0.0,
+        "stall_short_scoreboard": 2.983294,
+        "stall_wait": 1.49151,
+        "dram_pct_of_1597": 1.670758,
+        "top_stalls": [
+          {
+            "name": "long_scoreboard",
+            "warps_per_issue": 9.923281
+          },
+          {
+            "name": "short_scoreboard",
+            "warps_per_issue": 2.983294
+          },
+          {
+            "name": "wait",
+            "warps_per_issue": 1.49151
+          }
+        ]
+      }
+    ]
+  }
+}

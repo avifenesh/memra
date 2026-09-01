@@ -1,0 +1,14 @@
+warning: memra-engine@0.81.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running unittests src/main.rs (target/debug/deps/memra_server-e686d3e85b05107f)
+
+running 5 tests
+test worker::tests::runtime_reprobe_plain_serving_keeps_probe_execution_enabled ... ok
+test worker::tests::runtime_reprobe_mismatch_degrades_without_panicking_or_breaking_output_continuity ... ok
+test worker::tests::runtime_reprobe_bound_config_defaults_to_probeobs_four_and_clamps_zero ... ok
+test worker::tests::runtime_reprobe_deferral_counts_intervals_and_alarms_after_one_rotation ... ok
+test worker::tests::runtime_reprobe_soft_refusal_starts_at_bound_and_completed_probe_clears_it ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 213 filtered out; finished in 0.00s
+

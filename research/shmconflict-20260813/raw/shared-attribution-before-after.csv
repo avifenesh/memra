@@ -1,0 +1,57 @@
+arm,model,shape,phase,array,physical_layout,sass_pattern,pc_count,instructions_executed,conflict_degrees,actual_wavefronts,ideal_wavefronts,excess_wavefronts,actual_over_ideal,excess_share_pct
+baseline,q27,4096,q_ldmatrix,Q tile,16x256 row-major; no padding or swizzle,LDSM.16.M88.4,16,98304,32,3145728,393216,2752512,8.000000,0.373184
+baseline,q27,4096,k_ldmatrix,K double-buffer tiles,32x256 row-major; no padding or swizzle,LDSM.16.M88.4,32,12779520,32,408944640,51118080,357826560,8.000000,48.513928
+baseline,q27,4096,p_store,P restage,64x32 row-major; no padding or swizzle,STS,8,3194880,4,12779520,3194880,9584640,4.000000,1.299480
+baseline,q27,4096,p_ldmatrix,P restage,64x32 row-major; no padding or swizzle,LDSM.16.M88.4,2,798720,16,12779520,3194880,9584640,4.000000,1.299480
+baseline,q27,4096,v_ldmatrix_trans,V double-buffer tiles,32x256 row-major; no padding or swizzle,LDSM.16.MT88.4,32,12779520,32,408944640,51118080,357826560,8.000000,48.513928
+baseline,q27,4096,other_shared,Other shared traffic,mixed,other,112,7778304,1;4,26947584,26947584,0,1.000000,0.000000
+baseline,q27,4096,total,All shared traffic,mixed,all,202,37429248,1;4;16;32,873541632,135966720,737574912,6.424672,100.000000
+baseline,q27,764,q_ldmatrix,Q tile,16x256 row-major; no padding or swizzle,LDSM.16.M88.4,16,18432,32,589824,73728,516096,8.000000,0.172382
+baseline,q27,764,k_ldmatrix,K double-buffer tiles,32x256 row-major; no padding or swizzle,LDSM.16.M88.4,32,5197824,32,166330368,20791296,145539072,8.000000,48.611710
+baseline,q27,764,p_store,P restage,64x32 row-major; no padding or swizzle,STS,8,1299456,4,5197824,1299456,3898368,4.000000,1.302099
+baseline,q27,764,p_ldmatrix,P restage,64x32 row-major; no padding or swizzle,LDSM.16.M88.4,2,324864,16,5197824,1299456,3898368,4.000000,1.302099
+baseline,q27,764,v_ldmatrix_trans,V double-buffer tiles,32x256 row-major; no padding or swizzle,LDSM.16.MT88.4,32,5197824,32,166330368,20791296,145539072,8.000000,48.611710
+baseline,q27,764,other_shared,Other shared traffic,mixed,other,114,3504384,1;4,10656768,10656768,0,1.000000,0.000000
+baseline,q27,764,total,All shared traffic,mixed,all,204,15542784,1;4;16;32,354302976,54912000,299390976,6.452196,100.000000
+baseline,q35,4096,q_ldmatrix,Q tile,16x256 row-major; no padding or swizzle,LDSM.16.M88.4,16,65536,32,2097152,262144,1835008,8.000000,0.373184
+baseline,q35,4096,k_ldmatrix,K double-buffer tiles,32x256 row-major; no padding or swizzle,LDSM.16.M88.4,32,8519680,32,272629760,34078720,238551040,8.000000,48.513928
+baseline,q35,4096,p_store,P restage,64x32 row-major; no padding or swizzle,STS,8,2129920,4,8519680,2129920,6389760,4.000000,1.299480
+baseline,q35,4096,p_ldmatrix,P restage,64x32 row-major; no padding or swizzle,LDSM.16.M88.4,2,532480,16,8519680,2129920,6389760,4.000000,1.299480
+baseline,q35,4096,v_ldmatrix_trans,V double-buffer tiles,32x256 row-major; no padding or swizzle,LDSM.16.MT88.4,32,8519680,32,272629760,34078720,238551040,8.000000,48.513928
+baseline,q35,4096,other_shared,Other shared traffic,mixed,other,112,5185536,1;4,17965056,17965056,0,1.000000,0.000000
+baseline,q35,4096,total,All shared traffic,mixed,all,202,24952832,1;4;16;32,582361088,90644480,491716608,6.424672,100.000000
+baseline,q35,764,q_ldmatrix,Q tile,16x256 row-major; no padding or swizzle,LDSM.16.M88.4,16,12288,32,393216,49152,344064,8.000000,0.172382
+baseline,q35,764,k_ldmatrix,K double-buffer tiles,32x256 row-major; no padding or swizzle,LDSM.16.M88.4,32,3465216,32,110886912,13860864,97026048,8.000000,48.611710
+baseline,q35,764,p_store,P restage,64x32 row-major; no padding or swizzle,STS,8,866304,4,3465216,866304,2598912,4.000000,1.302099
+baseline,q35,764,p_ldmatrix,P restage,64x32 row-major; no padding or swizzle,LDSM.16.M88.4,2,216576,16,3465216,866304,2598912,4.000000,1.302099
+baseline,q35,764,v_ldmatrix_trans,V double-buffer tiles,32x256 row-major; no padding or swizzle,LDSM.16.MT88.4,32,3465216,32,110886912,13860864,97026048,8.000000,48.611710
+baseline,q35,764,other_shared,Other shared traffic,mixed,other,114,2336256,1;4,7104512,7104512,0,1.000000,0.000000
+baseline,q35,764,total,All shared traffic,mixed,all,204,10361856,1;4;16;32,236201984,36608000,199593984,6.452196,100.000000
+candidate-v1,q27,4096,q_ldmatrix,Q tile,16x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.M88.4,16,98304,4,393216,393216,0,1.000000,0.000000
+candidate-v1,q27,4096,k_ldmatrix,K double-buffer tiles,32x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.M88.4,32,12779520,4,51118080,51118080,0,1.000000,0.000000
+candidate-v1,q27,4096,p_store,P restage,64x32 bf16; four 16B chunks XOR row&3; no padding,STS,8,3194880,2,6389760,3194880,3194880,2.000000,50.000000
+candidate-v1,q27,4096,p_ldmatrix,P restage,64x32 bf16; four 16B chunks XOR row&3; no padding,LDSM.16.M88.4,2,798720,8,6389760,3194880,3194880,2.000000,50.000000
+candidate-v1,q27,4096,v_ldmatrix_trans,V double-buffer tiles,32x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.MT88.4,32,12779520,4,51118080,51118080,0,1.000000,0.000000
+candidate-v1,q27,4096,other_shared,Other shared traffic,mixed,other,112,7778304,1;4,26947584,26947584,0,1.000000,0.000000
+candidate-v1,q27,4096,total,All shared traffic,mixed,all,202,37429248,1;2;4;8,142356480,135966720,6389760,1.046995,100.000000
+candidate-v1,q27,764,q_ldmatrix,Q tile,16x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.M88.4,16,18432,4,73728,73728,0,1.000000,0.000000
+candidate-v1,q27,764,k_ldmatrix,K double-buffer tiles,32x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.M88.4,32,5197824,4,20791296,20791296,0,1.000000,0.000000
+candidate-v1,q27,764,p_store,P restage,64x32 bf16; four 16B chunks XOR row&3; no padding,STS,8,1299456,2,2598912,1299456,1299456,2.000000,49.948339
+candidate-v1,q27,764,p_ldmatrix,P restage,64x32 bf16; four 16B chunks XOR row&3; no padding,LDSM.16.M88.4,2,324864,8,2598912,1299456,1299456,2.000000,49.948339
+candidate-v1,q27,764,v_ldmatrix_trans,V double-buffer tiles,32x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.MT88.4,32,5197824,4,20791296,20791296,0,1.000000,0.000000
+candidate-v1,q27,764,other_shared,Other shared traffic,mixed,other,114,3504384,1;4,10659456,10656768,2688,1.000252,0.103321
+candidate-v1,q27,764,total,All shared traffic,mixed,all,204,15542784,1;2;4;8,57513600,54912000,2601600,1.047378,100.000000
+candidate-v1,q35,4096,q_ldmatrix,Q tile,16x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.M88.4,16,65536,4,262144,262144,0,1.000000,0.000000
+candidate-v1,q35,4096,k_ldmatrix,K double-buffer tiles,32x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.M88.4,32,8519680,4,34078720,34078720,0,1.000000,0.000000
+candidate-v1,q35,4096,p_store,P restage,64x32 bf16; four 16B chunks XOR row&3; no padding,STS,8,2129920,2,4259840,2129920,2129920,2.000000,50.000000
+candidate-v1,q35,4096,p_ldmatrix,P restage,64x32 bf16; four 16B chunks XOR row&3; no padding,LDSM.16.M88.4,2,532480,8,4259840,2129920,2129920,2.000000,50.000000
+candidate-v1,q35,4096,v_ldmatrix_trans,V double-buffer tiles,32x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.MT88.4,32,8519680,4,34078720,34078720,0,1.000000,0.000000
+candidate-v1,q35,4096,other_shared,Other shared traffic,mixed,other,112,5185536,1;4,17965056,17965056,0,1.000000,0.000000
+candidate-v1,q35,4096,total,All shared traffic,mixed,all,202,24952832,1;2;4;8,94904320,90644480,4259840,1.046995,100.000000
+candidate-v1,q35,764,q_ldmatrix,Q tile,16x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.M88.4,16,12288,4,49152,49152,0,1.000000,0.000000
+candidate-v1,q35,764,k_ldmatrix,K double-buffer tiles,32x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.M88.4,32,3465216,4,13860864,13860864,0,1.000000,0.000000
+candidate-v1,q35,764,p_store,P restage,64x32 bf16; four 16B chunks XOR row&3; no padding,STS,8,866304,2,1732608,866304,866304,2.000000,49.948339
+candidate-v1,q35,764,p_ldmatrix,P restage,64x32 bf16; four 16B chunks XOR row&3; no padding,LDSM.16.M88.4,2,216576,8,1732608,866304,866304,2.000000,49.948339
+candidate-v1,q35,764,v_ldmatrix_trans,V double-buffer tiles,32x256 bf16; 16B chunk XOR row&7; no padding,LDSM.16.MT88.4,32,3465216,4,13860864,13860864,0,1.000000,0.000000
+candidate-v1,q35,764,other_shared,Other shared traffic,mixed,other,114,2336256,1;4,7106304,7104512,1792,1.000252,0.103321
+candidate-v1,q35,764,total,All shared traffic,mixed,all,204,10361856,1;2;4;8,38342400,36608000,1734400,1.047378,100.000000

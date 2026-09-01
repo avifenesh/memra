@@ -1,0 +1,29 @@
+# BISECT of the missing dependency. Diagnosis scaffold (since removed): a bitmask of
+# candidate stage-stream publication points, driven from the gate's positional arg.
+#   1 = publish all stage streams to the caller AFTER glm5_verify_rollback
+#   2 = publish all stage streams to the caller after the session prime
+#   4 = publish all stage streams (not just the last) at the verify walk's exit
+#  32 = publish all stage streams at prime_cache_hyper_ppn's own exit
+# Metric A: forced-rejection arm FAILS. Metric B (11x more sensitive): NON-CANONICAL PRIMES
+# out of the 11 primes a gate run performs.
+# Every block below is ONE interleaved load window (interleaved-ab-protocol law).
+
+--- interleaved x12, stages=2, metric A ---
+mask=0  FAILS=2 / 12
+mask=1  FAILS=0 / 12
+mask=2  FAILS=0 / 12
+mask=4  FAILS=1 / 12      <- publishing at the WALK exit alone does not close it
+
+--- interleaved x10, stages=2, metric B ---
+mask=0   NON-CANONICAL PRIMES=37 / 110   arm FAILS=3 / 10
+mask=32  NON-CANONICAL PRIMES=31 / 110   arm FAILS=3 / 10   <- prime's own exit: FLAT
+
+--- interleaved x10, stages=2, metric B ---
+mask=0   NON-CANONICAL PRIMES=20 / 110   arm FAILS=0 / 10
+mask=1   NON-CANONICAL PRIMES=2  / 110   arm FAILS=0 / 10   <- THE ROLLBACK EXIT: 10x drop
+mask=33  NON-CANONICAL PRIMES=2  / 110   arm FAILS=0 / 10
+
+VERDICT: the load-bearing missing dependency is the EXIT PUBLICATION OF
+`glm5_verify_rollback` — the one ppN body in the loop that had neither an entry fence nor
+any exit ordering. The residual 2/110 is the earlier stages' post-`ev_tx` tails at the other
+bodies' exits, which the shipped fix closes at the walk and the prime as well.

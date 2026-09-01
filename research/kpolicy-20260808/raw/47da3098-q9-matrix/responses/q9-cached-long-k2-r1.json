@@ -1,0 +1,29 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "The most important remaining regression test should verify that the selector's internal state remains consistent when a file descriptor is closed while it is still registered. Specifically, the test should simulate a scenario where a worker process accepts a connection, registers the socket for read events, and then immediately closes the socket (perhaps due to a client disconnect or an error). The test must assert that the selector does not crash when `select()` is called on this closed socket, and that the `unregister()` method handles the closed file descriptor gracefully without raising a `KeyError`. This ensures that the fix for the `KeyError` in `get_key()` is robust and"
+    }
+  ],
+  "created": 1786210761,
+  "id": "cmpl-7af10557eeb8eeba4361202c1499150d",
+  "model": "q9",
+  "object": "text_completion",
+  "system_fingerprint": "memra-47da3098d8aa",
+  "usage": {
+    "completion_tokens": 129,
+    "elapsed_s": 0.442173163,
+    "prompt_tokens": 5496,
+    "prompt_tokens_details": {
+      "cached_tokens": 5477
+    },
+    "spec": {
+      "acceptance_rate": 0.5666666666666667,
+      "accepted": 68,
+      "drafted": 120,
+      "rounds": 60
+    },
+    "total_tokens": 5625
+  }
+}

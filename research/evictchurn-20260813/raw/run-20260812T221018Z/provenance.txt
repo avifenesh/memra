@@ -1,0 +1,17 @@
+server_source_commit=47d92b6fc2350658436b42a4eb6c67cbf0624653
+base_tag=v0.81.2
+branch=lane/cx-evictchurn
+model=/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+model_name=q36-35b
+rig=local RTX 5090 Laptop GPU
+thermal_regime=global 210-1200 MHz cap; no clock changes
+shape=single-GPU plain batched serving; spec off; reuse/affinity pools off
+working_set=40
+tenants=4
+target_equal_size_entries=12
+prefix_tokens=256
+suffix_tokens=8
+max_tokens=8
+round_robin_requests=80
+hotset_requests=160 (80% to 20% prefixes; alpha=1.0; seed=3407)
+sequential_scan_requests=40 (every request is a new prefix)

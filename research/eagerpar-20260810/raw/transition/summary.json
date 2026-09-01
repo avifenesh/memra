@@ -1,0 +1,25 @@
+{
+  "gate": "step35-b2-geometry-gate naked",
+  "result": "PASS",
+  "static_widths": {
+    "c1_reference": 1,
+    "c2_matches": 2,
+    "c4_matches": 4,
+    "mismatches": 0
+  },
+  "transition": {
+    "early_emitted_before_late_admission": true,
+    "transport_ok": true,
+    "width_evidence": "ready=1 -> ready>=2",
+    "early_matches_reference": true,
+    "late_matches_reference": 2,
+    "emitted_text_sha256": "96735d828e26e5f95cb35e30b6b4788021bb0a39b4d9d1ecfe68ceb8c6e51998"
+  },
+  "production_path_evidence": {
+    "decode_chunk_cap": 8,
+    "first_batched_walk": "B=2 layers=[0,22)"
+  },
+  "candidate_source": "711fbcaaef54491d22488a84d40b7fc35e5a58dd",
+  "candidate_binary_sha256": "43ad098d46bb26d644ba0b742d92f3f014d9287ac72e8a0edb8ebf9dac3ba608",
+  "lock_window_utc": ["2026-08-10T17:10:54Z", "2026-08-10T17:11:42Z"]
+}

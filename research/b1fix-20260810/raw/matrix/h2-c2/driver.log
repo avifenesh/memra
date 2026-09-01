@@ -1,0 +1,40 @@
+condition=h2-c2 cells=10 requests=2 stamp=fixed-6e50efdb lock_acquired=2026-08-10T04:56:57Z
+host=<private-host-redacted>
+source_commit=6e50efdbaefe7167f6c48309abd6892252220eb8
+binary_sha256=6a7c2046eb3197773def91baf012abd629e0b0ced239ec2d38016c93be5ca7e5
+qos_sha256=6c9e7386e3304deb6b625db1e7bd5089b3f0cf4844c198b17d7173e5c0082e9d
+golden_sha256=21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de
+## lane/cx-b1fix
+artifact=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-06 12:39:44.670328147 +0000
+artifact=/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-06 12:37:13.136888212 +0000
+cell=h2-c2-cell-01 boot_start=2026-08-10T04:56:57Z
+{"actual_start_offsets_ms": [0.025, 0.24], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-01", "latency_p50_s": 2.20786, "latency_p99_s": 2.213859, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.104065, "ttft_p99_s": 1.115898, "wall_s": 2.214142}
+cell=h2-c2-cell-01 probe_rc=0 boot_done=2026-08-10T04:57:36Z
+cell=h2-c2-cell-02 boot_start=2026-08-10T04:57:36Z
+{"actual_start_offsets_ms": [0.023, 0.225], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-02", "latency_p50_s": 2.206534, "latency_p99_s": 2.21274, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.103221, "ttft_p99_s": 1.115186, "wall_s": 2.212816}
+cell=h2-c2-cell-02 probe_rc=0 boot_done=2026-08-10T04:58:17Z
+cell=h2-c2-cell-03 boot_start=2026-08-10T04:58:17Z
+{"actual_start_offsets_ms": [0.023, 0.223], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-03", "latency_p50_s": 2.206983, "latency_p99_s": 2.207055, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.108165, "ttft_p99_s": 1.108201, "wall_s": 2.207194}
+cell=h2-c2-cell-03 probe_rc=0 boot_done=2026-08-10T04:58:56Z
+cell=h2-c2-cell-04 boot_start=2026-08-10T04:58:56Z
+{"actual_start_offsets_ms": [0.034, 0.277], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-04", "latency_p50_s": 2.209566, "latency_p99_s": 2.215528, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.106038, "ttft_p99_s": 1.1178, "wall_s": 2.215849}
+cell=h2-c2-cell-04 probe_rc=0 boot_done=2026-08-10T04:59:36Z
+cell=h2-c2-cell-05 boot_start=2026-08-10T04:59:36Z
+{"actual_start_offsets_ms": [0.024, 0.22], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-05", "latency_p50_s": 2.205963, "latency_p99_s": 2.206038, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.10528, "ttft_p99_s": 1.105324, "wall_s": 2.206158}
+cell=h2-c2-cell-05 probe_rc=0 boot_done=2026-08-10T05:00:16Z
+cell=h2-c2-cell-06 boot_start=2026-08-10T05:00:16Z
+{"actual_start_offsets_ms": [0.023, 0.224], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-06", "latency_p50_s": 2.20678, "latency_p99_s": 2.206855, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.105944, "ttft_p99_s": 1.105974, "wall_s": 2.206982}
+cell=h2-c2-cell-06 probe_rc=0 boot_done=2026-08-10T05:00:55Z
+cell=h2-c2-cell-07 boot_start=2026-08-10T05:00:55Z
+{"actual_start_offsets_ms": [0.019, 0.267], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-07", "latency_p50_s": 2.206185, "latency_p99_s": 2.212293, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.103316, "ttft_p99_s": 1.115124, "wall_s": 2.212621}
+cell=h2-c2-cell-07 probe_rc=0 boot_done=2026-08-10T05:01:35Z
+cell=h2-c2-cell-08 boot_start=2026-08-10T05:01:35Z
+{"actual_start_offsets_ms": [0.235, 0.022], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-08", "latency_p50_s": 2.207801, "latency_p99_s": 2.214012, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.103199, "ttft_p99_s": 1.115238, "wall_s": 2.214094}
+cell=h2-c2-cell-08 probe_rc=0 boot_done=2026-08-10T05:02:15Z
+cell=h2-c2-cell-09 boot_start=2026-08-10T05:02:15Z
+{"actual_start_offsets_ms": [0.024, 0.235], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-09", "latency_p50_s": 2.208229, "latency_p99_s": 2.214206, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.104426, "ttft_p99_s": 1.116263, "wall_s": 2.214495}
+cell=h2-c2-cell-09 probe_rc=0 boot_done=2026-08-10T05:02:55Z
+cell=h2-c2-cell-10 boot_start=2026-08-10T05:02:55Z
+{"actual_start_offsets_ms": [0.237, 0.023], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "h2-c2-cell-10", "latency_p50_s": 2.206764, "latency_p99_s": 2.21278, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.104505, "ttft_p99_s": 1.116342, "wall_s": 2.213077}
+cell=h2-c2-cell-10 probe_rc=0 boot_done=2026-08-10T05:03:34Z
+condition=h2-c2 completed_cells=10 divergent_cells=0 block_done=2026-08-10T05:03:34Z

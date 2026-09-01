@@ -1,0 +1,61 @@
+{
+  "date": "2026-08-12",
+  "branch": "lane/cx-downkernel",
+  "local_base": "79c3c0b27",
+  "measurement_base": "f0ab104e7",
+  "rig": "box1-rtx-pro-6000-blackwell-server-edition",
+  "shape": {
+    "in_f": 1280,
+    "out_f": 4096,
+    "n_used": 8,
+    "n_expert": 288,
+    "qtype": "IQ4_XS",
+    "row_bytes": 680
+  },
+  "mechanism": "one-warp CTAs hit the 24-block-per-SM limit",
+  "exactness": {
+    "output_f32": 4096,
+    "mismatches": 0,
+    "baseline_sha256": "3c509060d071f171e0bd54ac9d0e29f98411fa5d4367b47d1b54480a0e2eccce",
+    "candidate_sha256": "3c509060d071f171e0bd54ac9d0e29f98411fa5d4367b47d1b54480a0e2eccce"
+  },
+  "semantic_mix": {
+    "launches_per_token": 40,
+    "logical_weight_bytes_per_token": 891289600,
+    "repetitions_per_sample": 128,
+    "n_per_arm": 8,
+    "schedule": "ABBAx4",
+    "baseline_median_ms": 0.8591155,
+    "candidate_median_ms": 0.788857,
+    "time_delta_pct": -8.178004,
+    "throughput_delta_pct": 8.906367
+  },
+  "ncu": {
+    "baseline": {
+      "block": [32, 1, 1],
+      "registers_per_thread": 44,
+      "static_shared_bytes": 0,
+      "theoretical_occupancy_pct": 50.0,
+      "achieved_occupancy_pct": 44.82,
+      "waves_per_sm": 0.91,
+      "dram_gbps": 688.54,
+      "duration_us": 32.42
+    },
+    "candidate": {
+      "block": [32, 8, 1],
+      "registers_per_thread": 48,
+      "static_shared_bytes": 32,
+      "theoretical_occupancy_pct": 83.33,
+      "achieved_occupancy_pct": 73.79,
+      "waves_per_sm": 4.36,
+      "dram_gbps": 1020.0,
+      "duration_us": 21.79
+    }
+  },
+  "gates": {
+    "kernel_check": "ALL GREEN (88 cells, 21 skipped)",
+    "run_gen_argmax": "MATCH",
+    "run_spec_k1_k8": "PASS"
+  },
+  "verdict": "GO_FOR_ORCHESTRATOR_PROMOTION"
+}

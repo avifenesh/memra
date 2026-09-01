@@ -1,0 +1,21 @@
++ date -u
+Wed Aug 19 01:06:44 UTC 2026
++ cd /opt/scratch/nvme/b/memra
++ CUDA_VISIBLE_DEVICES=1
++ MEMRA_GPU_LOCK=/tmp/memra-b.lock
++ MEMRA_GATE_PORT=18098
++ tools/spec-cache-mixed-gate.sh /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/scratch/nvme/receipts/b/qwen-mixed
+== mixed arm: production config (spec on) ==
+[mixed-on] window 32.8s batch agg 238.1 tok/s (130 batch rows)
+== mixed arm: spec-off reference ==
+[mixed-off] window 31.2s batch agg 261.2 tok/s (136 batch rows)
+  FAIL: every repeat row took the cache — cached=[0, 0, 0, 0, 0, 0]
+  FAIL: >= 2 spec-engaged cache-hit rows under load (got 0, 6 gate-demoted)
+  ok: spec-engaged hit rows byte-identical to spec-off replay
+  ok: batch tier >= 0.9x spec-off (0.91x)
++ echo QWEN_MIXED_RC=1
+QWEN_MIXED_RC=1
++ date -u
+Wed Aug 19 01:08:15 UTC 2026
++ echo B_GATE2_DONE
+B_GATE2_DONE

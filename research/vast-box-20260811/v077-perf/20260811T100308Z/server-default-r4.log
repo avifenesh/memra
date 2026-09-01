@@ -1,0 +1,47 @@
+[server] starting; models config = [("stepfun/step-3.7-flash", "/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "stepfun/step-3.7-flash" <- /workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.92GB (expert budget 95.00GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] stepfun/step-3.7-flash: regime draft attached (/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "stepfun/step-3.7-flash": 45 layers, eos=128007
+[worker] stepfun/step-3.7-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] stepfun/step-3.7-flash: decode chunk cap 8
+[prefix-cache] on: budget 2147MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "stepfun/step-3.7-flash": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["stepfun/step-3.7-flash"]
+[server] listening on http://127.0.0.1:18432
+[meter] admit id=chatcmpl-c9885f1ff443bb7f724519601e500495 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=95 path=plain = 83520 B/token x ctx + 0MB fixed = 8MB
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-warmup-q0-1786443020387326154" K=0 source=pp2-placement prompt=15 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-bfcf333f86d0626c4408e7036d65847f tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[meter] admit id=chatcmpl-cfb997b071c9a99116a96c439d745e21 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[meter] admit id=chatcmpl-f4ea30fea057c8115535350f000a626a tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[admission] request cost: model="stepfun/step-3.7-flash" ctx=619 path=plain = 83520 B/token x ctx + 0MB fixed = 52MB
+[meter] admit id=chatcmpl-944938c9fbd780df6d05becf31f5cc0c tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[meter] admit id=chatcmpl-37d7a6ab2819ddffc78cc335353cffa4 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[meter] admit id=chatcmpl-363d4dd60f6fe311f1e77dcc16ec613a tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-c8-q1-1786443020687746876" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-376274ea9fe4832ffc327fdd11cbb3e6 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[meter] admit id=chatcmpl-a5fc3cc5f39f54853ec583e0a486b96b tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-c8-q3-1786443020688331848" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-c8-q5-1786443020689005060" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-c8-q7-1786443020689636023" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-c8-q2-1786443020688023222" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-c8-q4-1786443020688690854" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-c8-q6-1786443020689337436" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-c8-q0-1786443020687207392" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[step35-batch] first B>1 batched step35 walk: B=8 layers=[0,22)
+[meter] admit id=chatcmpl-fff16589e88f93f618a217c794541db2 tenant=default lane=interactive model="stepfun/step-3.7-flash"
+[spec-k] model="stepfun/step-3.7-flash" tenant="default-r4-c1-q0-1786443042913632766" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

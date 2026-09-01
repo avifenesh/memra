@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me carefully parse what's going on here. The user has pasted what looks like an incident report / handoff summary \u2014 probably something I (or another AI agent) wrote previously, describing a crash of a \"hermes-gateway\" process. The message starts with \"you crashed\" \u2014 addressing me? Or the user is showing me a report that they wrote/received about a crash that happened.\n\nActually, re-reading: \"you crashed\" \u2014 this reads like the user is talking to an AI agent (maybe me, in a persistent-agent context, like a \"hermes\" gateway that runs Claude). The content describes",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me carefully parse what's going on here. The user has pasted what looks like an incident report / handoff summary \u2014 probably something I (or another AI agent) wrote previously, describing a crash of a \"hermes-gateway\" process. The message starts with \"you crashed\" \u2014 addressing me? Or the user is showing me a report that they wrote/received about a crash that happened.\n\nActually, re-reading: \"you crashed\" \u2014 this reads like the user is talking to an AI agent (maybe me, in a persistent-agent context, like a \"hermes\" gateway that runs Claude). The content describes"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 453,
+  "completion_tokens": 128,
+  "total_tokens": 581,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.948047718,
+  "spec": {
+   "rounds": 55,
+   "drafted": 165,
+   "accepted": 72,
+   "acceptance_rate": 0.43636363636363634
+  }
+ },
+ "id": "chatcmpl-137e401bfce7643f58ac2d1bf4c20159",
+ "created": 1788081646,
+ "system_fingerprint": "REDACTED"
+}

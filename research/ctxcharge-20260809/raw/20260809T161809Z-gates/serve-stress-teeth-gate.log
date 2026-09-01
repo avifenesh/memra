@@ -1,0 +1,12 @@
+== serve-stress-gate: c=64 staggered short streams (128-256 tok) ==
+completed 46/64; wall p50=18.2s p95=20.7s max=21.2s; ttfb p50=3.37s p95=3.90s  (informational)
+  BAD i=12: err=None server_error=batch step: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") chunks=3 finish_reason=None done=True bad_json=
+  BAD i=2: err=None server_error=batch step: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") chunks=7 finish_reason=None done=True bad_json=
+  BAD i=9: err=None server_error=batch step: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") chunks=4 finish_reason=None done=True bad_json=
+  BAD i=5: err=None server_error=batch step: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") chunks=5 finish_reason=None done=True bad_json=
+  BAD i=7: err=None server_error=batch step: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") chunks=4 finish_reason=None done=True bad_json=
+  BAD i=15: err=None server_error=batch step: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") chunks=2 finish_reason=None done=True bad_json=
+  BAD i=17: err=None server_error=batch step: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") chunks=2 finish_reason=None done=True bad_json=
+  BAD i=13: err=None server_error=batch step: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") chunks=3 finish_reason=None done=True bad_json=
+  FAIL: not all 64 requests completed well-formed
+serve-stress-gate: TEETH OK (1 assertion(s) failed at MEMRA_ADMIT_RESERVE_MB=16 — the gate detects a broken admission reserve); server log: /home/avifenesh/projects/wt-cx-ctxcharge/research/ctxcharge-20260809/raw/20260809T161809Z-gates/serve-stress-teeth-server.log

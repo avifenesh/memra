@@ -1,0 +1,12 @@
+devices=2
+dev0 name="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition" cc=12.0 pci=0000:41:00
+dev1 name="NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition" cc=12.0 pci=0000:61:00
+canAccessPeer 0->1=1 1->0=1
+peer_enabled=1
+bytes,tokens_at_nembd4096,batch_us,serialized_us,GB_s
+16384,1,1.806,5.100,9.074
+2097152,128,19.730,24.156,106.294
+4194304,256,38.781,43.265,108.155
+8388608,512,76.921,81.831,109.055
+16777216,1024,153.669,158.583,109.177
+correctness bytes=16384 wrong=16320 verdict=FAIL

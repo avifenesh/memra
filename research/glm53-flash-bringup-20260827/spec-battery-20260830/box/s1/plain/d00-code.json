@@ -1,0 +1,33 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumably another language \u2014 probably Python or TypeScript/Node, something quick)\n- It should call a model (LLM) to do the \"arrangements\" \u2014 i.e., the LLM does the parsing/organizing\n- The user writes minimal few sentences (a brain dump)\n- The agent captures it, puts it in place, tracks the relevant JSONL from whatever tool they were using, and compacts it\n- The agent asks if they want to elaborate on some question it found helpful to note \u2014 and if so, asks with numbered options (1 2 3...) rather than making the user write long answers, unless the user wants to\n- Context switching is the core use case: 100 things to do, always starting something new, switching between 5 CLIs with 5 projects, answering user issues, looking for new contributions, addressing maintainer issues, dropping a new project and forgetting the original idea, setting v2 deferred features and forgetting them, wanting to do something but needing X energy \u2014 so they want a frictionless/fun small-things queue\n\nSo this is a \"second brain\" / context",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumably another language \u2014 probably Python or TypeScript/Node, something quick)\n- It should call a model (LLM) to do the \"arrangements\" \u2014 i.e., the LLM does the parsing/organizing\n- The user writes minimal few sentences (a brain dump)\n- The agent captures it, puts it in place, tracks the relevant JSONL from whatever tool they were using, and compacts it\n- The agent asks if they want to elaborate on some question it found helpful to note \u2014 and if so, asks with numbered options (1 2 3...) rather than making the user write long answers, unless the user wants to\n- Context switching is the core use case: 100 things to do, always starting something new, switching between 5 CLIs with 5 projects, answering user issues, looking for new contributions, addressing maintainer issues, dropping a new project and forgetting the original idea, setting v2 deferred features and forgetting them, wanting to do something but needing X energy \u2014 so they want a frictionless/fun small-things queue\n\nSo this is a \"second brain\" / context"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 239,
+  "completion_tokens": 256,
+  "total_tokens": 495,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 7.560238725
+ },
+ "id": "chatcmpl-3e40d09afb58f38cfce26e3b7faa5497",
+ "created": 1788079319,
+ "system_fingerprint": "REDACTED"
+}

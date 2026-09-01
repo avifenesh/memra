@@ -1,0 +1,302 @@
+[server] starting; models config = [("step35", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "step35" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step35: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step35": 45 layers, eos=128007
+[worker] step35: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml")
+[worker] step35: decode chunk cap 8
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["step35"]
+[server] listening on http://127.0.0.1:8137
+[meter] admit id=cmpl-0883c0737425bbca64de27e3de30a8e8 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-e055b66462d7b64b4d3affd30d715bf4 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-5ad5fe58016ac9fa7e463b57cc5ba32d tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-02448c1b36655f50f2701092e2e444fd tenant=default lane=harvest model="step35"
+[spec-k] model="step35" tenant="r0-sync-q1" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[worker] observed session VRAM cost for "step35": 168MB (admission gate = 2x)
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[tick-spec] seq=1 slot=0 trace=r0-sync-q1 start_ms=0.000 gap_ms=0.000 wall_ms=980.245 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=0 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=980.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-k] model="step35" tenant="r0-sync-q2" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r0-sync-q3" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r0-sync-q0" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-phase] draft=28.1ms (5.8%) verify-issue=445.3ms (92.5%) verify-wait=5.4ms (1.1%) commit-host=2.5ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=1 slot=1 trace=r0-sync-q2 start_ms=0.000 gap_ms=0.000 wall_ms=1424.013 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.2ms (5.8%) verify-issue=446.1ms (92.5%) verify-wait=5.2ms (1.1%) commit-host=2.5ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=2 slot=2 trace=r0-sync-q3 start_ms=1424.041 gap_ms=0.027 wall_ms=1422.768 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.1ms (5.8%) verify-issue=446.8ms (92.7%) verify-wait=4.5ms (0.9%) commit-host=2.6ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=3 slot=3 trace=r0-sync-q0 start_ms=2846.830 gap_ms=0.021 wall_ms=1423.154 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=25.9ms (5.8%) verify-issue=413.3ms (92.7%) verify-wait=4.1ms (0.9%) commit-host=2.5ms (0.6%) rounds=12
+[spec-acc] ctx=229 burst=18/36 cum=18/36=0.500
+[tick-spec] seq=4 slot=0 trace=r0-sync-q1 start_ms=4269.995 gap_ms=0.011 wall_ms=457.532 generated=1->32 rounds=12 drafted=36 accepted=18 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=4727.5 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-88b33aa10b7e82fd8fd063b2096e22b5 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-ab43bd8fc9ef87c242b814b27401c431 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-2f0996b70b7ab774f20f149147a94fce tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-1e0d53f116af55c7bab8e08d56d9c55e tenant=default lane=harvest model="step35"
+[spec-k] model="step35" tenant="r1-sync-q3" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[tick-spec] seq=1 slot=0 trace=r1-sync-q3 start_ms=0.000 gap_ms=0.000 wall_ms=938.757 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=0 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=938.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-k] model="step35" tenant="r1-sync-q2" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r1-sync-q0" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r1-sync-q1" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-phase] draft=28.1ms (5.8%) verify-issue=444.4ms (92.4%) verify-wait=5.9ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=1 slot=1 trace=r1-sync-q2 start_ms=0.000 gap_ms=0.000 wall_ms=1427.114 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.1ms (5.9%) verify-issue=443.7ms (92.4%) verify-wait=5.9ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=2 slot=2 trace=r1-sync-q0 start_ms=1427.125 gap_ms=0.010 wall_ms=1420.259 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.2ms (5.9%) verify-issue=443.9ms (92.4%) verify-wait=6.0ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=3 slot=3 trace=r1-sync-q1 start_ms=2847.395 gap_ms=0.011 wall_ms=1420.674 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.0ms (5.8%) verify-issue=444.9ms (92.5%) verify-wait=5.8ms (1.2%) commit-host=2.2ms (0.5%) rounds=13
+[spec-acc] ctx=229 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=4 slot=0 trace=r1-sync-q3 start_ms=4268.080 gap_ms=0.010 wall_ms=492.467 generated=1->33 rounds=13 drafted=39 accepted=18 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=4760.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=32.3ms (5.7%) verify-issue=520.8ms (92.6%) verify-wait=6.8ms (1.2%) commit-host=2.6ms (0.5%) rounds=15
+[spec-acc] ctx=261 burst=18/45 cum=36/84=0.429
+[tick-spec] seq=1 slot=0 trace=r1-sync-q3 start_ms=0.000 gap_ms=0.000 wall_ms=562.638 generated=33->66 rounds=15 drafted=45 accepted=18 k=3
+[spec-phase] draft=34.5ms (5.7%) verify-issue=555.4ms (92.6%) verify-wait=7.2ms (1.2%) commit-host=2.8ms (0.5%) rounds=16
+[spec-acc] ctx=260 burst=18/48 cum=36/87=0.414
+[tick-spec] seq=2 slot=1 trace=r1-sync-q2 start_ms=562.648 gap_ms=0.010 wall_ms=600.049 generated=32->66 rounds=16 drafted=48 accepted=18 k=3
+[spec-phase] draft=34.5ms (5.8%) verify-issue=554.7ms (92.6%) verify-wait=7.1ms (1.2%) commit-host=2.8ms (0.5%) rounds=16
+[spec-acc] ctx=260 burst=18/48 cum=36/87=0.414
+[tick-spec] seq=3 slot=2 trace=r1-sync-q0 start_ms=1162.715 gap_ms=0.017 wall_ms=599.248 generated=32->66 rounds=16 drafted=48 accepted=18 k=3
+[spec-phase] draft=34.5ms (5.8%) verify-issue=555.0ms (92.6%) verify-wait=7.1ms (1.2%) commit-host=2.8ms (0.5%) rounds=16
+[spec-acc] ctx=260 burst=18/48 cum=36/87=0.414
+[tick-spec] seq=4 slot=3 trace=r1-sync-q1 start_ms=1761.974 gap_ms=0.011 wall_ms=599.370 generated=32->66 rounds=16 drafted=48 accepted=18 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2361.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=36.7ms (5.8%) verify-issue=589.6ms (92.6%) verify-wait=7.3ms (1.1%) commit-host=3.0ms (0.5%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/135=0.378
+[tick-spec] seq=1 slot=0 trace=r1-sync-q3 start_ms=0.000 gap_ms=0.000 wall_ms=636.707 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[spec-phase] draft=36.7ms (5.8%) verify-issue=590.4ms (92.6%) verify-wait=7.5ms (1.2%) commit-host=3.1ms (0.5%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/138=0.370
+[tick-spec] seq=2 slot=1 trace=r1-sync-q2 start_ms=636.717 gap_ms=0.010 wall_ms=637.776 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[spec-phase] draft=36.6ms (5.7%) verify-issue=589.8ms (92.6%) verify-wait=7.5ms (1.2%) commit-host=3.1ms (0.5%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/138=0.370
+[tick-spec] seq=3 slot=2 trace=r1-sync-q0 start_ms=1274.504 gap_ms=0.011 wall_ms=637.021 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[spec-phase] draft=36.6ms (5.7%) verify-issue=590.2ms (92.6%) verify-wait=7.4ms (1.2%) commit-host=3.0ms (0.5%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/138=0.370
+[tick-spec] seq=4 slot=3 trace=r1-sync-q1 start_ms=1911.538 gap_ms=0.011 wall_ms=637.297 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2548.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-668816233077dd4e77c94e9409ea1465 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-28de1aa92ab37bece5faecbefa82f09e tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-153a859c1bb38b5ed8d3e95c83e81489 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-4414d7442f4b38ec1c682df6a2d18fce tenant=default lane=harvest model="step35"
+[spec-k] model="step35" tenant="r1-divergent-q2" K=3 source=operator-pin prompt=242 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r1-divergent-q3" K=3 source=operator-pin prompt=241 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[tick-spec] seq=1 slot=0 trace=r1-divergent-q2 start_ms=0.000 gap_ms=0.000 wall_ms=983.506 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[tick-spec] seq=2 slot=1 trace=r1-divergent-q3 start_ms=983.517 gap_ms=0.010 wall_ms=979.052 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=2 int=0 priming=0 ready=0 spec=2 demoted=0 spec_calls=2 spec_ms=1962.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-k] model="step35" tenant="r1-divergent-q0" K=3 source=operator-pin prompt=241 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r1-divergent-q1" K=3 source=operator-pin prompt=241 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-phase] draft=30.3ms (5.9%) verify-issue=478.9ms (92.4%) verify-wait=6.4ms (1.2%) commit-host=2.4ms (0.5%) rounds=14
+[spec-acc] ctx=241 burst=18/42 cum=18/42=0.429
+[tick-spec] seq=1 slot=2 trace=r1-divergent-q0 start_ms=0.000 gap_ms=0.000 wall_ms=1492.943 generated=0->33 rounds=14 drafted=42 accepted=18 k=3
+[spec-phase] draft=26.0ms (5.9%) verify-issue=408.9ms (92.4%) verify-wait=5.4ms (1.2%) commit-host=2.1ms (0.5%) rounds=12
+[spec-acc] ctx=241 burst=20/36 cum=20/36=0.556
+[tick-spec] seq=2 slot=3 trace=r1-divergent-q1 start_ms=1492.954 gap_ms=0.010 wall_ms=1419.924 generated=0->33 rounds=12 drafted=36 accepted=20 k=3
+[spec-phase] draft=23.8ms (5.9%) verify-issue=374.7ms (92.5%) verify-wait=4.7ms (1.2%) commit-host=2.0ms (0.5%) rounds=11
+[spec-acc] ctx=243 burst=20/33 cum=20/33=0.606
+[tick-spec] seq=3 slot=0 trace=r1-divergent-q2 start_ms=2912.890 gap_ms=0.011 wall_ms=416.778 generated=1->33 rounds=11 drafted=33 accepted=20 k=3
+[spec-phase] draft=25.9ms (5.8%) verify-issue=411.8ms (92.6%) verify-wait=4.5ms (1.0%) commit-host=2.3ms (0.5%) rounds=12
+[spec-acc] ctx=242 burst=19/36 cum=19/36=0.528
+[tick-spec] seq=4 slot=1 trace=r1-divergent-q3 start_ms=3329.679 gap_ms=0.011 wall_ms=456.190 generated=1->33 rounds=12 drafted=36 accepted=19 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=3785.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=34.6ms (5.7%) verify-issue=560.8ms (92.8%) verify-wait=5.4ms (0.9%) commit-host=3.3ms (0.5%) rounds=16
+[spec-acc] ctx=275 burst=16/48 cum=36/81=0.444
+[tick-spec] seq=1 slot=0 trace=r1-divergent-q2 start_ms=0.000 gap_ms=0.000 wall_ms=604.220 generated=33->65 rounds=16 drafted=48 accepted=16 k=3
+[spec-phase] draft=32.4ms (5.7%) verify-issue=521.7ms (92.6%) verify-wait=6.6ms (1.2%) commit-host=2.6ms (0.5%) rounds=15
+[spec-acc] ctx=274 burst=17/45 cum=36/81=0.444
+[tick-spec] seq=2 slot=1 trace=r1-divergent-q3 start_ms=604.231 gap_ms=0.010 wall_ms=563.390 generated=33->65 rounds=15 drafted=45 accepted=17 k=3
+[spec-phase] draft=32.3ms (5.7%) verify-issue=520.7ms (92.5%) verify-wait=7.1ms (1.3%) commit-host=2.5ms (0.4%) rounds=15
+[spec-acc] ctx=274 burst=17/45 cum=35/87=0.402
+[tick-spec] seq=3 slot=2 trace=r1-divergent-q0 start_ms=1167.631 gap_ms=0.010 wall_ms=562.776 generated=33->65 rounds=15 drafted=45 accepted=17 k=3
+[spec-phase] draft=34.5ms (5.7%) verify-issue=555.7ms (92.5%) verify-wait=7.5ms (1.3%) commit-host=2.9ms (0.5%) rounds=16
+[spec-acc] ctx=274 burst=16/48 cum=36/84=0.429
+[tick-spec] seq=4 slot=3 trace=r1-divergent-q1 start_ms=1730.421 gap_ms=0.014 wall_ms=600.685 generated=33->65 rounds=16 drafted=48 accepted=16 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2331.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=28.0ms (5.8%) verify-issue=450.9ms (92.6%) verify-wait=5.7ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=307 burst=18/39 cum=54/120=0.450
+[tick-spec] seq=1 slot=0 trace=r1-divergent-q2 start_ms=0.000 gap_ms=0.000 wall_ms=487.003 generated=65->96 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.0ms (5.7%) verify-issue=451.4ms (92.6%) verify-wait=5.8ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=306 burst=19/39 cum=55/120=0.458
+[tick-spec] seq=2 slot=1 trace=r1-divergent-q3 start_ms=487.014 gap_ms=0.011 wall_ms=487.640 generated=65->97 rounds=13 drafted=39 accepted=19 k=3
+[spec-phase] draft=34.5ms (5.7%) verify-issue=556.2ms (92.6%) verify-wait=7.1ms (1.2%) commit-host=2.8ms (0.5%) rounds=16
+[spec-acc] ctx=306 burst=16/48 cum=51/135=0.378
+[tick-spec] seq=3 slot=2 trace=r1-divergent-q0 start_ms=974.666 gap_ms=0.011 wall_ms=600.778 generated=65->97 rounds=16 drafted=48 accepted=16 k=3
+[spec-phase] draft=32.3ms (5.7%) verify-issue=521.7ms (92.5%) verify-wait=7.0ms (1.2%) commit-host=2.8ms (0.5%) rounds=15
+[spec-acc] ctx=306 burst=17/45 cum=53/129=0.411
+[tick-spec] seq=4 slot=3 trace=r1-divergent-q1 start_ms=1575.455 gap_ms=0.011 wall_ms=563.891 generated=65->97 rounds=15 drafted=45 accepted=17 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2139.4 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-84a4d8d9bd54a95e4406e3950f2e2066 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-50e576fd818183f4cf7ed29c04fff08b tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-c8fc11f701a8bc7cd1de2ba2a81a3073 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-a736e637b14e909653c47834579112a3 tenant=default lane=harvest model="step35"
+[spec-k] model="step35" tenant="r2-divergent-q3" K=3 source=operator-pin prompt=241 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r2-divergent-q2" K=3 source=operator-pin prompt=242 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[tick-spec] seq=1 slot=0 trace=r2-divergent-q3 start_ms=0.000 gap_ms=0.000 wall_ms=975.236 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[tick-spec] seq=2 slot=1 trace=r2-divergent-q2 start_ms=975.247 gap_ms=0.010 wall_ms=973.370 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=2 int=0 priming=0 ready=0 spec=2 demoted=0 spec_calls=2 spec_ms=1948.6 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-k] model="step35" tenant="r2-divergent-q1" K=3 source=operator-pin prompt=241 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r2-divergent-q0" K=3 source=operator-pin prompt=241 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-phase] draft=25.9ms (5.9%) verify-issue=408.7ms (92.4%) verify-wait=5.6ms (1.3%) commit-host=2.1ms (0.5%) rounds=12
+[spec-acc] ctx=241 burst=20/36 cum=20/36=0.556
+[tick-spec] seq=1 slot=2 trace=r2-divergent-q1 start_ms=0.000 gap_ms=0.000 wall_ms=1411.810 generated=0->33 rounds=12 drafted=36 accepted=20 k=3
+[spec-phase] draft=30.3ms (5.9%) verify-issue=478.0ms (92.4%) verify-wait=6.5ms (1.3%) commit-host=2.5ms (0.5%) rounds=14
+[spec-acc] ctx=241 burst=18/42 cum=18/42=0.429
+[tick-spec] seq=2 slot=3 trace=r2-divergent-q0 start_ms=1411.830 gap_ms=0.019 wall_ms=1484.399 generated=0->33 rounds=14 drafted=42 accepted=18 k=3
+[spec-phase] draft=25.9ms (5.9%) verify-issue=409.1ms (92.4%) verify-wait=5.5ms (1.2%) commit-host=2.1ms (0.5%) rounds=12
+[spec-acc] ctx=242 burst=19/36 cum=19/36=0.528
+[tick-spec] seq=3 slot=0 trace=r2-divergent-q3 start_ms=2896.250 gap_ms=0.020 wall_ms=454.157 generated=1->33 rounds=12 drafted=36 accepted=19 k=3
+[spec-phase] draft=23.7ms (5.9%) verify-issue=374.2ms (92.5%) verify-wait=4.9ms (1.2%) commit-host=1.9ms (0.5%) rounds=11
+[spec-acc] ctx=243 burst=20/33 cum=20/33=0.606
+[tick-spec] seq=4 slot=1 trace=r2-divergent-q2 start_ms=3350.432 gap_ms=0.025 wall_ms=416.335 generated=1->33 rounds=11 drafted=33 accepted=20 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=3766.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=32.4ms (5.8%) verify-issue=521.6ms (92.6%) verify-wait=6.6ms (1.2%) commit-host=2.6ms (0.5%) rounds=15
+[spec-acc] ctx=274 burst=17/45 cum=36/81=0.444
+[tick-spec] seq=1 slot=0 trace=r2-divergent-q3 start_ms=0.000 gap_ms=0.000 wall_ms=563.256 generated=33->65 rounds=15 drafted=45 accepted=17 k=3
+[spec-phase] draft=34.5ms (5.7%) verify-issue=556.2ms (92.6%) verify-wait=7.1ms (1.2%) commit-host=2.8ms (0.5%) rounds=16
+[spec-acc] ctx=275 burst=16/48 cum=36/81=0.444
+[tick-spec] seq=2 slot=1 trace=r2-divergent-q2 start_ms=563.277 gap_ms=0.021 wall_ms=600.688 generated=33->65 rounds=16 drafted=48 accepted=16 k=3
+[spec-phase] draft=34.5ms (5.7%) verify-issue=556.2ms (92.6%) verify-wait=7.1ms (1.2%) commit-host=2.9ms (0.5%) rounds=16
+[spec-acc] ctx=274 burst=16/48 cum=36/84=0.429
+[tick-spec] seq=3 slot=2 trace=r2-divergent-q1 start_ms=1163.988 gap_ms=0.023 wall_ms=600.774 generated=33->65 rounds=16 drafted=48 accepted=16 k=3
+[spec-phase] draft=32.3ms (5.7%) verify-issue=520.6ms (92.6%) verify-wait=6.7ms (1.2%) commit-host=2.5ms (0.4%) rounds=15
+[spec-acc] ctx=274 burst=17/45 cum=35/87=0.402
+[tick-spec] seq=4 slot=3 trace=r2-divergent-q0 start_ms=1764.773 gap_ms=0.011 wall_ms=562.256 generated=33->65 rounds=15 drafted=45 accepted=17 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2327.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=28.0ms (5.8%) verify-issue=451.0ms (92.6%) verify-wait=5.7ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=306 burst=19/39 cum=55/120=0.458
+[tick-spec] seq=1 slot=0 trace=r2-divergent-q3 start_ms=0.000 gap_ms=0.000 wall_ms=487.148 generated=65->97 rounds=13 drafted=39 accepted=19 k=3
+[spec-phase] draft=28.0ms (5.8%) verify-issue=450.8ms (92.6%) verify-wait=5.8ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=307 burst=18/39 cum=54/120=0.450
+[tick-spec] seq=2 slot=1 trace=r2-divergent-q2 start_ms=487.158 gap_ms=0.010 wall_ms=487.055 generated=65->96 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=32.3ms (5.7%) verify-issue=520.8ms (92.6%) verify-wait=6.7ms (1.2%) commit-host=2.7ms (0.5%) rounds=15
+[spec-acc] ctx=306 burst=17/45 cum=53/129=0.411
+[tick-spec] seq=3 slot=2 trace=r2-divergent-q1 start_ms=974.226 gap_ms=0.012 wall_ms=562.595 generated=65->97 rounds=15 drafted=45 accepted=17 k=3
+[spec-phase] draft=34.5ms (5.7%) verify-issue=555.6ms (92.6%) verify-wait=7.2ms (1.2%) commit-host=2.8ms (0.5%) rounds=16
+[spec-acc] ctx=306 burst=16/48 cum=51/135=0.378
+[tick-spec] seq=4 slot=3 trace=r2-divergent-q0 start_ms=1536.833 gap_ms=0.012 wall_ms=600.158 generated=65->97 rounds=16 drafted=48 accepted=16 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2137.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-3f33afb67e41ac5c90142a4fe6855818 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-38e50e5f27ce86655281af25e4055e54 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-b35f69258a9cfd7bfa50895c3ff1a8e4 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-5c9de607581a7f7f6acbda01923b83f9 tenant=default lane=harvest model="step35"
+[spec-k] model="step35" tenant="r2-sync-q3" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[tick-spec] seq=1 slot=0 trace=r2-sync-q3 start_ms=0.000 gap_ms=0.000 wall_ms=922.746 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=1 int=0 priming=0 ready=0 spec=1 demoted=0 spec_calls=1 spec_ms=922.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-k] model="step35" tenant="r2-sync-q2" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r2-sync-q1" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r2-sync-q0" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-phase] draft=28.1ms (5.8%) verify-issue=445.2ms (92.5%) verify-wait=5.8ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=1 slot=1 trace=r2-sync-q2 start_ms=0.000 gap_ms=0.000 wall_ms=1402.081 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.2ms (5.9%) verify-issue=444.4ms (92.5%) verify-wait=5.8ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=2 slot=2 trace=r2-sync-q1 start_ms=1402.092 gap_ms=0.010 wall_ms=1411.213 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.2ms (5.9%) verify-issue=444.5ms (92.4%) verify-wait=5.9ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=3 slot=3 trace=r2-sync-q0 start_ms=2813.322 gap_ms=0.017 wall_ms=1399.667 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.0ms (5.8%) verify-issue=444.1ms (92.5%) verify-wait=5.8ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=229 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=4 slot=0 trace=r2-sync-q3 start_ms=4213.001 gap_ms=0.013 wall_ms=491.809 generated=1->33 rounds=13 drafted=39 accepted=18 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=4704.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=32.3ms (5.7%) verify-issue=521.4ms (92.6%) verify-wait=6.9ms (1.2%) commit-host=2.7ms (0.5%) rounds=15
+[spec-acc] ctx=261 burst=18/45 cum=36/84=0.429
+[tick-spec] seq=1 slot=0 trace=r2-sync-q3 start_ms=0.000 gap_ms=0.000 wall_ms=563.364 generated=33->66 rounds=15 drafted=45 accepted=18 k=3
+[spec-phase] draft=34.4ms (5.7%) verify-issue=555.8ms (92.6%) verify-wait=7.4ms (1.2%) commit-host=2.9ms (0.5%) rounds=16
+[spec-acc] ctx=260 burst=18/48 cum=36/87=0.414
+[tick-spec] seq=2 slot=1 trace=r2-sync-q2 start_ms=563.374 gap_ms=0.010 wall_ms=600.623 generated=32->66 rounds=16 drafted=48 accepted=18 k=3
+[spec-phase] draft=34.5ms (5.7%) verify-issue=555.6ms (92.5%) verify-wait=7.4ms (1.2%) commit-host=2.8ms (0.5%) rounds=16
+[spec-acc] ctx=260 burst=18/48 cum=36/87=0.414
+[tick-spec] seq=3 slot=2 trace=r2-sync-q1 start_ms=1164.009 gap_ms=0.012 wall_ms=600.482 generated=32->66 rounds=16 drafted=48 accepted=18 k=3
+[spec-phase] draft=34.5ms (5.7%) verify-issue=555.5ms (92.6%) verify-wait=7.4ms (1.2%) commit-host=2.8ms (0.5%) rounds=16
+[spec-acc] ctx=260 burst=18/48 cum=36/87=0.414
+[tick-spec] seq=4 slot=3 trace=r2-sync-q0 start_ms=1764.503 gap_ms=0.011 wall_ms=600.171 generated=32->66 rounds=16 drafted=48 accepted=18 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2364.7 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=36.6ms (5.7%) verify-issue=589.3ms (92.5%) verify-wait=7.8ms (1.2%) commit-host=3.1ms (0.5%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/135=0.378
+[tick-spec] seq=1 slot=0 trace=r2-sync-q3 start_ms=0.000 gap_ms=0.000 wall_ms=636.856 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[spec-phase] draft=36.6ms (5.7%) verify-issue=589.4ms (92.6%) verify-wait=7.7ms (1.2%) commit-host=3.0ms (0.5%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/138=0.370
+[tick-spec] seq=2 slot=1 trace=r2-sync-q2 start_ms=636.867 gap_ms=0.010 wall_ms=636.828 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[spec-phase] draft=36.6ms (5.8%) verify-issue=589.5ms (92.5%) verify-wait=7.8ms (1.2%) commit-host=3.1ms (0.5%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/138=0.370
+[tick-spec] seq=3 slot=2 trace=r2-sync-q1 start_ms=1273.705 gap_ms=0.011 wall_ms=637.141 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[spec-phase] draft=36.5ms (5.7%) verify-issue=588.7ms (92.6%) verify-wait=7.7ms (1.2%) commit-host=3.0ms (0.5%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/138=0.370
+[tick-spec] seq=4 slot=3 trace=r2-sync-q0 start_ms=1910.859 gap_ms=0.012 wall_ms=636.137 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2547.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[meter] admit id=cmpl-17da805b145fbdecb3cb35b66ae348a4 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-4a8a343ab66bb1dacc06f98a414c4d01 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-abee61ac82466a6f0f8346bb3702ce31 tenant=default lane=harvest model="step35"
+[meter] admit id=cmpl-01b348132518e87bdaa527ec6b69defd tenant=default lane=harvest model="step35"
+[spec-k] model="step35" tenant="r3-sync-q2" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r3-sync-q0" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[tick-spec] seq=1 slot=0 trace=r3-sync-q2 start_ms=0.000 gap_ms=0.000 wall_ms=918.979 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[spec-phase] draft=0.0ms (NaN%) verify-issue=0.0ms (NaN%) verify-wait=0.0ms (NaN%) commit-host=0.0ms (NaN%) rounds=0
+[tick-spec] seq=2 slot=1 trace=r3-sync-q0 start_ms=918.991 gap_ms=0.011 wall_ms=917.937 generated=0->1 rounds=0 drafted=0 accepted=0 k=3
+[tick] act=2 int=0 priming=0 ready=0 spec=2 demoted=0 spec_calls=2 spec_ms=1836.9 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-k] model="step35" tenant="r3-sync-q3" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step35" tenant="r3-sync-q1" K=3 source=operator-pin prompt=228 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-phase] draft=28.1ms (5.9%) verify-issue=444.1ms (92.5%) verify-wait=5.7ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=1 slot=2 trace=r3-sync-q3 start_ms=0.000 gap_ms=0.000 wall_ms=1399.086 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.1ms (5.8%) verify-issue=444.6ms (92.4%) verify-wait=5.9ms (1.2%) commit-host=2.4ms (0.5%) rounds=13
+[spec-acc] ctx=228 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=2 slot=3 trace=r3-sync-q1 start_ms=1399.099 gap_ms=0.012 wall_ms=1395.897 generated=0->32 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.0ms (5.8%) verify-issue=443.3ms (92.5%) verify-wait=5.9ms (1.2%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=229 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=3 slot=0 trace=r3-sync-q2 start_ms=2795.010 gap_ms=0.013 wall_ms=490.967 generated=1->33 rounds=13 drafted=39 accepted=18 k=3
+[spec-phase] draft=28.0ms (5.8%) verify-issue=444.9ms (92.6%) verify-wait=5.4ms (1.1%) commit-host=2.3ms (0.5%) rounds=13
+[spec-acc] ctx=229 burst=18/39 cum=18/39=0.462
+[tick-spec] seq=4 slot=1 trace=r3-sync-q0 start_ms=3285.988 gap_ms=0.011 wall_ms=492.338 generated=1->33 rounds=13 drafted=39 accepted=18 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=3778.3 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=32.3ms (5.7%) verify-issue=521.1ms (92.6%) verify-wait=6.5ms (1.2%) commit-host=2.7ms (0.5%) rounds=15
+[spec-acc] ctx=261 burst=18/45 cum=36/84=0.429
+[tick-spec] seq=1 slot=0 trace=r3-sync-q2 start_ms=0.000 gap_ms=0.000 wall_ms=562.845 generated=33->66 rounds=15 drafted=45 accepted=18 k=3
+[spec-phase] draft=32.3ms (5.7%) verify-issue=520.9ms (92.7%) verify-wait=6.2ms (1.1%) commit-host=2.8ms (0.5%) rounds=15
+[spec-acc] ctx=261 burst=18/45 cum=36/84=0.429
+[tick-spec] seq=2 slot=1 trace=r3-sync-q0 start_ms=562.855 gap_ms=0.010 wall_ms=562.216 generated=33->66 rounds=15 drafted=45 accepted=18 k=3
+[spec-phase] draft=34.6ms (5.7%) verify-issue=557.8ms (92.8%) verify-wait=5.6ms (0.9%) commit-host=3.3ms (0.5%) rounds=16
+[spec-acc] ctx=260 burst=18/48 cum=36/87=0.414
+[tick-spec] seq=3 slot=2 trace=r3-sync-q3 start_ms=1125.083 gap_ms=0.011 wall_ms=601.428 generated=32->66 rounds=16 drafted=48 accepted=18 k=3
+[spec-phase] draft=34.6ms (5.7%) verify-issue=559.9ms (92.8%) verify-wait=5.2ms (0.9%) commit-host=3.4ms (0.6%) rounds=16
+[spec-acc] ctx=260 burst=18/48 cum=36/87=0.414
+[tick-spec] seq=4 slot=3 trace=r3-sync-q1 start_ms=1726.523 gap_ms=0.012 wall_ms=603.249 generated=32->66 rounds=16 drafted=48 accepted=18 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2329.8 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[spec-phase] draft=36.8ms (5.7%) verify-issue=593.6ms (92.8%) verify-wait=5.5ms (0.9%) commit-host=3.8ms (0.6%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/135=0.378
+[tick-spec] seq=1 slot=0 trace=r3-sync-q2 start_ms=0.000 gap_ms=0.000 wall_ms=639.858 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[spec-phase] draft=36.7ms (5.7%) verify-issue=593.1ms (92.8%) verify-wait=5.5ms (0.9%) commit-host=3.7ms (0.6%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/135=0.378
+[tick-spec] seq=2 slot=1 trace=r3-sync-q0 start_ms=639.871 gap_ms=0.012 wall_ms=639.268 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[spec-phase] draft=36.7ms (5.7%) verify-issue=594.0ms (92.8%) verify-wait=5.5ms (0.9%) commit-host=3.7ms (0.6%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/138=0.370
+[tick-spec] seq=3 slot=2 trace=r3-sync-q3 start_ms=1279.152 gap_ms=0.013 wall_ms=640.105 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[spec-phase] draft=36.8ms (5.7%) verify-issue=593.6ms (92.8%) verify-wait=5.5ms (0.9%) commit-host=3.7ms (0.6%) rounds=17
+[spec-acc] ctx=294 burst=15/51 cum=51/138=0.370
+[tick-spec] seq=4 slot=3 trace=r3-sync-q1 start_ms=1919.272 gap_ms=0.015 wall_ms=639.794 generated=66->98 rounds=17 drafted=51 accepted=15 k=3
+[tick] act=4 int=0 priming=0 ready=0 spec=4 demoted=0 spec_calls=4 spec_ms=2559.1 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

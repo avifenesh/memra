@@ -1,0 +1,26 @@
+# qwen4exp_real_gate	label=m11-ladder-raw	binary_sha256=acd01bd59269907617545d0731671bf9055805f8430fca700f02b0c4a34aa52c	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# defer-ab k=6 draft_head_rows=248320 pmin=0.3 adapt=Some(1): host vs deferred round readback, interleaved, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	chain_ms_per_round	verify_ms_per_round	guard_stops	zero_draft
+0	host	256	8.41	118.95	0.836	4.57	5.69	31.54	1	1
+0	defer	256	8.47	118.10	0.836	4.57	5.73	31.79	1	1
+0	defer-gsync	256	8.42	118.77	0.836	4.57	5.66	31.64	1	1
+1	host	256	8.45	118.36	0.836	4.57	5.69	31.74	1	1
+1	defer	256	8.41	118.91	0.836	4.57	5.73	31.53	1	1
+1	defer-gsync	256	8.41	118.86	0.836	4.57	5.66	31.61	1	1
+2	host	256	8.41	118.91	0.836	4.57	5.70	31.56	1	1
+2	defer	256	8.42	118.76	0.836	4.57	5.73	31.58	1	1
+2	defer-gsync	256	8.38	119.27	0.836	4.57	5.67	31.48	1	1
+3	host	256	8.40	119.09	0.836	4.57	5.69	31.51	1	1
+3	defer	256	8.40	119.01	0.836	4.57	5.73	31.50	1	1
+3	defer-gsync	256	8.39	119.18	0.836	4.57	5.67	31.51	1	1
+4	host	256	8.42	118.74	0.836	4.57	5.70	31.61	1	1
+4	defer	256	8.44	118.52	0.836	4.57	5.73	31.65	1	1
+4	defer-gsync	256	8.39	119.13	0.836	4.57	5.67	31.52	1	1
+# arm host	reps=5	median_ms=8.410	spread_abs_ms=0.052	spread_rel=0.6170%	mean_ms=8.417	tok_per_s=118.91
+# arm defer	reps=5	median_ms=8.420	spread_abs_ms=0.065	spread_rel=0.7669%	mean_ms=8.428	tok_per_s=118.76
+# arm defer-gsync	reps=5	median_ms=8.394	spread_abs_ms=0.035	spread_rel=0.4145%	mean_ms=8.400	tok_per_s=119.13
+# escalation	pair=host-vs-defer	rule=a+b	reps 3->5	spread_rel_host=0.5020%	spread_rel_arm=0.6842%	verdict_ms=0.010	pooled_spread_ms=0.050
+# escalation	pair=host-vs-defer-gsync	rule=a+b	reps 3->5	spread_rel_host=0.5020%	spread_rel_arm=0.4136%	verdict_ms=0.003	pooled_spread_ms=0.039
+# speedup_defer_over_host	0.9988	(decision medians)
+# identity	PASS

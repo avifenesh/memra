@@ -1,0 +1,45 @@
+lock_acquired=2026-08-10T01:25:49Z
+<private-host-redacted>
+Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 97887 MiB, 0 MiB, 97252 MiB, 26, P8
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 97887 MiB, 0 MiB, 97252 MiB, 26, P8
+   1222       1 S Thu Aug  6 11:50:50 2026 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
+   1292       1 S Thu Aug  6 11:50:50 2026 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/root       387G  263G  124G  69% /
+/dev/root       387G  263G  124G  69% /
+drwxrwxr-x 12 ubuntu ubuntu 4096 Aug  7 02:51 /home/ubuntu/memra
+drwxrwxr-x 11 ubuntu ubuntu 4096 Aug  7 12:46 /home/ubuntu/darktrain-memra
+drwxrwxr-x 12 ubuntu ubuntu 4096 Aug  8 03:18 /home/ubuntu/stepbatch-memra
+drwxrwxr-x 7 ubuntu ubuntu 4096 Aug  8 03:34 /home/ubuntu/step37
+/home/ubuntu/primebatch/target/release/memra-server 51399232 bytes 2026-08-08T11:50:41.1167337090
+/home/ubuntu/ppserve-memra/target/release/memra-server 51002464 bytes 2026-08-07T17:20:06.8097306080
+/home/ubuntu/cx-throughput-2d9359df/target/release/memra-server 51651496 bytes 2026-08-09T22:05:55.3249778080
+/home/ubuntu/memra-cx-concprefill/target/release/memra-server 51603896 bytes 2026-08-08T17:08:02.9838734510
+/home/ubuntu/darktrain-memra/target/release/memra-server 50295696 bytes 2026-08-07T12:47:21.8096410560
+/home/ubuntu/memra-pp2pipe/target/release/memra-server 51615136 bytes 2026-08-09T11:42:39.1887604510
+/home/ubuntu/leverb-memra/target/release/memra-server 51136624 bytes 2026-08-08T02:52:51.9394076350
+/home/ubuntu/tokparity-memra/target/release/memra-server 50502112 bytes 2026-08-07T09:35:38.6844167860
+/home/ubuntu/memra-prefixdedup/target/release/memra-server 51437792 bytes 2026-08-08T14:15:20.5129982110
+/home/ubuntu/memra-cx-cachespec/target/release/memra-server 51606256 bytes 2026-08-08T21:50:27.8872856430
+/home/ubuntu/memra/target/release/memra-server 50500280 bytes 2026-08-07T21:09:27.0682663000
+/home/ubuntu/memra-cx-longdepth/target/release/memra-server 51606144 bytes 2026-08-09T00:06:09.8845930800
+/home/ubuntu/archkit/target/release/memra-server 51333696 bytes 2026-08-08T04:09:48.5887640960
+/home/ubuntu/memra-cx-grouped/target/release/memra-server 51651328 bytes 2026-08-09T22:21:09.3059325720
+/home/ubuntu/stepbatch-memra/target/release/memra-server 51333696 bytes 2026-08-08T04:09:48.5887640960
+/home/ubuntu/step37/models/step-3.7-flash/.cache/huggingface/.gitignore 1 bytes
+/home/ubuntu/step37/models/step-3.7-flash/.cache/huggingface/CACHEDIR.TAG 191 bytes
+/home/ubuntu/step37/models/step-3.7-flash/.gitattributes 4159 bytes
+/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf 46483327296 bytes
+/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf 46999941600 bytes
+/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf 11510293728 bytes
+/home/ubuntu/step37/models/step-3.7-flash/README.md 15062 bytes
+/home/ubuntu/step37/models/step-3.7-flash/Step-3.7.imatrix.gguf 465998112 bytes
+/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-BF16.gguf 6973549696 bytes
+/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf 3707276416 bytes
+/usr/bin/python3
+3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+NameError: name 'torch' is not defined
+lock_released=2026-08-10T01:25:49Z

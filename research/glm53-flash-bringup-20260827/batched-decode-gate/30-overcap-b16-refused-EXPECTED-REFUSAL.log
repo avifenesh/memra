@@ -1,0 +1,13 @@
+=== 30-overcap: B=16 must STOP on the engine NAMED refusal (clean committed tree) ===
+?? research/glm53-flash-bringup-20260827/batched-decode-gate/17-b12.log
+?? research/glm53-flash-bringup-20260827/batched-decode-gate/18-b15-cap.log
+?? research/glm53-flash-bringup-20260827/batched-decode-gate/19-b15-ppn2.log
+?? research/glm53-flash-bringup-20260827/batched-decode-gate/30-overcap-b16-refused-EXPECTED-REFUSAL.log
+=== RUN: glm5-hyper-batch-gate 16 5 8 1 ===
+glm5-hyper-batch-gate config: B=16 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 16 concurrent sessions, 8 ticks
+Error: "decode_step_batch_hyper: B=16 > cap 15 — at t >= PRIME_MIN_T (16) the MoE shared-expert trio crosses from matmul_decode_exact onto the prefill matmul class (cuBLASLt n-dependent / m>16 MMQ-GEMM), so per-row bit-identity vs isolated decode breaks at exactly B=16 (gate knee probe 31-KNEE-b16-forced). Every other term is width-safe; widening needs a decode-exact shexp arm for t>=16 (named follow-up — the shared !prefill branch also carries step35 MoESD bytes and must not be flipped). Chunk wider concurrency into <=15 groups"
+exit=1

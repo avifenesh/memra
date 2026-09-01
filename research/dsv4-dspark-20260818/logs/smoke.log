@@ -1,0 +1,7 @@
+/home/ubuntu/dsv4-oracle0731/dsv4_cpu_ref_fixtures_0731.py:195: RuntimeWarning: overflow encountered in exp2
+  v = np.exp2(b.astype(np.float32) - 127.0)
+dequant equivalence gate: torch fast path bit-identical to the numpy oracle on layers.3.ffn.experts.0.w1 [2048, 4096]
+[ref] blocks loaded t=40.0s
+[ref] prefill(32) + ring prime done t=203.5s
+REF pass done: teacher-forced argmax == banked at ALL positions t=235.1s
+BANKED /home/ubuntu/dsv4-dspark/fixtures-smoke/dsv4_dspark_fixtures_ref.npz (13 arrays) | accept mean 3.3333 over 3 positions | total 235.1s

@@ -1,0 +1,36 @@
+{
+ "name": "p12-agent-c",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 6467,
+   "completion_tokens": 128,
+   "total_tokens": 6595,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 103.741651019,
+   "spec": {
+    "rounds": 56,
+    "drafted": 280,
+    "accepted": 71,
+    "acceptance_rate": 0.25357142857142856
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "The user wants a short summary paragraph of the state of the work shown above. Let me parse what's in the materials:\n\n1. A file listing of the wiki \u2014 many research files, concept files, etc.\n2. The `muon-optimizer.md` concept file \u2014 interestingly, the file as read has `sources: []` and tags `[optimizer, training, second-order, llm-pretraining, newton-schulz]`, but the grep output shows the file now has tags `[optimizer, training, second-order, llm-pretraining, il]` \u2014 wait, actually the grep output shows `wiki"
+    }
+   }
+  ]
+ }
+}

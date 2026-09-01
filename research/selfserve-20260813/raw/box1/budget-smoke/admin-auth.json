@@ -1,0 +1,24 @@
+{
+  "missing": {
+    "body": {
+      "error": {
+        "code": "admin_auth_required",
+        "message": "admin bearer token is required",
+        "param": null,
+        "type": "admin_error"
+      }
+    },
+    "status": 401
+  },
+  "wrong": {
+    "body": {
+      "error": {
+        "code": "admin_auth_forbidden",
+        "message": "admin bearer token is invalid",
+        "param": null,
+        "type": "admin_error"
+      }
+    },
+    "status": 403
+  }
+}

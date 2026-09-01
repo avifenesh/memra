@@ -1,0 +1,35 @@
+=== components-ref-run1 (22:46:26) ===
+exit=1 sha=f4b81360d3fc892c1035248a852c194f6891b0e7463f33dae5e8cbc9098e48f1
+
+COMPONENTS GATE [ref arm] [FAIL]: arrays 33 PASS / 12 FAIL | trunk flips in-band 0 (budget 8) | draft-id flips in-band 9 (budget 5) | accept rows exact 150/159 | confidence worst 1.129e0 (thr 2.959e0) | determinism sha256 f4b81360d3fc892c1035248a852c194f6891b0e7463f33dae5e8cbc9098e48f1
+elapsed 1914s
+=== components-ref-run2 (23:18:23) ===
+exit=1 sha=f4b81360d3fc892c1035248a852c194f6891b0e7463f33dae5e8cbc9098e48f1
+
+COMPONENTS GATE [ref arm] [FAIL]: arrays 33 PASS / 12 FAIL | trunk flips in-band 0 (budget 8) | draft-id flips in-band 9 (budget 5) | accept rows exact 150/159 | confidence worst 1.129e0 (thr 2.959e0) | determinism sha256 f4b81360d3fc892c1035248a852c194f6891b0e7463f33dae5e8cbc9098e48f1
+elapsed 1924s
+=== components-clamp-run1 (23:50:30) ===
+exit=0 sha=9087767501295269ded4fe64d26c9bc9bbdf70e713bcfac66350362c0739219f
+
+COMPONENTS GATE [clamp-only arm] [PASS]: arrays 45 PASS / 0 FAIL | trunk flips in-band 0 (budget 8) | draft-id flips in-band 0 (budget 5) | accept rows exact 159/159 | confidence worst 1.526e-5 (thr 1.950e-2) | determinism sha256 9087767501295269ded4fe64d26c9bc9bbdf70e713bcfac66350362c0739219f
+elapsed 1941s
+=== components-clamp-run2 (00:22:54) ===
+exit=0 sha=9087767501295269ded4fe64d26c9bc9bbdf70e713bcfac66350362c0739219f
+
+COMPONENTS GATE [clamp-only arm] [PASS]: arrays 45 PASS / 0 FAIL | trunk flips in-band 0 (budget 8) | draft-id flips in-band 0 (budget 5) | accept rows exact 159/159 | confidence worst 1.526e-5 (thr 1.950e-2) | determinism sha256 9087767501295269ded4fe64d26c9bc9bbdf70e713bcfac66350362c0739219f
+elapsed 1949s
+=== greedy-run1 (00:55:26) ===
+exit=0 sha=bc4a2737b20928a043857b564c43efdbdc6b811e9019a0fb8e923d80f72c3352
+
+SPEC==PLAIN IDENTITY GATE [PASS]: 160/160 tokens == banked REF trajectory | LITERAL IDENTITY, zero corrections | rounds 37 | accepted drafts 143 (mean 3.865/round, 4.324 tokens/round incl. bonus) | cross-check vs torch profile 33 exact + 3 in-band flip rounds / 0 FAIL | determinism sha256 bc4a2737b20928a043857b564c43efdbdc6b811e9019a0fb8e923d80f72c3352
+elapsed 1735s
+=== greedy-run2 (01:24:23) ===
+exit=0 sha=bc4a2737b20928a043857b564c43efdbdc6b811e9019a0fb8e923d80f72c3352
+
+SPEC==PLAIN IDENTITY GATE [PASS]: 160/160 tokens == banked REF trajectory | LITERAL IDENTITY, zero corrections | rounds 37 | accepted drafts 143 (mean 3.865/round, 4.324 tokens/round incl. bonus) | cross-check vs torch profile 33 exact + 3 in-band flip rounds / 0 FAIL | determinism sha256 bc4a2737b20928a043857b564c43efdbdc6b811e9019a0fb8e923d80f72c3352
+elapsed 1713s
+=== determinism ===
+components-ref: BYTE-IDENTICAL (f4b81360d3fc892c1035248a852c194f6891b0e7463f33dae5e8cbc9098e48f1)
+components-clamp: BYTE-IDENTICAL (9087767501295269ded4fe64d26c9bc9bbdf70e713bcfac66350362c0739219f)
+greedy: BYTE-IDENTICAL (bc4a2737b20928a043857b564c43efdbdc6b811e9019a0fb8e923d80f72c3352)
+ALL DONE

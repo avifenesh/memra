@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=nvfp4	binary_sha256=078d0dfc511de07b1be8a304877c080daf2624ab981b7a9331dd16feaf5ad153	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ab-tp2: fresh state + probe prefill per arm, 4 warmup steps excluded per arm
+rep	arm	steps	mean_ms	median_ms	tok_per_s
+0	single_card	40	15.57	15.59	64.21
+0	tp2	40	15.28	15.28	65.45
+1	single_card	40	15.56	15.58	64.27
+1	tp2	40	15.26	15.27	65.54
+2	single_card	40	15.55	15.58	64.30
+2	tp2	40	15.27	15.27	65.49
+3	single_card	40	15.54	15.56	64.33
+3	tp2	40	15.29	15.32	65.41
+4	single_card	40	15.54	15.56	64.33
+4	tp2	40	15.29	15.31	65.42
+# arm single_card	mean_of_means_ms=15.55	min=15.54	max=15.57	tok_per_s=64.29
+# arm tp2	mean_of_means_ms=15.28	min=15.26	max=15.29	tok_per_s=65.46
+# rep0_arm_chain_first_divergence	-1
+# rep0_single_card	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310
+# rep0_tp2	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310

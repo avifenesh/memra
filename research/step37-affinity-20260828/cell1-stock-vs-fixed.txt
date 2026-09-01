@@ -1,0 +1,106 @@
+tree=2dc5ea776 date=2026-08-28T15:08:29+00:00
+
+=== ARM stock bin=/root/memra-server.stock md5=004211b6b480 start=2026-08-28T15:08:29+00:00
+    BINARY FINGERPRINT (strings, never cargo's Finished line):
+      kind-mismatch=2
+      restore-refused=0
+      drop-receipt=0
+    booted=YES health=200
+    --- LEG 1: growing multi-turn, cold twin per turn (interleaved) ---
+    warm      turn1 ttft=2.087 total=3.724 chars=552 sha=9bb78d87cec7eefe rewound=False refused=False dropped=False
+    cold      turn2 ttft=1.723 total=3.317 chars=537 sha=b9cdcca0a709abb1 rewound=False refused=False dropped=False
+    warm      turn2 ttft=1.697 total=3.290 chars=587 sha=870da1f67d0bafde rewound=False refused=True dropped=False
+    cold      turn3 ttft=1.806 total=3.404 chars=636 sha=ff794bbcc7c690ad rewound=False refused=False dropped=False
+    warm      turn3 ttft=1.764 total=3.362 chars=579 sha=63790069cd5cad5f rewound=False refused=True dropped=False
+    cold      turn4 ttft=1.867 total=3.520 chars=626 sha=6924d4169a2de61e rewound=False refused=False dropped=False
+    warm      turn4 ttft=2.035 total=3.680 chars=637 sha=98af2067de37cb1e rewound=False refused=True dropped=False
+    cold      turn5 ttft=2.169 total=3.817 chars=564 sha=c84df350c9f0e210 rewound=False refused=False dropped=False
+    warm      turn5 ttft=2.169 total=3.817 chars=637 sha=98af2067de37cb1e rewound=False refused=True dropped=False
+    cold      turn6 ttft=2.272 total=3.918 chars=636 sha=ff794bbcc7c690ad rewound=False refused=False dropped=False
+    warm      turn6 ttft=2.236 total=3.877 chars=637 sha=98af2067de37cb1e rewound=False refused=True dropped=False
+    --- LEG 2: byte identity, one fixed prompt sent twice on one session ---
+    id-cold   turn3 ttft=1.802 total=3.398 chars=636 sha=ff794bbcc7c690ad rewound=False refused=False dropped=False
+    id-warm   turn3 ttft=1.800 total=3.397 chars=636 sha=ff794bbcc7c690ad rewound=False refused=True dropped=False
+    delta keys observed on the wire: ['reasoning', 'role']
+    valid_rows=13/13  (empty completions rejected in the instrument; sha256('')=e3b0c44298fc1c14)
+    --- PAIRWISE TTFT (cold twin vs warm same turn) ---
+      turn2 cold=1.723 warm=1.697 delta=+0.026s ratio=1.02x warm_rewound=False
+      turn3 cold=1.806 warm=1.764 delta=+0.042s ratio=1.02x warm_rewound=False
+      turn4 cold=1.867 warm=2.035 delta=-0.168s ratio=0.92x warm_rewound=False
+      turn5 cold=2.169 warm=2.169 delta=-0.000s ratio=1.00x warm_rewound=False
+      turn6 cold=2.272 warm=2.236 delta=+0.035s ratio=1.02x warm_rewound=False
+    pairwise TTFT win seconds: n=5 median=0.026 min=-0.168 max=0.042 spread=0.210
+    pairwise TTFT ratio      : n=5 median=1.015 min=0.917 max=1.024 spread=0.107
+    warm turns rewound: 0 of 5
+    --- LEG 2 IDENTITY: cold sha=ff794bbcc7c690ad chars=636 | reused sha=ff794bbcc7c690ad chars=636 rewound=False -> MATCH
+    CROSSARM {"warm-turn1": ["9bb78d87cec7eefe", 552, false], "cold-turn2": ["b9cdcca0a709abb1", 537, false], "warm-turn2": ["870da1f67d0bafde", 587, false], "cold-turn3": ["ff794bbcc7c690ad", 636, false], "warm-turn3": ["63790069cd5cad5f", 579, false], "cold-turn4": ["6924d4169a2de61e", 626, false], "warm-turn4": ["98af2067de37cb1e", 637, false], "cold-turn5": ["c84df350c9f0e210", 564, false], "warm-turn5": ["98af2067de37cb1e", 637, false], "cold-turn6": ["ff794bbcc7c690ad", 636, false], "warm-turn6": ["98af2067de37cb1e", 637, false], "id-cold-turn3": ["ff794bbcc7c690ad", 636, false], "id-warm-turn3": ["ff794bbcc7c690ad", 636, false]}
+    LOG TOTALS:
+      plain-affinity rewound = 0
+      plain-affinity resume failed = 6
+      spec affinity rewind failed  = 0
+      TP KV kind mismatch          = 6
+      TP KV restore refused        = 0
+      stale mirror drop receipts   = 0
+    OPERAND / RECEIPT LINES:
+plain-affinity resume failed (checkpoint TP KV kind mismatch at layer 0 (grow path): snapshot                          has NO distributed length (snap.kv_len=Some(1440), snap.pos=1440) while                          source_has_tp=true target_has_tp=false); dropping session, full prime
+plain-affinity resume failed (checkpoint TP KV kind mismatch at layer 0 (grow path): snapshot                          has NO distributed length (snap.kv_len=Some(1664), snap.pos=1664) while                          source_has_tp=true target_has_tp=false); dropping session, full prime
+plain-affinity resume failed (checkpoint TP KV kind mismatch at layer 0 (grow path): snapshot                          has NO distributed length (snap.kv_len=Some(1888), snap.pos=1888) while                          source_has_tp=true target_has_tp=false); dropping session, full prime
+checkpoint TP KV kind mismatch at layer 0 (grow path): snapshot                          has NO distributed length (snap.kv_len=Some(1440), snap.pos=1440) while                          source_has_tp=true target_has_tp=false); dropping session, full prime
+checkpoint TP KV kind mismatch at layer 0 (grow path): snapshot                          has NO distributed length (snap.kv_len=Some(1664), snap.pos=1664) while                          source_has_tp=true target_has_tp=false); dropping session, full prime
+
+=== ARM fixed bin=/root/memra-server.fixed md5=360ff09e2273 start=2026-08-28T15:12:27+00:00
+    BINARY FINGERPRINT (strings, never cargo's Finished line):
+      kind-mismatch=0
+      restore-refused=1
+      drop-receipt=1
+    booted=YES health=200
+    --- LEG 1: growing multi-turn, cold twin per turn (interleaved) ---
+    warm      turn1 ttft=2.831 total=4.482 chars=552 sha=9bb78d87cec7eefe rewound=False refused=False dropped=False
+    cold      turn2 ttft=1.755 total=3.367 chars=573 sha=90326faf0d7b585e rewound=False refused=False dropped=False
+    warm      turn2 ttft=1.966 total=3.572 chars=498 sha=55a9844924756dc0 rewound=True refused=False dropped=False
+        receipt: [worker] plain-affinity: rewound to 1440 of 1694 prompt tokens (priming 254 suffix; model step37)
+    cold      turn3 ttft=1.811 total=3.421 chars=636 sha=ff794bbcc7c690ad rewound=False refused=False dropped=False
+    warm      turn3 ttft=1.866 total=3.479 chars=377 sha=6fb50ce6363459f3 rewound=True refused=False dropped=False
+        receipt: [worker] plain-affinity: rewound to 1664 of 1908 prompt tokens (priming 244 suffix; model step37)
+    cold      turn4 ttft=1.861 total=3.514 chars=637 sha=98af2067de37cb1e rewound=False refused=False dropped=False
+    warm      turn4 ttft=1.838 total=3.496 chars=589 sha=a8b12bb031eb240b rewound=True refused=False dropped=False
+        receipt: [worker] plain-affinity: rewound to 1888 of 2122 prompt tokens (priming 234 suffix; model step37)
+    cold      turn5 ttft=2.367 total=4.027 chars=637 sha=98af2067de37cb1e rewound=False refused=False dropped=False
+    warm      turn5 ttft=1.955 total=3.614 chars=609 sha=336cf9ef5077d8ab rewound=True refused=False dropped=False
+        receipt: [worker] plain-affinity: rewound to 2080 of 2336 prompt tokens (priming 256 suffix; model step37)
+    cold      turn6 ttft=2.289 total=3.421 chars=312 sha=5991f47df440bc23 rewound=False refused=False dropped=False
+    warm      turn6 ttft=1.879 total=3.536 chars=610 sha=490751e28c743c8e rewound=True refused=False dropped=False
+        receipt: [worker] plain-affinity: rewound to 2304 of 2550 prompt tokens (priming 246 suffix; model step37)
+    --- LEG 2: byte identity, one fixed prompt sent twice on one session ---
+    id-cold   turn3 ttft=1.806 total=3.415 chars=550 sha=b9b647a562756964 rewound=False refused=False dropped=False
+    id-warm   turn3 ttft=0.314 total=1.922 chars=550 sha=b9b647a562756964 rewound=True refused=False dropped=False
+        receipt: [worker] plain-affinity: rewound to 1888 of 1912 prompt tokens (priming 24 suffix; model step37)
+    delta keys observed on the wire: ['reasoning', 'role']
+    valid_rows=13/13  (empty completions rejected in the instrument; sha256('')=e3b0c44298fc1c14)
+    --- PAIRWISE TTFT (cold twin vs warm same turn) ---
+      turn2 cold=1.755 warm=1.966 delta=-0.211s ratio=0.89x warm_rewound=True
+      turn3 cold=1.811 warm=1.866 delta=-0.054s ratio=0.97x warm_rewound=True
+      turn4 cold=1.861 warm=1.838 delta=+0.022s ratio=1.01x warm_rewound=True
+      turn5 cold=2.367 warm=1.955 delta=+0.412s ratio=1.21x warm_rewound=True
+      turn6 cold=2.289 warm=1.879 delta=+0.410s ratio=1.22x warm_rewound=True
+    pairwise TTFT win seconds: n=5 median=0.022 min=-0.211 max=0.412 spread=0.623
+    pairwise TTFT ratio      : n=5 median=1.012 min=0.893 max=1.218 spread=0.325
+    warm turns rewound: 5 of 5
+    --- LEG 2 IDENTITY: cold sha=b9b647a562756964 chars=550 | reused sha=b9b647a562756964 chars=550 rewound=True -> MATCH
+    CROSSARM {"warm-turn1": ["9bb78d87cec7eefe", 552, false], "cold-turn2": ["90326faf0d7b585e", 573, false], "warm-turn2": ["55a9844924756dc0", 498, true], "cold-turn3": ["ff794bbcc7c690ad", 636, false], "warm-turn3": ["6fb50ce6363459f3", 377, true], "cold-turn4": ["98af2067de37cb1e", 637, false], "warm-turn4": ["a8b12bb031eb240b", 589, true], "cold-turn5": ["98af2067de37cb1e", 637, false], "warm-turn5": ["336cf9ef5077d8ab", 609, true], "cold-turn6": ["5991f47df440bc23", 312, false], "warm-turn6": ["490751e28c743c8e", 610, true], "id-cold-turn3": ["b9b647a562756964", 550, false], "id-warm-turn3": ["b9b647a562756964", 550, true]}
+    LOG TOTALS:
+      plain-affinity rewound = 6
+      plain-affinity resume failed = 0
+      spec affinity rewind failed  = 0
+      TP KV kind mismatch          = 0
+      TP KV restore refused        = 0
+      stale mirror drop receipts   = 0
+    OPERAND / RECEIPT LINES:
+plain-affinity: rewound to 1440 of 1694 prompt tokens (priming 254 suffix; model step37)
+plain-affinity: rewound to 1664 of 1908 prompt tokens (priming 244 suffix; model step37)
+plain-affinity: rewound to 1888 of 2122 prompt tokens (priming 234 suffix; model step37)
+plain-affinity: rewound to 2080 of 2336 prompt tokens (priming 256 suffix; model step37)
+plain-affinity: rewound to 2304 of 2550 prompt tokens (priming 246 suffix; model step37)
+plain-affinity: rewound to 1888 of 1912 prompt tokens (priming 24 suffix; model step37)
+
+AFF-BATTERY-DONE 2026-08-28T15:16:33+00:00

@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=dt4-ladder-thinkon	binary_sha256=2f64b2cdae19edf32c146f045262c057cb28ec3d876740320fc99be334fa8491	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# router-ab seam=devtwin k=1 pmin=0.3 adapt=Some(1): host twin vs device seam, interleaved, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	chain_ms_per_round	verify_ms_per_round	guard_stops	zero_draft	first_div_vs_host
+0	devtwin_off	256	13.49	74.15	0.727	1.61	0.94	19.84	27	27	-1
+0	devtwin_on	256	11.91	84.00	0.727	1.61	1.21	17.48	27	27	-1
+1	devtwin_off	256	13.44	74.42	0.727	1.61	0.94	19.78	27	27	-1
+1	devtwin_on	256	11.76	85.05	0.727	1.61	1.21	17.24	27	27	-1
+2	devtwin_off	256	13.36	74.86	0.727	1.61	0.94	19.65	27	27	-1
+2	devtwin_on	256	11.74	85.19	0.727	1.61	1.21	17.21	27	27	-1
+3	devtwin_off	256	13.30	75.21	0.727	1.61	0.94	19.55	27	27	-1
+3	devtwin_on	256	11.52	86.84	0.727	1.61	1.21	16.85	27	27	-1
+4	devtwin_off	256	13.21	75.72	0.727	1.61	0.94	19.40	27	27	-1
+4	devtwin_on	256	11.50	86.94	0.727	1.61	1.21	16.83	27	27	-1
+# arm devtwin_off	reps=5	median_ms=13.358	spread_abs_ms=0.279	spread_rel=2.0898%	mean_ms=13.357	tok_per_s=74.86
+# arm devtwin_on	reps=5	median_ms=11.738	spread_abs_ms=0.402	spread_rel=3.4286%	mean_ms=11.684	tok_per_s=85.19
+# escalation	pair=host-vs-dev	rule=a	reps 3->5	spread_rel_host=0.9516%	spread_rel_arm=1.4201%	verdict_ms=1.679	pooled_spread_ms=0.147
+# speedup_dev_over_host	1.1380	(decision medians)
+# earliest_chain_divergence	-1

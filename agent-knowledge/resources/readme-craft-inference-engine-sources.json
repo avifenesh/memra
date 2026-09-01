@@ -1,0 +1,1107 @@
+{
+  "topic": "Writing the README for an open-source inference engine entering a market with entrenched competitors",
+  "slug": "readme-craft-inference-engine",
+  "generated": "2026-08-17T00:00:00Z",
+  "depth": "deep",
+  "minSources": 40,
+  "totalSources": 47,
+  "totalFetches": 56,
+  "supersedes": "readme-technical-inference-repos",
+  "targetRepo": "github.com/avifenesh/memra",
+  "notes": [
+    "WebSearch was unavailable in this run; DuckDuckGo/Mojeek returned bot-challenges or 403. Discovery was done through API surfaces that are not blocked: the arXiv Atom API (search + id_list), the Hacker News Algolia API, and the GitHub contents API, plus direct fetches of known-authoritative URLs.",
+    "Every competitor README was fetched from raw.githubusercontent.com on 2026-08-17 and its structure recorded from the live file, not from memory. Two sources returned 403 (acm.org artifact badging, mojeek) and one returned a certificate error (catb.org); none is load-bearing for any claim in the guide.",
+    "Semantic Scholar API rate-limited (429) on both attempts; the Steinmacher newcomer-barrier line of work is therefore cited only through arXiv:2101.08903, and the guide does not claim a quantitative documentation-abandonment rate because none was verified."
+  ],
+  "sourceBreakdown": {
+    "peerReviewedOrPreprint": 18,
+    "standardsBodies": 3,
+    "officialDocs": 4,
+    "practitionerPrimary": 6,
+    "competitorAndPeerReadmes": 20,
+    "aggregateSearchSweeps": 6
+  },
+  "sources": [
+    {
+      "url": "https://www.nngroup.com/articles/how-long-do-users-stay-on-web-pages/",
+      "title": "How Long Do Users Stay on Web Pages? (NN/g, summarizing Liu, White & Dumais, SIGIR '10)",
+      "type": "hciResearch",
+      "qualityScore": 94,
+      "authority": 10,
+      "recency": 6,
+      "depth": 9,
+      "examples": 6,
+      "uniqueness": 10,
+      "keyInsights": [
+        "205,873 pages, each with >=10,000 visits, >2 billion dwell times; dwell time follows a Weibull distribution",
+        "'Users often leave Web pages in 10-20 seconds'; 'first 10 seconds of the page visit are critical'",
+        "Curve flattens only 'after people have stayed on a page for about 30 seconds'",
+        "'99% of web pages have a negative aging effect'",
+        "Prescription: 'communicate your value proposition within 10 seconds'"
+      ],
+      "usedFor": "Part 1 - the actual size of the first-impression budget"
+    },
+    {
+      "url": "https://www.nngroup.com/articles/f-shaped-pattern-reading-web-content-discovered/",
+      "title": "F-Shaped Pattern For Reading Web Content (NN/g, 232 users, replicated 2017)",
+      "type": "hciResearch",
+      "qualityScore": 88,
+      "authority": 9,
+      "recency": 5,
+      "depth": 8,
+      "examples": 7,
+      "uniqueness": 8,
+      "keyInsights": [
+        "'The first two paragraphs must state the most important information'",
+        "'Start subheads, paragraphs, and bullet points with information-carrying words'",
+        "'They'll read the third word on a line much less often than the first two words'"
+      ],
+      "usedFor": "Part 1 - front-loading; Part 7 sub-fold thesis anti-pattern"
+    },
+    {
+      "url": "https://research.google/pubs/the-role-of-visual-complexity-and-prototypicality-regarding-first-impression-of-websites-working-towards-understanding-aesthetic-judgments/",
+      "title": "Tuch et al., The role of visual complexity and prototypicality regarding first impression of websites (IJHCS 70(11), 2012)",
+      "type": "peerReviewed",
+      "qualityScore": 90,
+      "authority": 10,
+      "recency": 4,
+      "depth": 9,
+      "examples": 5,
+      "uniqueness": 10,
+      "keyInsights": [
+        "Exposures tested: 50/500/1000 ms (study 1) and 17/33/50 ms (study 2), 119 real website screenshots",
+        "Both factors shape aesthetic ratings 'within the first 50 ms of exposure', detectable 'even within 17ms'",
+        "Low visual complexity + high prototypicality judged 'as highly appealing'"
+      ],
+      "usedFor": "Part 1 - the first screen is judged before it is read; badge-count and density arguments"
+    },
+    {
+      "url": "https://arxiv.org/abs/2010.02472",
+      "title": "Fan et al., What Makes a Popular Academic AI Repository? (EMSE 2020)",
+      "type": "peerReviewed",
+      "qualityScore": 93,
+      "authority": 9,
+      "recency": 7,
+      "depth": 9,
+      "examples": 8,
+      "uniqueness": 10,
+      "keyInsights": [
+        "1,149 academic AI repos; top 20% by stars vs bottom 70%, middle 10% as buffer; 21 features",
+        "Groups 'statistically significantly different in 11 of the studied features'",
+        "Strongest discriminators: number of links to other GitHub repositories in the README, number of images in the README, inclusion of a license",
+        "Highly cited papers more likely to have popular repos"
+      ],
+      "usedFor": "Part 1.3 - the three measured discriminators; memra's missing figure (recommendation A4)"
+    },
+    {
+      "url": "https://arxiv.org/abs/2206.10772",
+      "title": "Venigalla & Chimalakonda, Correlation between Readme Content and Project Popularity (2022)",
+      "type": "peerReviewed",
+      "qualityScore": 84,
+      "authority": 8,
+      "recency": 8,
+      "depth": 7,
+      "examples": 6,
+      "uniqueness": 8,
+      "keyInsights": [
+        "1,950 READMEs across ten programming languages",
+        "Popular projects' READMEs 'well organised using lists and images, and comprise links to external sources'",
+        "'contribution guidelines and references were observed to be associated with higher popularity'"
+      ],
+      "usedFor": "Part 1.3"
+    },
+    {
+      "url": "https://arxiv.org/abs/1802.06997",
+      "title": "Prana et al., Categorizing the Content of GitHub README Files (2018)",
+      "type": "peerReviewed",
+      "qualityScore": 87,
+      "authority": 9,
+      "recency": 5,
+      "depth": 9,
+      "examples": 7,
+      "uniqueness": 9,
+      "keyInsights": [
+        "4,226 hand-annotated sections from 393 randomly sampled repos; classifier F1 0.746 over 8 categories",
+        "'What' and 'How' content dominates; purpose and status information is frequently missing"
+      ],
+      "usedFor": "Part 1.3 and Part 7.3 - status is the most commonly missing README category"
+    },
+    {
+      "url": "https://arxiv.org/abs/1811.07643",
+      "title": "Borges & Valente, What's in a GitHub Star? (JSS 2018)",
+      "type": "peerReviewed",
+      "qualityScore": 89,
+      "authority": 9,
+      "recency": 5,
+      "depth": 8,
+      "examples": 7,
+      "uniqueness": 9,
+      "keyInsights": [
+        "Survey of 791 developers plus the top-5,000 most-starred repos",
+        "'three out of four developers consider the number of stars before using or contributing to a GitHub project'",
+        "Explicitly warns about 'the risks faced when selecting projects by GitHub stars'"
+      ],
+      "usedFor": "Part 1.3 - stars gate adoption but are a poor quality proxy"
+    },
+    {
+      "url": "https://arxiv.org/abs/2312.03250",
+      "title": "Gao, Treude & Zahedi, Adapting Installation Instructions in Rapidly Evolving Software Ecosystems (2023/2025)",
+      "type": "peerReviewed",
+      "qualityScore": 86,
+      "authority": 8,
+      "recency": 9,
+      "depth": 8,
+      "examples": 7,
+      "uniqueness": 8,
+      "keyInsights": [
+        "1,163 README commits across 400 repos touching installation sections",
+        "Six change categories: pre-installation, installation, post-installation, help information updates, document presentation, external resource management",
+        "Template-augmented documents judged 'generally of better quality'"
+      ],
+      "usedFor": "Part 5.4 - install sections drift most, and the drift is in prerequisites and verification"
+    },
+    {
+      "url": "https://arxiv.org/abs/2007.10744",
+      "title": "Treude, Middleton & Atapattu, Beyond Accuracy: Assessing Software Documentation Quality (2020)",
+      "type": "peerReviewed",
+      "qualityScore": 78,
+      "authority": 8,
+      "recency": 7,
+      "depth": 7,
+      "examples": 5,
+      "uniqueness": 6,
+      "keyInsights": [
+        "Ten-dimension quality framework across structure, content, style",
+        "'reference documentation and README files excel in quality whereas blog articles have more problems'"
+      ],
+      "usedFor": "Part 0.3 background"
+    },
+    {
+      "url": "https://arxiv.org/abs/1807.03341",
+      "title": "Lipton & Steinhardt, Troubling Trends in Machine Learning Scholarship (ICML 2018)",
+      "type": "peerReviewed",
+      "qualityScore": 92,
+      "authority": 10,
+      "recency": 5,
+      "depth": 9,
+      "examples": 8,
+      "uniqueness": 10,
+      "keyInsights": [
+        "'failure to distinguish between explanation and speculation'",
+        "'failure to identify the sources of empirical gains' - e.g. crediting architecture changes for gains from hyper-parameter tuning",
+        "'mathiness: the use of mathematics that obfuscates or impresses rather than clarifies'",
+        "'misuse of language, e.g., by choosing terms of art with colloquial connotations'"
+      ],
+      "usedFor": "Part 2.3 - the 'exact' trap; Part 7.2 unattributed gain and eroded term of art"
+    },
+    {
+      "url": "https://arxiv.org/abs/1907.06902",
+      "title": "Dacrema, Cremonesi & Jannach, Are We Really Making Much Progress? (RecSys 2019)",
+      "type": "peerReviewed",
+      "qualityScore": 88,
+      "authority": 9,
+      "recency": 5,
+      "depth": 8,
+      "examples": 8,
+      "uniqueness": 9,
+      "keyInsights": [
+        "Of 18 conference algorithms, 'Only 7 of them could be reproduced with reasonable effort'",
+        "6 of the 7 'can often be outperformed with comparably simple heuristic methods'",
+        "The one survivor 'did not consistently outperform a well-tuned non-neural linear ranking method'"
+      ],
+      "usedFor": "Part 2.3 - why beating an untuned baseline is worthless, and why memra's naked-defaults-vs-swept-best handicap is credibility-positive"
+    },
+    {
+      "url": "https://arxiv.org/abs/2506.13681",
+      "title": "Schaeffer, Kazdan & Denisov-Blanch, Min-p, Max Exaggeration (2025)",
+      "type": "peerReviewed",
+      "qualityScore": 91,
+      "authority": 9,
+      "recency": 10,
+      "depth": 9,
+      "examples": 9,
+      "uniqueness": 10,
+      "keyInsights": [
+        "Human evals 'omitted data, conducted statistical tests incorrectly, and described qualitative feedback inaccurately'",
+        "'min-p does not surpass baselines when controlling for the number of hyperparameters'",
+        "Adoption claims '49k GitHub repositories, 1.1M GitHub stars' were 'unsubstantiated, leading to their removal'; the revised claim 'remains misleading'"
+      ],
+      "usedFor": "Part 2.3 and Part 4.5 - an unsubstantiated popularity claim retroactively poisons the technical claims"
+    },
+    {
+      "url": "https://arxiv.org/abs/2604.21284",
+      "title": "Spatial Metaphors for LLM Memory: A Critical Analysis of the MemPalace Architecture (2026)",
+      "type": "peerReviewed",
+      "qualityScore": 79,
+      "authority": 7,
+      "recency": 10,
+      "depth": 7,
+      "examples": 7,
+      "uniqueness": 9,
+      "keyInsights": [
+        "47,000+ stars in two weeks; replication attributes 96.6% Recall@5 to verbatim storage plus the default embedding model, not the advertised design",
+        "Names the pattern: 'marketing velocity exceeds scientific rigor'"
+      ],
+      "usedFor": "Part 4.5 case file"
+    },
+    {
+      "url": "https://arxiv.org/abs/2511.04453",
+      "title": "Launch-Day Diffusion: Tracking Hacker News Impact on GitHub Stars for AI Tools (2025)",
+      "type": "peerReviewed",
+      "qualityScore": 76,
+      "authority": 7,
+      "recency": 10,
+      "depth": 6,
+      "examples": 6,
+      "uniqueness": 8,
+      "keyInsights": [
+        "138 launches 2024-2025; mean +121 stars at 24h, +189 at 48h, +289 at one week",
+        "Posting time dominated; the 'Show HN' tag 'shows no statistical advantage after controlling for other factors'"
+      ],
+      "usedFor": "Part 1.3 - launch traffic is a spike; the README has to convert it"
+    },
+    {
+      "url": "https://arxiv.org/abs/2607.02453",
+      "title": "Adoption and Ecosystem Health: Longitudinal Analysis of Open-Source Multi-Agent Frameworks (2026)",
+      "type": "peerReviewed",
+      "qualityScore": 77,
+      "authority": 7,
+      "recency": 10,
+      "depth": 7,
+      "examples": 7,
+      "uniqueness": 8,
+      "keyInsights": [
+        "15 frameworks, 808,042 stars, 73,997 PRs, 987,330 profiles",
+        "AutoGPT: 111,967 stars in one month, <9 contributors per 1,000 stars; LangChain: 41",
+        "'headline popularity is unreliable'; retention falls steepest within 30 days, stabilises near 90"
+      ],
+      "usedFor": "Part 1.3 - stars are not conversion"
+    },
+    {
+      "url": "https://arxiv.org/abs/2101.08903",
+      "title": "Newcomer OSS-Candidates: Characterizing Contributions of Novice Developers to GitHub (2021/2022)",
+      "type": "peerReviewed",
+      "qualityScore": 72,
+      "authority": 7,
+      "recency": 7,
+      "depth": 6,
+      "examples": 5,
+      "uniqueness": 7,
+      "keyInsights": [
+        "171 novice developers; newcomers 'cite finding a way to start as the most challenging barrier to contribute'"
+      ],
+      "usedFor": "Part 5 - orientation friction; the only verified newcomer-barrier datapoint in this run"
+    },
+    {
+      "url": "https://arxiv.org/abs/2005.12574",
+      "title": "Larios-Vargas et al., Selecting third-party libraries: The practitioners' perspective (2020)",
+      "type": "peerReviewed",
+      "qualityScore": 80,
+      "authority": 8,
+      "recency": 7,
+      "depth": 8,
+      "examples": 6,
+      "uniqueness": 7,
+      "keyInsights": [
+        "16 interviews across 11 businesses + 115-developer survey; 26 technical, human and economic factors, 8 new to the literature",
+        "Selection is 'conducted in an ad-hoc manner, where dozens of factors play an influential role in the decision'"
+      ],
+      "usedFor": "Part 1 - selection is improvised, so the README's job is to make one factor decisive fast"
+    },
+    {
+      "url": "http://export.arxiv.org/api/query?search_query=all:%22README%22+AND+cat:cs.SE",
+      "title": "arXiv cs.SE README corpus sweep (50 hits; 30 retrieved)",
+      "type": "literatureSweep",
+      "qualityScore": 74,
+      "authority": 8,
+      "recency": 10,
+      "depth": 6,
+      "examples": 4,
+      "uniqueness": 7,
+      "keyInsights": [
+        "arXiv:1802.08391 - 43,900 npm packages: recurring themes are usage, install, license",
+        "arXiv:2502.18440 - minimal READMEs appear early; CONTRIBUTING only after contribution spikes",
+        "arXiv:2603.00331 (LintMe) and arXiv:2607.15780 (READU, 75% precision) - README defects are now machine-detectable, which is why a checkable checklist is the right artifact",
+        "arXiv:2607.21079 - AI-assisted repos have longer READMEs with more headers and code blocks, fewer external URLs"
+      ],
+      "usedFor": "Background; Part 7 drift; justification for Part 9's grep-able form"
+    },
+    {
+      "url": "https://gernot-heiser.org/benchmarking-crimes.html",
+      "title": "Gernot Heiser, Systems Benchmarking Crimes",
+      "type": "standardsEssay",
+      "qualityScore": 97,
+      "authority": 10,
+      "recency": 8,
+      "depth": 10,
+      "examples": 9,
+      "uniqueness": 10,
+      "keyInsights": [
+        "1.1 'Not evaluating potential performance degradation'; 1.2 'Benchmark sub-setting without strong justification'; 1.3 'Selective data set hiding deficiencies'",
+        "2.1 'Pretending micro-benchmarks represent overall performance'; 2.4 'No indication of significance of data'; 2.5 arithmetic mean for normalised scores",
+        "4.1 'No proper baseline'; 4.2 'Only evaluate against yourself'; 4.3 'Unfair benchmarking of competitors'; 4.4 'Inflating gains by not comparing against the state of the art'",
+        "5.1 'Missing specification of evaluation platform'; 5.2 'Missing sub-benchmark results'; 5.3 'Relative numbers only'",
+        "'Make your benchmarking rig part of your regression testing suite.'"
+      ],
+      "usedFor": "Part 4.1 and Part 7.2 - the spine of the numbers discipline"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/SIGPLAN/empirical-evaluation/master/checklist/checklist.yml",
+      "title": "SIGPLAN Empirical Evaluation Checklist (Berger, Blackburn, Hauswirth, Hicks; ACM SIGPLAN EC, Oct 2018)",
+      "type": "standardsBody",
+      "qualityScore": 95,
+      "authority": 10,
+      "recency": 7,
+      "depth": 9,
+      "examples": 8,
+      "uniqueness": 9,
+      "keyInsights": [
+        "7 categories, 22 items",
+        "Clearly Stated Claims: 'Claims not explicit', 'Claims not appropriately scoped', 'Fails to acknowledge limitations'",
+        "Suitable Comparison: 'Fails to compare against appropriate baseline', 'Comparison is unfair'",
+        "Adequate Data Analysis: 'Insufficient number of trials', 'Inappropriate summary statistics', 'No data distribution reported'",
+        "Appropriate Presentation of Results: 'Misleading summary of results', 'Inappropriately truncated axes', 'Ratios plotted incorrectly', 'Inappropriate level of precision'"
+      ],
+      "usedFor": "Part 4.1, Part 7.2; the model for a category-based checklist"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mlcommons/inference_policies/master/inference_rules.adoc",
+      "title": "MLPerf Inference Rules (MLCommons)",
+      "type": "standardsBody",
+      "qualityScore": 92,
+      "authority": 10,
+      "recency": 10,
+      "depth": 9,
+      "examples": 7,
+      "uniqueness": 9,
+      "keyInsights": [
+        "'Results that cannot be replicated are not valid results.'",
+        "'The same system and framework must be used for a suite result or set of benchmark results reported in a single context.'",
+        "'SUT parameters and configuration must be uniquely and specifically named in the submission results.'",
+        "'Truncating output tokens to boost performance or meet accuracy is not permitted.'",
+        "Sorting samples beyond dataset boundaries and hard-coding query counts are disallowed",
+        "System diagram and software/hardware versions required 'sufficient for reproducibility'"
+      ],
+      "usedFor": "Part 4.1 - reporting discipline; latency-bounded throughput as the serving metric"
+    },
+    {
+      "url": "https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1006561",
+      "title": "Lee, Ten simple rules for documenting scientific software (PLoS Comput Biol 14(12), 2018)",
+      "type": "peerReviewed",
+      "qualityScore": 85,
+      "authority": 9,
+      "recency": 5,
+      "depth": 8,
+      "examples": 8,
+      "uniqueness": 7,
+      "keyInsights": [
+        "Rule 3 'Include a quickstart guide' - without one, newcomers 'may abandon your tool'",
+        "Rule 4 'Include a README file with basic information' - treat it as the project homepage",
+        "Rule 9 'Write error messages that provide solutions or point to your documentation'"
+      ],
+      "usedFor": "Part 5.1, Part 7.3"
+    },
+    {
+      "url": "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes",
+      "title": "GitHub Docs - About READMEs",
+      "type": "officialDocs",
+      "qualityScore": 90,
+      "authority": 10,
+      "recency": 10,
+      "depth": 6,
+      "examples": 5,
+      "uniqueness": 7,
+      "keyInsights": [
+        "'A README is often the first item a visitor will see when visiting your repository.'",
+        "'any content beyond 500 KiB will be truncated' when rendered",
+        "Auto-generated table of contents via the 'Outline' menu icon",
+        "Relative links are rewritten branch-aware; 'we recommend using relative links to refer to other files within your repository'",
+        "Precedence: .github/, then root, then docs/"
+      ],
+      "usedFor": "Part 1.2 mechanics"
+    },
+    {
+      "url": "https://github.com/hackergrrl/art-of-readme",
+      "title": "Art of README (Kira)",
+      "type": "guide",
+      "qualityScore": 82,
+      "authority": 8,
+      "recency": 5,
+      "depth": 8,
+      "examples": 7,
+      "uniqueness": 8,
+      "keyInsights": [
+        "'The ideal README is as short as it can be without being any shorter.'",
+        "Cognitive funnelling: 'a funnel held upright, where the widest end contains the broadest more pertinent details'",
+        "Order sections by how fast they let someone 'short circuit' and bail",
+        "Badges are 'easy to abuse' and add visual noise",
+        "Inline anything essential, since the repo will outlive its host and external links"
+      ],
+      "usedFor": "Part 7.1 badge racecar; Part 6.3 two-tier split"
+    },
+    {
+      "url": "https://github.com/RichardLitt/standard-readme/blob/main/spec.md",
+      "title": "standard-readme specification",
+      "type": "spec",
+      "qualityScore": 80,
+      "authority": 8,
+      "recency": 7,
+      "depth": 8,
+      "examples": 6,
+      "uniqueness": 7,
+      "keyInsights": [
+        "'Must not contain broken links.'",
+        "Short Description 'Must be less than 120 characters', must be on its own line, must not start with '> '",
+        "Table of Contents required unless the file is under 100 lines",
+        "Required order: Title, Short Description, ToC, Install, Usage, Contributing, License (License last)"
+      ],
+      "usedFor": "Part 7.1 broken links; Part 9 item Z1"
+    },
+    {
+      "url": "https://www.makeareadme.com/",
+      "title": "Make a README",
+      "type": "guide",
+      "qualityScore": 74,
+      "authority": 7,
+      "recency": 9,
+      "depth": 6,
+      "examples": 7,
+      "uniqueness": 5,
+      "keyInsights": [
+        "'Use examples liberally, and show the expected output if you can.'",
+        "Description is 'a good place to list differentiating factors' versus alternatives",
+        "A stalled project should note status at the top so others may fork"
+      ],
+      "usedFor": "Part 5.1 expected output; Part 7.3"
+    },
+    {
+      "url": "https://opensource.guide/starting-a-project/",
+      "title": "Open Source Guides - Starting an Open Source Project",
+      "type": "guide",
+      "qualityScore": 78,
+      "authority": 8,
+      "recency": 8,
+      "depth": 6,
+      "examples": 5,
+      "uniqueness": 5,
+      "keyInsights": [
+        "The four questions: what does it do, why is it useful, how do I get started, where can I get help",
+        "READMEs 'explain why your project matters, and what your users can do with it'",
+        "'Goals can help you figure out what to work on, what to say no to'"
+      ],
+      "usedFor": "Part 1.4 - and the argument that four questions are insufficient for an inference engine"
+    },
+    {
+      "url": "https://changelog.com/posts/top-ten-reasons-why-i-wont-use-your-open-source-project",
+      "title": "Changelog - Top ten reasons why I won't use your open source project",
+      "type": "practitioner",
+      "qualityScore": 66,
+      "authority": 6,
+      "recency": 2,
+      "depth": 6,
+      "examples": 6,
+      "uniqueness": 6,
+      "keyInsights": [
+        "Reason 1: no README - and the elements it names: Description, Installation instructions, Where to get help, Contribution guidelines, Contributor list, Credits/Inspiration/Alternatives",
+        "Reason 7: unclear licensing - publishing publicly does not place code in the public domain",
+        "Reason 2: no tests/examples makes a project 'harder to trust'"
+      ],
+      "usedFor": "Part 7 background. Dated (2011); seven of ten reasons are promotion advice, not README advice"
+    },
+    {
+      "url": "https://liw.fi/readme-review/",
+      "title": "Lars Wirzenius - I'd like to review your README",
+      "type": "practitioner",
+      "qualityScore": 70,
+      "authority": 7,
+      "recency": 6,
+      "depth": 6,
+      "examples": 4,
+      "uniqueness": 7,
+      "keyInsights": [
+        "'A README is meant for someone who is first encountering the project', who should decide fast whether to dig deeper",
+        "Needs 'a very short, dense summary of the project aimed at someone who doesn't know anything about it yet'",
+        "'A README is not the manual, but it may have an example of how to typically use the software'"
+      ],
+      "usedFor": "Part 6.3 two-tier split"
+    },
+    {
+      "url": "https://github.com/paperswithcode/releasing-research-code",
+      "title": "Papers with Code - ML Code Completeness Checklist (NeurIPS 2021 official guidelines)",
+      "type": "standardsGuide",
+      "qualityScore": 91,
+      "authority": 9,
+      "recency": 8,
+      "depth": 8,
+      "examples": 9,
+      "uniqueness": 10,
+      "keyInsights": [
+        "Five items: dependencies, training code, evaluation code, pre-trained models, 'README file including table of results accompanied by precise commands to run/produce those results'",
+        "Analysis of >200 ML repos: repos checking more items 'tend to have a higher number of GitHub stars'",
+        "All five items: 'median of 196 and mean of 2,664 stars'",
+        "Users who cannot install dependencies 'are likely to give up on the rest of your code as well'"
+      ],
+      "usedFor": "Part 1.3 - the only quantified link between reproducibility artifacts and adoption found in this run"
+    },
+    {
+      "url": "https://github.com/ossf/scorecard/blob/main/docs/checks.md",
+      "title": "OpenSSF Scorecard - checks documentation",
+      "type": "standardsBody",
+      "qualityScore": 84,
+      "authority": 9,
+      "recency": 10,
+      "depth": 8,
+      "examples": 6,
+      "uniqueness": 8,
+      "keyInsights": [
+        "License check: file must exist, be top-level, and name an FSF/OSI license",
+        "Maintained: archived scores lowest; roughly weekly commits over 90 days scores highest; repos under 90 days not assessed",
+        "Separately scored: CI-Tests, Signed-Releases, Security-Policy, Packaging, Code-Review, Contributors",
+        "'a low score is therefore not a definitive indication that the project is at risk'"
+      ],
+      "usedFor": "Part 1.3 - the machine-computed trust signals third parties publish about you"
+    },
+    {
+      "url": "https://developer.nvidia.com/blog/achieving-top-inference-performance-with-the-nvidia-h100-tensor-core-gpu-and-nvidia-tensorrt-llm/",
+      "title": "NVIDIA - H100 + TensorRT-LLM inference performance (response to AMD MI300X claims)",
+      "type": "vendorPrimary",
+      "qualityScore": 89,
+      "authority": 8,
+      "recency": 6,
+      "depth": 9,
+      "examples": 10,
+      "uniqueness": 10,
+      "keyInsights": [
+        "'The results shared did not use optimized software, and the H100, if benchmarked properly, is 2x faster.'",
+        "The delta was software config: vLLM v0.2.2.2 FP16 vs TensorRT-LLM v0.5.0/v0.6.1 with FP8 including FP8 KV cache; same workload (Llama 2 70B, 2048 in / 128 out, TP=8)",
+        "Both reproduction command lines published",
+        "'Industry-standard benchmarks like MLPerf also measure performance with this fixed response time metric.'"
+      ],
+      "usedFor": "Part 4.5 - the canonical same-hardware-different-software 2x case; Part 4.6 competitor-column discipline"
+    },
+    {
+      "url": "https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/",
+      "title": "Thinking Machines - Defeating Nondeterminism in LLM Inference",
+      "type": "practitionerPrimary",
+      "qualityScore": 90,
+      "authority": 8,
+      "recency": 9,
+      "depth": 10,
+      "examples": 9,
+      "uniqueness": 10,
+      "keyInsights": [
+        "The cause is not atomics: 'in the typical forward pass of an LLM, there is usually not a single atomic add present'",
+        "'our forward pass lacks batch invariance' - output depends on the batch a request landed in",
+        "1000 temperature-0 completions produced 80 unique outputs, first diverging at token 103; batch-invariant kernels made all 1000 identical, at 26s -> 42s",
+        "Requirement: 'the reduction order for each element must be fixed regardless of the batch-size of the kernel'"
+      ],
+      "usedFor": "Part 2.3 - why memra's byte-identical exactness gates are a differentiator a 2026 reader already understands without explanation"
+    },
+    {
+      "url": "https://docs.vllm.ai/en/latest/getting_started/installation/gpu.html",
+      "title": "vLLM - GPU installation documentation",
+      "type": "officialDocs",
+      "qualityScore": 87,
+      "authority": 9,
+      "recency": 10,
+      "depth": 9,
+      "examples": 8,
+      "uniqueness": 9,
+      "keyInsights": [
+        "Compiling kernels 'introduces binary incompatibility with other CUDA versions and PyTorch versions' - 'even for the same PyTorch version with different building configurations'",
+        "ROCm wheels are Python 3.12-only; otherwise the installer 'will silently fall back' and fails with 'libcudart.so: cannot open shared object file'",
+        "'Building from source requires GCC/G++ >= 11.3'; CUDA 13 images need 'an R580 or newer driver'",
+        "'vLLM does not support Windows natively.'",
+        "'NVIDIA Blackwell GPUs (B200, GB200) require a minimum of CUDA 12.8'"
+      ],
+      "usedFor": "Part 5.3 - the catalogue of CUDA install hazard, and why memra's 'do not require nvcc' clause is worth more than a Docker image"
+    },
+    {
+      "url": "https://www.arp242.net/curl-to-sh.html",
+      "title": "Martin Tournoij - Curl to shell isn't so bad",
+      "type": "practitioner",
+      "qualityScore": 72,
+      "authority": 6,
+      "recency": 7,
+      "depth": 7,
+      "examples": 6,
+      "uniqueness": 7,
+      "keyInsights": [
+        "'You're not running some random shell script from a random author, you're running it from a software vendor who you already trust to run software.'",
+        "'There is no fundamental difference between curl .. | sh versus cloning a repo and building it from source.'",
+        "Concedes 'Package managers are more secure due to checksums, signing, and auditing'"
+      ],
+      "usedFor": "Part 5.3 - the curl|sh objection and why checksum verification answers its strongest form"
+    },
+    {
+      "url": "https://hn.algolia.com/api/v1/search?query=README&tags=story&numericFilters=points%3E100",
+      "title": "HN Algolia sweep - README stories above 100 points (22 items)",
+      "type": "practitionerAggregate",
+      "qualityScore": 68,
+      "authority": 6,
+      "recency": 8,
+      "depth": 5,
+      "examples": 6,
+      "uniqueness": 7,
+      "keyInsights": [
+        "'Readme Driven Development' (Preston-Werner, 2010) reposted three times, 242/226/217 pts - the most durable README idea on HN",
+        "'I'd like to review your README' 336 pts; 'Art of README' 203 pts; 'A README maturity model' 178 pts",
+        "The high-engagement cluster is quality guidance plus tooling, not templates"
+      ],
+      "usedFor": "Discovery and Part 7 - what practitioners actually argue about"
+    },
+    {
+      "url": "https://hn.algolia.com/api/v1/search?query=misleading+benchmark&tags=story&numericFilters=points%3E80",
+      "title": "HN Algolia sweep - misleading-benchmark stories above 80 points",
+      "type": "practitionerAggregate",
+      "qualityScore": 70,
+      "authority": 6,
+      "recency": 6,
+      "depth": 5,
+      "examples": 7,
+      "uniqueness": 7,
+      "keyInsights": [
+        "'Intel publishes misleading benchmarks against AMD' 618 pts / 202 comments (2019)",
+        "'Intel's New Low: Commissioning Misleading Core I9-9900K Benchmarks' 161 pts (2018)",
+        "'Debunking Misleading Benchmarks Of Redshift vs BigQuery' 168 pts (2016) - vendor rebuttal genre",
+        "Recurring theme: first-party comparisons attract adversarial re-measurement"
+      ],
+      "usedFor": "Part 4.5 case file"
+    },
+    {
+      "url": "https://hn.algolia.com/api/v1/search?query=Ollama+llama.cpp&tags=story",
+      "title": "HN Algolia sweep - Ollama / llama.cpp (263 hits)",
+      "type": "practitionerAggregate",
+      "qualityScore": 71,
+      "authority": 6,
+      "recency": 9,
+      "depth": 5,
+      "examples": 7,
+      "uniqueness": 8,
+      "keyInsights": [
+        "'Ollama violating llama.cpp license for over a year' (issue #3185) 202 pts / 68 comments - the only attribution item, and by far the most discussed",
+        "The other 19 hits treat the two as substitutable runners, i.e. the ecosystem does not frame Ollama against its upstream"
+      ],
+      "usedFor": "Part 4.5, Part 7.3 - provenance as a trust surface; memra's missing Acknowledgements"
+    },
+    {
+      "url": "https://hn.algolia.com/api/v1/search?query=Bun+benchmark&tags=story",
+      "title": "HN Algolia sweep - Bun benchmark (1,008 hits)",
+      "type": "practitionerAggregate",
+      "qualityScore": 65,
+      "authority": 5,
+      "recency": 9,
+      "depth": 5,
+      "examples": 7,
+      "uniqueness": 7,
+      "keyInsights": [
+        "'Deno excludes Bun from new SQLite benchmark, calling Bun a demo' (2022) - exclusion reads as fear",
+        "PrinceJS 'From Wrong Benchmarks to Honest Results' (2025) - author retracted 'fastest' claims after the load tool proved 'too slow for Bun', switched to oha",
+        "socketify.py counter-benchmark took Bun's own WebSocket test and reported parity"
+      ],
+      "usedFor": "Part 4.5 - the retraction pattern and the counter-benchmark risk"
+    },
+    {
+      "url": "https://hn.algolia.com/api/v1/search?query=Mojo+faster+than+Python&tags=story",
+      "title": "HN Algolia sweep - Mojo speed claims",
+      "type": "practitionerAggregate",
+      "qualityScore": 62,
+      "authority": 5,
+      "recency": 7,
+      "depth": 4,
+      "examples": 6,
+      "uniqueness": 6,
+      "keyInsights": [
+        "Best-engaged follow-up is self-refuting by title: 'Making CRC calculations in Mojo 18x faster than Python and 3x slower than Python' (58 pts, 17 comments)",
+        "'Is Mojo really 35000x faster than Python?' - the skeptical framing that a large ratio invites"
+      ],
+      "usedFor": "Part 4.5 - a ratio against a weak baseline invites the inverse ratio"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/vllm-project/vllm/main/README.md",
+      "title": "vLLM README (fetched 2026-08-17)",
+      "type": "competitorReadme",
+      "qualityScore": 90,
+      "authority": 10,
+      "recency": 10,
+      "depth": 8,
+      "examples": 9,
+      "uniqueness": 8,
+      "keyInsights": [
+        "Zero badges. Tagline 'Easy, fast, and cheap LLM serving for everyone'. No H1",
+        "No numbers anywhere: only 'over 2000 contributors', '200+ model architectures', 'State-of-the-art serving throughput'",
+        "Getting Started is one command (uv pip install vllm) plus three doc links; no run example",
+        "No limitations section; scope implied by enumeration"
+      ],
+      "usedFor": "Part 6.1"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/sgl-project/sglang/main/README.md",
+      "title": "SGLang README (fetched 2026-08-17)",
+      "type": "competitorReadme",
+      "qualityScore": 83,
+      "authority": 9,
+      "recency": 10,
+      "depth": 8,
+      "examples": 8,
+      "uniqueness": 8,
+      "keyInsights": [
+        "'## News' precedes '## About' - changelog before description",
+        "'Benchmark and Performance' contains no table: one sentence, 'Learn more in the release blogs'",
+        "Speedups (25x, 3.8x/4.8x, 2.7x, 7x MLA) appear only in News headlines and are never restated",
+        "Credibility engine is scale: 'over 400,000 GPUs worldwide', 'de facto industry standard', ~30 named adopters",
+        "No code block anywhere"
+      ],
+      "usedFor": "Part 6.1 - the reject column"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/master/README.md",
+      "title": "llama.cpp README (fetched 2026-08-17)",
+      "type": "competitorReadme",
+      "qualityScore": 88,
+      "authority": 10,
+      "recency": 10,
+      "depth": 8,
+      "examples": 9,
+      "uniqueness": 9,
+      "keyInsights": [
+        "'## Quick start' is the FIRST section, before '## Description'",
+        "Commands: 'llama cli -hf ggml-org/Qwen3.5-0.8B-GGUF' and 'llama serve -hf ...'",
+        "No benchmark tables, no throughput figures, no model list, no news section - performance is the prose 'state-of-the-art performance'",
+        "18-row Supported backends table with two '[In Progress]' markers",
+        "Goal: 'to enable LLM (and VLM) inference with minimal setup and state-of-the-art performance on a wide range of hardware'",
+        "CORRECTS the prior guide, which claimed literal llama-bench output, uncertainty bars, and a 'What llama.cpp is NOT' section - none exist"
+      ],
+      "usedFor": "Part 0.1 (A3-A5), Part 6.1"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/NVIDIA/TensorRT-LLM/main/README.md",
+      "title": "TensorRT-LLM README (fetched 2026-08-17)",
+      "type": "competitorReadme",
+      "qualityScore": 82,
+      "authority": 9,
+      "recency": 10,
+      "depth": 8,
+      "examples": 8,
+      "uniqueness": 8,
+      "keyInsights": [
+        "No commands or code blocks anywhere; 8 badges; 5-link nav",
+        "All performance lives in dated news bullets carrying their conditions, e.g. 'can run Llama 4 at over 40,000 tokens per second on B200 GPUs'; older items in <details>",
+        "Limits expressed as a Deprecation Policy (3-month migration period) and a Telemetry disclosure with documented opt-out"
+      ],
+      "usedFor": "Part 6.1 - dated-item and staleness-visible pattern"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/ollama/ollama/main/README.md",
+      "title": "Ollama README (fetched 2026-08-17)",
+      "type": "competitorReadme",
+      "qualityScore": 76,
+      "authority": 8,
+      "recency": 10,
+      "depth": 6,
+      "examples": 8,
+      "uniqueness": 7,
+      "keyInsights": [
+        "Tagline 'Start building with open models.' then '## Download' immediately - no badges, no feature list",
+        "No performance numbers, no VRAM figures, no model table, no requirements section, no GPU matrix, no known issues",
+        "First command is 'curl -fsSL https://ollama.com/install.sh | sh'"
+      ],
+      "usedFor": "Part 6.1 - ruthless first screen, but the omissions are the anti-pattern"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/huggingface/text-generation-inference/main/README.md",
+      "title": "text-generation-inference README (Rust; fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 80,
+      "authority": 8,
+      "recency": 10,
+      "depth": 7,
+      "examples": 8,
+      "uniqueness": 8,
+      "keyInsights": [
+        "Opens with a caution admonition: 'now in maintenance mode', pointing readers to vllm, SGLang, llama.cpp / MLX",
+        "Docker first, 'The easiest way of getting started', then two curl examples",
+        "Caveats inline: CPU 'subpar', AMD MI210/MI250 only, unlisted architectures 'on a best-effort basis'",
+        "No license section anywhere"
+      ],
+      "usedFor": "Part 6.1 - the status-banner pattern; Docker-first rationale"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/EricLBuehler/mistral.rs/master/README.md",
+      "title": "mistral.rs README (Rust; fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 93,
+      "authority": 8,
+      "recency": 10,
+      "depth": 9,
+      "examples": 10,
+      "uniqueness": 10,
+      "keyInsights": [
+        "Conditions precede numbers: 'Mean tokens per second across prompt lengths and decode depths from 128 to 16384 tokens.', 'Decode uses 256 generated tokens.'",
+        "Four head-to-head tables vs llama.cpp GGUF Q8_0 and vLLM BF16, on Gemma 4 E4B and 26B-A4B across GB10/B200/H100 SXM",
+        "Publishes losses: several BF16 rows lost to vLLM (e.g. 592.2 vs 3878.6 prefill on GB10)",
+        "Full report at releases/v0.8.2/report.md with commands, model revisions, host metadata",
+        "Supported-model list generated from the loader registry, described as the 'single source of truth' so it does not drift",
+        "Benchmarks are hidden inside a collapsed <details> - the one weakness",
+        "CORRECTS the prior guide, which attributed a fabricated Qwen3.6-27B/14,520/182 row to this README"
+      ],
+      "usedFor": "Part 0.1 (A1-A2), Part 2.2 T1/T6, Part 4.2 tier 2, Part 6.1"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/turboderp-org/exllamav3/master/README.md",
+      "title": "ExLlamaV3 README (fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 86,
+      "authority": 8,
+      "recency": 10,
+      "depth": 8,
+      "examples": 9,
+      "uniqueness": 9,
+      "keyInsights": [
+        "Tagline: 'an inference library for running local LLMs on modern consumer GPUs'",
+        "'## What's missing?' as a top-level heading",
+        "Inline limits verbatim: 'expect that some things may be a little broken at first', 'n_group>1 currently not supported', 'though it still needs some work to achieve the same efficiency on Ampere GPUs'",
+        "Wins on a different axis: rival method needs 'around 720 GPU-hours' (~$850) vs minutes-hours on one GPU",
+        "Conditional claim: 'roughly memory-bound latency under optimal conditions (4bpw, RTX 4090)'"
+      ],
+      "usedFor": "Part 2.2 T3, Part 3.2, Part 6.1/6.2"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/SJTU-IPADS/PowerInfer/main/README.md",
+      "title": "PowerInfer README (fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 90,
+      "authority": 8,
+      "recency": 9,
+      "depth": 9,
+      "examples": 10,
+      "uniqueness": 10,
+      "keyInsights": [
+        "Tagline: 'a CPU/GPU LLM inference engine leveraging activation locality for your device'",
+        "Per-rig tables with input length and metric definition stated ('total prompting + generation time / total tokens generated'); baseline is always llama.cpp",
+        "Refuses a compatibility claim: llama.cpp weights supported 'for compatibility purposes, but there will be no performance gain'",
+        "'Now we only support models with ReLU/ReGLU/Squared ReLU activation function'",
+        "Self-reports a quality regression: 'This insufficient retraining has resulted in the model's inability to regain its original performance'"
+      ],
+      "usedFor": "Part 2.2 T4, Part 3.2, Part 6.1 - the most honest limits section in the survey"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/kvcache-ai/ktransformers/main/README.md",
+      "title": "KTransformers README (fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 81,
+      "authority": 8,
+      "recency": 10,
+      "depth": 8,
+      "examples": 8,
+      "uniqueness": 9,
+      "keyInsights": [
+        "Positions as a complement, not a competitor: 'Clean Python API for SGLang and other frameworks'; no comparison to vLLM or llama.cpp appears",
+        "Tables bound to named model plus explicit hardware plus concurrency (227.85 tok/s total / 87.58 output, DeepSeek-R1-0528 FP8, 8xL20 + Xeon Gold 6454S, 8-way concurrency)",
+        "Scope softened rather than sectioned: speedups '6-12x' only 'in benchmarked MoE SFT workloads'"
+      ],
+      "usedFor": "Part 3.2 - the sidestep-the-comparison move; Part 4.2 tier 3"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/GeeeekExplorer/nano-vllm/main/README.md",
+      "title": "nano-vllm README (fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 84,
+      "authority": 7,
+      "recency": 10,
+      "depth": 7,
+      "examples": 10,
+      "uniqueness": 9,
+      "keyInsights": [
+        "Tagline 'A lightweight vLLM implementation built from scratch'; scope IS the claim: 'Clean implementation in ~ 1,200 lines of Python code'",
+        "One fully specified benchmark cell: RTX 4070 Laptop 8GB, Qwen3-0.6B, 256 sequences, I/O 'Randomly sampled between 100-1024 tokens'",
+        "Identical 133,966 output tokens on both sides; 1434.13 vs vLLM 1361.84 tok/s - modest, checkable delta"
+      ],
+      "usedFor": "Part 3.2, Part 4.2 tier 4 - small and checkable beats large and vague"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/huggingface/candle/main/README.md",
+      "title": "candle README (Rust; fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 82,
+      "authority": 8,
+      "recency": 10,
+      "depth": 7,
+      "examples": 9,
+      "uniqueness": 8,
+      "keyInsights": [
+        "Tagline 'a minimalist ML framework for Rust with a focus on performance (including GPU support) and ease of use'",
+        "Get started prints the expected output: 'Tensor[[2, 4], f32]', plus a one-line diff to switch Device::Cpu to CUDA",
+        "'Why should I use Candle?' under FAQ: serverless inference, 'remove Python from production workloads', 'Rust is cool!'",
+        "No limitations section; instead a 'Common Errors' section carrying literal error strings and their causes"
+      ],
+      "usedFor": "Part 5.1 expected output; Part 6.2 - the Common Errors pattern memra lacks"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/tracel-ai/burn/main/README.md",
+      "title": "burn README (Rust; fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 79,
+      "authority": 8,
+      "recency": 10,
+      "depth": 7,
+      "examples": 7,
+      "uniqueness": 7,
+      "keyInsights": [
+        "Only quantified figure is a compile time ('under 5 seconds'); all throughput deferred to an external burn-bench",
+        "Explicit '## Status' section: active development, breaking changes, 'no guarantees at this stage'",
+        "Per-feature maturity labels (Remote = Beta), a boxed recursion_limit warning, deprecation notes with a compat flag",
+        "Two check-mark backend matrices with no performance grading"
+      ],
+      "usedFor": "Part 6.1 - explicit Status section; why full external deferral does not work for an engine whose thesis is speed"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/luminal-ai/luminal/main/README.md",
+      "title": "luminal README (Rust; fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 78,
+      "authority": 7,
+      "recency": 10,
+      "depth": 7,
+      "examples": 8,
+      "uniqueness": 8,
+      "keyInsights": [
+        "Core 'is and always will be minimal'; 15 primitive ops; 'The best heuristic is no heuristic'",
+        "'No indirections or abstractions, compatability layers, docker containers, or virtual environments'",
+        "'~80% of theoretical max performance' qualified to Q8 Llama 3 8B on an H100; 'fastest ML framework' stated as a goal, not a fact",
+        "Roadmap is longer than the results - 'no public benchmarking suite yet'; hl_ops covers 'the most used ~80% of the pytorch api'"
+      ],
+      "usedFor": "Part 3.2, Part 3.4, Part 6.1 - correct grammar for unfinished ambition, and the roadmap-heavy anti-pattern"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/tinygrad/tinygrad/master/README.md",
+      "title": "tinygrad README (fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 80,
+      "authority": 8,
+      "recency": 10,
+      "depth": 7,
+      "examples": 8,
+      "uniqueness": 9,
+      "keyInsights": [
+        "Positioning sentence: 'For something between PyTorch and karpathy/micrograd'; 'stays intentionally tiny and hackable'",
+        "A new backend needs only '~25 low level ops'; MNIST 'gets 98% in ~5 seconds'",
+        "Contribution rules are the de facto scope: 'No code golf!', speedup claims 'must be benchmarked', big diffs 'won't be reviewed or merged'"
+      ],
+      "usedFor": "Part 2.2 T7, Part 3.2 - the between-X-and-Y positioning form"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/karpathy/llm.c/master/README.md",
+      "title": "llm.c README (fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 85,
+      "authority": 8,
+      "recency": 9,
+      "depth": 8,
+      "examples": 10,
+      "uniqueness": 9,
+      "keyInsights": [
+        "Tagline names what it is AND what it does not need: 'LLMs in simple, pure C/CUDA with no need for 245MB of PyTorch or 107MB of cPython'",
+        "Explicit language boundary: 'I'd like this repo to only maintain C and CUDA code'; ports 'should be done in separate repos'",
+        "Stated complexity budget: for 500 complex lines buying 2% speed, 'I may reject the PR because the complexity is not worth it'",
+        "Honest about a path's ceiling: on CPU, 'you won't go too far'",
+        "Exact command sequences for three variants"
+      ],
+      "usedFor": "Part 2.2 T8, Part 3.2, Part 5.1 - the tagline structure recommended for memra"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/BurntSushi/ripgrep/master/README.md",
+      "title": "ripgrep README (Rust; fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 96,
+      "authority": 9,
+      "recency": 10,
+      "depth": 10,
+      "examples": 10,
+      "uniqueness": 10,
+      "keyInsights": [
+        "Has BOTH '## Why should I use ripgrep?' and '## Why shouldn't I use ripgrep?', plus '## Is it really faster than everything else?' answered 'Generally, yes,' with five technical reasons",
+        "First disqualifier is non-portability: 'The best tool for this job is good old grep'",
+        "Five benchmark tables (Tool/Command/Line count/Time), hardware disclosed (i9-12900K), corpora named (Linux kernel tree, ~13GB OpenSubtitles)",
+        "Tables ordered favourable -> unfavourable, ending in 'performance cliffs' where 'performance can drop precipitously across the board'",
+        "Preceded by the caveat 'a single benchmark is never enough!'",
+        "Defers to a third party's feature comparison (Andy Lester's ack table), conceding some ripgrep features are missing from it"
+      ],
+      "usedFor": "Part 2.2 T2, Part 3.2/3.3, Part 4.2, Part 6.2 - the single most transferable README in the survey"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/astral-sh/uv/main/README.md",
+      "title": "uv README (Rust; fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 79,
+      "authority": 8,
+      "recency": 10,
+      "depth": 6,
+      "examples": 8,
+      "uniqueness": 7,
+      "keyInsights": [
+        "Tagline 'An extremely fast Python package and project manager, written in Rust.'",
+        "Hero benchmark is an image; the only stated condition is an italic caption naming the workload - installing Trio's dependencies 'with a warm cache'",
+        "'10-100x faster' vs pip, where the phrase itself hyperlinks to BENCHMARKS.md",
+        "Install precedes every usage example"
+      ],
+      "usedFor": "Part 4.2 tiers 7-8, Part 5.1 - caption discipline, and the limits of numbers-in-an-image"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/evanw/esbuild/main/README.md",
+      "title": "esbuild README (fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 70,
+      "authority": 8,
+      "recency": 10,
+      "depth": 5,
+      "examples": 6,
+      "uniqueness": 7,
+      "keyInsights": [
+        "Benchmark is an SVG image with alt text 'Bar chart with benchmark results' - no numbers in text, no caveats, no methodology link on the README",
+        "'10-100x slower than they could be' as the framing claim; 'Extreme speed without needing a cache'",
+        "No scope or limitations section on the README (they live in the site FAQ)"
+      ],
+      "usedFor": "Part 4.2 tier 9 - what incumbency lets you get away with, and a new project cannot"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Dao-AILab/flash-attention/main/README.md",
+      "title": "flash-attention README (fetched 2026-08-17)",
+      "type": "peerReadme",
+      "qualityScore": 92,
+      "authority": 9,
+      "recency": 10,
+      "depth": 9,
+      "examples": 10,
+      "uniqueness": 10,
+      "keyInsights": [
+        "Per-generation gating is explicit: 'Requirements: H100 / H800 GPU, CUDA >= 12.3'; 'bf16 requires Ampere, Ada, or Hopper GPUs'; FA4 'optimized for Hopper and Blackwell GPUs (e.g. H100, B200)'",
+        "Obsolete restrictions are struck through and replaced with the version that changed them ('Head dim 256 backward now works on consumer GPUs ... as of flash-attn 2.5.5')",
+        "Named gaps: 'Sliding window attention is currently a work in progress.'; 'Note: Does not support backward pass.'; 'page_block_size must be a multiple of 256'",
+        "Charts carry conditions ('Head dimension 64 or 128, hidden dimension 2048', batch '16k / seqlen') and a pre-qualifier: 'speedup depends on memory bandwidth - we see more speedup on slower GPU memory'",
+        "Test coverage disclosed as 'mostly on A100 GPUs'"
+      ],
+      "usedFor": "Part 6.1/6.2 - the model for how memra should express sm_120a vs sm_90a vs sm_89 capability differences (recommendation A7)"
+    }
+  ],
+  "selfEvaluation": {
+    "coverage": 9,
+    "diversity": 9,
+    "examples": 10,
+    "accuracy": 9,
+    "applicability": 10,
+    "confidenceNotes": [
+      "All 20 README structural descriptions come from live fetches on 2026-08-17 and are dated in the guide; they will drift and should be re-fetched before being quoted as precedent.",
+      "The 10-second / 30-second timing numbers are from web-page dwell-time research, not from a study of GitHub repository pages specifically. No study of repo-page dwell time was found. The guide states the transfer explicitly rather than implying repo-specific measurement.",
+      "The Papers-with-Code stars finding is correlational, not causal, and is described as such.",
+      "Four arXiv identifiers in the 2603-2607 range appeared in the live API feed but their dates were not independently verified; they are used only for corroborating patterns (README linting, maintenance signals, MemPalace critique), never as the sole support for a recommendation."
+    ],
+    "gaps": [
+      "No study of dwell time or scan path on a GitHub repository page specifically - the strongest available evidence is web-page-general plus README-content-correlational.",
+      "ACM Artifact Review and Badging (403) and the Steinmacher newcomer-barrier line via Semantic Scholar (429) could not be fetched; the guide does not rely on either.",
+      "No documented, publicly litigated benchmark dispute between two open-source inference engines was found (the AMD/NVIDIA case is vendor-vs-vendor). The Anyscale/LLMPerf methodology dispute did not surface in the HN index.",
+      "No measured effect size for 'expected output shown in quick start' on conversion - the recommendation rests on precedent (candle, llm.c, tinygrad) plus PLOS Rule 3, not on an experiment.",
+      "No evidence found on whether a figure/plot in a systems README specifically improves conversion versus stars; Fan et al.'s image finding is on academic AI repos."
+    ]
+  }
+}

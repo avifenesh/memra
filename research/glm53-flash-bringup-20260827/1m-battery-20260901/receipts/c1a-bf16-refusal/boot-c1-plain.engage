@@ -1,0 +1,14 @@
+engage=mla-tc-prefill(DEFAULT ON, the re-priced lever) expected=1 lines=1
+engage=mla-tc-prefill DECLINED (a cuBLASLt shape decline) expected=0 lines=0
+[1m] ENGAGE FAIL: expected 'moe-grouped-prefill(default ON at this head)' announce, lines=0
+engage=moe-grouped-prefill(default ON at this head) expected=1 lines=0
+engage=door T bf16-tcols-wide(default-on) expected=0 lines=0
+engage=door X bf16-tcols-x1(default-on) expected=0 lines=0
+engage=door K topk-shards(default-on) expected=0 lines=0
+engage=door W glm5-verify-ws(default-on) expected=0 lines=0
+engage=door D (default OFF, never set) expected=0 lines=0
+engage=door R (default OFF, never set) expected=0 lines=0
+--- mla-tc-prefill announce ---
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+--- accept lines ---
+0

@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-224c75ec3ad65403281cbaf954daf216",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 45150,
+    "completion_tokens": 256,
+    "total_tokens": 45406,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 130.095985536
+  },
+  "text": "The user wants me to create a complete, self-contained HTML document for an inference service operations dashboard. This is a complex dashboard with many panels and features. Let me break down what's needed:\n\n1. **Request Timeline** - showing requests with arrival time, time to first token, generated-token rate, cache source, queue delay, and completion state. Must make rising latency visually distinguishable from slower decoding.\n2. **Cache hit-rate chart** - cumulative counters\n3. **Admission queue** - showing queued requests\n4. **GPU-memory gauge** - showing memory usage\n5. **Incident annotations** - marking issues\n6. **Compact mobile layout** - responsive design\n7. **Evidence rows** with units and exact timestamps\n8. **Filter by session** functionality\n9. **Compare speculative and plain arms** - likely two columns or toggle\n\nThe user mentions 600 requests (Request 1 through Request 600) with specific fields. I need to create realistic placeholder data for all of these.\n\nGiven the massive amount of data (600 requests), I should:\n- Generate the data programmatically in JavaScript\n- Create a timeline visualization (likely a Gantt-like chart or bar chart)\n- Create a cache hit-rate"
+}

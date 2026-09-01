@@ -1,0 +1,261 @@
+===== PHASE 1: byte + content gates on the PRICED binary =====
+########## GATE ARM M0 mode=gate-main ##########
+BOOT_OK pid=43429 arm=M0 mode=gate-main
+arm=M0
+mode=gate-main
+boot_nonce=bv3-M0-1788200376-23857
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-d3ac87f80
+bin_md5=64392d961fb27955edb254d2b71de851
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=d3ac87f80a7b1b94affa1c54ba565a018fb705b6
+git_log_1=d3ac87f80a7b1b94affa1c54ba565a018fb705b6 Merge step37 bank v3 milestones 1+2: the v2 layout was innocent, and the live in_f scale-fetch defect is fixed
+server_pid=43429
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-d3ac87f80
+environ_nonce=bv3-M0-1788200376-23857
+environ_mode=gate-main
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-M0.txt (41 MEMRA_/BV3 vars)
+0, 74067 MiB, 600.00 W, 2325 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=gate-main (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=0 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+[short0] pt=25 ct=92 nonempty=True expect='391' found=True first32="Got it, let's calculate 17 times" sha=b15301b762b20108 => OK
+[short1] pt=25 ct=84 nonempty=True expect='899' found=True first32='We need to compute 31 * 29. That' sha=412b7f64c7ee7df8 => OK
+[short2] pt=25 ct=45 nonempty=True expect='12' found=True first32='We are asked: "What is 144/12? R' sha=01a8816119e973e1 => OK
+[short3] pt=21 ct=65 nonempty=True expect='Tokyo' found=True first32="Got it, let's see. The question " sha=199d3f0876571200 => OK
+[short4] pt=25 ct=96 nonempty=True expect='1024' found=True first32="Got it, let's see, 2^10 is 1024 " sha=e0b7c7206ca24b57 => OK
+[agentic8.json#0] pt=187 ct=256 nonempty=True ttft=0.2392 first32="Got it, let's digest this nightl" sha=f70918228164adab
+[agentic8.json#1] pt=142 ct=256 nonempty=True ttft=0.255 first32="Got it, let's break down what th" sha=10615a2ac8d5b7fb
+[agentic8.json#2] pt=128 ct=256 nonempty=True ttft=0.2039 first32="Got it, let's tackle this. First" sha=fe5173e68e3e6ad5
+[agentic8.json#3] pt=355 ct=256 nonempty=True ttft=0.322 first32="Got it, let's tackle this forens" sha=0304d346e414d2bd
+[agentic8.json#4] pt=97 ct=256 nonempty=True ttft=0.2202 first32="Got it, let's break down what th" sha=43d37c9ebcb0b004
+[agentic8.json#5] pt=130 ct=256 nonempty=True ttft=0.2301 first32="Got it, let's start by parsing w" sha=d2b6310b28d6362c
+[agentic8.json#6] pt=88 ct=256 nonempty=True ttft=0.1823 first32="Got it, let's tackle this GitHub" sha=fbf28fd03e95aa83
+[agentic8.json#7] pt=93 ct=256 nonempty=True ttft=0.1851 first32="Got it, let's break down what th" sha=f47a2cbb377dcf6b
+[prefill-ladder.json#0] pt=248 ct=96 nonempty=True ttft=0.2555 first32="Got it, let's start by respondin" sha=e8042ef091df6943
+[prefill-ladder.json#1] pt=613 ct=96 nonempty=True ttft=0.403 first32="Got it, let's start by respondin" sha=12100dffb8dec0cf
+[prefill-ladder.json#2] pt=1480 ct=96 nonempty=True ttft=0.6651 first32="Got it, let's tackle this proper" sha=9b201aa4f7fb9a41
+[prefill-ladder.json#3] pt=3041 ct=96 nonempty=True ttft=1.1423 first32="Got it, let's tackle this step b" sha=9f528b61763a916b
+[prefill-ladder.json#4] pt=4555 ct=96 nonempty=True ttft=1.7277 first32="Got it, let's start by addressin" sha=d0075b9324ec212e
+TAPE arm=M0 cells=18 tape_sha256=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68 content_ok=True
+GATE_EXIT_M0=0
+--- engagement (M0) ---
+STOPPED gpus drained (max 0 MiB)
+########## GATE ARM GOFF2 mode=gate-off ##########
+BOOT_OK pid=44034 arm=GOFF2 mode=gate-off
+arm=GOFF2
+mode=gate-off
+boot_nonce=bv3-GOFF2-1788200561-23884
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=44034
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-GOFF2-1788200561-23884
+environ_mode=gate-off
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-GOFF2.txt (41 MEMRA_/BV3 vars)
+0, 74067 MiB, 600.00 W, 2325 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=gate-off (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=0 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+[short0] pt=25 ct=92 nonempty=True expect='391' found=True first32="Got it, let's calculate 17 times" sha=b15301b762b20108 => OK
+[short1] pt=25 ct=84 nonempty=True expect='899' found=True first32='We need to compute 31 * 29. That' sha=412b7f64c7ee7df8 => OK
+[short2] pt=25 ct=45 nonempty=True expect='12' found=True first32='We are asked: "What is 144/12? R' sha=01a8816119e973e1 => OK
+[short3] pt=21 ct=65 nonempty=True expect='Tokyo' found=True first32="Got it, let's see. The question " sha=199d3f0876571200 => OK
+[short4] pt=25 ct=96 nonempty=True expect='1024' found=True first32="Got it, let's see, 2^10 is 1024 " sha=e0b7c7206ca24b57 => OK
+[agentic8.json#0] pt=187 ct=256 nonempty=True ttft=0.2402 first32="Got it, let's digest this nightl" sha=f70918228164adab
+[agentic8.json#1] pt=142 ct=256 nonempty=True ttft=0.2554 first32="Got it, let's break down what th" sha=10615a2ac8d5b7fb
+[agentic8.json#2] pt=128 ct=256 nonempty=True ttft=0.2041 first32="Got it, let's tackle this. First" sha=fe5173e68e3e6ad5
+[agentic8.json#3] pt=355 ct=256 nonempty=True ttft=0.3229 first32="Got it, let's tackle this forens" sha=0304d346e414d2bd
+[agentic8.json#4] pt=97 ct=256 nonempty=True ttft=0.2203 first32="Got it, let's break down what th" sha=43d37c9ebcb0b004
+[agentic8.json#5] pt=130 ct=256 nonempty=True ttft=0.2302 first32="Got it, let's start by parsing w" sha=d2b6310b28d6362c
+[agentic8.json#6] pt=88 ct=256 nonempty=True ttft=0.1825 first32="Got it, let's tackle this GitHub" sha=fbf28fd03e95aa83
+[agentic8.json#7] pt=93 ct=256 nonempty=True ttft=0.1846 first32="Got it, let's break down what th" sha=f47a2cbb377dcf6b
+[prefill-ladder.json#0] pt=248 ct=96 nonempty=True ttft=0.255 first32="Got it, let's start by respondin" sha=e8042ef091df6943
+[prefill-ladder.json#1] pt=613 ct=96 nonempty=True ttft=0.4056 first32="Got it, let's start by respondin" sha=12100dffb8dec0cf
+[prefill-ladder.json#2] pt=1480 ct=96 nonempty=True ttft=0.6617 first32="Got it, let's tackle this proper" sha=9b201aa4f7fb9a41
+[prefill-ladder.json#3] pt=3041 ct=96 nonempty=True ttft=1.1411 first32="Got it, let's tackle this step b" sha=9f528b61763a916b
+[prefill-ladder.json#4] pt=4555 ct=96 nonempty=True ttft=1.7285 first32="Got it, let's start by addressin" sha=d0075b9324ec212e
+TAPE arm=GOFF2 cells=18 tape_sha256=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68 content_ok=True
+GATE_EXIT_GOFF2=0
+--- engagement (GOFF2) ---
+[nvfp4-bank] layout=block-nvfp4-v1 source=default tp=2 experts=288 in_f=4096 out_f=1280
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel slot_major=false in_f=4096 out_f=640 nsb=128 row_bytes=2304
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel slot_major=false in_f=640 out_f=4096 nsb=20 row_bytes=360
+[nvfp4-sweep] down8=false door=false device_routed=false slot_major=false nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] down8=false door=false device_routed=true slot_major=false nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] gu_fused=false door=false slot_major=false geometry_match=true in_f=4096 out_f=640 n_sel=8
+STOPPED gpus drained (max 0 MiB)
+########## GATE ARM GSM2 mode=gate-sm ##########
+BOOT_OK pid=45004 arm=GSM2 mode=gate-sm
+arm=GSM2
+mode=gate-sm
+boot_nonce=bv3-GSM2-1788200752-12776
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=45004
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-GSM2-1788200752-12776
+environ_mode=gate-sm
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-GSM2.txt (42 MEMRA_/BV3 vars)
+0, 74067 MiB, 600.00 W, 2317 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=gate-sm (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=0 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+[short0] pt=25 ct=92 nonempty=True expect='391' found=True first32="Got it, let's calculate 17 times" sha=b15301b762b20108 => OK
+[short1] pt=25 ct=84 nonempty=True expect='899' found=True first32='We need to compute 31 * 29. That' sha=412b7f64c7ee7df8 => OK
+[short2] pt=25 ct=45 nonempty=True expect='12' found=True first32='We are asked: "What is 144/12? R' sha=01a8816119e973e1 => OK
+[short3] pt=21 ct=65 nonempty=True expect='Tokyo' found=True first32="Got it, let's see. The question " sha=199d3f0876571200 => OK
+[short4] pt=25 ct=96 nonempty=True expect='1024' found=True first32="Got it, let's see, 2^10 is 1024 " sha=e0b7c7206ca24b57 => OK
+[agentic8.json#0] pt=187 ct=256 nonempty=True ttft=0.2425 first32="Got it, let's digest this nightl" sha=f70918228164adab
+[agentic8.json#1] pt=142 ct=256 nonempty=True ttft=0.2586 first32="Got it, let's break down what th" sha=10615a2ac8d5b7fb
+[agentic8.json#2] pt=128 ct=256 nonempty=True ttft=0.2067 first32="Got it, let's tackle this. First" sha=fe5173e68e3e6ad5
+[agentic8.json#3] pt=355 ct=256 nonempty=True ttft=0.3264 first32="Got it, let's tackle this forens" sha=0304d346e414d2bd
+[agentic8.json#4] pt=97 ct=256 nonempty=True ttft=0.2229 first32="Got it, let's break down what th" sha=43d37c9ebcb0b004
+[agentic8.json#5] pt=130 ct=256 nonempty=True ttft=0.2331 first32="Got it, let's start by parsing w" sha=d2b6310b28d6362c
+[agentic8.json#6] pt=88 ct=256 nonempty=True ttft=0.1851 first32="Got it, let's tackle this GitHub" sha=fbf28fd03e95aa83
+[agentic8.json#7] pt=93 ct=256 nonempty=True ttft=0.1872 first32="Got it, let's break down what th" sha=f47a2cbb377dcf6b
+[prefill-ladder.json#0] pt=248 ct=96 nonempty=True ttft=0.2589 first32="Got it, let's start by respondin" sha=e8042ef091df6943
+[prefill-ladder.json#1] pt=613 ct=96 nonempty=True ttft=0.4068 first32="Got it, let's start by respondin" sha=12100dffb8dec0cf
+[prefill-ladder.json#2] pt=1480 ct=96 nonempty=True ttft=0.6737 first32="Got it, let's tackle this proper" sha=9b201aa4f7fb9a41
+[prefill-ladder.json#3] pt=3041 ct=96 nonempty=True ttft=1.1591 first32="Got it, let's tackle this step b" sha=9f528b61763a916b
+[prefill-ladder.json#4] pt=4555 ct=96 nonempty=True ttft=1.7571 first32="Got it, let's start by addressin" sha=d0075b9324ec212e
+TAPE arm=GSM2 cells=18 tape_sha256=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68 content_ok=True
+GATE_EXIT_GSM2=0
+--- engagement (GSM2) ---
+[nvfp4-bank] layout=slot-major source=MEMRA_NVFP4_BANK_SM tp=2 experts=288 in_f=4096 out_f=1280
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel_v2 slot_major=true in_f=4096 out_f=640 nsb=128 row_bytes=2304
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel_v2 slot_major=true in_f=640 out_f=4096 nsb=20 row_bytes=360
+[nvfp4-sweep] down8=false door=false device_routed=false slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] down8=false door=false device_routed=true slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] gu_fused=false door=false slot_major=true geometry_match=true in_f=4096 out_f=640 n_sel=8
+STOPPED gpus drained (max 0 MiB)
+########## GATE ARM GGU2 mode=gate-sm-gu ##########
+BOOT_OK pid=45915 arm=GGU2 mode=gate-sm-gu
+arm=GGU2
+mode=gate-sm-gu
+boot_nonce=bv3-GGU2-1788200962-4928
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=45915
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-GGU2-1788200962-4928
+environ_mode=gate-sm-gu
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-GGU2.txt (43 MEMRA_/BV3 vars)
+0, 74067 MiB, 600.00 W, 2317 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=gate-sm-gu (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=0 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+[short0] pt=25 ct=92 nonempty=True expect='391' found=True first32="Got it, let's calculate 17 times" sha=b15301b762b20108 => OK
+[short1] pt=25 ct=84 nonempty=True expect='899' found=True first32='We need to compute 31 * 29. That' sha=412b7f64c7ee7df8 => OK
+[short2] pt=25 ct=45 nonempty=True expect='12' found=True first32='We are asked: "What is 144/12? R' sha=01a8816119e973e1 => OK
+[short3] pt=21 ct=65 nonempty=True expect='Tokyo' found=True first32="Got it, let's see. The question " sha=199d3f0876571200 => OK
+[short4] pt=25 ct=96 nonempty=True expect='1024' found=True first32="Got it, let's see, 2^10 is 1024 " sha=e0b7c7206ca24b57 => OK
+[agentic8.json#0] pt=187 ct=256 nonempty=True ttft=0.2424 first32="Got it, let's digest this nightl" sha=f70918228164adab
+[agentic8.json#1] pt=142 ct=256 nonempty=True ttft=0.2584 first32="Got it, let's break down what th" sha=10615a2ac8d5b7fb
+[agentic8.json#2] pt=128 ct=256 nonempty=True ttft=0.2068 first32="Got it, let's tackle this. First" sha=fe5173e68e3e6ad5
+[agentic8.json#3] pt=355 ct=256 nonempty=True ttft=0.3266 first32="Got it, let's tackle this forens" sha=0304d346e414d2bd
+[agentic8.json#4] pt=97 ct=256 nonempty=True ttft=0.2229 first32="Got it, let's break down what th" sha=43d37c9ebcb0b004
+[agentic8.json#5] pt=130 ct=256 nonempty=True ttft=0.2332 first32="Got it, let's start by parsing w" sha=d2b6310b28d6362c
+[agentic8.json#6] pt=88 ct=256 nonempty=True ttft=0.1848 first32="Got it, let's tackle this GitHub" sha=fbf28fd03e95aa83
+[agentic8.json#7] pt=93 ct=256 nonempty=True ttft=0.1874 first32="Got it, let's break down what th" sha=f47a2cbb377dcf6b
+[prefill-ladder.json#0] pt=248 ct=96 nonempty=True ttft=0.2589 first32="Got it, let's start by respondin" sha=e8042ef091df6943
+[prefill-ladder.json#1] pt=613 ct=96 nonempty=True ttft=0.4072 first32="Got it, let's start by respondin" sha=12100dffb8dec0cf
+[prefill-ladder.json#2] pt=1480 ct=96 nonempty=True ttft=0.674 first32="Got it, let's tackle this proper" sha=9b201aa4f7fb9a41
+[prefill-ladder.json#3] pt=3041 ct=96 nonempty=True ttft=1.1594 first32="Got it, let's tackle this step b" sha=9f528b61763a916b
+[prefill-ladder.json#4] pt=4555 ct=96 nonempty=True ttft=1.7586 first32="Got it, let's start by addressin" sha=d0075b9324ec212e
+TAPE arm=GGU2 cells=18 tape_sha256=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68 content_ok=True
+GATE_EXIT_GGU2=0
+--- engagement (GGU2) ---
+[nvfp4-bank] layout=slot-major source=MEMRA_NVFP4_BANK_SM tp=2 experts=288 in_f=4096 out_f=1280
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel_v2 slot_major=true in_f=640 out_f=4096 nsb=20 row_bytes=360
+[nvfp4-sweep] down8=false door=false device_routed=false slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] down8=false door=false device_routed=true slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] gu_fused=true door=true slot_major=true geometry_match=true in_f=4096 out_f=640 n_sel=8
+STOPPED gpus drained (max 0 MiB)
+########## GATE ARM GD82 mode=gate-sm-gu-d8 ##########
+BOOT_OK pid=46579 arm=GD82 mode=gate-sm-gu-d8
+arm=GD82
+mode=gate-sm-gu-d8
+boot_nonce=bv3-GD82-1788201172-30161
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+bin_md5=0ab9551f60989821f15b9c69a34762de
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=01ed43c1a3bc6e9547c1e14ff5fa127e37412135
+git_log_1=01ed43c1a3bc6e9547c1e14ff5fa127e37412135 step37 bank v3: the three doors announce their ENGAGEMENT, because a pricing cell that only proves the env var was set cannot tell "worth nothing" from "never ran"
+server_pid=46579
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-01ed43c1a
+environ_nonce=bv3-GD82-1788201172-30161
+environ_mode=gate-sm-gu-d8
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-GD82.txt (44 MEMRA_/BV3 vars)
+0, 74067 MiB, 600.00 W, 2325 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=gate-sm-gu-d8 (MEMRA_NVFP4_BANK_SM=1 MEMRA_NVFP4_SEL_GU=1 MEMRA_NVFP4_SEL_DOWN8=1 MEMRA_SERVE_SPEC=0 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+[short0] pt=25 ct=92 nonempty=True expect='391' found=True first32="Got it, let's calculate 17 times" sha=b15301b762b20108 => OK
+[short1] pt=25 ct=84 nonempty=True expect='899' found=True first32='We need to compute 31 * 29. That' sha=412b7f64c7ee7df8 => OK
+[short2] pt=25 ct=45 nonempty=True expect='12' found=True first32='We are asked: "What is 144/12? R' sha=01a8816119e973e1 => OK
+[short3] pt=21 ct=65 nonempty=True expect='Tokyo' found=True first32="Got it, let's see. The question " sha=199d3f0876571200 => OK
+[short4] pt=25 ct=96 nonempty=True expect='1024' found=True first32="Got it, let's see, 2^10 is 1024 " sha=e0b7c7206ca24b57 => OK
+[agentic8.json#0] pt=187 ct=256 nonempty=True ttft=0.2423 first32="Got it, let's digest this nightl" sha=f70918228164adab
+[agentic8.json#1] pt=142 ct=256 nonempty=True ttft=0.2582 first32="Got it, let's break down what th" sha=10615a2ac8d5b7fb
+[agentic8.json#2] pt=128 ct=256 nonempty=True ttft=0.2066 first32="Got it, let's tackle this. First" sha=fe5173e68e3e6ad5
+[agentic8.json#3] pt=355 ct=256 nonempty=True ttft=0.3265 first32="Got it, let's tackle this forens" sha=0304d346e414d2bd
+[agentic8.json#4] pt=97 ct=256 nonempty=True ttft=0.2224 first32="Got it, let's break down what th" sha=43d37c9ebcb0b004
+[agentic8.json#5] pt=130 ct=256 nonempty=True ttft=0.2327 first32="Got it, let's start by parsing w" sha=d2b6310b28d6362c
+[agentic8.json#6] pt=88 ct=256 nonempty=True ttft=0.1845 first32="Got it, let's tackle this GitHub" sha=fbf28fd03e95aa83
+[agentic8.json#7] pt=93 ct=256 nonempty=True ttft=0.1872 first32="Got it, let's break down what th" sha=f47a2cbb377dcf6b
+[prefill-ladder.json#0] pt=248 ct=96 nonempty=True ttft=0.2591 first32="Got it, let's start by respondin" sha=e8042ef091df6943
+[prefill-ladder.json#1] pt=613 ct=96 nonempty=True ttft=0.4075 first32="Got it, let's start by respondin" sha=12100dffb8dec0cf
+[prefill-ladder.json#2] pt=1480 ct=96 nonempty=True ttft=0.6741 first32="Got it, let's tackle this proper" sha=9b201aa4f7fb9a41
+[prefill-ladder.json#3] pt=3041 ct=96 nonempty=True ttft=1.1583 first32="Got it, let's tackle this step b" sha=9f528b61763a916b
+[prefill-ladder.json#4] pt=4555 ct=96 nonempty=True ttft=1.7615 first32="Got it, let's start by addressin" sha=d0075b9324ec212e
+TAPE arm=GD82 cells=18 tape_sha256=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68 content_ok=True
+GATE_EXIT_GD82=0
+--- engagement (GD82) ---
+[nvfp4-bank] layout=slot-major source=MEMRA_NVFP4_BANK_SM tp=2 experts=288 in_f=4096 out_f=1280
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel_v2 slot_major=true in_f=640 out_f=4096 nsb=20 row_bytes=360
+[nvfp4-sweep] down8=false door=true device_routed=false slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] down8=true door=true device_routed=true slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] gu_fused=true door=true slot_major=true geometry_match=true in_f=4096 out_f=640 n_sel=8
+STOPPED gpus drained (max 0 MiB)
+===== PHASE 1 comparisons =====
+----- M0 vs GOFF2 -----
+arms: M0 (md5 64392d961fb27955edb254d2b71de851) vs GOFF2 (md5 0ab9551f60989821f15b9c69a34762de)
+cells identical=18 differing=0
+tape A=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+tape B=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+BYTE GATE: PASS — 18 cells byte-identical, tapes equal=True
+----- GOFF2 vs GSM2 -----
+arms: GOFF2 (md5 0ab9551f60989821f15b9c69a34762de) vs GSM2 (md5 0ab9551f60989821f15b9c69a34762de)
+cells identical=18 differing=0
+tape A=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+tape B=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+BYTE GATE: PASS — 18 cells byte-identical, tapes equal=True
+----- GSM2 vs GGU2 -----
+arms: GSM2 (md5 0ab9551f60989821f15b9c69a34762de) vs GGU2 (md5 0ab9551f60989821f15b9c69a34762de)
+cells identical=18 differing=0
+tape A=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+tape B=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+BYTE GATE: PASS — 18 cells byte-identical, tapes equal=True
+----- GGU2 vs GD82 -----
+arms: GGU2 (md5 0ab9551f60989821f15b9c69a34762de) vs GD82 (md5 0ab9551f60989821f15b9c69a34762de)
+cells identical=18 differing=0
+tape A=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+tape B=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+BYTE GATE: PASS — 18 cells byte-identical, tapes equal=True
+----- M0 vs GD82 -----
+arms: M0 (md5 64392d961fb27955edb254d2b71de851) vs GD82 (md5 0ab9551f60989821f15b9c69a34762de)
+cells identical=18 differing=0
+tape A=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+tape B=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+BYTE GATE: PASS — 18 cells byte-identical, tapes equal=True
+===== PHASE 2: interleaved fresh-boot pricing x3 =====
+===== M4 RUN DONE =====

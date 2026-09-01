@@ -1,0 +1,11 @@
+warning: memra-engine@0.77.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.77.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.77.0 (/home/avifenesh/projects/wt-cx-metricstoken/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.85s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-48b148447a57e937)
+
+running 2 tests
+test spill::tests::pinned_frac_accepts_only_finite_values_in_range ... ok
+test spill::tests::invalid_pinned_frac_is_counted_and_uses_safe_default ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.10s

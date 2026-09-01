@@ -1,0 +1,22 @@
+block=qos stamp=20260810T014700Z lock_acquired=2026-08-10T01:50:31Z
+host=<private-host-redacted>
+source_commit=188154299064a42b67fc8eb1f41757cf6237300d
+binary_sha256=e7e6515e9f47030a7137ba9fdf7c40d43f0764d02699b38959f134ee0ace65b3
+trainer_sha256=33fe5610bd5e5c164e0bc1363d1ee970a71e894d5445f8587daef49c028eb575
+qos_sha256=ba9624c29eca5d88642c1053ce4cbbde1a044996e5a70bedf6b6f0155d40301c
+python=Python 3.12.3
+/home/ubuntu/darktrain2/venv/lib/python3.12/site-packages/torch/_subclasses/functional_tensor.py:307: UserWarning: Failed to initialize NumPy: No module named 'numpy' (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:84.)
+  cpu = _conversion_method_template(device=torch.device("cpu"))
+torch=2.11.0+cu128 cuda=12.8
+artifact=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296
+artifact=/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416
+qos_cell=rep1-absent start=2026-08-10T01:50:32Z
+{"errors": [], "exactness": "skipped", "expected_sha256": null, "label": "warmup-rep1-absent", "latency_p50_s": 0.662576, "latency_p99_s": 0.662576, "n_error": 0, "n_ok": 1, "requests": 1, "text_sha256": ["dafecb02cd9b96ea6ff491c523d2ee964fd5180601de4cd4aa6fe11dc6e38ad9"], "ttft_p50_s": 0.570076, "ttft_p99_s": 0.570076, "wall_s": 0.662651, "watch_latency_ms": null, "watch_pid": null, "watch_state_before": null, "watch_terminal": null}
+{"errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "label": "rep1-absent", "latency_p50_s": 3.346391, "latency_p99_s": 3.393323, "n_error": 0, "n_ok": 8, "requests": 8, "text_sha256": ["21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de"], "ttft_p50_s": 0.160272, "ttft_p99_s": 0.385143, "wall_s": 3.393623, "watch_latency_ms": null, "watch_pid": null, "watch_state_before": null, "watch_terminal": null}
+qos_cell=rep1-absent done=2026-08-10T01:51:16Z
+qos_cell=rep1-running start=2026-08-10T01:51:16Z
+{"errors": [], "exactness": "skipped", "expected_sha256": null, "label": "warmup-rep1-running", "latency_p50_s": 0.660089, "latency_p99_s": 0.660089, "n_error": 0, "n_ok": 1, "requests": 1, "text_sha256": ["dafecb02cd9b96ea6ff491c523d2ee964fd5180601de4cd4aa6fe11dc6e38ad9"], "ttft_p50_s": 0.567684, "ttft_p99_s": 0.567684, "wall_s": 0.660171, "watch_latency_ms": null, "watch_pid": null, "watch_state_before": null, "watch_terminal": null}
+{"errors": [], "exactness": "within-cell-mismatch", "expected_sha256": null, "label": "rep1-running", "latency_p50_s": 3.382954, "latency_p99_s": 3.429976, "n_error": 0, "n_ok": 8, "requests": 8, "text_sha256": ["21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f"], "ttft_p50_s": 0.190252, "ttft_p99_s": 0.416029, "wall_s": 3.430267, "watch_latency_ms": 144.609, "watch_pid": 408821, "watch_state_before": "R", "watch_terminal": "T"}
+P0 exactness failure: within-cell-mismatch
+P0: served bytes changed in /home/ubuntu/darktrain2/receipts/20260810T014700Z/qos/rep1-running
+block=qos rc=86 lock_released=2026-08-10T01:52:03Z

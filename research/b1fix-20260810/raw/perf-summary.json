@@ -1,0 +1,76 @@
+{
+  "arms": {
+    "base": {
+      "binary_sha256": "e7e6515e9f47030a7137ba9fdf7c40d43f0764d02699b38959f134ee0ace65b3",
+      "decode_tok_s": [
+        85.50872429168079,
+        85.49229773569468,
+        85.4231464314698,
+        85.41519263106092,
+        85.33592683949257
+      ],
+      "short_ttft_ms": [
+        70.28097100555897,
+        70.4199019819498,
+        70.31948800431564,
+        70.13610797002912,
+        70.24226197972894
+      ],
+      "source_commit": "188154299064a42b67fc8eb1f41757cf6237300d"
+    },
+    "fixed": {
+      "binary_sha256": "6a7c2046eb3197773def91baf012abd629e0b0ced239ec2d38016c93be5ca7e5",
+      "decode_tok_s": [
+        81.53143722725298,
+        81.31296585594981,
+        81.33651152979506,
+        81.57267631312617,
+        81.39931217058216
+      ],
+      "short_ttft_ms": [
+        70.07021899335086,
+        70.0482819811441,
+        70.27047802694142,
+        70.12514397501945,
+        70.3043770045042
+      ],
+      "source_commit": "2ef6d75cbf9ff7a09f685bcc1fc54b84bb8f81fb"
+    }
+  },
+  "deltas_pct": {
+    "decode_tok_s": -4.710473014612893,
+    "short_ttft_ms": -0.22172008768516216
+  },
+  "medians": {
+    "base_decode_tok_s": 85.4231464314698,
+    "base_short_ttft_ms": 70.28097100555897,
+    "fixed_decode_tok_s": 81.39931217058216,
+    "fixed_short_ttft_ms": 70.12514397501945
+  },
+  "method": {
+    "decode_tok_s": "(completion_tokens - 1) / (latency_s - ttft_s), 256-token greedy streaming request",
+    "n_per_arm": 5,
+    "order": [
+      "base-r01",
+      "fixed-r01",
+      "fixed-r02",
+      "base-r02",
+      "base-r03",
+      "fixed-r03",
+      "fixed-r04",
+      "base-r04",
+      "base-r05",
+      "fixed-r05"
+    ],
+    "short_ttft_ms": "streaming TTFT for an 8-token greedy request after one warmup request",
+    "thermal_regime": "one lock hold; fresh server and GPU-idle wait per arm; between-arm snapshots 27-32 C; 600 W power limit on both GPUs"
+  },
+  "serve_shape": {
+    "MEMRA_CTX": 262144,
+    "MEMRA_MOE_GROUPED": 1,
+    "MEMRA_PP_DEVICES": "0,1",
+    "MEMRA_PP_STAGES": 2,
+    "MEMRA_PREFILL_TICK": 2048,
+    "MEMRA_SERVE_SPEC": 0
+  }
+}

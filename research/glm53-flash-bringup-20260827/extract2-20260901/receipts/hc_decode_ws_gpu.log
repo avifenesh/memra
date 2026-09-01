@@ -1,0 +1,88 @@
+warning: function `expected_census` is never used
+   --> crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:288:15
+    |
+288 | pub(crate) fn expected_census(config: &ModelConfig) -> BTreeMap<String, TensorSpec> {
+    |               ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning
+warning: memra-engine@0.123.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.123.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:7243:9
+     |
+7243 |     let mut run = |label: &str, steps: Vec<Vec<u32>>| -> Res<usize> {
+     |         ----^^^
+     |         |
+     |         help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `indexer_mask_rows` is never used
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:3726:4
+     |
+3726 | fn indexer_mask_rows(
+     |    ^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `qsa_indexer_mask` is never used
+     --> crates/memra-engine/src/qwen4exp_gpu.rs:16582:8
+      |
+15974 | impl Qwen4ExpGpu {
+      | ---------------- method in this implementation
+...
+16582 |     fn qsa_indexer_mask(
+      |        ^^^^^^^^^^^^^^^^
+
+warning: `memra-engine` (lib) generated 3 warnings (run `cargo fix --lib -p memra-engine` to apply 1 suggestion)
+   Compiling memra-engine v0.123.0 (/home/avifenesh/projects/wt-glm5-extract2/crates/memra-engine)
+warning: variable does not need to be mutable
+   --> crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs:529:9
+    |
+529 |     let mut record = |phase: &str,
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs:691:9
+    |
+691 |     let mut check_config =
+    |         ----^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs:1708:13
+     |
+1708 |         let mut fold = |s: RowStats, ok: &mut bool, worst: &mut (f32, f32)| {
+     |             ----^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: `memra-engine` (bin "qwen4exp_gpu_gate") generated 3 warnings (run `cargo fix --bin "qwen4exp_gpu_gate" -p memra-engine` to apply 3 suggestions)
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/bin/qwen4exp_real_gate.rs:2396:17
+     |
+2396 |             let mut record = |regime: &str,
+     |                 ----^^^^^^
+     |                 |
+     |                 help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-engine` (bin "qwen4exp_real_gate") generated 1 warning (run `cargo fix --bin "qwen4exp_real_gate" -p memra-engine` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.50s
+     Running tests/hc_decode_ws_gpu.rs (target/debug/deps/hc_decode_ws_gpu-c2d60db419c25208)
+
+running 2 tests
+test decode_24_steps_are_byte_identical_ws_on_vs_off_and_alloc_calls_drop ... ok
+test ws_composes_with_the_fused_prechain_bitwise ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+exit=0

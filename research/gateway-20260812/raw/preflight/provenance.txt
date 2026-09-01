@@ -1,0 +1,23 @@
+timestamp=2026-08-12T08:13:37Z
+mode=preflight
+duration_s=0
+runtime_commit=3ff7b536e634c20b59ad7eac37dd4b8caa704a40
+model_id=qwen/qwen3.6-27b
+model_path=/opt/scratch/nvme/cx-gateway/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+model_sha256=d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517
+model_bytes=15705920064
+model_source_manifest=/opt/scratch/nvme/cx-gateway/memra/deploy/gateway/q27-artifact.manifest
+shape=two independent Q27 replicas on physical GPU0 and GPU1; c=4 tenant cap per replica; spec off; ctx8192; prefix cache 4096 MiB per replica
+traffic=the same streaming plus non-streaming, tools, strict structured output, exact 90%-hit, and overload soak runs concurrently against both replicas
+<private-host-redacted>
+Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+3ff7b536 (HEAD) fix: reduce gateway thermals numerically
+f1b4cdc1 fix: preserve concurrent output hash classes
+3b053ea1 fix: accept early EOS in gateway probe
+e837c311 feat: add production gateway preflight
+136f1f41 docs: start cx gateway production ledger
+a845cf9b51def51e1ba8e75b1eaa06dfc1e0cdd572e05c7fbfd6d6ce44a6348a  /opt/scratch/nvme/cx-gateway/memra/target/release/memra-server
+d685fc39208218819cc91d22c624d659094ce6bb5d14b69d434657429dfe6778  /opt/scratch/nvme/cx-gateway/memra/deploy/gateway/probe.py
+671568b0f4ea3c1b799b79073faeba8a8bfdb4f47e1afca8ed7710de2783d4ce  /opt/scratch/nvme/cx-gateway/memra/deploy/gateway/q27-models.toml
+74c972645fe335359c5175348619f6277e060a0266ded9f374bd3ae2b92e5b06  research/gateway-20260812/run-eu-west.sh
+247a0244ba557ef34246c57b778ff15da2c10e18e05804c98765eb793753e624  /opt/scratch/nvme/cx-gateway/memra/deploy/gateway/q27-artifact.manifest

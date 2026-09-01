@@ -1,0 +1,20 @@
+# qwen4exp_real_gate	label=nvfp4-spec	binary_sha256=c515f1095d0cdb2352fef2920b8752c27a9b40ac75ae283fbe6ec77c904017b1	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# spec-ab k=4: plain greedy decode vs spec_generate, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len
+0	plain	40	14.28	70.04	-	-
+0	spec	40	18.54	53.93	0.391	2.50
+1	plain	40	14.29	69.96	-	-
+1	spec	40	18.51	54.02	0.391	2.50
+2	plain	40	14.30	69.94	-	-
+2	spec	40	18.59	53.78	0.391	2.50
+3	plain	40	14.26	70.11	-	-
+3	spec	40	18.48	54.12	0.391	2.50
+4	plain	40	14.22	70.33	-	-
+4	spec	40	18.36	54.46	0.391	2.50
+# arm plain	mean_of_means_ms=14.27	min=14.22	max=14.30	tok_per_s=70.08
+# arm spec	mean_of_means_ms=18.50	min=18.36	max=18.59	tok_per_s=54.06
+# rep0_plain_vs_spec_first_divergence	-1
+# accept_hist_total	35,15,5,0,25
+# rep0_plain	271,248045,271,248045,271,248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424
+# rep0_spec	271,248045,271,248045,271,248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424

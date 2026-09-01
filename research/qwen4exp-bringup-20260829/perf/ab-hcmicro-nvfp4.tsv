@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=nvfp4	binary_sha256=e6c57048db587b3489215e260f851999feeedd26314307c8755773c510531277	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ab-hcmicro: fresh state + probe prefill per arm, 4 warmup steps excluded per arm
+rep	arm	steps	mean_ms	median_ms	tok_per_s
+0	hc_item3	40	20.28	20.27	49.30
+0	hc_micro	40	17.05	17.08	58.66
+1	hc_item3	40	20.36	20.34	49.12
+1	hc_micro	40	17.06	17.09	58.61
+2	hc_item3	40	20.44	20.44	48.93
+2	hc_micro	40	17.07	17.10	58.58
+3	hc_item3	40	20.42	20.41	48.96
+3	hc_micro	40	17.10	17.12	58.48
+4	hc_item3	40	20.41	20.39	49.00
+4	hc_micro	40	17.07	17.10	58.57
+# arm hc_item3	mean_of_means_ms=20.38	min=20.28	max=20.44	tok_per_s=49.06
+# arm hc_micro	mean_of_means_ms=17.07	min=17.05	max=17.10	tok_per_s=58.58
+# rep0_arm_chain_first_divergence	0
+# rep0_hc_item3	198,760,1156,682,3106,728,264,1575,20654,93530,2319,471,264,11316,421,5435,1396,6321,314,279,26887,506,3140,2957,13,328,760,3841,13477,37550,33075,888,279,15217,5388,1149,271,1919,369,264
+# rep0_hc_micro	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310

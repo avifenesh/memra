@@ -1,0 +1,1158 @@
+<request>
+  <url>https://arxiv.org/html/2608.10362v1</url>
+  <final_url>https://arxiv.org/html/2608.10362v1</final_url>
+  <method>GET</method>
+  <status>200</status>
+  <content_type>text/html; charset=utf-8</content_type>
+  <redirect_chain>https://arxiv.org/html/2608.10362v1</redirect_chain>
+</request>
+<body extract="markdown">
+# MemSpec: Memory-Aware Runtime for Adaptive Draft Scheduling in Speculative Decoding on Edge Devices
+
+(2026)
+
+###### Abstract. ######
+
+Speculative decoding accelerates autoregressive large language model (LLM)
+inference by using a lightweight draft model to speculate multiple tokens,
+reducing expensive target model decoding steps. Its effectiveness depends
+heavily on draft selection, motivating adaptive methods that exploit variation
+across inputs and generation stages. On memory-constrained edge devices,
+however, these methods often fail to improve end-to-end throughput due to the
+overhead of switching between draft models. We identify a key limitation in
+this setting: the mismatch between draft selection and draft availability under
+tight memory budgets.
+
+To address this challenge, we present MemSpec, a prediction-guided,
+memory-aware runtime for adaptive speculative decoding on edge devices.MemSpec decouples draft selection from execution through proactive
+resident working-set management. A lightweight predictor estimates draft
+effectiveness from prompt and generation context, while a memory-aware
+scheduler reduces reactive model loading overhead. Experiments on a Jetson
+Orin Nano show that MemSpec improves steady-state generation
+throughput by 40.7% on average over state-of-the-art bandit-based adaptive
+methods while closely approaching the oracle upper bound.
+
+Speculative Decoding,
+Large Language Models,
+On-Device AI,
+Memory Management,
+Adaptive Runtime
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>copyright: cc<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>doi: 10.1145/3814943.3816174<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>journalyear: 2026<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>isbn: 979-8-4007-2721-4/2026/06<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>conference: Proceedings of the 27th ACM SIGPLAN/SIGBED International Conference on Languages, Compilers, and Tools for Embedded Systems; June 15–16, 2026; Boulder, CO, USA<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>booktitle: Proceedings of the 27th ACM SIGPLAN/SIGBED International Conference on Languages, Compilers, and Tools for Embedded Systems (LCTES ’26), June 15–16, 2026, Boulder, CO, USA<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>ccs: Computer systems organization Embedded systems<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>ccs: Computing methodologies Natural language processing
+
+1. Introduction
+----------
+
+Large language models (LLMs) are increasingly moving beyond cloud datacenters
+to memory-constrained edge platforms, including mobile devices, embedded
+systems, and edge servers 
+> (Yi et al., [2025](#bib.bib1); Qin et al., [2024](#bib.bib2))
+
+. As on-device
+AI adoption accelerates, achieving high-throughput LLM inference under tight
+memory budgets has become a critical systems challenge. These constraints
+fundamentally reshape the design space of inference optimization techniques.
+
+Speculative decoding 
+> (Leviathan et al., [2023](#bib.bib3); Cai et al., [2024](#bib.bib4); Miao et al., [2024](#bib.bib5))
+
+has emerged as an effective approach for accelerating autoregressive inference
+by using a lightweight draft model to generate multiple candidate tokens, which
+are then verified by a larger target model, thereby amortizing expensive
+target-model computation. When the draft model accurately predicts the target
+model’s outputs, speculative decoding can significantly improve throughput
+while preserving output quality, making it particularly attractive for
+resource-constrained edge deployments.
+
+However, the effectiveness of speculative decoding is highly sensitive to the
+choice of draft model. Prior
+works 
+> (Yi et al., [2024](#bib.bib6); Kim et al., [2025](#bib.bib7); Yan et al., [2025](#bib.bib8))
+
+ show that
+different draft models exhibit widely varying token acceptance rates across
+prompts and generation stages. In practice, such variation arises naturally
+from domain-specialized draft models (e.g., code, math, or legal), which
+perform well on their target domains but perform poorly on out-of-domain
+workloads. This motivates adaptive approaches that dynamically select or switch
+between multiple candidate drafts.
+
+On memory-constrained edge devices, however, this adaptivity introduces a major
+systems challenge. Since only a small number of draft models can reside in fast
+memory, switching to a non-resident draft incurs substantial loading overhead.
+As a result, frequent draft transitions can negate potential throughput gains
+and even degrade overall performance.
+
+Existing approaches are not well suited to this setting. Traditional static
+methods 
+> (Leviathan et al., [2023](#bib.bib3); Miao et al., [2024](#bib.bib5); Liu et al., [2025](#bib.bib28); Mamou et al., [2024](#bib.bib26))
+
+that use a single fixed draft model fail to exploit generation heterogeneity,
+resulting in suboptimal performance. State-of-the-art adaptive methods typically
+rely on multi-armed bandit (MAB)-based
+approaches 
+> (Hou et al., [2025](#bib.bib9); Kim et al., [2025](#bib.bib7); Liu et al., [2026](#bib.bib10))
+
+ to explore and
+select draft models at runtime, often improving token acceptance rates. However,
+these methods incur frequent draft switching and implicitly assume that selected
+drafts can be executed immediately. This assumption breaks down on edge devices,
+where memory constraints limit draft residency. As a result, the cost of
+switching to non-resident drafts often outweighs the benefit of improved draft
+selection, and better draft selection does not necessarily translate into higher
+generation throughput.
+
+This limitation stems from a fundamental mismatch between *draft
+selection* and *draft availability*: a draft that is predicted to be
+effective may not be immediately executable under memory constraints. On edge
+devices, this mismatch makes draft switching prohibitively expensive, rendering
+exploration-based adaptation inefficient. These observations lead to a key
+insight: adaptive speculative decoding on edge devices must be formulated not
+only as a *selection problem*, but also as a *scheduling problem*under memory constraints.
+
+To address this challenge, we propose MemSpec, a prediction-guided,
+memory-aware runtime for adaptive draft scheduling. Instead of relying on
+costly online exploration, MemSpec predicts promising draft models
+using both prompt features and recent generation context, and proactively
+aligns draft residency with future demand. By decoupling draft selection from
+execution, MemSpec always proceeds with the best currently resident
+draft while preparing better candidates in the background, thereby avoiding
+blocking and excessive model loading overhead.
+
+Specifically, this paper makes the following contributions:
+
+* •
+
+  We identify a fundamental limitation of adaptive speculative decoding on
+  memory-constrained edge devices, namely the mismatch between draft selection
+  and draft availability. We show that exploration-based methods incur excessive
+  switching overhead, as selecting a better draft often requires loading
+  non-resident models, limiting end-to-end throughput gains.
+
+* •
+
+  We propose MemSpec, a prediction-guided, memory-aware runtime
+  that decouples draft selection from execution. MemSpec replaces online
+  exploration with lightweight prediction and enables non-blocking decoding by
+  always selecting the best currently resident draft.
+
+* •
+
+  We design a memory-aware scheduling framework that proactively manages a
+  small working set of draft models under tight memory budgets. Through
+  coordinated prefetching and eviction, MemSpec aligns draft
+  residency with predicted future demand and enables non-blocking adaptive
+  decoding under memory constraints.
+
+* •
+
+  We implement MemSpec on a Jetson Orin Nano and evaluate it
+  across diverse workloads. MemSpec improves end-to-end throughput by
+  58.8% over static baselines and 40.7% over state-of-the-art adaptive
+  methods, while achieving performance close to the dynamic oracle upper bound.
+
+2. Background and Motivation
+----------
+
+This section presents three key observations that motivate MemSpec:
+(1) speculative decoding efficiency varies across workloads and generation
+stages, creating substantial headroom for adaptive draft selection;
+(2) on memory-constrained edge devices, switching to a non-resident draft
+incurs high latency, often exceeding several decoding iterations; and
+(3) exploration-based adaptive methods repeatedly incur this switching cost,
+limiting their effectiveness.
+
+### 2.1. Speculative Decoding Efficiency and Acceptance ###
+
+In speculative decoding (SD), autoregressive generation proceeds in iterative
+draft-and-verify steps. At each iteration, a draft model proposes candidate
+tokens, which are then verified by the target model. Let AA denote the number
+of tokens accepted by the target model in one iteration. For a resident draft,
+throughput can be approximated as:
+
+|(1)|Throughput≈𝔼​[A]Liter,\\text{Throughput}\\approx\\frac{\\mathbb{E}[A]}{L\_{\\text{iter}}},|
+|---|------------------------------------------------------------------------------------------|
+
+where LiterL\_{\\text{iter}} is the average latency of one SD iteration. Improving𝔼​[A]\\mathbb{E}[A] is therefore the primary lever for increasing throughput.
+
+We evaluate a quantized LLaMA-2 7B target model (GPTQ INT4) with five
+400M-parameter draft models: one general-purpose draft and four
+domain-specialized drafts trained for code, mathematical reasoning, legal, and
+medical workloads. Detailed setup is described in
+Section [4.1](#S4.SS1).
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S2.F1.g1" src="2608.10362v1/x1.png" width="830">Figure 1. Impact of static and dynamic draft selection on token acceptance across datasets.
+
+Figure [1](#S2.F1) compares three configurations:General-Static, Oracle-Static, and Oracle-Dynamic.General-Static uses a single general-purpose draft,Oracle-Static selects the best draft per prompt via offline evaluation,
+and Oracle-Dynamic dynamically switches draft models within a single
+generation.
+
+Observation 1: Static selection is insufficient due to variability in
+draft effectiveness. Across datasets, Oracle-Static improves
+normalized acceptance by 40.3%40.3\\% on average over General-Static,
+demonstrating that selecting an appropriate specialized draft model is critical
+for performance. Moreover, Oracle-Dynamic provides an additional25.7%25.7\\% improvement over Oracle-Static, indicating that the most
+effective draft can change within a single generation. These results show that
+even the best static selection is insufficient and that dynamic adaptation is
+necessary to fully exploit speculative decoding efficiency.
+
+### 2.2. Memory Constraints and Draft Switching Overheads on Edge Platforms ###
+
+The headroom identified above does not directly translate into throughput on
+edge platforms. Unlike server-class systems, edge devices cannot keep many
+draft models resident in fast memory simultaneously. Switching to a better
+draft therefore requires loading a non-resident model from a slower memory
+tier, such as NVMe storage.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S2.F2.g1" src="2608.10362v1/x2.png" width="830">Figure 2. Latency comparison between SD iteration and draft switching overheads.
+
+We quantify this overhead on a Jetson Orin Nano using a 400M-parameter draft
+model. Figure [2](#S2.F2) shows that loading a non-resident
+draft takes 2.7×2.7\\times longer than a single SD iteration. As a result, even
+infrequent switching can offset the throughput gains from improved acceptance.
+
+Observation 2: On memory-constrained edge devices, switching cost
+fundamentally limits adaptive draft selection. Because draft loading latency
+significantly exceeds per-iteration decoding latency, switching introduces
+substantial overhead. As the number of candidate drafts increases, cache misses
+become more frequent, further amplifying this cost.
+
+These results reveal a fundamental trade-off: while adaptive draft selection
+can improve acceptance, switching to non-resident drafts incurs high loading
+latency that can negate throughput gains. Consequently, naive adaptive
+switching strategies are ineffective on memory-constrained edge devices.
+
+### 2.3. Limitations of Exploration-Based Adaptive Draft Selection ###
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S2.F3.g1" src="2608.10362v1/x3.png" width="830">Figure 3. Normalized token acceptance of adaptive draft selection methods.<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S2.F4.g1" src="2608.10362v1/x4.png" width="830">Figure 4. Execution time breakdown of exploration-based methods.
+
+State-of-the-art adaptive speculative decoding
+methods 
+> (Hou et al., [2025](#bib.bib9); Kim et al., [2025](#bib.bib7); Liu et al., [2026](#bib.bib10))
+
+ rely on multi-armed
+bandit (MAB)-based online exploration to identify effective draft models during
+generation. These approaches maintain multiple candidate drafts and adaptively
+select among them based on observed runtime feedback. In MAB-Sync, the
+runtime blocks to load and evaluate candidate drafts during exploration,
+incurring high switching overhead. In contrast, MAB-Async overlaps
+model loading with ongoing decoding to reduce blocking, but continues execution
+with suboptimal drafts while waiting for preferred drafts to become available.
+
+Figure [3](#S2.F3) shows that MAB-Sync improves normalized
+acceptance by 34.5%34.5\\% on average over General-Static, approachingOracle-Static. This confirms that exploration-based adaptation can
+effectively improve draft quality.
+
+However, these gains do not translate into throughput on memory-constrained
+edge devices. To understand why, we analyze execution time breakdown.
+Figure [4](#S2.F4) shows that model loading dominates execution
+time in MAB-Sync. Although MAB-Async partially overlaps loading
+with execution, it still spends a significant fraction of time—46.4%46.4\\% on
+average—executing suboptimal drafts while waiting for preferred drafts to become
+resident.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="182" id="S2.F5.g1" src="2608.10362v1/x5.png" width="410">Figure 5. Overall architecture of MemSpec.
+
+Observation 3: Exploration-based adaptation fails to improve throughput under memory constraints.While exploration improves draft selection, it incurs frequent model loading,
+which is prohibitively expensive on edge devices. As a result, improved
+acceptance does not translate into improved throughput.
+
+These results highlight a key limitation of existing adaptive methods: they
+optimize *which* draft to use, but ignore *whether* the selected draft
+is immediately executable. Under tight memory constraints, this mismatch leads
+to excessive fallback execution and diminished performance gains.
+
+Taken together, these observations show that improving acceptance alone is
+insufficient. An effective runtime must both identify promising drafts without
+repeated exploration and ensure their availability at runtime. This insight
+motivates MemSpec, a prediction-guided, memory-aware runtime for
+adaptive draft scheduling.
+
+3. MemSpec Design
+----------
+
+Figure [5](#S2.F5) presents the overall architecture ofMemSpec, a prediction-guided, memory-aware runtime for adaptive
+draft scheduling in speculative decoding on edge devices. The runtime
+integrates three key components: a Prediction Engine that ranks candidate
+drafts based on decoding context, a Draft Model Cache Manager that maintains
+a small resident working set under memory constraints, and a Runtime
+Controller that orchestrates non-blocking adaptive decoding.
+
+The key goal of MemSpec is to realize the benefits of adaptive
+draft selection without incurring the high overhead of model switching under
+tight memory constraints. Rather than relying on online exploration,MemSpec predicts a small set of promising draft models for the
+current decoding context and maintains them as a resident working set. At
+runtime, decoding always proceeds with the best currently resident draft,
+while high-priority non-resident drafts are prefetched in the background.
+
+The central challenge is that, on memory-constrained edge devices, draft
+selection and execution are no longer tightly coupled: a draft predicted to
+be effective may not be immediately executable because it is not resident.MemSpec addresses this mismatch by formulating adaptive speculative
+decoding as a memory-aware runtime scheduling problem, where prediction
+determines which drafts should be prepared, while execution is restricted to
+drafts that are currently available.
+
+This design leads to two key principles: (1) *non-blocking execution*,
+which avoids stalling on non-resident drafts by always selecting from the
+resident set, and (2) *proactive residency management*, which aligns the
+working set of drafts with predicted future demand. Together, these
+mechanisms allow MemSpec to achieve efficient adaptive decoding
+without repeated model switching or exploration overhead.
+
+### 3.1. Design Overview ###
+
+Consider a speculative decoding run with candidate draft set 𝒟\\mathcal{D} and
+resident cache capacity KK, where at most KK draft models can remain
+resident in fast memory. Let 𝒢i⊆𝒟\\mathcal{G}\_{i}\\subseteq\\mathcal{D} denote the
+resident set at scheduling point ii, and let di∈𝒢id\_{i}\\in\\mathcal{G}\_{i} denote
+the active draft used during interval ii.
+
+MemSpec performs scheduling every NN speculative decoding iterations.
+This interval-based design serves two purposes: (1) it amortizes the cost of
+prediction and runtime control over multiple decoding steps, and (2) it enables
+overlap between decoding and asynchronous loading of non-resident drafts,
+which is critical for hiding model loading latency.
+
+At initialization, MemSpec selects the first draft using only the
+input prompt:
+
+|d0=arg⁡maxd∈𝒟⁡P​(d∣xprompt).d\_{0}=\\arg\\max\_{d\\in\\mathcal{D}}P(d\\mid x\_{\\text{prompt}}).|
+|------------------------------------------------------------------------------------------------|
+
+During generation, the context at scheduling point ii is defined as
+
+|xi=[xprompt;xirecent​(T)],x\_{i}=[\\,x\_{\\text{prompt}};x^{\\text{recent}}\_{i}(T)\\,],|
+|----------------------------------------------------------------------------------------|
+
+where xirecent​(T)x^{\\text{recent}}\_{i}(T) denotes the most recent TT generated tokens.
+The Prediction Engine assigns each draft a score:
+
+|𝒑i={P​(d∣xi)∣d∈𝒟}.\\bm{p}\_{i}=\\{P(d\\mid x\_{i})\\mid d\\in\\mathcal{D}\\}.|
+|-----------------------------------------------------------------------------|
+
+These scores are used in two ways. First, MemSpec derives a ranked
+list of candidate drafts:
+
+|Ri=Sort⁡(𝒑i),R\_{i}=\\operatorname{Sort}(\\bm{p}\_{i}),|
+|-------------------------------------------------------|
+
+from which the cache manager derives the target resident set
+
+|𝒲i=TopK⁡(Ri).\\mathcal{W}\_{i}=\\operatorname{TopK}(R\_{i}).|
+|------------------------------------------------------------|
+
+Second, it selects the active draft only from the currently resident set:
+
+|di⋆=arg⁡maxd∈𝒢i⁡P​(d∣xi).d\_{i}^{\\star}=\\arg\\max\_{d\\in\\mathcal{G}\_{i}}P(d\\mid x\_{i}).|
+|----------------------------------------------------------------------------------------------|
+
+The key design abstraction of MemSpec is the separation between the
+target working set 𝒲i\\mathcal{W}\_{i} and the active draft di⋆d\_{i}^{\\star}.
+Prediction produces a ranked list of candidate drafts, the cache manager
+prepares a small working set from that list, and execution always proceeds
+with the best currently resident draft.
+
+This design enables non-blocking decoding while gradually steering the cache
+toward more effective drafts. Conceptually, MemSpec balances two
+competing objectives: (1) following the most promising draft as the generation
+context evolves, and (2) minimizing costly model loading under a tight memory
+budget. The interval-based working-set design reconciles these objectives by
+transforming draft adaptation into a staged, overlapped process, rather than a
+sequence of stall-heavy immediate switches.
+
+### 3.2. Prediction Engine ###
+
+The Prediction Engine ranks candidate draft models for the current decoding
+context. Unlike exploration-based approaches, MemSpec uses an
+offline-trained model to directly predict context-to-draft matching, avoiding
+costly online probing of multiple drafts.
+
+We use a fine-tuned BERT encoder as the predictor:
+
+|𝒑i=fθ​(xi),\\bm{p}\_{i}=f\_{\\theta}(x\_{i}),|
+|---------------------------------------------|
+
+where 𝒑i=[pi​(d1),pi​(d2),…,pi​(d|𝒟|)]\\bm{p}\_{i}=[p\_{i}(d\_{1}),p\_{i}(d\_{2}),\\dots,p\_{i}(d\_{|\\mathcal{D}|})]denotes the predicted score for each draft.
+
+The input xix\_{i} combines the prompt and recent output tokens. The prompt
+captures global task semantics, while recent tokens reflect phase-dependent
+generation behavior (e.g., reasoning vs. code generation). Using only the
+prompt fails to capture such phase transitions, whereas relying only on recent
+tokens loses global task intent. Their combination enables effective
+context-aware draft ranking.
+
+Importantly, the Prediction Engine is designed to be lightweight.MemSpec does not require fine-grained utility estimation or online
+evaluation of multiple drafts. Instead, it only needs a ranking that is
+sufficiently accurate to identify a small set of promising candidates. This is
+sufficient because the downstream cache manager and runtime controller operate
+on relative priority rather than exact utility values.
+
+#### Output and training. ####
+
+The predictor outputs a probability for each draft:
+
+|pi​(d)=P​(d∣xi),∀d∈𝒟.p\_{i}(d)=P(d\\mid x\_{i}),\\quad\\forall d\\in\\mathcal{D}.|
+|---------------------------------------------------------------------------------|
+
+It is trained offline using speculative decoding traces, where each contextxix\_{i} is labeled with the draft that achieves the highest decoding utility.
+This aligns prediction targets with system-level performance.
+
+#### Runtime usage. ####
+
+Algorithm 1 Context-Aware Draft Ranking
+
+1:Inputs: prompt xpromptx\_{\\text{prompt}}, recent tokens xirecent​(T)x^{\\text{recent}}\_{i}(T), candidate set 𝒟\\mathcal{D}
+
+2:Output: ranked list RiR\_{i}
+
+3:ifi=0i=0then
+
+4:𝒑i←fθ​(xprompt)\\bm{p}\_{i}\\leftarrow f\_{\\theta}(x\_{\\text{prompt}})
+
+5:else
+
+6:𝒑i←fθ​([xprompt;xirecent​(T)])\\bm{p}\_{i}\\leftarrow f\_{\\theta}([x\_{\\text{prompt}};x^{\\text{recent}}\_{i}(T)])
+
+7:sort d∈𝒟d\\in\\mathcal{D} by pi​(d)p\_{i}(d) to obtain RiR\_{i}
+
+8:returnRiR\_{i}
+
+The Prediction Engine is invoked once every NN iterations. When invoked, it
+computes a ranked list of candidate drafts as summarized in
+Algorithm [1](#alg1). Given the current context, it computes the
+per-draft score vector (lines 4–6), sorts drafts by score to obtain the ranked
+list RiR\_{i} (line 7), and returns this list for downstream cache management (line
+8). The target working set 𝒲i\\mathcal{W}\_{i} is then derived by the cache manager
+from the top-KK drafts in RiR\_{i}. Because prediction is performed only at
+interval boundaries, its overhead is amortized over multiple decoding steps.
+
+### 3.3. Draft Model Cache Manager ###
+
+The Draft Model Cache Manager maintains draft residency under a tight memory
+budget. Because only KK drafts can reside in fast memory, MemSpecexplicitly manages a small working set instead of keeping all candidate drafts
+loaded.
+
+We consider two memory tiers: (1) a *resident draft cache* containing
+immediately executable drafts, and (2) *backing storage* containing drafts
+that require asynchronous loading.
+
+Algorithm 2 Draft Model Cache Update
+
+1:Inputs:RiR\_{i}, 𝒢i\\mathcal{G}\_{i}, capacity KK, active draft did\_{i}
+
+2:𝒲i←\\mathcal{W}\_{i}\\leftarrow top-KK drafts in RiR\_{i}
+
+3:for each d∈𝒲id\\in\\mathcal{W}\_{i}do
+
+4:ifd∉𝒢id\\notin\\mathcal{G}\_{i} and not being prefetched then
+
+5:while|𝒢i|=K|\\mathcal{G}\_{i}|=Kdo
+
+6:select devict∈𝒢i∖(𝒲i∪{di})d\_{\\text{evict}}\\in\\mathcal{G}\_{i}\\setminus(\\mathcal{W}\_{i}\\cup\\{d\_{i}\\}) with lowest score
+
+7:if no such draft exists then
+
+8:break
+
+9:evict devictd\_{\\text{evict}}
+
+10:if|𝒢i|\<K|\\mathcal{G}\_{i}|\<Kthen
+
+11:asynchronously prefetch dd
+
+At each scheduling point, the cache manager derives the target set𝒲i\\mathcal{W}\_{i} from the ranked list RiR\_{i} by selecting the top-KK drafts
+(Algorithm [2](#alg2), line 2). It then incrementally updates the
+resident set 𝒢i\\mathcal{G}\_{i} without blocking execution.
+
+#### Policy. ####
+
+For each d∈𝒲i∖𝒢id\\in\\mathcal{W}\_{i}\\setminus\\mathcal{G}\_{i}, the system initiates
+asynchronous prefetch (lines 3–11). If space is required, it evicts drafts in𝒢i∖𝒲i\\mathcal{G}\_{i}\\setminus\\mathcal{W}\_{i} in ascending order of predicted utility,
+while protecting the active draft did\_{i} whenever possible (lines 5–9). This
+simple top-KK policy is effective in practice, as prediction already captures
+most of the utility variation across drafts.
+
+This design decouples long-horizon planning from immediate execution. Rather
+than switching to the globally best draft immediately, MemSpecincrementally reshapes the resident set so that promising drafts become
+available at future scheduling points. In this sense, cache management is not
+merely a storage optimization, but a key component of adaptive draft scheduling.
+
+### 3.4. Runtime Controller ###
+
+The Runtime Controller orchestrates decoding, prediction, cache updates, and
+draft switching. Its core policy is to always execute the best currently
+resident draft and never stall for non-resident models.
+
+Algorithm 3MemSpec Runtime Loop
+
+1:load target model
+
+2:R0←PredictDraftRanking​(xprompt)R\_{0}\\leftarrow\\textsc{PredictDraftRanking}(x\_{\\text{prompt}})
+
+3:load initial draft d0d\_{0}
+
+4:𝒢0←{d0}\\mathcal{G}\_{0}\\leftarrow\\{d\_{0}\\}
+
+5:UpdateCache(R0,𝒢0,K,d0R\_{0},\\mathcal{G}\_{0},K,d\_{0})
+
+6:i←0i\\leftarrow 0
+
+7:while not end-of-sequence do
+
+8:forj=1j=1 to NNdo
+
+9:run draft did\_{i}
+
+10:verify with target model
+
+11:if end-of-sequence then
+
+12:break
+
+13:if not end-of-sequence then
+
+14:collect xirecent​(T)x^{\\text{recent}}\_{i}(T)
+
+15:xi+1←[xprompt;xirecent​(T)]x\_{i+1}\\leftarrow[x\_{\\text{prompt}};x^{\\text{recent}}\_{i}(T)]
+
+16:Ri+1←PredictDraftRanking​(xi+1)R\_{i+1}\\leftarrow\\textsc{PredictDraftRanking}(x\_{i+1})
+
+17:UpdateCache(Ri+1,𝒢i,K,diR\_{i+1},\\mathcal{G}\_{i},K,d\_{i})
+
+18:di+1←arg⁡maxd∈𝒢i⁡P​(d∣xi+1)d\_{i+1}\\leftarrow\\arg\\max\_{d\\in\\mathcal{G}\_{i}}P(d\\mid x\_{i+1})
+
+19:i←i+1i\\leftarrow i+1
+
+As summarized in Algorithm [3](#alg3), MemSpec first predicts an
+initial ranked list from the prompt and loads the initial draft (lines 2–4).
+It then initializes the resident set and triggers cache preparation (line 5).
+
+During execution, the controller repeatedly performs three steps. First, it runs
+speculative decoding for the current interval using the active draft did\_{i}(lines 8–12). Second, it constructs the next context from the prompt and the
+most recent generated tokens (lines 14–15). Third, it invokes prediction and
+cache update to prepare future drafts, and selects the best currently resident
+draft for the next interval (lines 16–18).
+
+If the top-ranked draft is not yet resident, execution continues with the best
+available draft. Once loading completes, the new draft becomes eligible at the
+next scheduling point. This ensures that incomplete prefetch does not introduce
+blocking and converts draft adaptation into an overlapped process.
+
+This policy captures the key principle of MemSpec: the runtime should
+never sacrifice immediate progress to follow an unavailable draft. Instead, it
+continues decoding with the best runnable draft while opportunistically
+preparing better candidates in the background. This best-effort switching
+strategy enables adaptive decoding without incurring the severe overhead of
+naive dynamic switching.
+
+### 3.5. System Implementation ###
+
+MemSpec is implemented in PyTorch and built on top of a
+high-performance speculative decoding engine presented in 
+> (Svirschevski et al., [2024](#bib.bib11))
+
+.
+All models share a common tokenizer, and draft execution follows the standard
+draft-and-verify process within a conventional speculative decoding pipeline.
+
+Each draft model maintains its residency state and prefetch status.
+Prefetching is performed asynchronously and overlapped with decoding,
+allowing model loading to proceed without blocking execution. The active
+draft is protected from eviction whenever possible to ensure uninterrupted
+decoding.
+
+The Prediction Engine is invoked once every NN iterations, amortizing its
+runtime overhead. In practice, prediction accounts for only 3.9% of total
+execution time on average.
+
+Overall, MemSpec enables adaptive draft selection as a lightweight
+and non-blocking runtime mechanism, making it well-suited for
+memory-constrained edge deployments.
+
+4. Evaluation
+----------
+
+We evaluate MemSpec along four key aspects:
+
+* •
+
+  Generation throughput: How much steady-state generation
+  throughput improvement can MemSpec achieve over static and adaptive
+  draft-selection strategies?
+
+* •
+
+  Performance breakdown: Why does MemSpec outperform
+  exploration-based adaptive methods on memory-constrained edge devices?
+
+* •
+
+  Impact of design components: How much do the key design
+  components of MemSpec contribute to performance?
+
+* •
+
+  Sensitivity analysis: How sensitive is MemSpec to
+  runtime parameters such as scheduling interval, output length, and resident
+  cache capacity?
+
+### 4.1. Experimental Setup ###
+
+Platform.We evaluate MemSpec on a Jetson Orin Nano platform. Table [1](#S4.T1)summarizes the hardware configuration.
+
+Table 1. Hardware configuration.
+
+Software.We use PyTorch 2.9.1 with CUDA 12.6 on NVIDIA JetPack 6.2.1.
+All experiments are conducted under the same software environment.
+
+Models.We evaluate two target models: GPTQ INT4 LLaMA-2 7B 
+> (Touvron et al., [2023](#bib.bib12))
+
+and GPTQ INT4 Qwen2.5 7B 
+> (Team et al., [2025](#bib.bib13))
+
+.
+For each model family, we construct five draft models: one general-purpose draft
+and four domain-specialized drafts (code, math, law, and medical).
+Each draft model has 400M parameters for LLaMA-2 and 0.5B parameters for Qwen2.5.
+
+Under the 8GB memory constraint of the Jetson Orin Nano, at most two draft
+models can remain resident simultaneously. Therefore, we use K=2K=2 in the
+main evaluation unless otherwise stated.
+
+Draft models. Domain-specialized drafts are obtained via
+distillation following prior work 
+> (Yi et al., [2024](#bib.bib6))
+
+. Each draft is
+fine-tuned on domain-specific datasets:
+GSM8K 
+> (Cobbe et al., [2021](#bib.bib14))
+
+ and
+MATH 
+> (Hendrycks et al., [2021](#bib.bib15))
+
+ (math reasoning),
+HumanEval 
+> (Chen et al., [2021](#bib.bib16))
+
+ and
+MBPP 
+> (Austin et al., [2021](#bib.bib17))
+
+ (code),
+LexGLUE 
+> (Chalkidis et al., [2022](#bib.bib18))
+
+ (law), and MedQA 
+> (Jin et al., [2021](#bib.bib19))
+
+and MedMCQA 
+> (Pal et al., [2022](#bib.bib20))
+
+ (medical).
+
+Prediction model.The Prediction Engine uses a BERT-based model with a task-specific ranking
+head. The encoder is kept fixed, and only the ranking head is trained.
+Training data is collected by running speculative decoding on the same
+datasets used for draft fine-tuning and recording execution traces. The
+predictor is trained to select the most effective draft for each decoding
+context based on observed runtime utility. Training data is disjoint from
+the evaluation datasets to avoid data leakage and assess generalization.
+
+Workloads.We evaluate on five datasets covering diverse domains: Alpaca 
+> (Taori et al., [2023](#bib.bib21))
+
+(instruction following), LiveCodeBench 
+> (Jain et al., [2024](#bib.bib22))
+
+ (code),
+Omni-MATH 
+> (Gao et al., [2024](#bib.bib23))
+
+ (math),
+MMLU-Law, and MMLU-Medical 
+> (Hendrycks et al., [2021](#bib.bib15))
+
+ (MMLU professional law
+and medicine). We randomly sample 100 prompts from each dataset.
+
+Runtime configuration.Unless otherwise stated, the scheduling interval is set to N=4N=4 and the output
+length is fixed to 128 generated tokens. We use greedy decoding with batch size
+1.
+
+Throughput measurement.Throughput is measured as generated tokens per second during steady-state
+iterative decoding, including both draft execution and target verification. We
+exclude prompt encoding time and focus on steady-state generation so that the
+reported performance reflects the efficiency of runtime draft scheduling
+itself. All results are averaged over three runs. For each prompt, we reset the
+runtime state, including draft cache contents and prediction context, to avoid
+cross-sample interference. When summarizing performance across workloads, we
+report the geometric mean (GMEAN).
+
+Baselines.We compare the following draft-selection strategies:
+
+* •
+
+  General-Static: uses a single general-purpose (i.e., not fine-tuned) draft model.
+
+* •
+
+  Oracle-Static: selects the best draft per input via offline evaluation but keeps it fixed during generation.
+
+* •
+
+  MAB-Async: a state-of-the-art exploration-based adaptive method that dynamically selects drafts without blocking execution.
+
+* •
+
+  Oracle-Dynamic: an empirical upper bound that selects the best
+  draft at each scheduling point using the same scheduling interval asMemSpec, with oracle knowledge of future draft utility under the
+  same memory constraint.
+
+* •
+
+  MemSpec: our prediction-guided, memory-aware runtime.
+
+For MAB-Async, we implement an asynchronous bandit-based selection
+strategy that overlaps draft loading with ongoing decoding. This design gives
+the adaptive baseline the benefit of non-blocking loading and therefore
+represents a stronger comparison than a synchronous exploration strategy. We use
+a UCB-based policy similar to prior bandit-based adaptive speculative decoding
+approaches such as BanditSpec 
+> (Hou et al., [2025](#bib.bib9))
+
+, and initially explore
+each draft model once before adaptive selection begins. During decoding,
+MAB-Async adaptively updates draft selection decisions based on observed runtime
+behavior. When the selected draft is non-resident, loading proceeds
+asynchronously while decoding continues with the currently resident draft. We
+evaluate exploration coefficients (c∈{0.1,0.5,1.0,2.0,3.0})(c\\in\\{0.1,0.5,1.0,2.0,3.0\\}) and
+use the best-performing configuration (c=2.0c=2.0) in all experiments.
+
+These baselines cover static, adaptive, and oracle configurations. ComparingOracle-Static and Oracle-Dynamic isolates the benefit of
+dynamic adaptation beyond optimal static selection, while comparingMAB-Async and MemSpec highlights the benefit of
+prediction-guided, memory-aware scheduling over exploration-based adaptation.
+
+### 4.2. Overall Throughput ###
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="208" id="S4.F6.g1" src="2608.10362v1/x6.png" width="830">Figure 6. Normalized steady-state generation throughput across workloads.
+
+Figure [6](#S4.F6) shows normalized steady-state generation
+throughput (normalized to General-Static) across all workloads for
+both LLaMA-2 and Qwen2.5. MemSpec consistently
+outperforms both static baselines and the adaptive MAB-Async method
+across all datasets.
+
+Oracle-Static improves throughput by 22.5%22.5\\% on average overGeneral-Static, demonstrating that selecting an appropriate draft
+model is critical for performance. However, Oracle-Dynamic achieves a
+further 24.9%24.9\\% improvement over Oracle-Static, revealing substantial
+additional headroom from dynamic adaptation
+
+MemSpec closely approaches Oracle-Dynamic, achieving9595–97%97\\% of its throughput while remaining practical for deployment.
+Compared with MAB-Async, MemSpec improves throughput by
+approximately 40.7%40.7\\% on average across workloads.
+
+These results reveal two important insights. First, there exists substantial
+dynamic headroom beyond static selection. While Oracle-Staticalready captures the best per-prompt draft, Oracle-Dynamic further
+improves performance, indicating that the most effective draft can change
+within a single generation. Second, realizing this headroom on edge devices
+requires more than better draft identification. Although MAB-Asyncimproves selection quality, it fails to convert much of this benefit into
+throughput because effective drafts are often not resident when needed.
+
+MemSpec bridges this gap by aligning draft selection with runtime
+availability. By proactively maintaining a small set of high-utility drafts,
+it avoids excessive switching while preserving most of the gains of dynamic
+adaptation. The remaining gap to Oracle-Dynamic is relatively small,
+suggesting that prediction-guided scheduling is sufficient to approximate
+near-ideal behavior without exhaustive oracle knowledge.
+
+Overall, these results demonstrate that the key bottleneck on edge devices is
+not simply identifying better drafts, but ensuring that they are available at
+execution time. By jointly optimizing draft selection and draft residency,MemSpec captures most of the dynamic headroom ofOracle-Dynamic without requiring impractical offline enumeration.
+
+### 4.3. Execution Breakdown ###
+
+To understand the performance gap, we decompose execution time into three
+components: *desired execution*, *fallback execution*, and*prediction overhead*. Desired execution corresponds to decoding with the
+preferred draft, while fallback execution corresponds to decoding with a
+non-optimal resident draft when the desired draft is not yet available.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S4.F7.g1" src="2608.10362v1/x7.png" width="830">Figure 7. Execution time breakdown of MAB-Async and MemSpec.
+
+Figure [7](#S4.F7) shows that MAB-Async spends a large
+fraction of execution time in fallback execution, accounting for 49.4%49.4\\% of
+total runtime on average across model families. This reflects a key limitation
+of exploration-based adaptation: even when a better draft is identified, it is
+often unavailable at execution time, forcing the runtime to continue decoding
+with a suboptimal resident draft.
+
+In contrast, MemSpec reduces fallback execution to below 5.5%5.5\\% while
+substantially increasing the fraction of desired execution. Prediction overhead
+remains negligible, accounting for less than 3.9%3.9\\% of total runtime.
+
+A closer inspection reveals that this reduction is primarily due to improved
+temporal alignment between selection and residency. In MAB-Async,
+draft decisions are driven by online exploration and therefore react to past
+observations, but do not explicitly prepare high-utility drafts before they
+are needed. As a result, the runtime frequently spends time executing
+available but inferior drafts while preferred ones are still being loaded.
+
+By contrast, MemSpec uses prediction to anticipate near-future draft
+utility from both prompt semantics and recent generation context. This allows
+the runtime to initiate prefetch ahead of time and convert reactive switching
+into proactive preparation. The resulting increase in desired execution shows
+that the performance advantage of MemSpec comes not only from
+selecting better drafts, but from ensuring that those drafts are actually
+runnable at the scheduling point.
+
+These results highlight a fundamental distinction between *selection*quality and *execution* quality. While MAB-Async can identify
+effective drafts, it does not ensure that they are available at execution
+time. MemSpec improves throughput by aligning draft selection with
+runtime availability through proactive residency management.
+
+### 4.4. Impact of Design Components ###
+
+We analyze the contribution of MemSpec’s key design components by
+comparing the following configurations:
+
+* •
+
+  General-Static: a non-adaptive baseline with no prediction or
+  runtime draft management.
+
+* •
+
+  Prediction-Only: uses prediction-guided draft selection without
+  proactive prefetching.
+
+* •
+
+  MemSpec: the full design with prediction-guided scheduling and
+  memory-aware prefetching.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S4.F8.g1" src="2608.10362v1/x8.png" width="830">Figure 8. Throughput comparison for component analysis.<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S4.F9.g1" src="2608.10362v1/x9.png" width="830">Figure 9. Execution breakdown for component analysis.
+
+Figure [8](#S4.F8) shows that Prediction-Only improves
+throughput by 21.6%21.6\\% over General-Static,
+confirming that context-aware draft selection is beneficial. However, it still
+falls short of MemSpec by 30.5%30.5\\%.
+
+Figure [9](#S4.F9) explains this gap. Prediction-Onlyspends 21.3%21.3\\% of runtime in fallback execution, while MemSpecreduces this to below 5.3%5.3\\%. This shows that prediction alone is insufficient:
+performance gains are realized only when predicted drafts are made available at
+execution time.
+
+These results highlight an important system-level insight: prediction accuracy
+alone is not the limiting factor in adaptive decoding under memory constraints.
+Even when the runtime can identify effective drafts, those drafts may still
+fail to improve throughput if they are unavailable when needed. Without
+proactive cache management, prediction quality does not directly translate into
+execution quality.
+
+MemSpec addresses this limitation by coupling prediction with
+residency management, ensuring that high-utility drafts are not only selected
+but also prepared in advance. This tight integration between prediction and
+scheduling is essential for realizing the full benefit of adaptive decoding.
+
+Overall, MemSpec derives its performance from combining prediction
+with memory-aware scheduling, rather than prediction alone. More broadly,
+these results show that adaptive speculative decoding on edge devices is
+fundamentally a joint optimization problem over draft selection and memory
+management.
+
+### 4.5. Sensitivity Analysis ###
+
+We analyze the sensitivity of MemSpec to several key runtime
+parameters.
+
+#### Scheduling interval. ####
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S4.F10.g1" src="2608.10362v1/x10.png" width="830">Figure 10. Sensitivity to scheduling interval.
+
+Figure [10](#S4.F10) shows the effect of varying the
+scheduling interval. Throughput improves from N=2N=2 to N=4N=4, remains nearly
+unchanged at N=8N=8, and decreases at N=16N=16. This trend reflects the trade-off
+between adaptation frequency and prefetch opportunity. When the interval is too
+small, frequent rescheduling leaves less time to overlap model loading with
+decoding. When the interval is too large, beneficial draft transitions are
+delayed.
+
+The relatively flat performance between N=4N=4 and N=8N=8 suggests thatMemSpec does not require overly fine-grained parameter tuning to
+perform well. This is desirable for practical deployment, where the best
+interval may vary slightly across platforms and workloads. Overall, these
+results indicate that a moderate interval provides the best balance, and thatMemSpec remains robust over a reasonably wide operating range around
+the default setting.
+
+#### Output length. ####
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S4.F11.g1" src="2608.10362v1/x11.png" width="830">Figure 11. Sensitivity to output length.
+
+Figure [11](#S4.F11) shows the effect of varying output length.MemSpec achieves larger gains as generation becomes longer. Compared
+with short outputs, longer generations provide more opportunity to exploit
+intra-sequence variation and amortize the cost of draft adaptation. As a
+result, runtime draft switching becomes increasingly beneficial as output
+length grows.
+
+This trend also indicates that the benefit of memory-aware scheduling becomes
+more pronounced as generation complexity increases. Longer outputs typically
+contain more phase transitions and greater intra-sequence heterogeneity,
+making static draft selection increasingly suboptimal. In such settings,
+proactively adapting the resident working set provides greater benefit than in
+short, relatively homogeneous generations.
+
+These results further support the central motivation of MemSpec:
+dynamic draft adaptation is especially important for longer and more
+heterogeneous generation workloads, and the advantage of MemSpecscales with the opportunity for adaptation.
+
+#### Resident cache capacity. ####
+
+We additionally evaluate sensitivity to resident cache capacity KK, which
+controls how many draft models can remain resident simultaneously. Because the
+Jetson Orin Nano platform used in the main evaluation can hold at most two draft
+models under the default configuration, we conduct this additional analysis on a
+larger-memory Jetson AGX Orin platform.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="S4.F12.g1" src="2608.10362v1/x12.png" width="830">Figure 12. Sensitivity to resident cache capacity KK on Jetson AGX Orin.
+
+Figure [12](#S4.F12) shows that MemSpec already achieves
+most of its performance benefit at relatively small cache capacities.
+While MAB-Async improves throughput from 1.13×\\times to
+1.29×\\times as KK increases from 2 to 4, MemSpec shows only
+modest improvement (from 1.47×\\times to 1.51×\\times). This behavior is
+consistent with the predictor analysis in
+Section [4.6](#S4.SS6), which showed high top-2 recall. Since
+high-utility drafts are already included in the resident working set in most
+cases, increasing cache capacity further provides limited additional benefit
+for MemSpec.
+
+In contrast, MAB-Async benefits more noticeably from larger resident
+cache capacity. As KK increases, reactive draft loading becomes less
+frequent because the runtime experiences fewer non-resident draft selections.
+Consequently, the performance gap between MemSpec andMAB-Async decreases slightly at larger KK. Nevertheless,MemSpec consistently achieves higher throughput across all evaluated
+cache capacities, demonstrating that prediction-guided residency management
+remains beneficial even when more memory is available.
+
+### 4.6. Discussion ###
+
+#### Predictor quality. ####
+
+MemSpec does not require perfectly accurate draft prediction to
+improve throughput. The predictor is primarily used to identify promising
+drafts for proactive residency management rather than to select the exact
+optimal draft at every scheduling point.
+
+To evaluate predictor quality, we compare three predictor input
+configurations: prompt-only, recent-generated-tokens-only, and a combined
+configuration using both prompt and recent generated tokens.
+
+Table 2. Predictor quality comparison.
+
+The combined predictor achieves the best ranking quality, improving top-1
+accuracy to 71.6% and achieving a top-2 recall of 95.7%. This indicates
+that the optimal draft is almost always included in the resident working set.
+These results support the key design principle of MemSpec: adaptive
+scheduling mainly requires sufficiently accurate ranking to maintain
+high-utility drafts in the resident set, rather than perfect prediction.
+
+#### End-to-end latency considerations. ####
+
+Our main evaluation focuses on steady-state iterative decoding and therefore
+excludes prompt processing and initial model loading. To assess startup
+overhead, we additionally measure end-to-end latency including prompt
+processing, target-model prefill, initial draft loading, and draft-model
+preparation.
+
+Although including startup costs reduces relative gains, MemSpecstill reduces end-to-end latency by 32.3% on average overGeneral-Static and by 24.9% over MAB-Async. These results
+remain consistent with our main findings: the primary benefit ofMemSpec comes from reducing repeated draft loading and fallback
+execution during iterative decoding.
+
+5. Related Work
+----------
+
+### 5.1. Speculative Decoding and Adaptive Draft Selection ###
+
+Speculative decoding accelerates autoregressive LLM inference by using a
+lightweight draft model to propose candidate tokens that are then verified by a
+larger target
+model 
+> (Leviathan et al., [2023](#bib.bib3); Chen et al., [2023](#bib.bib24))
+
+.
+Prior work has improved this framework along multiple directions, including
+specialized or distilled draft
+models 
+> (Zhou et al., [2024](#bib.bib25); Yi et al., [2024](#bib.bib6))
+
+ and system optimizations
+that reduce verification overhead or improve pipeline
+efficiency 
+> (Miao et al., [2024](#bib.bib5); Mamou et al., [2024](#bib.bib26); Zhang et al., [2025](#bib.bib27); Liu et al., [2025](#bib.bib28))
+
+.
+
+More recent studies observe that draft effectiveness varies across inputs
+and even across generation stages within a single sequence. This has led to
+adaptive speculative decoding methods that select among multiple candidate
+drafts at runtime rather than relying on a single fixed
+drafter 
+> (Kim et al., [2025](#bib.bib7); Liu et al., [2026](#bib.bib10); Hou et al., [2025](#bib.bib9))
+
+. In particular,
+multi-drafter and bandit-based approaches improve acceptance through online
+exploration and adaptation to observed runtime behavior.
+
+However, these methods primarily optimize *which* draft to select,
+implicitly assuming that the chosen draft can be executed immediately. That
+assumption is often invalid on memory-constrained edge devices, where only a
+small number of drafts can remain resident and switching to a non-resident
+draft incurs substantial loading overhead.
+
+MemSpec differs from prior adaptive speculative decoding work by
+treating draft selection and draft availability as a coupled systems problem.
+Rather than focusing only on acceptance-rate improvement, it explicitly accounts
+for residency and switching cost so that adaptive selection translates into
+throughput gains under tight memory budgets.
+
+### 5.2. Adaptive Model Selection and Online Routing ###
+
+A broad line of research studies adaptive model selection in settings such as
+cascaded inference 
+> (Narasimhan et al., [2025](#bib.bib42); Varshney and Baral, [2022](#bib.bib33); Dekoninck et al., [2025](#bib.bib31))
+
+and model routing 
+> (Chen et al., [2024](#bib.bib29); Taylor et al., [2018](#bib.bib30); Dekoninck et al., [2025](#bib.bib31); Chen et al., [2022](#bib.bib32))
+
+.
+These approaches dynamically select among candidate models based on input
+difficulty, confidence estimates, or runtime feedback to balance accuracy and
+efficiency. Some methods further employ online learning or bandit algorithms to
+manage the exploration–exploitation trade-off.
+
+MemSpec is related to this literature in that it also performs runtime
+model selection, but the underlying systems constraints are fundamentally
+different. Conventional routing formulations typically assume that all candidate
+models are readily available for immediate execution, and thus optimize only the
+selection decision itself.
+
+In contrast, MemSpec operates in a setting where model*availability* is constrained by memory capacity and model loading
+latency. Unlike conventional adaptive routing settings, speculative decoding
+requires repeated draft decisions within a single generation trajectory,
+making switching overhead a first-order cost. MemSpec therefore
+extends adaptive model selection with residency-aware scheduling, separating
+which drafts should be prepared from which resident draft should be executed
+immediately.
+
+### 5.3. Memory-Constrained LLM Inference on Edge Devices ###
+
+Running LLMs on edge devices has motivated extensive work on reducing memory
+footprint and managing limited memory resources. Existing approaches include
+model compression (e.g., quantization, distillation) to shrink model
+size 
+> (Ko et al., [2025](#bib.bib34); Frantar et al., [2023](#bib.bib35); Xiao et al., [2023](#bib.bib36); Lin et al., [2024](#bib.bib37))
+
+and parameter offloading across GPU, CPU, and storage
+tiers 
+> (Svirschevski et al., [2024](#bib.bib11); Sheng et al., [2023](#bib.bib38); Song et al., [2024](#bib.bib39); Alizadeh et al., [2024](#bib.bib40); Kim et al., [2024](#bib.bib41))
+
+.
+These techniques make large-model inference feasible on resource-limited
+platforms.
+
+Our work is complementary to these efforts but addresses a different challenge.
+Prior memory-optimization methods mainly focus on optimizing the execution of a*single* large model by reducing its footprint or by moving its parameters
+more efficiently across memory tiers.
+
+By contrast, MemSpec targets adaptive speculative decoding with*multiple* candidate draft models, where the main challenge is not only
+executing one model efficiently, but deciding which drafts should remain
+resident, which should be prefetched, and when switching is worthwhile.
+
+In this sense, prior edge inference techniques reduce the per-model memory
+cost, while MemSpec addresses the runtime scheduling problem of
+managing multiple drafts under a tight memory budget. These directions are
+orthogonal and potentially complementary.
+
+6. Conclusion
+----------
+
+This paper presents MemSpec, a memory-aware runtime system for adaptive
+draft scheduling in speculative decoding on memory-constrained edge platforms.
+Through detailed characterization on a Jetson Orin Nano device, we show that
+although generation heterogeneity creates substantial opportunities for
+improving token acceptance, adaptive draft switching incurs significant model
+loading overhead—often exceeding multiple decoding iterations—which limits
+end-to-end throughput gains.
+
+To address this challenge, MemSpec formulates adaptive speculative
+decoding as a residency-constrained scheduling problem. By combining
+prediction-guided draft ranking with memory-aware residency management,MemSpec proactively aligns draft selection with runtime availability,
+allowing decoding to proceed with the best currently resident draft while
+asynchronously preparing better candidates in the background. Experimental
+results show that MemSpec improves steady-state generation throughput
+by 40.7%40.7\\% on average over state-of-the-art adaptive baselines, while
+achieving 9595–97%97\\% of an oracle dynamic upper bound under the same memory
+constraints. These results demonstrate that the primary bottleneck in adaptive
+speculative decoding on edge devices is not draft selection quality, but
+ensuring timely availability of effective drafts.
+
+Acknowledgements
+----------
+
+This research was supported in part by the National Research Foundation of
+Korea (NRF) grant funded by the Korean government (MSIT) (No.
+RS-2025-24535034), and in part by the Advanced GPU Utilization Support Program
+funded by the Korean government (MSIT). Myeonggyun Han is the corresponding
+author.
+
+References
+----------
+
+* K. Alizadeh, S. I. Mirzadeh, D. Belenko, S. Khatamifard, M. Cho, C. C. Del Mundo, M. Rastegari, and M. Farajtabar (2024)LLM in a flash: efficient large language model inference with limited memory.In Proceedings of the Annual Meeting of the Association for Computational Linguistics (ACL), L. Ku, A. Martins, and V. Srikumar (Eds.),Bangkok, Thailand,  pp. 12562–12584.External Links: [Document](https://dx.doi.org/10.18653/v1/2024.acl-long.678)Cited by: [§5.3](#S5.SS3.p1.1).
+* J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, and C. Sutton (2021)Program synthesis with large language models.External Links: 2108.07732Cited by: [§4.1](#S4.SS1.p5.1).
+* T. Cai, Y. Li, Z. Geng, H. Peng, J. D. Lee, D. Chen, and T. Dao (2024)MEDUSA: simple LLM inference acceleration framework with multiple decoding heads.In Proceedings of the International Conference on Machine Learning (ICML),Vienna, Austria.Cited by: [§1](#S1.p2.1).
+* I. Chalkidis, A. Jana, D. Hartung, M. Bommarito, I. Androutsopoulos, D. Katz, and N. Aletras (2022)LexGLUE: a benchmark dataset for legal language understanding in English.In Proceedings of the Annual Meeting of the Association for Computational Linguistics (ACL), S. Muresan, P. Nakov, and A. Villavicencio (Eds.),Dublin, Ireland,  pp. 4310–4330.External Links: [Document](https://dx.doi.org/10.18653/v1/2022.acl-long.297)Cited by: [§4.1](#S4.SS1.p5.1).
+* C. Chen, S. Borgeaud, G. Irving, J. Lespiau, L. Sifre, and J. Jumper (2023)Accelerating large language model decoding with speculative sampling.External Links: 2302.01318Cited by: [§5.1](#S5.SS1.p1.1).
+* L. Chen, M. Zaharia, and J. Zou (2022)Efficient online ML API selection for multi-label classification tasks.In Proceedings of the 39th International Conference on
+  Machine Learning, K. Chaudhuri, S. Jegelka, L. Song, C. Szepesvari, G. Niu, and S. Sabato (Eds.),Vol. 162, Baltimore, Maryland, USA,  pp. 3716–3746.External Links: [Link](https://proceedings.mlr.press/v162/chen22ad.html)Cited by: [§5.2](#S5.SS2.p1.1).
+* L. Chen, M. Zaharia, and J. Zou (2024)FrugalGPT: how to use large language models while reducing cost and improving performance.Transactions on Machine Learning Research2024.External Links: [Link](https://openreview.net/forum?id=cSimKw5p6R)Cited by: [§5.2](#S5.SS2.p1.1).
+* M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. de Oliveira Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, A. Ray, R. Puri, G. Krueger, M. Petrov, H. Khlaaf, G. Sastry, P. Mishkin, B. Chan, S. Gray, N. Ryder, M. Pavlov, A. Power, L. Kaiser, M. Bavarian, C. Winter, P. Tillet, F. P. Such, D. Cummings, M. Plappert, F. Chantzis, E. Barnes, A. Herbert-Voss, W. H. Guss, A. Nichol, A. Paino, N. Tezak, J. Tang, I. Babuschkin, S. Balaji, S. Jain, W. Saunders, C. Hesse, A. N. Carr, J. Leike, J. Achiam, V. Misra, E. Morikawa, A. Radford, M. Knight, M. Brundage, M. Murati, K. Mayer, P. Welinder, B. McGrew, D. Amodei, S. McCandlish, I. Sutskever, and W. Zaremba (2021)Evaluating large language models trained on code.External Links: 2107.03374Cited by: [§4.1](#S4.SS1.p5.1).
+* K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. Schulman (2021)Training verifiers to solve math word problems.External Links: 2110.14168Cited by: [§4.1](#S4.SS1.p5.1).
+* J. Dekoninck, M. Baader, and M. Vechev (2025)A unified approach to routing and cascading for LLMs.In Proceedings of the International Conference on Machine Learning (ICML),Vol. 267, Vancouver, Canada.External Links: [Link](https://openreview.net/forum?id=AAl89VNNy1)Cited by: [§5.2](#S5.SS2.p1.1).
+* E. Frantar, S. Ashkboos, T. Hoefler, and D. Alistarh (2023)OPTQ: accurate quantization for generative pre-trained transformers.In Proceedings of the International Conference on Learning Representations (ICLR),Kigali, Rwanda.External Links: [Link](https://openreview.net/forum?id=tcbBPnfwxS)Cited by: [§5.3](#S5.SS3.p1.1).
+* B. Gao, F. Song, Z. Yang, Z. Cai, Y. Miao, Q. Dong, L. Li, C. Ma, L. Chen, R. Xu, Z. Tang, B. Wang, D. Zan, S. Quan, G. Zhang, L. Sha, Y. Zhang, X. Ren, T. Liu, and B. Chang (2024)Omni-MATH: a universal olympiad level mathematic benchmark for large language models.External Links: 2410.07985Cited by: [§4.1](#S4.SS1.p7.1).
+* D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang, D. Song, and J. Steinhardt (2021)Measuring mathematical problem solving with the MATH dataset.In Proceedings of the Neural Information Processing
+  Systems Track on Datasets and Benchmarks,New Orleans, LA, USA.External Links: [Link](https://openreview.net/forum?id=7Bywt2mQsCe)Cited by: [§4.1](#S4.SS1.p5.1),[§4.1](#S4.SS1.p7.1).
+* Y. Hou, F. Zhang, C. Du, X. Zhang, J. Pan, T. Pang, C. Du, V. Y. F. Tan, and Z. Yang (2025)BanditSpec: adaptive speculative decoding via bandit algorithms.In Proceedings of the International Conference on Machine Learning (ICML),Vol. 267, Vancouver, Canada.External Links: [Link](https://openreview.net/forum?id=ghkWIlliZ8)Cited by: [§1](#S1.p5.1),[§2.3](#S2.SS3.p1.1),[§4.1](#S4.SS1.p12.2),[§5.1](#S5.SS1.p2.1).
+* N. Jain, K. Han, A. Gu, W. Li, F. Yan, T. Zhang, S. Wang, A. Solar-Lezama, K. Sen, and I. Stoica (2024)LiveCodeBench: holistic and contamination free evaluation of large language models for code.External Links: 2403.07974Cited by: [§4.1](#S4.SS1.p7.1).
+* D. Jin, E. Pan, N. Oufattole, W. Weng, H. Fang, and P. Szolovits (2021)What disease does this patient have? a large-scale open domain question answering dataset from medical exams.Applied Sciences11 (14).External Links: [Document](https://dx.doi.org/10.3390/app11146421),[Link](https://www.mdpi.com/2076-3417/11/14/6421)Cited by: [§4.1](#S4.SS1.p5.1).
+* S. Kim, E. Sim, Y. Shin, Y. Cho, and W. Baek (2024)Activation sequence caching: high-throughput and memory-efficient generative inference with a single gpu.In Proceedings of the 2024 International Conference on Parallel Architectures and Compilation Techniques (PACT ’24’),New York, NY, USA,  pp. 78–90.External Links: [Document](https://dx.doi.org/10.1145/3656019.3676945)Cited by: [§5.3](#S5.SS3.p1.1).
+* T. Kim, H. Jung, and S. Yun (2025)A unified framework for speculative decoding with multiple drafters as a bandit.External Links: [Link](https://openreview.net/forum?id=5haYLrlyGj)Cited by: [§1](#S1.p3.1),[§1](#S1.p5.1),[§2.3](#S2.SS3.p1.1),[§5.1](#S5.SS1.p2.1).
+* J. Ko, T. Chen, S. Kim, T. Ding, L. Liang, I. Zharkov, and S. Yun (2025)DistiLLM-2: a contrastive approach boosts the distillation of LLMs.In Proceedings of the International Conference on Machine Learning (ICML),Vol. 267, Vancouver, Canada.External Links: [Link](https://openreview.net/forum?id=rc65N9xIrY)Cited by: [§5.3](#S5.SS3.p1.1).
+* Y. Leviathan, M. Kalman, and Y. Matias (2023)Fast inference from transformers via speculative decoding.In Proceedings of the International Conference on Machine Learning (ICML),Honolulu, Hawaii, USA.Cited by: [§1](#S1.p2.1),[§1](#S1.p5.1),[§5.1](#S5.SS1.p1.1).
+* J. Lin, J. Tang, H. Tang, S. Yang, W. Chen, W. Wang, G. Xiao, X. Dang, C. Gan, and S. Han (2024)AWQ: activation-aware weight quantization for on-device LLM compression and acceleration.In Proceedings of Machine Learning and Systems (MLSys), P. Gibbons, G. Pekhimenko, and C. D. Sa (Eds.),Vol. 6, Santa Clara, CA, USA,  pp. 87–100.External Links: [Link](https://proceedings.mlsys.org/paper_files/paper/2024/file/%0A42a452cbafa9dd64e9ba4aa95cc1ef21-Paper-Conference.pdf)Cited by: [§5.3](#S5.SS3.p1.1).
+* H. Liu, J. Huang, Z. Jia, Y. Park, and Y. Wang (2026)Not-a-bandit: provably no-regret drafter selection in speculative decoding for LLMs.In Proceedings of the International Conference on Learning Representations (ICLR),Rio de Janeiro, Brazil.External Links: [Link](https://openreview.net/forum?id=JMmljf895g)Cited by: [§1](#S1.p5.1),[§2.3](#S2.SS3.p1.1),[§5.1](#S5.SS1.p2.1).
+* T. Liu, Y. Li, Q. Lv, K. Liu, J. Zhu, W. Hu, and X. Sun (2025)PEARL: parallel speculative decoding with adaptive draft length.In Proceedings of the International Conference on Learning Representations (ICLR),Singapore.External Links: [Link](https://openreview.net/forum?id=QOXrVMiHGK)Cited by: [§1](#S1.p5.1),[§5.1](#S5.SS1.p1.1).
+* J. Mamou, O. Pereg, D. Korat, M. Berchansky, N. Timor, M. Wasserblat, and R. Schwartz (2024)Dynamic speculation lookahead accelerates speculative decoding of large language models.In Proceedings of The 4th NeurIPS Efficient Natural
+  Language and Speech Processing Workshop, M. Rezagholizadeh, P. Passban, S. Samiee, V. Partovi Nia, Y. Cheng, Y. Deng, Q. Liu, and B. Chen (Eds.),Vol. 262, Vancouver, Canada,  pp. 456–467.External Links: [Link](https://proceedings.mlr.press/v262/mamou24a.html)Cited by: [§1](#S1.p5.1),[§5.1](#S5.SS1.p1.1).
+* X. Miao, G. Oliaro, Z. Zhang, X. Cheng, Z. Wang, Z. Zhang, R. Y. Y. Wong, A. Zhu, L. Yang, X. Shi, C. Shi, Z. Chen, D. Arfeen, R. Abhyankar, and Z. Jia (2024)SpecInfer: accelerating large language model serving with tree-based speculative inference and verification.In Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 3 (ASPLOS ’24’),New York, NY, USA,  pp. 932–949.External Links: [Document](https://dx.doi.org/10.1145/3620666.3651335)Cited by: [§1](#S1.p2.1),[§1](#S1.p5.1),[§5.1](#S5.SS1.p1.1).
+* H. Narasimhan, W. Jitkrittum, A. S. Rawat, S. Kim, N. Gupta, A. K. Menon, and S. Kumar (2025)Faster cascades via speculative decoding.In Proceedings of the International Conference on Learning Representations (ICLR),External Links: [Link](https://openreview.net/forum?id=vo9t20wsmd)Cited by: [§5.2](#S5.SS2.p1.1).
+* A. Pal, L. K. Umapathi, and M. Sankarasubbu (2022)MedMCQA: a large-scale multi-subject multi-choice dataset for medical domain question answering.In Proceedings of the Conference on Health, Inference,
+  and Learning, G. Flores, G. H. Chen, T. Pollard, J. C. Ho, and T. Naumann (Eds.),Vol. 174, 415 Main Street, Cambridge, MA USA,  pp. 248–260.External Links: [Link](https://proceedings.mlr.press/v174/pal22a.html)Cited by: [§4.1](#S4.SS1.p5.1).
+* R. Qin, J. Xia, Z. Jia, M. Jiang, A. Abbasi, P. Zhou, J. Hu, and Y. Shi (2024)Enabling on-device large language model personalization with self-supervised data selection and synthesis.In Proceedings of the 61st ACM/IEEE Design Automation Conference (DAC ’24’),New York, NY, USA.External Links: [Document](https://dx.doi.org/10.1145/3649329.3655665)Cited by: [§1](#S1.p1.1).
+* Y. Sheng, L. Zheng, B. Yuan, Z. Li, M. Ryabinin, B. Chen, P. Liang, C. Ré, I. Stoica, and C. Zhang (2023)FlexGen: high-throughput generative inference of large language models with a single GPU.In Proceedings of the International Conference on Machine Learning (ICML),Cited by: [§5.3](#S5.SS3.p1.1).
+* Y. Song, Z. Mi, H. Xie, and H. Chen (2024)PowerInfer: fast large language model serving with a consumer-grade GPU.In Proceedings of the ACM Symposium on Operating Systems Principles (SOSP),New York, NY, USA,  pp. 590–606.External Links: [Document](https://dx.doi.org/10.1145/3694715.3695964)Cited by: [§5.3](#S5.SS3.p1.1).
+* R. Svirschevski, A. May, Z. Chen, B. Chen, Z. Jia, and M. Ryabinin (2024)SpecExec: massively parallel speculative decoding for interactive LLM inference on consumer devices.In Advances in Neural Information Processing Systems (NeurIPS), A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang (Eds.),Vol. 37, Vancouver, Canada,  pp. 16342–16368.External Links: [Link](https://proceedings.neurips.cc/paper_files/paper/2024/file/%0A1d91d5689e251d27993a3c2182dddcf7-Paper-Conference.pdf)Cited by: [§3.5](#S3.SS5.p1.1),[§5.3](#S5.SS3.p1.1).
+* R. Taori, I. Gulrajani, T. Zhang, Y. Dubois, X. Li, C. Guestrin, P. Liang, and T. B. Hashimoto (2023)Stanford Alpaca: an instruction-following LLaMA model.Note: [https://github.com/tatsu-lab/stanford\_alpaca](https://github.com/tatsu-lab/stanford_alpaca)Cited by: [§4.1](#S4.SS1.p7.1).
+* B. Taylor, V. S. Marco, W. Wolff, Y. Elkhatib, and Z. Wang (2018)Adaptive deep learning model selection on embedded systems.In Proceedings of the 19th ACM SIGPLAN/SIGBED International Conference on Languages, Compilers, and Tools for Embedded Systems (LCTES ’18), pp. 31–43.External Links: [Document](https://dx.doi.org/10.1145/3211332.3211336)Cited by: [§5.2](#S5.SS2.p1.1).
+* Q. Team, A. Yang, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Li, D. Liu, F. Huang, H. Wei, H. Lin, J. Yang, J. Tu, J. Zhang, J. Yang, J. Yang, J. Zhou, J. Lin, K. Dang, K. Lu, K. Bao, K. Yang, L. Yu, M. Li, M. Xue, P. Zhang, Q. Zhu, R. Men, R. Lin, T. Li, T. Tang, T. Xia, X. Ren, X. Ren, Y. Fan, Y. Su, Y. Zhang, Y. Wan, Y. Liu, Z. Cui, Z. Zhang, and Z. Qiu (2025)Qwen2.5 technical report.External Links: 2412.15115Cited by: [§4.1](#S4.SS1.p3.1).
+* H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale, D. Bikel, L. Blecher, C. C. Ferrer, M. Chen, G. Cucurull, D. Esiobu, J. Fernandes, J. Fu, W. Fu, B. Fuller, C. Gao, V. Goswami, N. Goyal, A. Hartshorn, S. Hosseini, R. Hou, H. Inan, M. Kardas, V. Kerkez, M. Khabsa, I. Kloumann, A. Korenev, P. S. Koura, M. Lachaux, T. Lavril, J. Lee, D. Liskovich, Y. Lu, Y. Mao, X. Martinet, T. Mihaylov, P. Mishra, I. Molybog, Y. Nie, A. Poulton, J. Reizenstein, R. Rungta, K. Saladi, A. Schelten, R. Silva, E. M. Smith, R. Subramanian, X. E. Tan, B. Tang, R. Taylor, A. Williams, J. X. Kuan, P. Xu, Z. Yan, I. Zarov, Y. Zhang, A. Fan, M. Kambadur, S. Narang, A. Rodriguez, R. Stojnic, S. Edunov, and T. Scialom (2023)Llama 2: open foundation and fine-tuned chat models.External Links: 2307.09288Cited by: [§4.1](#S4.SS1.p3.1).
+* N. Varshney and C. Baral (2022)Model cascading: towards jointly improving efficiency and accuracy of NLP systems.In Proceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP), Y. Goldberg, Z. Kozareva, and Y. Zhang (Eds.),Abu Dhabi, United Arab Emirates,  pp. 11007–11021.External Links: [Document](https://dx.doi.org/10.18653/v1/2022.emnlp-main.756)Cited by: [§5.2](#S5.SS2.p1.1).
+* G. Xiao, J. Lin, M. Seznec, H. Wu, J. Demouth, and S. Han (2023)SmoothQuant: accurate and efficient post-training quantization for large language models.In Proceedings of the International Conference on Machine Learning (ICML), A. Krause, E. Brunskill, K. Cho, B. Engelhardt, S. Sabato, and J. Scarlett (Eds.),Vol. 202, Honolulu, Hawaii, USA,  pp. 38087–38099.External Links: [Link](https://proceedings.mlr.press/v202/xiao23c.html)Cited by: [§5.3](#S5.SS3.p1.1).
+* M. Yan, S. Agarwal, and S. Venkataraman (2025)Decoding speculative decoding.In Proceedings of the Annual Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics (NAACL), L. Chiruzzo, A. Ritter, and L. Wang (Eds.),Albuquerque, New Mexico,  pp. 6460–6473.External Links: [Document](https://dx.doi.org/10.18653/v1/2025.naacl-long.328)Cited by: [§1](#S1.p3.1).
+* E. Yi, T. Kim, H. Jeung, D. Chang, and S. Yun (2024)Towards fast multilingual LLM inference: speculative decoding and specialized drafters.In Proceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP), Y. Al-Onaizan, M. Bansal, and Y. Chen (Eds.),Miami, Florida, USA,  pp. 10789–10802.External Links: [Document](https://dx.doi.org/10.18653/v1/2024.emnlp-main.602)Cited by: [§1](#S1.p3.1),[§4.1](#S4.SS1.p5.1),[§5.1](#S5.SS1.p1.1).
+* R. Yi, L. Guo, S. Wei, A. Zhou, S. Wang, and M. Xu (2025)EdgeMoE: empowering sparse large language models on mobile devices.IEEE Transactions on Mobile Computing24 (8),  pp. 7059–7073.External Links: [Document](https://dx.doi.org/10.1109/TMC.2025.3546466)Cited by: [§1](#S1.p1.1).
+* Z. Zhang, J. Xu, T. Liang, X. Chen, Z. He, R. Wang, and Z. Tu (2025)Draft model knows when to stop: self-verification speculative decoding for long-form generation.In Proceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP), C. Christodoulopoulos, T. Chakraborty, C. Rose, and V. Peng (Eds.),Suzhou, China,  pp. 16696–16708.External Links: [Document](https://dx.doi.org/10.18653/v1/2025.emnlp-main.844)Cited by: [§5.1](#S5.SS1.p1.1).
+* Y. Zhou, K. Lyu, A. S. Rawat, A. K. Menon, A. Rostamizadeh, S. Kumar, J. Kagy, and R. Agarwal (2024)DistillSpec: improving speculative decoding via knowledge distillation.In Proceedings of the International Conference on Learning Representations (ICLR),Vienna, Austria.External Links: [Link](https://openreview.net/forum?id=rsY6J3ZaTF)Cited by: [§5.1](#S5.SS1.p1.1).
+
+</body>
+(Response complete. 252356 bytes total. Content-type: text/html; charset=utf-8. Fetched in 328ms.)

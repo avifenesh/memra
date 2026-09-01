@@ -1,0 +1,81 @@
+{
+  "anchor_sampling": {
+    "actual_records": 500,
+    "deficient_records": 12,
+    "max_per_pair": 4,
+    "maximum_records": 512,
+    "min_per_pair": 0,
+    "pairs_below_requested": 3,
+    "requested_per_pair": 4
+  },
+  "assignment_cells": {
+    "chat/nothink/train": 18,
+    "chat/think/train": 14,
+    "code/nothink/heldout": 1,
+    "code/nothink/train": 20,
+    "code/think/heldout": 1,
+    "code/think/train": 10,
+    "if/nothink/heldout": 1,
+    "if/nothink/train": 14,
+    "if/think/heldout": 3,
+    "if/think/train": 14,
+    "math/nothink/train": 21,
+    "math/think/heldout": 1,
+    "math/think/train": 10
+  },
+  "categories": {
+    "chat": 32,
+    "code": 32,
+    "if": 32,
+    "math": 32
+  },
+  "chunks": 2,
+  "end": 128,
+  "format": "memra-dspark-corpus-summary-v2",
+  "label": "pilot",
+  "manifest_fingerprint": "cf1ffcd7beeea505d727fb2c036897bbb26265198625c9214d5331388c76bb45",
+  "manifests": [
+    {
+      "chunk": "pilot-00000-00064",
+      "sha256": "1b589df5717a718613487d0b86239bf43c4b319985e5e92a71384ac8d944c0eb"
+    },
+    {
+      "chunk": "pilot-00064-00128",
+      "sha256": "b29097411b1e859ac4809508766f137efeecb686b944815316a5ab2364e09465"
+    }
+  ],
+  "modes": {
+    "nothink": 75,
+    "think": 53
+  },
+  "pairs": 128,
+  "prompt_tokens": {
+    "max": 2953,
+    "min": 23,
+    "p50": 83,
+    "p95": 540,
+    "total": 19460
+  },
+  "records": 500,
+  "response_tokens": {
+    "max": 512,
+    "max_new_512_count": 98,
+    "min": 2,
+    "p50": 512,
+    "p95": 512,
+    "total": 57814
+  },
+  "skipped_short_pairs": 3,
+  "splits": {
+    "heldout": 7,
+    "train": 121
+  },
+  "start": 0,
+  "validation": {
+    "max_logit_probability_ratio_error": 8.444720762668112e-07,
+    "max_probability_mass_error": 3.298590511846555e-08,
+    "sampled_token_top64_rate": 1.0,
+    "tail_mass_max": 0.014194505289196968,
+    "tail_mass_mean": 7.831294896296152e-05
+  }
+}

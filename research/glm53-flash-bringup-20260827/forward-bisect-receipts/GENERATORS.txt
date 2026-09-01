@@ -1,0 +1,23 @@
+The two analysis generators for this lane's forward bisect, banked beside their outputs so the
+derived tables can be rebuilt from the raw artifacts (same convention as oracle-mint.py /
+pretok-ref-glm4.py in the parent directory).
+
+  oracle-cmp.py <a.tsv> <b.tsv>
+      Two `memra-checkpoint-oracle-v1` files -> top-8, max_abs, mean_abs, cosine.
+      Produced logits-before-after.txt.
+      NOTE the byte order: the TSV writes `{:08x}` of `f32::to_bits()`, so the hex is
+      BIG-endian and must be unpacked with '>f'. Reading it '<f' silently yields ~1e38
+      nonsense that still parses.
+
+  trace-diff.py <reference-trace.txt> <engine-trace.txt>
+      Two `memra-hidden-trace-v1` files (MEMRA_HYPER_TRACE) -> one row per shared stage with
+      cosine, both norms, the norm ratio and max_abs, ordered by layer then stage.
+      Produced layer-diff-before.txt and layer-diff-after.txt.
+
+The raw traces themselves (~18 MB each: reference full-depth, engine before, engine after) are
+NOT banked. Regenerate with, on a box holding the artifact:
+
+  MEMRA_HYPER_TRACE=<path> MEMRA_ORACLE_OUT=<tsv> MEMRA_FULL_PREC=1 \
+    ./target/release/glm5_checkpoint_runner ~/models/glm53-nvfp4 1 2 3 4        # ~43 min
+  MEMRA_HYPER_TRACE=<path> MEMRA_ORACLE_OUT=<tsv> MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=12000 \
+    NVIDIA_TF32_OVERRIDE=0 ./target/release/run-safetensors ~/models/glm53-nvfp4 1 2 3 4  # ~50 s warm

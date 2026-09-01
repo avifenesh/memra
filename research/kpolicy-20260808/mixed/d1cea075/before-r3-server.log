@@ -1,0 +1,48 @@
+[server] starting; models config = [("q9", "/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[worker] loading model "q9" <- /scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q9: regime draft attached (/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q9": 33 layers, eos=248046
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] q9: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:8151
+[meter] admit id=cmpl-d1c012d8a0514a22f6911b0342cb4af2 tenant=default lane=interactive model="q9"
+[spec-acc] ctx=28 burst=21/36 cum=21/36=0.583
+[meter] admit id=cmpl-fe0b528ad019b57ab0768d314018be09 tenant=default lane=interactive model="q9"
+[worker] observed session VRAM cost for "q9": 201MB (admission gate = 2x)
+[spec-acc] ctx=28 burst=21/36 cum=21/36=0.583
+[spec-acc] ctx=62 burst=23/33 cum=44/69=0.638
+[spec-acc] ctx=96 burst=26/27 cum=70/96=0.729
+[spec-acc] ctx=131 burst=19/27 cum=89/123=0.724
+[meter] admit id=cmpl-1ff0b2d017a57b0d8dc1b178d66fbe0d tenant=default lane=interactive model="q9"
+[spec-acc] ctx=5411 burst=22/33 cum=22/33=0.667
+[spec-acc] ctx=5445 burst=21/36 cum=43/69=0.623
+[spec-acc] ctx=5478 burst=19/39 cum=62/108=0.574
+[spec-acc] ctx=5510 burst=19/30 cum=81/138=0.587
+[meter] admit id=cmpl-d5d6b05159d203deb34d7b14cc626dad tenant=default lane=interactive model="q9"
+[spec-acc] ctx=5411 burst=22/33 cum=22/33=0.667
+[spec-acc] ctx=5445 burst=21/36 cum=43/69=0.623
+[meter] admit id=cmpl-b8764413f1c2469c907189805bfc485f tenant=default lane=interactive model="q9"
+[worker] spec-reuse: 5478 committed tokens resumed (model q9)
+[spec-acc] ctx=12 burst=20/33 cum=20/33=0.606
+[spec-acc] ctx=44 burst=24/33 cum=44/66=0.667
+[spec-acc] ctx=79 burst=20/42 cum=64/108=0.593
+[spec-acc] ctx=113 burst=19/30 cum=83/138=0.601
+[meter] admit id=cmpl-39f90203a5d60470e82c690b2be9cccf tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-027f18c70484ffaa9ec98071764651cb tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-3b941762ad3ae099d1001e6d21eac853 tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-3cdda338a0cb78a7e647ee5675e227c6 tenant=default lane=interactive model="q9"
+[worker] spec-reuse: 5620 committed tokens resumed (model q9)
+[spec-gate] admit batched: 2 active (+1) > LOW=2 — spec would queue
+[spec-gate] admit batched: 3 active (+1) > LOW=2 — spec would queue
+[spec-gate] demoted session to batched decode: 4 active >= HIGH=4 (model q9, committed 29, generated 1)
+[spec-gate] demoted session to batched decode: 4 active >= HIGH=4 (model q9, committed 5620, generated 0)
+[prefix-cache] insert (seed): 5411 tokens, 133.0MB (resident 133.0MB / 268MB, model q9, ns "kpolicy-mixed-before-r3-wave-long")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

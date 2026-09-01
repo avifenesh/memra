@@ -1,0 +1,31 @@
+[server] starting; models config = [("q27", "/scratch-models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", Some("/scratch-models/draft-daily-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q27" <- /scratch-models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q27: regime draft attached (/scratch-models/draft-daily-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] q27: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 537MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q27"]
+[server] listening on http://127.0.0.1:8143
+[meter] admit id=cmpl-cd5a0bed96e0662e8eb33bb09da53412 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="kpolicy-q27-cold-short-k0-r92" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q27": 336MB (admission gate = 2x)
+[meter] admit id=cmpl-3bfb5610dfdcad3a51a6836b8c43a890 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="kpolicy-q27-cached-long-k0-r2" K=0 source=operator-pin prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 5411 tokens, 317.6MB (resident 317.6MB / 537MB, model q27, ns "kpolicy-q27-cached-long-k0-r2")
+[meter] admit id=cmpl-6c7c62e027a33c2a9bdcb433af395679 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 5411 of 5493 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="kpolicy-q27-cached-long-k0-r2" K=0 source=operator-pin prompt=5493 cached=5411 lcp=5411 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-419f6293d7e0884c505f5d47a2c476bb tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="kpolicy-q27-cold-long-k0-r2" K=0 source=operator-pin prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 5411 tokens, 317.6MB (resident 635.2MB / 537MB, model q27, ns "kpolicy-q27-cold-long-k0-r2")
+[prefix-cache] evict (LRU): 5411 tokens, 317.6MB (model q27, ns "kpolicy-q27-cold-long-k0-r2")
+[meter] admit id=cmpl-a635eb6a254b25d9fa0433f2579e2a6d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="kpolicy-q27-cold-short-k0-r2" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

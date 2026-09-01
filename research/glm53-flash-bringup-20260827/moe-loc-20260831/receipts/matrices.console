@@ -1,0 +1,66 @@
+########## 10-n2-even.log :: - 2 24 20 ##########
+PASS lines: 23
+########## 11-n2-split1.log :: MEMRA_PP_SPLITS=1 2 24 20 ##########
+PASS lines: 23
+########## 12-n2-split3.log :: MEMRA_PP_SPLITS=3 2 24 20 ##########
+PASS lines: 23
+########## 13-n2-streams0.log :: MEMRA_PP_STREAMS=0 2 24 20 ##########
+PASS lines: 23
+########## 14-n2-overlap0.log :: MEMRA_PP_OVERLAP=0 2 24 20 ##########
+PASS lines: 23
+########## 16-n3-even.log :: - 3 24 20 ##########
+PASS lines: 23
+########## 17-n3-asym.log :: MEMRA_PP_SPLITS=1,3 3 24 20 ##########
+PASS lines: 23
+########## 18-n3-streams0.log :: MEMRA_PP_STREAMS=0 3 24 20 ##########
+PASS lines: 23
+########## compose-n3-even-doors-DH.log :: MEMRA_MOE_VROWS_DEV_TABLES=1 MEMRA_GLM5_HTOD_DIET=1 MEMRA_MOE_VROWS_PACK=0 3 24 20 ##########
+PASS lines: 23
+########## 10-n2-even.log :: - 2 6 8 ##########
+PASS lines: 6
+########## 11-n2-split1.log :: MEMRA_PP_SPLITS=1 2 6 8 ##########
+PASS lines: 6
+########## 12-n2-split3.log :: MEMRA_PP_SPLITS=3 2 6 8 ##########
+PASS lines: 6
+########## 13-n2-streams0.log :: MEMRA_PP_STREAMS=0 2 6 8 ##########
+PASS lines: 6
+########## 14-n2-overlap0.log :: MEMRA_PP_OVERLAP=0 2 6 8 ##########
+PASS lines: 6
+########## 15-n2-shard0.log :: MEMRA_PP_SHARD=0 2 6 8 ##########
+PASS lines: 6
+########## 16-n3-asym.log :: MEMRA_PP_SPLITS=1,3 3 6 8 ##########
+PASS lines: 6
+########## 17-n4-even.log :: - 4 6 8 ##########
+PASS lines: 6
+########## 18-n4-streams0.log :: MEMRA_PP_STREAMS=0 4 6 8 ##########
+PASS lines: 6
+########## 19-n2-longer.log :: - 2 16 24 ##########
+PASS lines: 6
+########## compose-n2-even-doors-DH.log :: MEMRA_MOE_VROWS_DEV_TABLES=1 MEMRA_GLM5_HTOD_DIET=1 MEMRA_MOE_VROWS_PACK=0 2 6 8 ##########
+PASS lines: 6
+########## 10-b3-default.log :: - 3 5 8 1 ##########
+PASS lines: 3
+########## 11-b8-wide.log :: - 8 5 8 1 ##########
+PASS lines: 3
+########## 12-b2-longer.log :: - 2 12 24 1 ##########
+PASS lines: 3
+########## 13-b3-ppn2.log :: - 3 5 8 2 ##########
+PASS lines: 3
+########## 14-b3-ppn2-streams0.log :: MEMRA_PP_STREAMS=0 3 5 8 2 ##########
+PASS lines: 3
+########## 15-b3-ppn4.log :: - 3 5 8 4 ##########
+PASS lines: 3
+########## 16-b8-ppn2.log :: - 8 5 8 2 ##########
+PASS lines: 3
+########## 17-b12.log :: - 12 5 8 1 ##########
+PASS lines: 3
+########## 18-b15-cap.log :: - 15 5 8 1 ##########
+PASS lines: 3
+########## 19-b15-ppn2.log :: - 15 5 8 2 ##########
+PASS lines: 3
+########## compose-b3-doors-DH.log :: MEMRA_MOE_VROWS_DEV_TABLES=1 MEMRA_GLM5_HTOD_DIET=1 MEMRA_MOE_VROWS_PACK=0 3 5 8 1 ##########
+PASS lines: 3
+########## dedup-n3-even.log :: MEMRA_MOE_VROWS_DEDUP_STAT=1 MEMRA_MOE_VROWS_DEV_TABLES=0 MEMRA_MOE_VROWS_PACK=0 3 24 20 ##########
+PASS lines: 23
+==========================================================
+moe-loc matrices: ALL ARMS PASS

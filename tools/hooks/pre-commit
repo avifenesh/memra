@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+
+if ! cargo fmt --all -- --check; then
+    echo ""
+    echo "pre-commit: Rust formatting is stale. Run:"
+    echo "    cargo fmt --all"
+    echo "then stage the formatted files and commit again."
+    exit 1
+fi

@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/opt/scratch/nvme/cx-sellgate/memra/research/prefixmoney-20260812/prefix_gate.py", line 290, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/opt/scratch/nvme/cx-sellgate/memra/research/prefixmoney-20260812/prefix_gate.py", line 176, in main
+    b1 = {"kind": "request", "rep": rep, "case": "shared-cold", **request(
+                                                                  ^^^^^^^^
+  File "/opt/scratch/nvme/cx-sellgate/memra/research/prefixmoney-20260812/prefix_gate.py", line 81, in request
+    raise RuntimeError("stream completed without a visible text token")
+RuntimeError: stream completed without a visible text token

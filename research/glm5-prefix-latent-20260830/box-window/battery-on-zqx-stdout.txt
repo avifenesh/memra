@@ -1,0 +1,107 @@
+##############################################################################
+# C1 raw /v1/completions greedy, p5/p7, rep0 cold + 3 repeats, arm=on
+##############################################################################
+  p5 rep0: sha=98eac17a79c093c0 cached=0 prompt=180 finish=length err=None
+  p5 rep1: sha=98eac17a79c093c0 cached=180 prompt=180 finish=length err=None
+  p5 rep2: sha=98eac17a79c093c0 cached=180 prompt=180 finish=length err=None
+  p5 rep3: sha=98eac17a79c093c0 cached=180 prompt=180 finish=length err=None
+  == p5: ONE sha (98eac17a79c093c0)
+  p7 rep0: sha=ef197d4dd6c6cb6a cached=0 prompt=269 finish=length err=None
+  p7 rep1: sha=ef197d4dd6c6cb6a cached=269 prompt=269 finish=length err=None
+  p7 rep2: sha=ef197d4dd6c6cb6a cached=269 prompt=269 finish=length err=None
+  p7 rep3: sha=ef197d4dd6c6cb6a cached=269 prompt=269 finish=length err=None
+  == p7: ONE sha (ef197d4dd6c6cb6a)
+
+##############################################################################
+# C2 8-turn multiturn twin, larger prompt, sampled, arm=on
+##############################################################################
+  turn0: ttft=2.239s cached=0/1521 completion=512 loop_c=0.062 loop_r=0.067
+  turn1: ttft=29.458s cached=1521/2175 completion=512 loop_c=0.0 loop_r=0.025
+  turn2: ttft=56.378s cached=1521/2770 completion=512 loop_c=0.048 loop_r=0.218
+  turn3: ttft=Nones cached=None/None completion=None loop_c=0.0 loop_r=0.0
+  turn4: ttft=Nones cached=None/None completion=None loop_c=0.0 loop_r=0.0
+  turn5: ttft=Nones cached=None/None completion=None loop_c=0.0 loop_r=0.0
+  turn6: ttft=Nones cached=None/None completion=None loop_c=0.0 loop_r=0.0
+  turn7: ttft=Nones cached=None/None completion=None loop_c=0.0 loop_r=0.0
+
+##############################################################################
+# C3 TTFT at depth (cold vs repeat), sampled shape, arm=on
+##############################################################################
+  ~8000 chars (None tok): cold ttft=Nones -> repeat ttft=Nones cached=None
+  ~16000 chars (None tok): cold ttft=Nones -> repeat ttft=Nones cached=None
+  ~32000 chars (None tok): cold ttft=Nones -> repeat ttft=Nones cached=None
+
+##############################################################################
+# BATTERY arm=on: FAIL — 8 violation(s):
+#   C2 turn3: cached_tokens=0 — no warm-turn engagement
+#   C2 turn4: cached_tokens=0 — no warm-turn engagement
+#   C2 turn5: cached_tokens=0 — no warm-turn engagement
+#   C2 turn6: cached_tokens=0 — no warm-turn engagement
+#   C2 turn7: cached_tokens=0 — no warm-turn engagement
+#   C3 8000 hit: cached_tokens=0 != prompt_tokens=None — the restored rep did not take a whole-entry hit (eviction? budget? guard?)
+#   C3 16000 hit: cached_tokens=0 != prompt_tokens=None — the restored rep did not take a whole-entry hit (eviction? budget? guard?)
+#   C3 32000 hit: cached_tokens=0 != prompt_tokens=None — the restored rep did not take a whole-entry hit (eviction? budget? guard?)
+##############################################################################
+##############################################################################
+# TOOL / GREEDY   rep0 = COLD (these exact bytes), reps 1+ = RESTORED
+##############################################################################
+  rep0 [    COLD] pass= True cached=   0/ 320 finish=tool_calls ttf=  1.85 tool='zqx_fetch_glimb_status' args={"glimb_mode": "thrum", "vault_sigil": "VS-7"} content=''
+  rep1 [RESTORED] pass= True cached= 320/ 320 finish=tool_calls ttf= 1.204 tool='zqx_fetch_glimb_status' args={"glimb_mode": "thrum", "vault_sigil": "VS-7"} content=''
+  rep2 [RESTORED] pass= True cached= 320/ 320 finish=tool_calls ttf= 1.205 tool='zqx_fetch_glimb_status' args={"glimb_mode": "thrum", "vault_sigil": "VS-7"} content=''
+  rep3 [RESTORED] pass= True cached= 320/ 320 finish=tool_calls ttf= 1.204 tool='zqx_fetch_glimb_status' args={"glimb_mode": "thrum", "vault_sigil": "VS-7"} content=''
+
+##############################################################################
+# TOOL / SAMPLED   rep0 = COLD (these exact bytes), reps 1+ = RESTORED
+##############################################################################
+  rep0 [    COLD] pass= True cached=   0/ 319 finish=tool_calls ttf= 1.847 tool='zqx_fetch_glimb_status' args={"glimb_mode": "thrum", "vault_sigil": "VS-7"} content=''
+  rep1 [RESTORED] pass= True cached= 319/ 319 finish=tool_calls ttf= 1.259 tool='zqx_fetch_glimb_status' args={"glimb_mode": "thrum", "vault_sigil": "VS-7"} content=''
+  rep2 [RESTORED] pass= True cached= 319/ 319 finish=tool_calls ttf= 1.218 tool='zqx_fetch_glimb_status' args={"glimb_mode": "thrum", "vault_sigil": "VS-7"} content=''
+  rep3 [RESTORED] pass= True cached= 319/ 319 finish=tool_calls ttf= 1.217 tool='zqx_fetch_glimb_status' args={"glimb_mode": "thrum", "vault_sigil": "VS-7"} content=''
+
+##############################################################################
+# RECALL / GREEDY   rep0 = COLD (these exact bytes), reps 1+ = RESTORED
+##############################################################################
+  rep0 [    COLD] pass= True cached=   0/ 326 finish=      stop ttf= 1.085 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep1 [RESTORED] pass= True cached= 326/ 326 finish=      stop ttf= 0.448 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep2 [RESTORED] pass= True cached= 326/ 326 finish=      stop ttf= 0.446 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep3 [RESTORED] pass= True cached= 326/ 326 finish=      stop ttf= 0.445 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+
+##############################################################################
+# RECALL / SAMPLED   rep0 = COLD (these exact bytes), reps 1+ = RESTORED
+##############################################################################
+  rep0 [    COLD] pass= True cached=   0/ 325 finish=      stop ttf=  1.09 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep1 [RESTORED] pass= True cached= 325/ 325 finish=      stop ttf= 0.451 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep2 [RESTORED] pass= True cached= 325/ 325 finish=      stop ttf= 0.451 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep3 [RESTORED] pass= True cached= 325/ 325 finish=      stop ttf=  0.45 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+
+##############################################################################
+# BARE / GREEDY   rep0 = COLD (these exact bytes), reps 1+ = RESTORED
+##############################################################################
+  rep0 [    COLD] pass= True cached=   0/  97 finish=      stop ttf= 2.779 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep1 [RESTORED] pass= True cached=  97/  97 finish=      stop ttf= 2.437 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep2 [RESTORED] pass= True cached=  97/  97 finish=      stop ttf= 2.436 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep3 [RESTORED] pass= True cached=  97/  97 finish=      stop ttf= 2.459 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+
+##############################################################################
+# BARE / SAMPLED   rep0 = COLD (these exact bytes), reps 1+ = RESTORED
+##############################################################################
+  rep0 [    COLD] pass= True cached=   0/  96 finish=      stop ttf= 1.262 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep1 [RESTORED] pass= True cached=  96/  96 finish=      stop ttf= 3.415 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep2 [RESTORED] pass= True cached=  96/  96 finish=      stop ttf= 1.075 tool=None args={} content='QUARTZ-77-NIMBUS-4'
+  rep3 [RESTORED] pass=False cached=  96/  96 finish=      stop ttf= 1.866 tool=None args={} content="I can't verify that maintenance code against any system, so I won't re"
+
+LATENTPROBEDONE
+BATTERY-EXIT=2 ZQX-EXIT=0
+refusal-grep-count(must be 0 for carrying entries): 0
+---insert-probation
+[prefix-cache] insert probation (seed): 180 tokens, 156.9MB (resident 156.9MB / 2147MB, model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 269 tokens, 159.1MB (resident 316.0MB / 2147MB, model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 1521 tokens, 189.0MB (resident 505.1MB / 2147MB, model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 320 tokens, 160.3MB (resident 665.4MB / 2147MB, model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 319 tokens, 160.3MB (resident 825.7MB / 2147MB, model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 326 tokens, 160.5MB (resident 986.1MB / 2147MB, model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 325 tokens, 160.4MB (resident 1146.5MB / 2147MB, model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 97 tokens, 155.0MB (resident 1301.5MB / 2147MB, model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 96 tokens, 154.9MB (resident 1456.4MB / 2147MB, model zai/glm-5.3-flash)
+
+[exited with code 0]

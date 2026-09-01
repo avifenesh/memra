@@ -1,0 +1,31 @@
+The new pin `glm5_next_every_contract_tensor_resolves_through_the_engine_map`
+(crates/memra-gguf/src/hf_mapping.rs) was made to FAIL on each of the two real defects it
+would have caught, then restored. A gate nobody has watched go red is not a control
+(LAW: wiring assertions match prose / loud failures fail quietly).
+
+It covers TWO distinct failure modes, and each defect exercised a different one.
+
+=== reintroduce defect 1: delete the `exp_probs_b.bias` row (name MISSING) ===
+thread 'hf_mapping::tests::glm5_next_every_contract_tensor_resolves_through_the_engine_map'
+panicked at crates/memra-gguf/src/hf_mapping.rs:1484:25:
+no glm5_next ggml->HF mapping for blk.1.exp_probs_b.bias (Layer { index: 1, tensor:
+MoeRouterBias }). The engine's loader resolves names through resolve_ggml; an unmapped name
+reads as an ABSENT tensor, and absent is silently substituted for at several load sites. The
+HF contract declares this tensor as ["model.layers.1.mlp.e_score_correction_bias",
+"model.layers.1.mlp.gate.e_score_correction_bias"]
+test result: FAILED. 0 passed; 1 failed; 170 filtered out
+
+=== reintroduce defect 2: delete the `ffn_gate_shexp.weight` row (falls through to the
+    GENERIC map, so a name IS produced — it is just a name no checkpoint carries) ===
+panicked at crates/memra-gguf/src/hf_mapping.rs:1492:13:
+blk.1.ffn_gate_shexp.weight (Layer { index: 1, tensor: SharedMlpGate }) resolves to
+model.layers.1.mlp.shared_expert.gate_proj.weight, which is not one of the HF contract's
+names ["model.layers.1.mlp.shared_experts.gate_proj.weight"] for the same tensor
+test result: FAILED. 0 passed; 1 failed; 170 filtered out
+
+=== restored ===
+test result: ok. 1 passed; 0 failed; 170 filtered out
+
+Note the second mode: a plausible-looking name that resolves fine and binds nothing. That is
+the mode a "does every name resolve?" check would have MISSED — the pin has to compare against
+the contract's own names for the same TensorId, not merely assert Some(_).

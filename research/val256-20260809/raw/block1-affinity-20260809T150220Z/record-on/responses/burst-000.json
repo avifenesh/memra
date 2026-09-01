@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-af82fd120c76387552e4ee3862d9c8a9",
+  "finish_reason": "stop",
+  "usage": {
+    "prompt_tokens": 47229,
+    "completion_tokens": 160,
+    "total_tokens": 47389,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "elapsed_s": 135.610454593
+  },
+  "text": "The user wants to update the note to \"branch-a\" and return the compact JSON. The previous JSON was:\n\n{\n  \"revision\": 8,\n  \"change\": \"turn-8\",\n  \"counters\": {\"turns\": 8\n}\n\nWe need to add a \"note\" key with value \"branch-a\". Also need to close the counters object properly. The previous JSON was incomplete (missing closing brace). We should produce a valid compact JSON.\n\nSo final JSON:\n\n{\"revision\":8,\"change\":\"turn-8\",\"counters\":{\"turns\":8},\"note\":\"branch-a\"}\n\nThat's compact.\n</think>\n{\"revision\":8,\"change\":\"turn-8\",\"counters\":{\"turns\":8},\"note\":\"branch-a\"}"
+}

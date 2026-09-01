@@ -1,0 +1,36 @@
+{
+ "name": "p06-prose",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 131,
+   "completion_tokens": 128,
+   "total_tokens": 259,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 22.443104385,
+   "spec": {
+    "rounds": 59,
+    "drafted": 295,
+    "accepted": 69,
+    "acceptance_rate": 0.23389830508474577
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "Let me start by understanding the context. The user says \"Continue from the edits already made. Do not restart research.\" This implies there's prior work \u2014 a VAT form (tiyuvta, apparently Israeli VAT form 821) and an Income Tax form (form 5329), presumably Hebrew/Israeli tax forms being filled in as PDFs. There's mention of \"work/\" directory with generated PDFs, and \"outputs/\" directory for final verified copies. I need to:\n\n1. Render both regenerated work PDFs at 200 DPI or higher\n2. Visually inspect the VAT top, bank, and property"
+    }
+   }
+  ]
+ }
+}

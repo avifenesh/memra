@@ -1,0 +1,396 @@
+# Hy3 local 5090: 4.6 → 10 tok/s plan
+
+Baseline: 4.60 tok/s median (N=3 interleaved pairs, 2026-07-21 native ABI v2 receipt,
+`evidence/local-5090-native-next-20260721/q2k-avxvnni-pair-win.md`). Target: sustained
+10 tok/s on the same profile (Layer103.5 dual-NVMe view, 24 GB RTX 5090 laptop,
+Intel 275HX, 60 GB RAM, 2x WD SN8000S).
+
+## Measured per-token budget (from today's receipts, N=32 decode window)
+
+217 ms/token total at 4.60 tok/s:
+
+| stage | ms/token | evidence |
+| --- | ---: | --- |
+| GPU + engine glue (attn, dense, resident experts, sampler) | ~31 | window 6.955 s − exposed 5.956 s; MoE cache 100% hit, 0 H2D |
+| CPU expert backend wall | ~190 | backend_wall 6.068 s / 32; 98.4% exposed at join |
+| — phase_io (NVMe → RAM cache fill) | ~90 | 2.894 s / 32; 27.8 GB per 32 tok; RAM hit 54.97% at 20 GiB LRU |
+| — phase_compute (275 expert-instances/token, 8 P-cores) | ~95–113 | 3.025–3.627 s / 32 |
+| — prepare (per-call allocation churn) | ~6 | 0.179 s / 32 |
+
+Structural facts (code-confirmed, `tools/bw24_cpu_experts.cpp`):
+
+1. **io and compute are fully serial per call**: `bw24_cpu_moe_token_impl` runs
+   `load_projection_weights` to completion (all misses read) before any dot product starts
+   (`bw24_cpu_experts.cpp:1454→1458`). Cached experts wait on every miss in the call.
+2. **16 threads (8 compute + 8 io) share P-cores 0–7**; the 16 Skymont E-cores idle.
+   Skymont has AVX2 + AVX-VNNI — the paired Q2_K path would run on them.
+3. Effective NVMe rate during io phase ≈ 9.6 GB/s aggregate across the mirror — near the
+   device pair's practical ceiling. io time falls by reading fewer bytes, not faster.
+4. GPU expert residency frozen at 5,285 blocks / 13.97 GiB; GPU serves ~79.5% of routed
+   expert-instances (34,245 vs 8,809 CPU) with zero decode-window H2D.
+
+Ruled out by receipts (do not revisit without new evidence):
+
+- Adjacent-layer prefetch: predictor width-4 precision 57% / recall 28%
+  (`window4-route-transition-analysis.json`) — wrong door.
+- 32k MTP vocab trim: −20.7% plain (receipt, rejected).
+- Speculative verification batching: flat (receipt, rejected, removed).
+- Spec decode as currently measured: K=1 3.14 vs plain 3.72–4.60 — CPU wall per extra
+  verified token exceeds acceptance gain. Re-stack MTP only after the CPU wall shrinks.
+
+## Target arithmetic
+
+10 tok/s = 100 ms/token. GPU ~31 ms stays; CPU section must fall 190 → ~65–70 ms with io
+hidden under compute. That needs all three of: overlap (structure), wider compute (cores),
+fewer bytes (cache + residency).
+
+## Phase 0 — RESULTS (2026-07-21, all offline: simulation + CPU microbench, no GPU)
+
+Simulator: `simulate_expert_cache_curve.py` (route trace `window4-routes.trace`, 50 decode
+passes, real per-projection bytes from the plan manifest; calibrates against the live 20 GiB
+anchor 55% / 0.87 GB-fills per token).
+
+- **P0.B host-cache curve is FLAT — RAM lever DEMOTED.** LRU hit 46→55% and miss bytes
+  0.858→0.715 GB/token across 20→36 GiB. The cold tail (~64 GB CPU-side bank) swamps LRU;
+  doubling cache RAM buys −17% io bytes. Host cache stays 20 GiB. (Caveat: 50-pass trace
+  underestimates large-cache steady state somewhat; even 2x the benefit stays weak.)
+- **P0.C residency curve is the strong axis.** Sweeping HBM expert budget 13.97→18 GB:
+  CPU load falls ~6.5%/GB in instances AND ~5%/GB in NVMe miss bytes
+  (215.5→166.8 inst/tok, 0.858→0.711 GB/tok at +4 GB). Donors: kv-fp4 KV
+  (K q8_0 + V q5_1 ≈ 145 KiB/token/80-layers → nvfp4 ≈ −38%; ~1.8 GB at 32k ctx),
+  `BW24_MOE_VRAM_FRAC` 0.90→0.92+ (~+0.5–1 GB), and `enable_lm_head_fp32=True` in the
+  source config — if lm_head sits in HBM at f32 (~2 GB), quantizing it is a third donor
+  (verify on-GPU format at gate time).
+- **P0.A compute attribution** (per-format microbench `BW24_CPU_NATIVE_BENCH`, production
+  4-expert 4096x1536 shape, 8 P-cores, cache-hot, ms/call: Q2_K 1.06, IQ3_S 1.52,
+  Q4_K 1.97, IQ4_XS 0.74, Q8_0 0.79, NVFP4 1.90; weighted by simulated CPU instance mix):
+  **Q2_K 44% (already paired-VNNI), IQ3_S 30%, Q4_K 15%, IQ4_XS 11%.**
+  Phase 4 kernel order: IQ3_S pair-decode port first, then Q4_K.
+- **P0.D RAM ceiling**: 50 GB available, desktop RSS modest (swap 14 GB = cold pages).
+  Moot for cache (stays 20 GiB), relevant only as safety margin.
+
+Revised arithmetic: Phase 1 overlap → ~6.4; +E-cores → wall goes io-bound (~90 ms);
++kv-fp4/residency (−15–20% CPU load on both axes) → ~9.5; +IQ3_S/Q4_K kernels and prepare
+pooling → 10+.
+
+## Phase 1 — structural overlap (the big lever)
+
+**Pipeline io ↔ compute inside the companion.** Per-expert readiness: compute an expert as
+soon as its three projections are resident; cached experts compute immediately; misses
+stream in behind. Preserve exact accumulation order (accumulate in expert index order at the
+join, unchanged results). Serial 90+113 → max(io, compute)+ε.
+
+Estimate: backend wall 190 → ~125 ms → **~6.3 tok/s**.
+Gate: byte-identical output vs tokenwise control, packed-row oracle, interleaved N=32 pairs.
+
+## Phase 2 — widen compute to E-cores
+
+Extend workers beyond the 8 P-cores (OMP dynamic schedule already load-balances
+heterogeneous cores). io threads move to E-cores; compute spans P+E. Leave 2–4 cores for
+the desktop (quota rule). Estimate: compute 113 → ~65 ms; with Phase 1 the wall approaches
+max(io ~90, 65) — io becomes the binding edge → Phase 3.
+
+Estimate after phases 1+2: **~7.5–8 tok/s**.
+
+## Phase 3 — cut bytes: host cache + HBM residency
+
+- **3a host cache 20 → 28–32 GiB** (bounded by P0.D): hit 55% → ~70% (P0.B gives the real
+  curve) → io 27.8 → ~18 GB per 32 tok → ~58 ms/token, hidden under compute by Phase 1.
+- **3b kv-fp4 for KV → more resident experts**: the kf4 verdict was "capacity-only feature" —
+  this is exactly the capacity case. Each freed GiB ≈ +378 blocks resident → fewer CPU-routed
+  instances (est. 275 → ~240/token, −13% on both io and compute). Also retune
+  `BW24_MOE_VRAM_FRAC` 0.90 → 0.92+ if headroom confirms.
+
+Estimate after phase 3: **~9–10 tok/s**.
+
+## Phase 3.5 — memory-system engineering (owner direction 2026-07-22: raid the CRIU/Valkey/fast-systems playbook, not just GPU+pipe)
+
+Measured context: the io/compute overlap pipeline was retired — concurrent full-rate O_DIRECT
+DMA across a 20 GiB rotating buffer space inflates the compute loops themselves ~2.7x
+(stage-split counters; scheduling, power, preemption, and allocator mechanisms each ruled out
+by direct measurement). Serial phases each get the fabric to themselves. The winning arm
+(serial + RawBlockPool buffer recycling + paired kernels + scratch pooling) measured
+4.92/4.72 vs 4.50 control median. The system levers now ranked:
+
+- **THP arena (CRIU trick: pre-created, never-unmapped, hugepage-backed mappings)** — pool
+  blocks 2 MB-aligned + `MADV_HUGEPAGE`; compute streams the resident set through thousands
+  instead of millions of TLB entries. Built; e2e pair queued.
+- **Persistent warm cache — SHIPPED opt-in (`BW24_CPU_EXPERT_CACHE_SHM=1`, ec3cf22)**:
+  named tmpfs segment + persisted LRU-ordered index, flock-serialized, crash→cold-correct,
+  generation-pinned keys. Verified at scale (17.1 GB / 6,701 entries reopened warm, zero
+  refill for the retained set). Measured caveat: decode windows are freeze-protocol-identical
+  and the warmup flood evicts most of the warm head (only 3.3 GB whole-run io saved), so the
+  wall-clock payoff needs the NEXT increment — persist the freeze/residency profile with the
+  index and SKIP the 128-token warmup on clean warm reopen. Startup wall is dominated by
+  GPU-side HBM staging (~412 GB spill reads), its own future lane.
+- **io_uring read backend (Valkey 8's io model)** — registered buffers (the pool registers
+  once), SQPOLL on an E-core, zero-syscall submissions; replaces the 8-thread pread army.
+  Already the sanctioned next storage comparison in the lane rules.
+- **resctrl CAT/MBA probe** — RDT flags present on the 275HX, resctrl not mounted. If L3/MBA
+  partitioning works on this client part, fence io DMA away from compute's LLC slice — the
+  direct counter to the measured fabric interference; could resurrect overlap later.
+- **prefetchnta weight streaming** in the paired kernels — read-once weights shouldn't evict
+  the LLC hot set. Microbenchable without GPU.
+- Read coalescing: dead — layout is per-projection files (`blkN-{gate,up,down}-mixed.bin`),
+  an expert's three reads hit three files by construction.
+
+## Phase 4 — grind and re-stack
+
+- Kernel: pair-decode port for the top qtype from P0.A (Q2_K pattern → Q3_K/NVFP4).
+- Prepare pooling: reuse `ExpertRuntime`/activation buffers across calls (~6 ms/token).
+- Re-stack MTP: once per-token CPU cost halves, K=1–2 at 55–60% acceptance flips profitable.
+  Re-measure, don't assume.
+
+## Discipline
+
+Every phase: interleaved N=32 control/candidate pairs, cooled 55–56 °C starts, identical
+token ids, post-freeze argmax MATCH, kernel-check ALL GREEN, run-spec K=1..8 PASS, raw logs
+committed under `evidence/`. These are local-Hy3 numbers, never Qwen-board rows. Winners
+merge, losers get a receipt and die (winners-only rule).
+
+## Campaign state after the 2026-07-23 wall-mapping (READ FIRST for the next session)
+
+Standing best: **4.82 tok/s** (paired kernels + buffer pool + THP, receipts in
+`evidence/local-5090-next3-20260722/`), plus −21% startup (freeze profile) and the warm shm
+cache. Correctness green throughout.
+
+The io wall (~90 ms/token of NVMe reads) is now measured closed from every software side:
+
+| attack | verdict |
+|---|---|
+| bigger/better host cache (size, LRU/LFU/SLRU) | flat curves |
+| HBM residency growth (frac 0.92/0.94, KV-fp8) | compute-only, io unchanged — absorbed experts were cache-hits |
+| in-call io/compute overlap | fabric interference, compute 3.0→8.4 s |
+| prediction-guided prefetch (3 arms + 2 pilot extensions) | lead-time/precision scissors: strong signal at 2-5 ms lead, no signal at 42+ ms; MB-scale reads need the long lead |
+| MTP/spec amortization (K=1..8 re-stack) | loses at every K — verification MULTIPLIES expert io, acceptance 48-63% cannot pay it |
+
+Remaining doors are all OWNER-DECISION axes, not tuning:
+1. **Artifact axis**: fewer bytes per expert (deeper quant below Q2_K or more pruning) —
+   quality tradeoff, five-arm-study territory, not a runtime knob.
+2. **Concurrency axis**: multi-request serving shares hot experts across streams — io
+   amortizes across users where it cannot within one stream. Changes the product target
+   (single-stream 10 tok/s vs aggregate).
+3. **Hardware axis**: desktop-class bus/DRAM headroom or faster storage; the scaffolding
+   (annex, predictor, pipeline) is retained env-off and becomes viable there.
+
+Single-stream 10 tok/s on this laptop with this artifact is, on current evidence, not
+reachable by runtime work alone: every mechanism is either measured flat or measured
+negative with the mechanism identified. ~5.0-5.2 is the defensible ceiling of the present
+configuration (band 4.7-4.9 + the small unbanked kernels tail).
+
+## Gated-MTP verdict (2026-07-23, owner criteria: K>2, high do-nothing threshold, acceptance >0.80)
+
+Confidence gating (BW24_SPEC_PMIN 0.5-0.85, PMIN0=1, K=3-4) raises attempted-acceptance from
+48-63% to 74-87% exactly as intended, and short NGEN=32 windows showed 1.04-1.11x. The N=3
+NGEN=64 confirmation reverts to 0.93-0.97x with acceptance stable at 74-77% — under the 0.80
+bar. The mechanism is head-quality-bound, not gating-bound: at PMIN 0.8 most steps are
+already do-nothing (22 proposals per 64 tokens) and the surviving highest-confidence
+proposals still mispredict ~23%, each misprediction paying the expert-io multiple. Raw logs:
+`evidence/local-5090-next3-20260722/mtp-gated-*.log`, `mtp-conf-*.log`.
+
+Verdict: the Hy3 layer-80 MTP head is unfit for spec serving on this profile (owner's bar:
+0.80; measured gated ceiling: 0.77). Door for later: a trained draft head (EAGLE-class or
+head fine-tune) — artifact/training axis. Runtime-side spec work on this head is closed.
+
+## Tail-Q2_K demotion (2026-07-24, dual-*.log) — the wall finally moves
+
+Frozen selection (tail-q2k-demote-set.json, frequency-cold non-resident experts): 4,841
+experts / 12,262 projections requantized IQ3_S/IQ4_XS/Q4_K/Q8_0 -> Q2_K from the pinned BF16
+source (streaming shard fetch, no imatrix — cloudbox sidecars unavailable locally; the screen is
+the gate). Overlay surgery: kept experts byte-copied, payload 78.5 -> 64.4 GB.
+
+Dual-NVMe pairs (both orders, fresh rewarm profiles): base 4.72/5.00 vs **tailq2k 6.20/5.78
+(+23%)**, argmax MATCH all arms. Counters: io 2.86->1.80 s (-37%), fills 27.8->16.8 GB
+(-40%), compute 2.97->2.39-2.74 s (cheaper decode per element + 344 extra complete experts
+resident free — smaller experts pack the same HBM). The earlier no-mirror flat result was
+regime noise; its +15% compute counter-move did not reproduce.
+
+Single-stream standing: 4.82 -> ~6.0. Ship gate: the 115-question hourish screen on both
+arms; the artifact does not promote on perf alone.
+
+## Artifact-axis headroom, measured (2026-07-25) — and a correction
+
+I recommended "artifact first" on an estimate of ~7.0-7.5 tok/s, assuming two or three further
+demotion steps of the size that delivered +23%. That estimate was WRONG: I did not check the
+artifact's current tier composition before quoting it. Checking it:
+
+| | pre-demotion | post-demotion (current) |
+|---|---:|---:|
+| Q2_K | 49.5% | **90.7%** |
+| IQ3_S / IQ4_XS / Q4_K / Q8_0 | 50.5% | 9.3% |
+
+The tail-Q2_K step already captured essentially the whole demotion axis. Demoting ALL remaining
+non-Q2_K projections is worth **-4.86% expert bytes -> -1.65% step -> +1.7% tok/s**, and costs a
+~32 GB BF16 fetch plus quality on the 917 expert-pairs deliberately held at higher precision —
+the most sensitive experts in the plan. Least gain, most quality risk: rejected without running.
+
+### The hard ceiling this exposes
+
+Single-stream step budget is io 34% / compute 50% / GPU+glue 16%, with compute at the
+`avx_vnni` ISA ceiling (no AVX-512, no AMX on this part) and io at 88% of the dual-NVMe
+device ceiling. So:
+
+| scenario | tok/s |
+|---|---:|
+| eliminate ALL io (artifact axis absolute cap) | 9.1 |
+| draft head at 1.4x (exact, no quality cost) | 8.4 |
+| draft head + full remaining demotion | 8.5 |
+| halve io AND compute — needs ~halving the expert bank AGAIN (REAP50 -> ~25% of original) | 10.3 |
+
+**10 tok/s single-stream is not reachable on this box at acceptable model quality.** Bytes alone
+cannot do it: even zero io caps at 9.1, because compute and GPU are already at their floors. The
+only arithmetic that reaches 10 requires halving the expert bank a second time, which is a
+different product, not a tuning step.
+
+The honest best achievable here is **~8.4-8.5 tok/s**, via a draft head clearing the 0.80
+acceptance bar — the one lever that multiplies tokens instead of degrading the model, since
+speculative decode is exactness-preserving. Everything needed to consume such a head (gating
+framework, K-sweep harness, serve path) is already built and proven.
+
+## CORRECTION (2026-07-25): the served candidate is Layer103.5, not tail-Q2_K
+
+Owner direction: stay on the Layer103.5 base candidate. The tail-Q2_K demotion is an
+experiment, not the served artifact, and it is NOT adopted.
+
+Its paired quality screen (run `tailq2k-screen-20260724`, frozen panel) says why:
+
+| arm | humaneval_instruct | hendrycks_math500 |
+|---|---:|---:|
+| layer103p5-base (served) | **11/14** | 13/32 |
+| tailq2k (candidate) | **8/14** | shard incomplete |
+
+The demoted build lost 3 of 14 on the completed code shard. Small sample, but paired and
+directional, and the throughput win it was bought with (+23%) does not license a quality
+regression on the served candidate. Not promoted; the screen is not being resumed because the
+decision no longer depends on it.
+
+Consequence for this document: every "standing" number I quoted from the tail-Q2_K build —
+6.0 tok/s single-stream, the io 34% / compute 50% / GPU 16% budget, the ceiling table, and the
+"artifact axis exhausted" verdict — was measured on the UNADOPTED artifact and does not describe
+what we serve. The served Layer103.5 baseline is ~4.8-5.4 tok/s with a larger io share (it is
+49.5% Q2_K, not 90.7%). The artifact axis is therefore NOT exhausted on the served candidate;
+it is unexercised there, and the one step that was tried failed quality.
+
+## PROCESS (2026-07-25): ownership check before killing anything
+
+I killed a `bw24-server` that another agent's 5-hour quality screen was driving, at 31/32
+samples, because an established-but-idle socket looked like a stall. At 573 s/sample that idle
+gap was the screen working normally. Liveness is not ownership. Before killing any process:
+identify who is on the other end of its sockets, check `/proc/<pid>/cwd` and cmdline for another
+session's paths, and prefer waiting or asking over killing shared services. This machine runs
+several agents concurrently; a process that is not mine is not mine to reap.
+
+## 2026-07-25 — CORRECTION: importance re-assessment must anchor to plain quant, not layer103.5
+
+Owner correction: layer103.5 is the *winner of the measurement chain* (traffic-ranked 100GB plan
+→ layer100 → private late-restore screen). Its pruning AND tier assignments were all selected by
+our own measurements. Tracing calibration routing through it, or quality-screening new candidates
+against it, is circular — the reference arm must carry zero selection from bw24 measurements.
+
+Protocol change:
+- Reference arm: **plain quant** — full expert bank, uniform Q4_K
+  (`plain-fullbank-uniform-q4k.plan.json`), quantized from the pinned BF16 source
+  (`tencent/Hy3 @ 716aa724`) with the same pinned external quantizer commit (`llama.cpp 99f3dc3`,
+  libggml-base 0.16.0 rebuilt locally, sha recorded in build.log) as the served artifact.
+- Calibration weight traces re-captured on the plain arm; the running layer103.5 capture is
+  retained only as a rank-stability crosscheck (does demotion perturb routing), never for
+  selection.
+- New tier/prune candidates are screened paired against the PLAIN arm. Comparison to the served
+  layer103.5 happens only at ship-decision time, as a separate question.
+
+Build pipeline (resumable, receipts in `evidence/local-5090-plain-arm-20260725/build.log`):
+99-shard BF16 fetch (~506 GB, measured 93 MB/s) → uniform Q4_K repack (~161 GB overlay) →
+relocate + dual-NVMe view + freeze profile.
+
+### Tier correction: uniform Q3_K, not Q4_K
+
+Q4_K is an EXTERNAL quantizer type — `prepare_mixed_expert_repack.py` requires a plan-bound quant
+sensitivity map with per-layer private importance sidecars for external types
+(`ValueError: ['Q4_K'] require a plan-bound quant sensitivity map`, build.log). Uniform plans must
+not consume calibration traces, so uniform Q4_K is structurally blocked — correctly. The plain arm
+uses uniform Q3_K instead: in-tree exact quantizer (no calibration input), sanctioned tier palette,
+already served by the runtime, ~123 GB payload fits the /data dual-NVMe mirror. Q8_0 rejected
+(~282 GB breaks the mirror budget, screens ~2x slower); NVFP4 rejected (no proven CPU spill
+kernel on the local rig). Uniform degradation is noise, not bias, for routed-mass ranking.
+
+### Plain arm BUILT + serving assets ready (2026-07-25 late)
+
+- Overlay: 45,504 expert projections (15,168 experts x 3, full bank), uniform Q3_K, 115 GiB,
+  built from the complete 99-shard BF16 source (557 GiB staged) with the in-tree exact quantizer;
+  per-file completion receipts + manifest in `/data/ai-ml/hf-models/hy3-plain-q3k-overlay` (payload
+  now lives inside the runtime dir).
+- Runtime: `/data/ai-ml/hf-models/hy3-plain-q3k-runtime` (relocated view, source fingerprints
+  verified against the pinned sparse-source). Dual-NVMe: view at
+  `~/.local/share/bw24-models/hy3-plain-q3k-dual-nvme` (118 files copied to root, 61.8 GB) +
+  root mirror (119 verified copies + 118 hard links, 123 GB, `inode-alternates.tsv`) — every
+  byte on both devices, same split-read layout as the served candidate.
+- 103.5 crosscheck capture COMPLETE: 24/24 prompts traced (rank-stability evidence only).
+- Plain-arm calibration capture LAUNCHED: same methodology/env as the 103.5 capture (only
+  model/map/paths swapped), 24 private prompts, resumable, waits for foreign-GPU idle.
+- BF16 staging retained on root NVMe for candidate surgery (task 3); 378G root / 157G data free.
+
+## 2026-07-26 — PAIRED SCREEN RESULT: importance-fused candidate PASSES vs plain arm
+
+RUN_ID `fusedcand-screen-20260726`, both arms same runtime build, same panel lock, serial on the
+same rig, GPU-idle guarded, freeze-cache warmup 128 tokens per shard. Raw shards + score receipts
+in `results-hourish/{plain-q3k,fusedcand}/fusedcand-screen-20260726/`.
+
+| shard | plain-q3k (reference) | fusedcand | delta |
+| --- | --- | --- | --- |
+| humaneval_instruct | 11/14 | 12/14 | +1 |
+| hendrycks_math500 | 16/32 | 17/32 | +1 |
+| mmlu_pro_history | 4/5 | 4/5 | tie |
+| mmlu_pro_other | 5/5 | 5/5 | tie |
+| total | 36/56 | 38/56 | +2 |
+
+The fused candidate (4,428 cold pairs → Q2_K, 268 hot pairs → Q8_0, both-sources intersection,
+no pruning) carries 95.7% of the plain arm's expert bytes and is >= the neutral reference on every
+shard. Directional evidence at screen-panel N, not statistical significance — but the sign is
+positive on both scored tracks, and the design question ("does importance-guided tier
+redistribution cost quality?") answers NO at these sizes.
+
+Context stamps: the served layer103.5's screen (different run, 20260724) scored code 11/14,
+math 13/32; the fused candidate matches-or-beats those numbers while keeping the FULL 15,168-expert
+bank (layer103.5 retains 9,900). Cross-run comparison — labeled as such, not a paired claim.
+
+Next gates: throughput pair (m=1, N=3) fusedcand vs plain vs served layer103.5, then the
+ship-decision comparison vs the served candidate as a separate question (speed x quality x bytes).
+
+### Same-day throughput triads (m=1, NGEN=32, lockstep, freeze-profiles, N=3 each)
+
+Raw logs `evidence/local-5090-plain-arm-20260725/tp-*.log`, all three arms measured back-to-back
+on 2026-07-26 evening under the same guards (foreign-GPU < 500 MiB, temp <= 56, load <= 6).
+
+| arm | bank | expert bytes | runs (tok/s) | median |
+| --- | --- | --- | --- | --- |
+| plain-q3k | 15,168 full | 115 G | 1.44 / 2.87 / 3.06 | 2.87 |
+| fusedcand | 15,168 full | 110 G | 3.17 / 2.89 / 2.89 | 2.89 |
+| layer103p5 (served) | 9,900 pruned | 78.5 G | 5.13 / 5.13 / 5.16 | 5.13 |
+
+Note: layer103.5 measures 5.13 today vs 4.29 in yesterday's rebase triad — same artifact, same
+methodology; day-to-day regime shift. Cross-arm conclusions use only the same-day columns.
+
+### Ship decision picture
+
+- Science result (paired, same day): importance-fused tier redistribution is FREE — fusedcand
+  matches plain speed (2.89 vs 2.87) and beats it on quality (38/56 vs 36/56) at 95.7% bytes.
+  The method works: routed-mass x big-corpus fusion, no pruning, quality holds.
+- Serving result: fusedcand does NOT displace the served layer103.5 — 2.89 vs 5.13 tok/s. The
+  speed gap is bank size (110 G / 15,168 experts vs 78.5 G / 9,900): GPU residency hit rate and
+  spill traffic dominate, and no tier shaping at 110 G closes a 1.78x gap.
+- Layer103.5 stays the served candidate. The fused method's real shot at the board: rebuild the
+  fused design at the SERVED byte budget (~78 G, full bank, no pruning — deeper Q2_K cold slice,
+  same hot Q8_0 protection) and screen it paired against layer103.5 directly. That is the
+  byte-matched question the owner directives (no pruning, reuse NVFP4-study evidence) point at,
+  and it is a separate build+screen cycle awaiting owner call.
+
+### 2026-07-27 — byte-matched fused rebuild: KILLED BY ARITHMETIC (no build)
+
+Owner pushback taken: predict before building. The 78G full-bank fused idea dies on row-byte
+arithmetic from banked data (no GPU, no build): a full 15,168-expert bank at the pure Q2_K floor
+is 15,168 x 84 = 1,274,112 row-byte units — still ~110% of the served layer103.5 bank
+(1,157,786). Byte-matching the served candidate with a full bank is impossible at any tier mix,
+and even approaching it puts ~90% of routed mass on Q2_K — the blanket-demotion design that
+already failed quality (8/14). Without pruning (owner-ruled-out, and measured bad) the artifact
+axis at the served byte budget is CLOSED. layer103.5 stays served; remaining throughput lanes are
+system lanes on the served artifact.

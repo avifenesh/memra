@@ -1,0 +1,40 @@
+dsv4-gpu-greedy | model /home/ubuntu/models/dsv4-flash-nvfp4 | variant clamp-only | n_new 160 | runs 2 | devices [0, 1]
+[load] expert arm: Native
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=38s
+[load] layer 15 -> dev0 done t=51s
+[load] layer 19 -> dev0 done t=64s
+[load] layer 23 -> dev1 done t=77s
+[load] layer 27 -> dev1 done t=90s
+[load] layer 31 -> dev1 done t=103s
+[load] layer 35 -> dev1 done t=116s
+[load] layer 39 -> dev1 done t=128s
+[load] layer 42 -> dev1 done t=138s
+loaded: split at layer 22, t=143s
+[vram post-load] dev0 used 82.21/94.97 GiB (resident 81.51) | dev1 used 82.14/94.97 GiB (resident 81.44)
+[run 0] step 0: tok 2581 (logit 35.126) s=33 t=0.7s
+[run 0] step 20: tok 666 (logit 42.517) s=53 t=17.6s
+[run 0] step 40: tok 9884 (logit 45.089) s=73 t=41.3s
+[run 0] step 60: tok 3517 (logit 41.450) s=93 t=72.0s
+[run 0] step 80: tok 42492 (logit 41.201) s=113 t=110.2s
+[run 0] step 100: tok 83 (logit 43.661) s=133 t=155.8s
+[run 0] step 120: tok 95 (logit 44.218) s=153 t=208.7s
+[run 0] step 140: tok 12149 (logit 41.341) s=173 t=268.9s
+[run 0] step 159: tok 9832 (logit 43.305) s=192 t=332.7s
+[run 0] 160 tokens in 332.8s (informational, single-run, not a perf claim); logits bin /home/ubuntu/dsv4-lane7-out/greedy/gpu_logits_run0.bin sha256 67fa543eca269588bef03c01f0d71a59cfba21d6e87de336a1b177b1b30ec311
+[vram post-run0] dev0 used 82.36/94.97 GiB (resident 81.51) | dev1 used 82.27/94.97 GiB (resident 81.44)
+[run 1] step 0: tok 2581 (logit 35.126) s=33 t=0.6s
+[run 1] step 20: tok 666 (logit 42.517) s=53 t=17.1s
+[run 1] step 40: tok 9884 (logit 45.089) s=73 t=40.6s
+[run 1] step 60: tok 3517 (logit 41.450) s=93 t=71.3s
+[run 1] step 80: tok 42492 (logit 41.201) s=113 t=109.4s
+[run 1] step 100: tok 83 (logit 43.661) s=133 t=155.0s
+[run 1] step 120: tok 95 (logit 44.218) s=153 t=207.9s
+[run 1] step 140: tok 12149 (logit 41.341) s=173 t=268.0s
+[run 1] step 159: tok 9832 (logit 43.305) s=192 t=331.9s
+[run 1] 160 tokens in 331.9s (informational, single-run, not a perf claim); logits bin /home/ubuntu/dsv4-lane7-out/greedy/gpu_logits_run1.bin sha256 67fa543eca269588bef03c01f0d71a59cfba21d6e87de336a1b177b1b30ec311
+[vram post-run1] dev0 used 82.36/94.97 GiB (resident 81.51) | dev1 used 82.27/94.97 GiB (resident 81.44)
+determinism across 2 runs: tokens IDENTICAL | logits bins BYTE-IDENTICAL
+banked /home/ubuntu/dsv4-lane7-out/greedy/gpu_greedy.json | total elapsed 808s
+GPU GREEDY DRIVER: complete (verdict comes from dsv4-greedy-verify)

@@ -1,0 +1,58 @@
+[package]
+name = "memra-server"
+description = "OpenAI-compatible HTTP serving for the memra CUDA inference engine - single-GPU multi-model step-interleave scheduling on RTX 50-series"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shared crates.io browse metadata; see the note in the workspace manifest.
+categories.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+# BASE-4 (MEMRA-BUILD-MAP §BASE-4): HTTP server + step-interleave scheduler.
+# The engine lib stays CUDA-only and SYNC; this crate is the async-only seam.
+# A single dedicated GPU worker thread owns the Engine + all HybridModels
+# (CUDA context is thread-affine); axum handlers talk to it over channels.
+
+[dependencies]
+memra-engine = { workspace = true }
+# cross-request prefix cache: entries own compact device copies of primed KV/recurrent state.
+cudarc = { version = "0.19", default-features = false, features = ["std", "cuda-13010", "dynamic-loading", "driver", "cublas", "cublaslt", "nvrtc"] }
+memra-gguf = { workspace = true }
+# x-lane QoS: lane types, SLO admission policy, engine-truth step stats (lane/dl-metering
+# gate, QoS-only extraction — the metering half stays darklane-side).
+memra-lanes = { workspace = true }
+memra-tokenizer = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
+axum = "0.7"
+serde = { version = "1", features = ["derive"] }
+# preserve_order: tool schemas render into the chat template's <tools> block via
+# `tool | tojson` — key order must be the CLIENT's order (the training-time convention),
+# not BTreeMap-alphabetical. memra-server is the workspace's only serde_json consumer.
+serde_json = { version = "1", features = ["preserve_order"] }
+async-stream = "0.3"
+futures-core = "0.3"
+llguidance = "1.7.6"
+# dead-darklane background jobs (lane/darklane-training): process-group signaling
+# (SIGSTOP/SIGCONT yield, SIGUSR1 checkpoint) + PDEATHSIG on the job child.
+libc = "0.2"
+# API-key auth (lane/api-keys): keys are stored as SHA-256 hex, never plaintext.
+sha2 = "0.10"
+# keyring file format (MEMRA_API_KEYS=/path/keys.toml)
+toml = "0.8"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[[bin]]
+name = "memra-server"
+path = "src/main.rs"
+
+# cargo-binstall: point at the stable-name release artifact (sm_120a, glibc-2.35 floor)
+# built by .github/workflows/release.yml. `cargo binstall memra-server` then installs the
+# prebuilt self-contained binary instead of compiling CUDA locally.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/memra-server-v{ version }-{ target }.tar.gz"
+bin-dir = "memra-server-v{ version }-{ target }/{ bin }"
+pkg-fmt = "tgz"

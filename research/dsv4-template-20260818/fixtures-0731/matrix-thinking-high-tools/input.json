@@ -1,0 +1,44 @@
+{
+  "turns": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "Weather in Beijing?"
+    }
+  ],
+  "think": "thinking",
+  "reasoning_effort": "high",
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a specific location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city name"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "celsius",
+                "fahrenheit"
+              ],
+              "description": "Temperature unit"
+            }
+          },
+          "required": [
+            "location"
+          ]
+        }
+      }
+    }
+  ],
+  "add_generation_prompt": true
+}

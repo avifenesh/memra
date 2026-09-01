@@ -1,0 +1,101 @@
+6:[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+18:[admission] "step": plain 83520 B/token (61248 capped at 4639 rows), spec 85376 B/token (63104 capped); fixed residual learns from effective-free deltas
+25:[admission] request cost: model="step" ctx=262144 path=plain = 83520 B/token x ctx + 0MB fixed = 6123MB
+46:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=1 placement=pp2-cross-device
+47:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=2 placement=pp2-cross-device
+48:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=3 placement=pp2-cross-device
+49:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=4 placement=pp2-cross-device
+50:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=5 placement=pp2-cross-device
+51:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=6 placement=pp2-cross-device
+52:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=7 placement=pp2-cross-device
+53:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=8 placement=pp2-cross-device
+54:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=9 placement=pp2-cross-device
+55:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=10 placement=pp2-cross-device
+56:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=11 placement=pp2-cross-device
+57:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=12 placement=pp2-cross-device
+58:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+59:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+60:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+61:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+62:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+63:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+64:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+66:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+67:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+68:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+69:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+70:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+71:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+72:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+73:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+74:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+75:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+76:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+77:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+78:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+79:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+80:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+81:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+82:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+83:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+84:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+85:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+86:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+87:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+88:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+89:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+90:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+91:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+92:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+93:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+94:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+95:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+96:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+97:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+98:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+99:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+100:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+101:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+102:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+103:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+104:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+105:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+106:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+107:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+108:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95056MB; parked spec sessions 0; plain reuse 0; queue 11]
+109:[admit-oom] VRAM defer: 12 active, effective free 6166MB (driver + 37MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+110:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+111:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+112:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+113:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+114:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+115:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+116:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+117:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+118:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+119:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+120:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+121:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+122:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+123:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+124:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+125:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+126:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+127:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+128:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 11]
+129:[admit-oom] reclaim-on-defer: evicted 1 plain + 0 spec parked sessions (global LRU); effective free 6165MB -> 9231MB
+130:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=12 placement=pp2-cross-device
+131:[admit-oom] VRAM defer: 12 active, effective free 6165MB (driver + 36MB pool-cached) < cost 6123MB + reserve 1611MB — queueing (FIFO) [pool res 95093MB used 95057MB; parked spec sessions 0; plain reuse 0; queue 10]
+133:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=2 placement=pp2-cross-device
+135:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=3 placement=pp2-cross-device
+137:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=4 placement=pp2-cross-device
+139:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=5 placement=pp2-cross-device
+141:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=6 placement=pp2-cross-device
+143:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=7 placement=pp2-cross-device
+145:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=8 placement=pp2-cross-device
+147:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=9 placement=pp2-cross-device
+149:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=10 placement=pp2-cross-device
+150:[admit-oom] reclaim-on-defer: evicted 1 plain + 0 spec parked sessions (global LRU); effective free 6165MB -> 9231MB
+152:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=11 placement=pp2-cross-device
+153:[admit-oom] reclaim-on-defer: evicted 1 plain + 0 spec parked sessions (global LRU); effective free 6165MB -> 9231MB
+154:[spec-k] model="step" tenant="val256-capacity-262144" K=0 source=pp2-placement prompt=51 cached=0 lcp=0 active=12 placement=pp2-cross-device

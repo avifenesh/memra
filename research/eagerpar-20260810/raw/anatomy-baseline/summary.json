@@ -1,0 +1,41 @@
+{
+  "rig": "box1 cloud pair, 2x NVIDIA RTX PRO 6000 Blackwell Server Edition, 600 W limits",
+  "serve_shape": {
+    "pp_stages": 2,
+    "pp_devices": "0,1",
+    "context_env": 262144,
+    "moe_grouped": true,
+    "prefill_tick": 2048,
+    "bench_prompt_tokens": 512
+  },
+  "provenance": {
+    "fixed_source": "2ef6d75cbf9ff7a09f685bcc1fc54b84bb8f81fb",
+    "fixed_binary_sha256": "23cab4ad3b8a82ef86a5e884f6976b35441ff87bf881645b341630db5b568379",
+    "eager_source": "188154299064a42b67fc8eb1f41757cf6237300d",
+    "eager_binary_sha256": "f74d703f20c18c962ceeba1d96568667fae2b43e692fcb92ff9fb7226ecb8cc8",
+    "model_sha256": "b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259"
+  },
+  "wall": {
+    "steps_per_rep": 64,
+    "timed_reps_per_arm": 3,
+    "discarded_warmup_reps_per_arm": 1,
+    "order": ["batched", "eager"],
+    "batched_tok_s_median": 81.8,
+    "eager_tok_s_median": 86.0,
+    "batched_vs_eager_pct": -4.8837,
+    "batched_ms_per_token": 12.2249,
+    "eager_ms_per_token": 11.6279,
+    "gap_ms_per_token": 0.5970,
+    "thermal_regime": "single fixed-then-eager order; batched start 26/26 C, eager start 32/33 C; anatomy confirmation only, not the promotion A/B"
+  },
+  "sync_bounded_phase": {
+    "steps_per_rep": 8,
+    "measured_plus_warmup_tokens": 16,
+    "batched_total_ms": 250.6,
+    "batched_q_a_dtod_ms": 15.0,
+    "batched_q_a_dtod_share_pct": 6.0,
+    "q_a_dtod_launches_per_token": 90,
+    "interpretation": "MEMRA_BATCH_PHASE=1 synchronizes every boundary; rank/share and launch anatomy only, not uninstrumented wall time"
+  },
+  "errors": 0
+}

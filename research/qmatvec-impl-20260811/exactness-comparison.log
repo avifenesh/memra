@@ -1,0 +1,19 @@
+2026-08-11T21:47:24+03:00
+f436780c28ae7e54c73db62598cfd208295ba94924252157fda0ea5eae31f624  -
+NVIDIA GeForce RTX 5090 Laptop GPU, P8, 51, 180 MHz, 157 MiB
+shape out= 8192 in= 4096 attention-q-swa    aligned=80bc9af4fb120d65 fallback=80bc9af4fb120d65 mismatches=0 OK
+shape out=12288 in= 4096 attention-q-full   aligned=b6274475f6999551 fallback=b6274475f6999551 mismatches=0 OK
+shape out= 1024 in= 4096 attention-k        aligned=de85ef1b730ac84a fallback=de85ef1b730ac84a mismatches=0 OK
+shape out=   64 in= 4096 head-gate-swa      aligned=5029cca533743843 fallback=5029cca533743843 mismatches=0 OK
+shape out=   96 in= 4096 head-gate-full     aligned=f10b0d81d59d170a fallback=f10b0d81d59d170a mismatches=0 OK
+shape out= 4096 in= 8192 attention-out-swa  aligned=12c545976bf7e563 fallback=12c545976bf7e563 mismatches=0 OK
+shape out= 4096 in=12288 attention-out-full aligned=adfe2c7babe09a8b fallback=adfe2c7babe09a8b mismatches=0 OK
+shape out=11264 in= 4096 dense-gate-up      aligned=734c34e7815fc05c fallback=734c34e7815fc05c mismatches=0 OK
+shape out= 4096 in=11264 dense-down         aligned=2127f5a4be86d842 fallback=2127f5a4be86d842 mismatches=0 OK
+shape out= 1280 in= 4096 shared-gate-up     aligned=675055f4bcee1a0b fallback=675055f4bcee1a0b mismatches=0 OK
+shape out= 4096 in= 1280 shared-down        aligned=fa17d507a72743eb fallback=fa17d507a72743eb mismatches=0 OK
+exactness layouts: ALL GREEN
+e52f8369ce62dd250f4d203033bc5e8f6e6c1c9ba4e262ce84565d22eb92accf  /tmp/qmatvec-iq4xs-baseline.bin
+e52f8369ce62dd250f4d203033bc5e8f6e6c1c9ba4e262ce84565d22eb92accf  /tmp/qmatvec-iq4xs-candidate.bin
+baseline_candidate_cmp_rc=0
+NVIDIA GeForce RTX 5090 Laptop GPU, P0, 52, 495 MHz, 157 MiB

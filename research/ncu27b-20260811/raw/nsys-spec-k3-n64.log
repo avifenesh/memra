@@ -1,0 +1,39 @@
+capture-start 2026-08-10T23:34:09Z
+tree a12bde8f334c436e584dfbf542381de19c609ffa
+branch lane/cx-ncu27b
+run-spec-sha256 220d527beeb4bd2306cfd017ababdf2c501326bff9fcf87bcf4015e38c84561c
+model-sha256 d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517
+draft-sha256 b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581
+prompt-sha256 6e00d76296069277dc7717115f977aedcab502b610c95a042c63c30eefdb86b2
+shape c=1 K=3 NGEN=64 CHAT=1 PROFILE_SPEC=2 CUDA_VISIBLE_DEVICES=0
+[gpu 2026-08-10T23:34:35Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P8, 60, 10.30 W, [N/A], 180 MHz, 405 MHz, 31 MiB, 24463 MiB, 0 %
+profiler nsys; range=cudaProfilerApi; range-end=none; trace=cuda,nvtx; graph=node
+WARNING: CPU context switch tracing not supported, disabling.
+Try the 'nsys status --environment' command to learn more.
+
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.362s = 46.27 tok/s (gen-only; this run's prime 0.099s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+[spec-phase] draft=43.1ms (6.8%) verify-issue=214.2ms (33.6%) verify-wait=366.1ms (57.4%) commit-host=14.0ms (2.2%) rounds=21
+
+[generate_spec K=3] 64 tok in 1.146s = 54.97 tok/s (1.19x vs generate; this run's prime 0.100s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+Capture range started in the application.
+Capture range ended in the application.
+Generating '/tmp/nsys-report-b236.qdstrm'
+[1/1] [0%                          ] spec-k3-n64.nsys-repProcessing events...
+[1/1] [0%                          ] spec-k3-n64.nsys-rep[1/1] [====26%                     ] spec-k3-n64.nsys-rep[1/1] [==20%                       ] spec-k3-n64.nsys-rep[1/1] [=16%                        ] spec-k3-n64.nsys-rep[1/1] [=====32%                    ] spec-k3-n64.nsys-rep[1/1] [======35%                   ] spec-k3-n64.nsys-rep[1/1] [=======37%                  ] spec-k3-n64.nsys-rep[1/1] [=====31%                    ] spec-k3-n64.nsys-rep[1/1] [====27%                     ] spec-k3-n64.nsys-rep[1/1] [===24%                      ] spec-k3-n64.nsys-rep[1/1] [==21%                       ] spec-k3-n64.nsys-rep[1/1] [==19%                       ] spec-k3-n64.nsys-rep[1/1] [====27%                     ] spec-k3-n64.nsys-rep[1/1] [======35%                   ] spec-k3-n64.nsys-rep[1/1] [=========43%                ] spec-k3-n64.nsys-rep[1/1] [===========52%              ] spec-k3-n64.nsys-rep[1/1] [=============60%            ] spec-k3-n64.nsys-rep[1/1] [================68%         ] spec-k3-n64.nsys-rep[1/1] [==================77%       ] spec-k3-n64.nsys-rep[1/1] [====================85%     ] spec-k3-n64.nsys-rep[1/1] [=====================86%    ] spec-k3-n64.nsys-rep[1/1] [========================100%] spec-k3-n64.nsys-rep[1/1] [========================100%] spec-k3-n64.nsys-rep
+Generated:
+	/home/avifenesh/projects/wt-cx-ncu27b/research/ncu27b-20260811/raw/spec-k3-n64.nsys-rep
+[gpu 2026-08-10T23:34:48Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P4, 62, 25.13 W, [N/A], 180 MHz, 9001 MHz, 31 MiB, 24463 MiB, 0 %
+capture-end 2026-08-10T23:34:48Z rc=0

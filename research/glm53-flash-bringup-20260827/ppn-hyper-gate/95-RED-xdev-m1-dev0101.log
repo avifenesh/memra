@@ -1,0 +1,51 @@
+MUTATION M1 (DROPPED TX) CROSS-DEVICE, devices=0,1,0,1 N=4.
+Stage 0 publishes the PRE-range stream state, so the boundary carries nothing stage 0
+computed. Cross-device this also tests that the PEER COPY is what moves the payload.
+
+            // ***** MUTATION M1 (temporary, never committed): DROPPED TX. Stage 0 runs its
+            // layer range and then publishes the PRE-range stream state, so the boundary
+            // carries nothing stage 0 computed. Cross-device this also tests that the PEER
+            // COPY is what moves the payload: if the arms silently shared memory, the gate
+            // would stay green here.
+            let x_pre = e0.clone_dtod(&x)?;
+            let _x =
+                self.hyper_range_decode(e0, topology, x, fence[0], fence[1], &pos_d, pos, cache)?;
+            rt.tx(0, &x_pre, width)?
+
+=== gate output ===
+glm5-hyper-ppn-gate config: stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,0,1 splits=default(even) shard=per-stage
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=6 skipped=0 mismatches=0 elapsed_ms=1.896
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev0 stage3=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=1 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=1 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=2 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=2 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=24 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152 elapsed_ms=40.290
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+stage fence: [0, 1, 2, 3, 4] over 4 layers
+state placement: Recurrent(KDA) layers on stages [0, 2], LatentKvCache(MLA+kpool) layers on stages [1, 3]
+[phase] reference A: door OFF, step-by-step decode over the whole sequence
+[phase] reference C: door OFF, stateless prefill (forward / forward_last)
+[phase] reference B: door OFF, prime + decode continuation
+[phase] arm 1: door ON, decode-serial split walk
+[decode-serial] MISMATCH step 0 (decode): 32/32 logits differ, first @[0] ref=-2.4668674 pp=-0.39125445
+[decode-serial] MISMATCH step 1 (decode): 32/32 logits differ, first @[0] ref=-3.8083196 pp=-1.3407348
+[decode-serial] MISMATCH step 2 (decode): 32/32 logits differ, first @[0] ref=-3.2757268 pp=-0.2592535
+[decode-serial] MISMATCH step 3 (decode): 32/32 logits differ, first @[0] ref=-0.45848048 pp=2.7099328
+[decode-serial] MISMATCH step 4 (decode): 32/32 logits differ, first @[0] ref=-3.057311 pp=0.3783024
+[decode-serial] greedy tape DIVERGED at index 0: ref=0xa7972b1e01ff1f76 pp=0x818484f5e26a12bd
+[phase] arm 2: door ON, prime-twin split walk
+[prime-twin] MISMATCH step 1 (decode after prime): 32/32 logits differ, first @[0] ref=-0.13124299 pp=1.1600102
+[prime-twin] MISMATCH step 2 (decode after prime): 32/32 logits differ, first @[0] ref=-3.422094 pp=0.29999644
+[prime-twin] MISMATCH step 3 (decode after prime): 32/32 logits differ, first @[0] ref=-2.763019 pp=0.6377965
+[prime-twin] MISMATCH step 4 (decode after prime): 32/32 logits differ, first @[0] ref=-2.1943498 pp=0.9964707
+[prime-twin] MISMATCH step 5 (decode after prime): 32/32 logits differ, first @[0] ref=-2.6512775 pp=1.5896963
+[prime-twin] greedy tape DIVERGED at index 0: ref=0x50ad4c8f01bf7247 pp=0x52d8ae3a83f7e3a8
+[phase] arm 3: door ON, prefill-twin split walk
+glm5-hyper-ppn-gate NOTE: pipelined arm skipped — `decode_step_h_ppn_deferred` calls refuse_hyper(), so deferred readback is not wired for the mHC residual. This gate covers the serial split walk only; do not cite it for the pipelined arm.
+glm5-hyper-ppn gate FAIL [decode-serial]: 14/14 comparisons mismatched (first @ step 0 idx 0: ref=-2.4668674 pp=-0.39125445); greedy tape DIVERGED (fence=[0, 1, 2, 3, 4]; stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,0,1 splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate FAIL [prime-twin]: 8/9 comparisons mismatched (first @ step 1 idx 0: ref=-0.13124299 pp=1.1600102); greedy tape DIVERGED (fence=[0, 1, 2, 3, 4]; stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,0,1 splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prefill-twin]: 2 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,0,1 splits=default(even) shard=per-stage)
+exit=0

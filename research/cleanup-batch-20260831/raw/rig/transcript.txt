@@ -1,0 +1,17 @@
+binary: /home/avifenesh/projects/wt-memra-cleanup-batch/target/release/memra-server
+b3b813e190a8b6231b9b2798483f69f4abb11aa21afe776cf8ed6120e3d01809  /home/avifenesh/projects/wt-memra-cleanup-batch/target/release/memra-server
+9fad380f8 docs/FLAGS.md: MEMRA_SWA_RING row states both default truths (review [high])
+85 MiB
+== tooth 1: skip + MEMRA_SERVE_SPEC=1, no dspark -> FATAL ==
+PASS: exit=1, cause quoted:
+    [mtp-skip] gate: MEMRA_MTP_SKIP=1 removed the embedded MTP head but MEMRA_SERVE_SPEC=1 explicitly requests speculative serving and no dspark drafter is armed for this model; the spec request cannot be honored; unset MEMRA_MTP_SKIP, set MEMRA_SERVE_SPEC=0, or arm MEMRA_DSPARK_SPEC
+== tooth 2 (NEW): skip + MEMRA_SERVE_SPEC unset, no dspark -> FATAL naming the override ==
+PASS: exit=1, refusal names the override and the missing drafter:
+    [mtp-skip] gate: MEMRA_MTP_SKIP=1 removed the embedded MTP head, no dspark drafter is armed, and MEMRA_SERVE_SPEC is unset (or a form other than the literal 0), which leaves serving spec ON by default; booting would silently serve PLAIN decode at reduced speed with no receipt (the DFlash2 2026-08-25 incident class). Refusing at boot: set MEMRA_SERVE_SPEC=0 to choose plain serving explicitly, arm MEMRA_DSPARK_SPEC, or unset MEMRA_MTP_SKIP
+== tooth 3: skip + MEMRA_SERVE_SPEC=0 -> boots, PLAIN by explicit choice; vision cap cells ==
+PASS: explicit-choice PLAIN line present:
+    [mtp-skip] gate: serves PLAIN decode by explicit choice (MEMRA_SERVE_SPEC=0): the embedded MTP head was skipped (MEMRA_MTP_SKIP=1) and no dspark drafter is armed, so no spec program exists for this model
+PASS: greedy request served PLAIN (.usage.spec == null)
+cleanup-batch cells: ALL GREEN
+
+[exited with code 0]

@@ -1,0 +1,16 @@
+dsv4-greedy-verify | model /home/ubuntu/models/dsv4-flash-nvfp4 | variant clamp-only | prompt 32 + gpu tokens 160 = 192
+layer 3 done t=18s
+layer 7 done t=37s
+layer 11 done t=58s
+layer 15 done t=80s
+layer 19 done t=99s
+layer 23 done t=119s
+layer 27 done t=143s
+layer 31 done t=168s
+layer 35 done t=193s
+layer 39 done t=218s
+layer 42 done t=234s
+head: decoding + 160 position logits (t=234s)
+logits done t=238s
+
+CPU TEACHER-FORCING VERIFY [clamp-only]: 160/160 positions agree | first divergence: NONE — CPU greedy == GPU greedy for all tokens | elapsed 241s

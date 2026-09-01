@@ -1,0 +1,32 @@
+[server] starting; models config = [("gate", "/home/ubuntu/models/gemma/gemma-4-31B-it-shipQ6K-downQ6K.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "gate" <- /home/ubuntu/models/gemma/gemma-4-31B-it-shipQ6K-downQ6K.gguf
+[q8rp] split-plane decode mirrors built: 111 tensors
+[q4f16] prefill fp16 mirrors built: 110 dense trunk tensors
+[worker]   loaded "gate": 60 layers, eos=1
+[worker] gate: template caps tools=true think=false think_switch=true chat_ok=true effort_levels=false gemma_think=true ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[worker] gate: decode wave cap 8; scheduler tick cap 8
+[worker] gate: BATCHED DECODE (gemma4 dense arm, default-on; MEMRA_GEMMA4_BATCH=0 = eager kill switch): batched decode chunks; monolithic prefill, no graph promotion, no prime batching (eager-only for every non-decode entry point)
+[server] worker ready; serving models: ["gate"]
+[prefix-cache] on: budget 6753MB (6752829440 B, derived: 2 x 3376414720 B max entry for model "gate" at MEMRA_CTX=8192, requested 6752829440 B; boot driver free 56054317056 B, post-reserve clamp 54443704320 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 412160 B/token, spec 412160 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18093
+[meter] admit id=cmpl-ca54834394840da5ad34b406175f49cb tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=219 path=plain = 412160 B/token x ctx + 0MB fixed = 90MB
+[admission] fixed residual high-water: model="gate" 0MB (observed 67MB at ctx 163 path=plain)
+[prefix-cache] insert probation (seed): 107 tokens, 44.1MB (resident 44.1MB / 6753MB, model gate)
+[meter] admit id=cmpl-c67065dfb84102a28eb583abad9af3c8 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=232 path=plain = 412160 B/token x ctx + 0MB fixed = 96MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 120 prompt tokens; model gate)
+[prefix-cache] hit: 107 of 120 prompt tokens from cache (model gate)
+[meter] admit id=cmpl-d56afa5a12ad74d27ca27848d70064bd tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=219 path=plain = 412160 B/token x ctx + 0MB fixed = 90MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 107 prompt tokens; model gate)
+[prefix-cache] hit: 107 of 107 prompt tokens from cache (model gate)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

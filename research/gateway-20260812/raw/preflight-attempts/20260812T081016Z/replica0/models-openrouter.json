@@ -1,0 +1,165 @@
+{
+  "data": [
+    {
+      "capacity": [
+        {
+          "per": "minute",
+          "type": "request",
+          "unit": "request",
+          "value": 140
+        }
+      ],
+      "compliance": {
+        "hipaa": false,
+        "zdr": false
+      },
+      "created": 1777255064,
+      "datacenters": [
+        {
+          "country_code": "DE",
+          "region": "Frankfurt"
+        }
+      ],
+      "description": "Qwen3.6 27B served by memra from the pinned NVFP4/Q4_K_M GGUF artifact. Text input and output only on this endpoint.",
+      "hugging_face_id": "Qwen/Qwen3.6-27B",
+      "id": "qwen/qwen3.6-27b",
+      "input_modalities": [
+        {
+          "capacity": [
+            {
+              "per": "minute",
+              "type": "prompt",
+              "unit": "token",
+              "value": 700000
+            },
+            {
+              "per": "minute",
+              "type": "cached_prompt",
+              "unit": "token",
+              "value": 630000
+            }
+          ],
+          "pricing": [
+            {
+              "cost_usd": "0.000000300",
+              "type": "prompt",
+              "unit": "token"
+            },
+            {
+              "cost_usd": "0.000000075",
+              "type": "cached_prompt",
+              "unit": "token"
+            }
+          ],
+          "supported_inputs": {
+            "max_context_length": {
+              "unit": "token",
+              "value": 262144
+            },
+            "max_prompt_length": {
+              "unit": "token",
+              "value": 7680
+            }
+          },
+          "type": "text"
+        }
+      ],
+      "is_free": false,
+      "is_ready": false,
+      "name": "qwen/qwen3.6-27b",
+      "openrouter": {
+        "slug": "qwen/qwen3.6-27b"
+      },
+      "output_modalities": [
+        {
+          "capacity": [
+            {
+              "per": "minute",
+              "type": "completion",
+              "unit": "token",
+              "value": 8600
+            },
+            {
+              "type": "concurrency",
+              "unit": "request",
+              "value": 4
+            }
+          ],
+          "max_length": {
+            "unit": "token",
+            "value": 512
+          },
+          "pricing": [
+            {
+              "cost_usd": "0.000002000",
+              "type": "completion",
+              "unit": "token"
+            }
+          ],
+          "streaming": true,
+          "supported_parameters": {
+            "frequency_penalty": {
+              "type": "unknown"
+            },
+            "json_mode": {
+              "type": "boolean"
+            },
+            "max_tokens": {
+              "max": 512,
+              "min": 1,
+              "type": "integer",
+              "unit": "token"
+            },
+            "min_p": {
+              "type": "unknown"
+            },
+            "presence_penalty": {
+              "type": "unknown"
+            },
+            "reasoning": {
+              "type": "boolean"
+            },
+            "repetition_penalty": {
+              "type": "unknown"
+            },
+            "seed": {
+              "max": 9007199254740991,
+              "min": 0,
+              "type": "integer"
+            },
+            "stop": {
+              "type": "unknown"
+            },
+            "structured_outputs": {
+              "type": "boolean"
+            },
+            "temperature": {
+              "type": "unknown"
+            },
+            "tool_choice": {
+              "type": "enum",
+              "values": [
+                "auto",
+                "none"
+              ]
+            },
+            "tools": {
+              "type": "boolean"
+            },
+            "top_k": {
+              "min": 0,
+              "type": "integer"
+            },
+            "top_p": {
+              "type": "unknown"
+            }
+          },
+          "type": "text"
+        }
+      ],
+      "quantization": "nvfp4",
+      "schema_version": "2.4",
+      "tokenizer": "qwen35"
+    }
+  ]
+}

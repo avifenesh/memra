@@ -1,0 +1,294 @@
+{
+ "ep": "http://127.0.0.1:18600",
+ "deep_chars": 32720,
+ "short_chars": 32720,
+ "deep_max_tokens": 4096,
+ "rows": [
+  {
+   "label": "bar1-short0",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2000000,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "",
+   "usage": {
+    "prompt_tokens": 7880,
+    "completion_tokens": 48,
+    "total_tokens": 7928,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 13.934932778
+   },
+   "prefill_s": 10.699,
+   "decode_tok_s": 14.74,
+   "wall_s": 13.96,
+   "output": "",
+   "reasoning_head": "This is Tolstoy's War and Peace. It's one work \u2014 chapters from War and Peace. But question asks two works. The corpus fragments cut off may be from another work? All text is War and Peace (Pierre,",
+   "prefill_tok_s": 736.5
+  },
+  {
+   "label": "bar2-short0",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2000000,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+   "usage": null,
+   "prefill_s": null,
+   "decode_tok_s": null,
+   "wall_s": 0.91,
+   "output": "",
+   "reasoning_head": ""
+  },
+  {
+   "label": "bar2-short1",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2032720,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+   "usage": null,
+   "prefill_s": null,
+   "decode_tok_s": null,
+   "wall_s": 1.81,
+   "output": "",
+   "reasoning_head": ""
+  },
+  {
+   "label": "bar3-short0",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2000000,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+   "usage": null,
+   "prefill_s": null,
+   "decode_tok_s": null,
+   "wall_s": 0.95,
+   "output": "",
+   "reasoning_head": ""
+  },
+  {
+   "label": "bar3-short1",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2032720,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+   "usage": null,
+   "prefill_s": null,
+   "decode_tok_s": null,
+   "wall_s": 1.84,
+   "output": "",
+   "reasoning_head": ""
+  },
+  {
+   "label": "bar3-short2",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2065440,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+   "usage": null,
+   "prefill_s": null,
+   "decode_tok_s": null,
+   "wall_s": 2.73,
+   "output": "",
+   "reasoning_head": ""
+  },
+  {
+   "label": "bar4-short0",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2000000,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+   "usage": null,
+   "prefill_s": null,
+   "decode_tok_s": null,
+   "wall_s": 0.95,
+   "output": "",
+   "reasoning_head": ""
+  },
+  {
+   "label": "bar4-short1",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2032720,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+   "usage": null,
+   "prefill_s": null,
+   "decode_tok_s": null,
+   "wall_s": 1.85,
+   "output": "",
+   "reasoning_head": ""
+  },
+  {
+   "label": "bar4-short2",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2065440,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+   "usage": null,
+   "prefill_s": null,
+   "decode_tok_s": null,
+   "wall_s": 2.74,
+   "output": "",
+   "reasoning_head": ""
+  },
+  {
+   "label": "bar4-short3",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 2098160,
+   "max_tokens": 48,
+   "status": 200,
+   "error": "",
+   "usage": {
+    "prompt_tokens": 7674,
+    "completion_tokens": 48,
+    "total_tokens": 7722,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 13.721041543
+   },
+   "prefill_s": 13.331,
+   "decode_tok_s": 15.03,
+   "wall_s": 16.53,
+   "output": "The passage is drawn from Leo Tolstoy's *War and Peace*, depicting the Battle of Borodin\u00f3 through Pierre's eyes and behind the scenes with Napoleon and Kut\u00fazov. (It is a single novel rather than",
+   "reasoning_head": "",
+   "prefill_tok_s": 575.6
+  },
+  {
+   "label": "deep-vendor",
+   "mode": "vendor",
+   "chars": 32720,
+   "offset": 0,
+   "max_tokens": 4096,
+   "status": 200,
+   "error": "",
+   "usage": {
+    "prompt_tokens": 8086,
+    "completion_tokens": 237,
+    "total_tokens": 8323,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "elapsed_s": 50.536394298
+   },
+   "prefill_s": 10.936,
+   "decode_tok_s": 5.96,
+   "wall_s": 50.58,
+   "output": "**Book One: 1805**\n\n**Chapter I** \u2014 At Anna P\u00e1vlovna Sch\u00e9rer's Petersburg salon in July 1805, she greets Prince Vas\u00edli Kur\u00e1gin with anti-Napoleon tirades, discusses European politics, and agrees to help arrange a marriage between his dissolute son Anatole and the wealthy Princess Mary Bolk\u00f3nskaya.\n\n**Chapter II** \u2014 The salon fills with Petersburg high society, including little Princess Lise Bolk\u00f3nskaya, H\u00e9l\u00e8ne Kur\u00e1gin, and Pierre Bez\u00fakhov, the illegitimate, socially awkward son of the dying Count Bez\u00fakhov, whose breach of etiquette keeps alarming the hostess.\n\n**Chapter III** \u2014 The reception i",
+   "reasoning_head": "Summarize chapters I\u2013III of Book One (text cuts off in chapter III).",
+   "prefill_tok_s": 739.4
+  }
+ ],
+ "vram": [
+  {
+   "label": "before-deep",
+   "t": 0.1,
+   "cards": [
+    "0, 97238 MiB",
+    "1, 89656 MiB",
+    "2, 1 MiB",
+    "3, 24252 MiB"
+   ]
+  },
+  {
+   "label": "deep-first-token",
+   "t": 11.1,
+   "cards": [
+    "0, 97238 MiB",
+    "1, 96280 MiB",
+    "2, 1 MiB",
+    "3, 24252 MiB"
+   ]
+  },
+  {
+   "label": "after-bar+1",
+   "t": 25.1,
+   "cards": [
+    "0, 97238 MiB",
+    "1, 96856 MiB",
+    "2, 1 MiB",
+    "3, 24252 MiB"
+   ]
+  },
+  {
+   "label": "after-bar+2",
+   "t": 26.9,
+   "cards": [
+    "0, 97238 MiB",
+    "1, 96856 MiB",
+    "2, 1 MiB",
+    "3, 24252 MiB"
+   ]
+  },
+  {
+   "label": "after-bar+3",
+   "t": 29.7,
+   "cards": [
+    "0, 97238 MiB",
+    "1, 96856 MiB",
+    "2, 1 MiB",
+    "3, 24252 MiB"
+   ]
+  },
+  {
+   "label": "after-bar+4",
+   "t": 46.3,
+   "cards": [
+    "0, 97238 MiB",
+    "1, 96952 MiB",
+    "2, 1 MiB",
+    "3, 24252 MiB"
+   ]
+  },
+  {
+   "label": "after-deep-done",
+   "t": 50.7,
+   "cards": [
+    "0, 97238 MiB",
+    "1, 96952 MiB",
+    "2, 1 MiB",
+    "3, 24252 MiB"
+   ]
+  }
+ ],
+ "bars": [
+  {
+   "bar": 1,
+   "deep_live_before": true,
+   "deep_live_after": true
+  },
+  {
+   "bar": 2,
+   "deep_live_before": true,
+   "deep_live_after": true
+  },
+  {
+   "bar": 3,
+   "deep_live_before": true,
+   "deep_live_after": true
+  },
+  {
+   "bar": 4,
+   "deep_live_before": true,
+   "deep_live_after": true
+  }
+ ]
+}

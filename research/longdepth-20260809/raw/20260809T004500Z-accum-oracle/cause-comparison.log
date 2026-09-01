@@ -1,0 +1,20 @@
+lock_acquired=2026-08-09T01:05:10Z
+target=5333 literal=td recorded-causal-token
+compare n=128896 max_abs=2.213507652 max_abs_id=36036 mean_abs=0.329584064 rms_abs=0.419860626 rms_rel=0.101993584
+a raw_argmax=9787 raw_margin=1.025142670 sampled=5333 sample_margin=0.661468506
+a target=5333 raw_logit=34.480182648 raw_rank=2 probability_t0.7=1.877815929456e-1 gumbel_score=51.042392731 gumbel_rank=1
+a sampled_raw_logit=34.480182648 sampled_probability_t0.7=1.877815929456e-1 sampled_gumbel_score=51.042392731
+b raw_argmax=9787 raw_margin=1.757114410 sampled=9787 sample_margin=0.384204865
+b target=5333 raw_logit=34.695209503 raw_rank=2 probability_t0.7=7.514874056140e-2 gumbel_score=51.349575043 gumbel_rank=2
+b sampled_raw_logit=36.452323914 sampled_probability_t0.7=9.248511847690e-1 sampled_gumbel_score=51.733779907
+verdict same_raw_argmax=true same_sample=false target_selected_a=true target_selected_b=false target_logit_delta=-0.215026855
+target=9787 literal=dd grammatically-required-alternative
+compare n=128896 max_abs=2.213507652 max_abs_id=36036 mean_abs=0.329584064 rms_abs=0.419860626 rms_rel=0.101993584
+a raw_argmax=9787 raw_margin=1.025142670 sampled=5333 sample_margin=0.661468506
+a target=9787 raw_logit=35.505325317 raw_rank=1 probability_t0.7=8.122182630384e-1 gumbel_score=50.380924225 gumbel_rank=2
+a sampled_raw_logit=34.480182648 sampled_probability_t0.7=1.877815929456e-1 sampled_gumbel_score=51.042392731
+b raw_argmax=9787 raw_margin=1.757114410 sampled=9787 sample_margin=0.384204865
+b target=9787 raw_logit=36.452323914 raw_rank=1 probability_t0.7=9.248511847690e-1 gumbel_score=51.733779907 gumbel_rank=1
+b sampled_raw_logit=36.452323914 sampled_probability_t0.7=9.248511847690e-1 sampled_gumbel_score=51.733779907
+verdict same_raw_argmax=true same_sample=false target_selected_a=false target_selected_b=true target_logit_delta=-0.946998596
+lock_released=2026-08-09T01:05:12Z

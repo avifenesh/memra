@@ -1,0 +1,24 @@
+# ppN PRIME DETERMINISM, three controls, pre-fix tree, local 5090, one gate run each.
+# Instrument: the (removed) diagnosis print of a hash over the prime's own logits row, one
+# line per session (11 sessions per gate run). Canonical value = the MEMRA_PP_STREAMS=0 truth.
+# Invocation shape: flock /tmp/memra-5090.lock env NVIDIA_TF32_OVERRIDE=0 <cfg> \
+#   timeout 900 nice -n 5 ./target/debug/glm5-spec-ppn-gate <stages> 24 20 0 256
+
+=== MEMRA_PP_STREAMS=0 (same-stream seam), stages=2 :: exit=0
+     11 session prime: plen=24 argmax=23 logits0_hash=78126ae081d7e364
+  -> ONE fingerprint, 11/11. This is the TRUTH the other arms are read against.
+
+=== MEMRA_PP_OVERLAP=0 (per-stage streams, single boundary slot), stages=2 :: exit=1
+      1 session prime: plen=24 argmax=23 logits0_hash=34d2ff1fcdd7fea6
+      9 session prime: plen=24 argmax=23 logits0_hash=78126ae081d7e364
+      1 session prime: plen=24 argmax=23 logits0_hash=fec28e2666cc4155
+  -> THREE fingerprints in one process. Double-buffered slot alternation is EXONERATED:
+     turning it off does not make the prime a function of its inputs.
+
+=== default (per-stage streams, overlap on), stages=3 :: exit=0
+      3 session prime: plen=24 argmax=23 logits0_hash=4f7fedb9f6bdcce8
+      8 session prime: plen=24 argmax=23 logits0_hash=78126ae081d7e364
+  -> Also nondeterministic at the deployed stage count.
+
+VERDICT: per-stage STREAMS are the necessary condition; the argmax survives every drift, so
+nothing upstream of the accept walk was ever loud about it.

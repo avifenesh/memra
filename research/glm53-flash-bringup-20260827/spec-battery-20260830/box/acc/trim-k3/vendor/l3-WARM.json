@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is asking me to summarize \"the state of the work\" from what appears to be grep output from wiki files. There's a note at the end that says \"grep output masks my search term (shows `il`)\" \u2014 meaning the literal string shown as \"il\" in the output is actually masking their search term. Wait, they say \"grep output masks my search term (shows `il`) \u2014 file content itself is...\"\n\nHmm, the note appears cut off: \"file content itself is\" \u2014 the sentence trails off. So they're telling me that the word \"il\" shown in the grep output may actually be",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is asking me to summarize \"the state of the work\" from what appears to be grep output from wiki files. There's a note at the end that says \"grep output masks my search term (shows `il`)\" \u2014 meaning the literal string shown as \"il\" in the output is actually masking their search term. Wait, they say \"grep output masks my search term (shows `il`) \u2014 file content itself is...\"\n\nHmm, the note appears cut off: \"file content itself is\" \u2014 the sentence trails off. So they're telling me that the word \"il\" shown in the grep output may actually be"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 427,
+  "completion_tokens": 128,
+  "total_tokens": 555,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.574099098,
+  "spec": {
+   "rounds": 56,
+   "drafted": 168,
+   "accepted": 73,
+   "acceptance_rate": 0.43452380952380953
+  }
+ },
+ "id": "chatcmpl-04809d71d2e2bed2125edca013f85659",
+ "created": 1788082183,
+ "system_fingerprint": "REDACTED"
+}

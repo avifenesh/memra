@@ -1,0 +1,40 @@
+{
+ "name": "p04-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "object": "chat.completion",
+  "model": "zai/glm-5.3-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "I'll start by inspecting the environment, the Python script, and the form data to understand the setup.</think><tool_call>Bash<arg_key>command</arg_key><arg_value>ls -la /home/user 2>/dev/null; pwd; ls -la 2>/dev/null | head -30</arg_value><arg_key>big_result</arg_key><arg_value>true</arg_value></tool_call><tool_call>Bash<arg_key>command</arg_key><arg_value>which python3 pdftoppm pdftotext qpdf mutool gs python 2>/dev/null; python3 -V 2>/dev/null</arg_value></tool_call>"
+    },
+    "finish_reason": "stop"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 520,
+   "completion_tokens": 109,
+   "total_tokens": 629,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 18.448919957,
+   "spec": {
+    "rounds": 44,
+    "drafted": 132,
+    "accepted": 65,
+    "acceptance_rate": 0.49242424242424243
+   }
+  },
+  "id": "chatcmpl-124618cc41ef078f3138e621f0b22707",
+  "created": 1788067712
+ }
+}

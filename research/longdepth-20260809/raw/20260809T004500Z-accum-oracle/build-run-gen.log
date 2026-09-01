@@ -1,0 +1,176 @@
+started=2026-08-09T00:43:10Z
+585d46c480f3dcd83314ea9cc080626f7bbf490c
+diff --git a/crates/memra-engine/src/bin/run_gen.rs b/crates/memra-engine/src/bin/run_gen.rs
+index 2f1d72061..d30d7b67c 100644
+--- a/crates/memra-engine/src/bin/run_gen.rs
++++ b/crates/memra-engine/src/bin/run_gen.rs
+@@ -443,6 +443,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+                 )
+                 .into());
+             }
++            // Optional point probe for a teacher-forced decode tape. The dumped row predicts the
++            // token at the requested zero-based step, before that token is fed back into the
++            // cache. Requiring the forcing tape and both envs keeps a partial diagnostic setup
++            // from silently producing a logit row from the wrong trajectory.
++            let forced_logits_dump = match (
++                std::env::var("MEMRA_FORCE_LOGITS_AT").ok(),
++                std::env::var("MEMRA_FORCE_LOGITS_FILE").ok(),
++            ) {
++                (None, None) => None,
++                (Some(at), Some(path)) if forced_tokens.is_some() => {
++                    let at = at.parse::<usize>().map_err(|err| {
++                        format!("MEMRA_FORCE_LOGITS_AT must be a zero-based integer: {err}")
++                    })?;
++                    if at >= n_new {
++                        return Err(format!(
++                            "MEMRA_FORCE_LOGITS_AT={at} is outside MEMRA_NGEN={n_new}"
++                        )
++                        .into());
++                    }
++                    Some((at, path))
++                }
++                _ => {
++                    return Err(
++                        "MEMRA_FORCE_LOGITS_AT and MEMRA_FORCE_LOGITS_FILE must be set together with MEMRA_FORCE_TOKENS_FILE"
++                            .into(),
++                    )
++                }
++            };
+             e.stream().synchronize()?;
+             // The verify/prompt passes above warm residency. Reset only counters—not cache state—so
+             // this timed decode window reports its own hit rate, H2D bytes, and worker-I/O deltas.
+@@ -457,6 +485,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+             let mut tf_nll = 0.0f64;
+             let t0 = std::time::Instant::now();
+             for step in 0..n_new {
++                if let Some((at, path)) = &forced_logits_dump {
++                    if step == *at {
++                        let mut raw = Vec::with_capacity(logits.len() * 4);
++                        for value in &logits {
++                            raw.extend_from_slice(&value.to_le_bytes());
++                        }
++                        std::fs::write(path, raw)?;
++                        println!(
++                            "teacher-forced logits at step {step} -> {path} ({} f32)",
++                            logits.len()
++                        );
++                    }
++                }
+                 // Keep the ordinary host argmax cost inside teacher-forced A/B windows; only the
+                 // token fed into the next decode step changes.
+                 let greedy = argmax(&logits) as u32;
+@@ -1000,6 +1041,100 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+         .unwrap_or(16usize);
+     let eos = tokenizer.as_ref().map(|t| t.eos_id());
+     let eog: Vec<u32> = tokenizer.as_ref().map(|t| t.eog_ids()).unwrap_or_default();
++    // The GGUF teacher-forcing diagnostic mirrors the directory-checkpoint arm above. Rebuild a
++    // cache sized for the whole tape, replay the prompt, and then keep the externally recorded
++    // continuation fixed. This is intentionally an early-return lane: normal run-gen sampling,
++    // stop strings, and timing remain untouched when no forcing tape is supplied.
++    if let Some(forced_tokens) = forced_decode_tokens()? {
++        if forced_tokens.len() < n_new {
++            return Err(format!(
++                "MEMRA_FORCE_TOKENS_FILE needs at least {n_new} ids for the decode window"
++            )
++            .into());
++        }
++        let forced_logits_dump = match (
++            std::env::var("MEMRA_FORCE_LOGITS_AT").ok(),
++            std::env::var("MEMRA_FORCE_LOGITS_FILE").ok(),
++        ) {
++            (None, None) => None,
++            (Some(at), Some(path)) => {
++                let at = at.parse::<usize>().map_err(|err| {
++                    format!("MEMRA_FORCE_LOGITS_AT must be a zero-based integer: {err}")
++                })?;
++                if at >= n_new {
++                    return Err(format!(
++                        "MEMRA_FORCE_LOGITS_AT={at} is outside MEMRA_NGEN={n_new}"
++                    )
++                    .into());
++                }
++                Some((at, path))
++            }
++            _ => {
++                return Err(
++                    "MEMRA_FORCE_LOGITS_AT and MEMRA_FORCE_LOGITS_FILE must be set together"
++                        .into(),
++                )
++            }
++        };
++
++        let mut force_cache =
++            memra_engine::cache::Cache::new(&e, &model.cfg, prompt.len() + n_new + 8)?;
++        let mut logits = Vec::new();
++        for &token in &prompt {
++            logits = model.decode_step(&e, token, &mut force_cache)?;
++        }
++        e.stream().synchronize()?;
++        let (mut disagree, mut first_disagree, mut nll) = (0usize, None, 0.0f64);
++        let mut out = Vec::with_capacity(n_new);
++        let t0 = std::time::Instant::now();
++        for (step, &next) in forced_tokens.iter().take(n_new).enumerate() {
++            if let Some((at, path)) = &forced_logits_dump {
++                if step == *at {
++                    let mut raw = Vec::with_capacity(logits.len() * 4);
++                    for value in &logits {
++                        raw.extend_from_slice(&value.to_le_bytes());
++                    }
++                    std::fs::write(path, raw)?;
++                    println!(
++                        "teacher-forced logits at step {step} -> {path} ({} f32)",
++                        logits.len()
++                    );
++                }
++            }
++            let greedy = argmax(&logits) as u32;
++            if greedy != next {
++                disagree += 1;
++                first_disagree.get_or_insert(step);
++            }
++            let mx = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
++            let lse = mx + logits.iter().map(|value| (value - mx).exp()).sum::<f32>().ln();
++            nll += (lse - logits[next as usize]) as f64;
++            out.push(next);
++            logits = model.decode_step(&e, next, &mut force_cache)?;
++        }
++        e.stream().synchronize()?;
++        let dt = t0.elapsed().as_secs_f64();
++        println!(
++            "generated {} tokens in {dt:.3}s = {:.2} tok/s (GGUF teacher-forced decode)",
++            out.len(),
++            out.len() as f64 / dt,
++        );
++        println!(
++            "teacher-forced EXACTNESS: disagreements={disagree}/{} ({:.2}%) first_at={}  mean_nll={:.6}  total_nll={:.4}",
++            out.len(),
++            100.0 * disagree as f64 / out.len().max(1) as f64,
++            first_disagree.map_or("-".to_string(), |step| step.to_string()),
++            nll / out.len().max(1) as f64,
++            nll,
++        );
++        println!("tokens: {out:?}");
++        if let Some(tok) = &tokenizer {
++            let text = tok.decode(&out);
++            println!("OUTPUT TEXT: {text:?}");
++            println!("--- generated text ---\n{text}");
++        }
++        return Ok(());
++    }
+     // Sampler config from env (defaults = greedy, the bit-exact reference). MEMRA_TEMP>0 enables
+     // the full chain: MEMRA_TOP_K / MEMRA_TOP_P / MEMRA_MIN_P / MEMRA_PENALTY_REPEAT / MEMRA_SEED.
+     let env_f = |k: &str, d: f32| {
+diff --git a/docs/FLAGS.md b/docs/FLAGS.md
+index 9457c9030..ce66e08e3 100644
+--- a/docs/FLAGS.md
++++ b/docs/FLAGS.md
+@@ -69,6 +69,7 @@ now in the graveyard below).
+ | `MEMRA_PREFILL_LOGITS` | off | `<file>`: dump the VERIFY-class (`decode_step_t`) batched-prefill logit row as raw LE f32. Cross-arm instrument for a kernel that changes the verify class — **not** for a prefill-GEMM arm (use `MEMRA_PP_NLL` / `MEMRA_PP_LOGITS`) |
+ | `MEMRA_NMEASURE` | 32 | decode tokens measured after counter reset |
+ | `MEMRA_FORCE_TOKENS_FILE` | off | run-gen diagnostic: teacher-force numeric token ids from a file so placement A/Bs traverse an identical decode route. Also the decode-side branch-(b) exactness instrument (disagreement count + tape NLL); pair it with a REVERSE-TAPE control run, since a tape that is one arm's own greedy output structurally favours that arm |
++| `MEMRA_FORCE_LOGITS_AT` / `MEMRA_FORCE_LOGITS_FILE` | off | run-gen diagnostic used with `MEMRA_FORCE_TOKENS_FILE`: dump the raw LE f32 logit row that predicts the zero-based forced-tape position named by `_AT`. Both variables and the forcing tape are required, so an incomplete probe cannot silently measure a different trajectory |
+ | `MEMRA_TURN_TOKENS` | 512 | session-bench: suffix length per turn |
+ | `MEMRA_HIST_FILE` | required | session-bench: conversation history text file |
+ 
+bash: line 8: cargo: command not found
+finished=2026-08-09T00:43:10Z

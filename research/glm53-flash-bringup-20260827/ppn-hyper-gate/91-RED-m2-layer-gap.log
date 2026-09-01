@@ -1,0 +1,46 @@
+MUTATION M2 — OFF-BY-ONE LAYER RANGE: the last stage starts at fence[n_st-1]+1, so
+the first layer of that stage is never run (a GAP, not a repartition). Diff:
+
+diff --git a/crates/memra-engine/src/hybrid_forward.rs b/crates/memra-engine/src/hybrid_forward.rs
+index 5cac890034..3dd1a78358 100644
+--- a/crates/memra-engine/src/hybrid_forward.rs
++++ b/crates/memra-engine/src/hybrid_forward.rs
+@@ -1854,11 +1854,14 @@ impl HybridModel {
+         let el = rt.engine(n_st - 1, e);
+         let pos_d = el.htod_i32(&[pos as i32])?;
+         let x = rt.rx(n_st - 2, slot, width)?;
++        // ***** MUTATION M2 (temporary, never committed): OFF-BY-ONE LAYER RANGE. The last
++        // stage starts at fence[n_st - 1] + 1, so the first layer of that stage is never run
++        // — a GAP in the trunk, not a different partition. The gate must go red on this.
+         let x = self.hyper_range_decode(
+             el,
+             topology,
+             x,
+-            fence[n_st - 1],
++            fence[n_st - 1] + 1,
+             fence[n_st],
+             &pos_d,
+             pos,
+
+=== gate output ===
+glm5-hyper-ppn-gate config: stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.35GB (expert budget 22.35GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+stage fence: [0, 2, 4] over 4 layers
+state placement: Recurrent(KDA) layers on stages [0, 1], LatentKvCache(MLA+kpool) layers on stages [0, 1]
+[decode-serial] MISMATCH step 0 (decode): 32/32 logits differ, first @[0] ref=-2.466867 pp=-2.408934
+[decode-serial] MISMATCH step 1 (decode): 32/32 logits differ, first @[0] ref=-3.80832 pp=-3.7009025
+[decode-serial] MISMATCH step 2 (decode): 32/32 logits differ, first @[0] ref=-3.2757273 pp=-3.0231748
+[decode-serial] MISMATCH step 3 (decode): 32/32 logits differ, first @[0] ref=-0.45847982 pp=-0.30556434
+[decode-serial] MISMATCH step 4 (decode): 32/32 logits differ, first @[0] ref=-3.0573103 pp=-2.8489609
+[decode-serial] greedy tape DIVERGED at index 3: ref=0xa7972b1e01ff1f76 pp=0xf4ee7ce6b3c63d1e
+[prime-twin] MISMATCH step 1 (decode after prime): 32/32 logits differ, first @[0] ref=-0.13124189 pp=-0.4246019
+[prime-twin] MISMATCH step 2 (decode after prime): 32/32 logits differ, first @[0] ref=-3.4220948 pp=-3.302652
+[prime-twin] MISMATCH step 3 (decode after prime): 32/32 logits differ, first @[0] ref=-2.7630186 pp=-2.7410364
+[prime-twin] MISMATCH step 4 (decode after prime): 32/32 logits differ, first @[0] ref=-2.1943498 pp=-1.2744855
+[prime-twin] MISMATCH step 5 (decode after prime): 32/32 logits differ, first @[0] ref=-2.6512775 pp=-1.5054613
+[prime-twin] greedy tape DIVERGED at index 7: ref=0x50ad4c8f01bf7247 pp=0xf0fd3811f49965c8
+glm5-hyper-ppn-gate NOTE: pipelined arm skipped — `decode_step_h_ppn_deferred` calls refuse_hyper(), so deferred readback is not wired for the mHC residual. This gate covers the serial split walk only; do not cite it for the pipelined arm.
+glm5-hyper-ppn gate FAIL [decode-serial]: 15/14 comparisons mismatched (first @ step 0 idx 0: ref=-2.466867 pp=-2.408934; fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate FAIL [prime-twin]: 9/9 comparisons mismatched (first @ step 1 idx 0: ref=-0.13124189 pp=-0.4246019; fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+exit=

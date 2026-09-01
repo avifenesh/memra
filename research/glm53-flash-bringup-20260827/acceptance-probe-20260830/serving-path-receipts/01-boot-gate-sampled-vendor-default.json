@@ -1,0 +1,46 @@
+{
+ "name": "01-boot-gate-sampled-vendor-default",
+ "status": 200,
+ "request": {
+  "model": "zai/glm-5.3-flash",
+  "max_tokens": 48,
+  "messages": [
+   {
+    "role": "user",
+    "content": "Name three primary colors, one word each."
+   }
+  ]
+ },
+ "response": {
+  "object": "chat.completion",
+  "model": "zai/glm-5.3-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning": "The user is asking for three primary colors, one word each. This is a simple factual question.\n\nPrimary colors in traditional color theory (subtractive color model, like painting) are: red, blue, yellow.\n\nIn the RGB model (",
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "The user is asking for three primary colors, one word each. This is a simple factual question.\n\nPrimary colors in traditional color theory (subtractive color model, like painting) are: red, blue, yellow.\n\nIn the RGB model ("
+      }
+     ]
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 21,
+   "completion_tokens": 48,
+   "total_tokens": 69,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 3.718475215
+  },
+  "id": "chatcmpl-ca84a5ee5c051e6b6bd7bc71289e7606",
+  "created": 1788059111
+ }
+}

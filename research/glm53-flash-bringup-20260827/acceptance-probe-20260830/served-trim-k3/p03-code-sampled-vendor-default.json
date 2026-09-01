@@ -1,0 +1,36 @@
+{
+ "name": "p03-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 453,
+   "completion_tokens": 128,
+   "total_tokens": 581,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 19.179588058,
+   "spec": {
+    "rounds": 53,
+    "drafted": 159,
+    "accepted": 76,
+    "acceptance_rate": 0.4779874213836478
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "The user is showing me what appears to be an incident report or summary from some kind of AI assistant crash/handoff \u2014 it looks like a log from an agent (\"Hermes gateway\") that crashed and was recovered. The message reads like a status report from a previous session or another agent, describing:\n\n1. Root cause: `.venv` was deleted while gateway process was running\n2. What was done: recreated venv, killed broken process, relaunched in tmux\n3. Status: new PID, Telegram connected, cron ticker started\n4. Follow-ups: attach to tmux, systemd service, better error"
+    }
+   }
+  ]
+ }
+}

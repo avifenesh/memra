@@ -1,0 +1,68 @@
+{
+  "entry_rank": 0,
+  "expert_count": 4,
+  "format": "memra-ep-map-v1",
+  "layers": [
+    {
+      "assignment": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "layer": 1,
+      "stats": {
+        "even_baseline_expected_max_rank_touch": 1.9024390243902438,
+        "expected_max_rank_touch": 1.9024390243902438,
+        "intra_rank_coactivation_fraction": 0.5,
+        "peer_touch_fraction": 0.4878048780487805
+      }
+    },
+    {
+      "assignment": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "layer": 2,
+      "stats": {
+        "even_baseline_expected_max_rank_touch": 1.951219512195122,
+        "expected_max_rank_touch": 1.951219512195122,
+        "intra_rank_coactivation_fraction": 0.5217391304347826,
+        "peer_touch_fraction": 0.4634146341463415
+      }
+    },
+    {
+      "assignment": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "layer": 3,
+      "stats": {
+        "even_baseline_expected_max_rank_touch": 1.6585365853658536,
+        "expected_max_rank_touch": 1.6585365853658536,
+        "intra_rank_coactivation_fraction": 0.2608695652173913,
+        "peer_touch_fraction": 0.7560975609756098
+      }
+    }
+  ],
+  "params": {
+    "balance_tolerance": 0.05,
+    "decode_only": false,
+    "hotness_signal": "pick-count",
+    "layers": null,
+    "weight_traces": []
+  },
+  "ranks": 2,
+  "strategy": "even",
+  "traces": [
+    {
+      "lines": 123,
+      "path": "research/glm53-flash-bringup-20260827/ep-place-20260831/fixture-weight-trace.txt.ids",
+      "sha256": "bdec0370c144efe0ef87a973ae713a688c69540bdf64370c47d6b45ed950dce6"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+boot=c15-2-off pid=91280 nonce=4c8f6256-de73-4461-a89c-05c1501e29bf hyper_batch_env=0
+resident_lines=151 batched_on_lines=0 eager_only_lines=1 glm5spec_lines=0
+[bf16-mmv] RESIDENT output.weight ne=[4096, 154880] n=634388480 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+--- vram-at-ready (index, used MiB, total MiB) ---
+0, 51444 MiB, 97887 MiB
+1, 62772 MiB, 97887 MiB
+2, 66166 MiB, 97887 MiB
+3, 1 MiB, 97887 MiB

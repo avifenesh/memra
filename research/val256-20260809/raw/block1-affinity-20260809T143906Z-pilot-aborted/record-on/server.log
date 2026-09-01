@@ -1,0 +1,67 @@
+[server] starting; models config = [("step", "/opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step" <- /opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step: regime draft attached (/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step": 45 layers, eos=128007
+[worker] step: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step: decode chunk cap 8
+[prefix-cache] on: budget 537MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "step": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step"]
+[server] listening on http://127.0.0.1:18241
+[meter] admit id=cmpl-224c75ec3ad65403281cbaf954daf216 tenant=default lane=interactive model="step"
+[admission] request cost: model="step" ctx=262144 path=plain = 83520 B/token x ctx + 0MB fixed = 21894MB
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=45150 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[prefix-cache] skip seed insert: entry 3770.9MB > budget 537MB
+[ttft] id=cmpl-224c75ec3ad65403281cbaf954daf216 model="step" path="/v1/completions" prompt_tokens=45150 outcome=first_sse_byte request_parse_ms=0.419 admission_ms=0.034 queue_wait_ms=0.028 tokenize_ms=95.760 prime_wait_ms=35.916 prime_ms=126202.848 decode_wait_ms=0.133 sse_handoff_ms=0.042 request_parse_end_ms=0.419 admission_end_ms=0.453 tokenize_start_ms=0.481 tokenize_end_ms=96.241 prime_start_ms=132.157 prime_end_ms=126335.005 first_decode_ms=126335.138 first_sse_byte_ms=126335.180 total_ms=126335.180
+[meter] admit id=cmpl-989832afe55be50dbafab5e1eb61cacf tenant=default lane=interactive model="step"
+[worker] plain-affinity: rewound to 45144 of 45436 prompt tokens (priming 292 suffix; model step)
+[worker] kv-reuse: 45144 of 45436 prompt tokens resumed (model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=45436 cached=45144 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-989832afe55be50dbafab5e1eb61cacf model="step" path="/v1/completions" prompt_tokens=45436 outcome=first_sse_byte request_parse_ms=0.347 admission_ms=0.023 queue_wait_ms=0.012 tokenize_ms=100.007 prime_wait_ms=0.340 prime_ms=1074.291 decode_wait_ms=0.133 sse_handoff_ms=0.039 request_parse_end_ms=0.347 admission_end_ms=0.370 tokenize_start_ms=0.382 tokenize_end_ms=100.389 prime_start_ms=100.729 prime_end_ms=1175.020 first_decode_ms=1175.153 first_sse_byte_ms=1175.192 total_ms=1175.192
+[meter] admit id=cmpl-3274ff8881990a41f03704fedee09911 tenant=default lane=interactive model="step"
+[worker] plain-affinity: rewound to 45430 of 45723 prompt tokens (priming 293 suffix; model step)
+[worker] kv-reuse: 45430 of 45723 prompt tokens resumed (model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=45723 cached=45430 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-3274ff8881990a41f03704fedee09911 model="step" path="/v1/completions" prompt_tokens=45723 outcome=first_sse_byte request_parse_ms=0.379 admission_ms=0.026 queue_wait_ms=0.012 tokenize_ms=98.536 prime_wait_ms=0.321 prime_ms=1076.681 decode_wait_ms=0.171 sse_handoff_ms=0.032 request_parse_end_ms=0.379 admission_end_ms=0.405 tokenize_start_ms=0.417 tokenize_end_ms=98.953 prime_start_ms=99.274 prime_end_ms=1175.955 first_decode_ms=1176.126 first_sse_byte_ms=1176.158 total_ms=1176.158
+[meter] admit id=cmpl-1d11f7630e91351a2d0f0e9135cd20c4 tenant=default lane=interactive model="step"
+[worker] plain-affinity: rewound to 45717 of 46013 prompt tokens (priming 296 suffix; model step)
+[worker] kv-reuse: 45717 of 46013 prompt tokens resumed (model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=46013 cached=45717 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-1d11f7630e91351a2d0f0e9135cd20c4 model="step" path="/v1/completions" prompt_tokens=46013 outcome=first_sse_byte request_parse_ms=0.276 admission_ms=0.016 queue_wait_ms=0.010 tokenize_ms=100.013 prime_wait_ms=0.317 prime_ms=1090.881 decode_wait_ms=0.146 sse_handoff_ms=0.033 request_parse_end_ms=0.276 admission_end_ms=0.292 tokenize_start_ms=0.302 tokenize_end_ms=100.315 prime_start_ms=100.632 prime_end_ms=1191.513 first_decode_ms=1191.659 first_sse_byte_ms=1191.692 total_ms=1191.692
+[meter] admit id=cmpl-445ff653b2f00c7d107735b295bc7a77 tenant=default lane=interactive model="step"
+[worker] plain-affinity: rewound to 46007 of 46300 prompt tokens (priming 293 suffix; model step)
+[worker] kv-reuse: 46007 of 46300 prompt tokens resumed (model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=46300 cached=46007 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-445ff653b2f00c7d107735b295bc7a77 model="step" path="/v1/completions" prompt_tokens=46300 outcome=first_sse_byte request_parse_ms=0.219 admission_ms=0.016 queue_wait_ms=0.013 tokenize_ms=99.104 prime_wait_ms=0.330 prime_ms=1079.951 decode_wait_ms=0.142 sse_handoff_ms=0.029 request_parse_end_ms=0.219 admission_end_ms=0.235 tokenize_start_ms=0.248 tokenize_end_ms=99.352 prime_start_ms=99.682 prime_end_ms=1179.633 first_decode_ms=1179.775 first_sse_byte_ms=1179.804 total_ms=1179.804
+[meter] admit id=cmpl-0c34d8702bd63ad57513063d9df5b329 tenant=default lane=interactive model="step"
+[worker] plain-affinity: rewound to 46294 of 46583 prompt tokens (priming 289 suffix; model step)
+[worker] kv-reuse: 46294 of 46583 prompt tokens resumed (model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=46583 cached=46294 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-0c34d8702bd63ad57513063d9df5b329 model="step" path="/v1/completions" prompt_tokens=46583 outcome=first_sse_byte request_parse_ms=0.151 admission_ms=0.020 queue_wait_ms=0.012 tokenize_ms=102.527 prime_wait_ms=0.320 prime_ms=1072.288 decode_wait_ms=0.136 sse_handoff_ms=0.022 request_parse_end_ms=0.151 admission_end_ms=0.171 tokenize_start_ms=0.183 tokenize_end_ms=102.710 prime_start_ms=103.030 prime_end_ms=1175.318 first_decode_ms=1175.454 first_sse_byte_ms=1175.476 total_ms=1175.476
+[meter] admit id=cmpl-c014399978aaba121d88aee5182c02a9 tenant=default lane=interactive model="step"
+[worker] plain-affinity: rewound to 46577 of 46867 prompt tokens (priming 290 suffix; model step)
+[worker] kv-reuse: 46577 of 46867 prompt tokens resumed (model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=46867 cached=46577 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-c014399978aaba121d88aee5182c02a9 model="step" path="/v1/completions" prompt_tokens=46867 outcome=first_sse_byte request_parse_ms=0.139 admission_ms=0.018 queue_wait_ms=0.009 tokenize_ms=101.290 prime_wait_ms=0.325 prime_ms=1074.381 decode_wait_ms=0.158 sse_handoff_ms=0.037 request_parse_end_ms=0.139 admission_end_ms=0.157 tokenize_start_ms=0.166 tokenize_end_ms=101.456 prime_start_ms=101.781 prime_end_ms=1176.162 first_decode_ms=1176.320 first_sse_byte_ms=1176.357 total_ms=1176.357
+[meter] admit id=cmpl-a529c1321dc66aa880ba5eecbc2639a7 tenant=default lane=interactive model="step"
+[worker] plain-affinity: rewound to 46861 of 47159 prompt tokens (priming 298 suffix; model step)
+[worker] kv-reuse: 46861 of 47159 prompt tokens resumed (model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=47159 cached=46861 lcp=0 active=1 placement=pp2-cross-device
+[ttft] id=cmpl-a529c1321dc66aa880ba5eecbc2639a7 model="step" path="/v1/completions" prompt_tokens=47159 outcome=first_sse_byte request_parse_ms=0.151 admission_ms=0.024 queue_wait_ms=0.012 tokenize_ms=101.407 prime_wait_ms=0.335 prime_ms=1095.048 decode_wait_ms=0.170 sse_handoff_ms=0.028 request_parse_end_ms=0.151 admission_end_ms=0.175 tokenize_start_ms=0.187 tokenize_end_ms=101.594 prime_start_ms=101.929 prime_end_ms=1196.977 first_decode_ms=1197.147 first_sse_byte_ms=1197.175 total_ms=1197.175
+[meter] admit id=cmpl-3dae45f4ad6562ec99908f4136cdec10 tenant=default lane=interactive model="step"
+[worker] plain-affinity: declined (identity did not nominate; 1 parked, 47441 prompt tokens; model step)
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=47441 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[ttft] id=cmpl-3dae45f4ad6562ec99908f4136cdec10 model="step" path="/v1/completions" prompt_tokens=47441 outcome=ended_without_sse request_parse_ms=0.233 admission_ms=0.021 queue_wait_ms=0.011 tokenize_ms=104.701 prime_wait_ms=31.307 prime_ms=na decode_wait_ms=na sse_handoff_ms=na request_parse_end_ms=0.233 admission_end_ms=0.254 tokenize_start_ms=0.265 tokenize_end_ms=104.966 prime_start_ms=136.273 prime_end_ms=na first_decode_ms=na first_sse_byte_ms=na total_ms=104.966

@@ -1,0 +1,89 @@
+[meter] admit id=chatcmpl-8f472dd7192b36f7256c937d9493c3db tenant=default lane=interactive model="step35"
+[worker] plain-affinity: grew parked cache 106 -> 162 rows (request-owned need)
+[worker] plain-affinity: rewound to 28 of 34 prompt tokens (priming 6 suffix; model step35)
+[worker] kv-reuse: 28 of 34 prompt tokens resumed (model step35)
+[spec-k] model="step35" tenant="" K=0 source=pp2-placement prompt=34 cached=28 lcp=0 active=1 placement=pp2-cross-device
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.7 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.8 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.8 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.8 decode_ms=0.0
+[tick] act=1 int=1 priming=1 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.9 decode_ms=0.0
+[meter] admit id=chatcmpl-64504ba08ad74baed693d78de1f3ffb4 tenant=default lane=interactive model="step35"
+[meter] admit id=chatcmpl-2c1f0a1ce727e0c8df00a78fc14544dd tenant=default lane=interactive model="step35"
+[tick] act=1 int=1 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=11.9 decode_ms=12.7
+[worker] plain-affinity: grew parked cache 106 -> 162 rows (request-owned need)
+[worker] plain-affinity: rewound to 28 of 34 prompt tokens (priming 6 suffix; model step35)
+[worker] kv-reuse: 28 of 34 prompt tokens resumed (model step35)
+[spec-k] model="step35" tenant="" K=0 source=pp2-placement prompt=34 cached=28 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step35" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[tick] act=3 int=3 priming=2 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=2 prefill_single_tokens=29 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=155.3 decode_ms=12.8
+[tick] act=3 int=3 priming=2 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=2 prefill_single_tokens=2 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=23.6 decode_ms=12.8
+[tick] act=3 int=3 priming=2 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=2 prefill_single_tokens=2 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=23.6 decode_ms=12.9
+[tick] act=3 int=3 priming=2 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=2 prefill_single_tokens=2 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=23.7 decode_ms=12.9
+[tick] act=3 int=3 priming=2 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=2 prefill_single_tokens=2 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=23.9 decode_ms=13.0
+[tick] act=3 int=3 priming=1 ready=2 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=2 prefill_single_tokens=2 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=24.1 decode_ms=19.1
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=1 prefill_single_tokens=1 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=12.0 decode_ms=25.7
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=25.7
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=25.9
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=26.1
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=26.3
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=26.3
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=26.6
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=26.6
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=26.8
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=27.0
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=27.2
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=27.2
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=27.4
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=27.4
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=27.7
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=27.9
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=28.0
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=28.2
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=28.3
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=28.4
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=28.5
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=28.6
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=28.8
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=28.9
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=29.2
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=29.3
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=29.4
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=29.6
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=29.7
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=29.9
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=30.0
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=30.2
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=30.4
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=30.4
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=30.6
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=30.8
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=30.9
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=31.1
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=31.2
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=31.3
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=31.5
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=31.7
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=31.7
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=31.9
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=32.1
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=32.2
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=32.4
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=32.4
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=32.7
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=32.8
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=32.9
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=33.1
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=33.2
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=33.3
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=29.4
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=29.5
+[tick] act=3 int=3 priming=0 ready=3 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=29.5
+[tick] act=3 int=3 priming=0 ready=2 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=24.3
+[tick] act=2 int=2 priming=0 ready=2 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=24.3
+[tick] act=2 int=2 priming=0 ready=2 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=24.4
+[tick] act=2 int=2 priming=0 ready=2 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=20.5
+[tick] act=2 int=2 priming=0 ready=2 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=16.4
+[tick] act=2 int=2 priming=0 ready=2 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=16.3
+[tick] act=2 int=2 priming=0 ready=1 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=11.5
+[tick] act=1 int=1 priming=0 ready=0 spec=0 demoted=0 spec_calls=0 spec_ms=0.0 prefill_single_calls=0 prefill_single_tokens=0 prefill_batch_calls=0 prefill_batch_tokens=0 prefill_ms=0.0 decode_ms=0.0

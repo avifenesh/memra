@@ -1,0 +1,109 @@
+[server] starting; models config = [("q27", "/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27" <- /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q27: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 4295MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q27"]
+[admission] "q27": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18428
+[meter] admit id=cmpl-1b66f678c3d52d2f0c3361f8a78fb54a tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4984 path=plain = 31552 B/token x ctx + 0MB fixed = 157MB
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q27" 308MB (observed 463MB at ctx 4928 path=plain)
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 301.2MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-hot-0")
+[meter] admit id=cmpl-91463119538082bcc3dcb43718bfa381 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4984 path=plain = 31552 B/token x ctx + 308MB fixed = 465MB
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 602.4MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-hot-1")
+[meter] admit id=cmpl-b389e517a5525eb830d2091ce0e315c1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 903.6MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-hot-2")
+[meter] admit id=cmpl-14bbda40f81a72416ec2878cbf6b2a79 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1204.9MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-hot-3")
+[meter] admit id=cmpl-9a7608c8e97176479db5e085d39494e2 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1506.1MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-hot-4")
+[meter] admit id=cmpl-14e11f6193f8c5d34613bd02c3a5d44c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1807.3MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-hot-5")
+[meter] admit id=cmpl-6672bd59916cae0f76459fc4726ca95c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2108.5MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-hot-6")
+[meter] admit id=cmpl-149e8cc237f2f46928418b434ac60fe0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2409.7MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-hot-7")
+[meter] admit id=cmpl-55c1d3dbcd43e70f229de4fdcb4c0686 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-ebdcb3c1e3a7f9d3e7282dff7439e505 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b46bed63f8bda4e01972d3a6a5916c77 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-2aec53a320cdc1c814dbaf4959f453dc tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-7d59d80a2ec0260590ab7498fd750356 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f43979f71eb44aebd6e077a910f577e0 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-81a3357230e4e501069fea902f6b51c6 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-edd4b4e334725242e63f700cc5230ed4 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8dd76599a582a2ccc1b48717b1e94398 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-b7b613c6c9adc2bc11cd253d5e318dd8 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-9c9fd5e3c131a7e8ee93530a587bde78 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-ac5c5ca35a3ea543e7e73db412f044ce tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-6400b6611ab90406e17726e5040ab1c4 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-687440a8b0e0f9d7ebf0c969b60446a7 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-5c729c488e2cee50a59aa4105cb8dfee tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-8f61821a39d261cadf8650c5f13be68b tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-mixed90-r1-c16-i7" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-mixed90-r1-c16-i5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-5" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-4" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 531.2ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 545.1ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 557.6ms
+[prime-batch] B=2 tokens=2048 carried=2 partial=2 in 571.3ms
+[prime-batch] B=2 tokens=1528 carried=2 partial=0 in 449.3ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2710.9MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-mixed90-r1-c16-i7")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3012.2MB / 4295MB, model q27, ns "cx-coldhol-smoke-c16-candidate-q27-mixed90-r1-c16-i5")
+[meter] admit id=cmpl-0957bb8de93afb6075c3d10079564b3d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-6" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[meter] admit id=cmpl-4083388b5f3ff6bd53bfe9432ba3064f tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-f5a7cc110f3b6951571c870bcaf08db8 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-226fef4a588f900ae09cada91f260539 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-7" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-0" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-coldhol-smoke-c16-candidate-q27-hot-1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

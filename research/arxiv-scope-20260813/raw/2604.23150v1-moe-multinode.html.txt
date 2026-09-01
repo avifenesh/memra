@@ -1,0 +1,657 @@
+<request>
+  <url>https://arxiv.org/html/2604.23150v1</url>
+  <final_url>https://arxiv.org/html/2604.23150v1</final_url>
+  <method>GET</method>
+  <status>200</status>
+  <content_type>text/html; charset=utf-8</content_type>
+  <redirect_chain>https://arxiv.org/html/2604.23150v1</redirect_chain>
+</request>
+<body extract="markdown">
+# 1Introduction
+
+marginparsep has been altered.  
+topmargin has been altered.  
+marginparwidth has been altered.  
+marginparpush has been altered.  
+
+The page layout violates the ICML style.
+
+Please do not change the page layout, or include packages like geometry,
+savetrees, or fullpage, which change it for you.
+
+We’re not able to reliably undo arbitrary changes to the style. Please remove
+the offending package(s), or layout-changing commands and try again.
+
+Scaling Multi-Node Mixture-of-Experts Inference   
+Using Expert Activation Patterns
+
+Abhimanyu Bambhaniya<sup class="ltx_sup" id="p6.1.2">1 </sup>Geonhwa Jeong<sup class="ltx_sup" id="p6.1.4">2 </sup>Jason Park<sup class="ltx_sup" id="p6.1.6">2 </sup>Jiecao Yu<sup class="ltx_sup" id="p6.1.8">2 </sup>Jaewon Lee<sup class="ltx_sup" id="p6.1.10">2 </sup>Pengchao Wang<sup class="ltx_sup" id="p6.1.12">2 </sup>Changkyu Kim<sup class="ltx_sup" id="p6.1.14">2 </sup>Chunqiang Tang<sup class="ltx_sup" id="p6.1.16">2 </sup>Tushar Krishna<sup class="ltx_sup" id="p6.1.18">1 </sup>
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>footnotetext: <sup class="ltx_sup" id="footnotex1.1">1</sup>Georgia Institute of Technology, USA<sup class="ltx_sup" id="footnotex1.2">2</sup>Meta Platforms, Inc., USA.
+Correspondence to: Abhimanyu Bambhaniya \<abambhaniya3@gatech.edu\>.
+
+###### Abstract ######
+
+Most recent state-of-the-art (SOTA) large language models (LLMs) use Mixture-of-Experts (MoE) architectures to scale model capacity without proportional per-token compute, enabling higher-quality outputs at manageable serving costs.
+However, MoE inference at scale is fundamentally bottlenecked by expert load imbalance and inefficient token routing, especially in multi-node deployments where tokens are not guaranteed to be routed to local experts, resulting in significant inter-node all-to-all communication overhead.
+
+To systematically characterize these challenges, we profile SOTA open-source MoE models, including Llama 4 Maverick, DeepSeek V3-671B, and Qwen3-230B-A22B, on various datasets and collected over 100k real expert activation traces. Upon studying the expert activation patterns, we uncover various persistent properties across all the frontier MoE models: variable expert load imbalance, domain-specific expert activation where expert popularity shifts across task families (code, math, chat, general), and a strong correlation between prefill and decode expert activations.
+
+Motivated by these findings, we propose workload-aware micro-batch grouping and an expert placement strategy to maximize token locality to the destination expert, thereby reducing inter-node communication.
+Across models and datasets, these optimizations help reduce all-to-all communication data up to 20%, resulting in lower MoE decode latency and better accelerator utilization.
+
+1 Introduction
+----------
+
+The emergence of state-of-the-art Mixture-of-Experts (MoE) models, including DeepSeek-V3 
+> ([6](#bib.bib11))
+
+, Qwen3-MoE 
+> ([26](#bib.bib21))
+
+, and Llama4 
+> ([18](#bib.bib24))
+
+, has fundamentally transformed the landscape of large language model inference. These models achieve remarkable performance with significantly reduced inference FLOPs by activating only a subset of experts per token 
+> ([9](#bib.bib25))
+
+. However, the high sparsity that makes MoE models efficient at the algorithmic level introduces substantial challenges for multi-node distributed inference systems.
+
+To meet the computational demands of these humongous MoE models, distributed inference systems need to leverage large expert parallelism (EP) combined with prefill-decode disaggregation across multiple nodes 
+> ([6](#bib.bib11))
+
+. This approach appears straightforward in principle: distribute experts across a cluster of nodes and route tokens to their designated experts. However, empirical observations reveal a counter-intuitive reality; naively scaling expert parallelism to larger node counts often fails to deliver expected performance improvements, particularly during the decode phase where latency sensitivity is critical.
+
+The fundamental challenge lies in the mismatch between expert routing patterns and physical hardware topology. Unlike dense models where computation is predictably distributed thanks to their deterministic computation patterns, MoE models exhibit highly dynamic computation patterns due to the input-dependent expert activation patterns. This is critical during multi-node MoE inference as tokens frequently need to be routed to expert located on different nodes, triggering expensive inter-node all-to-all communication. As shown in [Fig. 1](#S1.F1), this all-to-all communication overhead becomes the dominant bottleneck, often overwhelming compute/memory benefits from large parallelism. In addition, the discrete nature of expert routing decisions creates a combinatorial optimization problem: even small changes in expert placement can dramatically affect communication patterns.
+
+Existing approaches fall short of addressing this non-trivial challenge comprehensively. Linear placement strategies 
+> ([29](#bib.bib31))
+
+ ignore activation patterns entirely and just follow the order of expert id in the model when placing the experts on GPUs.
+DeepSeek introduced EPLB approaches 
+> ([7](#bib.bib30))
+
+ using historical load statistics to balance expert loads across GPUs. However, it fails to capture fine-grained token-expert routing patterns. Neither approach considers the critical insight that requests with similar expert activation patterns should be co-located and processed together to maximize intra-node computation while minimizing inter-node communication.
+
+To address these fundamental limitations, we introduce a data-driven approach that leverages comprehensive analysis of expert activation patterns to optimize both request batching and expert placement in multi-node MoE inference serving systems. Our method is grounded in empirical observations from over 100,000 inference requests across three state-of-the-art MoE models, revealing that expert activation patterns exhibit predictable clustering ([Fig. 2](#S1.F2)) properties that can be exploited for system optimization.
+
+Based on our analysis, we propose two key innovations. First, we perform workload-aware micro-batch grouping by clustering requests after prefill based on their expert activation patterns during prefill, ensuring that co-batched requests activate similar sets of experts. Second, we develop an expert placement algorithm that strategically places experts across device groups for decode to maximize the fraction of tokens that can be processed within single nodes, thereby minimizing expensive inter-node all-to-all communication.
+
+Our contributions are threefold:
+
+1. 1.
+
+   We present the first comprehensive characterization of expert activation patterns across multiple state-of-the-art MoE models and diverse datasets, revealing critical insights about load imbalance, activation correlation, and clustering properties.
+
+2. 2.
+
+   We design a principled approach that combines expert-activation-aware request clustering with strategic expert placement to minimize inter-node communication overhead.
+
+3. 3.
+
+   We demonstrate that our clustering and placement approach reduces all-to-all communication volume up to 20% and reduce MoE layer latency by 6% compared to existing placement strategies.
+
+This work addresses a critical gap in scaling MoE inference to large multi-node clusters, providing both theoretical insights and practical solutions for the next generation of sparse language models.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="447" id="S1.F1.g1" src="2604.23150v1/figures/images/latency_breakdown_chart.png" width="673">
+
+Figure 1: Multi-Node Llama-Maverick Decode Latency Breakdown. As imbalance between EP ranks increase, the all-to-all component raises significantly.
+The text in each box in a bar is % of layer runtime compared the total runtime for each bar.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_square" height="285" id="S1.F2.sf1.g1" src="2604.23150v1/figures/images/deepseek_L17_decode.png" width="323">(a) Deepseek-V3
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_square" height="285" id="S1.F2.sf2.g1" src="2604.23150v1/figures/images/qwen_L17_decode.png" width="323">(b) Qwen3-235B-A22B
+
+Figure 2: Dataset wise decode expert activation visualization.
+
+2 Background
+----------
+
+### 2.1 Mixture-of-Experts ###
+
+Mixture-of-Experts (MoE) models 
+> ([1](#bib.bib26); [9](#bib.bib25); [25](#bib.bib28); [12](#bib.bib27); [24](#bib.bib22))
+
+ have emerged as a dominant architecture for scaling Transformer-based language models. Unlike dense models, MoEs have parallel feed-forward networks (experts), with a routing mechanism that dynamically selects a subset of experts for each input token. This design enables significant increases in model capacity with only modest increases in inference cost, as only a fraction of the model is activated per token.
+Recent state-of-the-art MoE models, such as DeepSeek-V3 
+> ([6](#bib.bib11))
+
+, Qwen3-MoE 
+> ([21](#bib.bib1))
+
+, and Llama Maverick 
+> ([18](#bib.bib24))
+
+ have demonstrated that MoE architectures can match or exceed the performance of dense models at a fraction of the inference FLOPs.
+
+#### 2.1.1 Attention ####
+
+MoE models typically retain the standard self-attention mechanism of Transformers. The MoE block is usually inserted after the attention layer, replacing or augmenting the standard feed-forward network (FFN).
+
+#### 2.1.2 Routing ####
+
+The core of MoE inference is the routing mechanism, which determines which experts process each token. The most common approach is expert choice routing top-kk gating 
+> ([6](#bib.bib11); [25](#bib.bib28))
+
+, where each token is routed to the kk experts with the highest gating scores.
+A key challenge with routing is load imbalance: the distribution of tokens across experts can be highly skewed, leading to stragglers experts as the highest loaded experts can become bottleneck keeping significant hardware resources underutilized. While auxiliary losses during training can encourage balanced routing 
+> ([17](#bib.bib10); [9](#bib.bib25); [35](#bib.bib9))
+
+, inference-time imbalance remains a practical concern, especially at datacenter scale deployments.
+
+#### 2.1.3 Routed Experts ####
+
+*Routed experts* only process tokens selected by the gating mechanism. As a result, the number of tokens per expert is variable and can be unpredictable, complicating load balancing and parallelization.
+
+### 2.2 Parallelism for MoE Models ###
+
+Large model inference of large MoE models requires distributing computation across multiple devices and nodes. Three primary types of parallelism are employed for MoE inference:
+
+#### 2.2.1 Data Parallelism ####
+
+Data parallelism replicates the model parameters across devices, each processing a different batch of input tokens.
+
+#### 2.2.2 Tensor Parallelism ####
+
+Tensor parallelism 
+> ([23](#bib.bib35))
+
+ splits the computation of large matrix multiplications (e.g., within the FFN or attention layers) across devices, typically along the hidden dimension. This is essential for fitting large models into device memory and for scaling up single-model inference.
+
+#### 2.2.3 Expert Parallelism ####
+
+Expert parallelism 
+> ([17](#bib.bib10))
+
+ distributes the set of experts across devices. Each device is responsible for a subset of experts, and tokens are routed to the appropriate device based on the gating decision. This is the most prominent form of parallelism for MoE models, but introduces all-to-all communication overhead due to token-expert assignments.
+
+### 2.3 Hybrid Parallelism ###
+
+DeepSpeed-MoE 
+> ([22](#bib.bib8))
+
+ introduced hybrid parallelism strategy, combining distinct forms of parallelism to expert and non-expert parameters to scale the number of nodes while reducing under-utilization
+
+##### Non-Expert Parameters (Attention, Shared FFN) #####
+
+Non-expert parameters, such as those in attention layers and shared feed-forward networks, are required by all tokens. For these components, we use tensor parallelism (TP) within a group.
+For LLM inference decode stage, it is important to have large batch sizes to avoid under-utilization.
+For scaling the batch size, non-expert parameters are replicated multiple times via data parallelism (DP). Each DP group maintains a replica of the non-expert parameters and processes different batches of input data, eliminating inter-group communication for non-expert layers.
+
+##### Expert Parallelism for Routed Experts #####
+
+Routed Experts in each MoE layer, are partitioned using expert parallelism (EP). Each device is assigned a subset of experts, and all tokens routed to a given expert are processed together on the corresponding device. This grouping minimizes the critical data path per device and enables high throughput.
+To further scale beyond the number of available experts, we can utilize tensor parallelism (TP), wherein the parameters of each expert are themselves partitioned (horizontally or vertically) across multiple GPUs.
+
+Combining DP+TP for non-expert parameters and EP+TP<sub class="ltx_sub" id="S2.SS3.SSS0.Px2.p2.1.1"><span class="ltx_text ltx_font_italic" id="S2.SS3.SSS0.Px2.p2.1.1.1">exp</span></sub> for expert parameters we can achieves scalable, low-latency, and high-throughput inference system for multi-trillion parameter MoE models. We refer these scheme as DPaTPb→\\rightarrowEPcTPd throughout the paper, ex: DP8TP8→\\rightarrowEP32TP2, mean 64 GPU used with 8 replicas of non-expert parameters shared in 8 GPUs and expert parameters are distributed into 32 EP rank with each rank splits the experts into 2 nodes.
+
+Recent works have proposed various strategies for expert placement 
+> ([15](#bib.bib6))
+
+, token permutation 
+> ([10](#bib.bib7); [15](#bib.bib6))
+
+, and communication 
+> ([16](#bib.bib5); [6](#bib.bib11))
+
+. However, achieving near-linear scaling for MoE inference across multi-node clusters remains an open problem.
+
+3 Characterization of Expert Activation
+----------
+
+In this section, we analyze expert activation patterns in large-scale MoE models across diverse datasets and inference stages. We construct expert activation dataset, and present data-driven insights on load imbalance, activation correlation, prefill–decode predictability, and clustering. These results highlight core bottlenecks, optimization opportunities, and security risks in multi-node MoE inference.
+
+Table 1: Architectural Parameters of SOTA MoE models.
+
+|       Feature       |       |       |    |
+|---------------------|-------|-------|----|
+|     Total Size      | 671B  | 400B  |235B|
+|     Active Size     |  37B  |  17B  |22B |
+|                     |61 (58)|48 (24)| 94 |
+|  Experts per Layer  |  256  |  128  |128 |
+|Router (Expert/Token)|   8   |   1   | 8  |
+|   Shared Experts    |  Yes  |  Yes  | No |
+
+### 3.1 Expert Activation Dataset Generation ###
+
+We collect MoE expert activation traces from over 100,000 requests spanning three large-scale models: Llama-4-Maverick 
+> ([18](#bib.bib24))
+
+, DeepSeek-V3 
+> ([6](#bib.bib11))
+
+, Qwen3-235B-A22B 
+> ([26](#bib.bib21))
+
+, whose architectural parameters are summarized in [Table 1](#S3.T1). All models are evaluated as released, with FP8 quantization applied for inference. We implemented activation logging on top of vLLM v0.9 
+> ([28](#bib.bib20))
+
+ and instrumenting the fusedMoE router to record, for each token in every request, the dataset, request index, decoding stage, input sequence length, generated token count, layer index, and a mapping of expert indices to token counts. Logging is performed at batch size 1 to ensure per-token granularity.
+To cover broad set of datasets, we used GSM8K 
+> ([5](#bib.bib19))
+
+,
+MATH 
+> ([13](#bib.bib23))
+
+,
+MBPP 
+> ([2](#bib.bib18))
+
+,
+HumanEval 
+> ([4](#bib.bib17))
+
+,
+LMSYS-Chat 
+> ([34](#bib.bib16))
+
+,
+XSUM 
+> ([20](#bib.bib15))
+
+, and
+TL;DR
+> ([30](#bib.bib14))
+
+, with datasets approximately equally represented.
+
+Data collection was conducted over 300 hours using 8 H100 GPUs.
+No prompt inputs or outputs are logged, fully mitigating privacy concerns.
+
+### 3.2 Terminology ###
+
+#### 3.2.1 Expert Load ####
+
+We define Expert load as the number of tokens per expert divided by the number of perfect-load-balanced-tokens per expert.
+If e​x​p​e​r​t​\_​l​o​a​dexpert\\\_load = 1, the expert takes the expected amount of tokens.
+This model has 16 experts with top-1, so it can go up to 16 (i.e. when all tokens are routed to a single expert).
+
+#### 3.2.2 Imbalance Factor ####
+
+Imbalance Factor (IF) of a layer = max(Expert load) per layer
+If the imbalance factor equals to 1, the most “loaded” expert of the layer takes the expected amount of tokens.
+Performance is bounded by the most loaded experts, and we will use this for performance projection.
+
+### 3.3 Expert Activation Analysis and Insights ###
+
+#### 3.3.1 Dataset-wise Load Imbalance ####
+
+Load imbalance across datasets and models are a critical bottleneck for efficient MoE inference, especially in multi-node settings. As seen in [Fig. 3](#S3.F3), the imbalance factor varies substantially by both dataset and model architecture.
+
+Empirically, certain datasets induce pronounced imbalance in specific models and layers. For example, GSM8K consistently exhibits extreme imbalance in Llama 4-Maverick, with maximum expert loads exceeding 80×\\times the balanced ideal.<sup class="ltx_note_mark">1</sup><sup class="ltx_note_mark">1</sup>1 Most of the tokens are routed to a single expert in Layer 45 (MoE layer 22), resulting in very high imbalance. This behavior has also been observed by other LLM Practitioners
+> ([27](#bib.bib29))
+
+.Such skewed token routing causes a small subset of experts to become bottlenecks during routed FFN computation. In contrast, unspecialized datasets like LMSYS-Chat show much lower imbalance—typically 10–20×\\times in Maverick, and below 10×\\times in DeepSeek V3 and Qwen3.
+The root cause is dataset-dependent activation: homogeneous or repetitive tasks (e.g., GSM8K) activate a narrow set of experts, while diverse datasets distribute load more evenly. Notably, Qwen 3 235B maintains low imbalance across all datasets, with maximum expert loads rarely exceeding 6–8×\\times, indicating improved routing or more uniform expert specialization.
+High imbalance, especially during prefill, leads to stragglers and hardware underutilization, bounding throughput by the slowest expert. This underscores the need for dataset-aware routing or adaptive load balancing for scalable MoE inference.
+
+Insight: Load Imbalance Drives BottlenecksLoad imbalance is highly dataset- and model-dependent. Specialized prompts (e.g., math, coding) induce severe expert overload in specific layers, directly reducing system throughput. Identifying and mitigating these imbalances is essential for scalable, efficient MoE inference.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_square" height="572" id="S3.F3.g1" src="2604.23150v1/figures//images/4.load_imbalance_plots.png" width="673">Figure 3: Maximum Load Imbalance across MoE layers for different models and datasets during prefill and decode phases.
+
+#### 3.3.2 Workload-aware Activation ####
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_portrait" height="898" id="S3.F4.g1" src="2604.23150v1/5.dataset_correlation_plot.png" width="673">Figure 4: Correlation of expert activation patterns across datasets for Llama 4-Maverick, DeepSeek V3, and Qwen 3 235B during prefill and decode phases. Each heatmap shows the Pearson correlation between per-expert token counts for different dataset pairs.
+
+We analyze the correlation of expert activation patterns across datasets, using Pearson correlation over per-expert token counts. As shown in [Fig. 4](#S3.F4), datasets within similar domains (e.g., MATH and GSM8K; HumanEval and MBPP) exhibit high correlation in the experts they activate, especially in decode stage. Notably, Maverick also shows substantial cross-domain correlation (e.g., MATH and MBPP). This might indicate that certain experts are general and are frequently activated by diverse workloads.
+In contrast, DeepSeek V3 demonstrates strong within-domain correlation but low cross-domain correlation, suggesting more effective expert specialization. For Qwen 3 235B, we found a subset of experts are highly activated across datasets, likely due to its top-8 routing mechanism without shared expert, which results in a few “hot” experts acting as de facto shared experts.
+These patterns highlight that both model architecture and dataset characteristics drive expert activation overlap, with implications for specialization, efficiency, and potential interference between tasks.
+
+Insight: Workload-dependent Expert CorrelationExpert activation correlation is strongly workload-dependent. In the decode stage, intra-domain correlation is high, enabling predictable batching. DeepSeek V3 achieves better domain separation via expert specialization, while Qwen 3 235B’s routing leads to a few universally hot experts. Model architecture and data both drive these effects.
+
+#### 3.3.3 Prefill to Decode Expert Activation Correlation ####
+
+To assess the predictability of expert activation between inference stages, we compute the Pearson correlation between per-expert activation vectors for prefill and decode, averaged across all experts for each layer. As shown in [Fig. 5](#S3.F5), most layers exhibit substantial correlation, indicating that the set of experts activated during prefill is often similar to those activated during decode.
+Quantitatively, the average layerwise correlation is high for Llama 4-Maverick (0.82), moderate for Qwen 3 235B (0.68), and DeepSeek V3 (0.55). While not all layers show strong correlation, the overall trend suggests that expert activation is reasonably predictable across stages, especially in models with more stable routing.
+This predictability has direct implications for system optimization. In scenarios where expert weights are offloaded to remote memory or fewer GPUs are used, high prefill–decode correlation enables efficient expert prefetching and reduces latency due to expert loading. Layers with high correlation can be prioritized for prefetch reducing prefetching penalty 
+> ([8](#bib.bib3); [3](#bib.bib4); [31](#bib.bib2))
+
+.
+
+Insight: Prefill–Decode PredictabilityExpert activation patterns between prefill and decode are strongly correlated in most layers, especially in Maverick. This predictability enables more efficient system-level optimizations, such as expert prefetching and memory management, and should be leveraged in large-scale MoE inference deployments.
+
+Figure 5: Expert Activation Correlation between Prefill and Decode stage across MoE layers for different models and datasets.
+
+#### 3.3.4 Clustering Expert Activations ####
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_square" height="303" id="S3.F6.sf1.g1" src="2604.23150v1/figures/images/Maverick_layer17_Prefill_cluster.png" width="303">(a) Prefill Clustering.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_square" height="302" id="S3.F6.sf2.g1" src="2604.23150v1/figures/images/Maverick_layer17_decode_cluster.png" width="323">(b) Decode Clustering.
+
+Figure 6: Llama-Maverick(Layer 17)’s expert activation t-SNE visualization for request of different dataset.
+
+To analyze request-level expert activation patterns, we apply t-SNE<sup class="ltx_note_mark">2</sup><sup class="ltx_note_mark">2</sup>2 t-distributed Stochastic Neighbor Embedding reduces high-dimensional data to two or three dimensions by minimizing the divergence between probability distributions of pairwise similarities in the original and embedded spaces; the axes in a t-SNE plot do not have intrinsic meaning and are used only for visualization. to the per-request expert activation vectors. For each request, we record the number of tokens routed to each expert during both prefill and decode stages, resulting in a data matrix of shape [R, E] (requests ×\\times experts). T-SNE is then used to project these high-dimensional activation patterns into two dimensions for visualization.
+
+In [Fig. 6](#S3.F6), we observe clustering of requests from similar domains during the prefill stage: requests belonging to the same dataset exhibit similar expert activation profiles, not just at the token level but across the entire prompt. This effect is even more pronounced in the decode stage, where requests from the same dataset are tightly grouped, indicating highly consistent expert activation patterns.
+
+These findings have two major implications. First, batching requests from similar datasets can lead to predictable and concentrated expert activation, which is advantageous for system acceleration and resource allocation. Second, and more critically, the clustering reveals a potential security vulnerability: even without user-identifying tokens, it is possible to infer the request type solely from expert activation patterns. This opens the door to adversaries monitoring expert activations to request profiling.
+
+Insight: Predictable ClusteringExpert activation clustering enables robust request based grouping.Requests from similar domains form clear clusters in expert activation space, especially during decode. Thus, prompts can be grouped and batched efficiently by analyzing activation vectors alone, improving resource utilization and throughput.
+
+Security Risk: Activation-based Request ProfilingExpert activation patterns can leak request type and user intent.The same clustering that aids batching also creates a security risk: activation vectors seems highly indicative of request type. Adversaries with access to this data could infer prompt categories or user intent, even without explicit identifiers, raising risks of user identity and information leakage.
+
+4 Workload-aware Micro-Batch Grouping and Expert Placement Strategy
+----------
+
+In distributed Mixture-of-Experts (MoE) systems, efficiently partitioning experts across devices while maintaining high performance requires careful consideration of both request patterns and expert utilization. We propose a two-stage approach: (1) clustering requests based on expert activation patterns, and (2) strategically placing experts across device groups with controlled redundancy to optimize coverage and load balancing.
+
+### 4.1 Workload-aware Micro-batch Grouping ###
+
+#### 4.1.1 Clustering Methodology ####
+
+Using past dataset with NN requests, where each request rir\_{i} has an associated expert activation vector 𝐚i∈ℝE\\mathbf{a}\_{i}\\in\\mathbb{R}^{E} representing the tokens sent to each of EE experts during decoding, we perform the following clustering procedure:
+
+1. 1.
+
+   Normalization: We apply L2 normalization to each activation vector to focus on relative activation patterns:
+
+   |𝐚\~i=𝐚i‖𝐚i‖2\\tilde{\\mathbf{a}}\_{i}=\\frac{\\mathbf{a}\_{i}}{\\|\\mathbf{a}\_{i}\\|\_{2}}|(1)|
+   |-------------------------------------------------------------------------------------------|---|
+
+2. 2.
+
+   K-Means Clustering: We apply K-Means clustering to partition requests into KK clusters based on their normalized activation patterns:
+
+   |min𝒞∑k=1K∑i∈Ck∥𝐚\~i−𝝁k∥22\\min\_{\\mathcal{C}}\\sum\_{k=1}^{K}\\sum\_{i\\in C\_{k}}\\|\\tilde{\\mathbf{a}}\_{i}-\\boldsymbol{\\mu}\_{k}\\|\_{2}^{2}|(2)|
+   |---------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+   where 𝒞={C1,…,CK}\\mathcal{C}=\\{C\_{1},\\ldots,C\_{K}\\} represents the cluster assignments and 𝝁k\\boldsymbol{\\mu}\_{k} is the centroid of cluster CkC\_{k}.
+
+This clustering approach groups together requests with similar expert usage patterns, enabling more efficient expert placement decisions which helps in reducing all-to-all communication data resulting in faster decodes.
+
+#### 4.1.2 Cluster-to-Group Assignment ####
+
+For D​PDP number of expert groups, we assign the KK request clusters to DD expert groups. Our approach handles three cases:
+
+##### Case 1: One-to-One Mapping (K=DK=D) #####
+
+Each request cluster is assigned to exactly one expert group:
+
+|map​(Ck)={Gk},k∈[1,K]\\text{map}(C\_{k})=\\{G\_{k}\\},\\quad k\\in[1,K]|(3)|
+|-----------------------------------------------------------------------|---|
+
+##### Case 2: Multiple Groups per Cluster (D\>KD\>K) #####
+
+When we have more expert groups than request clusters, larger clusters receive multiple groups to provide better parallelism for high-traffic patterns. We:
+
+1. 1.
+
+   Compute cluster sizes: sk=∑i∈Ck‖𝐚i‖1s\_{k}=\\sum\_{i\\in C\_{k}}\\|\\mathbf{a}\_{i}\\|\_{1}
+
+2. 2.
+
+   Sort clusters by size: Cπ⁡(1),…,Cπ⁡(K)C\_{\\pi(1)},\\ldots,C\_{\\pi(K)} where sπ⁡(1)≥⋯≥sπ⁡(K)s\_{\\pi(1)}\\geq\\cdots\\geq s\_{\\pi(K)}
+
+3. 3.
+
+   Assign one group to each cluster, then distribute the remaining D−KD-K groups to the largest clusters in round-robin fashion
+
+##### Case 3: Multiple Clusters per Group (K\>DK\>D) #####
+
+When we have more request clusters than expert groups, we perform secondary clustering to merge request clusters into DD meta-clusters:
+
+|𝐮k=∑i∈Ck𝐚i,k∈[1,K]\\mathbf{u}\_{k}=\\sum\_{i\\in C\_{k}}\\mathbf{a}\_{i},\\quad k\\in[1,K]|(4)|
+|------------------------------------------------------------------------------------------|---|
+
+We then apply K-Means with DD clusters on {𝐮1,…,𝐮K}\\{\\mathbf{u}\_{1},\\ldots,\\mathbf{u}\_{K}\\} to assign multiple request clusters to each expert group.
+
+### 4.2 Data-based Expert Placement ###
+
+#### 4.2.1 Problem Formulation ####
+
+Given EE unique experts and DD expert groups, with a redundancy budget of RR experts, we must place experts such that:
+
+* •
+
+  Each group contains exactly M=E+RDM=\\frac{E+R}{D} experts
+
+* •
+
+  All EE unique experts are covered across all groups
+
+* •
+
+  Expert placement maximizes relevance to assigned request clusters
+
+For each expert group GdG\_{d}, we compute the aggregated expert usage based on its assigned clusters:
+
+|Ud,e=∑k:d∈map​(Ck)∑i∈Ckai,eU\_{d,e}=\\sum\_{k:d\\in\\text{map}(C\_{k})}\\sum\_{i\\in C\_{k}}a\_{i,e}|(5)|
+|----------------------------------------------------------------------------------------------------|---|
+
+where ai,ea\_{i,e} is the activation count of expert ee for request ii.
+
+#### 4.2.2 Two-Phase Expert Placement Algorithm ####
+
+##### Phase 1: Unique Expert Distribution #####
+
+We first distribute all EE unique experts across the DD groups while balancing coverage and relevance. Let Mmin=⌊E/D⌋M\_{\\min}=\\lfloor E/D\\rfloor and Mmax=⌈E/D⌉M\_{\\max}=\\lceil E/D\\rceil denote the minimum and maximum unique experts per group.
+
+Algorithm 1 Phase 1: Unique Expert Distribution
+
+1: Compute global expert importance: Ie=maxd∈[1,D]⁡Ud,eI\_{e}=\\max\_{d\\in[1,D]}U\_{d,e}
+
+2: Sort experts by importance: eπ⁡(1),…,eπ⁡(E)e\_{\\pi(1)},\\ldots,e\_{\\pi(E)} where Iπ⁡(1)≥⋯≥Iπ⁡(E)I\_{\\pi(1)}\\geq\\cdots\\geq I\_{\\pi(E)}
+
+3:for each expert ee in sorted order do
+
+4: Find groups sorted by usage: d1,…,dDd\_{1},\\ldots,d\_{D} where Ud1,e≥⋯≥UdD,eU\_{d\_{1},e}\\geq\\cdots\\geq U\_{d\_{D},e}
+
+5:for each group dd in sorted order do
+
+6:if|Gd|\<Mmax|G\_{d}|\<M\_{\\max}then
+
+7:Gd←Gd∪{e}G\_{d}\\leftarrow G\_{d}\\cup\\{e\\}
+
+8:break
+
+9:endif
+
+10:endfor
+
+11:endfor
+
+This greedy approach assigns each expert to the group that uses it most, subject to capacity constraints, ensuring balanced distribution.
+
+##### Phase 2: Redundant Expert Addition #####
+
+After distributing unique experts, we fill remaining slots in each group with redundant copies of experts to reach the target size MM:
+
+Algorithm 2 Phase 2: Redundant Expert Addition
+
+1:for each group d∈[1,D]d\\in[1,D]do
+
+2:needed←M−|Gd|\\text{needed}\\leftarrow M-|G\_{d}|
+
+3:candidates←[E]∖Gd\\text{candidates}\\leftarrow[E]\\setminus G\_{d} {Experts not in group}
+
+4: Sort candidates by usage: c1,…,c|candidates|c\_{1},\\ldots,c\_{|\\text{candidates}|} where Ud,c1≥⋯≥Ud,c|candidates|U\_{d,c\_{1}}\\geq\\cdots\\geq U\_{d,c\_{|\\text{candidates}|}}
+
+5:Gd←Gd∪{c1,…,cneeded}G\_{d}\\leftarrow G\_{d}\\cup\\{c\_{1},\\ldots,c\_{\\text{needed}}\\}
+
+6:endfor
+
+This phase adds the most relevant experts that weren’t initially assigned to each group, creating controlled redundancy that improves cache hit rates for frequently co-activated experts. While we enable redundant experts, for the evaluation we don’t use any redundant experts.
+
+#### 4.2.3 Group Balancing and Verification ####
+
+After the two-phase placement, we perform balancing to ensure exact size constraints:
+
+* •
+
+  Undersized groups (|Gd|\<M|G\_{d}|\<M): Randomly add missing experts from those not yet in GdG\_{d}
+
+* •
+
+  Oversized groups (|Gd|\>M|G\_{d}|\>M): Remove redundant experts (those appearing in multiple groups) from the end of the sorted list, preserving unique experts
+
+We verify two critical properties:
+
+|⋃d=1DGd=[E],|Gd|=M∀d∈[1,D]\\bigcup\_{d=1}^{D}G\_{d}=[E],\\quad|G\_{d}|=M\\quad\\forall d\\in[1,D]|(6)|
+|-------------------------------------------------------------------------------------------------|---|
+
+The first ensures complete coverage of all experts, while the second guarantees balanced memory usage across devices.
+
+#### 4.2.4 Request Routing ####
+
+Given the expert placement, each request rr is routed to its recommended expert groups based on its cluster assignment:
+
+|route​(r)=map​(Ck)where ​r∈Ck\\text{route}(r)=\\text{map}(C\_{k})\\quad\\text{where }r\\in C\_{k}|(7)|
+|-------------------------------------------------------------------------------------------------|---|
+
+This ensures that requests are processed by groups containing the experts they are most likely to activate, minimizing cross-node all-to-all communication.
+
+### 4.3 Deployment in Production Stack ###
+
+To implement the proposed clustering and placement strategy, in production. The MoE inference stack will need to be modified as shown in [Fig. 7](#S4.F7).
+
+1
+
+Micro-Batch Grouping: Analyzing which expert are being activated by the tokens of the request. Using this information we decide the dataset of the request and which decode micro batch it should be placed in. This will happen each time a request comes in.
+
+2
+
+Data-aware Expert Placement: Decode expert placement is dictated by finding experts with correlated activation patterns. We place these experts in the same node, to minimize inter-node all-to-all communication. New expert placement should happen infrequently, the main reason for refreshing expert placement would be intra-node expert corelation has droped resulting in additional inter-node all-to-all communication.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="397" id="S4.F7.g1" src="2604.23150v1/figures//images/full_flow.png" width="673">Figure 7: Disaggregated Prefill-Decode production system architecture with workload-aware micro-batch grouping and expert placement strategy
+
+5 Evaluations
+----------
+
+In this section, we rigorously evaluate the impact of workload-aware micro-batch grouping and expert placement strategies on accelerating multi-node MoE inference. Our evaluation focuses on three key aspects: (1) the ability to accurately classify prefill request type for micro-batch formation, (2) reduction in all-to-all communication volume via data-aware expert placement, and (3) improvements in MoE layer latency.
+
+We demonstrate the efficacy of our approach using three state-of-the-art MoE models: Llama-Maverick, DeepSeek-V3, and Qwen 3-235B, evaluated on the same diverse datasets as in [Section 3](#S3).
+
+### 5.1 Prefill Request Type Classification ###
+
+In [Fig. 6](#S3.F6), we saw that prefill requests show significant clustering of request based on expert activation. To quantify this clustering of request types based on expert activation, we perform dataset classification for each MoE layer independently. For each model, we construct a request-wise expert activation matrix of shape [R,E][R,E], where RR is the total number of requests and EE is the number of experts. Each entry records the raw token count routed to each expert for a given request. The dataset is split into 80:20 train:test sets, with equal representation of each dataset.
+We train a multi-class logistic regression classifier for each layer, using the raw expert activation counts as input features.
+
+[Fig. 8](#S5.F8)presents the layer-wise classification accuracy for all three models. The average classification accuracy is exceptionally high: Qwen3-235B achieves 98.9%±0.498.9\\%\\pm 0.4, DeepSeek-V3 achieves 98.4%±0.498.4\\%\\pm 0.4, and Llama-Maverick achieves 94.4%±6.894.4\\%\\pm 6.8 across layers. These results demonstrate that prefill expert activation patterns are highly predictive of request type, enabling robust micro-batch formation for subsequent decode stages.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="147" id="S5.F8.g1" src="2604.23150v1/figures/images/7.cluster_accuracy_plot.png" width="538">Figure 8: Accuracy for classifying prefill request into clusters based on the expert activation patterns.
+
+### 5.2 Inter-Node All-to-All Communication ###
+
+We next evaluate the impact of our proposed workload-aware micro-batch grouping and expert placement on inter-node all-to-all communication volume during MoE Decode. Accurate prefill request type prediction enables micro-batch formation, and our data-driven expert placement strategy (Data-based Expert Placement) co-locates frequently co-activated experts in the same node, reducing the need for tokens to be routed across nodes.
+We compare three expert placement strategies on DeepSeek-V3 with a DP8TP8→\\rightarrowEP64 configuration, averaged over 500 global batches (each global batch consists of 8×1288\\times 128 requests):
+
+* •
+
+  Linear
+  > ([29](#bib.bib31))
+
+  : Experts are assigned contiguously to ranks (e.g., rank 0: [0,1], rank 1: [2,3]).
+
+* •
+
+  Expert Placement with Load Balancing (EPLB)
+  > ([7](#bib.bib30); [15](#bib.bib6))
+
+  : Expert placement based on past expert loads.<sup class="ltx_note_mark">3</sup><sup class="ltx_note_mark">3</sup>3 EPLB also has redundant experts, but for our analysis we have 0 redundant experts for all placement experts.
+
+* •
+
+  Data-based Expert Placement: Our proposed method, which clusters requests and places correlated experts on the same node.
+
+All-to-all data volume is normalized to the median value of the linear baseline. [Fig. 9](#S5.F9) shows the normalized all-to-all data size for each strategy. Data-based Expert Placement achieves a substantial reduction in inter-node communication, with a median normalized value of 0.940.94, compared to 1.001.00 for Linear and 1.001.00 for EPLB. This reduction is due the fact the more tokens are located in the same node as the destination experts, thus reduce inter-node communication data.
+
+In summary, data-aware expert placement significantly reduces all-to-all communication volume, directly addressing a key bottleneck in scaling multi-node MoE inference.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="333" id="S5.F9.g1" src="2604.23150v1/figures/images/10.deepseek_all2all_time_boxplot.png" width="673">Figure 9: Normalized all-to-all data size for Deepseek-V3 (Layer 42) with different expert placement strategies.
+
+### 5.3 MoE Decode Runtime ###
+
+Finally, we evaluate the impact of Data-based Expert Placement combined with workload-aware micro-batch grouping on MoE layer runtime. We present results for two representative models: Llama Maverick and Qwen3-235B. Both using a DP8TP8→\\rightarrowEP64 configuration, with each global batch consisting of 8×1288\\times 128 requests.
+
+For Llama Maverick, [Fig. 10](#S5.F10) shows the median layer runtime over 100 global batches for different expert placement strategies. Data-based Expert Placement outperforms EPLB (Expert Placement with Load Balancing) in most layers, achieving up to a 20% reduction in all-to-all message size. However, due to the inefficiency of the underlying all-to-all communication kernel<sup class="ltx_note_mark">4</sup><sup class="ltx_note_mark">4</sup>4 Current all-to-all kernel implementation pads the data from each EP rank to the largest EP rank all-to-all data size and thus does not fully exploit reduced all-to-all message size, limiting runtime improvements., the observed reduction in all-to-all communication time is 9%, which translates to a 5.5% reduction in overall layer runtime.
+
+We further analyze Qwen3-235B, focusing on a single representative layer. [Fig. 11](#S5.F11) presents the runtime breakdown of the median layer runtime over 100 global batches for different placement strategies. Data-based Expert Placement again demonstrates clear benefits, reducing all-to-all communication time by 12% and overall layer runtime by 6% relative to EPLB.
+
+These results reaffirm that by routing more tokens to local experts and minimizing inter-node communication, Data-based Expert Placement can delivers consistent improvements in MoE layer efficiency. The magnitude of runtime reduction is ultimately bounded by the efficiency of the underlying communication primitives, highlighting an important direction for future system optimization.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="334" id="S5.F10.g1" src="2604.23150v1/figures/images/8.layer_runtime_plot.png" width="673">Figure 10: Runtime for MoE Layer of Llama-Maverick with different expert placement strategies.<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="410" id="S5.F11.g1" src="2604.23150v1/figures/images/9.qwen_time_breakdown.png" width="673">Figure 11: Runtime Breakdown for Qwen3-235B-A22B with different expert placement strategies.
+
+6 Related Work
+----------
+
+Recent work on Mixture-of-Experts (MoE) inference has explored several optimization strategies. Huang et al. 
+> ([14](#bib.bib12))
+
+ focus on routing optimizations, token droping and suggests Greedy placement, while Lu et al. 
+> ([19](#bib.bib13))
+
+ propose expert pruning and skipping to improve efficiency.
+Deepspeed-MoE 
+> ([22](#bib.bib8))
+
+ introduced hybrid parallelism, enabling large multi-node MoE deployments. Expert Affinity 
+> ([32](#bib.bib32))
+
+ reduce cross-GPU communication via KV cache duplication, but this approach is not scalable as cache sizes grow. MoETuner 
+> ([11](#bib.bib33))
+
+ uses integer linear programming for expert placement, but is limited to small expert counts.
+MoESys 
+> ([33](#bib.bib34))
+
+ proposes an Elastic MoE training strategy with 2D prefetch and Fusion communication over Hierarchical storage, so as to enjoy efficient parallelisms.
+
+DeepSeek-V3 
+> ([6](#bib.bib11))
+
+ introduced EPLB, periodically rebalancing and replicating experts to improve throughput. Deepseek-V3 also proposed overlapping the attention of one micro-batch with the dispatch+MoE+combine of another to increase utilization. Our proposed placement would also work with this optimization.
+Despite these advances, scalable multi-node MoE inference remains bottlenecked by communication overhead and lacks activation-aware batching and placement, which our work directly addresses.
+
+7 Conclusion
+----------
+
+This work addresses a central bottleneck in scaling multi-node Mixture-of-Experts (MoE) inference: the mismatch between dynamic expert activation patterns and static device topology, which leads to excessive inter-node communication and suboptimal runtime. Through comprehensive data-driven analysis across multiple state-of-the-art MoE models and diverse datasets, we demonstrate that expert activation patterns are highly predictive of request type and exhibit strong clustering properties.
+
+Building on these insights, we introduce a workload-aware micro-batch grouping and data-based expert placement strategy that co-locates frequently co-activated experts and batches similar requests. Our evaluations show that this approach enables highly accurate prefill request type classification, substantially reduces all-to-all communication volume, and delivers consistent improvements in MoE layer runtime across models and layers. Specifically, we observe up to 20% reduction in inter-node message size and up to 6% reduction in layer runtime, with the magnitude of improvement bounded by the efficiency of underlying communication kernels.
+
+These results establish a principled foundation for scaling sparse model inference in distributed environments. By leveraging activation-aware batching and expert placement.
+
+Future Works and Extensions: Further optimization of all-to-all communication kernel where padding is not required can help reduce the all-to-all Latency. Using expert load information during expert grouping can further improve the overall layer latency taking it more closer to ideal runtime.
+
+References
+----------
+
+* Achiam et al. (2023)J. Achiam, S. Adler, S. Agarwal, L. Ahmad, I. Akkaya, F. L. Aleman, D. Almeida, J. Altenschmidt, S. Altman, S. Anadkat, et al.Gpt-4 technical report.arXiv preprint arXiv:2303.08774.Cited by: [§2.1](#S2.SS1.p1.1).
+* Austin et al. (2021)J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, et al.Program synthesis with large language models.arXiv preprint arXiv:2108.07732.Cited by: [§3.1](#S3.SS1.p1.1).
+* Bambhaniya et al. (2024)A. R. Bambhaniya, S. C. Kumar, and T. KrishnaMoE-ERAS: expert residency aware selection.In Machine Learning for Computer Architecture and Systems 2024,External Links: [Link](https://openreview.net/forum?id=o43eHjPEMO)Cited by: [§3.3.3](#S3.SS3.SSS3.p1.1).
+* Chen et al. (2021)M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. de Oliveira Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, A. Ray, R. Puri, G. Krueger, M. Petrov, H. Khlaaf, G. Sastry, P. Mishkin, B. Chan, S. Gray, N. Ryder, M. Pavlov, A. Power, L. Kaiser, M. Bavarian, C. Winter, P. Tillet, F. P. Such, D. Cummings, M. Plappert, F. Chantzis, E. Barnes, A. Herbert-Voss, W. H. Guss, A. Nichol, A. Paino, N. Tezak, J. Tang, I. Babuschkin, S. Balaji, S. Jain, W. Saunders, C. Hesse, A. N. Carr, J. Leike, J. Achiam, V. Misra, E. Morikawa, A. Radford, M. Knight, M. Brundage, M. Murati, K. Mayer, P. Welinder, B. McGrew, D. Amodei, S. McCandlish, I. Sutskever, and W. ZarembaEvaluating large language models trained on code.External Links: 2107.03374Cited by: [§3.1](#S3.SS1.p1.1).
+* Cobbe et al. (2021)K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. SchulmanTraining verifiers to solve math word problems.arXiv preprint arXiv:2110.14168.Cited by: [§3.1](#S3.SS1.p1.1).
+* DeepSeek-AI et al. (2025)DeepSeek-AI, A. Liu, B. Feng, B. Xue, B. Wang, B. Wu, C. Lu, C. Zhao, C. Deng, C. Zhang, C. Ruan, D. Dai, D. Guo, D. Yang, D. Chen, D. Ji, E. Li, F. Lin, F. Dai, F. Luo, G. Hao, G. Chen, G. Li, H. Zhang, H. Bao, H. Xu, H. Wang, H. Zhang, H. Ding, H. Xin, H. Gao, H. Li, H. Qu, J. L. Cai, J. Liang, J. Guo, J. Ni, J. Li, J. Wang, J. Chen, J. Chen, J. Yuan, J. Qiu, J. Li, J. Song, K. Dong, K. Hu, K. Gao, K. Guan, K. Huang, K. Yu, L. Wang, L. Zhang, L. Xu, L. Xia, L. Zhao, L. Wang, L. Zhang, M. Li, M. Wang, M. Zhang, M. Zhang, M. Tang, M. Li, N. Tian, P. Huang, P. Wang, P. Zhang, Q. Wang, Q. Zhu, Q. Chen, Q. Du, R. J. Chen, R. L. Jin, R. Ge, R. Zhang, R. Pan, R. Wang, R. Xu, R. Zhang, R. Chen, S. S. Li, S. Lu, S. Zhou, S. Chen, S. Wu, S. Ye, S. Ye, S. Ma, S. Wang, S. Zhou, S. Yu, S. Zhou, S. Pan, T. Wang, T. Yun, T. Pei, T. Sun, W. L. Xiao, W. Zeng, W. Zhao, W. An, W. Liu, W. Liang, W. Gao, W. Yu, W. Zhang, X. Q. Li, X. Jin, X. Wang, X. Bi, X. Liu, X. Wang, X. Shen, X. Chen, X. Zhang, X. Chen, X. Nie, X. Sun, X. Wang, X. Cheng, X. Liu, X. Xie, X. Liu, X. Yu, X. Song, X. Shan, X. Zhou, X. Yang, X. Li, X. Su, X. Lin, Y. K. Li, Y. Q. Wang, Y. X. Wei, Y. X. Zhu, Y. Zhang, Y. Xu, Y. Xu, Y. Huang, Y. Li, Y. Zhao, Y. Sun, Y. Li, Y. Wang, Y. Yu, Y. Zheng, Y. Zhang, Y. Shi, Y. Xiong, Y. He, Y. Tang, Y. Piao, Y. Wang, Y. Tan, Y. Ma, Y. Liu, Y. Guo, Y. Wu, Y. Ou, Y. Zhu, Y. Wang, Y. Gong, Y. Zou, Y. He, Y. Zha, Y. Xiong, Y. Ma, Y. Yan, Y. Luo, Y. You, Y. Liu, Y. Zhou, Z. F. Wu, Z. Z. Ren, Z. Ren, Z. Sha, Z. Fu, Z. Xu, Z. Huang, Z. Zhang, Z. Xie, Z. Zhang, Z. Hao, Z. Gou, Z. Ma, Z. Yan, Z. Shao, Z. Xu, Z. Wu, Z. Zhang, Z. Li, Z. Gu, Z. Zhu, Z. Liu, Z. Li, Z. Xie, Z. Song, Z. Gao, and Z. PanDeepSeek-v3 technical report.External Links: 2412.19437,[Link](https://arxiv.org/abs/2412.19437)Cited by: [§1](#S1.p1.1),[§1](#S1.p2.1),[§2.1.2](#S2.SS1.SSS2.p1.1),[§2.1](#S2.SS1.p1.1),[§2.3](#S2.SS3.SSS0.Px2.p3.1),[§3.1](#S3.SS1.p1.1),[§6](#S6.p2.1).
+* Deepseek (2025)DeepseekGitHub - deepseek-ai/eplb: expert parallelism load balancer.External Links: [Link](https://github.com/deepseek-ai/EPLB)Cited by: [§1](#S1.p4.1),[2nd item](#S5.I1.i2.p1.1).
+* Eliseev and Mazur (2023)A. Eliseev and D. MazurFast inference of mixture-of-experts language models with offloading.External Links: 2312.17238,[Link](https://arxiv.org/abs/2312.17238)Cited by: [§3.3.3](#S3.SS3.SSS3.p1.1).
+* Fedus et al. (2021)W. Fedus, B. Zoph, and N. ShazeerSwitch transformers: scaling to trillion parameter models with simple and efficient sparsity.arXiv preprint arXiv:2101.03961.Cited by: [§1](#S1.p1.1),[§2.1.2](#S2.SS1.SSS2.p1.1),[§2.1](#S2.SS1.p1.1).
+* Gale et al. (2022)T. Gale, D. Narayanan, C. Young, and M. ZahariaMegaBlocks: efficient sparse training with mixture-of-experts.External Links: 2211.15841,[Link](https://arxiv.org/abs/2211.15841)Cited by: [§2.3](#S2.SS3.SSS0.Px2.p3.1).
+* Go and Mahajan (2025)S. Go and D. MahajanMoETuner: optimized mixture of expert serving with balanced expert placement and token routing.External Links: 2502.06643,[Link](https://arxiv.org/abs/2502.06643)Cited by: [§6](#S6.p1.1).
+* [12]Grok-1.External Links: [Link](https://github.com/xai-org/grok-1)Cited by: [§2.1](#S2.SS1.p1.1).
+* Hendrycks et al. (2021)D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang, D. Song, and J. SteinhardtMeasuring mathematical problem solving with the math dataset.NeurIPS.Cited by: [§3.1](#S3.SS1.p1.1).
+* Huang et al. (2024a)H. Huang, N. Ardalani, A. Sun, L. Ke, S. Bhosale, H. S. Lee, C. Wu, and B. LeeToward efficient inference for mixture of experts.In The Thirty-eighth Annual Conference on Neural Information Processing Systems,External Links: [Link](https://openreview.net/forum?id=stXtBqyTWX)Cited by: [§6](#S6.p1.1).
+* Huang et al. (2024b)H. Huang, N. Ardalani, A. Sun, L. Ke, H. S. Lee, S. Bhosale, C. Wu, and B. LeeToward efficient inference for mixture of experts.In Advances in Neural Information Processing Systems, A. Globerson, L. Mackey, D. Belgrave, A. Fan, U. Paquet, J. Tomczak, and C. Zhang (Eds.),Vol. 37, pp. 84033–84059.External Links: [Link](https://proceedings.neurips.cc/paper_files/paper/2024/file/98bf3b8505c611ac21055dd9d355c66e-Paper-Conference.pdf)Cited by: [§2.3](#S2.SS3.SSS0.Px2.p3.1),[2nd item](#S5.I1.i2.p1.1).
+* Jin et al. (2025)C. Jin, Z. Jiang, Z. Bai, Z. Zhong, J. Liu, X. Li, N. Zheng, X. Wang, C. Xie, Q. Huang, W. Heng, Y. Ma, W. Bao, S. Zheng, Y. Peng, H. Lin, X. Liu, X. Jin, and X. LiuMegaScale-moe: large-scale communication-efficient training of mixture-of-experts models in production.External Links: 2505.11432,[Link](https://arxiv.org/abs/2505.11432)Cited by: [§2.3](#S2.SS3.SSS0.Px2.p3.1).
+* Lepikhin et al. (2021)D. Lepikhin, H. Lee, Y. Xu, D. Chen, O. Firat, Y. Huang, M. Krikun, N. Shazeer, and Z. Chen{GS}hard: scaling giant models with conditional computation and automatic sharding.In International Conference on Learning Representations,External Links: [Link](https://openreview.net/forum?id=qrwe7XHTmYb)Cited by: [§2.1.2](#S2.SS1.SSS2.p1.1),[§2.2.3](#S2.SS2.SSS3.p1.1).
+* Llama4 (2025)M. Llama4The llama 4 herd: the beginning of a new era of natively multimodal ai innovation.Note: [Online; accessed 2025-04-10]External Links: [Link](https://ai.meta.com/blog/llama-4-multimodal-intelligence/)Cited by: [§1](#S1.p1.1),[§2.1](#S2.SS1.p1.1),[§3.1](#S3.SS1.p1.1).
+* Lu et al. (2024)X. Lu, Q. Liu, Y. Xu, A. Zhou, S. Huang, B. Zhang, J. Yan, and H. LiNot all experts are equal: efficient expert pruning and skipping for mixture-of-experts large language models.In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), L. Ku, A. Martins, and V. Srikumar (Eds.),Bangkok, Thailand, pp. 6159–6172.External Links: [Link](https://aclanthology.org/2024.acl-long.334/),[Document](https://dx.doi.org/10.18653/v1/2024.acl-long.334)Cited by: [§6](#S6.p1.1).
+* Narayan et al. (2018)S. Narayan, S. B. Cohen, and M. LapataDon’t give me the details, just the summary! topic-aware convolutional neural networks for extreme summarization.ArXivabs/1808.08745.Cited by: [§3.1](#S3.SS1.p1.1).
+* Qwen Team (2025)A. C. Qwen TeamQwen3: think deeper, act faster.Note: [https://qwenlm.github.io/blog/qwen3/](https://qwenlm.github.io/blog/qwen3/)Cited by: [§2.1](#S2.SS1.p1.1).
+* Rajbhandari et al. (2022)S. Rajbhandari, C. Li, Z. Yao, M. Zhang, R. Y. Aminabadi, A. A. Awan, J. Rasley, and Y. HeDeepSpeed-moe: advancing mixture-of-experts inference and training to power next-generation ai scale.External Links: 2201.05596,[Link](https://arxiv.org/abs/2201.05596)Cited by: [§2.3](#S2.SS3.p1.1),[§6](#S6.p1.1).
+* Shoeybi et al. (2019)M. Shoeybi, M. Patwary, R. Puri, P. LeGresley, J. Casper, and B. CatanzaroMegatron-lm: training multi-billion parameter language models using model parallelism.arXiv preprint arXiv:1909.08053.Cited by: [§2.2.2](#S2.SS2.SSS2.p1.1).
+* Team et al. (2025)K. Team, Y. Bai, Y. Bao, G. Chen, J. Chen, N. Chen, R. Chen, Y. Chen, Y. Chen, Y. Chen, Z. Chen, J. Cui, H. Ding, M. Dong, A. Du, C. Du, D. Du, Y. Du, Y. Fan, Y. Feng, K. Fu, B. Gao, H. Gao, P. Gao, T. Gao, X. Gu, L. Guan, H. Guo, J. Guo, H. Hu, X. Hao, T. He, W. He, W. He, C. Hong, Y. Hu, Z. Hu, W. Huang, Z. Huang, Z. Huang, T. Jiang, Z. Jiang, X. Jin, Y. Kang, G. Lai, C. Li, F. Li, H. Li, M. Li, W. Li, Y. Li, Y. Li, Z. Li, Z. Li, H. Lin, X. Lin, Z. Lin, C. Liu, C. Liu, H. Liu, J. Liu, J. Liu, L. Liu, S. Liu, T. Y. Liu, T. Liu, W. Liu, Y. Liu, Y. Liu, Y. Liu, Y. Liu, Z. Liu, E. Lu, L. Lu, S. Ma, X. Ma, Y. Ma, S. Mao, J. Mei, X. Men, Y. Miao, S. Pan, Y. Peng, R. Qin, B. Qu, Z. Shang, L. Shi, S. Shi, F. Song, J. Su, Z. Su, X. Sun, F. Sung, H. Tang, J. Tao, Q. Teng, C. Wang, D. Wang, F. Wang, H. Wang, J. Wang, J. Wang, J. Wang, S. Wang, S. Wang, Y. Wang, Y. Wang, Y. Wang, Y. Wang, Y. Wang, Z. Wang, Z. Wang, Z. Wang, C. Wei, Q. Wei, W. Wu, X. Wu, Y. Wu, C. Xiao, X. Xie, W. Xiong, B. Xu, J. Xu, J. Xu, L. H. Xu, L. Xu, S. Xu, W. Xu, X. Xu, Y. Xu, Z. Xu, J. Yan, Y. Yan, X. Yang, Y. Yang, Z. Yang, Z. Yang, Z. Yang, H. Yao, X. Yao, W. Ye, Z. Ye, B. Yin, L. Yu, E. Yuan, H. Yuan, M. Yuan, H. Zhan, D. Zhang, H. Zhang, W. Zhang, X. Zhang, Y. Zhang, Y. Zhang, Y. Zhang, Y. Zhang, Y. Zhang, Y. Zhang, Z. Zhang, H. Zhao, Y. Zhao, H. Zheng, S. Zheng, J. Zhou, X. Zhou, Z. Zhou, Z. Zhu, W. Zhuang, and X. ZuKimi k2: open agentic intelligence.External Links: 2507.20534,[Link](https://arxiv.org/abs/2507.20534)Cited by: [§2.1](#S2.SS1.p1.1).
+* team (2025)M. A. teamMixtral-8x22b.External Links: [Link](https://mistral.ai/news/mixtral-8x22b)Cited by: [§2.1.2](#S2.SS1.SSS2.p1.1),[§2.1](#S2.SS1.p1.1).
+* Team (2025)Q. TeamQwen3 technical report.External Links: 2505.09388,[Link](https://arxiv.org/abs/2505.09388)Cited by: [§1](#S1.p1.1),[§3.1](#S3.SS1.p1.1).
+* Unsloth (2025)UnslothLlama 4 maverick - 1.78bit unsloth dynamic gguf : r/localllama.External Links: [Link](https://www.reddit.com/r/LocalLLaMA/comments/1juq57m/llama_4_maverick_178bit_unsloth_dynamic_gguf/)Cited by: [footnote 1](#footnote1).
+* Vllm-Project (2025)Vllm-ProjectRelease v0.9.0 · vllm-project/vllm.vLLM-Project.External Links: [Link](https://github.com/vllm-project/vllm/releases/tag/v0.9.0)Cited by: [§3.1](#S3.SS1.p1.1).
+* vLLM (2025)vLLMVllm expert paralleism.External Links: [Link](https://docs.vllm.ai/en/latest/api/vllm/config/parallel.html)Cited by: [§1](#S1.p4.1),[1st item](#S5.I1.i1.p1.1).
+* von Werra et al. (2020)L. von Werra, Y. Belkada, L. Tunstall, E. Beeching, T. Thrush, N. Lambert, S. Huang, K. Rasul, and Q. GallouédecTRL: transformer reinforcement learning.GitHub.Note: [https://github.com/huggingface/trl](https://github.com/huggingface/trl)Cited by: [§3.1](#S3.SS1.p1.1).
+* Xue et al. (2024)L. Xue, Y. Fu, Z. Lu, L. Mai, and M. MarinaMoE-infinity: efficient moe inference on personal machines with sparsity-aware expert cache.External Links: 2401.14361Cited by: [§3.3.3](#S3.SS3.SSS3.p1.1).
+* Yao et al. (2024)J. Yao, Q. Anthony, A. Shafi, H. Subramoni, D. K., and PandaExploiting inter-layer expert affinity for accelerating mixture-of-experts model inference.External Links: 2401.08383,[Link](https://arxiv.org/abs/2401.08383)Cited by: [§6](#S6.p1.1).
+* Yu et al. (2024)D. Yu, L. Shen, H. Hao, W. Gong, H. Wu, J. Bian, L. Dai, and H. XiongMoESys: a distributed and efficient mixture-of-experts training and inference system for internet services.IEEE Transactions on Services Computing17 (5), pp. 2626–2639.External Links: [Document](https://dx.doi.org/10.1109/TSC.2024.3399654)Cited by: [§6](#S6.p1.1).
+* Zheng et al. (2023)L. Zheng, W. Chiang, Y. Sheng, T. Li, S. Zhuang, Z. Wu, Y. Zhuang, Z. Li, Z. Lin, Eric. P. Xing, J. E. Gonzalez, I. Stoica, and H. ZhangLMSYS-chat-1m: a large-scale real-world llm conversation dataset.External Links: 2309.11998Cited by: [§3.1](#S3.SS1.p1.1).
+* Zoph et al. (2022)B. Zoph, I. Bello, S. Kumar, N. Du, Y. Huang, J. Dean, N. Shazeer, and W. FedusST-moe: designing stable and transferable sparse expert models.External Links: 2202.08906,[Link](https://arxiv.org/abs/2202.08906)Cited by: [§2.1.2](#S2.SS1.SSS2.p1.1).
+
+</body>
+(Response complete. 203109 bytes total. Content-type: text/html; charset=utf-8. Fetched in 317ms.)

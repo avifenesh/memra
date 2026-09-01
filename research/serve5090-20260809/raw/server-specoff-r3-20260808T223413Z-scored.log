@@ -1,0 +1,171 @@
+[server] starting; models config = [("q27", "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", Some("/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27" <- /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q27: regime draft attached (/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] q27: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 537MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q27"]
+[server] listening on http://127.0.0.1:8189
+[meter] admit id=cmpl-76a17e58ccf9b9c077c7eea76bf86352 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-a390c55b53e0fc4ced58331a8a888632 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-cde9b83aad879bd91ec427e7411357c3 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-1d0ae86a1df34ed8c60c7479227d4dd5 tenant=default lane=interactive model="q27"
+[meter] admit id=cmpl-e4934cb17e7f228ed57da36be8b63d98 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="meter-A" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q27": 336MB (admission gate = 2x)
+[spec-k] model="q27" tenant="meter-A" K=0 source=eligibility-fallback prompt=272 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="meter-A" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="meter-B" K=0 source=concurrency prompt=272 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (in-batch fanout): 256 tokens, 164.5MB (resident 164.5MB / 537MB, model q27, ns "meter-A")
+[prefix-dedup] B=3 prefix=256 saved=512 hash=6f9cf1d9c04f1a45 in 263.4ms retained=true (model q27, ns "meter-A")
+[prefix-cache] insert (seed): 272 tokens, 165.0MB (resident 329.5MB / 537MB, model q27, ns "meter-B")
+[prefix-cache] hit: 256 of 272 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="meter-A" K=0 source=concurrency prompt=272 cached=256 lcp=256 active=4 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-eca69c87874ded5e46624e84430e1bae tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r3-shared" K=0 source=eligibility-fallback prompt=27 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-5405a98f859f23023cd9acf75b943cf0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r3-shared" K=0 source=eligibility-fallback prompt=229 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 229 tokens, 163.7MB (resident 493.2MB / 537MB, model q27, ns "q27-specoff-r3-shared")
+[meter] admit id=chatcmpl-675387ca15f03201fea7ac94f0562296 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r3-shared" K=0 source=eligibility-fallback prompt=229 cached=0 lcp=4 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 229 tokens, 163.7MB (resident 656.9MB / 537MB, model q27, ns "q27-specoff-r3-shared")
+[prefix-cache] evict (LRU): 272 tokens, 165.0MB (model q27, ns "meter-B")
+[meter] admit id=chatcmpl-bb5c967105a4a7ec8e794f61fd055238 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r3-shared" K=0 source=eligibility-fallback prompt=4107 cached=0 lcp=6 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4107 tokens, 278.9MB (resident 770.7MB / 537MB, model q27, ns "q27-specoff-r3-shared")
+[prefix-cache] evict (LRU): 229 tokens, 163.7MB (model q27, ns "q27-specoff-r3-shared")
+[prefix-cache] evict (LRU): 229 tokens, 163.7MB (model q27, ns "q27-specoff-r3-shared")
+[meter] admit id=chatcmpl-669fef66b92157c8a397f053d59c9f80 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r3-shared" K=0 source=eligibility-fallback prompt=4107 cached=0 lcp=4 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4107 tokens, 278.9MB (resident 722.2MB / 537MB, model q27, ns "q27-specoff-r3-shared")
+[prefix-cache] evict (LRU): 4107 tokens, 278.9MB (model q27, ns "q27-specoff-r3-shared")
+[meter] admit id=cmpl-371548e4ab36afc80ab78fa38c22ae20 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="q27-specoff-r3-shared" K=0 source=eligibility-fallback prompt=4094 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4094 tokens, 278.5MB (resident 721.8MB / 537MB, model q27, ns "q27-specoff-r3-shared")
+[prefix-cache] evict (LRU): 4107 tokens, 278.9MB (model q27, ns "q27-specoff-r3-shared")
+[meter] admit id=cmpl-7f168162119f6f7b4ec96eaabde696e6 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4094 of 4094 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="q27-specoff-r3-shared" K=0 source=eligibility-fallback prompt=4094 cached=4094 lcp=4094 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-991a5fc0401b411e792a636ec799000d tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4094 of 4094 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="q27-specoff-r3-shared" K=0 source=eligibility-fallback prompt=4094 cached=4094 lcp=4094 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-210b2795a096dc5a00cb1d77e418a456 tenant=default lane=interactive model="q27"
+[worker] kv-reuse: 4158 of 4177 prompt tokens resumed (model q27)
+[spec-k] model="q27" tenant="q27-specoff-r3-shared" K=0 source=eligibility-fallback prompt=4177 cached=4158 lcp=4094 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-d91769cb2bb9706991cf4404cc08ba11 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-ccf9a2bff4c62140f4a8f097eb4c2086 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-24495cf1e891f132e1c7d65e46439a89 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] skip pinned in-batch fanout insert: entry 163.6MB cannot fit beside 443.0MB already pinned (budget 537MB)
+[prefix-dedup] B=2 prefix=226 saved=226 hash=850081215038abe5 in 186.6ms retained=false (model q27)
+[meter] admit id=chatcmpl-812bd0dfb0ec18692c39617a377e0da1 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-3ee91289251641d49d0262a3d14821a3 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] skip pinned in-batch fanout insert: entry 163.6MB cannot fit beside 443.0MB already pinned (budget 537MB)
+[prefix-dedup] B=2 prefix=226 saved=226 hash=850081215038abe5 in 187.6ms retained=false (model q27)
+[meter] admit id=chatcmpl-ba57e5f81360ba8400cf435b47cf3704 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-00b24253e399e70f18b91b8ce4992d6c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] skip pinned in-batch fanout insert: entry 163.6MB cannot fit beside 443.0MB already pinned (budget 537MB)
+[prefix-dedup] B=2 prefix=226 saved=226 hash=850081215038abe5 in 187.4ms retained=false (model q27)
+[meter] admit id=chatcmpl-f15103b866b0014c98bc8a8b5e80d2df tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-099e3328744c3c6d8ad963649f1b860b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] skip pinned in-batch fanout insert: entry 163.6MB cannot fit beside 443.0MB already pinned (budget 537MB)
+[prefix-dedup] B=2 prefix=226 saved=226 hash=850081215038abe5 in 188.3ms retained=false (model q27)
+[meter] admit id=chatcmpl-462f6ba28bc3fb2ea4ea987e2b9c97d9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-c9b005659a2139f01a202bd1658f6f30 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-f8909e9b5309d0a501bf334dd742c8a4 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-57820b0665cbbfc6adb14cb9f9ecddc3 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-05f08639d906877719f89eac98cce10d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] skip pinned in-batch fanout insert: entry 163.6MB cannot fit beside 443.0MB already pinned (budget 537MB)
+[prefix-dedup] B=4 prefix=226 saved=678 hash=850081215038abe5 in 191.8ms retained=false (model q27)
+[meter] admit id=chatcmpl-1c5a85b344682d2933a3575cc5dfbffb tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-7816da95cd3249605ab3aeb79b63ca50 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-2ee57c0113ba8786bcc1fcedc617eb6b tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-89ef750683d53cf0b2091462730b69c2 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] skip pinned in-batch fanout insert: entry 163.6MB cannot fit beside 443.0MB already pinned (budget 537MB)
+[prefix-dedup] B=4 prefix=226 saved=678 hash=850081215038abe5 in 186.4ms retained=false (model q27)
+[meter] admit id=chatcmpl-6b3248db11fb4500011a671b686bfcb6 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-6cabb29b9a5ab12669f3f327020d3951 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-fefc04f84269de1791814954ba47ba62 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-4f795e54b31c74256e0d6d99304c37ea tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] skip pinned in-batch fanout insert: entry 163.6MB cannot fit beside 443.0MB already pinned (budget 537MB)
+[prefix-dedup] B=4 prefix=226 saved=678 hash=850081215038abe5 in 188.0ms retained=false (model q27)
+[meter] admit id=chatcmpl-301b861ef43d593639e7a4d776e69238 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-f77393519beaa9c1b04a08a3675b9704 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-78aeef6f7ca19a2f079d4658919fb0fc tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-16b6587ea9378e714dbd8ee367c4059e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="" K=0 source=concurrency prompt=226 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] skip pinned in-batch fanout insert: entry 163.6MB cannot fit beside 443.0MB already pinned (budget 537MB)
+[prefix-dedup] B=4 prefix=226 saved=678 hash=850081215038abe5 in 194.2ms retained=false (model q27)
+[meter] admit id=chatcmpl-aafb4c7491dabbee8308bec21ff9cb2f tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-b56ef33cb020626a4875f4bb41abb966 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-e44c379fe940c1361499b2df3f70e942 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-1f598a8514f5bf72572dbfd369b3d2d1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-eccffa9dfaf2e3edb084ca14fa734605 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-e75b71b44562cc0183522dec6c33be39 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-0fdbd1259e99d41da6d81eb6442e926f tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-d247c40d6af700707253f1af2c3127c2 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[meter] admit id=chatcmpl-203a92e3994d656f8e18657f0d4eb0f7 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="" K=0 source=eligibility-fallback prompt=226 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 226 tokens, 163.6MB (resident 606.6MB / 537MB, model q27)
+[prefix-cache] evict (LRU): 226 tokens, 163.6MB (model q27)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

@@ -1,0 +1,18 @@
+warning: memra-engine@0.77.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.77.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.77.0 (/home/avifenesh/projects/wt-cx-dualpp2/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.40s
+     Running unittests src/main.rs (target/debug/deps/memra_server-82ac615fd504334f)
+
+running 9 tests
+test worker::tests::admission_activation_residual_is_a_high_water_not_a_new_scalar ... ok
+test worker::tests::admission_caps_only_the_step35_swa_byte_class ... ok
+test worker::tests::admission_cost_scales_with_each_requests_context ... ok
+test worker::tests::admission_finite_request_does_not_inherit_large_server_default ... ok
+test worker::tests::admission_request_context_uses_the_requests_own_bound ... ok
+test worker::tests::dual_pp_admission_arithmetic_saturates_and_serial_is_unchanged ... ok
+test worker::tests::dual_pp_admission_checks_both_devices_and_both_receiver_slots ... ok
+test worker::tests::dual_pp_admission_aggregates_two_stages_on_one_device ... ok
+test worker::tests::admission_reclaim_selects_the_global_oldest_across_both_pools ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 180 filtered out; finished in 0.00s

@@ -1,0 +1,130 @@
+{
+  "dual_stage_diagnostics": {
+    "c16": {
+      "method": "unscored companion run; CUDA events bracket layer ranges",
+      "overlap_counter_delta": 1024,
+      "spans": {
+        "wave_a_stage0": {
+          "mean_ms": 11.587621437500001,
+          "samples": 1024,
+          "total_ms": 11865.724352000001
+        },
+        "wave_a_stage1": {
+          "mean_ms": 12.252627472656249,
+          "samples": 1024,
+          "total_ms": 12546.690531999999
+        },
+        "wave_b_stage0": {
+          "mean_ms": 11.598189628906251,
+          "samples": 1024,
+          "total_ms": 11876.546180000001
+        },
+        "wave_b_stage1": {
+          "mean_ms": 12.260402462890625,
+          "samples": 1024,
+          "total_ms": 12554.652122
+        }
+      },
+      "stage0_mean_ms": 11.592905533203126,
+      "stage1_mean_ms": 12.256514967773438,
+      "stage_balance_ratio": 1.0572427190637994
+    },
+    "c8": {
+      "method": "unscored companion run; CUDA events bracket layer ranges",
+      "overlap_counter_delta": 512,
+      "spans": {
+        "wave_a_stage0": {
+          "mean_ms": 11.688459248046875,
+          "samples": 512,
+          "total_ms": 5984.491135
+        },
+        "wave_a_stage1": {
+          "mean_ms": 12.47986938671875,
+          "samples": 512,
+          "total_ms": 6389.693126
+        },
+        "wave_b_stage0": {
+          "mean_ms": 11.69513662890625,
+          "samples": 512,
+          "total_ms": 5987.909954
+        },
+        "wave_b_stage1": {
+          "mean_ms": 12.48130969921875,
+          "samples": 512,
+          "total_ms": 6390.430566
+        }
+      },
+      "stage0_mean_ms": 11.691797938476562,
+      "stage1_mean_ms": 12.480589542968751,
+      "stage_balance_ratio": 1.0674653811708765
+    }
+  },
+  "kill_rule": {
+    "diagnosis": "gain-clears-hold-floor",
+    "observed_pct": 19.10819898962228,
+    "threshold_pct_at_c16": 15.0,
+    "verdict": "HOLD"
+  },
+  "max_tokens_per_request": 512,
+  "metric": "aggregate completion tokens after first visible token / decode window second",
+  "protocol": "N=5 interleaved arms, rotating width order, one lock hold; unscored CUDA-event diagnostic companion",
+  "receipt": {
+    "errors": 0,
+    "points": 20,
+    "request_rows": 240
+  },
+  "rig": "box1, 2x RTX PRO 6000 Blackwell Server Edition",
+  "schema": "memra.dualpp0.perf.v1",
+  "source_commit": "ed4ff393969bb94bf167ce4ea530e4a6bb5e77f1",
+  "thermal_regime": {
+    "artificial_cooldown": false,
+    "sample_interval_ms": 250,
+    "samples": 5752,
+    "sm_clock_mhz_max": 2407.0,
+    "sm_clock_mhz_min": 2287.0,
+    "temperature_c_max": 47.0,
+    "temperature_c_min": 31.0
+  },
+  "widths": {
+    "c16": {
+      "N": 5,
+      "delta_pct": 19.10819898962228,
+      "dual_decode_window_tok_s": [
+        202.33925651371348,
+        203.49733960110677,
+        202.30124674488343,
+        203.0335003446885,
+        201.98334994556546
+      ],
+      "dual_median_tok_s": 202.33925651371348,
+      "serial_decode_window_tok_s": [
+        169.91283743272692,
+        169.5958614070138,
+        170.16592825166643,
+        169.40635506393966,
+        169.87852912740541
+      ],
+      "serial_median_tok_s": 169.87852912740541
+    },
+    "c8": {
+      "N": 5,
+      "delta_pct": 20.31337105165023,
+      "dual_decode_window_tok_s": [
+        203.40765264934475,
+        200.7026849520578,
+        203.6032440060752,
+        200.5072926615922,
+        203.33984748415153
+      ],
+      "dual_median_tok_s": 203.33984748415153,
+      "serial_decode_window_tok_s": [
+        168.84179479550983,
+        170.50572379887316,
+        168.84046493007457,
+        170.21191365028395,
+        169.00851975700877
+      ],
+      "serial_median_tok_s": 169.00851975700877
+    }
+  }
+}

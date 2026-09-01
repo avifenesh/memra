@@ -1,0 +1,191 @@
+{
+  "aggregate": {
+    "cells": 90,
+    "decode_history_counts": {
+      "all-solo": 10,
+      "batched-from-first": 5,
+      "solo-to-batch": 75
+    },
+    "hash_counts": {
+      "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 505,
+      "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 75,
+      "d35be2307889b24ec1ba4361eb22fdc6ceabda65864df261bd66c08f37f192c1": 10
+    },
+    "requests": 590
+  },
+  "completion_classes": {
+    "all_solo": "d35be2307889b24ec1ba4361eb22fdc6ceabda65864df261bd66c08f37f192c1",
+    "golden": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de",
+    "solo_to_batch": "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f"
+  },
+  "conditions": [
+    {
+      "cells": 20,
+      "condition": "same",
+      "decode_history_counts": {
+        "solo-to-batch": 20
+      },
+      "divergent_cells_vs_golden": 20,
+      "errors": 0,
+      "first_positive_ready_counts": {
+        "1": 20
+      },
+      "golden_only_cells": 0,
+      "hash_counts": {
+        "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 140,
+        "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 20
+      },
+      "non_golden_requests": 20,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 160,
+      "requests": 160,
+      "transition_cells": 20,
+      "transition_ttft_delta_vs_peer_median_ms": {
+        "max": -91.236,
+        "median": -91.5295,
+        "min": -91.75,
+        "n": 20
+      }
+    },
+    {
+      "cells": 20,
+      "condition": "stagger",
+      "decode_history_counts": {
+        "solo-to-batch": 20
+      },
+      "divergent_cells_vs_golden": 20,
+      "errors": 0,
+      "first_positive_ready_counts": {
+        "1": 20
+      },
+      "golden_only_cells": 0,
+      "hash_counts": {
+        "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 140,
+        "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 20
+      },
+      "non_golden_requests": 20,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 160,
+      "requests": 160,
+      "transition_cells": 20,
+      "transition_ttft_delta_vs_peer_median_ms": {
+        "max": -91.275,
+        "median": -91.4325,
+        "min": -91.806,
+        "n": 20
+      }
+    },
+    {
+      "cells": 20,
+      "condition": "dedup-off",
+      "decode_history_counts": {
+        "batched-from-first": 1,
+        "solo-to-batch": 19
+      },
+      "divergent_cells_vs_golden": 19,
+      "errors": 0,
+      "first_positive_ready_counts": {
+        "1": 19,
+        "2": 1
+      },
+      "golden_only_cells": 1,
+      "hash_counts": {
+        "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 141,
+        "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 19
+      },
+      "non_golden_requests": 19,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 160,
+      "requests": 160,
+      "transition_cells": 19,
+      "transition_ttft_delta_vs_peer_median_ms": {
+        "max": -91.282,
+        "median": -91.482,
+        "min": -91.982,
+        "n": 19
+      }
+    },
+    {
+      "cells": 10,
+      "condition": "h2-c2",
+      "decode_history_counts": {
+        "batched-from-first": 1,
+        "solo-to-batch": 9
+      },
+      "divergent_cells_vs_golden": 9,
+      "errors": 0,
+      "first_positive_ready_counts": {
+        "1": 9,
+        "2": 1
+      },
+      "golden_only_cells": 1,
+      "hash_counts": {
+        "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 11,
+        "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 9
+      },
+      "non_golden_requests": 9,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 20,
+      "requests": 20,
+      "transition_cells": 9,
+      "transition_ttft_delta_vs_peer_median_ms": {
+        "max": -23.102,
+        "median": -23.215,
+        "min": -23.281,
+        "n": 9
+      }
+    },
+    {
+      "cells": 10,
+      "condition": "h2-first-late",
+      "decode_history_counts": {
+        "batched-from-first": 3,
+        "solo-to-batch": 7
+      },
+      "divergent_cells_vs_golden": 7,
+      "errors": 0,
+      "first_positive_ready_counts": {
+        "1": 7,
+        "2": 3
+      },
+      "golden_only_cells": 3,
+      "hash_counts": {
+        "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 73,
+        "7a5032f2d723e3cf9ef788fdc9d4067fe2eb909157189b666430b7997a56961f": 7
+      },
+      "non_golden_requests": 7,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 80,
+      "requests": 80,
+      "transition_cells": 7,
+      "transition_ttft_delta_vs_peer_median_ms": {
+        "max": -91.358,
+        "median": -91.456,
+        "min": -91.615,
+        "n": 7
+      }
+    },
+    {
+      "cells": 10,
+      "condition": "h2-c1",
+      "decode_history_counts": {
+        "all-solo": 10
+      },
+      "divergent_cells_vs_golden": 10,
+      "errors": 0,
+      "first_positive_ready_counts": {
+        "1": 10
+      },
+      "golden_only_cells": 0,
+      "hash_counts": {
+        "d35be2307889b24ec1ba4361eb22fdc6ceabda65864df261bd66c08f37f192c1": 10
+      },
+      "non_golden_requests": 10,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 10,
+      "requests": 10,
+      "transition_cells": 0,
+      "transition_ttft_delta_vs_peer_median_ms": null
+    }
+  ]
+}

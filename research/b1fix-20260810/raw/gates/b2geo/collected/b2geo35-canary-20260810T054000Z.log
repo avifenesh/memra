@@ -1,0 +1,53 @@
+=== step35-b2-geometry-gate tag=canary ts=20260810T054000Z model=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf draft=/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf ===
+lock acquired 2026-08-10T05:40:00Z
+0, 0 MiB
+1, 0 MiB
+--- c=1 reference (greedy) ---
+ERROR {"message": "batch step: step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) \u2014 PP-N Step35 decode is unavailable because eager B=1 is a different numeric class", "type": "server_error", "param": null, "code": "engine_error"}
+--- c=2 concurrent identical requests ---
+ERROR {"message": "batch step: step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) \u2014 PP-N Step35 decode is unavailable because eager B=1 is a different numeric class", "type": "server_error", "param": null, "code": "engine_error"}
+ERROR {"message": "batch step: step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) \u2014 PP-N Step35 decode is unavailable because eager B=1 is a different numeric class", "type": "server_error", "param": null, "code": "engine_error"}
+--- c=4 concurrent identical requests ---
+ERROR {"message": "batch step: step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) \u2014 PP-N Step35 decode is unavailable because eager B=1 is a different numeric class", "type": "server_error", "param": null, "code": "engine_error"}
+ERROR {"message": "batch step: step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) \u2014 PP-N Step35 decode is unavailable because eager B=1 is a different numeric class", "type": "server_error", "param": null, "code": "engine_error"}
+ERROR {"message": "batch step: step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) \u2014 PP-N Step35 decode is unavailable because eager B=1 is a different numeric class", "type": "server_error", "param": null, "code": "engine_error"}
+ERROR {"message": "batch step: step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) \u2014 PP-N Step35 decode is unavailable because eager B=1 is a different numeric class", "type": "server_error", "param": null, "code": "engine_error"}
+--- explicit B=1 -> B>1 transition (one early + two late) ---
+ERROR {"message": "batch step: step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) \u2014 PP-N Step35 decode is unavailable because eager B=1 is a different numeric class", "type": "server_error", "param": null, "code": "engine_error"}
+ERROR {"message": "batch step: step35 batched decode is disabled (MEMRA_STEP35_BATCH=0) \u2014 PP-N Step35 decode is unavailable because eager B=1 is a different numeric class", "type": "server_error", "param": null, "code": "engine_error"}
+transition tick trace: research/step35-batch-20260808/raw/b2geo35-transition-ticks-canary-20260810T054000Z.log
+0, 0 MiB
+1, 0 MiB
+lock released 2026-08-10T05:40:41Z
+FAIL: empty/error c=1 reference
+c2[1] == ref
+c2[2] == ref
+c4[1] == ref
+c4[2] == ref
+c4[3] == ref
+c4[4] == ref
+transition early row emitted before late admission OK
+transition transport OK
+FAIL: no ready=1 -> ready>=2 sequence in transition tick trace
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "/usr/lib/python3.12/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+FAIL: transition early != ref (ccf6ec9d6d5e0efa6543ce225ac08a9c61b8d57b44a4d350a510418576ba6172 vs e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855)
+transition late[1] == ref
+transition late[2] == ref
+FAIL: step35 decode chunk cap is '1' (< 2) — no B>1 walk was tested
+FAIL: no '[step35-batch] first B>1' line in the server log — no B>1 step35 tick ran
+server log: research/step35-batch-20260808/raw/b2geo35-server-canary-20260810T054000Z.log
+VERDICT: FAIL (5 failed assertions)
+step35-b2-geometry-gate: CANARY OK (disabling the Step35 batched trunk broke the live assertions as required)

@@ -1,0 +1,65 @@
+REQUAL2_START ts=2026-08-12T18:21:07Z pid=1074175 source=065a705d63461b2e3a7d945f824024fe0c482886
+d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
+91eac7250e0d268ac6be8cfd1ee64e346d405dc412824dab45f224e9563e1e5b  /opt/scratch/nvme/cx-requal2/harness/sellgate_replay.py
+85597a0a28ed874f440b4a966c0b43fd3e31b94fe868266de9e299decc208c34  /opt/scratch/nvme/cx-requal2/harness/workload.lock.json
+LOCK_QUEUE_CHECK ts=2026-08-12T18:21:54Z
+REQUAL2_LOCK_ACQUIRED ts=2026-08-12T18:21:54Z pid=1074175
+RUN_START label=kernel ts=2026-08-12T18:21:54Z
+RUN_DONE label=kernel rc=0 ts=2026-08-12T18:24:12Z
+RUN_START label=run-gen-q27 ts=2026-08-12T18:24:12Z
+RUN_DONE label=run-gen-q27 rc=0 ts=2026-08-12T18:24:26Z
+RUN_START label=run-gen-q35 ts=2026-08-12T18:24:26Z
+RUN_DONE label=run-gen-q35 rc=0 ts=2026-08-12T18:24:36Z
+RUN_START label=run-spec-q27 ts=2026-08-12T18:24:36Z
+RUN_DONE label=run-spec-q27 rc=0 ts=2026-08-12T18:24:47Z
+RUN_START label=run-spec-q35 ts=2026-08-12T18:24:47Z
+RUN_DONE label=run-spec-q35 rc=0 ts=2026-08-12T18:24:56Z
+MODEL_REP_START target=q27 rep=1 ts=2026-08-12T18:24:56Z
+RUN_START label=prefix-q27 ts=2026-08-12T18:25:03Z
+RUN_DONE label=prefix-q27 rc=0 ts=2026-08-12T18:25:22Z
+RUN_START label=replay-q27-r1 ts=2026-08-12T18:25:22Z
+RUN_DONE label=replay-q27-r1 rc=0 ts=2026-08-12T18:31:47Z
+MODEL_REP_COMPLETE target=q27 rep=1 verdict=PASS ts=2026-08-12T18:31:48Z
+MODEL_REP_START target=q35 rep=1 ts=2026-08-12T18:31:48Z
+RUN_START label=prefix-q35 ts=2026-08-12T18:31:55Z
+RUN_DONE label=prefix-q35 rc=0 ts=2026-08-12T18:32:02Z
+RUN_START label=replay-q35-r1 ts=2026-08-12T18:32:02Z
+RUN_DONE label=replay-q35-r1 rc=0 ts=2026-08-12T18:35:19Z
+MODEL_REP_COMPLETE target=q35 rep=1 verdict=PASS ts=2026-08-12T18:35:21Z
+MODEL_REP_START target=q35 rep=2 ts=2026-08-12T18:35:21Z
+RUN_START label=replay-q35-r2 ts=2026-08-12T18:35:28Z
+RUN_DONE label=replay-q35-r2 rc=0 ts=2026-08-12T18:38:47Z
+MODEL_REP_COMPLETE target=q35 rep=2 verdict=PASS ts=2026-08-12T18:38:49Z
+MODEL_REP_START target=q27 rep=2 ts=2026-08-12T18:38:49Z
+RUN_START label=replay-q27-r2 ts=2026-08-12T18:38:56Z
+RUN_DONE label=replay-q27-r2 rc=0 ts=2026-08-12T18:45:22Z
+MODEL_REP_COMPLETE target=q27 rep=2 verdict=PASS ts=2026-08-12T18:45:23Z
+MODEL_REP_START target=q27 rep=3 ts=2026-08-12T18:45:23Z
+RUN_START label=replay-q27-r3 ts=2026-08-12T18:45:30Z
+RUN_DONE label=replay-q27-r3 rc=0 ts=2026-08-12T18:51:56Z
+MODEL_REP_COMPLETE target=q27 rep=3 verdict=PASS ts=2026-08-12T18:51:57Z
+MODEL_REP_START target=q35 rep=3 ts=2026-08-12T18:51:57Z
+RUN_START label=replay-q35-r3 ts=2026-08-12T18:52:04Z
+RUN_DONE label=replay-q35-r3 rc=0 ts=2026-08-12T18:55:22Z
+MODEL_REP_COMPLETE target=q35 rep=3 verdict=PASS ts=2026-08-12T18:55:24Z
+MODEL_REP_START target=q35 rep=4 ts=2026-08-12T18:55:24Z
+RUN_START label=replay-q35-r4 ts=2026-08-12T18:55:31Z
+RUN_DONE label=replay-q35-r4 rc=0 ts=2026-08-12T18:58:50Z
+MODEL_REP_COMPLETE target=q35 rep=4 verdict=PASS ts=2026-08-12T18:58:52Z
+MODEL_REP_START target=q27 rep=4 ts=2026-08-12T18:58:52Z
+RUN_START label=replay-q27-r4 ts=2026-08-12T18:58:59Z
+RUN_DONE label=replay-q27-r4 rc=0 ts=2026-08-12T19:05:25Z
+MODEL_REP_COMPLETE target=q27 rep=4 verdict=PASS ts=2026-08-12T19:05:26Z
+MODEL_REP_START target=q27 rep=5 ts=2026-08-12T19:05:26Z
+RUN_START label=replay-q27-r5 ts=2026-08-12T19:05:33Z
+RUN_DONE label=replay-q27-r5 rc=0 ts=2026-08-12T19:11:59Z
+MODEL_REP_COMPLETE target=q27 rep=5 verdict=PASS ts=2026-08-12T19:12:00Z
+MODEL_REP_START target=q35 rep=5 ts=2026-08-12T19:12:00Z
+RUN_START label=replay-q35-r5 ts=2026-08-12T19:12:08Z
+RUN_DONE label=replay-q35-r5 rc=0 ts=2026-08-12T19:15:26Z
+MODEL_REP_COMPLETE target=q35 rep=5 verdict=PASS ts=2026-08-12T19:15:28Z
+REQUAL2_COMPLETE ts=2026-08-12T19:15:28Z out=/opt/scratch/nvme/cx-requal2/raw/run-coldfix-065a705d6-n5-r2
+DRIVER_EXIT rc=0 ts=2026-08-12T19:15:28Z

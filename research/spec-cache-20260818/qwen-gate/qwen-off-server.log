@@ -1,0 +1,33 @@
+[server] starting; models config = [("gate", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "gate" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "gate": 33 layers, eos=248046
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 349MB (348651520 B, derived: 2 x 174325760 B max entry for model "gate" at MEMRA_CTX=8192, requested 348651520 B; boot driver free 18173591552 B, post-reserve clamp 16562978816 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 16704 B/token, spec 18560 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18099
+[meter] admit id=cmpl-0710fd3667442e7bbc7ef8136fdde572 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=218 path=plain = 16704 B/token x ctx + 0MB fixed = 4MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=106 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 106MB at ctx 162 path=plain)
+[prefix-cache] insert probation (seed): 106 tokens, 54.3MB (resident 54.3MB / 349MB, model gate)
+[meter] admit id=cmpl-924c4e5169b418091529257d985db97f tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=218 path=plain = 16704 B/token x ctx + 103MB fixed = 107MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 106 prompt tokens; model gate)
+[prefix-cache] hit: 106 of 106 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=106 cached=106 lcp=106 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-921dd91fea41851a018aff90569d40cc tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=231 path=plain = 16704 B/token x ctx + 103MB fixed = 107MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 119 prompt tokens; model gate)
+[prefix-cache] hit: 106 of 119 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=119 cached=106 lcp=106 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

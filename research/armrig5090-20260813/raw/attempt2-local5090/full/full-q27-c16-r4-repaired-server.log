@@ -1,0 +1,120 @@
+[server] starting; models config = [("q27", "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27" <- /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q27: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 4295MB (4294967296 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q27": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q27"]
+[server] listening on http://127.0.0.1:18469
+[meter] admit id=chatcmpl-ee4c75e0f2541bb105f1ad32c9cb6bd2 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=252 path=plain = 31552 B/token x ctx + 0MB fixed = 8MB
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=eligibility-fallback prompt=172 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q27" 308MB (observed 314MB at ctx 196 path=plain)
+[prefix-cache] insert probation (seed): 172 tokens, 162.0MB (resident 162.0MB / 4295MB, model q27, ns "armrig5090-full-q27-c16-r4-repaired")
+[meter] admit id=chatcmpl-84b094214f4459d7a8981b0265cfd7b3 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-de118ed7d3cc42cc8f1bcc61457b70f6 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-e0d37593e7c723f1d97971420f3bdb85 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-f092c1d7c3391e141ec52a9c21ac9839 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-93e05eacc9f811bd85abbb6069edace5 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=252 path=plain = 31552 B/token x ctx + 308MB fixed = 316MB
+[meter] admit id=chatcmpl-bcfa2f2f2fac3e48b5efe05fdaaa2333 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-e391c6dc07a32d0a11383b12315c40e5 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=eligibility-fallback prompt=172 cached=172 lcp=172 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-96063b912530e9ead3423bdd33193817 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-87f9ec99599ece7075f10d61d10f03df tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-a3f7a94973d85a1b1f436ee2d03470a9 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-3062bd378c01a5d2075496cff1a81f08 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-9df42a0166d84cdf22634e89ffdc5372 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-5c85f7ece1489d437f904143b90a37b8 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-0241c8003d30c07ec6e95d2212903ae7 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=eligibility-fallback prompt=172 cached=172 lcp=172 active=2 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-2b30f874cee3d876861c0eea424f7580 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-07832b5e343d2437de58b5a067757b72 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=16 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-21e7e46243af991e4496fe8a64736f8e tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-7e3d2e8f443216af3da1a4c140d94997 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-4b358836d927db348e628c22c6758dc7 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-ac144ad360b5a29256f81c69466e77d3 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-c3c6a29f5999403672c67db4ffc01a8a tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-a19f56c2cb44e37547f55128e9d80b42 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-98d09daefe6634160c629dd9ad55bc34 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-fcb9923af58346a4dcd7dac053108841 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-94de05fbc865e5406b6c77ad3c441085 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-b1ea1eaabf375879bed0a901da7ce770 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-8a5c76c435c1ede202acedd9197a4026 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=748 path=plain = 31552 B/token x ctx + 308MB fixed = 331MB
+[meter] admit id=chatcmpl-8cdc55e1f6720a905b006231ede6274a tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-ef235eb45b89438b1ecd5d4f6863f7b2 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-13d7e16892cca1eb56ff96d9e55c9c02 tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=eligibility-fallback prompt=172 cached=172 lcp=172 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-50bc0c94b719eb9b6a864053b702f61f tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-f989c1798140faabbbc47012281dcbaa tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=eligibility-fallback prompt=172 cached=172 lcp=172 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=9 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 172 of 172 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="armrig5090-full-q27-c16-r4-repaired" K=0 source=concurrency prompt=172 cached=172 lcp=172 active=16 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

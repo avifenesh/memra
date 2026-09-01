@@ -1,0 +1,886 @@
+<request>
+  <url>https://arxiv.org/html/2608.05303v1</url>
+  <final_url>https://arxiv.org/html/2608.05303v1</final_url>
+  <method>GET</method>
+  <status>200</status>
+  <content_type>text/html; charset=utf-8</content_type>
+  <redirect_chain>https://arxiv.org/html/2608.05303v1</redirect_chain>
+</request>
+<body extract="markdown">
+# EdgeXpert: An Edge Device for Memory-Efficient LLM Inference with Mixture-of-Experts and Speculative Decoding
+
+Sangwoo HaAffiliation: KAIST  
+Daejeon, South Korea   
+sangwoo\_ha@kaist.ac.krHyunwoo SeoAffiliation: KAIST  
+Daejeon, South Korea   
+shw4166@kaist.ac.krYurim JoAffiliation: KAIST  
+Daejeon, South Korea   
+yurim.jo@kaist.ac.krYoungjin MoonAffiliation: KAIST  
+Daejeon, South Korea   
+yj.moon@kaist.ac.krHoi-Jun YooAffiliation: KAIST  
+Daejeon, South Korea   
+hjyoo@kaist.ac.kr
+
+###### Abstract ######
+
+On-device deployment of Large Language Models (LLMs) has become essential for personalized edge applications. A primary bottleneck is external memory access (EMA) in feed-forward network (FFN) layers. Speculative decoding and mixture-of-experts (MoE) are promising solutions. Speculative decoding reduces the number of decoding stages by generating multiple tokens per stage, and MoE minimizes per-stage cost through sparse expert activation. However, there is an incompatibility when combining these two techniques.
+
+We propose EdgeXpert, a software-hardware co-designed LLM accelerator that resolves this incompatibility. In the prefill stage, the prompt-wise expert reuse reformulates routing as prompt-level expert reuse rather than independent per-token expert selection. It identifies important tokens using a lightweight encoder, constructs a shared expert set from them, and routes less important tokens with a reduced expert budget to lower expert EMA. In the decode stage, depth-aware expert coalescing exploits the contextual similarity and mutual exclusivity of same-depth candidate tokens. Rather than loading the union of all required channels, EdgeXpert loads only salient channels and applies computational calibration to recover accuracy without additional memory access. Synthesized in Samsung 28nm technology at 800 MHz, EdgeXpert achieves up to 56.3% latency reduction and 44.1% energy reduction compared to prior works
+> [[54](#bib.bib26), [60](#bib.bib33), [18](#bib.bib47)]
+
+, while maintaining near-baseline accuracy.
+
+###### Index Terms:  ######
+
+Edge device, large language model, mixture-of-experts, speculative decoding
+
+I Introduction
+----------
+
+Large language models (LLMs)
+> [[1](#bib.bib2), [16](#bib.bib1), [51](#bib.bib3)]
+
+ are being adopted across a wide range of applications, and there is growing interest in deploying them directly on edge devices for personalized, low-latency experiences. However, on-device inference is constrained by memory bandwidth and capacity. Edge LLMs typically operate in single-batch, autoregressive inference, which requires all model parameters to be loaded from external memory for each output token. This characteristic incurs substantial external memory access (EMA) latency and energy, becoming a primary cause of system bottlenecks. As shown in Figure [1](#S1.F1), the EMA of the weight parameters constitutes the largest overhead. Specifically, the weight EMA in the feed-forward network (FFN) layers is the most dominant factor, and this overhead grows linearly with the number of decoding stages. While recent works have focused on mitigating KV cache overhead in long-context scenarios
+> [[20](#bib.bib5), [65](#bib.bib4)]
+
+, on-device contexts are typically short (tens to a thousand tokens)
+> [[25](#bib.bib30), [56](#bib.bib36)]
+
+, making KV cache a less significant bottleneck. Consequently, weight EMA emerges as the primary overhead for on-device LLM. For a conventional autoregressive decoding LLM, the weight EMA per token is defined by the total number of weight parameters (𝐏total\\mathbf{P\_{\\text{total}}}) that must be accessed from external memory per output token, as expressed in Equation ([1](#S1.E1)). Previous works
+> [[27](#bib.bib7), [46](#bib.bib6), [25](#bib.bib30)]
+
+ have focused on reducing 𝐏total\\mathbf{P\_{\\text{total}}} by employing various model compression techniques, such as quantization, pruning, and tensor decomposition.
+
+|E​M​AW, Conventional=PtotalEMA\_{\\text{W, Conventional}}=P\_{\\text{total}}|(1)|
+|----------------------------------------------------------------------------|---|
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="250" id="S1.F1.g1" src="2608.05303v1/figures/fig_1.png" width="452">Fig. 1: Overall LLM system breakdown in edge devices.
+
+The substantial computation overhead associated with FFN layers has driven the exploration of more efficient models. The mixture-of-experts (MoE) models
+> [[15](#bib.bib31), [57](#bib.bib32), [10](#bib.bib8), [12](#bib.bib10), [24](#bib.bib9), [68](#bib.bib11)]
+
+ have emerged as a promising approach to mitigate this challenge. In MoE-based transformers, a single large FFN layer is replaced by an MoE layer, which consists of multiple smaller expert networks. During inference, instead of executing the entire set of parameters for an FFN layer, a router selects only a few relevant experts for each input token. This selective activation reduces the computation cost while achieving superior model performance. Applying MoE to edge devices
+> [[60](#bib.bib33)]
+
+ directly translates to a reduction in EMA cost while reducing the overall computation. The weight EMA per token in the MoE model is substantially reduced compared to the conventional LLM, as shown in Equation ([2](#S1.E2)). 𝐒\\mathbf{S} represents the number of deactivated experts and 𝐏expert\\mathbf{P\_{\\text{expert}}} denotes the weight parameters of a single expert. As demonstrated by EdgeMoE
+> [[60](#bib.bib33)]
+
+ and SMoLPU
+> [[18](#bib.bib47)]
+
+, MoE models are well-suited for edge devices because they substantially reduce the inference cost of FFN layers.
+
+|E​M​AW, MoE=Ptotal−S×PexpertEMA\_{\\text{W, MoE}}=P\_{\\text{total}}-S\\times P\_{\\text{expert}}|(2)|
+|-------------------------------------------------------------------------------------------------|---|
+
+Recent LLMs adopt speculative decoding (SD)
+> [[4](#bib.bib15), [53](#bib.bib21), [29](#bib.bib22), [6](#bib.bib23), [13](#bib.bib17), [28](#bib.bib14), [31](#bib.bib16), [14](#bib.bib48)]
+
+ to reduce the repeated loading of model parameters. This is typically achieved by employing a smaller, low-cost draft model to generate multiple candidate tokens, which are then verified in a single pass by the larger target LLM model. The target model accepts only the verified tokens, which are denoted by accepted tokens. Such approaches accelerate decoding stages by producing multiple tokens for each stage. The application of speculative decoding is particularly beneficial for edge LLM devices
+> [[55](#bib.bib19), [61](#bib.bib34), [18](#bib.bib47)]
+
+. Speculative decoding can significantly lower the EMA cost by reducing the frequent loading of large target model parameters. The weight EMA per token with speculative decoding is shown in Equation ([3](#S1.E3)). 𝐍A\\mathbf{N\_{\\text{A}}} represents the average number of accepted tokens per stage (acceptance length). EAGLE-3
+> [[31](#bib.bib16)]
+
+ generates an average of five tokens per stage on the DeepSeek-R1 8B model
+> [[17](#bib.bib18)]
+
+, thereby reducing the model parameter load by approximately five times. Therefore, integrating speculative decoding with MoE models presents a compelling strategy for edge LLMs. This combination offers a twofold advantage: speculative decoding reduces the total number of decoding stages, while MoE reduces the EMA overhead of FFN layers within each stage.
+
+|E​M​AW, SD≈Ptotal/NAEMA\_{\\text{W, SD}}\\approx P\_{\\text{total}}/N\_{\\text{A}}|(3)|
+|----------------------------------------------------------------------------------|---|
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="230" id="S1.F2.sf1.g1" src="2608.05303v1/figures/fig_2a.png" width="476">(a)
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="232" id="S1.F2.sf2.g1" src="2608.05303v1/figures/fig_2b.png" width="476">(b)
+
+Fig. 2: (a) Incompatibility of speculative decoding and MoE.
+(b) Overall system breakdown.
+
+However, naively applying both speculative decoding and MoE directly to edge devices incurs increased EMA overhead in MoE layers. Attaching EAGLE-3
+> [[31](#bib.bib16)]
+
+ to Qwen3
+> [[57](#bib.bib32)]
+
+ yields an average of 4.3 tokens per stage. Nonetheless, as shown in Figure [2](#S1.F2)([2(a)](#S1.F2.sf1)), each stage activates 52.1 experts, which increases EMA and computational cost by 6.5×. When combining two techniques, the weight EMA per token is approximated by Equation ([4](#S1.E4)). Although increasing 𝐍A\\mathbf{N\_{\\text{A}}} and 𝐒\\mathbf{S} is beneficial in minimizing EMA, these two factors present a significant trade-off. In speculative decoding, generating more candidate tokens increases the chance of accepted tokens (𝐍A\\mathbf{N\_{\\text{A}}}) and thus speeds up inference. In contrast, in an MoE model, a larger number of candidate tokens activates more experts per layer, which reduces 𝐒\\mathbf{S} and lowers inference speed. Consequently, as noted in
+> [[30](#bib.bib20), [22](#bib.bib35)]
+
+, speculative decoding and MoE are incompatible.
+
+|E​M​AW, MoE & SD≈(Ptotal−S×Pexpert)/NAEMA\_{\\text{W, MoE \\& SD}}\\approx(P\_{\\text{total}}-S\\times P\_{\\text{expert}})/N\_{\\text{A}}|(4)|
+|------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+Figure [2](#S1.F2)([2(b)](#S1.F2.sf2)) presents the system energy breakdown when speculative decoding is applied to the MoE model. In the ideal case, speculative decoding (ideal SD) reduces the total energy by amortizing the energy of the target model over multiple accepted tokens. However, the actual result (actual SD) shows the opposite trend. While the EMA of the attention layer decreases, that of the MoE layer increases due to the incompatibility between speculative decoding and MoE. The draft model further introduces additional EMA and computation overhead, increasing the total energy consumption by 24.3% compared to autoregressive decoding (AU). Since the draft model consists of only a single layer, the target model dominates the overall overhead. Speculative decoding increases computation by processing multiple candidate tokens simultaneously. However, the acceptance length (𝐍A\\mathbf{N\_{\\text{A}}}) saturates as the number of candidate tokens grows, meaning that arbitrarily increasing candidate tokens does not improve overall efficiency. Therefore, at the optimal number of candidate tokens, the EMA energy of the MoE layer remains the dominant bottleneck. The optimal number of candidate tokens will be discussed in Section [II-B](#S2.SS2). As shown in the detailed energy breakdown, the MoE layer is the dominant bottleneck in both stages. In the prefill stage, many input tokens in the user prompt are processed together, activating a large number of experts. In the decode stage, the incompatibility between MoE and speculative decoding increases expert activation. As a result, the EMA of the MoE layer dominates the overall energy. This result does not imply that MoE and speculative decoding should be used separately. Instead, it shows that their memory incompatibility must be explicitly addressed. If this incompatibility is resolved, MoE and speculative decoding provide complementary benefits: MoE reduces the active FFN weights per decode stage, while speculative decoding reduces the number of decode stages.
+
+To address the above EMA overhead of the MoE layer, we propose EdgeXpert, which combines software and hardware optimizations for memory-efficient LLM inference in edge devices. Experiments on speculative decoding
+> [[31](#bib.bib16)]
+
+ and MoE models
+> [[57](#bib.bib32), [32](#bib.bib12), [41](#bib.bib13), [15](#bib.bib31)]
+
+ at various benchmarks show that EdgeXpert achieves up to 56.3% latency reduction and 44.1% energy reduction compared to prior works
+> [[54](#bib.bib26), [60](#bib.bib33), [18](#bib.bib47)]
+
+.
+
+Key contributions of this work are as follows:
+
+* •
+
+  Prefill Stage Optimization: We introduce prompt-wise expert reuse, which treats prefill routing not as independent per-token expert selection, but as prompt-level expert reuse using a shared expert set to reduce EMA while preserving routing quality. EdgeXpert first identifies important tokens using a lightweight encoder, builds the shared expert set from them, and then applies budgeted expert routing to less important tokens. Furthermore, the partitioning network supports variable-length input tokens with negligible latency overhead. Together, these techniques substantially reduce the EMA of MoE layers in the prefill stage.
+
+* •
+
+  Decode Stage Optimization: We propose a depth-aware expert coalescing that reduces EMA during the decode stage. Unlike existing expert pruning, our approach leverages the depth-wise mutual exclusivity inherent to candidate tokens to load only the necessary expert channels. This achieves EMA reductions that are difficult to achieve through existing pruning strategies alone.
+
+II Background
+----------
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="119" id="S2.F3.g1" src="2608.05303v1/figures/fig_3.png" width="452">Fig. 3: Operational flow of MoE.
+
+### II-AMixture-of-Experts ###
+
+The MoE model achieves high capacity with minimal computation by routing each input token to a small subset of specialized experts rather than executing all experts. In a typical MoE layer (Figure [3](#S2.F3)), a router computes routing scores, indicating the selection probability of each expert. The input selects top-k experts and then performs the GEMV operation with the selected experts. Each expert’s output is scaled by its routing score and aggregated into the final result.
+
+Prior MoE works have focused on reducing expert loading latency.
+> [[49](#bib.bib58), [3](#bib.bib27)]
+
+ optimize the routing policy of the router to increase the expert hit rate and thereby lower loading latency. However, these works are infeasible on edge devices due to stringent on-chip memory capacity constraints
+> [[27](#bib.bib7), [46](#bib.bib6), [25](#bib.bib30)]
+
+, where the available cache size is typically on the order of a few megabytes (MB). For instance, a single expert in DeepSeek-V2-Lite
+> [[32](#bib.bib12)]
+
+ occupies 4 MB at 4-bit precision, making multi-expert caching and scheduling impractical. Therefore, each expert must be loaded sequentially, and all routed tokens must be computed in parallel before loading the next expert.
+
+Several MoE hardware studies 
+> [[62](#bib.bib28), [43](#bib.bib29)]
+
+ improve the efficiency of expert execution under unbalanced routing. Duplex 
+> [[62](#bib.bib28)]
+
+ uses a heterogeneous xPU-PIM architecture to accelerate memory-bound MoE operations, reducing the cost of memory access through PIM offloading. Space-Mate 
+> [[43](#bib.bib29)]
+
+ improves PE utilization by simultaneously executing high-reusability and low-reusability experts. These schemes improve how activated experts are served, but they do not reduce the number of experts activated per request.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="225" id="S2.F4.sf1.g1" src="2608.05303v1/figures/fig_4a.png" width="476">(a)
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="266" id="S2.F4.sf2.g1" src="2608.05303v1/figures/fig_4b.png" width="476">(b)
+
+Fig. 4: (a) Operational flow of speculative decoding.
+(b) Comparison of various speculative decoding frameworks.
+
+### II-BSpeculative Decoding ###
+
+Speculative decoding was proposed to overcome the limitations of autoregressive decoding. By using a small draft model to speculate future tokens and verifying them in parallel with the target model, overall decoding latency is reduced while preserving output quality.
+
+Recent speculative decoding approaches fall into three categories. First, the big-little model
+> [[28](#bib.bib14)]
+
+ is the most fundamental approach. A small draft model generates multiple candidate tokens with little overhead. Candidate tokens are then fed in parallel into the larger target model for verification. C-Transformer
+> [[27](#bib.bib7)]
+
+ applies this scheme on edge devices, improving energy efficiency. However, to maintain a high acceptance length (speculation accuracy), the draft model must be large enough (i.e., above a certain parameter count), making it impractical for edge devices.
+
+Second, quantization-based speculative decoding
+> [[14](#bib.bib48)]
+
+ uses a low-bit quantized model as the draft model, while a higher-precision model is used for verification. However, on resource-constrained edge devices, the target model is already deployed at low precision
+> [[25](#bib.bib30), [27](#bib.bib7), [18](#bib.bib47)]
+
+. In this setting, it is difficult to further reduce the precision of the draft model because the draft model has to use even lower precision than the already quantized target model. For example, if the target model is quantized to 4-bit, even an aggressively quantized 2-bit draft model still has half the footprint of the target model. As a result, the draft model still incurs a large EMA, which limits the benefit on edge devices.
+
+Third, self-speculative decoding
+> [[4](#bib.bib15), [30](#bib.bib20), [31](#bib.bib16)]
+
+ attaches a lightweight transformer block to the tail of the target model itself as a draft model. As illustrated in Figure [4](#S2.F4)([4(a)](#S2.F4.sf1)), input tokens first pass through the target model. Subsequently, the draft model runs iteratively to generate multiple candidate tokens, which are then structured into a token tree. This tree serves as the input for the next verification pass through the target model. Because only one transformer block is used iteratively for speculation, the cost remains low even on edge devices. Moreover, the speculative block is fine-tuned to align its parameters with the target model, yielding a high acceptance length. Thus, self-speculative decoding is preferable for edge devices.
+
+Figure [4](#S2.F4)([4(b)](#S2.F4.sf2)) compares the three approaches in terms of acceptance length and the EMA energy under the same verification model. Normalized EMA energy is reported per accepted token. It includes the repeated draft-model EMA required to generate all candidate tokens and the target-model EMA for one verification pass, normalized by the resulting acceptance length. For a fair comparison, the same draft model size is used across approaches. The draft model of the quantization-based approach cannot be further compressed and therefore requires a larger draft model than the other two. The big-little approach achieves a low acceptance length due to the limited capacity of its small draft model. The quantization-based approach has a very short acceptance length due to 2-bit quantization. Although using a 3-bit draft model can increase the acceptance length, the draft model becomes too large. The EMA of the 2-bit draft model alone exceeds the combined EMA of the target and draft models in the other approaches, resulting in the highest total EMA ratio. Self-speculative decoding achieves a competitive acceptance length with a low EMA, making it the most suitable approach for edge devices. Based on this analysis, the optimal number of candidate tokens is set to 64.
+
+Specialized hardware for speculative decoding has emerged. SpecInfer
+> [[38](#bib.bib25)]
+
+ introduces tree attention for parallel verification. EdgeLLM 
+> [[55](#bib.bib19)]
+
+ dynamically builds the token tree and continues drafting during verification. However, these works focused on improving acceptance length or reducing verification latency, while overlooking EMA overhead in edge scenarios.
+
+TABLE I: Comparison with speculative decoding works  
+for MoE models
+
+\+: low, ++: medium, +++: high
+
+### II-CRelated Works ###
+
+Applying speculative decoding to MoE models yields suboptimal performance gains. To address this, existing pruning schemes can be leveraged to reduce redundant parameters in this system.
+
+Candidate Token Pruning. During speculative decoding, candidate tokens that are incorrectly speculated are discarded after verification by the target model. The computation spent on these discarded tokens is entirely redundant. Candidate token pruning
+> [[21](#bib.bib49), [50](#bib.bib50)]
+
+ removes low-confidence candidates before verification, but its benefit decreases as speculative decoding becomes more accurate. In our Qwen3 
+> [[57](#bib.bib32)]
+
+ evaluation, early frameworks such as Medusa 
+> [[4](#bib.bib15)]
+
+ allow pruning 74.6% candidate tokens at 20% 𝐍𝐀\\mathbf{N\_{A}} degradation. However, recent frameworks 
+> [[31](#bib.bib16), [7](#bib.bib24)]
+
+ achieve substantially higher speculation accuracy. Only 13.5% of candidate tokens in EAGLE-3 can be pruned at the same degradation point. Therefore, candidate token pruning yields diminishing returns and is no longer an effective strategy for reducing inference overhead.
+
+Expert Pruning. Recent works
+> [[35](#bib.bib51), [58](#bib.bib52), [33](#bib.bib53), [54](#bib.bib26)]
+
+ have shown that not all activated experts contribute meaningfully to model output. They prune less important experts or specific channels within experts to reduce overhead. More recently, SMoLPU
+> [[18](#bib.bib47)]
+
+ presents a state-of-the-art pruning framework for MoE-based speculative decoding and serves as a natural baseline for our study. First, it predicts and prunes experts that are activated exclusively by tokens expected to be discarded after verification. Second, it performs fine-grained channel pruning within each activated expert using a dynamic policy based on the channel importance of input tokens. This coarse-to-fine pruning removes a substantial number of parameters with minimal accuracy loss. Because SMoLPU already demonstrates effective pruning in a system that combines MoE and speculative decoding, we adopt it as the baseline pruning scheme. However, SMoLPU has two fundamental limitations that leave the primary bottleneck unresolved. First, its pruning mainly reduces computation rather than EMA. Second, it focuses only on the decode stage and does not consider the prefill stage, where multiple input tokens (user prompt) can simultaneously activate many experts. EdgeXpert adopts the coarse-to-fine pruning of SMoLPU as a baseline and introduces EMA-aware optimizations across both stages to address these unresolved bottlenecks.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="236" id="S2.F5.g1" src="2608.05303v1/figures/fig_5.png" width="452">Fig. 5: Contextual similarity and expert overlap ratio.<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="120" id="S2.F6.g1" src="2608.05303v1/figures/fig_6.png" width="476">Fig. 6: Overall architecture.
+
+MoE with speculative decoding. Recent works 
+> [[22](#bib.bib35), [67](#bib.bib64), [36](#bib.bib63), [18](#bib.bib47)]
+
+ have studied speculative decoding for MoE models. Table [I](#S2.T1) summarizes their optimization coverage. MoESD 
+> [[22](#bib.bib35)]
+
+ analyzes the interaction between MoE and speculative decoding on GPUs and searches for an efficient operating point by adjusting parameters such as batch size and candidate-token configuration. It does not directly reduce the expert EMA introduced by candidate tokens. SS-MoE 
+> [[67](#bib.bib64)]
+
+ constructs the draft path from the same target MoE model by activating only the top-1 routed expert, instead of using a separate draft model. However, this self-draft path remains costly for edge deployment. For DeepSeek-V2-Lite, top-1 expert routing still activates about 1.3B parameters, while the EAGLE-3 draft block used in EdgeXpert contains only 351M parameters 
+> [[31](#bib.bib16)]
+
+. Moreover, SS-MoE mainly reduces CPU-GPU expert transfers, rather than reducing the expert EMA. MoE-Spec 
+> [[36](#bib.bib63)]
+
+ adopts EAGLE-3 and reduces verification overhead through expert budgeting. This effectively limits expert-level EMA during decode, but its budgeted routing still does not address intra-expert EMA. SMoLPU 
+> [[18](#bib.bib47)]
+
+ applies coarse-to-fine pruning during the decode stage. However, its fine-grained pruning mainly reduces computation and does not fully translate into EMA reduction. In contrast, EdgeXpert addresses both prefill expert EMA and decode intra-expert EMA, providing broader coverage for edge deployment.
+
+III Motivation
+----------
+
+### III-ACLS Token as a Global Context Summarizer ###
+
+The CLS token is a special token attached to the input sequence in encoder-based transformers such as BERT
+> [[11](#bib.bib54)]
+
+. It is trained to summarize the entire input into a single representation. In vision transformers
+> [[5](#bib.bib55)]
+
+, the CLS token captures semantically important regions, and in retrieval-augmented generation (RAG)
+> [[26](#bib.bib56)]
+
+, the CLS token embedding represents the entire document for similarity search. This property makes the CLS token an effective lightweight estimator of token importance. Recent VLM works such as FasterVLM 
+> [[64](#bib.bib66)]
+
+, HiPrune 
+> [[34](#bib.bib67)]
+
+, and ATP-LLaVA 
+> [[59](#bib.bib68)]
+
+ also exploit CLS tokens or attention scores to identify important visual tokens for pruning. These works use token importance to remove less important visual tokens and shorten the input sequence. Unlike these works, EdgeXpert uses CLS tokens to estimate the importance of input tokens and determine which tokens should create or reuse experts to reduce expert EMA.
+
+### III-BCharacteristics of Candidate Tokens ###
+
+Depth-wise Contextual Similarity.Figure [5](#S2.F5) illustrates the contextual similarity among candidate tokens generated at the same depth. Candidate tokens are commonly represented as a token tree. Tokens at the same depth exhibit a high probability of sharing grammatical or contextual characteristics. This similarity is validated by examining the overlap ratio of activated experts. Our analysis shows that for tokens at the same depth, the co-activation ratio for three or more experts among eight experts is up to 88.4%. This observation is consistent with Figure [2](#S1.F2)([2(b)](#S1.F2.sf2)). Speculative decoding increases the total number of activated experts by verifying multiple candidate tokens, but many of these activations overlap within the same depth group. Thus, MoE-based speculative decoding increases the overall expert activations while also creating depth-wise expert reuse opportunities. EdgeXpert exploits this overlap to reduce redundant expert EMA during verification.
+
+Depth-wise Mutual Exclusivity.In addition to contextual similarity, candidate tokens at the same depth also demonstrate mutual exclusivity. Within a single depth, only one token is accepted during verification, and other tokens are discarded. This characteristic presents an opportunity for hardware-efficient computation. It enables precise computations for the token likely to be accepted, while using approximate computations for the remaining candidates.
+
+IV EdgeXpert: An Edge Device for LLM Inference
+----------
+
+Prior work
+> [[18](#bib.bib47)]
+
+ on MoE-based speculative decoding has demonstrated that redundant experts can be effectively pruned through a coarse-to-fine strategy during the decode stage. We adopt this pruning scheme as our baseline. However, the dominant bottleneck on edge devices is EMA rather than computation. Pruning introduces sparsity and reduces computation, but it does not proportionally reduce EMA. We propose EdgeXpert to address this limitation by minimizing EMA across both prefill and decode stages.
+
+However, without hardware-level support, sparsity does not directly translate into EMA reduction. Since EdgeXpert dynamically determines the required experts and channels from the input tokens at runtime, the memory system must support on-the-fly fine-grained expert/channel loading before unnecessary data is fetched. This requirement is especially important in the decode stage, where the channel set to be loaded is dynamically constructed from same-depth candidate tokens. Therefore, EdgeXpert adopts a SW-HW co-design that skips unnecessary expert/channel data before EMA occurs. EdgeXpert achieves higher performance than prior software-centric works 
+> [[54](#bib.bib26), [60](#bib.bib33)]
+
+, which determine pruning masks or bit-precision offline using a validation set before inference.
+
+### IV-AOverall Architecture ###
+
+Figure [6](#S2.F6) shows the overall architecture. EdgeXpert comprises an instruction decoder, a top controller, a 512 KB global SRAM, a SIMD unit, and eight clusters. The PE array contains 8K MACs, comparable to recent edge LLM accelerators 
+> [[18](#bib.bib47), [25](#bib.bib30), [27](#bib.bib7)]
+
+, while the 512 KB SRAM is sufficient to buffer input activations, routing metadata, masks, and streamed weight blocks for the proposed dataflow. Since edge accelerators typically provide only a few MB of on-chip SRAM and each MoE expert requires several MB, caching and reusing multiple experts on-chip is impractical. Thus, EdgeXpert uses 512 KB SRAM because increasing the SRAM capacity would add area and power while still being insufficient to keep multiple experts resident on chip. Each expert is fetched once from external memory, kept on-chip until all routed tokens are processed, and then replaced by the next expert. The datapath adapts to the distinct characteristics of the prefill and decode stages. In the prefill stage, each expert is reused across many tokens, resulting in high operational intensity (Op/B). EdgeXpert exploits this high reusability through a broadcast NoC that distributes the same weight to all clusters simultaneously. In contrast, in the decode stage, different output channels are assigned to each cluster. Experts are loaded from external memory along the output-channel dimension. Since channel pruning is applied along the input-channel dimension, this loading order preserves contiguous memory accesses and avoids fragmented DRAM transactions.
+
+Fig. 7: (a) Example of shared expert reuse.
+(b) Operation flow in the prefill stage.
+(c) Example to determine optimal kk and nn.
+(d) Analysis of expert reuse and comparison of importance estimation.
+
+The top controller orchestrates prompt-wise expert reuse and expert channel coalescing. The prompt-wise expert reuse unit manages the routing of the prefill stage. It contains a partitioning network, a group FIFO, a union unit, and a shared expert set register. The partitioning network uses ternary comparators and a token reordering unit to classify input tokens into importance groups based on CLS attention. The group FIFO and the union unit then form and update the shared expert set and generate routing decisions for each token group. The depth-aware coalescing unit operates during the decode stage to reduce EMA when loading pruned experts. The channel coalescing unit evaluates per-channel importance and masks channels. The compute mask update unit adjusts channel masks to recover the accuracy drop caused by coalescing.
+
+The cluster is composed of a quantization/dequantization unit, a workload allocator, a 12KB input memory (IAMEM\\mathrm{IAMEM}), and four cores. The workload allocator improves utilization under imbalanced data reuse (Op/B) by allocating input channels to each core. Each core consists of an input buffer, a 12KB weight memory (WMEM\\mathrm{WMEM}), a 4KB weight scaling factor memory (SFW​MEM\\mathrm{SF}\_{\\mathrm{W}}\\mathrm{MEM}), eight PE lines, an aggregation unit, and the nonzero channel index register, which enables efficient input channel skipping. Furthermore, each PE line comprises 32 PEs and supports sparse computation via channel-skipping operations. Each PE line is mapped along the output channel dimension (OCH), where weights are unicast to individual PEs while a single input is broadcast across all 32 PEs within the line. Across PE lines, the mapping follows the input channel (ICH) dimension, where only non-zero inputs are fed to the respective PE lines, effectively skipping computation for pruned channels. The 32 partial products from each PE line are forwarded to adder trees. Adder tree outputs are then accumulated in the aggregation unit.
+
+Algorithm 1 Prompt-wise Expert Reuse Policy
+
+1:Input:
+
+2:𝒯m​a​j,𝒯m​i​n,𝒯t​r​i\\mathcal{T}^{maj},\\mathcal{T}^{min},\\mathcal{T}^{tri}: Major, minor, and trivial token sets.
+
+3:Im​a​j,Im​i​n,It​r​iI^{maj},I^{min},I^{tri}: Top-km​a​jk\_{maj}, Top-km​i​nk\_{min}, Top-kt​r​ik\_{tri} expert indices.
+
+4:nm​a​j,nm​i​n,nt​r​in\_{maj},n\_{min},n\_{tri}: number of routed experts of 𝒯m​a​j,𝒯m​i​n,𝒯t​r​i\\mathcal{T}^{maj},\\mathcal{T}^{min},\\mathcal{T}^{tri}.
+
+5:Output:
+
+6:ℰ\\mathcal{E}: Shared expert set.
+
+7:ℛm​a​j,ℛm​i​n,ℛt​r​i\\mathcal{R}^{maj},\\mathcal{R}^{min},\\mathcal{R}^{tri}: Final expert indices for tokens.
+
+8:
+
+9:// 1. Major token routing
+
+10:for each t∈𝒯majt\\in\\mathcal{T}^{\\mathrm{maj}}do
+
+11:ℛtm​a​j←Itm​a​j[1:nm​a​j]\\mathcal{R}\_{t}^{maj}\\leftarrow I\_{t}^{maj}[1{:}n\_{maj}]
+
+12:ℰ←ℰ∪ℛtm​a​j\\mathcal{E}\\leftarrow\\mathcal{E}\\cup\\mathcal{R}\_{t}^{maj}
+
+13:endfor
+
+14:
+
+15:// 2. Minor token routing
+
+16:for each t∈𝒯mint\\in\\mathcal{T}^{\\mathrm{min}}do
+
+17:ℛtm​i​n←Itm​i​n​[1]\\mathcal{R}\_{t}^{min}\\leftarrow I\_{t}^{min}[1]
+
+18:ℛtm​i​n←ℛtm​i​n∪reuse\_route(Itm​i​n[2:km​i​n],ℰ,nm​i​n−1)\\mathcal{R}\_{t}^{min}\\leftarrow\\mathcal{R}\_{t}^{min}\\cup reuse\\\_route(I\_{t}^{min}[2{:}k\_{min}],\\mathcal{E},n\_{min}-1)
+
+19:if|ℛtm​i​n|\<nm​i​n|\\mathcal{R}^{min}\_{t}|\<n\_{min}then
+
+20:ℛtm​i​n←ℛtm​i​n∪t​o​p​\_​k​\_​r​o​u​t​e​(Itm​i​n,ℛtm​i​n,nm​i​n−|ℛtm​i​n|)\\mathcal{R}\_{t}^{min}\\leftarrow\\mathcal{R}\_{t}^{min}\\cup top\\\_k\\\_route(I\_{t}^{min},\\mathcal{R}\_{t}^{min},n\_{min}-|\\mathcal{R}^{min}\_{t}|)
+
+21:endif
+
+22:ℰ←ℰ∪ℛtm​i​n\\mathcal{E}\\leftarrow\\mathcal{E}\\cup\\mathcal{R}\_{t}^{min}
+
+23:endfor
+
+24:
+
+25:// 3. Trivial token routing
+
+26:for each t∈𝒯trit\\in\\mathcal{T}^{\\mathrm{tri}}do
+
+27:ℛtt​r​i←Itt​r​i​[1]\\mathcal{R}\_{t}^{tri}\\leftarrow I\_{t}^{tri}[1]
+
+28:ℛtt​r​i←ℛtt​r​i∪reuse\_route(Itt​r​i[2:kt​r​i],ℰ,nt​r​i−1)\\mathcal{R}\_{t}^{tri}\\leftarrow\\mathcal{R}\_{t}^{tri}\\cup reuse\\\_route(I\_{t}^{tri}[2{:}k\_{tri}],\\mathcal{E},n\_{tri}-1)
+
+29:if|ℛtt​r​i|\<nt​r​i|\\mathcal{R}^{tri}\_{t}|\<n\_{tri}then
+
+30:ℛtt​r​i←ℛtt​r​i∪t​o​p​\_​k​\_​r​o​u​t​e​(Itt​r​i,ℛtt​r​i,nt​r​i−|ℛtt​r​i|)\\mathcal{R}\_{t}^{tri}\\leftarrow\\mathcal{R}\_{t}^{tri}\\cup top\\\_k\\\_route(I\_{t}^{tri},\\mathcal{R}\_{t}^{tri},n\_{tri}-|\\mathcal{R}^{tri}\_{t}|)
+
+31:endif
+
+32:endfor
+
+33:
+
+34:returnℰ,ℛm​a​j,ℛm​i​n,ℛt​r​i\\mathcal{E},\\mathcal{R}^{maj},\\mathcal{R}^{min},\\mathcal{R}^{tri}
+
+35:
+
+36:functionr​e​u​s​e​\_​r​o​u​t​ereuse\\\_route(I,ℰ,mI,\\mathcal{E},m) // Reuse shared expert set
+
+37:return top-mm experts in I∩ℰI\\cap\\mathcal{E}
+
+38:endfunction
+
+39:
+
+40:functiont​o​p​\_​k​\_​r​o​u​t​etop\\\_k\\\_route(I,ℛ,mI,\\mathcal{R},m) // Fill remaining experts
+
+41:return top-mm experts from I∖ℛI\\setminus\\mathcal{R}
+
+42:endfunction
+
+### IV-BPrompt-wise Expert Reuse ###
+
+In the prefill stage, routing every token independently activates too many experts and increases expert EMA. To address this inefficiency, we propose prompt-wise expert reuse, a prefill stage routing policy that reduces EMA by allowing less important tokens to reuse experts already activated by more important tokens. Figure [7](#S4.F7)([7(a)](#S4.F7.sf1)) illustrates the key intuition. Important tokens (major) establish a shared expert set, while less important tokens (minor/trivial) preferentially reuse that set instead of activating new experts.
+
+EdgeXpert first uses a lightweight encoder 
+> [[47](#bib.bib57)]
+
+ to identify important tokens. The encoder introduces only negligible overhead, while substantially reducing expert EMA. As shown in Figure [7](#S4.F7)([7(b)](#S4.F7.sf2)), EdgeXpert uses the CLS attention weights produced by the lightweight encoder to partition tokens into major, minor, and trivial groups and then applies different routing budgets to each group.
+
+Algorithm [1](#alg1) describes the budgeted expert routing policy for prompt-level expert reuse. For each token group, EdgeXpert considers the top-kk candidate experts and selects nn routed experts. Major tokens use the original routing budget, i.e., km​a​jk\_{maj} and nm​a​jn\_{maj} follow the original router configuration, and their routed experts form shared expert set ℰ\\mathcal{E}. Minor and trivial tokens use a larger candidate range but a smaller routing budget, i.e., kt​r​i\>km​i​n\>km​a​jk\_{tri}\>k\_{min}\>k\_{maj} = nm​a​j\>nm​i​n\>nt​r​in\_{maj}\>n\_{min}\>n\_{tri}, to increase reuse while reducing newly activated experts. For minor tokens, EdgeXpert preserves the top-1 expert to keep the dominant routing path. The remaining nm​i​n−1n\_{min}-1 slots are first filled by reuse\_route using experts in ℰ\\mathcal{E}. If they are insufficient, top\_k\_route fills the remaining slots with unselected experts in descending score order. The selected minor-token experts are then merged into ℰ\\mathcal{E}. Trivial tokens follow the same rule with the updated ℰ\\mathcal{E} and the more aggressive budget (kt​r​i,nt​r​i)(k\_{tri},n\_{tri}).
+
+We determine (k,n)(k,n) by searching for a Pareto point between the MoE-layer error (MSE¯\\overline{\\mathrm{MSE}}) and the activated expert count (REMAR\_{\\mathrm{EMA}}). For each (k,n)(k,n), we compare the final MoE-layer output of the proposed routing policy with that of the original routing, and measure the activated expert count (Equation ([5](#S4.E5))).
+
+|MSE¯​(k,n)\\displaystyle\\overline{\\mathrm{MSE}}(k,n)|\=𝔼ℓ,t​[‖hℓ,tori−hℓ,tk,n‖22‖hℓ,tori‖22],\\displaystyle=\\mathbb{E}\_{\\ell,t}\\!\\left[\\frac{\\|h\_{\\ell,t}^{\\mathrm{ori}}-h\_{\\ell,t}^{k,n}\\|\_{2}^{2}}{\\|h\_{\\ell,t}^{\\mathrm{ori}}\\|\_{2}^{2}}\\right],|(5)|
+|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+|   REMA​(k,n)\\displaystyle R\_{\\mathrm{EMA}}(k,n)   |                                              \=∑ℓ|Eℓk,n|∑ℓ|Eℓori|\\displaystyle=\\frac{\\sum\_{\\ell}|E\_{\\ell}^{k,n}|}{\\sum\_{\\ell}|E\_{\\ell}^{\\mathrm{ori}}|}                                              |   |
+
+ℓ\\ell and tt denote the layer and token indices, respectively. hℓ,torih\_{\\ell,t}^{\\mathrm{ori}} and hℓ,tk,nh\_{\\ell,t}^{k,n} are the MoE-layer outputs of the original routing and the proposed (k,n)(k,n) routing, respectively. Eℓk,nE\_{\\ell}^{k,n} is the activated expert-set size per layer. During the search, we iteratively adjust kk and nn. kk is increased to expand reusable expert candidates, and nn is decreased to reduce activated experts. At each step, we select the elbow point between MSE¯\\overline{\\mathrm{MSE}} and REMAR\_{\\mathrm{EMA}}. As shown in Figure [7](#S4.F7)([7(c)](#S4.F7.sf3)), for trivial tokens, we allow more aggressive reuse and choose the lowest REMAR\_{\\mathrm{EMA}} point whose MSE¯\\overline{\\mathrm{MSE}} is within 3×3\\times the minor-token elbow-point MSE¯\\overline{\\mathrm{MSE}}.
+
+Prior MoE routing methods
+> [[49](#bib.bib58), [23](#bib.bib37)]
+
+ treat routing as a token-wise expert selection problem and mainly optimize locality and latency. In contrast, EdgeXpert treats routing as a prompt-level expert set formation problem. EdgeXpert directly reduces the EMA of the prefill stage and improves both energy consumption and latency.
+
+As shown in Figure [7](#S4.F7)([7(d)](#S4.F7.sf4)), important tokens add new experts to the shared expert set, while less important tokens predominantly reuse experts from this shared set. We further compared our method with an alternative scheme that estimates token importance from the attention weights of the target model. Although this scheme uses the target model directly, the causal attention mask inherently restricts each token to attending only to preceding tokens, limiting its ability to accurately assess importance across the full context. By contrast, our lightweight encoder leverages bidirectional attention to compute token importance before the target model is executed, suppressing expert EMA from the beginning of the prefill stage.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="234" id="S4.F8.sf1.g1" src="2608.05303v1/figures/fig_8a.png" width="476">(a)
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="199" id="S4.F8.sf2.g1" src="2608.05303v1/figures/fig_8b.png" width="476">(b)
+
+Fig. 8: (a) Detailed hardware of the partitioning network.
+(b) Performance analysis of prompt-wise expert reuse.
+
+Figure [8](#S4.F8)([8(a)](#S4.F8.sf1)) shows the hardware implementation of the proposed policy. The partitioning network compares the CLS attention weight of each token against two thresholds using parallel comparator arrays, generating a ternary label for every token. These labels are then reordered by a butterfly-based reordering unit to partition the input into major, minor, and trivial groups. The proposed hardware processes 128 input tokens per cycle and is implemented as a three-stage pipeline, enabling low-latency token grouping.
+
+A straightforward alternative is to sort tokens globally by attention weight and partition them by rank. However, such a sorting-based design is inefficient for the variable-length user prompt. Once the prompt length exceeds the hardware input width, a sorting-based design requires chunk-wise sorting followed by cross-chunk merging, causing latency to grow rapidly with input length. In contrast, the proposed threshold-based partitioning network avoids global ordering and processes each 128-token block independently, making the design suitable for variable-length prefill inputs.
+
+Figure [8](#S4.F8)([8(b)](#S4.F8.sf2)) shows the effectiveness of the proposed method and its hardware support. By allowing less important tokens to reuse the shared expert set, EdgeXpert reduces expert EMA by 55.7% in the prefill stage. Importantly, the additional EMA introduced by the lightweight encoder used for importance estimation is negligible, indicating that the reduction in expert EMA substantially outweighs the encoder overhead. Moreover, as the input length increases, the proposed threshold-based design exhibits near-linear latency scaling, whereas a sorting-based implementation incurs rapidly increasing latency due to repeated sorting and cross-chunk merging. These results show that prompt-wise expert reuse is effective.
+
+### IV-CDepth-aware Expert Coalescing ###
+
+Fig. 9: (a) Limitation of pruning on EMA reduction.
+(b) Depth-wise redundancy.
+(c) Depth-aware expert coalescing.
+(d) Sensitivity of s​rsr to channel EMA and channel coverage.
+
+While channel-level expert pruning
+> [[18](#bib.bib47), [54](#bib.bib26), [58](#bib.bib52)]
+
+ has proven effective for MoE compression, its EMA reduction becomes limited when speculative decoding is applied. In speculative decoding, multiple candidate tokens are passed to the target MoE model. As shown in Figure [9](#S4.F9)([9(a)](#S4.F9.sf1)), when experts are pruned according to the channel requirements of individual candidate tokens, different tokens tend to select different channel subsets. Each token only computes on its own selected channel subset, enabling compute reduction to follow the pruning ratio. In contrast, since the hardware must load the union of all necessary channels to serve multiple tokens, EMA reduction remains marginal even when individual tokens utilize only sparse channel subsets. As the weight EMA is the primary bottleneck compared to computation, optimization is necessary. We propose depth-aware expert coalescing, a decode stage optimization that converts channel-level sparsity into actual EMA reduction.
+
+EdgeXpert exploits two key characteristics of candidate tokens to reduce EMA during expert loading: depth-wise contextual similarity and mutual exclusivity. Depth-wise contextual similarity implies that tokens at the same depth exhibit similar semantic features and therefore tend to route to the same experts. Simultaneously, mutual exclusivity guarantees that only one token per depth is accepted at the verification stage, while all others are discarded. As illustrated in Figure [9](#S4.F9)([9(b)](#S4.F9.sf2)), when multiple same-depth tokens route to the same expert, the hardware must load the union of all required channels. Since verification discards all but one token per depth, most loaded channels serve discarded tokens, resulting in redundant EMA. Therefore, it is not necessary to retain the full union of all required channels. This allows EdgeXpert to apply channel coalescing within each depth with minor accuracy drop.
+
+Figure [9](#S4.F9)([9(c)](#S4.F9.sf3)) presents our depth-aware expert coalescing. Instead of loading the union of all channels for tokens at the same depth, we selectively load only salient channels based on two metrics, the salience score (SsS\_{s}) and the channel score (ScS\_{c}). The channel score aggregates the product of the input channel magnitude and attention weight (|I​A|×At|IA|\\times A\_{t}) across all routed tokens, whereas the salience score considers only tokens that require computation on that channel, as determined by the channel pruning mask. Channels are selected for loading when their salience score exceeds s​r×SCsr\\times S\_{C}, where s​rsr is the selection ratio (0\<s​r\<10\<sr\<1), and others are skipped to reduce EMA. Although channel coalescing substantially reduces EMA, it may exclude channels that are semantically important for specific tokens. This semantic loss degrades accuracy and lowers the acceptance length, which in turn limits the overall EMA reduction.
+
+To address this issue, we perform computational calibration whenever channel coalescing is applied. Calibration allows all routed tokens to recompute on all channels that have already been loaded by coalescing, rather than restricting each token to its own individually pruned subset. In this way, the loaded salient channels are more fully shared across tokens, which reduces the approximation error introduced by coalescing. Even if a channel important to one token is skipped, that token can still benefit from other salient channels that were loaded for different tokens at the same depth. While this increases computation, the trade-off remains favorable because it requires no additional memory access. Since EMA is the dominant bottleneck on edge devices, the extra computation helps recover both accuracy and acceptance length while maintaining the reduced EMA. Consequently, depth-aware expert coalescing reduces overall system energy and latency.
+
+As shown in Figure [9](#S4.F9)([9(d)](#S4.F9.sf4)), we determine the selection ratio s​rsr using the channel coverage of the accepted token after verification. For each depth group, we compare the coalesced channel set with the original pruned channel set of the accepted token. We select the maximum s​rsr that maintains the average channel coverage above 75%, ensuring that coalescing preserves channels required by the accepted token.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_square" height="358" id="S4.F10.sf1.g1" src="2608.05303v1/figures/fig_10a.png" width="429">(a)
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="160" id="S4.F10.sf2.g1" src="2608.05303v1/figures/fig_10b.png" width="476">(b)
+
+Fig. 10: (a) Dual reconfigurable adder tree in coalescing unit.
+(b) Performance analysis.
+
+Figure [10](#S4.F10)([10(a)](#S4.F10.sf1)) shows the dual reconfigurable adder tree used to compute the channel and salience scores for channel coalescing. Because the number of candidate tokens varies across depths, a conventional fixed adder tree suffers from severe under-utilization. We therefore adopt a reconfigurable adder tree (RAT)
+> [[44](#bib.bib59)]
+
+, which can process multiple depth groups within a single unit by accumulating same-depth inputs while bypassing others. This allows a RAT to handle multiple depths at once and reduces coalescing latency.
+
+Figure [10](#S4.F10)([10(b)](#S4.F10.sf2)) shows that the dual RAT reduces coalescing unit latency by 76.7% compared with a conventional dual adder tree. Although the RAT incurs additional area and power compared to a fixed adder tree, the impact is minor because the top controller accounts for only a small fraction of the total area and power. Figure [10](#S4.F10)([10(b)](#S4.F10.sf2)) also shows the effect of depth-aware expert coalescing on expert EMA. The baseline applies only coarse-to-fine pruning
+> [[18](#bib.bib47)]
+
+ without further optimization. Channel coalescing reduces the amount of loaded expert data, but also lowers the acceptance length, limiting the EMA reduction. When computational calibration is applied after each coalescing step, the acceptance length is recovered. This reduces the number of decoding stages, which further reduces expert EMA. These results show that EdgeXpert converts channel sparsity into actual EMA reduction while preserving speculative decoding effectiveness. This makes MoE and speculative decoding more suitable for edge deployment.
+
+V Evaluation
+----------
+
+### V-AExperimental Setup ###
+
+EdgeXpert was synthesized using Synopsys Design Compiler, targeting Samsung 28nm FDSOI technology at typical corner conditions (TT, 25°C, 1.0V). The design flow consists of RTL design, synthesis, logic optimization, post-synthesis timing check, and power analysis using Synopsys PrimeTime. The synthesized logic area is projected to the post-PnR area, assuming 60% cell utilization, a typical utilization rate for digital designs to accommodate routing congestion and timing closure. SRAM macros are modeled using a commercial memory compiler for the target technology node. The total chip area is calculated as the sum of the projected logic area (synthesized area divided by 0.6) and the SRAM macro area.
+
+EdgeXpert operates at 800 MHz with a supply voltage of 1.0V. The hardware supports 8-bit input activation and 4-bit weight (A8W4) for efficient edge inference. This configuration delivers a peak throughput of 13.1 TOPS, calculated as 8K MACs multiplied by 800 MHz and 2 operations per MAC. Hardware power is obtained from post-synthesis power analysis using Synopsys PrimeTime. External memory consists of LPDDR4X DRAM with 16 GB/s bandwidth. We estimate LPDDR4X DRAM read and write energies from the datasheet IDD currents and supply voltages of the LPDDR4X power rails 
+> [[39](#bib.bib38)]
+
+, resulting in 4.5 pJ/bit and 2.9 pJ/bit, respectively. Physical design metrics show a synthesized logic area of 3.8 mm<sup class="ltx_sup" id="S5.SS1.p2.1.1">2</sup> before PnR, projected to 6.3 mm<sup class="ltx_sup" id="S5.SS1.p2.1.2">2</sup> assuming 60% cell utilization. SRAM macros occupy 3.0 mm<sup class="ltx_sup" id="S5.SS1.p2.1.3">2</sup>. The total chip area, including logic and SRAM, measures 9.3 mm<sup class="ltx_sup" id="S5.SS1.p2.1.4">2</sup>. Hardware peak power is 1.52 W without EMA power. The hardware achieves a peak energy efficiency of 8.6 TOPS/W without sparsity exploitation.
+
+EdgeXpert is evaluated using an instruction-level custom simulator. The simulator implements behavioral models of the proposed hardware modules, including router reformulation, channel coalescing, and computational calibration. Given the original model trace, including expert routing information and the token tree, the behavioral models emulate the hardware-module behavior to derive the final expert/channel access pattern. The simulator then generates the corresponding runtime instruction sequence and memory requests, and accumulates latency and energy using per-instruction costs. The per-instruction costs for logic and SRAM are obtained from post-synthesis results, while the EMA cost is computed from the read/write traffic. For off-chip memory, the simulator generates read/write requests from the final expert/channel access pattern and computes their latency using the 16 GB/s bandwidth. The energy is accumulated from the read/write volume using the energy parameters in the datasheet 
+> [[39](#bib.bib38)]
+
+.
+
+TABLE II: Hardware configuration for comparison
+
+<sup class="ltx_sup" id="S5.T2.6.1"><span class="ltx_text ltx_font_italic" id="S5.T2.6.1.1">∗</span></sup> Arbitrary skipping MAC 
+> [[43](#bib.bib29)]
+
+<sup class="ltx_sup" id="S5.T2.6.2.1"><span class="ltx_text ltx_font_italic" id="S5.T2.6.2.1.1">∗∗</span></sup> Dense MAC 
+> [[42](#bib.bib60)]
+
+Table [II](#S5.T2) summarizes the hardware configurations. We compare EdgeXpert against two hardware and one software baseline.
+
+Hardware Baseline. SMoLPU
+> [[18](#bib.bib47)]
+
+ is a dedicated accelerator for MoE-based speculative decoding that applies coarse-to-fine expert pruning during the decode stage. EdgeMoE
+> [[60](#bib.bib33)]
+
+ reduces expert footprint through importance-aware mixed-precision quantization, assigning 4-bit or 2-bit precision to each expert. For fair comparison, we project EdgeMoE onto dedicated hardware with 4-bit dense INT MAC units
+> [[42](#bib.bib60)]
+
+ rather than comparing directly on the Jetson platform. Since it originally targets autoregressive decoding, we evaluate it under both autoregressive decoding (EdgeMoE<sub class="ltx_sub" id="S5.SS1.p5.1.2">AU</sub>) and speculative decoding (EdgeMoE<sub class="ltx_sub" id="S5.SS1.p5.1.3">SD</sub>).
+
+Software Baseline. Due to the limited number of existing MoE hardware accelerators, we additionally compare against MoE-Pruner
+> [[54](#bib.bib26)]
+
+, a state-of-the-art software pruning scheme that applies fine-grained unstructured sparsity within each expert. We map MoE-Pruner onto a hardware accelerator that supports arbitrary skipping
+> [[43](#bib.bib29)]
+
+. Since MoE-Pruner targets autoregressive decoding, we evaluate both autoregressive (MoE-Pruner<sub class="ltx_sub" id="S5.SS1.p6.1.2">AU</sub>) and speculative decoding (MoE-Pruner<sub class="ltx_sub" id="S5.SS1.p6.1.3">SD</sub>). Although MoE-Pruner supports optional fine-tuning after pruning, we disable it to ensure consistency.
+
+While Table [I](#S2.T1) summarizes related speculative decoding works for MoE models, MoESD 
+> [[22](#bib.bib35)]
+
+ and SS-MoE 
+> [[67](#bib.bib64)]
+
+ are not directly comparable to our edge accelerator setting. MoESD focuses on GPU-level operating-point analysis, while SS-MoE adopts a large self-draft model, which is less suitable for edge devices. MoE-Spec 
+> [[36](#bib.bib63)]
+
+ performs only coarse expert budgeting during verification. Therefore, SMoLPU, which supports coarse-to-fine pruning, provides a stronger pruning baseline. Accordingly, our quantitative comparison covers three representative categories: fine-grained pruning for MoE models (MoE-Pruner), mixed-precision quantization for MoE models (EdgeMoE), and coarse-to-fine pruning for MoE-based speculative decoding (SMoLPU).
+
+All baselines are normalized to the same technology (28nm CMOS), operating frequency (800 MHz), and external DRAM bandwidth (16 GB/s) as EdgeXpert. SMoLPU is scaled from its original 200 MHz to 800 MHz, isolating architectural efficiency from clock-frequency differences. Since EdgeMoE originally reports power from a Jetson board, we map its mixed-precision execution to the EdgeXpert backend with 4-bit dense INT MAC units. This preserves the benefits of mixed precision while excluding the board-level system power. MoE-Pruner is mapped to hardware with arbitrary skipping cores so that its unstructured sparsity directly reduces latency and energy. All evaluations perform single-batch inference, reflecting edge deployment scenarios.
+
+TABLE III: Model configuration
+
+|               Granite               |    OLMoE    |  DeepSeek   |      Qwen3      |             |
+|-------------------------------------|-------------|-------------|-----------------|-------------|
+|              1B-A400M               |    1B-7B    |   V2-Lite   |     30B-A3B     |             |
+|            Target Model             |             |             |                 |             |
+|              \# Layer               |     24      |     16      |   27 (26 MoE)   |     48      |
+|             Hidden Dim.             |    1024     |    2048     |      2048       |    2048     |
+|             \# Experts              |     32      |     64      |       64        |     128     |
+|            Expert Param.            |    1.5M     |    6.0M     |      8.3M       |    4.5M     |
+|           Top-kk Routing            |      8      |      8      |8 (2 shared exp.)|      8      |
+|             Draft Model             |             |             |                 |             |
+|              \# Layer               |      1      |      1      |        1        |      1      |
+|             Hidden Dim.             |    1024     |    2048     |      2048       |    2048     |
+|              Max Depth              |      6      |      6      |        6        |      6      |
+|           Hyperparameters           |             |             |                 |             |
+|   km​i​n,nm​i​nk\_{min},n\_{min}    |    8, 7     |    10, 6    |      6, 5       |    10, 6    |
+|   kt​r​i,nt​r​ik\_{tri},n\_{tri}    |    10, 6    |    12, 4    |      8, 3       |    12, 4    |
+|θ1,θ2,s​r\\theta\_{1},\\theta\_{2},sr|.65, .45, .70|.80, .40, .90|  .55, .30, .90  |.80, .55, .90|
+TABLE IV: Accuracy and acceptance length
+
+<sup class="ltx_sup" id="S5.T4.6.1"><span class="ltx_text ltx_font_italic" id="S5.T4.6.1.1">∗</span></sup> Acceptance length <sup class="ltx_sup" id="S5.T4.6.2.1"><span class="ltx_text ltx_font_italic" id="S5.T4.6.2.1.1">∗∗</span></sup> Thinking mode (multi-step reasoning)
+
+As shown in Table [III](#S5.T3), we evaluated four representative MoE models
+> [[15](#bib.bib31), [41](#bib.bib13), [32](#bib.bib12), [57](#bib.bib32)]
+
+. Since EdgeXpert optimizes MoE models during the verification phase, it is applicable to various speculative decoding frameworks. Figure [11](#S5.F11) compares the energy consumption of different frameworks. Self-speculative decoding achieves the lowest energy consumption because its draft model is lightweight while still providing a high acceptance length. Based on this result, we adopt EAGLE-3
+> [[31](#bib.bib16)]
+
+, a self-speculative decoding framework that generates 64 candidate tokens per iteration with a maximum depth of 6. Moreover, we evaluated accuracy on seven benchmarks
+> [[66](#bib.bib39), [9](#bib.bib61), [19](#bib.bib40), [63](#bib.bib41), [8](#bib.bib42), [48](#bib.bib43), [2](#bib.bib44)]
+
+. For the hyperparameters km​i​n,t​r​ik\_{min,tri}, nm​i​n,t​r​in\_{min,tri}, and s​rsr, we do not tune them on downstream benchmark accuracy. Instead, we determine them using model-distribution-based metrics, i.e., MoE-layer output deviation and accepted-token channel coverage. This design reduces benchmark-specific sensitivity, since the hyperparameters are selected to preserve the original model behavior rather than to overfit a particular evaluation task. As a result, the selected values maintain accuracy across benchmarks. The calibration is performed only once per model: km​i​n,t​r​ik\_{min,tri} and nm​i​n,t​r​in\_{min,tri} are calibrated on WikiText-2 validation set 
+> [[37](#bib.bib65)]
+
+, while s​rsr is selected using a small calibration set sampled from MT-Bench prompts to preserve the original channel distribution, rather than to optimize benchmark accuracy. For the partitioning thresholds θ1,2\\theta\_{1,2}, we use WikiText-2 perplexity. Although the encoder is shared across MoE models, each MoE model exhibits different sensitivity to budgeted routing. Therefore, θ1,2\\theta\_{1,2} is calibrated once for each model.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="192" id="S5.F11.g1" src="2608.05303v1/figures/fig_11.png" width="452">Fig. 11: Comparison of speculative decoding frameworks.
+
+### V-BExperimental Results ###
+
+Accuracy and acceptance length analysis. Table [IV](#S5.T4) presents the accuracy and acceptance length of the proposed techniques. We evaluate four configurations by incrementally enabling each technique. Baseline combines MoE and speculative decoding with the pruning scheme of prior work 
+> [[18](#bib.bib47)]
+
+. EdgeXpert<sub class="ltx_sub" id="S5.SS2.p1.1.2">PR</sub> applies prompt-wise expert reuse on top of Baseline. EdgeXpert<sub class="ltx_sub" id="S5.SS2.p1.1.3">DC</sub> further introduces depth-aware channel coalescing. EdgeXpert<sub class="ltx_sub" id="S5.SS2.p1.1.4">ALL</sub> incorporates all proposed techniques, including computational calibration. Prompt-wise expert reuse introduces negligible accuracy loss and leaves the acceptance length unchanged. In particular, its effect in the prefill stage can be observed on MMLU, HellaSwag, ARC-Challenge, WinoGrande, and PIQA, where the maximum degradation is only 1.0-3.1% across the evaluated models. This indicates that major tokens effectively establish the shared expert set in the prefill stage, while the remaining tokens can largely be served through reuse without significant quality loss. Depth-aware channel coalescing reduces EMA, but significantly degrades both accuracy and acceptance length. However, with computational calibration, both metrics are recovered to near-baseline levels. The final drop in MT-Bench score remains within 0.1, while GSM8K shows a larger degradation of 3–4%. This degradation is mainly due to the sensitivity of GSM8K under the non-thinking inference. The non-thinking setting provides fewer intermediate reasoning steps, leaving fewer chances to recover from such approximation errors introduced by channel coalescing. In contrast, the longer reasoning trace in thinking mode mitigates this sensitivity and eliminates the additional accuracy drop. With Qwen3 in thinking mode (Table [IV](#S5.T4)), the proposed techniques introduce no accuracy drop on GSM8K.
+
+Fig. 12: (a) Normalized end-to-end latency of EdgeXpert.
+(b) Comparison of end-to-end latency against prior works.
+(c) Detailed TTFT and TPOT.
+
+Latency analysis. Figure [12](#S5.F12)([12(a)](#S5.F12.sf1)) shows the normalized end-to-end latency of EdgeXpert on multiple benchmarks. The baseline represents MoE combined with speculative decoding without any optimization. Pruning applies the coarse-to-fine expert pruning of previous work
+> [[18](#bib.bib47)]
+
+. EdgeXpert<sub class="ltx_sub" id="S5.SS2.p2.1.2">PR</sub> reduces the latency of the prefill stage through prompt-wise expert reuse. The gain is larger at shorter token lengths, where the prefill stage constitutes a larger fraction of the total latency. EdgeXpert<sub class="ltx_sub" id="S5.SS2.p2.1.3">DC</sub> applies depth-aware channel coalescing on top of EdgeXpert<sub class="ltx_sub" id="S5.SS2.p2.1.4">PR</sub> and further reduces EMA. However, channel coalescing also lowers the acceptance length and limits the latency improvement. Applying computational calibration recovers the acceptance length. As shown in EdgeXpert<sub class="ltx_sub" id="S5.SS2.p2.1.5">ALL</sub>, this recovery translates into a large overall latency reduction. DeepSeek shows the largest latency reduction because its expert size is larger than that of the other evaluated models. EdgeXpert achieves 10.7-61.1% latency reduction. Figure [12](#S5.F12)([12(b)](#S5.F12.sf2)) compares end-to-end latency with previous work. Baseline maps MoE with speculative decoding onto dense MAC
+> [[42](#bib.bib60)]
+
+ without any optimization. Since MoE-Pruner
+> [[54](#bib.bib26)]
+
+ statically prunes expert weights, it can reduce latency in both autoregressive and speculative decoding. However, because the static pruning ratio is limited, the overall latency reduction remains modest. EdgeMoE
+> [[60](#bib.bib33)]
+
+ assigns mixed precision to each expert based on importance at the offline. This reduces expert EMA at runtime and is also applicable to both autoregressive and speculative decoding (EdgeMoE<sub class="ltx_sub" id="S5.SS2.p2.1.6">AU</sub> and EdgeMoE<sub class="ltx_sub" id="S5.SS2.p2.1.7">SD</sub>). However, mixed-precision quantization reduces expert EMA by only 30–35%, leading to limited latency improvement. SMoLPU
+> [[18](#bib.bib47)]
+
+ performs runtime pruning of redundant experts in a system that combines MoE and speculative decoding. It achieves the highest pruning ratio among the three prior works and therefore provides a larger latency reduction. EdgeXpert goes beyond pruning by introducing EMA-aware expert routing and loading, which further reduces EMA. Consequently, it achieves the lowest latency across all models, delivering up to 56.3% end-to-end latency reduction compared to prior works.
+
+Fig. 13: (a) Normalized energy consumption of EdgeXpert.
+(b) Comparison of energy consumption against prior works.
+(c) Detailed energy breakdown.
+
+Figure [12](#S5.F12)([12(c)](#S5.F12.sf3)) presents the detailed time to first token (TTFT) and time per output token (TPOT). Practical edge deployment requires TTFT below 450 ms and TPOT below 50 ms
+> [[40](#bib.bib62)]
+
+. Prompt-wise expert reuse effectively reduces TTFT, where the proposed reuse policy lowers expert EMA in the prefill. Moreover, depth-aware expert coalescing reduces TPOT, where selective channel loading reduces expert EMA. As a result, EdgeXpert is the only design that satisfies both thresholds across all evaluated benchmarks.
+
+Energy consumption analysis. Figure [13](#S5.F13)([13(a)](#S5.F13.sf1)) shows the normalized energy consumption of EdgeXpert. Baseline combines MoE with speculative decoding without any optimization, while pruning applies coarse-to-fine pruning. Similar to the latency trend, EdgeXpert<sub class="ltx_sub" id="S5.SS2.p4.1.2">PR</sub> provides larger energy reduction at shorter token lengths. EdgeXpert<sub class="ltx_sub" id="S5.SS2.p4.1.3">ALL</sub> achieves the largest overall energy reduction (9.5-56.6%) thanks to EMA-aware expert routing and loading. Figure [13](#S5.F13)([13(b)](#S5.F13.sf2)) compares the energy consumption with prior works. Although the energy reduction ratio varies depending on the pruning ratio of each model, EdgeXpert consistently achieves the lowest energy consumption across all models, delivering up to 44.1% energy reduction compared to prior works. Figure [13](#S5.F13)([13(c)](#S5.F13.sf3)) shows the energy breakdown of each design. Baseline applies speculative decoding to MoE without optimization. In MoE-Pruner and EdgeMoE, applying speculative decoding increases both draft model overhead and MoE layer overhead compared to autoregressive decoding. However, the energy reduction from expert pruning and quantization is larger under speculative decoding because EMA of the MoE layer accounts for more of the total system energy. Speculative decoding also reduces the energy consumption of the attention layer and other components, such as the LM head and KV cache. EdgeXpert further reduces the EMA and computation overhead of the MoE layers, achieving the lowest overall energy consumption.
+
+TABLE V: Synthesis results of EdgeXpert
+
+|                                                          Components                                                          |Area [mm<sup class="ltx_sup" id="S5.T5.5.1.1.4.1.1"><span class="ltx_text ltx_font_italic" id="S5.T5.5.1.1.4.1.1.1">2</span></sup>]|           Power [W]            |            |               |
+|------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|--------------------------------|------------|---------------|
+|                                                        Cluster#0 – #7                                                        |                                                             PE Lines                                                              |8×\\times4×\\times8×\\times32 PE|2.24 (24.1%)| 0.70 (46.1%)  |
+|                                                             SRAM                                                             |                               WMEM, IAMEM, SF<sub class="ltx_sub" id="S5.T5.5.1.3.2.1.1">W</sub>MEM                               |          1.70 (18.3%)          |0.19 (12.5%)|               |
+|                                                          Peripheral                                                          |                                                       Workload allocator, …                                                       |          1.27 (13.6%)          |0.12 (7.9%) |               |
+|                                                        TopController                                                         |   PRU<sup class="ltx_sup" id="S5.T5.5.1.5.2.1.1"><span class="ltx_text ltx_font_italic" id="S5.T5.5.1.5.2.1.1.1">∗</span></sup>   |      Partitioning network      |0.11 (1.2%) |\<\<0.01 (0.4%)|
+|                                                      Expert union unit                                                       |                                                            0.16 (1.7%)                                                            |        \<\<0.01 (0.2%)         |            |               |
+|                                                    Etc. (Routing map, …)                                                     |                                                            0.04 (0.4%)                                                            |        \<\<0.01 (0.1%)         |            |               |
+|DCU<sup class="ltx_sup" id="S5.T5.5.1.8.1.1.1"><span class="ltx_text ltx_font_italic" id="S5.T5.5.1.8.1.1.1.1">∗∗</span></sup>|                                                      Channel coalescing unit                                                      |          0.26 (2.8%)           |0.03 (2.1%) |               |
+|                                                   Compute mask update unit                                                   |                                                            0.05 (0.5%)                                                            |          0.01 (0.5%)           |            |               |
+|                                                    Etc. (Channel REG, …)                                                     |                                                            0.15 (1.6%)                                                            |          0.01 (0.7%)           |            |               |
+|                                                             Etc.                                                             |                                                  Pruning logic, Addr. generator                                                   |          0.55 (5.9%)           |0.07 (4.6%) |               |
+|                                                         Shared SRAM                                                          |                                                            512KB SRAM                                                             |          1.34 (14.4%)          |0.21 (13.8%)|               |
+|                                                            Others                                                            |                                                    SIMD, NoC, Instruction Dec.                                                    |          1.44 (15.5%)          |0.17 (11.1%)|               |
+
+<sup class="ltx_sup" id="S5.T5.6.1"><span class="ltx_text ltx_font_italic" id="S5.T5.6.1.1">∗</span></sup>Prompt-wise Expert Reuse Unit <sup class="ltx_sup" id="S5.T5.6.2.1"><span class="ltx_text ltx_font_italic" id="S5.T5.6.2.1.1">∗∗</span></sup>Depth-aware Coalescing Unit
+
+Area and power overhead. Table [V](#S5.T5) presents the area and average power of EdgeXpert. The top controller, which consists of a prompt-wise expert reuse unit (PRU) and a depth-aware coalescing unit (DCU), occupies only 14.1% of the total chip area and 8.6% of total power due to two factors. First, prompt-wise expert reuse is executed once for each layer, and depth-aware expert coalescing is applied once for each expert, whereas the clusters repeatedly perform MAC operations. Second, controller execution overlaps with long-latency cluster MAC operations, amortizing its power across extended computation periods. Moreover, the latency overhead of the top controller is amortized by MAC operations in the clusters. In PRU, the expert union unit forms the shared expert set and consumes only 0.2% of the total power. The remaining routing decision logic, shown as Etc. in Table [V](#S5.T5), selects experts based on the shared expert set and adds only 0.1% power overhead. In DCU, the compute mask update unit supports computational calibration by updating the masks of loaded channels from 0 to 1. Since this unit consists mainly of simple multiplexers and control logic, it consumes only 0.5% of the total power. The pruning logic and address generator together consume 4.6% of the total power, where most of the overhead comes from the pruning logic. The address generator produces addresses for the selected input channels. Although the selected input channels may be fragmented, EdgeXpert fetches weights along the output-channel dimension for each selected input channel, avoiding irregular DRAM accesses. Therefore, EdgeXpert enables memory-efficient LLM inference with minimal overhead.
+
+VI Discussion
+----------
+
+Extension to other frameworks and models.EdgeXpert is compatible with diverse speculative decoding frameworks because it optimizes the target model during verification rather than the draft model. It is also applicable to all MoE models, with larger benefits for models with finer-grained experts and for larger models where pruning creates greater channel sparsity.
+
+Edge LLM accelerators. Prior edge LLM accelerators primarily focus on model compression through quantization
+> [[25](#bib.bib30), [27](#bib.bib7)]
+
+, pruning
+> [[52](#bib.bib45), [45](#bib.bib46)]
+
+, and tensor decomposition
+> [[25](#bib.bib30)]
+
+. MECLA
+> [[46](#bib.bib6)]
+
+ introduces SSMP matrix partition and fine-tuning methods to reduce memory footprint and computation. In contrast, EdgeXpert reduces both EMA and computation through EMA-aware expert routing and loading in the MoE and speculative decoding system.
+
+VII Conclusion
+----------
+
+We propose EdgeXpert, a software-hardware co-designed edge device that addresses the EMA bottleneck caused by the combination of speculative decoding and MoE. We show that naive integration increases expert EMA in both the prefill and decode stages, limiting the benefits of MoE and speculative decoding on edge devices. EdgeXpert addresses this problem with prompt-wise expert reuse in the prefill stage, and depth-aware expert coalescing with computational calibration in the decode stage. Synthesized in Samsung 28nm technology at 800 MHz, EdgeXpert achieves up to 56.3% latency reduction and 44.1% energy reduction over prior works
+> [[54](#bib.bib26), [60](#bib.bib33), [18](#bib.bib47)]
+
+, demonstrating SW-HW co-design for edge devices.
+
+### -AAbstract ###
+
+We provide the software implementation of the five optimization
+techniques in the paper: coarse-grained expert pruning, fine-grained channel pruning,
+prompt-wise expert reuse, depth-aware expert coalescing, and computational calibration. All techniques are implemented as PyTorch modules on top of the HuggingFace
+implementations of four MoE models (Granite-1B-A400M, OLMoE-1B-7B,
+DeepSeek-V2-Lite, and Qwen3-30B-A3B) combined with EAGLE-3 speculative
+decoding. A single command-line entry point (run.py) runs each
+model and lets evaluators individually enable or disable each technique.
+
+### -BArtifact check-list (meta-information) ###
+
+* •
+
+  Algorithm:  Coarse-to-fine pruning, prompt-wise expert
+  reuse, depth-aware expert coalescing with computational
+  calibration
+
+* •
+
+  Program:  Python
+
+* •
+
+  Model:  Granite-1B-A400M, OLMoE-1B-7B,
+  DeepSeek-V2-Lite, Qwen3-30B-A3B, and their EAGLE-3 draft models
+
+* •
+
+  Run-time environment:  Linux, conda, Python 3.13; all
+  package versions pinned in requirements.txt
+
+* •
+
+  Hardware:  NVIDIA GPUs (evaluated on RTX A6000 48 GB);
+  1 GPU for Granite/OLMoE, 2 GPUs for DeepSeek/Qwen
+
+* •
+
+  Execution:  Interactive command line; each technique is
+  toggled with a True/False flag
+
+* •
+
+  Output:  Generated text printed to stdout
+
+* •
+
+  Experiments:  Run each of the four models with the
+  proposed techniques enabled or disabled and a user-defined input
+  prompt
+
+* •
+
+  How much disk space required (approximately)?: ∼\\sim110 GB (model weights for all four models)
+
+* •
+
+  How much time is needed to prepare workflow
+  (approximately)?: ∼\\sim10 minutes, excluding model download
+
+* •
+
+  How much time is needed to complete experiments
+  (approximately)?:  A few minutes per model after weights are
+  downloaded
+
+* •
+
+  Publicly available?:  Yes
+
+* •
+
+  Archived?: [https://doi.org/10.5281/zenodo.21481269](https://doi.org/10.5281/zenodo.21481269)
+
+### -CDescription ###
+
+#### -C1 How to access ####
+
+Access the source code of EdgeXpert’s software implementation at:
+
+#### -C2 Hardware dependencies ####
+
+An x86\_64 Linux server with NVIDIA GPUs. Approximate peak VRAM (bf16):
+Granite ∼\\sim3–5 GB and OLMoE ∼\\sim16–20 GB on a single GPU;
+DeepSeek-V2-Lite ∼\\sim34–40 GB and Qwen3-30B-A3B ∼\\sim62–70 GB
+across two GPUs.
+
+#### -C3 Software dependencies ####
+
+Linux, conda, and Python 3.13. All package versions are pinned inrequirements.txt.
+
+#### -C4 Models ####
+
+The four MoE base models and their EAGLE-3 draft models are downloaded
+automatically from the Hugging Face Hub on first run.
+
+### -DInstallation ###
+
+Follow the setup instructions in the README.md available at the
+DOI:
+
+```
+conda create -n edgexpert python=3.13 -y
+conda activate edgexpert
+pip install -r requirements.txt
+
+```
+
+### -EExperiment workflow ###
+
+Run run.py with the target model and the desired combination of
+techniques, e.g.:
+
+```
+python run.py --model olmoe \
+    --coarse_pruning True \
+    --fine_pruning True \
+    --prompt_wise_expert_reuse True
+
+```
+
+After the model loads, the program prints write prompt:; type
+any prompt to generate text. Per-model example commands are given in theREADME.md.
+
+### -FEvaluation and expected results ###
+
+After loading, the program prints model loaded. and the list of active policies, then enters the prompt loop (write prompt:). For each input prompt, the generated response is printed to stdout. The generated response and its accuracy vary depending on which policies are enabled, as each policy trades output quality for reduced computation. Peak GPU memory can be measured with measure\_vram.py under the same flags.
+
+### -GExperiment customization ###
+
+Each of the five techniques can be enabled or disabled independently.
+Generation parameters (--max\_new\_tokens,--temperature, --top\_k, --top\_p,--max\_length, --total\_token, --depth) and
+GPU selection (--gpus) can be overridden on the command line.
+
+### -HNotes ###
+
+This artifact runs in full precision (bf16). The results reported in the
+paper were simulated with 8-bit inputs and 4-bit weights, quantized with
+LLM Compressor
+([https://github.com/vllm-project/llm-compressor](https://github.com/vllm-project/llm-compressor)) using GPTQ with
+group size 32.
+
+References
+----------
+
+* [1]J. Achiam, S. Adler, S. Agarwal, L. Ahmad, I. Akkaya, F. L. Aleman, D. Almeida, J. Altenschmidt, S. Altman, S. Anadkat, et al. (2023)GPT-4 Technical Report.arXiv preprint arXiv:2303.08774.Cited by: [§I](#S1.p1.1).
+* [2]Y. Bisk, R. Zellers, J. Gao, Y. Choi, et al. (2020)Piqa: reasoning about physical commonsense in natural language.In Proceedings of the AAAI conference on artificial intelligence,Vol. 34, pp. 7432–7439.Cited by: [§V-A](#S5.SS1.p9.1).
+* [3]R. Cai, Y. Ro, G. Kim, P. Wang, B. Ehteshami Bejnordi, A. Akella, Z. Wang, et al. (2024)Read-ME: Refactorizing LLMs as Router-Decoupled Mixture of Experts with System Co-Design.Advances in Neural Information Processing Systems37, pp. 116126–116148.Cited by: [§II-A](#S2.SS1.p2.1).
+* [4]T. Cai, Y. Li, Z. Geng, H. Peng, J. D. Lee, D. Chen, and T. Dao (2024)Medusa: Simple llm inference acceleration framework with multiple decoding heads.arXiv preprint arXiv:2401.10774.Cited by: [§I](#S1.p5.1),[§II-B](#S2.SS2.p4.1),[§II-C](#S2.SS3.p2.1).
+* [5]M. Caron, H. Touvron, I. Misra, H. Jégou, J. Mairal, P. Bojanowski, and A. Joulin (2021)Emerging properties in self-supervised vision transformers.In Proceedings of the IEEE/CVF international conference on computer vision,pp. 9650–9660.Cited by: [§III-A](#S3.SS1.p1.1).
+* [6]C. Chen, S. Borgeaud, G. Irving, J. Lespiau, L. Sifre, and J. Jumper (2023)Accelerating large language model decoding with speculative sampling.arXiv preprint arXiv:2302.01318.Cited by: [§I](#S1.p5.1).
+* [7]Z. Chen, A. May, R. Svirschevski, Y. Huang, M. Ryabinin, Z. Jia, and B. Chen (2024)Sequoia: Scalable, robust, and hardware-aware speculative decoding.arXiv preprint arXiv:2402.12374.Cited by: [§II-C](#S2.SS3.p2.1).
+* [8]P. Clark, I. Cowhey, O. Etzioni, T. Khot, A. Sabharwal, C. Schoenick, and O. Tafjord (2018)Think you have solved question answering? try arc, the ai2 reasoning challenge.arXiv preprint arXiv:1803.05457.Cited by: [§V-A](#S5.SS1.p9.1).
+* [9]K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, et al. (2021)Training verifiers to solve math word problems.arXiv preprint arXiv:2110.14168.Cited by: [§V-A](#S5.SS1.p9.1).
+* [10]D. Dai, C. Deng, C. Zhao, R. Xu, H. Gao, D. Chen, J. Li, W. Zeng, X. Yu, Y. Wu, et al. (2024)DeepSeekMoE: Towards ultimate expert specialization in mixture-of-experts language models.arXiv preprint arXiv:2401.06066.Cited by: [§I](#S1.p3.1).
+* [11]J. Devlin, M. Chang, K. Lee, and K. Toutanova (2019)Bert: pre-training of deep bidirectional transformers for language understanding.In Proceedings of the 2019 conference of the North American chapter of the association for computational linguistics: human language technologies, volume 1 (long and short papers),pp. 4171–4186.Cited by: [§III-A](#S3.SS1.p1.1).
+* [12]N. Du, Y. Huang, A. M. Dai, S. Tong, D. Lepikhin, Y. Xu, M. Krikun, Y. Zhou, A. W. Yu, O. Firat, et al. (2022)GlaM: Efficient scaling of language models with mixture-of-experts.In International conference on machine learning,pp. 5547–5569.Cited by: [§I](#S1.p3.1).
+* [13]M. Elhoushi, A. Shrivastava, D. Liskovich, B. Hosmer, B. Wasti, L. Lai, A. Mahmoud, B. Acun, S. Agarwal, A. Roman, et al. (2024)LayerSkip: Enabling early exit inference and self-speculative decoding.arXiv preprint arXiv:2404.16710.Cited by: [§I](#S1.p5.1).
+* [14]E. Georganas, D. Kalamkar, A. Kozlov, and A. Heinecke (2025)ML-SpecQD: Multi-level speculative decoding with quantized drafts.arXiv preprint arXiv:2503.13565.Cited by: [§I](#S1.p5.1),[§II-B](#S2.SS2.p3.1).
+* [15]I. Granite Team (2024)Granite 3.0 Language Models.External Links: [Link](https://github.com/ibm-granite/granite-3.0-language-models/)Cited by: [§I](#S1.p10.1),[§I](#S1.p3.1),[§V-A](#S5.SS1.p9.1).
+* [16]A. Grattafiori, A. Dubey, A. Jauhri, A. Pandey, A. Kadian, A. Al-Dahle, A. Letman, A. Mathur, A. Schelten, A. Vaughan, et al. (2024)The Llama 3 Herd of Models.arXiv preprint arXiv:2407.21783.Cited by: [§I](#S1.p1.1).
+* [17]D. Guo, D. Yang, H. Zhang, J. Song, R. Zhang, R. Xu, Q. Zhu, S. Ma, P. Wang, X. Bi, et al. (2025)DeepSeek-R1: Incentivizing reasoning capability in llms via reinforcement learning.arXiv preprint arXiv:2501.12948.Cited by: [§I](#S1.p5.1).
+* [18]S. Ha, J. Lee, Y. Moon, S. Whang, W. Jo, G. Park, S. Kim, S. Um, J. Ryu, Y. Jo, and H. Yoo (2026)SMoLPU: 122.1µJ/Token Sparse MoE-Based Speculative Decoding Language Processing Unit with Adaptive-Offload NPU-CIM Core.In 2026 IEEE International Solid-State Circuits Conference (ISSCC),Vol. 69, pp. 312–314.External Links: [Document](https://dx.doi.org/10.1109/ISSCC49663.2026.11409285)Cited by: [§I](#S1.p10.1),[§I](#S1.p3.1),[§I](#S1.p5.1),[§II-B](#S2.SS2.p3.1),[§II-C](#S2.SS3.p3.1),[§II-C](#S2.SS3.p4.1),[§IV-A](#S4.SS1.p1.1),[§IV-C](#S4.SS3.p1.1),[§IV-C](#S4.SS3.p7.1),[§IV](#S4.p1.1),[§V-A](#S5.SS1.p5.1),[§V-B](#S5.SS2.p1.1),[§V-B](#S5.SS2.p2.1),[§VII](#S7.p1.1),[Abstract](#abstract1.2).
+* [19]D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and J. Steinhardt (2020)Measuring massive multitask language understanding.arXiv preprint arXiv:2009.03300.Cited by: [§V-A](#S5.SS1.p9.1).
+* [20]C. Hooper, S. Kim, H. Mohammadzadeh, M. Maheswaran, J. Paik, M. W. Mahoney, K. Keutzer, and A. Gholami (2024)Squeezed attention: Accelerating long context length llm inference.arXiv preprint arXiv:2411.09688.Cited by: [§I](#S1.p1.1).
+* [21]K. Huang, X. Guo, and M. Wang (2024)Specdec++: Boosting speculative decoding via adaptive candidate lengths.arXiv preprint arXiv:2405.19715.Cited by: [§II-C](#S2.SS3.p2.1).
+* [22]Z. Huang, L. Zhu, Z. Zhan, T. Hu, W. Mao, X. Yu, Y. Liu, and T. Zhang (2025)MoESD: Unveil Speculative Decoding’s Potential for Accelerating Sparse MoE.arXiv preprint arXiv:2505.19645.Cited by: [§I](#S1.p7.1),[§II-C](#S2.SS3.p4.1),[§V-A](#S5.SS1.p7.1).
+* [23]R. Hwang, J. Wei, S. Cao, C. Hwang, X. Tang, T. Cao, and M. Yang (2025)Pre-Gated MoE: An Algorithm-System Co-Design for Fast and Scalable Mixture-of-Expert Inference.In Proceedings of the 51st Annual International Symposium on Computer Architecture,ISCA ’24, pp. 1018–1031.External Links: ISBN 9798350326581,[Link](https://doi.org/10.1109/ISCA59077.2024.00078),[Document](https://dx.doi.org/10.1109/ISCA59077.2024.00078)Cited by: [§IV-B](#S4.SS2.p5.1).
+* [24]A. Q. Jiang, A. Sablayrolles, A. Roux, A. Mensch, B. Savary, C. Bamford, D. S. Chaplot, D. d. l. Casas, E. B. Hanna, F. Bressand, et al. (2024)Mixtral of Experts.arXiv preprint arXiv:2401.04088.Cited by: [§I](#S1.p3.1).
+* [25]W. Jo, S. Hong, J. Choi, B. Kwon, H. Sang, D. Im, S. Kim, S. Kim, T. Lee, and H. Yoo (2025)23.7 BROCA: A 52.4-to-559.2mW Mobile Social Agent System-on-Chip with Adaptive Bit-Truncate Unit and Acoustic-Cluster Bit Grouping.In 2025 IEEE International Solid-State Circuits Conference (ISSCC),Vol. 68, pp. 418–420.External Links: [Document](https://dx.doi.org/10.1109/ISSCC49661.2025.10904658)Cited by: [§I](#S1.p1.1),[§II-A](#S2.SS1.p2.1),[§II-B](#S2.SS2.p3.1),[§IV-A](#S4.SS1.p1.1),[§VI](#S6.p2.1).
+* [26]V. Karpukhin, B. Oguz, S. Min, P. Lewis, L. Wu, S. Edunov, D. Chen, and W. Yih (2020)Dense passage retrieval for open-domain question answering.In Proceedings of the 2020 conference on empirical methods in natural language processing (EMNLP),pp. 6769–6781.Cited by: [§III-A](#S3.SS1.p1.1).
+* [27]S. Kim, S. Kim, W. Jo, S. Kim, S. Hong, N. Lee, J. Lee, and H. Yoo (2025)C-Transformer: An Energy-Efficient Homogeneous DNN-Transformer/SNN-Transformer Processor for Large Language Models.IEEE Journal of Solid-State Circuits.Cited by: [§I](#S1.p1.1),[§II-A](#S2.SS1.p2.1),[§II-B](#S2.SS2.p2.1),[§II-B](#S2.SS2.p3.1),[§IV-A](#S4.SS1.p1.1),[§VI](#S6.p2.1).
+* [28]S. Kim, K. Mangalam, S. Moon, J. Malik, M. W. Mahoney, A. Gholami, and K. Keutzer (2023)Speculative decoding with big little decoder.Advances in Neural Information Processing Systems36, pp. 39236–39256.Cited by: [§I](#S1.p5.1),[§II-B](#S2.SS2.p2.1).
+* [29]Y. Leviathan, M. Kalman, and Y. Matias (2023)Fast inference from transformers via speculative decoding.In International Conference on Machine Learning,pp. 19274–19286.Cited by: [§I](#S1.p5.1).
+* [30]Y. Li, F. Wei, C. Zhang, and H. Zhang (2024)Eagle: Speculative sampling requires rethinking feature uncertainty.arXiv preprint arXiv:2401.15077.Cited by: [§I](#S1.p7.1),[§II-B](#S2.SS2.p4.1).
+* [31]Y. Li, F. Wei, C. Zhang, and H. Zhang (2025)EAGLE-3: Scaling up inference acceleration of large language models via training-time test.arXiv preprint arXiv:2503.01840.Cited by: [§I](#S1.p10.1),[§I](#S1.p5.1),[§I](#S1.p7.1),[§II-B](#S2.SS2.p4.1),[§II-C](#S2.SS3.p2.1),[§II-C](#S2.SS3.p4.1),[§V-A](#S5.SS1.p9.1).
+* [32]A. Liu, B. Feng, B. Wang, B. Wang, B. Liu, C. Zhao, C. Dengr, C. Ruan, D. Dai, D. Guo, et al. (2024)Deepseek-v2: A strong, economical, and efficient mixture-of-experts language model.arXiv preprint arXiv:2405.04434.Cited by: [§I](#S1.p10.1),[§II-A](#S2.SS1.p2.1),[§V-A](#S5.SS1.p9.1).
+* [33]E. Liu, J. Zhu, Z. Lin, X. Ning, M. B. Blaschko, S. Yan, G. Dai, H. Yang, and Y. Wang (2024)Efficient expert pruning for sparse mixture-of-experts language models: enhancing performance and reducing inference costs.arXiv preprint arXiv:2407.00945.Cited by: [§II-C](#S2.SS3.p3.1).
+* [34]J. Liu, G. Zhu, and F. Du (2026)HiPrune: Training-Free Visual Token Pruning via Hierarchical Attention in Vision-Language Models (Student Abstract).In Proceedings of the AAAI Conference on Artificial Intelligence,Vol. 40, pp. 41275–41277.Cited by: [§III-A](#S3.SS1.p1.1).
+* [35]X. Lu, Q. Liu, Y. Xu, A. Zhou, S. Huang, B. Zhang, J. Yan, and H. Li (2024)Not all experts are equal: efficient expert pruning and skipping for mixture-of-experts large language models.In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),pp. 6159–6172.Cited by: [§II-C](#S2.SS3.p3.1).
+* [36]B. McDanel, S. Li, S. Surineni, and H. Khaitan (2026)MoE-Spec: Expert Budgeting for Efficient Speculative Decoding.arXiv preprint arXiv:2602.16052.Cited by: [§II-C](#S2.SS3.p4.1),[§V-A](#S5.SS1.p7.1).
+* [37]S. Merity, C. Xiong, J. Bradbury, and R. Socher (2016)Pointer Sentinel Mixture Models.arXiv preprint arXiv:1609.07843.Cited by: [§V-A](#S5.SS1.p9.1).
+* [38]X. Miao, G. Oliaro, Z. Zhang, X. Cheng, Z. Wang, Z. Zhang, R. Y. Y. Wong, A. Zhu, L. Yang, X. Shi, C. Shi, Z. Chen, D. Arfeen, R. Abhyankar, and Z. Jia (2024)SpecInfer: Accelerating Large Language Model Serving with Tree-based Speculative Inference and Verification.ASPLOS ’24, New York, NY, USA, pp. 932–949.External Links: ISBN 9798400703867,[Link](https://doi.org/10.1145/3620666.3651335),[Document](https://dx.doi.org/10.1145/3620666.3651335)Cited by: [§II-B](#S2.SS2.p6.1).
+* [39]Micron Technology, Inc. (2022)LPDDR4/LPDDR4X SDRAM: MT53E1536M32D4, MT53E768M64D4 Datasheet.Micron Technology, Inc..Note: Rev. D, datasheetExternal Links: [Link](https://www.mouser.com/datasheet/2/671/z3bm_embedded_lpddr4_lpddr4x-3193457.pdf)Cited by: [§V-A](#S5.SS1.p2.1),[§V-A](#S5.SS1.p3.1).
+* [40]MLCommons (2024)MLPerf Inference interactive benchmark.Note: [https://github.com/mlcommons/inference/blob/master/language/llama2-70b/README.md](https://github.com/mlcommons/inference/blob/master/language/llama2-70b/README.md)Cited by: [§V-B](#S5.SS2.p3.1).
+* [41]N. Muennighoff, L. Soldaini, D. Groeneveld, K. Lo, J. Morrison, S. Min, W. Shi, P. Walsh, O. Tafjord, N. Lambert, et al. (2024)OLMoE: Open mixture-of-experts language models.arXiv preprint arXiv:2409.02060.Cited by: [§I](#S1.p10.1),[§V-A](#S5.SS1.p9.1).
+* [42]A. Parashar, M. Rhu, A. Mukkara, A. Puglielli, R. Venkatesan, B. Khailany, J. Emer, S. W. Keckler, and W. J. Dally (2017)SCNN: An accelerator for compressed-sparse convolutional neural networks.ACM SIGARCH computer architecture news45 (2), pp. 27–40.Cited by: [§V-A](#S5.SS1.p5.1),[§V-B](#S5.SS2.p2.1),[TABLE II](#S5.T2.6.2).
+* [43]G. Park, S. Song, H. Sang, D. Im, D. Han, S. Kim, H. Lee, and H. Yoo (2024)20.8 Space-Mate: A 303.5mW Real-Time Sparse Mixture-of-Experts-Based NeRF-SLAM Processor for Mobile Spatial Computing.In 2024 IEEE International Solid-State Circuits Conference (ISSCC),Vol. 67, pp. 374–376.External Links: [Document](https://dx.doi.org/10.1109/ISSCC49657.2024.10454487)Cited by: [§II-A](#S2.SS1.p3.1),[§V-A](#S5.SS1.p6.1),[TABLE II](#S5.T2.6.2).
+* [44]E. Qin, A. Samajdar, H. Kwon, V. Nadella, S. Srinivasan, D. Das, B. Kaul, and T. Krishna (2020)Sigma: a sparse and irregular gemm accelerator with flexible interconnects for dnn training.In 2020 IEEE International Symposium on High Performance Computer Architecture (HPCA),pp. 58–70.Cited by: [§IV-C](#S4.SS3.p6.1).
+* [45]Y. Qin, Y. Wang, D. Deng, Z. Zhao, X. Yang, L. Liu, S. Wei, Y. Hu, and S. Yin (2023)FACT: FFN-Attention Co-optimized Transformer Architecture with Eager Correlation Prediction.In Proceedings of the 50th Annual International Symposium on Computer Architecture,ISCA ’23, New York, NY, USA.External Links: ISBN 9798400700958,[Link](https://doi.org/10.1145/3579371.3589057),[Document](https://dx.doi.org/10.1145/3579371.3589057)Cited by: [§VI](#S6.p2.1).
+* [46]Y. Qin, Y. Wang, Z. Zhao, X. Yang, Y. Zhou, S. Wei, Y. Hu, and S. Yin (2024)MECLA: Memory-Compute-Efficient LLM Accelerator with Scaling Sub-matrix Partition.In 2024 ACM/IEEE 51st Annual International Symposium on Computer Architecture (ISCA),pp. 1032–1047.Cited by: [§I](#S1.p1.1),[§II-A](#S2.SS1.p2.1),[§VI](#S6.p2.1).
+* [47]N. Reimers and I. Gurevych (2021)All-minilm-l6-v2: sentence transformers model.Note: [https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)Hugging Face Model CardCited by: [§IV-B](#S4.SS2.p2.1).
+* [48]K. Sakaguchi, R. L. Bras, C. Bhagavatula, and Y. Choi (2021)Winogrande: an adversarial winograd schema challenge at scale.Communications of the ACM64 (9), pp. 99–106.Cited by: [§V-A](#S5.SS1.p9.1).
+* [49]A. Skliar, T. van Rozendaal, R. Lepert, T. Boinovski, M. Van Baalen, M. Nagel, P. Whatmough, and B. E. Bejnordi (2024)Mixture of cache-conditional experts for efficient mobile device inference.arXiv preprint arXiv:2412.00099.Cited by: [§II-A](#S2.SS1.p2.1),[§IV-B](#S4.SS2.p5.1).
+* [50]H. Sun, M. Haider, R. Zhang, H. Yang, J. Qiu, M. Yin, M. Wang, P. Bartlett, and A. Zanette (2024)Fast best-of-n decoding via speculative rejection.Advances in Neural Information Processing Systems37, pp. 32630–32652.Cited by: [§II-C](#S2.SS3.p2.1).
+* [51]G. Team, P. Georgiev, V. I. Lei, R. Burnell, L. Bai, A. Gulati, G. Tanzer, D. Vincent, Z. Pan, S. Wang, et al. (2024)Gemini 1.5: Unlocking multimodal understanding across millions of tokens of context.arXiv preprint arXiv:2403.05530.Cited by: [§I](#S1.p1.1).
+* [52]H. Wang, Z. Zhang, and S. Han (2021)Spatten: efficient sparse attention architecture with cascade token and head pruning.In 2021 IEEE International Symposium on High-Performance Computer Architecture (HPCA),pp. 97–110.Cited by: [§VI](#S6.p2.1).
+* [53]H. Xia, T. Ge, P. Wang, S. Chen, F. Wei, and Z. Sui (2022)Speculative decoding: Exploiting speculative execution for accelerating seq2seq generation.arXiv preprint arXiv:2203.16487.Cited by: [§I](#S1.p5.1).
+* [54]Y. Xie, Z. Zhang, D. Zhou, C. Xie, Z. Song, X. Liu, Y. Wang, X. Lin, and A. Xu (2024)MoE-Pruner: Pruning Mixture-of-Experts Large Language Model using the Hints from Its Router.arXiv preprint arXiv:2410.12013.Cited by: [§I](#S1.p10.1),[§II-C](#S2.SS3.p3.1),[§IV-C](#S4.SS3.p1.1),[§IV](#S4.p2.1),[§V-A](#S5.SS1.p6.1),[§V-B](#S5.SS2.p2.1),[§VII](#S7.p1.1),[Abstract](#abstract1.2).
+* [55]D. Xu, W. Yin, H. Zhang, X. Jin, Y. Zhang, S. Wei, M. Xu, and X. Liu (2025)EdgeLLM: Fast On-Device LLM Inference With Speculative Decoding.IEEE Transactions on Mobile Computing24 (4), pp. 3256–3273.External Links: [Document](https://dx.doi.org/10.1109/TMC.2024.3513457)Cited by: [§I](#S1.p5.1),[§II-B](#S2.SS2.p6.1).
+* [56]D. Xu, H. Zhang, L. Yang, R. Liu, G. Huang, M. Xu, and X. Liu (2025)Fast on-device LLM inference with npus.In Proceedings of the 30th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 1,pp. 445–462.Cited by: [§I](#S1.p1.1).
+* [57]A. Yang, A. Li, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Gao, C. Huang, C. Lv, et al. (2025)Qwen3 technical report.arXiv preprint arXiv:2505.09388.Cited by: [§I](#S1.p10.1),[§I](#S1.p3.1),[§I](#S1.p7.1),[§II-C](#S2.SS3.p2.1),[§V-A](#S5.SS1.p9.1).
+* [58]C. Yang, Y. Sui, J. Xiao, L. Huang, Y. Gong, Y. Duan, W. Jia, M. Yin, Y. Cheng, and B. Yuan (2024)MoE-i2: compressing mixture of experts models through inter-expert pruning and intra-expert low-rank decomposition.In Findings of the Association for Computational Linguistics: EMNLP 2024,pp. 10456–10466.Cited by: [§II-C](#S2.SS3.p3.1),[§IV-C](#S4.SS3.p1.1).
+* [59]X. Ye, Y. Gan, Y. Ge, X. Zhang, and Y. Tang (2025)Atp-llava: adaptive token pruning for large vision language models.In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition,pp. 24972–24982.Cited by: [§III-A](#S3.SS1.p1.1).
+* [60]R. Yi, L. Guo, S. Wei, A. Zhou, S. Wang, and M. Xu (2025)EdgeMoE: Empowering Sparse Large Language Models on Mobile Devices.IEEE Transactions on Mobile Computing24 (8), pp. 7059–7073.External Links: [Document](https://dx.doi.org/10.1109/TMC.2025.3546466)Cited by: [§I](#S1.p10.1),[§I](#S1.p3.1),[§IV](#S4.p2.1),[§V-A](#S5.SS1.p5.1),[§V-B](#S5.SS2.p2.1),[§VII](#S7.p1.1),[Abstract](#abstract1.2).
+* [61]S. Yildirim and D. Chen (2025)SpecMemo: Speculative Decoding is in Your Pocket.arXiv preprint arXiv:2506.01986.Cited by: [§I](#S1.p5.1).
+* [62]S. Yun, K. Kyung, J. Cho, J. Choi, J. Kim, B. Kim, S. Lee, K. Sohn, and J. H. Ahn (2024)Duplex: A Device for Large Language Models with Mixture of Experts, Grouped Query Attention, and Continuous Batching.In 2024 57th IEEE/ACM International Symposium on Microarchitecture (MICRO),pp. 1429–1443.Cited by: [§II-A](#S2.SS1.p3.1).
+* [63]R. Zellers, A. Holtzman, Y. Bisk, A. Farhadi, and Y. Choi (2019)Hellaswag: Can a machine really finish your sentence?.arXiv preprint arXiv:1905.07830.Cited by: [§V-A](#S5.SS1.p9.1).
+* [64]Q. Zhang, A. Cheng, M. Lu, Z. Zhuo, M. Wang, J. Cao, S. Guo, Q. She, and S. Zhang (2024)[CLS] attention is all you need for training-free visual token pruning: make vlm inference faster.arXiv preprint arXiv:2412.01818v1.Cited by: [§III-A](#S3.SS1.p1.1).
+* [65]Y. Zhao, D. Wu, and J. Wang (2024)ALISA: Accelerating Large Language Model Inference via Sparsity-Aware KV Caching.In 2024 ACM/IEEE 51st Annual International Symposium on Computer Architecture (ISCA),Vol. , pp. 1005–1017.External Links: [Document](https://dx.doi.org/10.1109/ISCA59077.2024.00077)Cited by: [§I](#S1.p1.1).
+* [66]L. Zheng, W. Chiang, Y. Sheng, S. Zhuang, Z. Wu, Y. Zhuang, Z. Lin, Z. Li, D. Li, E. Xing, et al. (2023)Judging llm-as-a-judge with mt-bench and chatbot arena.Advances in neural information processing systems36, pp. 46595–46623.Cited by: [§V-A](#S5.SS1.p9.1).
+* [67]P. Zheng, W. Xu, and H. Wang (2026)Self-speculative decoding for on-device moe acceleration.WWW ’26, New York, NY, USA, pp. 5155–5164.External Links: ISBN 9798400723070,[Link](https://doi.org/10.1145/3774904.3792218),[Document](https://dx.doi.org/10.1145/3774904.3792218)Cited by: [§II-C](#S2.SS3.p4.1),[§V-A](#S5.SS1.p7.1).
+* [68]T. Zhu, X. Qu, D. Dong, J. Ruan, J. Tong, C. He, and Y. Cheng (2024)LLaMA-MoE: Building mixture-of-experts from llama with continual pre-training.In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing,pp. 15913–15923.Cited by: [§I](#S1.p3.1).
+
+</body>
+(Response complete. 412184 bytes total. Content-type: text/html; charset=utf-8. Fetched in 373ms.)

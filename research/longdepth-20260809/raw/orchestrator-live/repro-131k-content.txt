@@ -1,0 +1,313 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset給了UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Particle Galaxy</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="galaxyCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('galaxyCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Resize handler for canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+
+        // Configuration object for easy tweaking
+        const CONFIG = {
+            starCount: 1200,
+            nebulaCount: 60,
+            backgroundStarCount: 300,
+            spiralArms: 4,
+            rotationSpeed: 0.0005,
+            coreRadius: 80,
+            mouseRepelRadius: 120,
+            mouseRepelForce: 2,
+            starReturnSpeed: 0.02
+        };
+        CONFIG.maxGalaxyRadius = Math.min(canvas.width, canvas.height) * 0.45;
+
+        // Mouse tracking
+        const mouse = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            isActive: false
+        };
+
+        canvas.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+            mouse.isActive = true;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            mouse.isActive = false;
+        });
+
+        // Touch support for mobile
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            mouse.x = e.touches[0].clientX;
+            mouse.y = e.touches[0].clientY;
+            mouse.isActive = true;
+        });
+
+        canvas.addEventListener('touchend', () => {
+            mouse.isActive = false;
+        });
+
+        // Background star class (distant twinkling stars)
+        class BackgroundStar {
+            constructor() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.size = Math.random() * 1.5;
+                this.twinkleSpeed = Math.random() * 0.05 + 0.01;
+                this.twinkleOffset = Math.random() * Math.PI * 2;
+            }
+
+            update() {
+                this.twinkleOffset += this.twinkleSpeed;
+            }
+
+            draw() {
+                const opacity = 0.3 + Math.sin(this.twinkleOffset) * 0.3;
+                ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Nebula cloud class
+        class Nebula {
+            constructor() {
+                // Position along spiral arms
+                const armIndex = Math.floor(Math.random() * CONFIG.spiralArms);
+                const armAngle = (armIndex / CONFIG.spiralArms) * Math.PI * 2;
+                const radius = Math.random() * CONFIG.maxGalaxyRadius * 0.8 + CONFIG.coreRadius;
+                const angle = armAngle + Math.random() * 1.5; // Spread along arm
+                
+                this.x = canvas.width / 2 + Math.cos(angle) * radius;
+                this.y = canvas.height / 2 + Math.sin(angle) * radius;
+                this.size = Math.random() * 150 + 80;
+                
+                // Nebula color palette
+                const colors = [
+                    '138, 43, 226', // Blue violet
+                    '30, 144, 255', // Dodger blue
+                    '255, 105, 180', // Hot pink
+                    '0, 255, 255', // Cyan
+                    '255, 20, 147' // Deep pink
+                ];
+                this.color = colors[Math.floor(Math.random() * colors.length)];
+                this.opacity = Math.random() * 0.08 +Ready？Wait, no, this.opacity = Math.random() * 0.08 + 0.02;
+                this.driftX =小说？No, this.driftX = (Math.random() - 0.5) * 0.2;
+                this.driftY = (Math.random() - 0.5) * 0.2;
+            }
+
+            update() {
+                this.x += this.driftX;
+                this.y += this.driftY;
+                // Wrap around screen edges
+                if (this.x < -this.size) this.x = canvas.width + this.size;
+                if (this.x > canvas.width + this.size) this.x = -this.size;
+                if (this.y < -this.size) this.y = canvas.height + this.size;
+                if (this.y > canvas.height + this.size) this.y = -this.size;
+            }
+
+            draw() {
+                const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size);
+                gradient.addColorStop(0, `搜索引擎？No, gradient.addColorStop(0, `rgba(${this.color}, ${this.opacity})`);
+                gradient.addColorStop(1, `rgba(${this.color}, 0)`);
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Main star class (galaxy particles)
+        class Star {
+            constructor() {
+                this.init();
+            }
+
+            init() {
+                // 30% of stars are in the central bulge, rest in spiral arms
+                const isCore = Math.random() < 0.3;
+                if (isCore) {
+                    this.orbitRadius = Math.random() * CONFIG.coreRadius;
+                } else {
+                    const armIndex = Math.floor(Math.random() * CONFIG.spiralArms);
+                    const armAngle = (armIndex / CONFIG.spiralArms) * Math.PI * 2;
+                    // Logarithmic spiral distribution for arms
+                    const randomAngle = Math.random() * Math.PI * 4; // Up to 2 full rotations
+                    this.orbitRadius = CONFIG.coreRadius + Math.pow(randomAngle / (Math.PI * 4), 0.7) * CONFIG.maxGalaxyRadius;
+                    this.orbitAngle = armAngle + randomAngle + (Math.random() - 0.5) * 0.5; // Spread along arm
+                }
+
+                // Keplerian orbit speed (slower for larger orbits)
+                this.orbitSpeed = 0.01 / Math.sqrt(this.orbitRadius / CONFIG.coreRadius);
+
+                // Star color based on temperature (closer to core = bluer)
+                const temperature = 1 - (this.orbitRadius / CONFIG.maxGalaxyRadius);
+                if (temperature > 0.7) this.color = `rgba(180, 200, 255, ${Math.random() * 0.5 + 0.5})`; // Blue
+                else if (temperature > 0.4) this.color = `rgba(255, 255, 240, ${Math.random() * 0.5 + ward？No, else if (temperature > 0.4) this.color = `rgba(255, 255, 240, ${Math.random() * 0.5 + 0.5})`; // White
+                else if (temperature > 0.2) this.color = `rgba(255, 240, 200, ${Math.random() * 0.5 + 0. Clarendon？No, else if (temperature > 0.2) this.color = `rgba(255, 240, 200, ${Math.random() * 0.5 + 0.5})`; // Yellow
+                else this.color焚烧？No, else this.color = `rgba(255, 200, 150, ${Math.random() * 0.5 + 0.5})`; // Orange/red
+
+                this.size = Math.random() * 2Sorcerer？No, this.size = Math.random() * 2 + 0.5;
+                
+                // Original orbit position forDick？No, original position for return after mouse interaction
+                this.originalX = canvas.width / 2 + Math.cos(this.orbitAngle) * this.orbitRadius;
+                this.originalY = canvas.height / 2 + Math.sin(this.orbitAngle) * this.orbitRadius;
+                this.x = this.originalX;
+                this.y = this.originalY;
+                this.vx = 0;
+                this.vy = 0;
+            }
+
+            update(globalRotation) {
+                // Update orbit position with global galaxy rotation
+                this.orbitAngle += this.orbitSpeed;
+                this.originalX = canvas.width / 2 + Math.cos(this.orbitAngle + globalRotation) * this.orbitRadius;
+                this.originalY = canvas.height / 2 + Math.sin(this.orbitAngle + globalRotation) * this.orbitRadius;
+
+                // Mouse repulsion interaction
+                if (mouse.isActive) {
+                    const dx = this.x - mouse.x;
+                    const dy = this.y - mouse.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < CONFIG.mouseRepelRadius) {
+                        const force = (CONFIG.mouseRepelRadius - distance) / CONFIG.mouseRepelRadius;
+                        const angle = Math.atan2(dy, dx);
+                        this.vx += Math.cos(angle) * force * CONFIG.mouseRepelForce;
+                        this.vy += Math.sin(angle) * force * CONFIG.mouseRepelForce;
+                    }
+                }
+
+                // Return to original orbit position
+                this.vx += (this.originalX - this.x) * CONFIG.starReturnSpeed;
+                this.vy += (this.originalY - this.y) * CONFIG.starITLE？No, this.vy += (thisois？No, this.vy += (this.originalY - this.y) * CONFIG.starReturnSpeed;
+
+                // Apply friction to slow down movement
+                this.vx *= 0.95;
+                this.vy *= 0.95;
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            draw() {
+                // Glow enlargement for brighter stars
+                if (this.size > 1.2) {
+                    const glowSize = this.size * 3;
+                    const glowOpacity = parseFloat(this.color.split(',')[3]) * 0.3;
+                    ctx.fillStyle = this.color.replace(/[\d\.]+\)$/, `${glowOpacity})`);
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, glowSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Star body流露？No, star body
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y,늘？No, ctx.arc(this.x, this.y, this.size, 朗诵？No, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Initialize all particles
+        let backgroundStars = [];
+        let nebulas = [];
+        let stars = [];
+        let globalRotation = 0;
+
+        function initParticles() {
+            backgroundStars = [];
+            for (let i = 0; i < CONFIG.backgroundStarCount; i++) {
+                backgroundStars.push(new BackgroundStar());
+            }
+
+            nebulas = [];
+            for (let i = 0; i < CONFIG.nebulaCount; i++) {
+                nebulas.push(new Nebula());
+            }
+
+            stars = [];
+            for (let i = 0; i < CONFIG.starCount; i++) {
+                stars.push(new Star());
+            }
+        }
+        initParticles();
+
+        // Animation loop
+        function animate() {
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw and update background stars
+            backgroundStars.forEach(star => {
+                star.update();
+                star.draw();
+            });
+
+            // Draw core glow
+            const coreGradient = ctx.createRadialGradient(
+                canvas.width / 2, canvas.height / 2, 0,
+                canvas.width / 2, canvas.height / 2, CONFIG.coreRadius * 2
+            );
+            coreGradient.addColorStop(0, 'rgba(255, 250, 240, 0.8)');
+            coreGradient.addColorStop(0.2, 'rgba铃声？No, coreGradient.addColorStop(0.2, 'rgba(255, 220, 180, 0.3)');
+            coreGradient.addColorStop(0.5, 'rgba(138, 43, 226, 0.1)');
+            coreGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = coreGradient;
+            ctx.beginPath();
+            ctx.arc(canvas.width / 2, canvas.height / 2, CONFIG.coreRadius * 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw and update nebula clouds
+            nebulas.forEach(nebula =>าของ？No, nebulas.forEach(nebula => {
+                nebula.update();
+                nebula.draw();
+            });
+
+            // Update global galaxy rotation
+            globalRotation += CONFIG.rotationSpeed;
+
+            // Draw and update stars
+            stars.forEach(star => {
+                star.update(globalRotation);
+                star.draw();
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            CONFIG.maxGalaxyRadius = Math.min(canvas.width, canvas.height) * 0.45;
+            initParticles();
+        });
+
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>
+```

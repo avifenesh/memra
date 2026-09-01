@@ -1,0 +1,638 @@
+[server] starting; models config = [("zai/glm-5.3-flash", "/root/models/glm53-nvfp4", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=2, MEMRA_FAST=true)
+[spec-k] operator pin K=5: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "zai/glm-5.3-flash" <- /root/models/glm53-nvfp4
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=4 skipped=0 mismatches=0 elapsed_ms=2.672
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev1->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev2->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=16 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=1624.919
+[bf16-mmv] RESIDENT output.weight ne=[4096, 154880] n=634388480 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_b.weight loads as 2D Float ne=[4096, 64] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[bf16-mmv] RESIDENT blk.0.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.3.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk3-gate: 1296 MiB in 0.1s (22040 MiB/s)
+[slab-populate] blk3-up: 1296 MiB in 0.1s (22260 MiB/s)
+[slab-populate] blk3-down: 1296 MiB in 0.1s (22262 MiB/s)
+[moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+[bf16-mmv] RESIDENT blk.4.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk4-gate: 1296 MiB in 0.1s (22183 MiB/s)
+[slab-populate] blk4-up: 1296 MiB in 0.1s (22231 MiB/s)
+[slab-populate] blk4-down: 1296 MiB in 0.1s (22218 MiB/s)
+[bf16-mmv] RESIDENT blk.5.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk5-gate: 1296 MiB in 0.1s (22189 MiB/s)
+[slab-populate] blk5-up: 1296 MiB in 0.1s (22263 MiB/s)
+[slab-populate] blk5-down: 1296 MiB in 0.1s (22274 MiB/s)
+[bf16-mmv] RESIDENT blk.6.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk6-gate: 1296 MiB in 0.1s (22125 MiB/s)
+[slab-populate] blk6-up: 1296 MiB in 0.1s (22206 MiB/s)
+[slab-populate] blk6-down: 1296 MiB in 0.1s (22233 MiB/s)
+[bf16-mmv] RESIDENT blk.7.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk7-gate: 1296 MiB in 0.1s (22200 MiB/s)
+[slab-populate] blk7-up: 1296 MiB in 0.1s (22234 MiB/s)
+[slab-populate] blk7-down: 1296 MiB in 0.1s (22208 MiB/s)
+[bf16-mmv] RESIDENT blk.8.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk8-gate: 1296 MiB in 0.1s (22246 MiB/s)
+[slab-populate] blk8-up: 1296 MiB in 0.1s (22264 MiB/s)
+[slab-populate] blk8-down: 1296 MiB in 0.1s (22226 MiB/s)
+[bf16-mmv] RESIDENT blk.9.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk9-gate: 1296 MiB in 0.1s (22185 MiB/s)
+[slab-populate] blk9-up: 1296 MiB in 0.1s (22218 MiB/s)
+[slab-populate] blk9-down: 1296 MiB in 0.1s (22220 MiB/s)
+[bf16-mmv] RESIDENT blk.10.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk10-gate: 1296 MiB in 0.1s (22473 MiB/s)
+[slab-populate] blk10-up: 1296 MiB in 0.1s (22593 MiB/s)
+[slab-populate] blk10-down: 1296 MiB in 0.1s (22493 MiB/s)
+[bf16-mmv] RESIDENT blk.11.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk11-gate: 1296 MiB in 0.1s (22344 MiB/s)
+[slab-populate] blk11-up: 1296 MiB in 0.1s (22569 MiB/s)
+[slab-populate] blk11-down: 1296 MiB in 0.1s (22570 MiB/s)
+[bf16-mmv] RESIDENT blk.12.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk12-gate: 1296 MiB in 0.1s (22458 MiB/s)
+[slab-populate] blk12-up: 1296 MiB in 0.1s (22572 MiB/s)
+[slab-populate] blk12-down: 1296 MiB in 0.1s (22543 MiB/s)
+[bf16-mmv] RESIDENT blk.13.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk13-gate: 1296 MiB in 0.1s (22521 MiB/s)
+[slab-populate] blk13-up: 1296 MiB in 0.1s (22552 MiB/s)
+[slab-populate] blk13-down: 1296 MiB in 0.1s (22561 MiB/s)
+[bf16-mmv] RESIDENT blk.14.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk14-gate: 1296 MiB in 0.1s (22421 MiB/s)
+[slab-populate] blk14-up: 1296 MiB in 0.1s (22488 MiB/s)
+[slab-populate] blk14-down: 1296 MiB in 0.1s (22540 MiB/s)
+[bf16-mmv] RESIDENT blk.15.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk15-gate: 1296 MiB in 0.1s (22492 MiB/s)
+[slab-populate] blk15-up: 1296 MiB in 0.1s (22526 MiB/s)
+[slab-populate] blk15-down: 1296 MiB in 0.1s (22581 MiB/s)
+[moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+[bf16-mmv] RESIDENT blk.16.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk16-gate: 1296 MiB in 0.1s (25193 MiB/s)
+[slab-populate] blk16-up: 1296 MiB in 0.1s (25262 MiB/s)
+[slab-populate] blk16-down: 1296 MiB in 0.1s (25311 MiB/s)
+[bf16-mmv] RESIDENT blk.17.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk17-gate: 1296 MiB in 0.1s (25294 MiB/s)
+[slab-populate] blk17-up: 1296 MiB in 0.1s (25231 MiB/s)
+[slab-populate] blk17-down: 1296 MiB in 0.1s (25359 MiB/s)
+[bf16-mmv] RESIDENT blk.18.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk18-gate: 1296 MiB in 0.1s (25257 MiB/s)
+[slab-populate] blk18-up: 1296 MiB in 0.1s (25352 MiB/s)
+[slab-populate] blk18-down: 1296 MiB in 0.1s (25301 MiB/s)
+[bf16-mmv] RESIDENT blk.19.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk19-gate: 1296 MiB in 0.1s (24811 MiB/s)
+[slab-populate] blk19-up: 1296 MiB in 0.1s (25356 MiB/s)
+[slab-populate] blk19-down: 1296 MiB in 0.1s (25278 MiB/s)
+[bf16-mmv] RESIDENT blk.20.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk20-gate: 1296 MiB in 0.1s (25195 MiB/s)
+[slab-populate] blk20-up: 1296 MiB in 0.1s (25411 MiB/s)
+[slab-populate] blk20-down: 1296 MiB in 0.1s (25347 MiB/s)
+[bf16-mmv] RESIDENT blk.21.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk21-gate: 1296 MiB in 0.1s (25203 MiB/s)
+[slab-populate] blk21-up: 1296 MiB in 0.1s (25361 MiB/s)
+[slab-populate] blk21-down: 1296 MiB in 0.1s (25448 MiB/s)
+[bf16-mmv] RESIDENT blk.22.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk22-gate: 1296 MiB in 0.1s (22253 MiB/s)
+[slab-populate] blk22-up: 1296 MiB in 0.1s (22347 MiB/s)
+[slab-populate] blk22-down: 1296 MiB in 0.1s (22378 MiB/s)
+[bf16-mmv] RESIDENT blk.23.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk23-gate: 1296 MiB in 0.1s (22107 MiB/s)
+[slab-populate] blk23-up: 1296 MiB in 0.1s (22371 MiB/s)
+[slab-populate] blk23-down: 1296 MiB in 0.1s (22272 MiB/s)
+[bf16-mmv] RESIDENT blk.24.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk24-gate: 1296 MiB in 0.1s (22312 MiB/s)
+[slab-populate] blk24-up: 1296 MiB in 0.1s (22305 MiB/s)
+[slab-populate] blk24-down: 1296 MiB in 0.1s (22339 MiB/s)
+[bf16-mmv] RESIDENT blk.25.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk25-gate: 1296 MiB in 0.1s (22236 MiB/s)
+[slab-populate] blk25-up: 1296 MiB in 0.1s (22283 MiB/s)
+[slab-populate] blk25-down: 1296 MiB in 0.1s (22212 MiB/s)
+[bf16-mmv] RESIDENT blk.26.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk26-gate: 1296 MiB in 0.1s (22266 MiB/s)
+[slab-populate] blk26-up: 1296 MiB in 0.1s (22293 MiB/s)
+[slab-populate] blk26-down: 1296 MiB in 0.1s (22429 MiB/s)
+[bf16-mmv] RESIDENT blk.27.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk27-gate: 1296 MiB in 0.1s (22263 MiB/s)
+[slab-populate] blk27-up: 1296 MiB in 0.1s (22383 MiB/s)
+[slab-populate] blk27-down: 1296 MiB in 0.1s (22339 MiB/s)
+[bf16-mmv] RESIDENT blk.28.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk28-gate: 1296 MiB in 0.1s (25797 MiB/s)
+[slab-populate] blk28-up: 1296 MiB in 0.1s (25791 MiB/s)
+[slab-populate] blk28-down: 1296 MiB in 0.1s (25803 MiB/s)
+[bf16-mmv] RESIDENT blk.29.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk29-gate: 1296 MiB in 0.1s (25855 MiB/s)
+[slab-populate] blk29-up: 1296 MiB in 0.1s (25902 MiB/s)
+[slab-populate] blk29-down: 1296 MiB in 0.1s (25765 MiB/s)
+[bf16-mmv] RESIDENT blk.30.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk30-gate: 1296 MiB in 0.1s (25888 MiB/s)
+[slab-populate] blk30-up: 1296 MiB in 0.1s (25858 MiB/s)
+[slab-populate] blk30-down: 1296 MiB in 0.0s (25925 MiB/s)
+[moe] resident-experts decision (PP dev2): experts 65.23GB + trunk 0.00GB vs free 99.70GB (expert budget 98.00GB) -> RESIDENT
+[bf16-mmv] RESIDENT blk.31.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk31-gate: 1296 MiB in 0.1s (25072 MiB/s)
+[slab-populate] blk31-up: 1296 MiB in 0.1s (25901 MiB/s)
+[slab-populate] blk31-down: 1296 MiB in 0.1s (25831 MiB/s)
+[bf16-mmv] RESIDENT blk.32.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk32-gate: 1296 MiB in 0.1s (25623 MiB/s)
+[slab-populate] blk32-up: 1296 MiB in 0.1s (25775 MiB/s)
+[slab-populate] blk32-down: 1296 MiB in 0.1s (25839 MiB/s)
+[bf16-mmv] RESIDENT blk.33.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk33-gate: 1296 MiB in 0.1s (25386 MiB/s)
+[slab-populate] blk33-up: 1296 MiB in 0.1s (25870 MiB/s)
+[slab-populate] blk33-down: 1296 MiB in 0.1s (25884 MiB/s)
+[bf16-mmv] RESIDENT blk.34.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk34-gate: 1296 MiB in 0.1s (22084 MiB/s)
+[slab-populate] blk34-up: 1296 MiB in 0.1s (22118 MiB/s)
+[slab-populate] blk34-down: 1296 MiB in 0.1s (22066 MiB/s)
+[bf16-mmv] RESIDENT blk.35.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk35-gate: 1296 MiB in 0.1s (21963 MiB/s)
+[slab-populate] blk35-up: 1296 MiB in 0.1s (22116 MiB/s)
+[slab-populate] blk35-down: 1296 MiB in 0.1s (22047 MiB/s)
+[bf16-mmv] RESIDENT blk.36.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk36-gate: 1296 MiB in 0.1s (22082 MiB/s)
+[slab-populate] blk36-up: 1296 MiB in 0.1s (22087 MiB/s)
+[slab-populate] blk36-down: 1296 MiB in 0.1s (22009 MiB/s)
+[bf16-mmv] RESIDENT blk.37.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk37-gate: 1296 MiB in 0.1s (22069 MiB/s)
+[slab-populate] blk37-up: 1296 MiB in 0.1s (22126 MiB/s)
+[slab-populate] blk37-down: 1296 MiB in 0.1s (22154 MiB/s)
+[bf16-mmv] RESIDENT blk.38.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk38-gate: 1296 MiB in 0.1s (22108 MiB/s)
+[slab-populate] blk38-up: 1296 MiB in 0.1s (22139 MiB/s)
+[slab-populate] blk38-down: 1296 MiB in 0.1s (22137 MiB/s)
+[bf16-mmv] RESIDENT blk.39.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk39-gate: 1296 MiB in 0.1s (22052 MiB/s)
+[slab-populate] blk39-up: 1296 MiB in 0.1s (22135 MiB/s)
+[slab-populate] blk39-down: 1296 MiB in 0.1s (22209 MiB/s)
+[bf16-mmv] RESIDENT blk.40.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk40-gate: 1296 MiB in 0.1s (22323 MiB/s)
+[slab-populate] blk40-up: 1296 MiB in 0.1s (22310 MiB/s)
+[slab-populate] blk40-down: 1296 MiB in 0.1s (22345 MiB/s)
+[bf16-mmv] RESIDENT blk.41.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk41-gate: 1296 MiB in 0.1s (22326 MiB/s)
+[slab-populate] blk41-up: 1296 MiB in 0.1s (22365 MiB/s)
+[slab-populate] blk41-down: 1296 MiB in 0.1s (22280 MiB/s)
+[bf16-mmv] RESIDENT blk.42.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk42-gate: 1296 MiB in 0.1s (22331 MiB/s)
+[slab-populate] blk42-up: 1296 MiB in 0.1s (22326 MiB/s)
+[slab-populate] blk42-down: 1296 MiB in 0.1s (22363 MiB/s)
+[bf16-mmv] RESIDENT blk.43.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk43-gate: 1296 MiB in 0.1s (22216 MiB/s)
+[slab-populate] blk43-up: 1296 MiB in 0.1s (22276 MiB/s)
+[slab-populate] blk43-down: 1296 MiB in 0.1s (22290 MiB/s)
+[bf16-mmv] RESIDENT blk.44.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[slab-populate] blk44-gate: 1296 MiB in 0.1s (22359 MiB/s)
+[slab-populate] blk44-up: 1296 MiB in 0.1s (22420 MiB/s)
+[slab-populate] blk44-down: 1296 MiB in 0.1s (22328 MiB/s)
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[bf16-mmv] RESIDENT blk.45.nextn.eh_proj.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.indexer.attn_q_b.weight ne=[1536, 4096] n=6291456 admit=bf16_mmv
+[slab-populate] blk45-gate: 1296 MiB in 0.1s (22236 MiB/s)
+[slab-populate] blk45-up: 1296 MiB in 0.1s (22409 MiB/s)
+[slab-populate] blk45-down: 1296 MiB in 0.1s (22315 MiB/s)
+[frspec-trim] self-trimmed head: 32768 rows of main output.weight (BF16)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[glm5-spec] serve route ARMED: MTP head loaded; draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[worker]   loaded "zai/glm-5.3-flash": 46 layers, eos=154820, stop=[154820, 154827, 154829]
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["zai/glm-5.3-flash"]
+[server] listening on http://127.0.0.1:18400
+[meter] admit id=chatcmpl-dfd6160597a646452778a167bd81381c tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=367 path=plain = 23936 B/token x ctx + 259MB prefill-workspace + 0MB fixed = 268MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] flag=on (MEMRA_PP_BF16; engagement is the per-shape ENGAGED line + the dispatch counter)
+[bf16-tc] ENGAGED m=239 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=239 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=239 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=239, t_kv=239, nh=64, width=239); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=239 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[moe-sk-form] dev=0 qt=7 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=2048 n_active=276 max_m=94
+[moe-grouped-prefill] execute layer=3 tokens=239 n_active=276 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=4 tokens=239 n_active=278 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=5 tokens=239 n_active=280 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=6 tokens=239 n_active=275 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=7 tokens=239 n_active=246 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=8 tokens=239 n_active=259 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=9 tokens=239 n_active=256 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=10 tokens=239 n_active=255 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=11 tokens=239 n_active=245 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=12 tokens=239 n_active=238 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=13 tokens=239 n_active=218 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=14 tokens=239 n_active=213 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=15 tokens=239 n_active=217 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=16 tokens=239 n_active=206 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=17 tokens=239 n_active=196 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=18 tokens=239 n_active=180 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=19 tokens=239 n_active=177 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=20 tokens=239 n_active=178 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=21 tokens=239 n_active=171 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=22 tokens=239 n_active=177 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=23 tokens=239 n_active=185 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=24 tokens=239 n_active=182 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=25 tokens=239 n_active=207 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=26 tokens=239 n_active=201 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=27 tokens=239 n_active=211 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=28 tokens=239 n_active=220 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=29 tokens=239 n_active=211 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=30 tokens=239 n_active=220 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=31 tokens=239 n_active=227 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=32 tokens=239 n_active=226 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=33 tokens=239 n_active=218 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=34 tokens=239 n_active=229 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=35 tokens=239 n_active=245 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=36 tokens=239 n_active=229 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=37 tokens=239 n_active=223 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=38 tokens=239 n_active=239 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=39 tokens=239 n_active=230 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=40 tokens=239 n_active=224 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=41 tokens=239 n_active=222 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=42 tokens=239 n_active=221 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=43 tokens=239 n_active=210 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=44 tokens=239 n_active=224 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[glm5-acc] ctx=239 burst=17/70 cum=17/70=0.243
+[glm5-acc] ctx=271 burst=22/60 cum=39/130=0.300
+[meter] admit id=chatcmpl-ceed5e9838c0e2bdeb59e97ee2d77d62 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=431 path=plain = 23936 B/token x ctx + 259MB prefill-workspace + 0MB fixed = 269MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=239 burst=17/70 cum=17/70=0.243
+[glm5-acc] ctx=271 burst=22/60 cum=39/130=0.300
+[glm5-acc] ctx=305 burst=20/65 cum=59/195=0.303
+[glm5-acc] ctx=338 burst=19/50 cum=78/245=0.318
+[meter] admit id=chatcmpl-630949496a616fa05bcd43138649bfbd tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=481 path=plain = 23936 B/token x ctx + 313MB prefill-workspace + 0MB fixed = 325MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=289 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=289 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=289 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=289 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=289 burst=18/70 cum=18/70=0.257
+[glm5-acc] ctx=322 burst=17/85 cum=35/155=0.226
+[glm5-acc] ctx=356 burst=21/55 cum=56/210=0.267
+[glm5-acc] ctx=388 burst=17/60 cum=73/270=0.270
+[meter] admit id=chatcmpl-52e92af18f9526909e400d9b191c83d1 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=755 path=plain = 23936 B/token x ctx + 610MB prefill-workspace + 0MB fixed = 628MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=563 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=563 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=563 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=563 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=563 burst=20/55 cum=20/55=0.364
+[glm5-acc] ctx=595 burst=20/60 cum=40/115=0.348
+[glm5-acc] ctx=627 burst=21/65 cum=61/180=0.339
+[glm5-acc] ctx=661 burst=18/60 cum=79/240=0.329
+[meter] admit id=chatcmpl-1938f7811f010495d315bc75b0069483 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=645 path=plain = 23936 B/token x ctx + 491MB prefill-workspace + 0MB fixed = 506MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=453 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=453 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=453 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=453 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=453 burst=17/70 cum=17/70=0.243
+[glm5-acc] ctx=485 burst=16/80 cum=33/150=0.220
+[glm5-acc] ctx=517 burst=21/70 cum=54/220=0.245
+[glm5-acc] ctx=552 burst=18/55 cum=72/275=0.262
+[meter] admit id=chatcmpl-a483ece9336a9c8a5d4c158941f87529 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=712 path=plain = 23936 B/token x ctx + 564MB prefill-workspace + 0MB fixed = 581MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=520 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=520 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=520 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=520 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=520 burst=19/60 cum=19/60=0.317
+[glm5-acc] ctx=552 burst=19/70 cum=38/130=0.292
+[glm5-acc] ctx=585 burst=21/65 cum=59/195=0.303
+[glm5-acc] ctx=619 burst=19/50 cum=78/245=0.318
+[meter] admit id=chatcmpl-c5420d7f57dc1f46852be7e5079a75c8 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=384 path=plain = 23936 B/token x ctx + 208MB prefill-workspace + 0MB fixed = 217MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=192 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=192 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=192 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=192 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=192 burst=19/60 cum=19/60=0.317
+[glm5-acc] ctx=224 burst=22/50 cum=41/110=0.373
+[glm5-acc] ctx=256 burst=17/75 cum=58/185=0.314
+[glm5-acc] ctx=288 burst=18/70 cum=76/255=0.298
+[meter] admit id=chatcmpl-585ba668e7406007e95eb754b11ae231 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=323 path=plain = 23936 B/token x ctx + 142MB prefill-workspace + 0MB fixed = 150MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=131 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=131 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=131 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=131 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=131 burst=18/70 cum=18/70=0.257
+[glm5-acc] ctx=164 burst=22/55 cum=40/125=0.320
+[glm5-acc] ctx=197 burst=21/55 cum=61/180=0.339
+[glm5-acc] ctx=229 burst=20/55 cum=81/235=0.345
+[meter] admit id=chatcmpl-a11a0a51ac4caa3c8a809a432b0d5122 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=473 path=plain = 23936 B/token x ctx + 305MB prefill-workspace + 0MB fixed = 316MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=281 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=281 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=281 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=281 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=281 burst=18/70 cum=18/70=0.257
+[glm5-acc] ctx=314 burst=20/60 cum=38/130=0.292
+[glm5-acc] ctx=346 burst=22/60 cum=60/190=0.316
+[glm5-acc] ctx=380 burst=22/50 cum=82/240=0.342
+[meter] admit id=chatcmpl-9d50f798a5dde576c2149214130ff117 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=417 path=plain = 23936 B/token x ctx + 244MB prefill-workspace + 0MB fixed = 254MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=225 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=225 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=225 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=225 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=225 burst=20/65 cum=20/65=0.308
+[glm5-acc] ctx=259 burst=22/55 cum=42/120=0.350
+[glm5-acc] ctx=292 burst=20/65 cum=62/185=0.335
+[glm5-acc] ctx=325 burst=16/60 cum=78/245=0.318
+[meter] admit id=chatcmpl-288a34880acedc5c0fbc0dd27cd33cde tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=332 path=plain = 23936 B/token x ctx + 152MB prefill-workspace + 0MB fixed = 160MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=140 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=140 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=140 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=140 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=140 burst=15/85 cum=15/85=0.176
+[glm5-acc] ctx=173 burst=21/70 cum=36/155=0.232
+[glm5-acc] ctx=208 burst=19/65 cum=55/220=0.250
+[glm5-acc] ctx=240 burst=17/60 cum=72/280=0.257
+[meter] admit id=chatcmpl-8c31c5e7fd55b61ce009f6710738f534 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=619 path=plain = 23936 B/token x ctx + 463MB prefill-workspace + 0MB fixed = 478MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=427 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=427 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=427 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=427 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=427 burst=19/60 cum=19/60=0.317
+[glm5-acc] ctx=459 burst=20/75 cum=39/135=0.289
+[glm5-acc] ctx=494 burst=20/65 cum=59/200=0.295
+[glm5-acc] ctx=527 burst=16/60 cum=75/260=0.288
+[meter] admit id=chatcmpl-8f4b78c84dc7619ae908652c0cbbae87 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=4818 path=plain = 23936 B/token x ctx + 4465MB prefill-workspace + 0MB fixed = 4581MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=4626 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=4096 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=4096 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=4096 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=530 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=530 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=530 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=4626 burst=18/75 cum=18/75=0.240
+[glm5-acc] ctx=4660 burst=19/75 cum=37/150=0.247
+[glm5-acc] ctx=4694 burst=21/65 cum=58/215=0.270
+[glm5-acc] ctx=4728 burst=14/65 cum=72/280=0.257
+[meter] admit id=chatcmpl-cfdf0b4305f46e4e950eaacfdf0f400c tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=5739 path=plain = 23936 B/token x ctx + 4484MB prefill-workspace + 0MB fixed = 4621MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=5547 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=1451 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=1451 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=1451 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=5547 burst=18/65 cum=18/65=0.277
+[glm5-acc] ctx=5579 burst=14/90 cum=32/155=0.206
+[glm5-acc] ctx=5611 burst=21/60 cum=53/215=0.247
+[glm5-acc] ctx=5644 burst=17/70 cum=70/285=0.246
+[meter] admit id=chatcmpl-855b4cedb32ba37ee58cfc218982cc97 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=6659 path=plain = 23936 B/token x ctx + 4503MB prefill-workspace + 0MB fixed = 4662MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=6467 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[bf16-tc] ENGAGED m=2371 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=2371 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[bf16-tc] ENGAGED m=2371 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
+[glm5-acc] ctx=6467 burst=18/65 cum=18/65=0.277
+[glm5-acc] ctx=6499 burst=20/70 cum=38/135=0.281
+[glm5-acc] ctx=6533 burst=20/60 cum=58/195=0.297
+[glm5-acc] ctx=6565 burst=19/70 cum=77/265=0.291
+[meter] admit id=chatcmpl-a10978f11ea878ee39ab937d233ea99b tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=431 path=plain = 23936 B/token x ctx + 259MB prefill-workspace + 0MB fixed = 269MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=239 burst=17/70 cum=17/70=0.243
+[glm5-acc] ctx=271 burst=15/85 cum=32/155=0.206
+[glm5-acc] ctx=303 burst=19/65 cum=51/220=0.232
+[glm5-acc] ctx=335 burst=20/60 cum=71/280=0.254
+[meter] admit id=chatcmpl-b98262c8fddf70ceb128170a530bfa40 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=481 path=plain = 23936 B/token x ctx + 313MB prefill-workspace + 0MB fixed = 325MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=289 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=289 burst=16/75 cum=16/75=0.213
+[glm5-acc] ctx=321 burst=18/75 cum=34/150=0.227
+[glm5-acc] ctx=354 burst=19/70 cum=53/220=0.241
+[glm5-acc] ctx=387 burst=19/60 cum=72/280=0.257
+[meter] admit id=chatcmpl-3e80e87c6a17182a3b8ced536e89af66 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=755 path=plain = 23936 B/token x ctx + 610MB prefill-workspace + 0MB fixed = 628MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=563 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=563 burst=20/55 cum=20/55=0.364
+[glm5-acc] ctx=595 burst=19/70 cum=39/125=0.312
+[glm5-acc] ctx=628 burst=16/80 cum=55/205=0.268
+[glm5-acc] ctx=660 burst=20/65 cum=75/270=0.278
+[meter] admit id=chatcmpl-d4295f2d9e3367b98153ff18014fe1ae tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=645 path=plain = 23936 B/token x ctx + 491MB prefill-workspace + 0MB fixed = 506MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=453 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=453 burst=16/75 cum=16/75=0.213
+[glm5-acc] ctx=485 burst=17/80 cum=33/155=0.213
+[glm5-acc] ctx=518 burst=16/80 cum=49/235=0.209
+[glm5-acc] ctx=550 burst=19/65 cum=68/300=0.227
+[meter] admit id=chatcmpl-db00c97fdd2079a7970d59ce13e505ef tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=712 path=plain = 23936 B/token x ctx + 564MB prefill-workspace + 0MB fixed = 581MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=520 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=520 burst=20/60 cum=20/60=0.333
+[glm5-acc] ctx=553 burst=16/95 cum=36/155=0.232
+[glm5-acc] ctx=588 burst=16/80 cum=52/235=0.221
+[glm5-acc] ctx=620 burst=15/70 cum=67/305=0.220
+[meter] admit id=chatcmpl-f5943b58b3d391a980f64c1b801ae279 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=384 path=plain = 23936 B/token x ctx + 208MB prefill-workspace + 0MB fixed = 217MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=192 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=192 burst=22/55 cum=22/55=0.400
+[glm5-acc] ctx=226 burst=19/65 cum=41/120=0.342
+[glm5-acc] ctx=258 burst=21/60 cum=62/180=0.344
+[glm5-acc] ctx=291 burst=17/65 cum=79/245=0.322
+[meter] admit id=chatcmpl-d3dddbf9c8c9da5d008fc5d1269b3f84 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=323 path=plain = 23936 B/token x ctx + 142MB prefill-workspace + 0MB fixed = 150MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=131 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=131 burst=20/60 cum=20/60=0.333
+[glm5-acc] ctx=164 burst=19/65 cum=39/125=0.312
+[glm5-acc] ctx=196 burst=20/70 cum=59/195=0.303
+[glm5-acc] ctx=230 burst=16/65 cum=75/260=0.288
+[meter] admit id=chatcmpl-4fcb374e7d1691d223b5b5010ae1620f tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=473 path=plain = 23936 B/token x ctx + 305MB prefill-workspace + 0MB fixed = 316MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=281 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=281 burst=18/65 cum=18/65=0.277
+[glm5-acc] ctx=313 burst=19/65 cum=37/130=0.285
+[glm5-acc] ctx=345 burst=19/65 cum=56/195=0.287
+[glm5-acc] ctx=377 burst=19/65 cum=75/260=0.288
+[meter] admit id=chatcmpl-01a75ff61466e958cfb7974a03fd9f5e tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=417 path=plain = 23936 B/token x ctx + 244MB prefill-workspace + 0MB fixed = 254MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=225 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=225 burst=18/65 cum=18/65=0.277
+[glm5-acc] ctx=257 burst=21/65 cum=39/130=0.300
+[glm5-acc] ctx=291 burst=23/65 cum=62/195=0.318
+[glm5-acc] ctx=327 burst=18/45 cum=80/240=0.333
+[meter] admit id=chatcmpl-6b776a2194af5599fc601899998c4162 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=332 path=plain = 23936 B/token x ctx + 152MB prefill-workspace + 0MB fixed = 160MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=140 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=140 burst=20/65 cum=20/65=0.308
+[glm5-acc] ctx=174 burst=18/70 cum=38/135=0.281
+[glm5-acc] ctx=206 burst=20/60 cum=58/195=0.297
+[glm5-acc] ctx=238 burst=19/65 cum=77/260=0.296
+[meter] admit id=chatcmpl-96a50d14138141d7b4d7851b453706aa tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=619 path=plain = 23936 B/token x ctx + 463MB prefill-workspace + 0MB fixed = 478MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=427 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=427 burst=19/60 cum=19/60=0.317
+[glm5-acc] ctx=459 burst=18/70 cum=37/130=0.285
+[glm5-acc] ctx=491 burst=19/65 cum=56/195=0.287
+[glm5-acc] ctx=523 burst=20/65 cum=76/260=0.292
+[meter] admit id=chatcmpl-ce9bba78bf20075ac00ee7bdc28817e3 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=4818 path=plain = 23936 B/token x ctx + 4465MB prefill-workspace + 0MB fixed = 4581MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=4626 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=4626 burst=19/65 cum=19/65=0.292
+[glm5-acc] ctx=4659 burst=19/75 cum=38/140=0.271
+[glm5-acc] ctx=4693 burst=20/70 cum=58/210=0.276
+[glm5-acc] ctx=4727 burst=19/55 cum=77/265=0.291
+[meter] admit id=chatcmpl-18bbfc2916e32d868d9fdf8f4aab4e16 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=5739 path=plain = 23936 B/token x ctx + 4484MB prefill-workspace + 0MB fixed = 4621MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=5547 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=5547 burst=22/55 cum=22/55=0.400
+[glm5-acc] ctx=5581 burst=17/75 cum=39/130=0.300
+[glm5-acc] ctx=5613 burst=16/80 cum=55/210=0.262
+[glm5-acc] ctx=5645 burst=17/70 cum=72/280=0.257
+[meter] admit id=chatcmpl-5c4c75ca9de82bf6710fdcc5f3c6422a tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=6659 path=plain = 23936 B/token x ctx + 4503MB prefill-workspace + 0MB fixed = 4662MB
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=6467 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft head TRIMMED to 32768 rows (FR-Spec d2t engaged)
+[glm5-acc] ctx=6467 burst=13/90 cum=13/90=0.144
+[glm5-acc] ctx=6499 burst=18/70 cum=31/160=0.194
+[glm5-acc] ctx=6531 burst=19/75 cum=50/235=0.213
+[glm5-acc] ctx=6565 burst=15/80 cum=65/315=0.206
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

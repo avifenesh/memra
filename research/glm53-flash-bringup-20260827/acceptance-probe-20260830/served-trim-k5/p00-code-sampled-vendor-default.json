@@ -1,0 +1,36 @@
+{
+ "name": "p00-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 239,
+   "completion_tokens": 128,
+   "total_tokens": 367,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 20.47221598,
+   "spec": {
+    "rounds": 47,
+    "drafted": 235,
+    "accepted": 80,
+    "acceptance_rate": 0.3404255319148936
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "Let me parse what the user is asking for.\n\nContext: They said \"we don't go with rust this time\" \u2014 implying there was a previous conversation (which I don't have) about building something in Rust. Now they want a different implementation. They want a CLI tool that:\n\n1. They write minimal few sentences\n2. The agent captures, puts in place, tracks the relevant jsonl from whatever tool they were using (sounds like parsing Claude Code / agent session JSONL files)\n3. Compacts it\n4. Asks if they want to elaborate on some questions the agent found helpful to note\n5. If"
+    }
+   }
+  ]
+ }
+}

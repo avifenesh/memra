@@ -1,0 +1,49 @@
+ANON=nx20 TURN=8 CHARS=4588 FINISH=length REPEAT60=1
+======================================================================
+<think>
+Got it, let's break down what the user is asking here. First, they want me to handle a GitHub task related to a bug in JetBrains Marketplace listing. Let's parse the details:
+1. The bug is: Documentation link returns 404, Source Code link references stale repository URL (points to github.com/agent-sh/agnix/issues/1099)
+2. They want me to investigate, handle the answer/triage, implement on a branch if code is needed, and summarize what was done.
+
+First, I need to structure this properly. Let's start with triage first, since that's the first step for a bug report. First, confirm the bug validity: check if the documentation link and source code link in the JetBrains Marketplace listing are indeed broken as reported.
+
+Wait, first, triage steps:
+- First, reproduce the issue: Navigate to the JetBrains Marketplace listing for the relevant plugin (wait, the user didn't specify the plugin name? Wait no, the source code link is github.com/agent-sh/agnix, so the plugin is probably related to that repo. Let's assume the plugin is the one associated with the agent-sh/agnix repository.
+- Check the current links in the Marketplace listing:
+  1. Documentation link: Does it return 404? Let's say if the current doc link points to a removed page, that's confirmed.
+  2. Source Code link: Does it point to the stale issues URL (github.com/agent-sh/agnix/issues/1099) instead of the main repo URL? That's confirmed as a misconfiguration.
+
+Next, root cause analysis:
+- The Marketplace listing likely has incorrect URLs configured: the documentation link is pointing to a non-existent resource, and the source code link is incorrectly set to an issue page instead of the root repository URL.
+- Possible reasons: The repository was moved, the documentation was migrated and the old link wasn't updated, or the listing was set up incorrectly initially.
+
+Then, fix implementation steps:
+1. First, if we have access to the JetBrains Marketplace vendor account:
+   - Log in to the JetBrains Marketplace vendor portal.
+   - Navigate to the plugin listing settings.
+   - Update the Documentation link to the correct, active documentation URL (e.g., if the docs are now in the repo's wiki, or a separate docs site like agnix.agent-sh.dev/docs, or the repo's README if that's the primary doc).
+   - Update the Source Code link to the correct root repository URL: https://github.com/agent-sh/agnix (instead of the issues/1099 URL).
+2. If we don't have direct vendor access, we need to:
+   - Open a support ticket with JetBrains Marketplace support, referencing the bug report, providing the correct URLs, and requesting the listing be updated.
+   - Alternatively, if the repository owner has vendor access, notify them to make the changes.
+
+Wait, also, the user mentioned "implement on a branch if code is needed"—but in this case, is there code needed? Wait, maybe if the source code link is stale because the repo was moved, but no, the fix here is configuration, not code. Unless there's a case where the plugin's metadata is stored in the repo itself (like in a marketplace.json file in the repo), then we need to create a branch, update the metadata file with the correct links, and open a PR.
+
+Oh right! That's a possibility. If the JetBrains Marketplace listing pulls metadata from a file in the repository (like a .json or .yaml file in the root), then the fix would be in the repo code. Let's cover that case too.
+
+So, if the metadata is repo-hosted:
+1. Create a new branch in the agent-sh/agnix repo, e.g., fix/marketplace-links.
+2. Locate the metadata file (e.g., marketplace.json, plugin.yaml) that contains the documentation and source code links.
+3. Update the documentation link to the active URL, update the source code link to https://github.com/agent-sh/agnix.
+4. Commit the changes with a clear commit message: "fix: update stale JetBrains Marketplace documentation and source code links".
+5. Open a pull request against the main branch, referencing the bug report (issue #1099).
+6. Once the PR is merged, the Marketplace listing will automatically update if it's configured to pull from the repo metadata.
+
+Then, verification steps:
+- After making the changes (either via vendor portal or PR merge), wait for the Marketplace listing to refresh (usually takes a few minutes to a few hours).
+- Verify that the documentation link no longer returns 404, and the source code link points to the correct root repository.
+- Test both links to confirm they load the expected content.
+
+Then, summary of what was done, as the user requested.
+
+Wait, also, the user mentioned "handle it

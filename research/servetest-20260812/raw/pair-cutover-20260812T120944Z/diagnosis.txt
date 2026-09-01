@@ -1,0 +1,5 @@
+classified_utc=2026-08-12T12:15:55Z
+classification=operator metrics ingress boundary, not model-routing failure
+detail=api.tiyuvta.ai returned 403 for the privileged metrics token; pair reached public two-model readiness first
+action=rollback restored Q27, then gate and monitor were changed to scrape operator metrics on loopback while customer requests remain on the public base URL
+rollback_q27_ready=true

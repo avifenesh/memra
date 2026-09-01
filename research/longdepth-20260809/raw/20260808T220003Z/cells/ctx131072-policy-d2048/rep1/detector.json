@@ -1,0 +1,38 @@
+{
+  "cached_tokens": 0,
+  "code_start_char_offset": null,
+  "completion_bytes": 9136,
+  "completion_sha256": "c1a6f1cf61ff17ed550b4541620abd8136e0fbeb8e8bfcda72ac9e5923d17ea7",
+  "corrupt": true,
+  "first_corruption_cause": "parse_failure",
+  "first_corruption_token_index_0based": 0,
+  "first_corruption_token_index_1based": 1,
+  "first_non_ascii": null,
+  "first_non_latin": null,
+  "javascript_parser": "tree-sitter-javascript",
+  "label": "ctx131072-policy-d2048-r1",
+  "parse_failure": {
+    "byte_offset": 0,
+    "char_offset": 0,
+    "completion_token_index_0based": 0,
+    "completion_token_index_1based": 1,
+    "detail": "no <!doctype html> or <html start after the reasoning segment",
+    "kind": "missing_html_start",
+    "token_byte_end": 2,
+    "token_byte_start": 0,
+    "token_hex": "5765",
+    "token_id": 2581,
+    "token_text_debug": "\"We\""
+  },
+  "prompt_tokens": 361,
+  "server_n_tokens": 2048,
+  "stop_reason": "MaxNew",
+  "terminal_unclosed_tags": [],
+  "think_end_char_offset": null,
+  "token_index_convention": "completion token index is 0-based; 1-based twin is included",
+  "token_stream": {
+    "decode_match": "MATCH",
+    "decoded_bytes": 9136,
+    "token_count": 2048
+  }
+}

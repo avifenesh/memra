@@ -1,0 +1,768 @@
+// Compile engine .cu kernels to the selected CUDA fatbin (same pattern as memra-probe).
+use std::path::PathBuf;
+use std::process::Command;
+
+/// `nvcc --version`'s reported release, as `(major, minor)`. `None` when the binary cannot
+/// be run or the line cannot be parsed — such a candidate is unusable and gets skipped.
+/// Parses the canonical last line: `Cuda compilation tools, release 13.2, V13.2.68`.
+fn nvcc_version(p: &std::path::Path) -> Option<(u32, u32)> {
+    let out = Command::new(p).arg("--version").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    let rel = s.split("release ").nth(1)?;
+    let rel = rel.split(',').next()?.trim();
+    let mut it = rel.split('.');
+    let maj = it.next()?.parse::<u32>().ok()?;
+    let min = it.next().and_then(|m| m.parse::<u32>().ok()).unwrap_or(0);
+    Some((maj, min))
+}
+
+/// Resolve the `nvcc` to build with.
+///
+/// EXPLICIT INTENT WINS, unvalidated: `MEMRA_NVCC` first, then
+/// `CUDA_HOME`/`CUDA_PATH`/`CUDA_ROOT` + `/bin/nvcc`. Whoever sets those has chosen a
+/// toolkit (CI pins 13.1 through `MEMRA_NVCC`; the portable `89`/`90a` arches build fine on
+/// older releases), so this function must not second-guess them.
+///
+/// Otherwise: enumerate every candidate — `PATH` entries, `/usr/local/cuda/bin/nvcc`, and
+/// each `/usr/local/cuda-<x.y>/bin/nvcc` — ask each one its release, and take the
+/// **NEWEST**, not the first found.
+///
+/// WHY NEWEST-WINS RATHER THAN FIRST-ON-PATH (measured on the 5090 dev rig, 2026-08-06):
+/// this rig has BOTH a distro `/usr/bin/nvcc` (**CUDA 12.4**) and `/usr/local/cuda-13.1`.
+/// `/usr/bin` precedes the toolkit on the default `PATH`, and 12.4 predates sm_120 entirely
+/// — a first-hit resolver picks it and the build dies at
+/// `nvcc fatal : Unsupported gpu architecture 'compute_120a'`, which is a WORSE failure
+/// than the hardcoded pin it replaced (it breaks a machine that used to work). Ranking by
+/// reported release makes the pick order-independent and monotone: the rig picks 13.1, the
+/// PRO 6000 box picks 13.2, and a stale distro nvcc can never shadow a real toolkit.
+///
+/// WHY AT ALL: the old code defaulted to a bare `/usr/local/cuda-13.1/bin/nvcc`. The
+/// 2x RTX PRO 6000 box ships 12.8/12.9/13.0/**13.2** and no 13.1, so a naked `cargo build`
+/// died at `panicked at build.rs: spawn nvcc: Os { code: 2, kind: NotFound }` — a message
+/// naming neither CUDA nor the missing path. It cost the pp2-hardening lane its first build
+/// (`research/pp2-hardening-20260806/PROGRESS.md` Phase 0) and the vast 2x5090 bring-up
+/// before that (`research/vast2x5090-bringup-20260803/SUMMARY.md`). The resolved path and
+/// release are always echoed via `cargo:warning`, so every build log records which nvcc
+/// produced its fatbins.
+fn resolve_nvcc() -> String {
+    println!("cargo:rerun-if-env-changed=MEMRA_NVCC");
+    println!("cargo:rerun-if-env-changed=CUDA_HOME");
+    println!("cargo:rerun-if-env-changed=CUDA_PATH");
+    println!("cargo:rerun-if-env-changed=CUDA_ROOT");
+    if let Ok(p) = std::env::var("MEMRA_NVCC") {
+        println!("cargo:warning=nvcc from MEMRA_NVCC: {p}");
+        return p;
+    }
+    for var in ["CUDA_HOME", "CUDA_PATH", "CUDA_ROOT"] {
+        if let Ok(root) = std::env::var(var) {
+            let cand = PathBuf::from(&root).join("bin/nvcc");
+            if cand.is_file() {
+                println!("cargo:warning=nvcc from ${var}: {}", cand.display());
+                return cand.to_string_lossy().into_owned();
+            }
+        }
+    }
+    // Candidate set. Canonicalized + deduped so `/usr/local/cuda -> cuda-13.2` and a PATH
+    // entry pointing at the same tree are not probed (or reported) twice, and so the
+    // `<nvcc>/../../lib64` derivations below land in the real toolkit tree.
+    let mut cands: Vec<PathBuf> = Vec::new();
+    if let Ok(path) = std::env::var("PATH") {
+        cands.extend(
+            path.split(':')
+                .filter(|d| !d.is_empty())
+                .map(|d| PathBuf::from(d).join("nvcc")),
+        );
+    }
+    cands.push(PathBuf::from("/usr/local/cuda/bin/nvcc"));
+    if let Ok(rd) = std::fs::read_dir("/usr/local") {
+        for ent in rd.flatten() {
+            if ent.file_name().to_string_lossy().starts_with("cuda-") {
+                cands.push(ent.path().join("bin/nvcc"));
+            }
+        }
+    }
+    let mut seen: Vec<PathBuf> = Vec::new();
+    let mut ranked: Vec<((u32, u32), PathBuf)> = Vec::new();
+    for c in cands {
+        if !c.is_file() {
+            continue;
+        }
+        let abs = c.canonicalize().unwrap_or(c);
+        if seen.contains(&abs) {
+            continue;
+        }
+        seen.push(abs.clone());
+        if let Some(v) = nvcc_version(&abs) {
+            ranked.push((v, abs));
+        }
+    }
+    // Newest release wins; ties (same release reachable by two paths) keep discovery order,
+    // which puts PATH ahead of /usr/local — the sort is stable.
+    ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+    if let Some(((maj, min), p)) = ranked.first() {
+        let others: Vec<String> = ranked[1..]
+            .iter()
+            .map(|((a, b), q)| format!("{a}.{b} @ {}", q.display()))
+            .collect();
+        println!(
+            "cargo:warning=nvcc auto-detected CUDA {maj}.{min} at {}{}",
+            p.display(),
+            if others.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " (newest of {}; also saw {})",
+                    ranked.len(),
+                    others.join(", ")
+                )
+            }
+        );
+        return p.to_string_lossy().into_owned();
+    }
+    // Nothing runnable found: keep the historic pin so the failure text names a familiar
+    // path, and say out loud what to set. The spawn below turns this into a build error.
+    let pin = "/usr/local/cuda-13.1/bin/nvcc";
+    println!(
+        "cargo:warning=no runnable nvcc found via MEMRA_NVCC / CUDA_HOME / PATH / \
+         /usr/local/cuda*; falling back to {pin} — set MEMRA_NVCC=<path/to/nvcc>"
+    );
+    pin.to_string()
+}
+
+/// Arch auto-detection (MEMRA_CUDA_ARCH unset): probe the first GPU's compute capability
+/// via nvidia-smi and pick the matching build arch. GPU-less machines (CI compile gate)
+/// and unrecognized caps fall back to 120a — the naked build stays the sm_120a build.
+/// An explicit MEMRA_CUDA_ARCH always wins (this fn is not called then).
+fn detect_arch() -> String {
+    let cap = Command::new("nvidia-smi")
+        .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.lines().next().map(|l| l.trim().to_string()));
+    // sm_100a IS DELIBERATELY NOT AUTO-SELECTED. It is still accepted as an EXPLICIT
+    // MEMRA_CUDA_ARCH=100a opt-in, but a B200 owner must not have it chosen for them.
+    //
+    // HISTORY (2026-08-23): it did not build at all —
+    //   ptxas ... error : Instruction 'mma with block scale' not supported on .target 'sm_100a'
+    // Three translation units, two distinct causes, found by fixing each and watching the
+    // failure move:
+    //   1. cu/mmq_nvfp4_w4a8.cu (~40 sites) — stub-gate polarity. FIXED below.
+    //   2. cu/mmq_fp8_blk.cu   (~400 sites) — same polarity bug. FIXED below.
+    //   3. cu/mmq_q8_0_f32acc.cu — NOT polarity: its f8f6f4 arm was guarded by
+    //      `__CUDA_ARCH__ >= 1000`, and 1000 IS sm_100a, so the guard admitted the very arch
+    //      that rejects the instruction. FIXED lane/glm5-b200-prep-20260901 (>= 1200; the TU's
+    //      fail-closed __trap() arm now covers sm_100a like every other non-120a arch).
+    //
+    // CURRENT STATE (2026-09-01, lane/glm5-b200-prep-20260901): MEMRA_CUDA_ARCH=100a COMPILES —
+    // per-TU census 29/29 arm-A cells green, and ci.yml carries a compile-only sm_100a matrix cell so
+    // it stays that way. tools/fatbin-lookup-census.py --arch 100a passes with two DECLARED
+    // exceptions (qmatvec_gemm_nvfp4_fp4 — the MEMRA_FP4 door refuses on non-120a builds;
+    // qmatvec_gemm_q8_0_wgmma — call sites compiled out, cfg!(memra_hopper_mma)).
+    //
+    // WHY STILL NOT AUTO-SELECTED: compiling is not running. No memra binary has ever executed
+    // on sm_100a silicon — zero exactness gates, zero serving receipts, and the sm_120a-tuned
+    // block-scale MMQ prefill family is fail-closed stubs here. Auto-detect must not hand a
+    // B200 owner an unproven target; the opt-in stays explicit until a B200 box window banks
+    // runtime receipts (the bring-up plan lives in research/glm5-b200-prep-20260901/LANE.md).
+    // Refusing to choose an unexercised target is honest; silently choosing one is the shape
+    // this repo spent 2026-08-23 removing. See docs/RELEASING.md.
+    let arch = match cap.as_deref() {
+        Some("12.0") | Some("12.1") => "120a",
+        Some("9.0") => "90a",
+        Some("8.9") => "89",
+        _ => "120a",
+    };
+    match cap.as_deref() {
+        Some("10.0") => println!(
+            "cargo:warning=compute_cap 10.0 (B200) detected: sm_100a is NOT auto-selected \
+             because no memra binary has ever run on that silicon (it compiles and is \
+             CI-covered, but there are zero runtime receipts and the sm_120a block-scale MMQ \
+             prefill family is fail-closed stubs there - see docs/RELEASING.md). Building \
+             {arch} instead, which will NOT run on this device. Set MEMRA_CUDA_ARCH=100a to \
+             opt in explicitly."
+        ),
+        Some(c) => println!(
+            "cargo:warning=MEMRA_CUDA_ARCH auto-detected {arch} (compute_cap {c}); set MEMRA_CUDA_ARCH to override"
+        ),
+        None => {
+            println!("cargo:warning=no GPU visible; defaulting MEMRA_CUDA_ARCH=120a (compile-only)")
+        }
+    }
+    arch.to_string()
+}
+
+fn main() {
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+
+    // docs.rs builders have no nvcc and no CUDA libs: emit empty placeholder fatbins so
+    // the include_bytes!/env! consts compile, skip every nvcc/ar/link step. The resulting
+    // rlib is documentation-only — Engine::new would fail to load a zero-byte module, but
+    // docs.rs never runs code. Normal builds (CI included) never set DOCS_RS.
+    if std::env::var_os("DOCS_RS").is_some() {
+        for stem in [
+            "kernels",
+            "hybrid",
+            "kda",
+            "qmatvec",
+            "flash_attn",
+            "qmatvec_gemm",
+            "moe_router",
+            "spec_sample",
+            "flash_attn_vq4",
+            "flash_attn_vf8",
+            "flash_attn_kf8",
+            "flash_attn_kf8vq4",
+            "flash_attn_kf8vf8",
+        ] {
+            std::fs::write(out.join(format!("{stem}.fatbin")), []).unwrap();
+        }
+        for (env, stem) in [
+            ("MEMRA_ENGINE_FATBIN", "kernels"),
+            ("MEMRA_HYBRID_FATBIN", "hybrid"),
+            ("MEMRA_KDA_FATBIN", "kda"),
+            ("MEMRA_QMATVEC_FATBIN", "qmatvec"),
+            ("MEMRA_FLASH_FATBIN", "flash_attn"),
+            ("MEMRA_GEMM_FATBIN", "qmatvec_gemm"),
+            ("MEMRA_ROUTER_FATBIN", "moe_router"),
+            ("MEMRA_SAMPLE_FATBIN", "spec_sample"),
+            ("MEMRA_FLASH_FATBIN_VQ4", "flash_attn_vq4"),
+            ("MEMRA_FLASH_FATBIN_VF8", "flash_attn_vf8"),
+            ("MEMRA_FLASH_FATBIN_KF8", "flash_attn_kf8"),
+            ("MEMRA_FLASH_FATBIN_KF8VQ4", "flash_attn_kf8vq4"),
+            ("MEMRA_FLASH_FATBIN_KF8VF8", "flash_attn_kf8vf8"),
+        ] {
+            println!(
+                "cargo:rustc-env={env}={}",
+                out.join(format!("{stem}.fatbin")).display()
+            );
+        }
+        println!("cargo:rustc-check-cfg=cfg(memra_portable_cuda)");
+        println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
+        println!("cargo:rustc-check-cfg=cfg(memra_cutlass)");
+        println!("cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH=120a");
+        return;
+    }
+
+    let nvcc = resolve_nvcc();
+    println!("cargo:rerun-if-env-changed=MEMRA_CUDA_ARCH");
+    println!("cargo:rerun-if-env-changed=MEMRA_CUTLASS");
+    println!("cargo:rustc-check-cfg=cfg(memra_portable_cuda)");
+    println!("cargo:rustc-check-cfg=cfg(memra_hopper_mma)");
+    println!("cargo:rustc-check-cfg=cfg(memra_cutlass)");
+    let cuda_arch = std::env::var("MEMRA_CUDA_ARCH").unwrap_or_else(|_| detect_arch());
+    assert!(
+        matches!(cuda_arch.as_str(), "120a" | "100a" | "90a" | "89"),
+        "MEMRA_CUDA_ARCH must be 120a (default), 100a (B200), 90a (Hopper), or 89 (portable eval)"
+    );
+    // Hopper boot arch rides the portable-CUDA correctness path: sm_90a SASS, no
+    // sm_120a/sm_100a MMA kinds. Tuned wgmma paths are a separate later lane.
+    // Phase A (ARCHITECTURE-H100.md): 90a additionally re-enables the portable-PTX
+    // tensor-core paths the boot lane gated off — int8 mma.m16n8k32/k16.s8, bf16
+    // m16n8k16, ldmatrix, cp.async are sm_80-class and run natively on Hopper.
+    // The sm_120a/sm_100a-only MMA kinds (mxf4nvf4, kind::f8f6f4) stay dead: their
+    // launchers remain fail-closed stubs on this arch.
+    let portable = matches!(cuda_arch.as_str(), "89" | "90a");
+    let hopper_mma = cuda_arch == "90a";
+    assert!(
+        !(cuda_arch != "120a" && std::env::var_os("MEMRA_CUTLASS").is_some()),
+        "MEMRA_CUTLASS is sm_120a-only and cannot be enabled for this CUDA architecture"
+    );
+    let gencode = format!("arch=compute_{cuda_arch},code=sm_{cuda_arch}");
+    if portable {
+        println!("cargo:rustc-cfg=memra_portable_cuda");
+    }
+    if hopper_mma {
+        println!("cargo:rustc-cfg=memra_hopper_mma");
+    }
+    // Runtime arch guard reads this (Engine::new): fatbins are single-arch SASS, so the
+    // engine verifies the device's compute capability matches the built arch at init.
+    println!("cargo:rustc-env=MEMRA_BUILT_CUDA_ARCH={cuda_arch}");
+
+    for (src, env) in [
+        ("cu/kernels.cu", "MEMRA_ENGINE_FATBIN"),
+        ("cu/hybrid.cu", "MEMRA_HYBRID_FATBIN"),
+        ("cu/kda.cu", "MEMRA_KDA_FATBIN"),
+        ("cu/qmatvec.cu", "MEMRA_QMATVEC_FATBIN"),
+        ("cu/flash_attn.cu", "MEMRA_FLASH_FATBIN"),
+        ("cu/qmatvec_gemm.cu", "MEMRA_GEMM_FATBIN"),
+        ("cu/moe_router.cu", "MEMRA_ROUTER_FATBIN"),
+        ("cu/spec_sample.cu", "MEMRA_SAMPLE_FATBIN"),
+    ] {
+        println!("cargo:rerun-if-changed={src}");
+        println!("cargo:rerun-if-changed=cu/wgmma_common.cuh");
+        let stem = src.split('/').next_back().unwrap().trim_end_matches(".cu");
+        let fatbin = out.join(format!("{stem}.fatbin"));
+        let mut args = vec!["-gencode", &gencode, "-O3", "--fatbin"];
+        if portable {
+            args.push("-DMEMRA_PORTABLE_CUDA=1");
+        }
+        if hopper_mma {
+            args.push("-DMEMRA_HOPPER_MMA=1");
+        }
+        // The hand-written mxf4nvf4 block-scale MMA in qmatvec_gemm.cu is an sm_120a
+        // instruction encoding, so omit that opt-in kernel from the sm_100a fatbin.
+        // NOTE (corrected lane/glm5-b200-prep-20260901): the earlier version of this comment
+        // said B200 "uses the accuracy-safe NVFP4 W4A8 int8 path below instead" — it does
+        // NOT: cu/mmq_nvfp4_w4a8.cu is a fail-closed stub on every non-120a arch (the
+        // block-scale int8 form is the same sm_120a-only MMA kind). What an sm_100a build
+        // actually runs for NVFP4 weights today is the dp4a decode matvec family
+        // (cu/qmatvec.cu, `qmatvec_nvfp4_dp4a_sel*` — plain int8 dp4a, compiles clean on
+        // sm_100a) plus cuBLAS/cuBLASLt-class prefill. B200's own FP4 tensor cores are the
+        // tcgen05 family, a different programming model no memra kernel targets yet; a tuned
+        // sm_100a FP4/W4A8 prefill is a port lane, not a flag flip.
+        if cuda_arch == "100a" && src == "cu/qmatvec_gemm.cu" {
+            args.push("-DMEMRA_DISABLE_NATIVE_FP4=1");
+        }
+        // TUNE SEAM: MEMRA_FA_PP_MINBLOCKS sweeps fa_prefill_f32_pp's __launch_bounds__
+        // min-blocks (occupancy vs register-spill tradeoff; H100 ncu 2026-07-26).
+        println!("cargo:rerun-if-env-changed=MEMRA_FA_PP_MINBLOCKS");
+        let fa_mb = std::env::var("MEMRA_FA_PP_MINBLOCKS").ok();
+        let fa_mb_arg;
+        if let (Some(mb), "cu/flash_attn.cu") = (&fa_mb, src) {
+            fa_mb_arg = format!("-DFA_PP_MINBLOCKS={mb}");
+            args.push(&fa_mb_arg);
+        }
+        args.extend(["-o", fatbin.to_str().unwrap(), src]);
+        let status = Command::new(&nvcc).args(args).status().expect("spawn nvcc");
+        assert!(status.success(), "nvcc fatbin build failed for {src}");
+        println!("cargo:rustc-env={env}={}", fatbin.display());
+    }
+
+    // ---- KV-format fatbin variants of flash_attn.cu (kvbytes lane, 2026-07-08) ----
+    // Same kernels/entry names, compile-time K/V cache format via -D. Engine::new picks the
+    // fatbin at runtime from env MEMRA_KV_K / MEMRA_KV_V (lib.rs flash_fatbin_bytes); the default
+    // (no env) loads the plain flash_attn.fatbin built above — bit-identical daily config.
+    for (suffix, kfmt, vfmt) in [
+        ("VQ4", 0, 1),
+        ("VF8", 0, 2),
+        ("KF8", 1, 0),
+        ("KF8VQ4", 1, 1),
+        ("KF8VF8", 1, 2),
+    ] {
+        let fatbin = out.join(format!("flash_attn_{}.fatbin", suffix.to_lowercase()));
+        let mut args = vec![
+            "-gencode".to_string(),
+            gencode.clone(),
+            "-O3".to_string(),
+            "--fatbin".to_string(),
+        ];
+        if portable {
+            args.push("-DMEMRA_PORTABLE_CUDA=1".to_string());
+        }
+        if hopper_mma {
+            args.push("-DMEMRA_HOPPER_MMA=1".to_string());
+        }
+        args.extend([
+            format!("-DMEMRA_KV_KFMT={kfmt}"),
+            format!("-DMEMRA_KV_VFMT={vfmt}"),
+            "-o".to_string(),
+            fatbin.to_string_lossy().into_owned(),
+            "cu/flash_attn.cu".to_string(),
+        ]);
+        let status = Command::new(&nvcc)
+            .args(args)
+            .status()
+            .expect("spawn nvcc (flash_attn kv-format variant)");
+        assert!(
+            status.success(),
+            "nvcc fatbin build failed for flash_attn kv variant {suffix}"
+        );
+        println!(
+            "cargo:rustc-env=MEMRA_FLASH_FATBIN_{suffix}={}",
+            fatbin.display()
+        );
+    }
+
+    // ---- Vendored llama MMQ GEMMs: a STATIC LIB with C-ABI host launchers (extern "C"). ----
+    // Same kind as the CUTLASS artifact (a host-side launcher cannot go through the device-only fatbin
+    // path), but ALWAYS built (no external header deps — fully ggml-decoupled). The launchers do
+    // cudaFuncSetAttribute (>48KB dynamic smem) + the mul_mat_q kernel launch internally.
+    // Called from Rust via FFI (mmq_ffi.rs), dispatched behind MEMRA_MMQ=1.
+    // Two translation units: mmq_fp4.cu (Blackwell mxf4nvf4 W4A4) and mmq_q45k.cu
+    // (Q4_K/Q5_K int8-MMA W4A8, sm_75+ portable). Both archived into one libmemra_mmq.a.
+    {
+        let mut objs: Vec<PathBuf> = Vec::new();
+        // TUNE SEAM: MEMRA_MMQ_X_Q45K=64 rebuilds the k-quant MMQ with a 64-token tile
+        // (47KB smem -> 2 CTA/SM vs 57KB/1; the q45k occupancy ceiling found by ncu).
+        println!("cargo:rerun-if-env-changed=MEMRA_MMQ_X_Q45K");
+        let q45k_x = std::env::var("MEMRA_MMQ_X_Q45K").ok();
+        // TUNE SEAM: MEMRA_MMQ_X_Q4=64|96 shrinks the q4_0 MMQ token-tile (same axis as the
+        // q45k/w4a8 seams; build-time — the tile is a template constant).
+        println!("cargo:rerun-if-env-changed=MEMRA_MMQ_X_Q4");
+        let q4_x = std::env::var("MEMRA_MMQ_X_Q4").ok();
+        // TUNE SEAM: MEMRA_MMQ_X_W4A8=<n> rebuilds the NVFP4 W4A8 MMQ with an n-token tile.
+        // ncu 2026-07-06 (27B pp6257): default 128x128 tile = 61KB smem = 1 CTA/SM ->
+        // warps_active 16.7%, tensor pipe 53% — the same occupancy ceiling q45k hit.
+        println!("cargo:rerun-if-env-changed=MEMRA_MMQ_X_W4A8");
+        let w4a8_x = std::env::var("MEMRA_MMQ_X_W4A8").ok();
+        // TUNE SEAM: MEMRA_MMQ_X_IQEXP=<n> rebuilds the expert-segmented MMQ with an n-token
+        // tile (the round-45 kernel-rate dig: 128 costs 64 accumulator regs/thread at
+        // occupancy 12.5%; smaller tiles trade MMA j-reuse for CTAs/SM).
+        println!("cargo:rerun-if-env-changed=MEMRA_MMQ_X_IQEXP");
+        let iqexp_x = std::env::var("MEMRA_MMQ_X_IQEXP").ok();
+        // ROLLBACK SEAM: MEMRA_IQEXP_K16=1 rebuilds the IQ-experts + IQ4_XS-dense MMQ tiles with
+        // the ORIGINAL m16n8k16.s8 MMA form instead of the m16n8k32.s8 default (lane/iq-experts-
+        // k32, 2026-08-07). The int8 pipe is K-FREE on sm_120a (both forms 16.06 cyc/warp-MMA),
+        // so k32 does 2x the K-work per instruction and halves the f32 fold arity; the merge is
+        // legal because both per-16 scale slots of a 32-block are equal by loader construction.
+        // Receipts: research/iq-k32-20260807/.
+        println!("cargo:rerun-if-env-changed=MEMRA_IQEXP_K16");
+        let iqexp_k16 = std::env::var("MEMRA_IQEXP_K16").ok();
+        // TUNE SEAM: MEMRA_MMQ_Y_W4A8=64 halves the row tile AND warp count together (mmq_y =
+        // nwarps*16) — 42KB->21KB tile_x, 2 CTA/SM. Unlike MMQ_X, this axis doesn't duplicate
+        // weight reads, so it attacks the 16.7%-warps occupancy ceiling for free.
+        println!("cargo:rerun-if-env-changed=MEMRA_MMQ_Y_W4A8");
+        let w4a8_y = std::env::var("MEMRA_MMQ_Y_W4A8").ok();
+        // CEILING PROBE (not a tune seam, NOT shippable): MEMRA_MMQ_FOLD_CEILING=1 rebuilds
+        // the NVFP4 W4A8 MMQ with the per-k01 f32 scale-fold collapsed to an s32 add, to
+        // measure the upper bound of every fold-removal lever. Output is NUMERICALLY WRONG
+        // by construction — argmax/exactness gates WILL fail under it, by design. Receipts:
+        // research/prefill-gemm-20260806/.
+        println!("cargo:rerun-if-env-changed=MEMRA_MMQ_FOLD_CEILING");
+        let w4a8_fold_ceiling = std::env::var("MEMRA_MMQ_FOLD_CEILING").ok();
+        // ROLLBACK SEAM: MEMRA_MMQ_F8F4_PLAIN=1 rebuilds the f8f4 tile with the ORIGINAL plain
+        // kind::f8f6f4 MMA instead of the block_scale form at the ue8m0 identity scale. The two
+        // are bit-identical (0/128 elements differ, live-operand controls at 2^1/2^-1 exact) but
+        // the plain form issues at 32.02 cyc/warp-MMA against the block_scale form's 16.06 — a
+        // 1.994x MMA-rate difference. Receipts: research/w4a8-prefill-20260806/ slices 3-4.
+        println!("cargo:rerun-if-env-changed=MEMRA_MMQ_F8F4_PLAIN");
+        let f8f4_plain = std::env::var("MEMRA_MMQ_F8F4_PLAIN").ok();
+        // TUNE SEAM: MEMRA_MMQ_X_FP8=<n> rebuilds the per-block FP8 prefill tile with an n-token
+        // tile (it sets the WIDE candidate; the launcher picks between it and FP8_MMQ_X_SMALL per
+        // call by wave fill). v1 needed this seam because its 128-token default sat below the Q8_0
+        // floor at every 27B shape; v2's restructure made X=256 affordable and it is now the
+        // default. Neither arm is MMA-bound at any width measured (110-130 TF) — though note the
+        // denominator that judgement used was WRONG: the tile issued the PLAIN kind::f8f6f4 form,
+        // a 155-TF ceiling, not the 381-TF block_scale class (corrected 2026-08-06; see the FORM
+        // CHOICE block in cu/mmq_fp8_blk.cu).
+        //
+        // MEMRA_MMQ_Y_FP8 / MEMRA_MMQ_OCC_FP8 / MEMRA_MMQ_PIPE_FP8 (v2 slice-2/slice-3 seams)
+        // CONCLUDED NEGATIVE and were DELETED per the flags doctrine (v0.69.0): halving Y splits
+        // the same 8 warps across two CTAs, Y=128 with OCC=2 spills the accumulator, and cp.async
+        // on the weight tile cannot pay while the activation tile stays a synchronous copy. The
+        // record is research/fp8st-20260804/mmq-v2/RESULTS.jsonl slices 2-3 and experiment B.
+        println!("cargo:rerun-if-env-changed=MEMRA_MMQ_X_FP8");
+        let fp8_x = std::env::var("MEMRA_MMQ_X_FP8").ok();
+        // ROLLBACK SEAM: MEMRA_MMQ_FP8BLK_PLAIN=1 rebuilds the per-block FP8 prefill tile with the
+        // ORIGINAL plain kind::f8f6f4 MMA instead of the block_scale form at the ue8m0 identity
+        // scale. The two are bit-identical (0/128 accumulator elements differ, live-operand controls
+        // at 2^1/2^-1 exact) but the plain form issues at 32.02 cyc/warp-MMA against the block_scale
+        // form's 16.06 — a 1.994x MMA-rate difference. Same seam the W4A8 tile carries as
+        // MEMRA_MMQ_F8F4_PLAIN. Receipts: research/w4a8-prefill-20260806/ slices 3-4,
+        // research/rp-on-st-20260806/.
+        println!("cargo:rerun-if-env-changed=MEMRA_MMQ_FP8BLK_PLAIN");
+        let fp8blk_plain = std::env::var("MEMRA_MMQ_FP8BLK_PLAIN").ok();
+        // RESEARCH-INSTRUMENT ARM (not a runtime flag): ACCPROBE_F32_PLAIN=1 — see the
+        // mmq_q8_0_f32acc.cu branch below.
+        println!("cargo:rerun-if-env-changed=ACCPROBE_F32_PLAIN");
+        let accprobe_plain = std::env::var("ACCPROBE_F32_PLAIN").ok();
+        // RESEARCH-INSTRUMENT ARM (not a runtime flag, never a shipping default):
+        // MEMRA_DSV4_FMAD=1 drops the blanket `-fmad=false` from cu/dsv4_gpu.cu so nvcc may
+        // contract mul+add into FMA. It exists to PRICE the oracle-parity law's cost: a PTX
+        // census of the default build (iteration 4, 2026-08-19) found ZERO fma.rn.f32 in the
+        // hot decode kernels -- dsv4_fp4_gemm_sel (168 mul + 149 add), dsv4_gemv_bf16_m<T>
+        // (64 + 72), dsv4_dots_f32acc_mrow<T> (128 + 136), dsv4_rmsnorm/rowsq_f32acc -- so
+        // every hot inner loop pays two dependent instructions and two roundings where one
+        // FMA would do. That is a candidate explanation for lane 9's banked 'sel is not
+        // bandwidth-bound' and for the ~13-16% roofline position.
+        // FORKS NUMERICS: contraction removes an intermediate rounding, so an FMA build is
+        // NOT bit-identical to the CPU oracle's separate mul+add fixed tree. It must never
+        // become a default without the standard fork discipline (derived thresholds banked
+        // before rerun, CPU-oracle teacher-forcing, every disagreement an in-band near-tie).
+        // It does NOT threaten the batched-vs-sequential bit-exactness property, because a
+        // TU-wide compile flag lands identically on the M=1 and M=T twins.
+        println!("cargo:rerun-if-env-changed=MEMRA_DSV4_FMAD");
+        let dsv4_fmad = std::env::var("MEMRA_DSV4_FMAD").ok();
+        // fp8_prefill.cu rides the same static-lib kind: a cuBLASLt host launcher + quantize
+        // kernels for the MEMRA_PP_FP8 prefill path (runtime-gated; always built — no external
+        // header deps beyond the CUDA toolkit, which ships cublasLt).
+        for mmq_src in [
+            "cu/mmq_fp4.cu",
+            "cu/mmq_q45k.cu",
+            "cu/mmq_nvfp4_w4a8.cu",
+            "cu/mmq_iq_experts.cu",
+            "cu/mmq_q8_0.cu",
+            "cu/mmq_q4_0.cu",
+            "cu/fp8_prefill.cu",
+            "cu/f16_prefill.cu",
+            "cu/mmq_nvfp4_f8f4.cu",
+            "cu/fa3_prefill.cu",
+            "cu/moe_f16_grouped.cu",
+            "cu/fp8_blk_dequant.cu",
+            "cu/mmq_fp8_blk.cu",
+            // Q1 instrument of the FP8-ST v3 gate lane: the Q8_0 MMQ floor with the
+            // accumulator (s32 vs f32) as its ONE free variable, to price v2's
+            // "what is left is the f32 accumulator" ceiling claim before anyone builds
+            // a v3. Research-only: no dispatch seam, never linked into a serving path.
+            // Its f8f6f4 arm is guarded by __CUDA_ARCH__ >= 1200 inside the TU (>= 1000
+            // wrongly admitted sm_100a, the one arch that rejects the instruction — fixed
+            // lane/glm5-b200-prep-20260901), so it needs no portable stub (the s32 arm
+            // builds everywhere; every non-120a arch takes the fail-closed __trap() arm).
+            "cu/mmq_q8_0_f32acc.cu",
+            // MLA (multi-head latent attention) forward: the glm-dsa / glm5_next attention
+            // core. Portable CUDA C (no tensor-core intrinsics, no arch stub needed).
+            // Deliberately NOT compiled -fmad=false like dsv4_gpu.cu below: that flag serves
+            // that lane's bit-parity-with-oracle contract, while the MLA gates are maxdiff
+            // bounds (the online-softmax tiling already reorders accumulation vs the CPU
+            // oracle), so forbidding contraction would cost speed and buy nothing.
+            "cu/mla_attn.cu",
+            // DeepSeek-V4-Flash trunk bring-up kernels + bf16 cuBLASLt GEMM (lane 4).
+            // Portable CUDA C (no tensor-core intrinsics) — no arch stub needed. Compiled
+            // with -fmad=false below: the kernels mirror the lane-3 CPU oracle's separate
+            // mul+add rounding; default FMA contraction would silently fork the f32-island
+            // arithmetic from the oracle contract.
+            "cu/dsv4_gpu.cu",
+        ] {
+            println!("cargo:rerun-if-changed={mmq_src}");
+            println!("cargo:rerun-if-changed=cu/mmq_common.cuh");
+            println!("cargo:rerun-if-changed=cu/mmq_mma_i8.cuh");
+            // fa3_prefill.cu includes the shared wgmma header (dedup 2026-08-21).
+            println!("cargo:rerun-if-changed=cu/wgmma_common.cuh");
+            let compile_src = if cuda_arch != "120a" && mmq_src == "cu/mmq_fp4.cu" {
+                // The explicit MEMRA_MMQ=1 W4A4 launcher is sm_120a-only (mxf4nvf4
+                // block-scale MMA). Keep its C ABI present on B200 and portable Ada,
+                // but make accidental use fail closed; normal evaluation uses the
+                // separately compiled W4A8 launcher.
+                "cu/mmq_fp4_stub.cu"
+            } else if cuda_arch != "120a" && mmq_src == "cu/mmq_nvfp4_w4a8.cu" {
+                // POLARITY FIXED 2026-08-23: this tested `portable` (89|90a), so sm_100a got the
+                // REAL file — and ptxas refuses it there:
+                //   error : Instruction 'mma with block scale' not supported on .target 'sm_100a'
+                // at ~40 sites. So `MEMRA_CUDA_ARCH=100a` could not build AT ALL, and nothing
+                // noticed because no workflow compiled that arch. `cu/mmq_fp4.cu` one branch up
+                // already had the correct `cuda_arch != "120a"` test; this is the same class of
+                // kernel (block-scale MMA, sm_120a-only in practice) and now shares the test.
+                //
+                // The bug's real cost was not sm_100a specifically: `portable` is a two-arch
+                // ENUMERATION, so every future non-120a arch inherited the breakage silently,
+                // while `!= 120a` is a property. Prefer the property.
+                "cu/mmq_nvfp4_w4a8_stub.cu"
+            } else if cuda_arch != "120a" && mmq_src == "cu/mmq_fp8_blk.cu" {
+                // Per-block FP8 MMQ: same .kind::f8f6f4 gate as the W4A8/F8F4 launchers, and
+                // therefore the SAME polarity fix (2026-08-23). Testing `portable` sent sm_100a
+                // to the real file, which ptxas rejects at ~400 sites. Found by fixing the
+                // mmq_nvfp4_w4a8 branch above and watching the failure MOVE here — the two are
+                // one class, not two bugs.
+                "cu/mmq_fp8_blk_stub.cu"
+            } else {
+                mmq_src
+            };
+            println!("cargo:rerun-if-changed={compile_src}");
+            let stem = mmq_src
+                .split('/')
+                .next_back()
+                .unwrap()
+                .trim_end_matches(".cu");
+            let obj = out.join(format!("{stem}.o"));
+            let mut args: Vec<String> = vec![
+                "-gencode".into(),
+                gencode.clone(),
+                "-O3".into(),
+                "-std=c++17".into(),
+                "--expt-relaxed-constexpr".into(),
+            ];
+            if mmq_src.ends_with("mmq_q45k.cu")
+                && let Some(x) = &q45k_x
+            {
+                args.push(format!("-DMMQ_X={x}"));
+            }
+            if mmq_src.ends_with("mmq_q4_0.cu")
+                && let Some(x) = &q4_x
+            {
+                args.push(format!("-DMMQ_X={x}"));
+            }
+            if mmq_src.ends_with("mmq_nvfp4_w4a8.cu") {
+                if let Some(x) = &w4a8_x {
+                    args.push(format!("-DMMQ_X={x}"));
+                }
+                if let Some(y) = &w4a8_y {
+                    args.push(format!("-DMMQ_Y={y}"));
+                }
+                if let Some(v) = &w4a8_fold_ceiling {
+                    args.push(format!("-DMEMRA_MMQ_FOLD_CEILING={v}"));
+                }
+                if f8f4_plain.as_deref() == Some("1") {
+                    args.push("-DMEMRA_F8F4_PLAIN_MMA".into());
+                }
+            }
+            if mmq_src.ends_with("mmq_iq_experts.cu") {
+                if let Some(x) = &iqexp_x {
+                    args.push(format!("-DMMQ_X={x}"));
+                }
+                if iqexp_k16.as_deref() == Some("1") {
+                    args.push("-DMEMRA_IQEXP_K16_MMA".into());
+                }
+            }
+            // Per-block FP8 MMQ token-tile geometry (X only — the Y/OCC/PIPE seams concluded
+            // negative and were deleted; see the TUNE SEAM note above).
+            if mmq_src.ends_with("mmq_fp8_blk.cu") {
+                if let Some(x) = &fp8_x {
+                    args.push(format!("-DFP8_MMQ_X={x}"));
+                }
+                if fp8blk_plain.as_deref() == Some("1") {
+                    args.push("-DMEMRA_FP8BLK_PLAIN_MMA".into());
+                }
+            }
+            // RESEARCH INSTRUMENT ARM: ACCPROBE_F32_PLAIN=1 rebuilds the fp8-v3-gate Q1 instrument's
+            // F32 arm with the ORIGINAL plain kind::f8f6f4 MMA. Needed to REPRODUCE the published
+            // +19.8/+20.2 delta_pp (research/fp8v3-gate-20260805/), which was measured with that
+            // form — and which is confounded, because the plain form issues at 32.02 cyc/warp-MMA
+            // against the S32 arm's 16.06, so "f32 vs s32 accumulate" moved the MMA interval too.
+            // The default arm now uses the block_scale form at the ue8m0 identity scale (bit-identical
+            // product, 16.06 cyc), which is what makes the instrument single-variable.
+            if mmq_src.ends_with("mmq_q8_0_f32acc.cu") && accprobe_plain.as_deref() == Some("1") {
+                args.push("-DMEMRA_ACCPROBE_PLAIN_MMA".into());
+            }
+            if mmq_src.ends_with("fa3_prefill.cu") && cuda_arch != "90a" {
+                args.push("-DMEMRA_FA3_STUB".into());
+            }
+            if mmq_src.ends_with("dsv4_gpu.cu") {
+                // Oracle-parity law (see the TU header): no FMA contraction in the dsv4
+                // f32-island kernels. MEMRA_DSV4_FMAD=1 lifts it for the pricing instrument
+                // documented above -- research only, and it is echoed so no build log is
+                // ambiguous about which arm produced a binary.
+                if dsv4_fmad.as_deref() == Some("1") {
+                    println!(
+                        "cargo:warning=dsv4_gpu.cu built with FMA CONTRACTION ENABLED \
+                         (MEMRA_DSV4_FMAD=1) -- RESEARCH INSTRUMENT, forks the CPU oracle"
+                    );
+                } else {
+                    args.push("-fmad=false".into());
+                }
+            }
+            args.extend([
+                "-c".into(),
+                compile_src.into(),
+                "-o".into(),
+                obj.to_str().unwrap().into(),
+            ]);
+            let status = Command::new(&nvcc)
+                .args(&args)
+                .status()
+                .expect("spawn nvcc (mmq)");
+            assert!(
+                status.success(),
+                "nvcc static-lib build failed for {mmq_src}"
+            );
+            objs.push(obj);
+        }
+        let lib = out.join("libmemra_mmq.a");
+        let _ = std::fs::remove_file(&lib);
+        let mut ar_args = vec!["crus".to_string(), lib.to_str().unwrap().to_string()];
+        ar_args.extend(objs.iter().map(|o| o.to_str().unwrap().to_string()));
+        let status = Command::new("ar")
+            .args(&ar_args)
+            .status()
+            .expect("spawn ar (mmq)");
+        assert!(status.success(), "ar failed for {}", lib.display());
+        // rustc-link-lib (NOT rustc-link-arg): link-arg applies only to THIS package's own
+        // binaries, so downstream crates (memra-server) failed to link the MMQ symbols. link-lib
+        // metadata propagates through the dependency graph; +whole-archive keeps the CUDART
+        // fatbin-registration global ctor alive (same MANDATORY reasoning as the CUTLASS link).
+        println!("cargo:rustc-link-search=native={}", out.display());
+        println!("cargo:rustc-link-lib=static:+whole-archive=memra_mmq");
+        let cuda_lib = std::path::Path::new(&nvcc)
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("lib64"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/usr/local/cuda-13.1/lib64"));
+        println!("cargo:rustc-link-search=native={}", cuda_lib.display());
+        // dylib link-lib (not link-arg) so cudart/stdc++ propagate to downstream binaries too.
+        println!("cargo:rustc-link-lib=dylib=cudart");
+        println!("cargo:rustc-link-lib=dylib=stdc++");
+        // fp8_prefill.cu calls the cuBLASLt host API directly (same lib64 search path as cudart).
+        println!("cargo:rustc-link-lib=dylib=cublasLt");
+        // plain cublas: the MoE grouped f16 GEMM (cublasGemmGroupedBatchedEx, CUDA >= 12.5)
+        println!("cargo:rustc-link-lib=dylib=cublas");
+        // fa3_prefill.cu calls the driver API (cuTensorMapEncodeTiled). GPU-less build
+        // machines (CI compile gate, release matrix) have no driver libcuda.so — the
+        // toolkit's stubs dir satisfies the link; at runtime ld.so resolves the real
+        // libcuda.so.1 from the driver (the stubs dir is not on any runtime path).
+        println!(
+            "cargo:rustc-link-search=native={}/stubs",
+            cuda_lib.display()
+        );
+        println!("cargo:rustc-link-lib=dylib=cuda");
+    }
+
+    // ---- CUTLASS sm_120a NVFP4 GEMM: a STATIC LIB (7th artifact, different kind), NOT a fatbin ----
+    // CUTLASS needs its host-side GemmUniversalAdapter::run() (host C++), so it cannot go through the
+    // fatbin/load_module path above. It is compiled to an object, archived, and whole-archived at link.
+    // Additive: the 6-fatbin loop above is byte-for-byte unchanged (the parallel flash_attn.cu FA build
+    // is untouched). Guarded by MEMRA_CUTLASS so the default build is unaffected until Phase 0 lands.
+    if std::env::var("MEMRA_CUTLASS").is_ok() {
+        let cutlass_src = "cu/cutlass_fp4_sm120.cu";
+        println!("cargo:rerun-if-changed={cutlass_src}");
+        // CUTLASS 4.x header tree (on-box, probe-verified). TODO Phase 1: vendor a pinned tree into the
+        // repo for reproducibility rather than pointing at the venv install.
+        let cutlass_root = std::env::var("MEMRA_CUTLASS_ROOT").unwrap_or_else(|_| {
+            "/home/avifenesh/.venvs/torch/lib/python3.12/site-packages/flashinfer/data/cutlass"
+                .into()
+        });
+        let cutlass_inc = format!("{cutlass_root}/include");
+        let cutlass_util = format!("{cutlass_root}/tools/util/include");
+        let obj = out.join("cutlass_fp4_sm120.o");
+        let lib = out.join("libmemra_cutlass.a");
+        let status = Command::new(&nvcc)
+            .args([
+                "-gencode",
+                "arch=compute_120a,code=sm_120a",
+                "-O3",
+                "-std=c++17",
+                "--expt-relaxed-constexpr",
+                "-DENABLE_BF16",
+                "-DENABLE_FP4",
+                "-DCUTLASS_ENABLE_GDC_FOR_SM100=1",
+                "-I",
+                &cutlass_inc,
+                "-I",
+                &cutlass_util,
+                "-c",
+                cutlass_src,
+                "-o",
+                obj.to_str().unwrap(),
+            ])
+            .status()
+            .expect("spawn nvcc (cutlass)");
+        assert!(
+            status.success(),
+            "nvcc static-lib build failed for {cutlass_src}"
+        );
+        let _ = std::fs::remove_file(&lib);
+        let status = Command::new("ar")
+            .args(["crus", lib.to_str().unwrap(), obj.to_str().unwrap()])
+            .status()
+            .expect("spawn ar");
+        assert!(status.success(), "ar failed for {}", lib.display());
+        // --whole-archive is MANDATORY: a plain static link drops the CUDART fatbin-registration global
+        // ctor (_ZL24__sti____cudaRegisterAllv in .init_array) -> the device kernel silently never
+        // registers -> no-kernel launch failure. Verified on-box (plan §2.2).
+        println!("cargo:rustc-link-search=native={}", out.display());
+        println!("cargo:rustc-link-arg=-Wl,--whole-archive");
+        println!("cargo:rustc-link-arg={}", lib.display());
+        println!("cargo:rustc-link-arg=-Wl,--no-whole-archive");
+        // libstdc++ AFTER the archive (link-arg, not link-lib) so the function-local-static guard
+        // symbols (__cxa_guard_acquire/release, from CUTLASS's tile_atom_to_shape statics) resolve.
+        // A plain `link-lib=stdc++` can be ordered before the archive under -nodefaultlibs/lld and
+        // leave them undefined for bins other than cutlass-smoke (whole-archive applies to ALL bins).
+        // cudart (CUTLASS host adapter uses the runtime API) and stdc++ BOTH as trailing link-args so
+        // they sit AFTER the whole-archive; the cudart fatbin-registration ctors + the C++ static
+        // guards in cutlass_fp4_sm120.o resolve against them. The CUDA lib dir is needed for -lcudart.
+        let cuda_lib = std::path::Path::new(&nvcc)
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("lib64"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/usr/local/cuda-13.1/lib64"));
+        println!("cargo:rustc-link-search=native={}", cuda_lib.display());
+        // dylib link-lib (not link-arg) so cudart/stdc++ propagate to downstream binaries too.
+        println!("cargo:rustc-link-lib=dylib=cudart");
+        println!("cargo:rustc-link-lib=dylib=stdc++");
+        // Let the smoke-test bin gate compile out cleanly when CUTLASS is not built.
+        println!("cargo:rustc-cfg=memra_cutlass");
+    }
+}

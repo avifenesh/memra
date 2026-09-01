@@ -1,0 +1,12 @@
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.21GB (expert budget 19.61GB) -> RESIDENT
+prime-gate: qwen35moe (40 layers) prompts=8 chat=false steps=0
+prompt  0 (T=512): tw=365 (margin 0.6146) bp=365 (margin 0.0591) fl=365 maxdiff=1.4926e0 det=BIT-IDENTICAL MATCH
+prompt  1 (T=54): tw=1921 (margin 0.8667) bp=1921 (margin 0.9008) fl=1921 maxdiff=5.6902e-1 det=BIT-IDENTICAL MATCH
+prompt  2 (T=36): tw=271 (margin 4.8103) bp=271 (margin 4.8313) fl=271 maxdiff=7.6049e-1 det=BIT-IDENTICAL MATCH
+prompt  3 (T=40): tw=198 (margin 0.6124) bp=198 (margin 0.7346) fl=198 maxdiff=6.0519e-1 det=BIT-IDENTICAL MATCH
+prompt  4 (T=79): tw=271 (margin 4.8987) bp=271 (margin 4.8673) fl=271 maxdiff=6.1955e-1 det=BIT-IDENTICAL MATCH
+prompt  5 (T=36): tw=279 (margin 1.6587) bp=279 (margin 1.7633) fl=279 maxdiff=2.3640e0 det=BIT-IDENTICAL MATCH
+prompt  6 (T=21): tw=271 (margin 1.4450) bp=271 (margin 0.8972) fl=271 maxdiff=1.1259e0 det=BIT-IDENTICAL MATCH
+prompt  7 (T=60): tw=198 (margin 1.2126) bp=198 (margin 1.4198) fl=198 maxdiff=7.2951e-1 det=BIT-IDENTICAL MATCH
+prime-gate SUMMARY: 8 prompts (0 skipped short) | MATCH=8 FLIP-NEARTIE=0 STRUCTURED=0 det_fails=0 | worst maxdiff=2.3640e0 min flip margin=-
+prime-gate: ALL GREEN

@@ -1,0 +1,9 @@
+6:[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+18:[admission] "step": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+22:[admission] request cost: model="step" ctx=262144 path=plain = 83520 B/token x ctx + 0MB fixed = 21894MB
+23:[spec-k] model="step" tenant="val256-parkfull" K=0 source=pp2-placement prompt=48 cached=0 lcp=0 active=1 placement=pp2-cross-device
+28:[admission] request cost: model="step" ctx=8192 path=plain = 83520 B/token x ctx + 0MB fixed = 684MB
+29:[spec-k] model="step" tenant="val256-pressure" K=0 source=pp2-placement prompt=47 cached=0 lcp=0 active=1 placement=pp2-cross-device
+30:[spec-k] model="step" tenant="val256-pressure" K=0 source=pp2-placement prompt=47 cached=0 lcp=0 active=2 placement=pp2-cross-device
+31:[spec-k] model="step" tenant="val256-pressure" K=0 source=pp2-placement prompt=47 cached=0 lcp=0 active=3 placement=pp2-cross-device
+32:[spec-k] model="step" tenant="val256-pressure" K=0 source=pp2-placement prompt=47 cached=0 lcp=0 active=4 placement=pp2-cross-device

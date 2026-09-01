@@ -1,0 +1,21 @@
+warning: memra-engine@0.122.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.122.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.122.0 (/home/avifenesh/projects/wt-glm5-extract2/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.64s
+     Running tests/swiglu_preclamp_gpu.rs (target/debug/deps/swiglu_preclamp_gpu-8373977faaf7eef2)
+
+running 10 tests
+test dense_prefill_matches_the_reference ... ok
+test dense_prime_then_decode_matches_the_reference ... ok
+test plain_form_fails_the_gate ... ok
+test post_form_fails_the_gate ... ok
+test shared_expert_decode_matches_the_reference ... ok
+test shared_expert_matches_the_reference ... ok
+test the_limit_actually_binds ... ok
+test the_mini_plans_declare_preclamped_swiglu_on_dense_routed_and_shared ... ok
+test the_preclamped_kernel_matches_its_oracle ... ok
+test the_routed_branch_selects_the_preclamped_kernel ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
+
+exit=0

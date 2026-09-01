@@ -1,0 +1,62 @@
+10346 |             let mut up = |src: &CudaSlice<u8>,
+20602 |         let eps = self.cfg.rms_eps;
+3754 |         let mut anat_mark = |i: usize,
+5721 |                     let mut ffn_col =
+8983 |             let mtp = self.mtp.as_ref().expect("mtp checked above");
+ 1339 | impl Engine {
+...
+18960 |     pub(crate) fn matvec_bf16_dual(
+15966 | impl HybridModel {
+...
+17541 |     pub(crate) fn step35_spec_fa2_precheck(
+...
+18279 |     pub(crate) fn step35_verify_spec_fa2_join(
+1443 | impl TpE4m3HostBounce {
+...
+5806 |     pub(crate) fn decode_v2_spec_fa2_join(
+8984 | impl Nvfp4DeviceRoutesWorkspace {
+...
+8991 |     pub(crate) fn out_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
+13061 | struct TokenGraphChild {
+13062 |     graph: cudarc::driver::CudaGraph,
+5822 |                     drop(ffn_col);
+help: use `let _ = ...` to ignore the expression or result
+5822 -                     drop(ffn_col);
+5822 +                     let _ = ffn_col;
+ 57 | impl Geometry {
+...
+170 |     pub fn expect_usize_if_present(&self, key: &str, want: usize) -> Result<bool, String> {
+...
+180 |     pub fn expect_str_if_present(&self, key: &str, want: &str) -> Result<bool, String> {
+354 |             use cudarc::driver::DevicePtr;
+46 |         let f_d = stream.memcpy_stod(&f_h)?;
+47 |         let res_d = stream.memcpy_stod(&res_h)?;
+48 |         let post_d = stream.memcpy_stod(&post_h)?;
+49 |         let comb_d = stream.memcpy_stod(&comb_h)?;
+71 |             let got = stream.memcpy_dtov(&out_d)?;
+106 |         let x_d = stream.memcpy_stod(&x_h)?;
+107 |         let pre_d = stream.memcpy_stod(&pre_h)?;
+124 |             let got = stream.memcpy_dtov(&y_d)?;
+     Running tests/glm5_chunked_prime_gpu.rs (target/debug/deps/glm5_chunked_prime_gpu-b2c30e7643be572b)
+running 4 tests
+test a_chunked_mhc_prime_matches_the_reference_executor ... FAILED
+test a_chunked_mhc_prime_stays_inside_the_near_tie_band_of_the_monolithic_prime ... FAILED
+test a_chunked_prime_then_decode_matches_the_reference_executor ... FAILED
+test the_parity_comparison_has_teeth ... ok
+failures:
+---- a_chunked_mhc_prime_matches_the_reference_executor stdout ----
+thread 'a_chunked_mhc_prime_matches_the_reference_executor' (3416788) panicked at crates/memra-engine/tests/glm5_chunked_prime_gpu.rs:335:5:
+T=64 chunk=16 vs reference: relative maxdiff 1.346e0 (tol 2.0e-5)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+---- a_chunked_mhc_prime_stays_inside_the_near_tie_band_of_the_monolithic_prime stdout ----
+thread 'a_chunked_mhc_prime_stays_inside_the_near_tie_band_of_the_monolithic_prime' (3416889) panicked at crates/memra-engine/tests/glm5_chunked_prime_gpu.rs:335:5:
+T=64 chunk=16 logits vs monolithic: relative maxdiff 1.346e0 (tol 2.0e-5)
+---- a_chunked_prime_then_decode_matches_the_reference_executor stdout ----
+thread 'a_chunked_prime_then_decode_matches_the_reference_executor' (3416892) panicked at crates/memra-engine/tests/glm5_chunked_prime_gpu.rs:335:5:
+chunk=16 decode step 0 vs reference: relative maxdiff 6.642e-1 (tol 2.0e-5)
+failures:
+    a_chunked_mhc_prime_matches_the_reference_executor
+    a_chunked_mhc_prime_stays_inside_the_near_tie_band_of_the_monolithic_prime
+    a_chunked_prime_then_decode_matches_the_reference_executor
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.81s
+error: test failed, to rerun pass `-p memra-engine --test glm5_chunked_prime_gpu`

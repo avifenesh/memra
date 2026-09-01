@@ -1,0 +1,73 @@
+warning: memra-engine@0.77.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.77.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.77.0 (/home/avifenesh/projects/wt-cx-peerprobe/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.38s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-48b148447a57e937)
+
+running 64 tests
+test cpu_experts::tests::rejects_missing_symbols_and_wrong_abi ... ok
+test cpu_experts::tests::accepts_supported_native_qtypes_without_translation ... ok
+test hybrid::draft_head_tests::draft_without_a_nextn_head_falls_back_to_file_level_output ... ok
+test hybrid::draft_head_tests::a_different_blocks_nextn_head_is_never_borrowed ... ok
+test hybrid::draft_head_tests::legacy_shared_head_is_probed_but_loses_to_shared_head_head ... ok
+test cpu_experts::tests::validates_thread_count ... ok
+test hybrid::draft_head_tests::each_nextn_block_selects_its_own_head ... ok
+test hybrid::draft_head_tests::step37_drafter_prefers_the_blocks_own_nextn_head_over_file_level_output ... ok
+test hybrid::residency_tests::pp_residency_combines_stages_that_share_one_device ... ok
+test hybrid::residency_tests::pp_residency_counts_only_each_devices_expert_slice ... ok
+test hybrid_forward::page_prefetch_tests::page_prefetch_window_keeps_existing_opt_in_default ... ok
+test hybrid_forward::page_prefetch_tests::grouped_worker_prefetch_primes_first_then_each_known_next_once ... ok
+test cpu_experts::tests::dropped_ticket_joins_outstanding_worker ... ok
+test hybrid_forward::page_prefetch_tests::rolling_page_prefetch_advises_each_future_expert_once ... ok
+test hybrid_forward::page_prefetch_tests::rolling_worker_prefetch_primes_current_and_each_future_expert_once ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_matches_registered_shapes ... ok
+test hybrid_forward::prime_chunk_schedule_tests::fixed_schedule_retains_measured_geometry ... ok
+test mla::tests::rope_norm_equals_permuted_neox ... ok
+test model::tests::mixed_expert_loader_keeps_each_encoding_and_extent ... ok
+test model::tests::legacy_mmap_source_requires_retained_file_extent ... ok
+test model::tests::mixed_expert_loader_keeps_mmap_backing_zero_copy ... ok
+test model::tests::mixed_expert_loader_omits_masked_expert_bytes ... ok
+test model::tests::tiered_expert_source_does_not_double_apply_layout_offset ... ok
+test model::tests::uniform_expert_loader_coalesces_contiguous_mmap ... ok
+test model::tests::direct_split_equals_chained ... ok
+test moe_cache::slru_intrusive_tests::slru_list_basic_invariants ... ok
+test moe_cache::vram_fraction_tests::hard_vram_fraction_defaults_and_rejects_unsafe_values ... ok
+test moe_cache::vram_fraction_tests::lfu_decay_is_opt_in_and_bounded ... ok
+test moe_cache::vram_fraction_tests::lfu_mtp_weight_defaults_and_is_bounded ... ok
+test moe_cache::vram_fraction_tests::size_class_plan_does_not_overflow_on_pathological_sizes ... ok
+test moe_cache::vram_fraction_tests::size_class_plan_preserves_classes_and_never_exceeds_budget ... ok
+test moe_cache::vram_fraction_tests::size_class_plan_returns_full_inventory_when_it_fits ... ok
+test pp::host_bounce_tests::host_bounce_capacity_rejects_invalid_or_overflowing_geometry ... ok
+test pp::host_bounce_tests::step37_geometry_sizes_each_slot_from_the_prime_cap ... ok
+test pp::host_bounce_tests::transport_selection_keeps_peer_default_and_bounces_only_cross_device ... ok
+test sigrouter_contract::tests::active_count_error_quotes_both_counts ... ok
+test sigrouter_contract::tests::pinned_host_expf_matches ... ok
+test spec::draft_graph_fallback_tests::flip_is_loud_once_and_memoized_after ... ok
+test spec::draft_graph_fallback_tests::reset_on_resume_clears_flags_and_logs_once ... ok
+test spec::draft_graph_fallback_tests::shape_change_clears_are_silent ... ok
+test spec::dspark_sparse_tests::topk_keeps_full_softmax_mass_and_stable_ties ... ok
+test spec::opti_fork_tests::alternating_mode_flips_by_generation_not_round_parity ... ok
+test spec::opti_fork_tests::controller_threshold_and_three_miss_breaker_are_exact ... ok
+test spec::opti_fork_tests::live_generation_cannot_be_overwritten ... ok
+test spec::opti_fork_tests::teardown_rejects_a_stale_generation_tag ... ok
+test spec::opti_fork_tests::zero_threshold_is_the_true_unconditional_measurement_arm ... ok
+test spec::telem_tests::delta_isolates_burst_contribution ... ok
+test spec::telem_tests::delta_saturates_never_wraps ... ok
+test spec::telem_tests::merge_accumulates_fieldwise ... ok
+test spill::tests::spill_ctx_keeps_parsed_gguf_inode_after_path_replacement ... ok
+test spill_pread::tests::buffer_state_rejects_early_reuse ... ok
+test spill_pread::tests::direct_io_requires_conservative_block_alignment ... ok
+test pp::host_bounce_tests::corrupted_peer_readback_fails_closed_unless_host_bounce_is_selected ... ok
+test spill_pread::tests::mode_and_depth_defaults_are_conservative ... ok
+test spill_pread::tests::exact_and_unaligned_positioned_reads_match_file_bytes ... ok
+test spill_pread::tests::short_positioned_read_is_an_error ... ok
+test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... ignored, requires a CUDA GPU
+test mla::tests::naive_equals_absorbed_prefill_causal ... ok
+test target_dispatch_tests::legacy_quant_gemm_arch_policy_honors_the_escape_hatch ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_covers_exactly_and_shrinks_after_fill ... ok
+test mla::tests::naive_equals_absorbed_decode_t1 ... ok
+test moe_cache::slru_intrusive_tests::hit_promotion_is_o1_not_on ... ok
+test mla::tests::naive_equals_absorbed_glm52_full_dims ... ok
+test moe_cache::slru_intrusive_tests::same_eviction_decisions_randomized_soak ... ok
+
+test result: ok. 63 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.97s

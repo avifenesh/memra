@@ -1,0 +1,31 @@
+dsv4-gpu-dspark-gate | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | variant ref | p0 32 | n_new 160 | runs 2 | devices [0, 1] | torch accept_mean 3.7862
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f64
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=39s
+[load] layer 15 -> dev0 done t=52s
+[load] layer 19 -> dev0 done t=65s
+[load] layer 23 -> dev1 done t=78s
+[load] layer 27 -> dev1 done t=92s
+[load] layer 31 -> dev1 done t=105s
+[load] layer 35 -> dev1 done t=118s
+[load] layer 39 -> dev1 done t=131s
+[load] layer 42 -> dev1 done t=141s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+loaded: split at layer 22, t=153s
+[vram post-load] dev0 used 82.24/94.97 GiB (resident 81.51) | dev1 used 89.30/94.97 GiB (resident 88.36)
+arm P (plain device greedy): 160 tokens t=160s
+[vram post-plain] dev0 used 82.27/94.97 GiB (resident 81.51) | dev1 used 89.33/94.97 GiB (resident 88.36)
+arm D run0 (drafted, sequential verify): 160 tokens | rounds 42 | accepted 136 (mean 3.2381/round) | verified 159 | accept sha b3765040fa85697be279d77946cfd1d987eae847f36bf0e829bdf23a3e44e30b | t=167s
+arm D run1 (drafted, sequential verify): 160 tokens | rounds 42 | accepted 136 (mean 3.2381/round) | verified 159 | accept sha b3765040fa85697be279d77946cfd1d987eae847f36bf0e829bdf23a3e44e30b | t=175s
+[vram post-drafted] dev0 used 82.27/94.97 GiB (resident 81.51) | dev1 used 89.33/94.97 GiB (resident 88.36)
+determinism across 2 drafted runs: tokens IDENTICAL | per-round accepts BYTE-IDENTICAL
+[REPORTED, not gated] arm P vs banked torch REF trajectory: 29/160 positions equal, common prefix 22 (torch-vs-GPU realization flips are the teacher-forcing gate's business, lane-6 in-band policy)
+
+*** ACCEPTANCE IS A CORRECTNESS OBSERVABLE ONLY — NOT A SPEED CLAIM ***
+rounds 42 | accepted 136 | mean accepted/round 3.2381 | torch teacher-forced accept_mean 3.7862 (different loop: teacher-forced vs free-running, so these are not required to match)
+
+GPU DSPARK GATE (§ greedy spec==plain identity, device drafter): [PASS] 160/160 tokens LITERAL identity drafted vs plain, determinism x2 | banked /home/ubuntu/dsv4-it3-out/gpu-dspark-gate-f64/gpu_dspark_gate.json
+total elapsed 175s
+EXIT=0

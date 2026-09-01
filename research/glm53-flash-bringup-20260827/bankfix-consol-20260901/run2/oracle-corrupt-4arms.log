@@ -1,0 +1,45 @@
+binary sha256: 7680adc595d1d6d020a47604dd89c2723a279a9d454b591ed8dc854285587340  lane sha: 61dcf202c9cea745fc8a5631777a087c1ffe8686
+######## corrupt ARM=hybrid <unset> ########
+nvfp4-bank-oracle: v1(QT_NVFP4) vs v2(QT_NVFP4_V2) over ONE permuted bank
+arm policy: shape_sel=0 cross=64 deep_tail=true f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[moe-sk-form] dev=0 qt=7 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
+[moe-sk-form] dev=0 qt=107 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.069158e3 maxrel=5.000e-1 => DEVIATION
+[cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=-7.633102417e2 (0xc43ed3db)
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=4.644921e2 maxrel=5.000e-1 => DEVIATION
+[cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-3.993620911e2 (0xc3c7ae59)
+nvfp4-bank-oracle: FAIL — the slot-major bank is not a pure permutation on this arm
+EXIT=1
+######## corrupt ARM=sk128 MEMRA_F16G_SK=128 ########
+nvfp4-bank-oracle: v1(QT_NVFP4) vs v2(QT_NVFP4_V2) over ONE permuted bank
+arm policy: shape_sel=0 cross=1 deep_tail=true f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[moe-sk-form] dev=0 qt=7 sms=188 occ128=1 occ32=7 occt=3 cross=1 xcross=1 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
+[moe-sk-form] dev=0 qt=107 sms=188 occ128=1 occ32=7 occt=3 cross=1 xcross=1 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.069158e3 maxrel=5.000e-1 => DEVIATION
+[cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=-7.633102417e2 (0xc43ed3db)
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=4.644921e2 maxrel=5.000e-1 => DEVIATION
+[cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-3.993620911e2 (0xc3c7ae59)
+nvfp4-bank-oracle: FAIL — the slot-major bank is not a pure permutation on this arm
+EXIT=1
+######## corrupt ARM=sk32 MEMRA_F16G_SK=32 ########
+nvfp4-bank-oracle: v1(QT_NVFP4) vs v2(QT_NVFP4_V2) over ONE permuted bank
+arm policy: shape_sel=0 cross=2147483647 deep_tail=true f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[moe-sk-form] dev=0 qt=7 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
+[moe-sk-form] dev=0 qt=107 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.069158e3 maxrel=5.000e-1 => DEVIATION
+[cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=-7.633102417e2 (0xc43ed3db)
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=4.644921e2 maxrel=5.000e-1 => DEVIATION
+[cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-3.993620911e2 (0xc3c7ae59)
+nvfp4-bank-oracle: FAIL — the slot-major bank is not a pure permutation on this arm
+EXIT=1
+######## corrupt ARM=tail0 MEMRA_F16G_TAIL=0 ########
+nvfp4-bank-oracle: v1(QT_NVFP4) vs v2(QT_NVFP4_V2) over ONE permuted bank
+arm policy: shape_sel=0 cross=64 deep_tail=false f16g_mode=2 direct_on=true | MEMRA_F16G_SK / _SK_CROSS / _TAIL select the tile form
+[moe-sk-form] dev=0 qt=7 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
+[moe-sk-form] dev=0 qt=107 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=640 n_active=32 max_m=41
+[cell gate_up] in_f=4096 out_f=640 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=64 elems=327680 nonzero_v1=327680 finite=true DIFF=327680 maxabs=1.069158e3 maxrel=5.000e-1 => DEVIATION
+[cell gate_up] first deviation at element 0: v1=-5.088741150e2 (0xc3fe6fe3) v2=-7.633102417e2 (0xc43ed3db)
+[cell down] in_f=640 out_f=4096 n_expert=32 n_pairs=512 n_active=32 group_m=[7..41] nkb=10 elems=2097152 nonzero_v1=2097152 finite=true DIFF=2097152 maxabs=4.644921e2 maxrel=5.000e-1 => DEVIATION
+[cell down] first deviation at element 0: v1=-2.662414246e2 (0xc3851ee7) v2=-3.993620911e2 (0xc3c7ae59)
+nvfp4-bank-oracle: FAIL — the slot-major bank is not a pure permutation on this arm
+EXIT=1

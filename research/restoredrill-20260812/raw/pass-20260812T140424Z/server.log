@@ -1,0 +1,111 @@
+[auth] keyring loaded: 1 key(s) from /scratch/restore-drill/secrets/keys.toml
+[server] OpenRouter metadata loaded: 2 model(s) from /scratch/restore-drill/config/models.toml
+[server] starting; models config = [("qwen/qwen3.6-27b", "/scratch/restore-drill/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None), ("qwen/qwen3.6-35b-a3b", "/scratch/restore-drill/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "qwen/qwen3.6-27b" <- /scratch/restore-drill/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[worker]   loaded "qwen/qwen3.6-27b": 65 layers, eos=248046
+[worker] loading model "qwen/qwen3.6-35b-a3b" <- /scratch/restore-drill/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 46.34GB (expert budget 41.74GB) -> RESIDENT
+[worker]   loaded "qwen/qwen3.6-35b-a3b": 41 layers, eos=248046
+[worker] qwen/qwen3.6-27b: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] qwen/qwen3.6-35b-a3b: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] qwen/qwen3.6-27b: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[worker] qwen/qwen3.6-35b-a3b: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 4295MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "qwen/qwen3.6-27b": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[admission] "qwen/qwen3.6-35b-a3b": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["qwen/qwen3.6-27b", "qwen/qwen3.6-35b-a3b"]
+[server] listening on http://127.0.0.1:8004
+[meter] admit id=chatcmpl-3dcc2abdd59a23dc04f927cff5c0c812 tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=111 path=plain = 31552 B/token x ctx + 0MB fixed = 4MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="qwen/qwen3.6-27b" 308MB (observed 310MB at ctx 55 path=plain)
+[meter] admit id=chatcmpl-672c295b04b00ba0ef5cf04c8f83adb1 tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=111 path=plain = 31552 B/token x ctx + 308MB fixed = 311MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-6a0abfa64e2fa10289bd0b59a1f13b7c tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=485 path=plain = 31552 B/token x ctx + 308MB fixed = 323MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=293 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 293 tokens, 165.6MB (resident 165.6MB / 4295MB, model qwen/qwen3.6-27b, ns "t:servetest\u{1f}")
+[meter] admit id=chatcmpl-f88a255893c0c254eb95984afa0f35d7 tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 293 of 293 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=293 cached=293 lcp=293 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-9e3e6c4be95646540a916543f1c13f3a tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=160 path=plain = 31552 B/token x ctx + 308MB fixed = 313MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=32 cached=0 lcp=1 active=1 placement=single-or-non-pp2
+[constrained] qwen/qwen3.6-27b: 21 masked steps, mask total 0.29 ms (0.014 ms/step)
+[meter] admit id=chatcmpl-19794587b52e18ec303ae4e29f118356 tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=32 cached=0 lcp=1 active=1 placement=single-or-non-pp2
+[constrained] qwen/qwen3.6-27b: 21 masked steps, mask total 0.20 ms (0.010 ms/step)
+[meter] admit id=cmpl-ef0c5e0ea93e2cdc97b9f0b2ffb85c94 tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[admission] request cost: model="qwen/qwen3.6-27b" ctx=4984 path=plain = 31552 B/token x ctx + 308MB fixed = 465MB
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 466.8MB / 4295MB, model qwen/qwen3.6-27b, ns "t:servetest\u{1f}servetest-cache-1786543581152246121")
+[meter] admit id=cmpl-a220a5e2005036791bbc110dbe454716 tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a15e6607c3eb7d61eaa35f61f044054c tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model qwen/qwen3.6-27b)
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5c08e0e745acbea2003a9cb7b3a69b7d tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-21d0dbf6f4c0feebca357a5d6b9c38e1 tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[meter] admit id=cmpl-0ac294d7da1474ef0ce6049692607dff tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[meter] admit id=cmpl-8655fe480407c7379479fe2fa3860c47 tenant=servetest lane=interactive model="qwen/qwen3.6-27b"
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.6-27b" tenant="t:servetest" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 768.0MB / 4295MB, model qwen/qwen3.6-27b, ns "t:servetest\u{1f}servetest-overload-1786543584799917826-5")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1069.2MB / 4295MB, model qwen/qwen3.6-27b, ns "t:servetest\u{1f}servetest-overload-1786543584799404184-0")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1370.5MB / 4295MB, model qwen/qwen3.6-27b, ns "t:servetest\u{1f}servetest-overload-1786543584799652664-2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1671.7MB / 4295MB, model qwen/qwen3.6-27b, ns "t:servetest\u{1f}servetest-overload-1786543584800081580-7")
+[meter] admit id=chatcmpl-7acb3963e266f8ed92002be6f5103b91 tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=111 path=plain = 10208 B/token x ctx + 0MB fixed = 1MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="qwen/qwen3.6-35b-a3b" 129MB (observed 129MB at ctx 55 path=plain)
+[meter] admit id=chatcmpl-e2f59ae3a72bb238f25d059771252e63 tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=111 path=plain = 10208 B/token x ctx + 129MB fixed = 130MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-1b2c45e9a74b2ee8685326da058dd7fb tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=485 path=plain = 10208 B/token x ctx + 129MB fixed = 134MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=293 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 293 tokens, 68.6MB (resident 1740.3MB / 4295MB, model qwen/qwen3.6-35b-a3b, ns "t:servetest\u{1f}")
+[meter] admit id=chatcmpl-04d80dd43ae6e439c225125ac8e59942 tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[prefix-cache] hit: 293 of 293 prompt tokens from cache (model qwen/qwen3.6-35b-a3b)
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=293 cached=293 lcp=293 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-de4973641a3bf4398705fbcc323f80f5 tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=160 path=plain = 10208 B/token x ctx + 129MB fixed = 130MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=32 cached=0 lcp=1 active=1 placement=single-or-non-pp2
+[constrained] qwen/qwen3.6-35b-a3b: 21 masked steps, mask total 0.33 ms (0.016 ms/step)
+[meter] admit id=chatcmpl-6af0164e1c1d8e6406ed055d4e0f2ed9 tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=32 cached=0 lcp=1 active=1 placement=single-or-non-pp2
+[constrained] qwen/qwen3.6-35b-a3b: 21 masked steps, mask total 0.22 ms (0.010 ms/step)
+[meter] admit id=cmpl-dfbad7cdb08a75b402f0f21a10065cde tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=4984 path=plain = 10208 B/token x ctx + 129MB fixed = 180MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1851.2MB / 4295MB, model qwen/qwen3.6-35b-a3b, ns "t:servetest\u{1f}servetest-cache-1786543593012216260")
+[meter] admit id=cmpl-2e05c5284b9ed68759a4a6faa4c342e1 tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model qwen/qwen3.6-35b-a3b)
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9bff751e225b8ef81ad4da99b6947492 tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model qwen/qwen3.6-35b-a3b)
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-00f91e38b0e5f20ec3c38a7f2fb94b5c tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-43c47c2d1221cafeaf1f8fd6e4df344c tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[meter] admit id=cmpl-6905654a6a9c38d63eaa3d184ebdf5c0 tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[meter] admit id=cmpl-a8b34f959339dae43a0e6bfcbc62afae tenant=servetest lane=interactive model="qwen/qwen3.6-35b-a3b"
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:servetest" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1962.2MB / 4295MB, model qwen/qwen3.6-35b-a3b, ns "t:servetest\u{1f}servetest-overload-1786543594091750595-7")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2073.1MB / 4295MB, model qwen/qwen3.6-35b-a3b, ns "t:servetest\u{1f}servetest-overload-1786543594091338572-2")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2184.1MB / 4295MB, model qwen/qwen3.6-35b-a3b, ns "t:servetest\u{1f}servetest-overload-1786543594091668844-6")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2295.1MB / 4295MB, model qwen/qwen3.6-35b-a3b, ns "t:servetest\u{1f}servetest-overload-1786543594091508206-4")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

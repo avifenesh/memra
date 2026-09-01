@@ -1,0 +1,67 @@
+{
+  "schema": "memra.gateway-pair-soak.v1",
+  "mode": "preflight",
+  "verdict": "PASS",
+  "replicas": [
+    {
+      "base_url": "http://127.0.0.1:18427",
+      "billing_reconciliation_checks": 1,
+      "cache90_expected_hits": 0,
+      "cache90_expected_misses": 0,
+      "cache90_groups": 0,
+      "cache90_scored_requests": 0,
+      "concurrent_output_hash_mismatches_observed": 0,
+      "elapsed_s": 9.712,
+      "failure": null,
+      "finished_utc": "2026-08-12T08:13:55.356433Z",
+      "model": "qwen/qwen3.6-27b",
+      "overload_bursts": 1,
+      "protocol_schema_billing_output_errors": 0,
+      "requested_duration_s": 0.0,
+      "requests": 28,
+      "schema": "memra.gateway-soak.v1",
+      "schema_sha256": "c5ec05a453e262c9c1fd9041ca2624e48b8681ed48df9e73ab5a3642e00675d0",
+      "started_utc": "2026-08-12T08:13:45.644222Z",
+      "status_counts": {
+        "200": 24,
+        "429": 4
+      },
+      "structured_checks": 2,
+      "tenant_isolation_checks": 1,
+      "tool_checks": 2,
+      "verdict": "PASS"
+    },
+    {
+      "base_url": "http://127.0.0.1:18428",
+      "billing_reconciliation_checks": 1,
+      "cache90_expected_hits": 0,
+      "cache90_expected_misses": 0,
+      "cache90_groups": 0,
+      "cache90_scored_requests": 0,
+      "concurrent_output_hash_mismatches_observed": 0,
+      "elapsed_s": 9.775,
+      "failure": null,
+      "finished_utc": "2026-08-12T08:13:55.420400Z",
+      "model": "qwen/qwen3.6-27b",
+      "overload_bursts": 1,
+      "protocol_schema_billing_output_errors": 0,
+      "requested_duration_s": 0.0,
+      "requests": 28,
+      "schema": "memra.gateway-soak.v1",
+      "schema_sha256": "c5ec05a453e262c9c1fd9041ca2624e48b8681ed48df9e73ab5a3642e00675d0",
+      "started_utc": "2026-08-12T08:13:45.645224Z",
+      "status_counts": {
+        "200": 24,
+        "429": 4
+      },
+      "structured_checks": 2,
+      "tenant_isolation_checks": 1,
+      "tool_checks": 2,
+      "verdict": "PASS"
+    }
+  ],
+  "requested_duration_s": 0.0,
+  "elapsed_s": 9.712,
+  "requests": 56,
+  "protocol_schema_billing_output_errors": 0
+}

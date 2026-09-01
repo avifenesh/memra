@@ -1,0 +1,27 @@
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 74.88GB (expert budget 71.27GB) -> RESIDENT
+argmax-margin-probe: T=2048 window=12 sm_count=188 model=/data/memra/models/ornith15/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf
+env: MEMRA_FA_SPLIT=<unset> MEMRA_Q80_G2=<unset> MEMRA_FAST=<unset> MEMRA_PRIME_CHUNK=<unset>
+
+pos      prefill_top1  margin_p     decode_top1  margin_d     delta@ids      agree
+2036     24822         8.7013       24822        8.7157       0.0413         yes
+2037     63            1.1185       63           1.2019       0.0558         yes
+2038     318           0.7164       318          0.7864       0.1106         yes
+2039     42714         0.9470       42714        0.3336       0.5049         yes
+2040     40049         7.5875       40049        7.5659       0.2698         yes
+2041     681           0.2401       8            0.0378       0.3479         NO <-- FLIP
+2042     681           0.2567       681          0.1003       0.1041         yes
+2043     735           0.5996       735          0.5465       0.2099         yes
+2044     264           2.3856       264          2.5819       0.2281         yes
+2045     2972          2.5287       2972         2.6571       0.1468         yes
+2046     42714         3.8291       42714        3.6753       0.1354         yes
+2047     2131          1.2138       2131         1.0366       0.3946         yes
+
+margin distribution (decode config, 12 positions): min 0.0378  p10 0.1003  p50 1.2019  p90 7.5659  max 8.7157
+margin distribution (prefill config): min 0.2401  p50 1.2138  max 8.7013
+DECISION POSITION (the gate's): prefill_top1=2131 decode_top1=2131 margin_p=1.2138 margin_d=1.0366 config_delta_at_ids=0.3946
+  -> the decision margin is BELOW 5/12 sampled positions' margins (rank 6 of 12)
+  -> flip is ARITHMETICALLY POSSIBLE iff config_delta > margin: 0.3946 > 1.0366 = false
+agreement across sampled positions: 11/12 (1 flip(s))
+flip@2041: margin 0.0378 vs config spread 0.3479 -> margin-EXPLAINED (near-tie coin)
+flip budget: 1 flip(s) vs budget 1 (calibration row: default (1/12-window))
+VERDICT-INPUT: NEAR-TIE class — every flip sits at a margin the config spread covers, within the model's calibrated budget (documented cross-config drift, not a numeric defect)

@@ -1,0 +1,13 @@
+# qwen4exp_real_gate	label=r2ab131k-off-1	binary_sha256=325a0314592a0b1adaa563932ec7ff0a88331036107286638b0146dc9fbe2ad8	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel=0
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+# load	159.3s
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+# ladder	state-allocated	0, 91475 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+# ladder-progress	fill=16384	elapsed_s=86.4	0, 92851 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+# ladder-progress	fill=32768	elapsed_s=174.7	0, 92915 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+# ladder-progress	fill=49152	elapsed_s=266.7	0, 93011 MiB, 97887 MiB | 1, 94195 MiB, 97887 MiB
+# ladder-progress	fill=65536	elapsed_s=361.6	0, 93698 MiB, 97887 MiB | 1, 94387 MiB, 97887 MiB
+# ladder-progress	fill=81920	elapsed_s=461.6	0, 93922 MiB, 97887 MiB | 1, 94515 MiB, 97887 MiB
+# ladder-progress	fill=98304	elapsed_s=563.0	0, 93858 MiB, 97887 MiB | 1, 94547 MiB, 97887 MiB

@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-7d0f68aa78ad6b09272c91d4785b8d11",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 1715,
+    "completion_tokens": 256,
+    "total_tokens": 1971,
+    "prompt_tokens_details": {
+      "cached_tokens": 1547
+    },
+    "elapsed_s": 1.930294019
+  },
+  "text": "The user wants me to add keyboard navigation and visible focus treatment throughout the dashboard. I need to ensure all interactive elements have proper keyboard accessibility with visible focus indicators.\n\nLet me create a complete HTML document with:\n1. All the previous features (request timeline, cache hit-rate chart, admission queue, GPU-memory gauge, incident annotations, sticky request inspector, cache-tier legend, admission-pressure strip)\n2. Keyboard navigation support\n3. Visible focus treatment (focus rings, clear focus states)\n4. Accessible labels and ARIA attributes\n\nI'll make sure all interactive elements (buttons, filters, tabs, etc.) are keyboard accessible with visible focus indicators.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-tertiary: #334155;\n      --"
+}

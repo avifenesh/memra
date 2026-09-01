@@ -1,0 +1,8 @@
+# Public TLS edge for the two-day cx serve test. The origin stays loopback-only
+# on <rig-hostname> and is reached through the restricted reverse SSH forward.
+<relay-host> {
+    reverse_proxy 127.0.0.1:18002 {
+        # Flush streaming chat-completion chunks immediately.
+        flush_interval -1
+    }
+}

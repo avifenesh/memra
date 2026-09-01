@@ -1,0 +1,105 @@
+[server] starting; models config = [("q35-coldfix", "/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q35-coldfix" <- /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.32GB (expert budget 19.72GB) -> RESIDENT
+[worker]   loaded "q35-coldfix": 41 layers, eos=248046
+[worker] q35-coldfix: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q35-coldfix: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 4295MB (MEMRA_PREFIX_CACHE_MB), policy plain-LRU (MEMRA_PREFIX_CACHE_POLICY=lru rollback; no probation segment), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "q35-coldfix": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q35-coldfix"]
+[server] listening on http://127.0.0.1:8177
+[meter] admit id=cmpl-e62d2ab07a169987de5f1011112fee8d tenant=default lane=interactive model="q35-coldfix"
+[admission] request cost: model="q35-coldfix" ctx=4984 path=plain = 10208 B/token x ctx + 0MB fixed = 51MB
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q35-coldfix" 129MB (observed 179MB at ctx 4928 path=plain)
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-dce7fc8efed348d310ba36ea22e3cac1 tenant=default lane=interactive model="q35-coldfix"
+[admission] request cost: model="q35-coldfix" ctx=4984 path=plain = 10208 B/token x ctx + 129MB fixed = 180MB
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-d7fa880e41da89c0ddf2156354b025a8 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-cfd3094e9e4c610cebff7ef9c602b87a tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-987c1c44fc7902c3947b683eeb217596 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-3c7c583e0527f5b1475c3682815592a9 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-216195208410ded12803dc64af428655 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-f3ac72be0229806e4d421451e9ccaaff tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-1e941e13b44ca7637d8c35bc89b7b05a tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-e9361b75b5b6a4a1ed81b9203e9b3606 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-cda0f66a516ede568d05e83c5855d0ae tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-mixed90-r1-c4-i1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-mixed90-r1-c4-i3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-cb882700560cd8a4123cda402bb0336c tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-11008779ba99a012d20fc29402d3ff48 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-2" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-7559e601af30ac03ffe87c835e23e030 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-d45ba91a88e1d248160cef9a831947bb tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-4" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[meter] admit id=cmpl-348e43ca042dcd638ea67a70a17369ec tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-1172cb31d391e5d669f290342e55c345 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-d0e076f9acae4d977f85be035b23eb0c tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-0ca6dd434c055f4ac13dda1b34e6f0f0 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-5fa69a94d1c031127747b5d33790c88e tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-7" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-619589177fc92e379c203baeeb8f2bb1 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-2" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-b56ba3c9ee3564eafab22cf6dc755050 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-d50f6f8429d602434e7ba53efc2bbefa tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[meter] admit id=cmpl-e54a4b066ac0297fe066b236e2f33582 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[meter] admit id=cmpl-4cf9a0786c4f911f9ee4d0f4f46a2161 tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-160edf2b12959a4de927d8afe67188d0 tenant=default lane=interactive model="q35-coldfix"
+[meter] admit id=cmpl-2b44249b09a45790e3e479b8404a42fa tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[meter] admit id=cmpl-40e092aff85a6540ff1bc1165d02ea5c tenant=default lane=interactive model="q35-coldfix"
+[spec-k] model="q35-coldfix" tenant="serve-smoke-q35-coldfix-q35-hot-1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[prefix-cache] snapshot failed (prefix snapshot layer 40 len 0 != cache pos 4860); prefix not cached
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,28 @@
+binary: /home/ubuntu/wt-cleanup-batch/target/release/memra-server
+6eb0ebe0df7686c9a5b0c0fb59697d15bb34fd66625201a66a845dda1b35af2d  /home/ubuntu/wt-cleanup-batch/target/release/memra-server
+9fad380f8 docs/FLAGS.md: MEMRA_SWA_RING row states both default truths (review [high])
+0 MiB
+0 MiB
+== tooth 3: skip + MEMRA_SERVE_SPEC=0 -> boots, PLAIN by explicit choice; vision cap cells ==
+PASS: explicit-choice PLAIN line present:
+    [mtp-skip] gate: serves PLAIN decode by explicit choice (MEMRA_SERVE_SPEC=0): the embedded MTP head was skipped (MEMRA_MTP_SKIP=1) and no dspark drafter is armed, so no spec program exists for this model
+PASS: greedy request served PLAIN (.usage.spec == null)
+== cell 1a: oversized data URI -> named 400 ==
+PASS: oversized URI refused 400, names the limit:
+    "user message: image 1: image data exceeds 12 MiB (per-image raw limit, refused before decode)"
+
+== cell 1b: at-cap data URI -> cap gate admits (decoder judges the bytes) ==
+PASS: at-cap URI passed the cap gate (refusal, if any, is the decoder's):
+    "user message: image 1: image header: The image format could not be determined"
+
+== cell 1c: 9 valid images -> too many images (max 8), budget unchanged ==
+PASS: 9th image refused with the documented budget message
+== cell 1d: 1 valid small image -> not refused by the cap ==
+PASS: in-budget image admitted past the cap gate:
+    {"status":400,"err":"image 1: Format error decoding Png: CRC error: expected 0xa035a035 have 0x6994f941 while decoding ChunkType { type: IDAT, critical: true, private: false, reserved: false, safecopy: false } chunk."}
+
+cleanup-batch cells: ALL GREEN
+0 MiB
+0 MiB
+
+[exited with code 0]

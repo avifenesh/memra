@@ -1,0 +1,1061 @@
+<request>
+  <url>https://arxiv.org/html/2607.07964v2</url>
+  <final_url>https://arxiv.org/html/2607.07964v2</final_url>
+  <method>GET</method>
+  <status>200</status>
+  <content_type>text/html; charset=utf-8</content_type>
+  <redirect_chain>https://arxiv.org/html/2607.07964v2</redirect_chain>
+</request>
+<body extract="markdown">
+# KronQ: LLM Quantization via Kronecker-Factored Hessian
+
+###### Abstract ######
+
+Post-training quantization (PTQ) is a widely adopted technique for compressing large language models (LLMs) without retraining. Most existing second-order PTQ methods, including GPTQ, construct quantization objectives from input activation statistics, effectively assuming that all output channels contribute equally to the layer-wise reconstruction objective. We propose KronQ, a PTQ framework that challenges this assumption by introducing the gradient covariance into the quantization pipeline. Under the Kronecker-factored Hessian approximation, the quantization loss depends jointly on both the activation and gradient covariances, and KronQ exploits this at two complementary levels. (1) KronQ introduces bidirectional incoherence processing, extending the existing input-side random rotation to the output dimension using the gradient covariance, reducing weight magnitude variance across both input and output dimensions. (2) KronQ derives a new sensitivity metric for inter-layer mixed-precision allocation, driven by the gradient and activation Hessian traces. Notably, in the case of 2-bit weight-only quantization on LLaMA-3-70B, while GPTQ and GPTAQ diverge or produce degenerate quantizations (\>\>2000 perplexity on WikiText-2), KronQ achieves 7.93 perplexity.
+
+1 Introduction
+----------
+
+Large language models (LLMs) have achieved remarkable performance across a wide range of natural language understanding and generation tasks 
+> ([6](#bib.bib1); [48](#bib.bib2); [17](#bib.bib5))
+
+. However, their growing parameter counts, reaching hundreds of billions in recent models, pose significant deployment challenges, as the memory and computational requirements far exceed what is available on commodity and edge hardware. Quantization 
+> ([16](#bib.bib6); [33](#bib.bib13))
+
+ provides an effective solution by compressing model weights and activations to low-bit representations, reducing both memory footprint and inference latency. Among quantization techniques, post-training quantization (PTQ) has attracted particular interest due to its practicality. It requires no retraining and operates on a pretrained model using only a small calibration dataset.
+
+PTQ methods for LLMs span several paradigms 
+> ([55](#bib.bib16))
+
+: (1) Compensation-based methods apply the Optimal Brain Surgeon (OBS) principle 
+> ([19](#bib.bib4); [29](#bib.bib14))
+
+ layer-by-layer, using the input activation covariance as a proxy Hessian to compensate for rounding error in weight quantization 
+> ([12](#bib.bib15); [13](#bib.bib3); [26](#bib.bib38); [32](#bib.bib17); [50](#bib.bib42); [25](#bib.bib24))
+
+. (2) Rotation-based methods apply orthogonal transforms to weight matrices and activations to suppress outliers before quantization 
+> ([7](#bib.bib11); [49](#bib.bib19); [3](#bib.bib18); [36](#bib.bib8))
+
+. (3) Salience-based methods identify sensitive weight channels via activation magnitudes and protect them through per-channel scaling 
+> ([34](#bib.bib9); [53](#bib.bib10))
+
+. These paradigms are
+complementary and are often combined in practice.
+In this work, we focus on the compensation-based family, in particular GPTQ 
+> ([13](#bib.bib3))
+
+ and its successors, combined with orthogonal transforms from the rotation-based paradigm. These methods have become the dominant framework for LLM weight quantization and are widely integrated into production serving stacks, including HuggingFace Transformers 
+> ([52](#bib.bib20))
+
+, GPTQModel 
+> ([42](#bib.bib21))
+
+, and vLLM 
+> ([28](#bib.bib22))
+
+.
+
+However, most compensation-based methods share a common limitation: the quantization objective is characterized solely through the input activation covariance 𝐇X\\mathbf{H}\_{X}, which captures only the input-side second-order information of the weight space. Under the Kronecker-factored approximation (K-FAC) 
+> ([38](#bib.bib23))
+
+, the full weight Hessian factorizes as 𝐇≈𝐇X⊗𝐇G\\mathbf{H}\\approx\\mathbf{H}\_{X}\\otimes\\mathbf{H}\_{G}, where 𝐇G=𝔼⁡[𝐠𝐠⊤]\\mathbf{H}\_{G}=\\mathbb{E}[\\mathbf{gg}^{\\top}] is the gradient covariance with gg as the output gradient. Yet compensation-based methods built on the GPTQ-style 
+> ([13](#bib.bib3))
+
+ column-wise OBS solver leave 𝐇G\\mathbf{H}\_{G} unused, implicitly treating all output directions as equally important by assuming 𝐇G=𝐈\\mathbf{H}\_{G}=\\mathbf{I}. As shown in Figure [1](#S1.F1)(a), output channels vary substantially in gradient magnitude, making this a suboptimal approximation.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="210" id="S1.F1.g1" src="2607.07964v2/fig1.png" width="548">Figure 1: (a) Normalized diagonal entries of the gradient covariance HGH\_{G} for Q, K, V, and O projections in LLaMA-2-13B. Diagonal entries vary by orders of magnitude, revealing heterogeneous output-side sensitivity. (b) WikiText-2 perplexity of GPTQ, GPTAQ, and KronQ on LLaMA-2-13B and LLaMA-3-8B across W4/W3/W2 weight-only quantization.
+
+We propose KronQ, a post-training quantization method built on the Kronecker-factored Hessian approximation 𝐇≈𝐇X⊗𝐇G\\mathbf{H}\\approx\\mathbf{H}\_{X}\\otimes\\mathbf{H}\_{G}. By incorporating the gradient covariance 𝐇G\\mathbf{H}\_{G} into the quantization objective, KronQ accounts for output-side Hessian information, a dimension largely overlooked by existing compensation-based methods. Our contributions are as follows.
+
+1. 1.
+
+   Kronecker-Factored Quantization Error. We extend the layer-wise quantization objective to incorporate 𝐇G\\mathbf{H}\_{G} under the K-FAC approximation and introduce bidirectional incoherence processing. Notably, 𝐇G\\mathbf{H}\_{G} cancels in the quantization update, preserving the efficiency of the base quantizer.
+
+2. 2.
+
+   Inter-Layer Mixed Precision via Joint Hessian Traces.We derive a sublayer sensitivity metric from tr⁡(𝐇G)⋅tr⁡(𝐇X)\\mathrm{tr}(\\mathbf{H}\_{G})\\cdot\\mathrm{tr}(\\mathbf{H}\_{X}) that differentiates sublayers sharing identical input statistics, enabling principled bit-width allocation across sublayers.
+
+3. 3.
+
+   Empirical Validation.We evaluate KronQ on LLaMA-2 and LLaMA-3 from 7B to 70B across weight-only and weight-and-activation settings at W2/W3/W4, achieving consistent state-of-the-art results with the largest gains at 2-bit, as shown in Figure [1](#S1.F1)(b).
+
+2 Related Work
+----------
+
+#### Compensation-Based Post-Training Quantization. ####
+
+The Optimal Brain Surgeon (OBS) framework 
+> ([19](#bib.bib4); [29](#bib.bib14))
+
+ provides the theoretical basis for Hessian-guided weight perturbation. GPTQ 
+> ([13](#bib.bib3))
+
+ scales this to LLMs by performing column-wise OBS updates using the input activation covariance 𝐇X\\mathbf{H}\_{X} as a proxy Hessian, establishing the de facto standard for one-shot LLM quantization. BoA 
+> ([26](#bib.bib38))
+
+ extends GPTQ with attention-aware Hessians that capture inter-layer interactions within the attention module. GPTAQ 
+> ([32](#bib.bib17))
+
+ improves upon GPTQ by correcting for input drift caused by prior-layer quantization errors that accumulate during sequential layer-wise quantization, substantially reducing perplexity at ultra-low bit-widths.
+Two recent methods go beyond input-only statistics. GuidedQuant 
+> ([25](#bib.bib24))
+
+ reweights 𝐇X\\mathbf{H}\_{X} with per-output-channel end-loss saliency under a block-diagonal Fisher approximation.
+YAQA 
+> ([50](#bib.bib42))
+
+, the work most closely related to ours, estimates the Fisher of the KL divergence to the original model through two Kronecker-factored sketches: Sketch A power-iterates under a token-independence assumption, while Sketch B is an unbiased single-pass sketch that retains cross-token structure. Both feed a two-sided LDLQ solver. KronQ targets the same curvature but factorizes it under the K-FAC assumptions, and leaves the rounding step exactly as GPTAQ, using 𝐇G\\mathbf{H}\_{G} only for incoherence processing and mixed-precision allocation.
+
+#### Rotation-Based Post-Training Quantization. ####
+
+QuaRot 
+> ([3](#bib.bib18))
+
+ and SpinQuant 
+> ([36](#bib.bib8))
+
+ apply orthogonal transforms to weight matrices and activations to suppress outliers, enabling low-bit weight-and-activation quantization. QuIP 
+> ([7](#bib.bib11))
+
+ establishes the theoretical foundation, showing that incoherent weight and Hessian matrices yield lower quantization error, and QuIP# 
+> ([49](#bib.bib19))
+
+ extends this with the randomized Hadamard transform and lattice-based vector quantization for practical 2-bit quantization. More recent methods explore learnable transformations, including Kronecker-structured affine maps 
+> ([47](#bib.bib25))
+
+ and jointly optimized orthogonal and scaling transforms 
+> ([21](#bib.bib26))
+
+.
+
+Mixed-Precision Quantization. Mixed-precision methods differ in granularity. Intra-layer methods allocate bit-widths within a layer: SliM-LLM 
+> ([22](#bib.bib28))
+
+ uses weight saliency and CMPQ 
+> ([8](#bib.bib40))
+
+ uses activation norms. Inter-layer methods assign one bit-width per sublayer: HAWQ-V2 
+> ([11](#bib.bib27))
+
+ ranks layers by Hessian traces, while AMQ 
+> ([31](#bib.bib43))
+
+, Q-Palette 
+> ([30](#bib.bib44))
+
+, and HIGGS 
+> ([37](#bib.bib45))
+
+ rely on evolutionary search, a multiple-choice knapsack formulation, and a linearity theorem, respectively.
+Differentiating Q, K, and V, which share 𝐇X\\mathbf{H}\_{X}, requires costly search or per-sublayer loss estimation in these methods, whereas the KronQ score tr⁡(𝐇G)⋅tr⁡(𝐇X)\\mathrm{tr}(\\mathbf{H}\_{G})\\cdot\\mathrm{tr}(\\mathbf{H}\_{X}) breaks this degeneracy analytically at the cost of a single backward pass.
+
+3 Preliminary
+----------
+
+### 3.1 Compensation-based Quantization ###
+
+Let 𝐗∈ℝdin×n\\mathbf{X}\\in\\mathbb{R}^{d\_{\\mathrm{in}}\\times n} be a matrix of nn calibration inputs stacked as columns, 𝐖∈ℝdout×din\\mathbf{W}\\in\\mathbb{R}^{d\_{\\mathrm{out}}\\times d\_{\\mathrm{in}}} the weight matrix of a linear layer with input dimension dind\_{\\mathrm{in}} and output dimension doutd\_{\\mathrm{out}}, and 𝐖^\\widehat{\\mathbf{W}} its quantized counterpart. The standard layer-wise PTQ objective minimizes the squared output reconstruction error:
+
+|min𝐖^⁡‖𝐖𝐗−𝐖^​𝐗‖F2=tr⁡[(𝐖−𝐖^)​𝐇X​(𝐖−𝐖^)⊤],\\min\_{\\widehat{\\mathbf{W}}}\\;\\|\\mathbf{W}\\mathbf{X}-\\widehat{\\mathbf{W}}\\mathbf{X}\\|\_{F}^{2}\\;=\\;\\mathrm{tr}\\!\\left[(\\mathbf{W}-\\widehat{\\mathbf{W}})\\,\\mathbf{H}\_{X}\\,(\\mathbf{W}-\\widehat{\\mathbf{W}})^{\\top}\\right],|(1)|
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+where 𝐇X=𝐗𝐗⊤∈ℝdin×din\\mathbf{H}\_{X}=\\mathbf{X}\\mathbf{X}^{\\top}\\in\\mathbb{R}^{d\_{\\mathrm{in}}\\times d\_{\\mathrm{in}}} is the input activation covariance, which serves as a proxy for the layer-wise Hessian. GPTQ 
+> ([13](#bib.bib3))
+
+ solves this objective greedily column by column using the OBS 
+> ([19](#bib.bib4))
+
+ update. The compensation applied to the remaining unquantized columns after quantizing column pp is given by
+
+|Δ𝐖:,p+1:=−𝐖:,p−𝐖^:,p[𝐇X−1]p​p⋅[𝐇X−1]p,p+1:,\\Delta\\mathbf{W}\_{:,p+1:}=-\\frac{\\mathbf{W}\_{:,p}-\\widehat{\\mathbf{W}}\_{:,p}}{[\\mathbf{H}\_{X}^{-1}]\_{pp}}\\cdot[\\mathbf{H}\_{X}^{-1}]\_{p,p+1:},|(2)|
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+where [𝐇X−1]p​p[\\mathbf{H}\_{X}^{-1}]\_{pp} is the pp-th diagonal entry of the inverse Hessian and [𝐇X−1]p,p+1:[\\mathbf{H}\_{X}^{-1}]\_{p,p+1:} is its pp-th row restricted to columns p+1p+1 onward. This distributes the quantization error of 𝐖:,p\\mathbf{W}\_{:,p} optimally to the remaining weights. However, the layer-wise framework causes quantization errors to accumulate across layers, as the objective in Equation ([1](#S3.E1)) is evaluated on activations already degraded by prior-layer quantization. GPTAQ 
+> ([32](#bib.bib17))
+
+ addresses this by correcting for input drift via asymmetric calibration:
+
+|min𝐖^⁡‖𝐖​𝐗\~−𝐖^​𝐗‖F2=min𝐖^⁡tr⁡[Δ​𝐖​𝐇X​Δ​𝐖⊤+2​𝐖​Δ​𝐗𝐗⊤​Δ​𝐖⊤],\\min\_{\\widehat{\\mathbf{W}}}\\;\\|\\mathbf{W}\\widetilde{\\mathbf{X}}-\\widehat{\\mathbf{W}}\\mathbf{X}\\|\_{F}^{2}\\;=\\;\\min\_{\\widehat{\\mathbf{W}}}\\mathrm{tr}\\!\\left[\\Delta\\mathbf{W}\\,\\mathbf{H}\_{X}\\,\\Delta\\mathbf{W}^{\\top}+2\\mathbf{W}\\,\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\,\\Delta\\mathbf{W}^{\\top}\\right],|(3)|
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+where Δ​𝐖=𝐖−𝐖^\\Delta\\mathbf{W}=\\mathbf{W}-\\widehat{\\mathbf{W}}, 𝐗\\mathbf{X} is the input from the running quantized model, 𝐗\~\\widetilde{\\mathbf{X}} is the corresponding activation of the full-precision model, and Δ​𝐗=𝐗\~−𝐗\\Delta\\mathbf{X}=\\widetilde{\\mathbf{X}}-\\mathbf{X} is the input drift. The term ‖𝐖​Δ​𝐗‖F2\\|\\mathbf{W}\\Delta\\mathbf{X}\\|\_{F}^{2} is constant in 𝐖^\\widehat{\\mathbf{W}} and omitted. Despite this correction, GPTAQ inherits the same proxy Hessian 𝐇X\\mathbf{H}\_{X}, leaving the output-side gradient statistics unaccounted for.
+
+### 3.2 Incoherence Processing ###
+
+Incoherence processing 
+> ([7](#bib.bib11))
+
+ is a preprocessing technique that reduces quantization error by spreading weight magnitudes uniformly across all dimensions. Formally, the incoherence of 𝐖\\mathbf{W} and its proxy Hessian 𝐇X\\mathbf{H}\_{X} are measured by
+
+|μ⁡(𝐖)=dout​din‖𝐖‖F​maxi,j​|Wi​j|,μ⁡(𝐇X)=din⋅maxi,j⁡|Qi​j|,\\mu(\\mathbf{W})=\\frac{\\sqrt{d\_{\\mathrm{out}}d\_{\\mathrm{in}}}}{\\|\\mathbf{W}\\|\_{F}}\\max\_{i,j}|\\textbf{W}\_{ij}|,\\qquad\\mu(\\mathbf{H}\_{X})=\\sqrt{d\_{\\mathrm{in}}}\\cdot\\max\_{i,j}|\\textbf{Q}\_{ij}|,|(4)|
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+where 𝐐\\mathbf{Q} denotes the eigenvector matrix of 𝐇X\\mathbf{H}\_{X}, and lower μ\\mu leads to tighter quantization error bounds. Intuitively, this is achieved by randomizing the spectral directions of 𝐖\\mathbf{W} and 𝐇X\\mathbf{H}\_{X}, so that rounding sensitivity is no longer concentrated along specific coordinate axes. To this end, random orthogonal matrices 𝐔∈ℝdout×dout\\mathbf{U}\\in\\mathbb{R}^{d\_{\\mathrm{out}}\\times d\_{\\mathrm{out}}} and 𝐕∈ℝdin×din\\mathbf{V}\\in\\mathbb{R}^{d\_{\\mathrm{in}}\\times d\_{\\mathrm{in}}} are applied:
+
+|𝐖←𝐔𝐖𝐕⊤,𝐇X←𝐕𝐇X​𝐕⊤.\\mathbf{W}\\leftarrow\\mathbf{U}\\mathbf{W}\\mathbf{V}^{\\top},\\quad\\mathbf{H}\_{X}\\leftarrow\\mathbf{V}\\mathbf{H}\_{X}\\mathbf{V}^{\\top}.|(5)|
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+After quantization, the rotations must be applied online during inference. QuIP 
+> ([7](#bib.bib11))
+
+ instantiates 𝐔\\mathbf{U} and 𝐕\\mathbf{V} as Kronecker-structured random orthogonal matrices, introducing Θ⁡(din3/2+dout3/2)\\Theta(d\_{\\mathrm{in}}^{3/2}+d\_{\\mathrm{out}}^{3/2}) inference overhead per layer. QuIP# 
+> ([49](#bib.bib19))
+
+ replaces these with randomized Hadamard transforms, reducing this to Θ⁡(din​log⁡din+dout​log⁡dout)\\Theta(d\_{\\mathrm{in}}\\log d\_{\\mathrm{in}}+d\_{\\mathrm{out}}\\log d\_{\\mathrm{out}}). However, this incoherence process accounts only for input-side Hessian information through 𝐇X\\mathbf{H}\_{X}, leaving the output-side entirely unaddressed.
+
+4 Method
+----------
+
+### 4.1 Kronecker-Factored Quantization Error ###
+
+The standard layer-wise PTQ objective in Equation ([1](#S3.E1)) uses 𝐇X\\mathbf{H}\_{X} as a proxy for the full Hessian 𝐇\\mathbf{H}, discarding the output-side statistics entirely. We recover this missing factor via the Kronecker-factored approximation 
+> ([38](#bib.bib23); [51](#bib.bib12))
+
+. For a linear layer 𝐲=𝐖𝐱\\mathbf{y}=\\mathbf{W}\\mathbf{x}, the per-sample gradient factorizes as ∂ℒ∂𝐖=𝐠𝐱⊤\\frac{\\partial\\mathcal{L}}{\\partial\\mathbf{W}}=\\mathbf{g}\\mathbf{x}^{\\top}, where 𝐠=∂ℒ/∂𝐲\\mathbf{g}=\\partial\\mathcal{L}/\\partial\\mathbf{y}.
+The true Fisher approximation of 𝐇\\mathbf{H}, which samples labels from the model’s own output distribution rather than using the empirical Fisher 
+> ([27](#bib.bib29))
+
+, gives:
+
+|𝐇\\displaystyle\\mathbf{H}|\=𝔼𝐱,y∼p(⋅∣𝐱)[vec(∂ℒ∂𝐖)vec(∂ℒ∂𝐖)⊤]=𝔼[(𝐱⊗𝐠)(𝐱⊗𝐠)⊤]=𝔼[𝐱𝐱⊤⊗𝐠𝐠⊤].\\displaystyle\\;=\\;\\mathbb{E}\_{\\mathbf{x},\\,y\\sim p(\\cdot\\mid\\mathbf{x})}\\!\\left[\\mathrm{vec}\\!\\left(\\frac{\\partial\\mathcal{L}}{\\partial\\mathbf{W}}\\right)\\mathrm{vec}\\!\\left(\\frac{\\partial\\mathcal{L}}{\\partial\\mathbf{W}}\\right)^{\\top}\\right]\\;=\\;\\mathbb{E}\\!\\left[(\\mathbf{x}\\otimes\\mathbf{g})(\\mathbf{x}\\otimes\\mathbf{g})^{\\top}\\right]\\;=\\;\\mathbb{E}\\!\\left[\\mathbf{x}\\mathbf{x}^{\\top}\\otimes\\mathbf{g}\\mathbf{g}^{\\top}\\right].|(6)|
+|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+Since the joint expectation 𝔼⁡[𝐱𝐱⊤⊗𝐠𝐠⊤]∈ℝdout​din×dout​din\\mathbb{E}[\\mathbf{x}\\mathbf{x}^{\\top}\\otimes\\mathbf{g}\\mathbf{g}^{\\top}]\\in\\mathbb{R}^{d\_{\\mathrm{out}}d\_{\\mathrm{in}}\\times d\_{\\mathrm{out}}d\_{\\mathrm{in}}} is intractable, we apply the K-FAC independence assumption 𝐱⟂⟂𝐠\\mathbf{x}\\perp\\!\\!\\!\\perp\\mathbf{g}
+> ([38](#bib.bib23); [5](#bib.bib30))
+
+, under which the expectation factorizes:
+
+|𝐇≈𝔼⁡[𝐱𝐱⊤]⊗𝔼⁡[𝐠𝐠⊤]=:𝐇X⊗𝐇G,\\mathbf{H}\\;\\approx\\;\\mathbb{E}[\\mathbf{x}\\mathbf{x}^{\\top}]\\otimes\\mathbb{E}[\\mathbf{g}\\mathbf{g}^{\\top}]\\;=:\\;\\mathbf{H}\_{X}\\otimes\\mathbf{H}\_{G},|(7)|
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+reducing complexity from 𝒪⁡(din2​dout2)\\mathcal{O}(d\_{\\mathrm{in}}^{2}d\_{\\mathrm{out}}^{2}) to 𝒪⁡(din2+dout2)\\mathcal{O}(d\_{\\mathrm{in}}^{2}+d\_{\\mathrm{out}}^{2}). Substituting ([7](#S4.E7)) into ([1](#S3.E1)) yields the Kronecker-factored quantization objective:
+
+|min𝐖^⁡tr⁡[𝐇G​Δ​𝐖​𝐇X​Δ​𝐖⊤].\\min\_{\\widehat{\\mathbf{W}}}\\;\\mathrm{tr}\\!\\left[\\mathbf{H}\_{G}\\,\\Delta\\mathbf{W}\\,\\mathbf{H}\_{X}\\,\\Delta\\mathbf{W}^{\\top}\\right].|(8)|
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+Most existing PTQ methods implicitly set 𝐇G=𝐈\\mathbf{H}\_{G}=\\mathbf{I}. However, as shown in Figure [1](#S1.F1)(a), output channels vary substantially in gradient magnitude, making this approximation suboptimal. KronQ retains 𝐇G\\mathbf{H}\_{G}, estimated via a single backward pass over the calibration set and stored as a dout×doutd\_{\\mathrm{out}}\\times d\_{\\mathrm{out}} matrix. Building on GPTAQ 
+> ([32](#bib.bib17))
+
+, we further correct for input drift by incorporating the asymmetric correction from Equation ([3](#S3.E3)):
+
+|min𝐖^⁡tr⁡[𝐇G​(Δ​𝐖​𝐇X​Δ​𝐖⊤+2​𝐖​Δ​𝐗𝐗⊤​Δ​𝐖⊤)].\\min\_{\\widehat{\\mathbf{W}}}\\mathrm{tr}\\!\\left[\\mathbf{H}\_{G}\\!\\left(\\Delta\\mathbf{W}\\,\\mathbf{H}\_{X}\\,\\Delta\\mathbf{W}^{\\top}+2\\mathbf{W}\\,\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\,\\Delta\\mathbf{W}^{\\top}\\right)\\right].|(9)|
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+The optimal weight update under ([9](#S4.E9)) is characterized in the following proposition.
+
+###### Proposition 1 (KronQ Weight Compensation) ######
+
+Under the column-wise OBS update applied to ([9](#S4.E9)), 𝐇G\\mathbf{H}\_{G} cancels algebraically, and the weight compensation after quantizing column pp reduces to:
+
+|Δ𝐖:,p+1:=−𝜹p[𝐇X−1]p,p+1:+𝐖:,p⋅[𝐏]p,p+1:,\\Delta\\mathbf{W}\_{:,p+1:}=-\\bm{\\delta}\_{p}\\,[\\mathbf{H}\_{X}^{-1}]\_{p,p+1:}+\\mathbf{W}\_{:,p}\\cdot[\\mathbf{P}]\_{p,p+1:},|(10)|
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+where 𝛅p=(𝐖:,p−𝐖^:,p)/[𝐇X−1]p​p\\bm{\\delta}\_{p}=(\\mathbf{W}\_{:,p}-\\widehat{\\mathbf{W}}\_{:,p})/[\\mathbf{H}\_{X}^{-1}]\_{pp}is the scaled quantization error,𝐏=α⁡((Δ​𝐗𝐗⊤​𝐋)⊙𝐌U)​𝐋⊤\\mathbf{P}=\\alpha\\left((\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{L})\\odot\\mathbf{M}\_{U}\\right)\\mathbf{L}^{\\top}the GPTAQ asymmetric correction with 𝐇X−1=𝐋𝐋⊤\\mathbf{H}\_{X}^{-1}=\\mathbf{L}\\mathbf{L}^{\\top},
+and 𝐌U\\mathbf{M}\_{U} the strictly upper-triangular mask.
+
+The derivation of Proposition [1](#Thmproposition1) is provided in Appendix [A.1](#A1.SS1). KronQ inherits the computational efficiency of GPTAQ while exploiting 𝐇G\\mathbf{H}\_{G} for bidirectional incoherence processing and mixed-precision allocation.
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="171" id="S4.F2.g1" src="2607.07964v2/fig2.png" width="548">Figure 2: (a) μ\\mu-incoherence of 𝐇G\\mathbf{H}\_{G} before and after incoherence preprocessing across sublayers of LLaMA-2-7B. (b) Weight magnitude distribution of Q\_proj under three configurations: original weights, after input-side incoherence (𝐇X\\mathbf{H}\_{X} only), and after bidirectional incoherence (𝐇X+𝐇G\\mathbf{H}\_{X}+\\mathbf{H}\_{G}), where CVin\\mathrm{CV}\_{\\mathrm{in}} and CVout\\mathrm{CV}\_{\\mathrm{out}} denote the coefficient of variation of column and row norms, respectively.
+
+### 4.2 Bidirectional Incoherence Processing ###
+
+> [7](#bib.bib11)
+
+ and
+> [49](#bib.bib19)
+
+ show that quantization error can be reduced when the proxy Hessian is incoherent—its eigenvectors are not aligned with the coordinate axes—and that 𝐇X\\mathbf{H}\_{X} is highly coherent in practice, motivating column-side incoherence processing. Under the KronQ objective ([9](#S4.E9)), 𝐇G\\mathbf{H}\_{G} appears as the complementary output-side Hessian factor. This raises a natural question: *is HG\\mathbf{H}\_{G} also coherent?*
+
+We answer this via the incoherence measure μ⁡(𝐇G)=dout⋅maxi,j⁡|Qi​j|\\mu(\\mathbf{H}\_{G})=\\sqrt{d\_{\\mathrm{out}}}\\cdot\\max\_{i,j}|\\textbf{Q}\_{ij}| from Equation ([4](#S3.E4)). Here, μ/dout→1\\mu/\\sqrt{d\_{\\mathrm{out}}}\\to 1 indicates maximal coherence and μ/dout→0\\mu/\\sqrt{d\_{\\mathrm{out}}}\\to 0 indicates incoherence. Figure [2](#S4.F2)(a) presents μ⁡(𝐇G)/dout\\mu(\\mathbf{H}\_{G})/\\sqrt{d\_{\\mathrm{out}}} before and after incoherence processing across sublayers of LLaMA-2-7B. μ⁡(𝐇G)/dout\\mu(\\mathbf{H}\_{G})/\\sqrt{d\_{\\mathrm{out}}} reaches up to 0.990.99, but it drops below 0.100.10 for all sublayers after incoherence processing, confirming that output-side rotation effectively renders 𝐇G\\mathbf{H}\_{G} incoherent.
+This motivates bidirectional incoherence processing (BiIP). Extending the input-side diagonal rescaling of 
+> [7](#bib.bib11)
+
+ to both column and row directions, we apply:
+
+|𝐖←𝐒G𝐖𝐒X,𝐒X=diag([𝐇X]j​j∥𝐖:,j∥2)1/4,𝐒G=diag([𝐇G]i​i∥𝐖i,:∥2)1/4,\\mathbf{W}\\;\\leftarrow\\;\\mathbf{S}\_{G}\\,\\mathbf{W}\\,\\mathbf{S}\_{X},\\qquad\\mathbf{S}\_{X}=\\mathrm{diag}\\!\\left(\\frac{[\\mathbf{H}\_{X}]\_{jj}}{\\|\\mathbf{W}\_{:,j}\\|^{2}}\\right)^{1/4}\\!,\\quad\\mathbf{S}\_{G}=\\mathrm{diag}\\!\\left(\\frac{[\\mathbf{H}\_{G}]\_{ii}}{\\|\\mathbf{W}\_{i,:}\\|^{2}}\\right)^{1/4}\\!,|(11)|
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+where the output-side 𝐒G\\mathbf{S}\_{G} term, derived from 𝐇G\\mathbf{H}\_{G}, is
+novel. Since the subsequent quantization operates in the rescaled weight space, the Hessians and drift statistics are transformed as 𝐇X←𝐒X−1​𝐇X​𝐒X−1\\mathbf{H}\_{X}\\leftarrow\\mathbf{S}\_{X}^{-1}\\mathbf{H}\_{X}\\mathbf{S}\_{X}^{-1}, 𝐇G←𝐒G−1​𝐇G​𝐒G−1\\mathbf{H}\_{G}\\leftarrow\\mathbf{S}\_{G}^{-1}\\mathbf{H}\_{G}\\mathbf{S}\_{G}^{-1}, Δ​𝐗𝐗⊤←𝐒X−1​Δ​𝐗𝐗⊤​𝐒X−1\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\leftarrow\\mathbf{S}\_{X}^{-1}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{S}\_{X}^{-1}, leaving the objective ([9](#S4.E9)) unchanged. We then apply orthogonal transforms:
+
+|𝐖←𝐔𝐖𝐕⊤,𝐇X←𝐕𝐇X​𝐕⊤,𝐇G←𝐔𝐇G​𝐔⊤,Δ​𝐗𝐗⊤←𝐕​Δ​𝐗𝐗⊤​𝐕⊤,\\mathbf{W}\\leftarrow\\mathbf{U}\\mathbf{W}\\mathbf{V}^{\\top},\\quad\\mathbf{H}\_{X}\\leftarrow\\mathbf{V}\\mathbf{H}\_{X}\\mathbf{V}^{\\top},\\quad\\mathbf{H}\_{G}\\leftarrow\\mathbf{U}\\mathbf{H}\_{G}\\mathbf{U}^{\\top},\\quad\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\leftarrow\\mathbf{V}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{V}^{\\top},|(12)|
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+instantiating 𝐔\\mathbf{U} and 𝐕\\mathbf{V} as randomized Hadamard transforms 
+> ([49](#bib.bib19))
+
+ to make both 𝐇G\\mathbf{H}\_{G} and 𝐇X\\mathbf{H}\_{X} incoherent with high probability. Figure [2](#S4.F2)(b) shows that incoherencing 𝐇X\\mathbf{H}\_{X} alone leaves the output-channel coefficient of variation (C​Vo​u​tCV\_{out}) nearly unchanged, whereas bidirectional incoherence processing reduces both C​Vi​nCV\_{in} to 0.360.36 and C​Vo​u​tCV\_{out} to 0.340.34. At inference, BiIP introduces no additional overhead beyond QuIP# 
+> ([49](#bib.bib19))
+
+. The diagonal rescaling 𝐒X\\mathbf{S}\_{X} and 𝐒G\\mathbf{S}\_{G} are reverted elementwise with negligible cost, while 𝐔\\mathbf{U} and 𝐕\\mathbf{V} introduce Θ⁡(din​log⁡din+dout​log⁡dout)\\Theta(d\_{\\mathrm{in}}\\log d\_{\\mathrm{in}}+d\_{\\mathrm{out}}\\log d\_{\\mathrm{out}}) per layer. The KronQ objective stays invariant under these transformations, as formalized in Theorem [1](#Thmtheorem1) with proof in Appendix [A.2](#A1.SS2).
+
+###### Theorem 1 ######
+
+For any orthogonal 𝐔∈ℝdout×dout\\mathbf{U}\\in\\mathbb{R}^{d\_{\\mathrm{out}}\\times d\_{\\mathrm{out}}} and 𝐕∈ℝdin×din\\mathbf{V}\\in\\mathbb{R}^{d\_{\\mathrm{in}}\\times d\_{\\mathrm{in}}}, KronQ objective tr⁡[𝐇G​(Δ​𝐖​𝐇X​Δ​𝐖⊤+2​𝐖​Δ​𝐗𝐗⊤​Δ​𝐖⊤)]\\mathrm{tr}\\!\\left[\\mathbf{H}\_{G}\\!\\left(\\Delta\\mathbf{W}\\,\\mathbf{H}\_{X}\\,\\Delta\\mathbf{W}^{\\top}+2\\mathbf{W}\\,\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\,\\Delta\\mathbf{W}^{\\top}\\right)\\right] is invariant under the transformation ([12](#S4.E12)).
+
+> [50](#bib.bib42)
+
+ bound the two-sided LDLQ proxy loss by the product of the LDL diagonal traces of both factors, where 𝐇G\\mathbf{H}\_{G} enters the solver as additional feedback. In our case, 𝐇G\\mathbf{H}\_{G} cancels in the column-wise update, leaving a one-sided solver. The following results show that diag⁡(𝐇G)\\mathrm{diag}(\\mathbf{H}\_{G}) suffices, and that 𝐒G\\mathbf{S}\_{G} in Equation ([11](#S4.E11)) is optimal to leading order.
+
+###### Proposition 2 (BiIP-Preconditioned Expected Loss) ######
+
+Let hi=[𝐇G]i​ih\_{i}=[\\mathbf{H}\_{G}]\_{ii}, ai=∥𝐖i,:∥2a\_{i}=\\lVert\\mathbf{W}\_{i,:}\\rVert^{2}, 𝐃\\mathbf{D} the LDL diagonal of the transformed 𝐇X\\mathbf{H}\_{X}, and LqL\_{q} the objective of Equation ([8](#S4.E8)). Among diagonal output rescalings applied before the rotation,
+
+|𝔼⁡[Lq]∝(∑ihisi2)​(∑jsj2​aj)​tr⁡(𝐃),\\mathbb{E}[L\_{q}]\\;\\propto\\;\\Big(\\sum\_{i}\\frac{h\_{i}}{s\_{i}^{2}}\\Big)\\Big(\\sum\_{j}s\_{j}^{2}a\_{j}\\Big)\\operatorname{tr}(\\mathbf{D}),|(13)|
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+minimized at si=(hi/ai)1/4s\_{i}=(h\_{i}/a\_{i})^{1/4}, the 𝐒G\\mathbf{S}\_{G} of Equation ([11](#S4.E11)).
+
+This improves over input-side-only processing by ρ=(∑ihi​ai)2/(∑ihi​∑iai)≤1\\rho=\\big(\\sum\_{i}\\sqrt{h\_{i}a\_{i}}\\big)^{2}\\big/\\big(\\sum\_{i}h\_{i}\\sum\_{i}a\_{i}\\big)\\leq 1, strict unless hi∝aih\_{i}\\propto a\_{i}, which is far from the case in practice as diag⁡(𝐇G)\\operatorname{diag}(\\mathbf{H}\_{G}) spans orders of magnitude (Figure [1](#S1.F1)(a)). The full derivation and the relation to
+> [50](#bib.bib42)
+
+ are given in Appendix [A.3](#A1.SS3). The overall algorithms are summarized in Algorithm [1](#alg1) and [2](#alg2).
+
+<img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="159" id="S4.F3.g1" src="2607.07964v2/sensitivity_ranking.png" width="548">Figure 3: Sublayer sensitivity rankings under the KronQ scoretr⁡(𝐇G)⋅tr⁡(𝐇X)\\mathrm{tr}(\\mathbf{H}\_{G})\\cdot\\mathrm{tr}(\\mathbf{H}\_{X}) and the activation-only score tr⁡(𝐇X)\\mathrm{tr}(\\mathbf{H}\_{X}) on LLaMA-2-7B and LLaMA-3-8B.
+
+### 4.3 Mixed-Precision Allocation via Joint Hessian Traces ###
+
+Mixed-precision quantization allocates a bit budget across sublayers by ranking them according to a sensitivity metric. Under the second-order approximation, the expected quantization loss for layer ℓ\\ell is proportional to ϵℓ2⋅tr⁡(𝐇(ℓ))\\epsilon\_{\\ell}^{2}\\cdot\\mathrm{tr}(\\mathbf{H}^{(\\ell)})
+> ([11](#bib.bib27))
+
+, where ϵℓ2\\epsilon\_{\\ell}^{2} denotes the per-element rounding error variance at bit-width bℓb\_{\\ell}. Since the goal is to rank sublayers rather than compute absolute loss values, ϵℓ2\\epsilon\_{\\ell}^{2} is treated as a constant within each layer 
+> ([11](#bib.bib27))
+
+, and sensitivity reduces to tr⁡(𝐇(ℓ))\\mathrm{tr}(\\mathbf{H}^{(\\ell)}). Existing methods approximate 𝐇(ℓ)≈𝐇X(ℓ)\\mathbf{H}^{(\\ell)}\\approx\\mathbf{H}\_{X}^{(\\ell)}, yielding the activation-only score tr⁡(𝐇X(ℓ))\\mathrm{tr}(\\mathbf{H}\_{X}^{(\\ell)}). Under the Kronecker factorization 𝐇≈𝐇X⊗𝐇G\\mathbf{H}\\approx\\mathbf{H}\_{X}\\otimes\\mathbf{H}\_{G}, this extends naturally to both factors:
+
+|𝔼⁡[ℒℓ]∝tr⁡(𝐇G(ℓ))⋅tr⁡(𝐇X(ℓ)).\\mathbb{E}[\\mathcal{L}\_{\\ell}]\\;\\propto\\;\\mathrm{tr}(\\mathbf{H}\_{G}^{(\\ell)})\\cdot\\mathrm{tr}(\\mathbf{H}\_{X}^{(\\ell)}).|(14)|
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+We define the KronQ sensitivity score as sℓ=tr⁡(𝐇G(ℓ))⋅tr⁡(𝐇X(ℓ))s\_{\\ell}=\\mathrm{tr}(\\mathbf{H}\_{G}^{(\\ell)})\\cdot\\mathrm{tr}(\\mathbf{H}\_{X}^{(\\ell)}), computed post-BiIP, and allocate higher bit-widths to sublayers with larger sℓs\_{\\ell}. Within a transformer attention block, the query (Q), key (K), and value (V) projections share the same input, so 𝐇X(Q)=𝐇X(K)=𝐇X(V)\\mathbf{H}\_{X}^{(Q)}=\\mathbf{H}\_{X}^{(K)}=\\mathbf{H}\_{X}^{(V)}: any activation-only metric assigns identical sensitivity to all three. The KronQ score breaks this degeneracy via 𝐇G\\mathbf{H}\_{G}, which differs across Q, K, and V as they receive different downstream gradients. As shown in Figure [3](#S4.F3), the sublayer rankings under tr⁡(𝐇G)⋅tr⁡(𝐇X)\\mathrm{tr}(\\mathbf{H}\_{G})\\cdot\\mathrm{tr}(\\mathbf{H}\_{X}) differ substantially from those under tr⁡(𝐇X)\\mathrm{tr}(\\mathbf{H}\_{X}) alone. The KronQ score yields strictly better perplexity–bit-width tradeoffs, as we quantify in Section [5.3](#S5.SS3).
+
+5 Experiments
+----------
+
+### 5.1 Experimental Setup ###
+
+We evaluate KronQ on the LLaMA family, from LLaMA-2-7B/13B/70B 
+> ([48](#bib.bib2))
+
+ to LLaMA-3-8B/70B 
+> ([17](#bib.bib5))
+
+. We compare against GPTQ 
+> ([13](#bib.bib3))
+
+ and GPTAQ 
+> ([32](#bib.bib17))
+
+ as primary baselines. We consider three regimes: (i) weight-only quantization (WxA16), (ii) group quantization (WxA16, g=128g{=}128), and (iii) weight-and-activation quantization (WxA4). For activation quantization, we utilize the QuaRot 
+> ([3](#bib.bib18))
+
+ framework. All other quantization configurations follow GPTAQ 
+> ([32](#bib.bib17))
+
+. Perplexity is measured on WikiText-2 
+> ([40](#bib.bib55))
+
+ and zero-shot accuracy is reported on seven commonsense reasoning benchmarks: PiQA 
+> ([4](#bib.bib31))
+
+, Arc-Easy (ArcE), Arc-Challenge (ArcC) 
+> ([10](#bib.bib32))
+
+, HellaSwag (HS) 
+> ([54](#bib.bib33))
+
+, WinoGrande (WG) 
+> ([45](#bib.bib34))
+
+, BoolQ 
+> ([9](#bib.bib35))
+
+, and OpenBookQA (OBQA) 
+> ([41](#bib.bib36))
+
+. All experiments use 128 calibration samples from WikiText-2 with 2048 context lengths and are run on A100 GPUs. 𝐇G\\mathbf{H}\_{G} is precomputed via a single backward pass prior to calibration and loaded layer-by-layer on demand, incurring no additional overhead during quantization. Results for prior works are taken from their respective papers, except for OmniQuant 
+> ([46](#bib.bib7))
+
+ zero-shot accuracy, which we reproduce using the official implementation.
+
+Table 1: Weight-only quantization (WxA16). WikiText-2 perplexity ↓\\downarrow across LLaMA-2/3 models, and zero-shot accuracy ↑\\uparrow for LLaMA-2-7B on three reasoning benchmarks (PiQA, ArcC, WG). NaN indicates diverged quantization, and – indicates results not available. Avg is reported only when all three tasks are available.
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+Table 2: Comparison with GuidedQuant (LLaMA-2, WikiText-2, ctx 4096).
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+Table 3: Comparison with YAQA (WikiText-2 PPL, identical INT per-channel grids,
+no finetuning, L2-7B ctx 2048, L3.1-8B ctx 8192).
+
+Table 4: WikiText-2 perplexity and zero-shot accuracy for weight-only group quantization (g=128g{=}128) at W2.
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+Table 5: WikiText-2 perplexity and zero-shot accuracy for weight & activation quantization.
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+### 5.2 Results on Uniform Precision ###
+
+Weight-only Quantization. Table [1](#S5.T1) shows WikiText-2 perplexity and zero-shot accuracy on three reasoning benchmarks (PiQA, ArcC, WG) for per-channel weight-only quantization at W4/W3/W2. The comparison baselines include OmniQuant 
+> ([46](#bib.bib7))
+
+, AWQ 
+> ([34](#bib.bib9))
+
+, BoA 
+> ([26](#bib.bib38))
+
+, SpinQuant 
+> ([36](#bib.bib8))
+
+, OSTQuant 
+> ([21](#bib.bib26))
+
+, QEP 
+> ([2](#bib.bib39))
+
+, QuIP 
+> ([7](#bib.bib11))
+
+, QuIP# 
+> ([49](#bib.bib19))
+
+, GPTQ 
+> ([13](#bib.bib3))
+
+, and GPTAQ 
+> ([32](#bib.bib17))
+
+. For QuIP#, we report the no-E8P, no-finetuning variant to match our scalar quantization setting. KronQ achieves the lowest perplexity across nearly all settings, with the most significant gains at W2 and W3 where activation-covariance-only methods degrade severely. The zero-shot accuracy improvements mirror the perplexity gains, with KronQ achieving the highest or comparable accuracy across benchmarks and bit-widths. On LLaMA-3-70B, GPTQ and GPTAQ diverge or fail to produce valid quantizations, while KronQ achieves 4.41 and 7.93 at W3 and W2, respectively. We attribute this to the anomalously large weight outliers unique to LLaMA-3-70B, as further analyzed in Appendix [D](#A4). The remaining zero-shot results, generalization to Mistral-7B, and results on newer model families and harder benchmarks are presented in Appendix [C.1](#A3.SS1), [C.2](#A3.SS2), and [C.3](#A3.SS3), respectively.
+
+We also compare KronQ with gradient-based methods, including GuidedQuant 
+> ([25](#bib.bib24))
+
+ and YAQA 
+> ([50](#bib.bib42))
+
+. Table [3](#S5.T3) shows that KronQ matches or exceeds GuidedQuant with a plain uniform per-channel grid. Table [3](#S5.T3) compares against YAQA-B under identical INT per-channel grids and no finetuning, using both their released Hessians (RedPajama) and Hessians recomputed on our calibration set (WikiText2). KronQ+GPTQ denotes KronQ without the drift correction. Without the drift correction, YAQA-B performs slightly better on L2-7B while KronQ+GPTQ is better on L3.1-8B. The full KronQ+GPTAQ achieves the lowest perplexity in every setting, indicating that a large part of the gain comes from the drift correction. An additional study that swaps only the Hessian estimator between the two methods is provided in Appendix [C.4](#A3.SS4).
+
+Group Quantization.Group quantization generally achieves better performance than per-channel quantization due to its more optimized scaling factors and zero points. Table [4](#S5.T4) reports results under weight-only 2-bit group quantization with 128 column blocks. KronQ maintains its lead over GPTQ and GPTAQ. For example, on LLaMA-2-7B, GPTQ degrades to 274.0 PPL under group quantization while KronQ achieves 7.60. The perplexity comparison with OmniQuant 
+> ([46](#bib.bib7))
+
+ and AWQ 
+> ([34](#bib.bib9))
+
+ and the full bit-width results are shown in Appendix [C.5](#A3.SS5) and [C.6](#A3.SS6), respectively.
+
+Weight-and-Activation Quantization.For activation quantization, we apply QuaRot 
+> ([3](#bib.bib18))
+
+ framework to suppress outliers. Table [5](#S5.T5) presents W2A4 results on LLaMA-2-7B/13B and LLaMA-3-8B. KronQ consistently outperforms both baselines across all settings. The gains are again largest at W2A4, where KronQ reduces PPL from 36.74 to 9.46 on LLaMA-2-7B. The comparison with QuaRot 
+> ([3](#bib.bib18))
+
+ and SpinQuant 
+> ([36](#bib.bib8))
+
+ and other bit-width results are presented in Appendix [C.7](#A3.SS7) and [C.8](#A3.SS8), respectively.
+
+### 5.3 Results on Mixed-precision ###
+
+We evaluate the mixed-precision allocation strategy by incrementally upgrading the most sensitive sublayers from W2 to W3 according to the sensitivity score s=tr⁡(𝐇G)⋅tr⁡(𝐇X)s=\\mathrm{tr}(\\mathbf{H}\_{G})\\cdot\\mathrm{tr}(\\mathbf{H}\_{X}) in Equation ([14](#S4.E14)), applying each upgrade across all layers. Table [6](#S5.T6) compares the sublayer rankings and WikiText-2 perplexity under the KronQ joint score versus the activation-only score tr⁡(𝐇X)\\mathrm{tr}(\\mathbf{H}\_{X}) on LLaMA-2-7B. The activation-only score produces suboptimal allocations: its top-1 sublayer (gate\_proj) yields higher perplexity than the top-1 of the KronQ joint score (down\_proj) at equal average bit-width. The KronQ joint score resolves this degeneracy via 𝐇G\\mathbf{H}\_{G}, yielding strictly better PPL–bits tradeoff. Figure [4](#S5.F4) further compares KronQ mixed-precision against SliM-LLM 
+> ([22](#bib.bib28))
+
+, SliM-LLM+, and CMPQ 
+> ([8](#bib.bib40))
+
+ on LLaMA-2-7B, where KronQ achieves lower perplexity than W3 baselines at only ∼2.6{\\sim}2.6 average bits. Other architectures show the same trend in Appendix [C.9](#A3.SS9), and a comparison with inter-layer mixed-precision methods is provided in Appendix [C.10](#A3.SS10).
+
+Table 6: Sublayer sensitivity rankings and WikiText-2 perplexity
+on LLaMA-2-7B. Each row cumulatively upgrades one additional sublayer
+to W3 across all layers.
+
+Figure 4: WikiText-2 perplexity vs. average bit-width on LLaMA-2-7B, comparing KronQ with prior mixed precision works.
+
+### 5.4 Memory and Latency ###
+
+Beyond calibration cost, we measure the end-to-end inference benefit of quantization in Figure [5](#S5.F5). On the memory side, KronQ reduces peak inference VRAM by 3.53.5–3.9×3.9\\times at W4 and 4.04.0–7.5×7.5\\times at W2 over the bf16 baseline, consistently across model scales. This compression translates into deployment: a 70B model that requires two 80 GB A100s in bf16 (138138–141141 GB) fits on a single A100 at W4 (3535–3939 GB). On the latency side, the reduced memory traffic yields 1.251.25–2.51×2.51\\times faster decoding at W4, measured as time per output token (TPOT), on the 7B–13B models under a matched single-GPU configuration. We report the 70B latency, though its bf16 baseline spans two GPUs and is included only for context.
+
+Figure 5: Inference efficiency of KronQ quantized models. (a) Peak VRAM and (b) decoding latency (TPOT) at batch size 1, relative to the bf16 baseline. For 70B, the bf16 baseline runs on two GPUs due to OOM on single GPU, while W4 runs on a single GPU.
+
+### 5.5 Analysis ###
+
+Ablation Study.We conduct three ablation studies to isolate the contribution of each component in KronQ, with W2 WikiText-2 perplexity shown in Table [7](#S5.T7).
+First, to isolate the contribution of the base quantizer, we replace GPTAQ with a plain GPTQ base. This degrades perplexity from 8.19/6.99/11.92 to 10.18/7.95/14.52 on LLaMA-2-7B/13B and LLaMA-3-8B, confirming that drift correction and BiIP are complementary. Second, we examine the effect of diagonal rescaling (𝐒X\\mathbf{S}\_{X}, 𝐒G\\mathbf{S}\_{G}) in BiIP. Removing the scaling while retaining the Hadamard rotations consistently degrades perplexity across all models, demonstrating that diagonal rescaling is a necessary complement to the orthogonal transforms. Third, we ablate the rotation directions in BiIP. Applying input-side incoherence (𝐇X\\mathbf{H}\_{X} only) already reduces perplexity, confirming the importance of suppressing input-side outliers 
+> ([7](#bib.bib11))
+
+. Output-side incoherence alone (𝐇G\\mathbf{H}\_{G} only) degrades severely on LLaMA-2-7B/13B as input-side outliers remain unaddressed. Combining both directions consistently achieves the lowest perplexity, demonstrating that 𝐇G\\mathbf{H}\_{G} provides complementary output-side correction that 𝐇X\\mathbf{H}\_{X} alone cannot capture.
+
+Table 7: Ablation study on WikiText-2 perplexity at W2.
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+Calibration Efficiency.
+
+Table 8: Calibration latency (s/layer) and memory needed to perform calibration (GiB) per layer. †\\dagger represents 𝐇G\\mathbf{H}\_{G} offload after BiIP.
+
+KronQ introduces a moderate latency overhead over GPTAQ (+8–11s/layer across models), attributable to the bidirectional Hadamard rotations in BiIP, which require dense matrix multiplications for both 𝐇X\\mathbf{H}\_{X} and 𝐇G\\mathbf{H}\_{G}. This overhead is consistent across model sizes, reflecting that the dominant cost scales with the hidden dimension rather than the total parameter count. For memory, KronQ additionally stores 𝐇G\\mathbf{H}\_{G} as a full dout×doutd\_{\\text{out}}\\times d\_{\\text{out}} matrix during BiIP preprocessing, causing a temporary memory overhead above GPTAQ. However, since 𝐇G\\mathbf{H}\_{G} cancels algebraically in the column-wise quantization updates in Proposition [1](#Thmproposition1), it is released upon completion of BiIP, and the memory required for the subsequent quantization loop is identical to GPTAQ. Per-sublayer memory breakdown is provided in Appendix [E](#A5).
+
+6 Conclusion
+----------
+
+We presented KronQ, a PTQ framework that incorporates the gradient covariance 𝐇G\\mathbf{H}\_{G} into the quantization pipeline. KronQ exploits 𝐇G\\mathbf{H}\_{G} for bidirectional incoherence processing and inter-layer mixed-precision allocation, while inheriting the computational efficiency of GPTAQ as 𝐇G\\mathbf{H}\_{G} cancels algebraically in the quantization updates. Experiments on LLaMA-2 and LLaMA-3 from 7B to 70B show consistent gains across W2/W3/W4, with the largest improvements at 2-bit, where activation-covariance-only methods degrade severely. The limitations of this work are presented in Appendix [F](#A6).
+
+Acknowledgments
+----------
+
+This work was supported in part by CoCoSys, a JUMP2.0 center sponsored by DARPA and SRC, the National Science Foundation (CAREER Award, Grant #2312366, Grant #2318152), the DARPA Young Faculty Award, the DoE MMICC center SEA-CROGS (Award #DE-SC0023198), and the Global Industrial Technology Cooperation Center (GITCC) program.
+
+References
+----------
+
+* Abouelenin et al. (2025)A. Abouelenin, A. Ashfaq, A. Atkinson, H. Awadalla, N. Bach, J. Bao, A. Benhaim, M. Cai, V. Chaudhary, C. Chen, et al.Phi-4-mini technical report: compact yet powerful multimodal language models via mixture-of-loras.arXiv preprint arXiv:2503.01743.Cited by: [§C.3](#A3.SS3.p1.1).
+* Arai and Ichikawa (2025)Y. Arai and Y. IchikawaQuantization error propagation: revisiting layer-wise post-training quantization.arXiv preprint arXiv:2504.09629.Cited by: [§5.2](#S5.SS2.p1.1).
+* Ashkboos et al. (2024)S. Ashkboos, A. Mohtashami, M. L. Croci, B. Li, P. Cameron, M. Jaggi, D. Alistarh, T. Hoefler, and J. HensmanQuarot: outlier-free 4-bit inference in rotated llms.Advances in Neural Information Processing Systems37, pp. 100213–100240.Cited by: [§C.7](#A3.SS7.p1.1),[§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px2.p1.1),[§5.1](#S5.SS1.p1.1),[§5.2](#S5.SS2.p4.1).
+* Bisk et al. (2020)Y. Bisk, R. Zellers, J. Gao, Y. Choi, et al.Piqa: reasoning about physical commonsense in natural language.In Proceedings of the AAAI conference on artificial intelligence,Vol. 34, pp. 7432–7439.Cited by: [§5.1](#S5.SS1.p1.1).
+* Botev et al. (2017)A. Botev, H. Ritter, and D. BarberPractical gauss-newton optimisation for deep learning.In International Conference on Machine Learning,pp. 557–565.Cited by: [§4.1](#S4.SS1.p1.2).
+* Brown et al. (2020)T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, et al.Language models are few-shot learners.Advances in neural information processing systems33, pp. 1877–1901.Cited by: [§1](#S1.p1.1).
+* Chee et al. (2023)J. Chee, Y. Cai, V. Kuleshov, and C. M. De SaQuip: 2-bit quantization of large language models with guarantees.Advances in Neural Information Processing Systems36, pp. 4396–4429.Cited by: [§A.3](#A1.SS3.SSS0.Px1.p1.1),[§A.3](#A1.SS3.SSS0.Px2.p1.1),[§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px2.p1.1),[§3.2](#S3.SS2.p1.1),[§3.2](#S3.SS2.p1.3),[§4.2](#S4.SS2.p1.1),[§4.2](#S4.SS2.p2.1),[§5.2](#S5.SS2.p1.1),[§5.5](#S5.SS5.p1.1).
+* Chen et al. (2024)Z. Chen, B. Xie, J. Li, and C. ShenChannel-wise mixed-precision quantization for large language models.arXiv preprint arXiv:2410.13056.Cited by: [§C.9](#A3.SS9.p1.1),[§2](#S2.SS0.SSS0.Px2.p2.1),[§5.3](#S5.SS3.p1.1).
+* Clark et al. (2019)C. Clark, K. Lee, M. Chang, T. Kwiatkowski, M. Collins, and K. ToutanovaBoolq: exploring the surprising difficulty of natural yes/no questions.In Proceedings of the 2019 conference of the north American chapter of the association for computational linguistics: Human language technologies, volume 1 (long and short papers),pp. 2924–2936.Cited by: [§5.1](#S5.SS1.p1.1).
+* Clark et al. (2018)P. Clark, I. Cowhey, O. Etzioni, T. Khot, A. Sabharwal, C. Schoenick, and O. TafjordThink you have solved question answering? try arc, the ai2 reasoning challenge.arXiv preprint arXiv:1803.05457.Cited by: [§5.1](#S5.SS1.p1.1).
+* Dong et al. (2020)Z. Dong, Z. Yao, D. Arfeen, A. Gholami, M. W. Mahoney, and K. KeutzerHawq-v2: hessian aware trace-weighted quantization of neural networks.Advances in neural information processing systems33, pp. 18518–18529.Cited by: [§2](#S2.SS0.SSS0.Px2.p2.1),[§4.3](#S4.SS3.p1.1).
+* Frantar and Alistarh (2022)E. Frantar and D. AlistarhOptimal brain compression: a framework for accurate post-training quantization and pruning.Advances in Neural Information Processing Systems35, pp. 4475–4488.Cited by: [§1](#S1.p2.1).
+* Frantar et al. (2022)E. Frantar, S. Ashkboos, T. Hoefler, and D. AlistarhGptq: accurate post-training quantization for generative pre-trained transformers.arXiv preprint arXiv:2210.17323.Cited by: [§C.3](#A3.SS3.p1.1),[§1](#S1.p2.1),[§1](#S1.p3.1),[§2](#S2.SS0.SSS0.Px1.p1.1),[§3.1](#S3.SS1.p1.2),[§5.1](#S5.SS1.p1.1),[§5.2](#S5.SS2.p1.1).
+* Gao et al. (2024)L. Gao, J. Tow, B. Abbasi, S. Biderman, S. Black, A. DiPofi, C. Foster, L. Golding, J. Hsu, A. Le Noac’h, H. Li, K. McDonell, N. Muennighoff, C. Ociepa, J. Phang, L. Reynolds, H. Schoelkopf, A. Skowron, L. Sutawika, E. Tang, A. Thite, B. Wang, K. Wang, and A. ZouThe language model evaluation harness.Zenodo.External Links: [Document](https://dx.doi.org/10.5281/zenodo.12608602),[Link](https://zenodo.org/records/12608602)Cited by: [§C.3](#A3.SS3.SSS0.Px1.p1.1).
+* Gemma Team (2025)Gemma TeamGemma 3 technical report.arXiv preprint arXiv:2503.19786.Cited by: [§C.3](#A3.SS3.p1.1).
+* Gholami et al. (2022)A. Gholami, S. Kim, Z. Dong, Z. Yao, M. W. Mahoney, and K. KeutzerA survey of quantization methods for efficient neural network inference.In Low-power computer vision,pp. 291–326.Cited by: [§1](#S1.p1.1).
+* Grattafiori et al. (2024)A. Grattafiori, A. Dubey, A. Jauhri, A. Pandey, A. Kadian, A. Al-Dahle, A. Letman, A. Mathur, A. Schelten, A. Vaughan, et al.The llama 3 herd of models.arXiv preprint arXiv:2407.21783.Cited by: [§1](#S1.p1.1),[§5.1](#S5.SS1.p1.1).
+* Guo et al. (2025)D. Guo, D. Yang, H. Zhang, J. Song, P. Wang, Q. Zhu, R. Xu, R. Zhang, S. Ma, X. Bi, et al.Deepseek-r1: incentivizing reasoning capability in llms via reinforcement learning.arXiv preprint arXiv:2501.12948.Cited by: [§C.3](#A3.SS3.p1.1).
+* Hassibi and Stork (1992)B. Hassibi and D. StorkSecond order derivatives for network pruning: optimal brain surgeon.Advances in neural information processing systems5.Cited by: [§A.1](#A1.SS1.p1.1),[§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px1.p1.1),[§3.1](#S3.SS1.p1.2).
+* Hendrycks et al. (2020)D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and J. SteinhardtMeasuring massive multitask language understanding.arXiv preprint arXiv:2009.03300.Cited by: [§C.3](#A3.SS3.p1.1).
+* Hu et al. (2025)X. Hu, Y. Cheng, D. Yang, Z. Xu, Z. Yuan, J. Yu, C. Xu, Z. Jiang, and S. ZhouOstquant: refining large language model quantization with orthogonal and scaling transformations for better distribution fitting.arXiv preprint arXiv:2501.13987.Cited by: [§2](#S2.SS0.SSS0.Px2.p1.1),[§5.2](#S5.SS2.p1.1).
+* Huang et al. (2024)W. Huang, H. Qin, Y. Liu, Y. Li, Q. Liu, X. Liu, L. Benini, M. Magno, S. Zhang, and X. QiSliM-llm: salience-driven mixed-precision quantization for large language models.arXiv preprint arXiv:2405.14917.Cited by: [§C.9](#A3.SS9.p1.1),[§2](#S2.SS0.SSS0.Px2.p2.1),[§5.3](#S5.SS3.p1.1).
+* Jain et al. (2025)N. Jain, A. Gu, W. Li, F. Yan, T. Zhang, S. Wang, A. Solar-Lezama, K. Sen, and I. StoicaLivecodebench: holistic and contamination free evaluation of large language models for code.In International Conference on Learning Representations,Vol. 2025, pp. 58791–58831.Cited by: [§C.3](#A3.SS3.p1.1).
+* Jiang et al. (2024)A. Jiang, A. Sablayrolles, A. Mensch, C. Bamford, D. Chaplot, D. de Las Casas, F. Bressand, G. Lengyel, G. Lample, L. Saulnier, et al.Mistral 7b. arxiv 2023.arXiv preprint arXiv:2310.06825.Cited by: [§C.2](#A3.SS2.p1.1).
+* Kim et al. (2025)J. Kim, M. E. Halabi, W. Park, C. J. Schaefer, D. Lee, Y. Park, J. W. Lee, and H. O. SongGuidedQuant: large language model quantization via exploiting end loss guidance.arXiv preprint arXiv:2505.07004.Cited by: [§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px1.p1.1),[§5.2](#S5.SS2.p2.1).
+* Kim et al. (2024)J. Kim, H. Kim, E. Cho, C. Lee, J. Kim, and Y. JeonBoa: attention-aware post-training quantization without backpropagation.arXiv preprint arXiv:2406.13474.Cited by: [§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px1.p1.1),[§5.2](#S5.SS2.p1.1).
+* Kunstner et al. (2019)F. Kunstner, P. Hennig, and L. BallesLimitations of the empirical fisher approximation for natural gradient descent.Advances in neural information processing systems32.Cited by: [§4.1](#S4.SS1.p1.1).
+* Kwon et al. (2023)W. Kwon, Z. Li, S. Zhuang, Y. Sheng, L. Zheng, C. H. Yu, J. E. Gonzalez, H. Zhang, and I. StoicaEfficient memory management for large language model serving with pagedattention.In Proceedings of the ACM SIGOPS 29th Symposium on Operating Systems Principles,Cited by: [§1](#S1.p2.1).
+* LeCun et al. (1989)Y. LeCun, J. Denker, and S. SollaOptimal brain damage.Advances in neural information processing systems2.Cited by: [§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px1.p1.1).
+* Lee and Song (2026)D. Lee and H. O. SongQ-palette: fractional-bit quantizers toward optimal bit allocation for efficient llm deployment.Advances in Neural Information Processing Systems38, pp. 11525–11558.Cited by: [§C.10](#A3.SS10.p1.1),[§2](#S2.SS0.SSS0.Px2.p2.1).
+* Lee et al. (2025)S. Lee, S. Woo, J. Jin, C. Lee, and E. ParkAmq: enabling automl for mixed-precision weight-only quantization of large language models.In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing,pp. 35520–35538.Cited by: [§C.10](#A3.SS10.p1.1),[§2](#S2.SS0.SSS0.Px2.p2.1).
+* Li et al. (2025)Y. Li, R. Yin, D. Lee, S. Xiao, and P. PandaGptaq: efficient finetuning-free quantization for asymmetric calibration.arXiv preprint arXiv:2504.02692.Cited by: [§A.1](#A1.SS1.p13.1),[§C.3](#A3.SS3.p1.1),[Appendix E](#A5.p1.1),[§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px1.p1.1),[§3.1](#S3.SS1.p1.3),[§4.1](#S4.SS1.p1.4),[§5.1](#S5.SS1.p1.1),[§5.2](#S5.SS2.p1.1).
+* Liang et al. (2021)T. Liang, J. Glossner, L. Wang, S. Shi, and X. ZhangPruning and quantization for deep neural network acceleration: a survey.Neurocomputing461, pp. 370–403.Cited by: [§1](#S1.p1.1).
+* Lin et al. (2024)J. Lin, J. Tang, H. Tang, S. Yang, W. Chen, W. Wang, G. Xiao, X. Dang, C. Gan, and S. HanAwq: activation-aware weight quantization for on-device llm compression and acceleration.Proceedings of machine learning and systems6, pp. 87–100.Cited by: [§C.5](#A3.SS5.p1.1),[§1](#S1.p2.1),[§5.2](#S5.SS2.p1.1),[§5.2](#S5.SS2.p3.1).
+* Liu et al. (2025)R. Liu, Y. Sun, M. Zhang, H. Bai, X. Yu, T. Yu, C. Yuan, and L. HouQuantization hurts reasoning? an empirical study on quantized reasoning models.arXiv preprint arXiv:2504.04823.Cited by: [§C.3](#A3.SS3.SSS0.Px1.p1.1).
+* Liu et al. (2024)Z. Liu, C. Zhao, I. Fedorov, B. Soran, D. Choudhary, R. Krishnamoorthi, V. Chandra, Y. Tian, and T. BlankevoortSpinquant: llm quantization with learned rotations.arXiv preprint arXiv:2405.16406.Cited by: [§C.7](#A3.SS7.p1.1),[§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px2.p1.1),[§5.2](#S5.SS2.p1.1),[§5.2](#S5.SS2.p4.1).
+* Malinovskii et al. (2025)V. Malinovskii, A. Panferov, I. Ilin, H. Guo, P. Richtárik, and D. AlistarhHiggs: pushing the limits of large language model quantization via the linearity theorem.In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers),pp. 10857–10886.Cited by: [§C.10](#A3.SS10.p1.1),[§2](#S2.SS0.SSS0.Px2.p2.1).
+* Martens and Grosse (2015)J. Martens and R. GrosseOptimizing neural networks with kronecker-factored approximate curvature.In International conference on machine learning,pp. 2408–2417.Cited by: [§1](#S1.p3.1),[§4.1](#S4.SS1.p1.1),[§4.1](#S4.SS1.p1.2).
+* Maxwell-Jia (2025)Maxwell-JiaAIME 2024 dataset.Note: [https://huggingface.co/datasets/Maxwell-Jia/AIME\_2024](https://huggingface.co/datasets/Maxwell-Jia/AIME_2024)Hugging Face datasetCited by: [§C.3](#A3.SS3.p1.1).
+* Merity et al. (2016)S. Merity, C. Xiong, J. Bradbury, and R. SocherPointer sentinel mixture models.arXiv preprint arXiv:1609.07843.Cited by: [§5.1](#S5.SS1.p1.1).
+* Mihaylov et al. (2018)T. Mihaylov, P. Clark, T. Khot, and A. SabharwalCan a suit of armor conduct electricity? a new dataset for open book question answering.In Proceedings of the 2018 conference on empirical methods in natural language processing,pp. 2381–2391.Cited by: [§5.1](#S5.SS1.p1.1).
+* ModelCloud.ai and qubitium@modelcloud.ai (2024)ModelCloud.ai and qubitium@modelcloud.aiGPT-qmodel.GitHub.Note: [https://github.com/modelcloud/gptqmodel](https://github.com/modelcloud/gptqmodel)Contact: qubitium@modelcloud.aiCited by: [§1](#S1.p2.1).
+* Qin (2024)M. QinThe uniqueness of llama3-70b series with per-channel quantization.arXiv preprint arXiv:2408.15301.Cited by: [Appendix D](#A4.p1.1).
+* Rein et al. (2023)D. Rein, B. L. Hou, A. C. Stickland, J. Petty, R. Y. Pang, J. Dirani, J. Michael, and S. R. BowmanGpqa: a graduate-level google-proof q&a benchmark.arXiv preprint arXiv:2311.12022.Cited by: [§C.3](#A3.SS3.p1.1).
+* Sakaguchi et al. (2021)K. Sakaguchi, R. L. Bras, C. Bhagavatula, and Y. ChoiWinogrande: an adversarial winograd schema challenge at scale.Communications of the ACM64 (9), pp. 99–106.Cited by: [§5.1](#S5.SS1.p1.1).
+* Shao et al. (2023)W. Shao, M. Chen, Z. Zhang, P. Xu, L. Zhao, Z. Li, K. Zhang, P. Gao, Y. Qiao, and P. LuoOmniquant: omnidirectionally calibrated quantization for large language models.arXiv preprint arXiv:2308.13137.Cited by: [§C.5](#A3.SS5.p1.1),[§5.1](#S5.SS1.p1.1),[§5.2](#S5.SS2.p1.1),[§5.2](#S5.SS2.p3.1).
+* Sun et al. (2024)Y. Sun, R. Liu, H. Bai, H. Bao, K. Zhao, Y. Li, J. Hu, X. Yu, L. Hou, C. Yuan, et al.Flatquant: flatness matters for llm quantization.arXiv preprint arXiv:2410.09426.Cited by: [§2](#S2.SS0.SSS0.Px2.p1.1).
+* Touvron et al. (2023)H. Touvron, T. Lavril, G. Izacard, X. Martinet, M. Lachaux, T. Lacroix, B. Rozière, N. Goyal, E. Hambro, F. Azhar, et al.Llama: open and efficient foundation language models.arXiv preprint arXiv:2302.13971.Cited by: [§1](#S1.p1.1),[§5.1](#S5.SS1.p1.1).
+* Tseng et al. (2024)A. Tseng, J. Chee, Q. Sun, V. Kuleshov, and C. De SaQuip#: even better llm quantization with hadamard incoherence and lattice codebooks.Proceedings of machine learning research235, pp. 48630.Cited by: [§A.3](#A1.SS3.SSS0.Px2.p1.1),[Appendix F](#A6.p1.1),[§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px2.p1.1),[§3.2](#S3.SS2.p1.3),[§4.2](#S4.SS2.p1.1),[§4.2](#S4.SS2.p2.3),[§5.2](#S5.SS2.p1.1).
+* Tseng et al. (2025)A. Tseng, Z. Sun, and C. De SaModel-preserving adaptive rounding.arXiv preprint arXiv:2505.22988.Cited by: [§A.3](#A1.SS3.SSS0.Px3),[§A.3](#A1.SS3.SSS0.Px3.p1.1),[§1](#S1.p2.1),[§2](#S2.SS0.SSS0.Px1.p1.1),[§4.2](#S4.SS2.p3.1),[§4.2](#S4.SS2.p4.1),[§5.2](#S5.SS2.p2.1).
+* van der Ouderaa et al. (2023)T. F. van der Ouderaa, M. Nagel, M. Van Baalen, Y. M. Asano, and T. BlankevoortThe llm surgeon.arXiv preprint arXiv:2312.17244.Cited by: [§4.1](#S4.SS1.p1.1).
+* Wolf et al. (2020)T. Wolf, L. Debut, V. Sanh, J. Chaumond, C. Delangue, A. Moi, P. Cistac, T. Rault, R. Louf, M. Funtowicz, J. Davison, S. Shleifer, P. von Platen, C. Ma, Y. Jernite, J. Plu, C. Xu, T. L. Scao, S. Gugger, M. Drame, Q. Lhoest, and A. M. RushTransformers: state-of-the-art natural language processing.In Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations,Online, pp. 38–45.External Links: [Link](https://www.aclweb.org/anthology/2020.emnlp-demos.6)Cited by: [§1](#S1.p2.1).
+* Xiao et al. (2023)G. Xiao, J. Lin, M. Seznec, H. Wu, J. Demouth, and S. HanSmoothquant: accurate and efficient post-training quantization for large language models.In International conference on machine learning,pp. 38087–38099.Cited by: [§1](#S1.p2.1).
+* Zellers et al. (2019)R. Zellers, A. Holtzman, Y. Bisk, A. Farhadi, and Y. ChoiHellaswag: can a machine really finish your sentence?.In Proceedings of the 57th annual meeting of the association for computational linguistics,pp. 4791–4800.Cited by: [§5.1](#S5.SS1.p1.1).
+* Zhao et al. (2025)J. Zhao, M. Wang, M. Zhang, Y. Shang, X. Liu, Y. Wang, M. Zhang, and L. NieBenchmarking post-training quantization in llms: comprehensive taxonomy, unified evaluation, and comparative analysis.arXiv preprint arXiv:2502.13178.Cited by: [§1](#S1.p2.1).
+
+Appendix A Proofs
+----------
+
+### A.1 Proof of Proposition [1](#Thmproposition1) (KronQ Weight Compensation) ###
+
+The general OBS optimal weight update 
+> ([19](#bib.bib4))
+
+ is:
+
+|Δ​𝜽=−𝐇−1​𝐄p​(𝐄p⊤​𝐇−1​𝐄p)−1​𝜺p,\\Delta\\bm{\\theta}=-\\mathbf{H}^{-1}\\mathbf{E}\_{p}(\\mathbf{E}\_{p}^{\\top}\\mathbf{H}^{-1}\\mathbf{E}\_{p})^{-1}\\bm{\\varepsilon}\_{p},|(15)|
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+where 𝜽=vec⁡(𝐖)\\bm{\\theta}=\\mathrm{vec}(\\mathbf{W}) stacks the columns of 𝐖\\mathbf{W}, 𝐄p=ep⊗𝐈\\mathbf{E}\_{p}=e\_{p}\\otimes\\mathbf{I} with ep∈ℝdine\_{p}\\in\\mathbb{R}^{d\_{\\mathrm{in}}} and 𝐈∈ℝdout×dout\\mathbf{I}\\in\\mathbb{R}^{d\_{\\mathrm{out}}\\times d\_{\\mathrm{out}}} is the selection matrix for column pp, and 𝜺p=𝐖:,p−𝐖^:,p\\bm{\\varepsilon}\_{p}=\\mathbf{W}\_{:,p}-\\widehat{\\mathbf{W}}\_{:,p} is the quantization error of column pp. Under the K-FAC approximation 𝐇=𝐇X⊗𝐇G\\mathbf{H}=\\mathbf{H}\_{X}\\otimes\\mathbf{H}\_{G}, we have 𝐇−1=𝐇X−1⊗𝐇G−1\\mathbf{H}^{-1}=\\mathbf{H}\_{X}^{-1}\\otimes\\mathbf{H}\_{G}^{-1}.
+We compute the two terms in the OBS formula. First:
+
+|             𝐄p⊤​𝐇−1​𝐄p\\displaystyle\\mathbf{E}\_{p}^{\\top}\\mathbf{H}^{-1}\\mathbf{E}\_{p}              |\=(ep⊤⊗𝐈)​(𝐇X−1⊗𝐇G−1)​(ep⊗𝐈)\\displaystyle=(e\_{p}^{\\top}\\otimes\\mathbf{I})(\\mathbf{H}\_{X}^{-1}\\otimes\\mathbf{H}\_{G}^{-1})(e\_{p}\\otimes\\mathbf{I})|
+|-----------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|\=(ep⊤​𝐇X−1​ep)⊗𝐇G−1\\displaystyle=(e\_{p}^{\\top}\\mathbf{H}\_{X}^{-1}e\_{p})\\otimes\\mathbf{H}\_{G}^{-1}|                                                                                                                                                             |
+|         \=[𝐇X−1]p​p⋅𝐇G−1.\\displaystyle=[\\mathbf{H}\_{X}^{-1}]\_{pp}\\cdot\\mathbf{H}\_{G}^{-1}.         |                                                                            (16)                                                                             |
+
+Second:
+
+|𝐇−1𝐄p=(𝐇X−1⊗𝐇G−1)(ep⊗𝐈)=[𝐇X−1]:,p⊗𝐇G−1.\\mathbf{H}^{-1}\\mathbf{E}\_{p}=(\\mathbf{H}\_{X}^{-1}\\otimes\\mathbf{H}\_{G}^{-1})(e\_{p}\\otimes\\mathbf{I})=[\\mathbf{H}\_{X}^{-1}]\_{:,p}\\otimes\\mathbf{H}\_{G}^{-1}.|(17)|
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+Substituting into the OBS formula and applying the mixed-product property,𝐇G−1\\mathbf{H}\_{G}^{-1} cancels algebraically:
+
+|                                                                                                                       Δ​𝜽\\displaystyle\\Delta\\bm{\\theta}                                                                                                                        |\=−([𝐇X−1]:,p⊗𝐇G−1)([𝐇X−1]p​p⋅𝐇G−1)−1𝜺p\\displaystyle=-\\left([\\mathbf{H}\_{X}^{-1}]\_{:,p}\\otimes\\mathbf{H}\_{G}^{-1}\\right)\\left([\\mathbf{H}\_{X}^{-1}]\_{pp}\\cdot\\mathbf{H}\_{G}^{-1}\\right)^{-1}\\bm{\\varepsilon}\_{p}|
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|\=−1[𝐇X−1]p​p([𝐇X−1]:,p⊗𝐇G−1𝐇G)𝜺p=−[𝐇X−1]:,p⊗𝜹p,\\displaystyle=-\\frac{1}{[\\mathbf{H}\_{X}^{-1}]\_{pp}}\\left([\\mathbf{H}\_{X}^{-1}]\_{:,p}\\otimes\\mathbf{H}\_{G}^{-1}\\mathbf{H}\_{G}\\right)\\bm{\\varepsilon}\_{p}=-[\\mathbf{H}\_{X}^{-1}]\_{:,p}\\otimes\\bm{\\delta}\_{p},|                                                                                                                (18)                                                                                                                |
+
+where 𝜹p=𝜺p/[𝐇X−1]p​p\\bm{\\delta}\_{p}=\\bm{\\varepsilon}\_{p}/[\\mathbf{H}\_{X}^{-1}]\_{pp} is the scaled quantization error of Proposition [1](#Thmproposition1).
+Reshaping back to matrix form and restricting to the remaining columns gives
+
+|Δ𝐖:,p+1:=−𝜹p⋅[𝐇X−1]p,p+1:.\\Delta\\mathbf{W}\_{:,p+1:}=-\\bm{\\delta}\_{p}\\cdot[\\mathbf{H}\_{X}^{-1}]\_{p,p+1:}.|(19)|
+|------------------------------------------------------------------------------------------------------------------|----|
+
+We now extend the derivation to the full objective ([9](#S4.E9)), whose drift term contributes a linear term 𝐛⊤​Δ​𝜽\\mathbf{b}^{\\top}\\Delta\\bm{\\theta} with 𝐛=2​vec​(𝐇G​𝐖​Δ​𝐗𝐗⊤)\\mathbf{b}=2\\,\\mathrm{vec}(\\mathbf{H}\_{G}\\mathbf{W}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}). The constrained minimizer generalizes the OBS update to
+
+|Δ​𝜽=−12​𝐇−1​𝐛−𝐇−1​𝐄p​(𝐄p⊤​𝐇−1​𝐄p)−1​(𝜺p−12​𝐄p⊤​𝐇−1​𝐛),\\Delta\\bm{\\theta}=-\\tfrac{1}{2}\\mathbf{H}^{-1}\\mathbf{b}-\\mathbf{H}^{-1}\\mathbf{E}\_{p}\\big(\\mathbf{E}\_{p}^{\\top}\\mathbf{H}^{-1}\\mathbf{E}\_{p}\\big)^{-1}\\big(\\bm{\\varepsilon}\_{p}-\\tfrac{1}{2}\\mathbf{E}\_{p}^{\\top}\\mathbf{H}^{-1}\\mathbf{b}\\big),|(20)|
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+which reduces to the update above when Δ​𝐗=𝟎\\Delta\\mathbf{X}=\\mathbf{0}. Using vec⁡(𝐀𝐁𝐂)=(𝐂⊤⊗𝐀)​vec​(𝐁)\\mathrm{vec}(\\mathbf{A}\\mathbf{B}\\mathbf{C})=(\\mathbf{C}^{\\top}\\otimes\\mathbf{A})\\,\\mathrm{vec}(\\mathbf{B}),
+
+|12​𝐇−1​𝐛=(𝐇X−1⊗𝐇G−1)​vec​(𝐇G​𝐖​Δ​𝐗𝐗⊤)=vec⁡(𝐇G−1​𝐇G​𝐖​Δ​𝐗𝐗⊤​𝐇X−1)=vec⁡(𝐖​Δ​𝐗𝐗⊤​𝐇X−1),\\begin{split}\\tfrac{1}{2}\\mathbf{H}^{-1}\\mathbf{b}&=(\\mathbf{H}\_{X}^{-1}\\otimes\\mathbf{H}\_{G}^{-1})\\,\\mathrm{vec}\\big(\\mathbf{H}\_{G}\\mathbf{W}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\big)\\\\<br/>&=\\mathrm{vec}\\big(\\mathbf{H}\_{G}^{-1}\\mathbf{H}\_{G}\\,\\mathbf{W}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{H}\_{X}^{-1}\\big)=\\mathrm{vec}\\big(\\mathbf{W}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{H}\_{X}^{-1}\\big),\\end{split}|(21)|
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+so 𝐇G\\mathbf{H}\_{G} cancels in the drift component as well, and 𝐄p⊤(12𝐇−1𝐛)=[𝐖Δ𝐗𝐗⊤𝐇X−1]:,p\\mathbf{E}\_{p}^{\\top}\\big(\\tfrac{1}{2}\\mathbf{H}^{-1}\\mathbf{b}\\big)=[\\mathbf{W}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{H}\_{X}^{-1}]\_{:,p} is likewise 𝐇G\\mathbf{H}\_{G}-free. Combined with the cancellations above, every occurrence of 𝐇G\\mathbf{H}\_{G} cancels in ([20](#A1.E20)), so the constrained minimizer of ([9](#S4.E9)) coincides with that of the unweighted (𝐇G=𝐈\\mathbf{H}\_{G}=\\mathbf{I}) GPTAQ objective. Applying the sequential residual decomposition of
+> [32](#bib.bib17)
+
+ to this system yields the correction matrix 𝐏\\mathbf{P} and Equation ([10](#S4.E10)). □\\square
+
+### A.2 Proof of Theorem [1](#Thmtheorem1) (Rotation Invariance) ###
+
+Denote the transformed quantities after ([12](#S4.E12)) as𝐖′=𝐔𝐖𝐕⊤\\mathbf{W}^{\\prime}=\\mathbf{U}\\mathbf{W}\\mathbf{V}^{\\top},𝐇\~G=𝐔𝐇G​𝐔⊤\\widetilde{\\mathbf{H}}\_{G}=\\mathbf{U}\\mathbf{H}\_{G}\\mathbf{U}^{\\top},𝐇\~X=𝐕𝐇X​𝐕⊤\\widetilde{\\mathbf{H}}\_{X}=\\mathbf{V}\\mathbf{H}\_{X}\\mathbf{V}^{\\top}, and(Δ​𝐗𝐗⊤)′=𝐕​Δ​𝐗𝐗⊤​𝐕⊤(\\Delta\\mathbf{X}\\mathbf{X}^{\\top})^{\\prime}=\\mathbf{V}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{V}^{\\top}.
+Note that Δ​𝐖′=𝐖′−𝐖^′=𝐔​Δ​𝐖𝐕⊤\\Delta\\mathbf{W}^{\\prime}=\\mathbf{W}^{\\prime}-\\widehat{\\mathbf{W}}^{\\prime}=\\mathbf{U}\\Delta\\mathbf{W}\\mathbf{V}^{\\top}.
+We verify invariance of each term separately.
+
+For the first term:
+
+|tr⁡[𝐇\~G​Δ​𝐖′​𝐇\~X​(Δ​𝐖′)⊤]\\displaystyle\\mathrm{tr}\\!\\left[\\widetilde{\\mathbf{H}}\_{G}\\,\\Delta\\mathbf{W}^{\\prime}\\,\\widetilde{\\mathbf{H}}\_{X}\\,(\\Delta\\mathbf{W}^{\\prime})^{\\top}\\right]|\=tr⁡[𝐔𝐇G​𝐔⊤⋅𝐔​Δ​𝐖𝐕⊤⋅𝐕𝐇X​𝐕⊤⋅𝐕​Δ​𝐖⊤​𝐔⊤]\\displaystyle=\\mathrm{tr}\\!\\left[\\mathbf{U}\\mathbf{H}\_{G}\\mathbf{U}^{\\top}\\cdot\\mathbf{U}\\Delta\\mathbf{W}\\mathbf{V}^{\\top}\\cdot\\mathbf{V}\\mathbf{H}\_{X}\\mathbf{V}^{\\top}\\cdot\\mathbf{V}\\Delta\\mathbf{W}^{\\top}\\mathbf{U}^{\\top}\\right]|
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|              \=tr⁡[𝐔𝐇G​Δ​𝐖𝐇X​Δ​𝐖⊤​𝐔⊤]\\displaystyle=\\mathrm{tr}\\!\\left[\\mathbf{U}\\mathbf{H}\_{G}\\Delta\\mathbf{W}\\mathbf{H}\_{X}\\Delta\\mathbf{W}^{\\top}\\mathbf{U}^{\\top}\\right]               |                                                                                                                                                                                                                                                                                                         |
+|                         \=tr⁡[𝐇G​Δ​𝐖​𝐇X​Δ​𝐖⊤],\\displaystyle=\\mathrm{tr}\\!\\left[\\mathbf{H}\_{G}\\,\\Delta\\mathbf{W}\\,\\mathbf{H}\_{X}\\,\\Delta\\mathbf{W}^{\\top}\\right],                          |                                                                                                                                                  (22)                                                                                                                                                   |
+
+where the second step uses 𝐔⊤​𝐔=𝐈\\mathbf{U}^{\\top}\\mathbf{U}=\\mathbf{I} and𝐕⊤​𝐕=𝐈\\mathbf{V}^{\\top}\\mathbf{V}=\\mathbf{I}, and the third step uses the
+cyclic property of the trace.
+
+For the second term:
+
+|tr⁡[𝐇\~G​𝐖′​(Δ​𝐗𝐗⊤)′​(Δ​𝐖′)⊤]\\displaystyle\\mathrm{tr}\\!\\left[\\widetilde{\\mathbf{H}}\_{G}\\,\\mathbf{W}^{\\prime}\\,(\\Delta\\mathbf{X}\\mathbf{X}^{\\top})^{\\prime}\\,(\\Delta\\mathbf{W}^{\\prime})^{\\top}\\right]|\=tr⁡[𝐔𝐇G​𝐔⊤⋅𝐔𝐖𝐕⊤⋅𝐕​Δ​𝐗𝐗⊤​𝐕⊤⋅𝐕​Δ​𝐖⊤​𝐔⊤]\\displaystyle=\\mathrm{tr}\\!\\left[\\mathbf{U}\\mathbf{H}\_{G}\\mathbf{U}^{\\top}\\cdot\\mathbf{U}\\mathbf{W}\\mathbf{V}^{\\top}\\cdot\\mathbf{V}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{V}^{\\top}\\cdot\\mathbf{V}\\Delta\\mathbf{W}^{\\top}\\mathbf{U}^{\\top}\\right]|
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|         \=tr⁡[𝐔𝐇G​𝐖​Δ​𝐗𝐗⊤​Δ​𝐖⊤​𝐔⊤]\\displaystyle=\\mathrm{tr}\\!\\left[\\mathbf{U}\\mathbf{H}\_{G}\\,\\mathbf{W}\\,\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\,\\Delta\\mathbf{W}^{\\top}\\mathbf{U}^{\\top}\\right]          |                                                                                                                                                                                                                                                                                                                        |
+|                         \=tr⁡[𝐇G​𝐖​Δ​𝐗𝐗⊤​Δ​𝐖⊤],\\displaystyle=\\mathrm{tr}\\!\\left[\\mathbf{H}\_{G}\\,\\mathbf{W}\\,\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\,\\Delta\\mathbf{W}^{\\top}\\right],                          |                                                                                                                                                          (23)                                                                                                                                                          |
+
+where the second step uses 𝐔⊤​𝐔=𝐈\\mathbf{U}^{\\top}\\mathbf{U}=\\mathbf{I} and𝐕⊤​𝐕=𝐈\\mathbf{V}^{\\top}\\mathbf{V}=\\mathbf{I}, and the third step uses the
+cyclic property of the trace.
+
+Since both terms are individually invariant, the full KronQ objective
+([9](#S4.E9)) is invariant under the transformation ([12](#S4.E12)). □\\square
+
+### A.3 Proof of Proposition [2](#Thmproposition2) ###
+
+#### Step 1: loss decomposition. ####
+
+By Theorem [1](#Thmtheorem1) we work with the transformed quantities 𝐇\~X,𝐇\~G\\widetilde{\\mathbf{H}}\_{X},\\widetilde{\\mathbf{H}}\_{G} of Equations ([11](#S4.E11))–([12](#S4.E12)). Let 𝐇\~X=𝐓𝐃𝐓⊤\\widetilde{\\mathbf{H}}\_{X}=\\mathbf{T}\\mathbf{D}\\mathbf{T}^{\\top} be the unit-triangular factorization matched to the processing order, 𝐞\\mathbf{e} the accumulated error, and 𝜼=𝐞​𝐓\\bm{\\eta}=\\mathbf{e}\\,\\mathbf{T} the per-step rounding residuals, so that 𝐞​𝐇\~X​𝐞⊤=𝜼​𝐃​𝜼⊤\\mathbf{e}\\,\\widetilde{\\mathbf{H}}\_{X}\\,\\mathbf{e}^{\\top}=\\bm{\\eta}\\mathbf{D}\\bm{\\eta}^{\\top} exactly 
+> ([7](#bib.bib11))
+
+. Hence
+
+|Lq=∑k𝐃k​k𝜼:,k⊤𝐇\~G𝜼:,k.L\_{q}=\\sum\_{k}\\mathbf{D}\_{kk}\\,\\bm{\\eta}\_{:,k}^{\\top}\\,\\widetilde{\\mathbf{H}}\_{G}\\,\\bm{\\eta}\_{:,k}.|(24)|
+|--------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+Under stochastic rounding the residuals of different rows are conditionally independent and mean-zero, since each row’s feedback uses only its own past. Writing σi2=𝔼⁡[ηi​k2]\\sigma\_{i}^{2}=\\mathbb{E}[\\eta\_{ik}^{2}] for the per-row residual variance, constant across steps kk,
+
+|𝔼⁡[Lq]=(∑i[𝐇\~G]i​i​σi2)​tr⁡(𝐃),\\mathbb{E}[L\_{q}]\\;=\\;\\Big(\\sum\_{i}[\\widetilde{\\mathbf{H}}\_{G}]\_{ii}\\,\\sigma\_{i}^{2}\\Big)\\operatorname{tr}(\\mathbf{D}),|(25)|
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+so the off-diagonal of 𝐇\~G\\widetilde{\\mathbf{H}}\_{G} does not enter the expected loss.
+
+#### Step 2: optimality of 𝐒G\\mathbf{S}\_{G}. ####
+
+The RHT mixes rows, so row energies and ranges concentrate and σi2≤cb​1dout​∑jsj2​aj\\sigma\_{i}^{2}\\leq c\_{b}\\,\\tfrac{1}{d\_{\\mathrm{out}}}\\sum\_{j}s\_{j}^{2}a\_{j} with high probability over the sign draw, where cb∝(2b−1)−2c\_{b}\\propto(2^{b}-1)^{-2} up to logarithmic factors 
+> ([7](#bib.bib11); [49](#bib.bib19))
+
+. By the same concentration the bound is tight up to the deviation of row ranges from their common value, so ([26](#A1.E26)) holds as an equality to leading order. Since ∑i[𝐇\~G]i​i=∑jhj/sj2\\sum\_{i}[\\widetilde{\\mathbf{H}}\_{G}]\_{ii}=\\sum\_{j}h\_{j}/s\_{j}^{2} by trace invariance, ([25](#A1.E25)) gives
+
+|𝔼⁡[Lq]≤cbdout​(∑jhjsj2)​(∑jsj2​aj)​tr⁡(𝐃).\\mathbb{E}[L\_{q}]\\;\\leq\\;\\frac{c\_{b}}{d\_{\\mathrm{out}}}\\Big(\\sum\_{j}\\frac{h\_{j}}{s\_{j}^{2}}\\Big)\\Big(\\sum\_{j}s\_{j}^{2}a\_{j}\\Big)\\operatorname{tr}(\\mathbf{D}).|(26)|
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+By Cauchy–Schwarz,
+
+|(∑jhjsj2)​(∑jsj2​aj)≥(∑jhj​aj)2,\\Big(\\sum\_{j}\\frac{h\_{j}}{s\_{j}^{2}}\\Big)\\Big(\\sum\_{j}s\_{j}^{2}a\_{j}\\Big)\\;\\geq\\;\\Big(\\sum\_{j}\\sqrt{h\_{j}\\,a\_{j}}\\Big)^{\\!2},|(27)|
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+with equality iff sj∝(hj/aj)1/4s\_{j}\\propto(h\_{j}/a\_{j})^{1/4}, the 𝐒G\\mathbf{S}\_{G} of Equation ([11](#S4.E11)) up to a global scale that leaves the product invariant. This yields Equation ([13](#S4.E13)). The gain over s≡1s\\equiv 1 is ρ=(∑jhj​aj)2/(∑jhj​∑jaj)≤1\\rho=\\big(\\sum\_{j}\\sqrt{h\_{j}a\_{j}}\\big)^{2}/\\big(\\sum\_{j}h\_{j}\\sum\_{j}a\_{j}\\big)\\leq 1, and ρ≈k/dout\\rho\\approx k/d\_{\\mathrm{out}} when the curvature concentrates on kk channels of comparable row energy. The random signs also decorrelate the residuals from 𝐇\~G\\widetilde{\\mathbf{H}}\_{G}, extending ([25](#A1.E25)) to nearest rounding in expectation over the sign draw. □\\square
+
+#### Relation to
+> [50](#bib.bib42)
+
+. ####
+
+> [50](#bib.bib42)
+
+ bound the proxy loss of their two-sided solver by tr⁡(𝐃X)​tr⁡(𝐃G)​σ2\\operatorname{tr}(\\mathbf{D}\_{X})\\operatorname{tr}(\\mathbf{D}\_{G})\\sigma^{2}, where the output-side factor enters the solver as feedback. Ours covers the one-sided solver KronQ runs, where 𝐇G\\mathbf{H}\_{G} acts only as a diagonal preconditioner.
+
+#### Numerical verification. ####
+
+On Llama-2-7B layer-0 matrices with INT4 per-channel grids, ([24](#A1.E24)) holds to machine precision, 𝔼⁡[Lq]\\mathbb{E}[L\_{q}] matches ([25](#A1.E25)) within 0.6%0.6\\%, and the exponent sweep si=(hi/ai)αs\_{i}=(h\_{i}/a\_{i})^{\\alpha} is minimized at α=1/4\\alpha=1/4. For nearest rounding the diagonal-only prediction holds within 2.3%2.3\\% averaged over RHT sign draws, though with larger per-draw deviation. This analysis covers per-channel grids and the GPTQ-mode objective, without GPTAQ’s drift term.
+
+Table 9: Expected proxy loss under the one-sided solver, up to the grid constant cb/doutc\_{b}/d\_{\\mathrm{out}}. All rows include the BiIP rotations. The first two omit the rescaling (s≡1s\\equiv 1).
+
+Appendix B KronQ Algorithm
+----------
+
+Algorithm 1 Bidirectional Incoherence Pre-Processing (BiIP)
+
+1: FP weight 𝐖∈ℝdout×din\\mathbf{W}\\in\\mathbb{R}^{d\_{\\mathrm{out}}\\times d\_{\\mathrm{in}}},
+degraded input 𝐗∈ℝdin×n\\mathbf{X}\\in\\mathbb{R}^{d\_{\\mathrm{in}}\\times n},
+FP input 𝐗\~∈ℝdin×n\\tilde{\\mathbf{X}}\\in\\mathbb{R}^{d\_{\\mathrm{in}}\\times n},𝐇G∈ℝdout×dout\\mathbf{H}\_{G}\\in\\mathbb{R}^{d\_{\\mathrm{out}}\\times d\_{\\mathrm{out}}} (precomputed)
+
+2:𝐇X←𝐗𝐗⊤\\mathbf{H}\_{X}\\leftarrow\\mathbf{X}\\mathbf{X}^{\\top}; Δ​𝐗𝐗⊤←(𝐗\~−𝐗)​𝐗⊤\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\leftarrow(\\tilde{\\mathbf{X}}-\\mathbf{X})\\mathbf{X}^{\\top}⊳\\triangleright online statistics
+
+3:sample random Hadamard 𝐔∈ℝdout×dout\\mathbf{U}\\in\\mathbb{R}^{d\_{\\mathrm{out}}\\times d\_{\\mathrm{out}}}, 𝐕∈ℝdin×din\\mathbf{V}\\in\\mathbb{R}^{d\_{\\mathrm{in}}\\times d\_{\\mathrm{in}}}
+
+4:𝐒X←(diag⁡(𝐇X)/diag⁡(𝐖⊤​𝐖))1/4\\mathbf{S}\_{X}\\leftarrow\\bigl(\\mathrm{diag}(\\mathbf{H}\_{X})/\\mathrm{diag}(\\mathbf{W}^{\\top}\\mathbf{W})\\bigr)^{1/4}⊳\\triangleright input-side rescaling
+
+5:𝐒G←(diag⁡(𝐇G)/diag⁡(𝐖𝐖⊤))1/4\\mathbf{S}\_{G}\\leftarrow\\bigl(\\mathrm{diag}(\\mathbf{H}\_{G})/\\mathrm{diag}(\\mathbf{W}\\mathbf{W}^{\\top})\\bigr)^{1/4}⊳\\triangleright output-side rescaling
+
+6:𝐖←𝐒G​𝐖​𝐒X\\mathbf{W}\\leftarrow\\mathbf{S}\_{G}\\,\\mathbf{W}\\,\\mathbf{S}\_{X}
+
+7:𝐇X←𝐒X−1​𝐇X​𝐒X−1\\mathbf{H}\_{X}\\leftarrow\\mathbf{S}\_{X}^{-1}\\mathbf{H}\_{X}\\mathbf{S}\_{X}^{-1}; Δ​𝐗𝐗⊤←𝐒X−1​Δ​𝐗𝐗⊤​𝐒X−1\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\leftarrow\\mathbf{S}\_{X}^{-1}\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{S}\_{X}^{-1}; 𝐇G←𝐒G−1​𝐇G​𝐒G−1\\mathbf{H}\_{G}\\leftarrow\\mathbf{S}\_{G}^{-1}\\mathbf{H}\_{G}\\mathbf{S}\_{G}^{-1}
+
+8:𝐖←𝐔𝐖𝐕⊤\\mathbf{W}\\leftarrow\\mathbf{U}\\mathbf{W}\\mathbf{V}^{\\top}; 𝐇X←𝐕𝐇X​𝐕⊤\\mathbf{H}\_{X}\\leftarrow\\mathbf{V}\\mathbf{H}\_{X}\\mathbf{V}^{\\top}; Δ​𝐗𝐗⊤←𝐕​Δ​𝐗𝐗⊤​𝐕⊤\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\leftarrow\\mathbf{V}\\,\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\mathbf{V}^{\\top}⊳\\triangleright incoherence
+
+9:𝐇G←𝐔𝐇G​𝐔⊤\\mathbf{H}\_{G}\\leftarrow\\mathbf{U}\\mathbf{H}\_{G}\\mathbf{U}^{\\top}; release𝐇G\\mathbf{H}\_{G}⊳\\triangleright𝐇G\\mathbf{H}\_{G} not needed after BiIP (Prop. 1)
+
+10:return𝐖,𝐇X,Δ​𝐗𝐗⊤,𝐒X,𝐒G,𝐔,𝐕\\mathbf{W},\\;\\mathbf{H}\_{X},\\;\\Delta\\mathbf{X}\\mathbf{X}^{\\top},\\;\\mathbf{S}\_{X},\\;\\mathbf{S}\_{G},\\;\\mathbf{U},\\;\\mathbf{V}
+
+Algorithm 2KronQ – Quantization Loop
+
+1:𝐖∈ℝm×n,𝐇X∈ℝn×n,Δ𝐗𝐗⊤∈ℝn×n,𝐒X,𝐒G,𝐔,𝐕\\mathbf{W}\\in\\mathbb{R}^{m\\times n},\\,\\mathbf{H}\_{X}\\in\\mathbb{R}^{n\\times n},\\,\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\in\\mathbb{R}^{n\\times n},\\,\\mathbf{S}\_{X},\\,\\mathbf{S}\_{G},\\,\\mathbf{U},\\,\\mathbf{V}
+
+(from Alg. 
+
+[1](#alg1)
+
+),
+block size
+
+BB
+
+, damping
+
+λ\\lambda
+
+, scaling
+
+α\\alpha
+
+2:𝐇X←𝐇X+λ⋅mean⁡(diag⁡(𝐇X))​𝐈\\mathbf{H}\_{X}\\leftarrow\\mathbf{H}\_{X}+\\lambda\\cdot\\mathrm{mean}(\\mathrm{diag}(\\mathbf{H}\_{X}))\\,\\mathbf{I}⊳\\triangleright damping
+
+3:𝐋←Inverse\_Cholesky​(𝐇X)\\mathbf{L}\\leftarrow\\textit{Inverse\\\_Cholesky}(\\mathbf{H}\_{X})
+
+4:𝐏←α⁡((Δ​𝐗𝐗⊤⋅𝐋)⊙𝐌U)​𝐋⊤\\mathbf{P}\\leftarrow\\alpha\\bigl((\\Delta\\mathbf{X}\\mathbf{X}^{\\top}\\cdot\\mathbf{L})\\odot\\mathbf{M}\_{U}\\bigr)\\mathbf{L}^{\\top}⊳\\triangleright GPTAQ correction; 𝐌U\\mathbf{M}\_{U}: upper-triangular mask
+
+5:𝐐←𝟎m×n\\mathbf{Q}\\leftarrow\\mathbf{0}\_{m\\times n}; 𝐄←𝟎m×B\\mathbf{E}\\leftarrow\\mathbf{0}\_{m\\times B}
+
+6:fori=0,B, 2​B,…i=0,\\,B,\\,2B,\\,\\ldotsdo
+
+7:forj=i,i+1,…,i+B−1j=i,\\;i{+}1,\\;\\ldots,\\;i{+}B{-}1do
+
+8:𝐐:,j←quant(𝐖:,j)\\mathbf{Q}\_{:,j}\\leftarrow\\mathrm{quant}(\\mathbf{W}\_{:,j})
+
+9:𝐄:,j−i←(𝐖:,j−𝐐:,j)/𝐋j​j\\mathbf{E}\_{:,\\,j-i}\\leftarrow(\\mathbf{W}\_{:,j}-\\mathbf{Q}\_{:,j})\\;/\\;\\mathbf{L}\_{jj}
+
+10:𝐖:,j:(i+B)←𝐖:,j:(i+B)−𝐄:,j−i𝐋j,j:(i+B)⊤+𝐖:,j𝐏j,j:(i+B)\\mathbf{W}\_{:,\\,j:(i+B)}\\leftarrow\\mathbf{W}\_{:,\\,j:(i+B)}-\\mathbf{E}\_{:,\\,j-i}\\,\\mathbf{L}\_{j,\\,j:(i+B)}^{\\top}+\\mathbf{W}\_{:,j}\\,\\mathbf{P}\_{j,\\,j:(i+B)}
+
+11:endfor
+
+12:𝐖:,(i+B):←𝐖:,(i+B):−𝐄⋅𝐋i:(i+B),(i+B):⊤+𝐖:,i:(i+B)𝐏i:(i+B),(i+B):\\mathbf{W}\_{:,\\,(i+B):}\\leftarrow\\mathbf{W}\_{:,\\,(i+B):}-\\mathbf{E}\\cdot\\mathbf{L}\_{i:(i+B),\\,(i+B):}^{\\top}+\\mathbf{W}\_{:,\\,i:(i+B)}\\,\\mathbf{P}\_{i:(i+B),\\,(i+B):}
+
+13:endfor
+
+14:𝐐←𝐔⊤​𝐐​𝐕\\mathbf{Q}\\leftarrow\\mathbf{U}^{\\top}\\mathbf{Q}\\,\\mathbf{V}; 𝐐←𝐒G−1​𝐐​𝐒X−1\\mathbf{Q}\\leftarrow\\mathbf{S}\_{G}^{-1}\\,\\mathbf{Q}\\,\\mathbf{S}\_{X}^{-1}⊳\\triangleright revert incoherence & rescaling
+
+15:return𝐐\\mathbf{Q}
+
+Appendix C Additional Experiments
+----------
+
+### C.1 Zero-shot Accuracy on Weight-only Quantization ###
+
+Table 10: Zero-shot accuracy on reasoning benchmarks (PiQA, ArcE, ArcC, HS, WG, BoolQ, OBQA) for weight-only quantization (WxA16) at W4/W3/W2. NaN indicates diverged quantization.
+
+|   Model   |Method|Bits|PiQA|ArcE|ArcC| HS | WG |BoolQ|OBQA|Avg↑\\!\\uparrow|
+|-----------|------|----|----|----|----|----|----|-----|----|----------------|
+|LLaMA-2-7B | GPTQ | 4  |77.2|69.2|41.2|70.5|68.7|67.3 |40.8|      62.1      |
+|   GPTAQ   |  4   |76.8|70.6|41.6|70.3|68.4|68.1|42.6 |62.6|                |
+|   KronQ   |  4   |78.7|72.4|44.9|75.2|68.4|77.4|44.4 |65.9|                |
+| OmniQuant |  3   |74.0|62.6|36.3|67.6|63.6|65.7|39.8 |58.5|                |
+|   GPTQ    |  3   |76.0|59.4|36.5|66.8|65.7|65.9|40.0 |58.6|                |
+|    BoA    |  3   |78.4|69.3|40.3|72.0|67.6|74.2|41.2 |63.3|                |
+|   GPTAQ   |  3   |75.4|62.0|37.2|65.9|65.3|66.1|38.4 |58.6|                |
+|   KronQ   |  3   |76.9|70.9|43.3|72.5|67.2|72.5|41.4 |63.5|                |
+| OmniQuant |  2   |57.2|35.3|26.1|31.7|51.5|51.1|30.6 |40.5|                |
+|   GPTQ    |  2   |63.0|45.1|28.4|42.8|53.9|52.3|28.4 |44.8|                |
+|    BoA    |  2   |64.9|47.7|28.3|45.5|54.5|64.7|29.6 |47.9|                |
+|   GPTAQ   |  2   |NaN |NaN |NaN |NaN |NaN |NaN | NaN |NaN |                |
+|   KronQ   |  2   |68.0|54.3|31.3|51.2|60.8|64.3|34.8 |52.0|                |
+|LLaMA-2-13B| GPTQ | 4  |77.3|73.7|45.6|67.6|71.1|71.0 |43.2|      64.2      |
+|   GPTAQ   |  4   |77.9|74.4|46.5|73.1|71.3|75.5|44.8 |66.2|                |
+|   KronQ   |  4   |80.2|74.7|48.0|79.1|71.8|82.1|44.8 |68.7|                |
+| OmniQuant |  3   |77.7|69.0|42.7|72.8|65.9|69.0|38.8 |62.3|                |
+|   GPTQ    |  3   |72.5|62.8|36.8|54.4|65.5|66.5|36.6 |56.4|                |
+|    BoA    |  3   |77.4|69.3|43.5|74.7|62.5|78.9|35.2 |63.1|                |
+|   GPTAQ   |  3   |75.1|65.5|39.0|62.6|64.2|67.3|38.2 |58.8|                |
+|   KronQ   |  3   |79.3|73.5|46.5|77.0|71.2|78.9|45.0 |67.3|                |
+| OmniQuant |  2   |62.9|44.4|28.4|49.7|52.6|62.2|33.8 |47.7|                |
+|   GPTQ    |  2   |57.9|36.2|23.4|37.3|53.2|62.1|28.2 |42.6|                |
+|    BoA    |  2   |63.3|46.3|29.8|49.3|52.6|62.2|27.6 |47.3|                |
+|   GPTAQ   |  2   |54.8|33.1|21.4|31.7|52.0|58.0|29.4 |40.1|                |
+|   KronQ   |  2   |72.4|62.5|36.4|59.4|65.1|69.4|37.0 |57.5|                |
+|LLaMA-2-70B| GPTQ | 4  |82.3|81.0|57.6|82.7|77.4|82.3 |48.0|      73.0      |
+|   GPTAQ   |  4   |82.8|81.5|57.3|82.8|77.0|82.4|47.8 |73.1|                |
+|   KronQ   |  4   |82.3|80.3|57.9|83.8|79.9|85.4|49.2 |74.1|                |
+| OmniQuant |  3   |80.7|75.6|45.8|78.1|73.6|66.5|42.6 |66.1|                |
+|   GPTQ    |  3   |80.4|78.9|55.8|80.2|76.2|79.1|46.0 |70.9|                |
+|   GPTAQ   |  3   |81.7|77.5|54.4|79.8|75.2|81.6|45.8 |70.9|                |
+|   KronQ   |  3   |82.3|81.9|58.3|82.5|78.5|83.0|48.8 |73.6|                |
+| OmniQuant |  2   |69.9|55.5|31.5|55.4|53.6|64.9|33.8 |52.1|                |
+|   GPTQ    |  2   |72.1|64.7|37.6|58.0|66.9|66.6|40.2 |58.0|                |
+|   GPTAQ   |  2   |72.2|64.4|36.8|58.4|64.6|69.9|34.6 |57.3|                |
+|   KronQ   |  2   |77.4|75.9|46.9|72.0|75.0|79.7|43.2 |67.2|                |
+|LLaMA-3-8B | GPTQ | 4  |79.4|75.7|49.7|75.6|73.5|77.1 |44.8|      68.0      |
+|   GPTAQ   |  4   |80.0|75.7|49.7|77.2|72.5|76.5|44.4 |68.0|                |
+|   KronQ   |  4   |79.4|78.2|51.5|78.2|73.2|82.2|44.2 |69.6|                |
+|   GPTQ    |  3   |74.5|62.6|39.7|70.0|67.8|73.3|38.6 |60.9|                |
+|    BoA    |  3   |77.3|72.8|45.1|72.7|71.4|78.7|42.6 |65.8|                |
+|   GPTAQ   |  3   |73.5|60.1|40.4|70.8|69.9|75.7|41.0 |61.6|                |
+|   KronQ   |  3   |77.5|74.5|50.2|74.9|71.7|81.1|41.2 |67.3|                |
+|   GPTQ    |  2   |54.2|34.0|22.3|37.9|49.5|45.9|28.0 |38.8|                |
+|    BoA    |  2   |59.9|44.9|26.6|43.3|55.8|60.5|29.4 |45.8|                |
+|   GPTAQ   |  2   |55.0|33.1|23.6|38.1|53.4|46.8|28.0 |39.7|                |
+|   KronQ   |  2   |67.0|50.7|30.6|49.0|61.1|66.1|33.0 |51.1|                |
+|LLaMA-3-70B| GPTQ | 4  |50.2|26.3|24.6|59.8|56.4|66.9 |33.2|      45.3      |
+|   GPTAQ   |  4   |56.9|39.6|25.6|30.1|54.4|48.1|29.0 |40.5|                |
+|   KronQ   |  4   |84.2|81.8|61.7|84.8|79.1|86.8|48.0 |75.2|                |
+|   GPTQ    |  3   |52.0|25.3|26.1|26.4|49.0|41.2|28.4 |35.5|                |
+|   GPTAQ   |  3   |50.0|25.9|27.5|26.2|49.7|37.9|30.0 |35.3|                |
+|   KronQ   |  3   |83.5|80.4|58.8|83.1|79.5|85.4|47.2 |74.0|                |
+|   GPTQ    |  2   |51.7|25.6|26.4|26.4|49.0|37.8|27.4 |34.9|                |
+|   GPTAQ   |  2   |NaN |NaN |NaN |NaN |NaN |NaN | NaN |NaN |                |
+|   KronQ   |  2   |77.6|73.2|44.5|66.0|72.6|79.1|39.6 |64.7|                |
+
+### C.2 Comparison on Mistral-7B ###
+
+Table [11](#A3.T11) extends the weight-only quantization evaluation to Mistral-7B 
+> ([24](#bib.bib41))
+
+, demonstrating that KronQ generalizes beyond the LLaMA family.
+
+Table 11: Weight-only quantization (WxA16) WikiText-2 perplexity ↓\\downarrow on Mistral-7B.
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+### C.3 Generalization to Newer Models and Harder Benchmarks ###
+
+To verify that KronQ’s gains are not specific to the LLaMA family or to perplexity, we evaluate recent model families: Gemma-3-12B 
+> ([15](#bib.bib46))
+
+, DeepSeek-R1-Distill-Llama-8B 
+> ([18](#bib.bib47))
+
+, and Phi-4-mini-instruct 
+> ([1](#bib.bib48))
+
+. Table [13](#A3.T13) reports weight-only WikiText-2 perplexity at W4 and W2 against GPTQ 
+> ([13](#bib.bib3))
+
+ and GPTAQ 
+> ([32](#bib.bib17))
+
+. KronQ wins all eight settings, and the margin widens sharply at W2. Beyond perplexity, Table [13](#A3.T13) evaluates four harder benchmarks, GPQA-Diamond 
+> ([44](#bib.bib49))
+
+, MMLU 
+> ([20](#bib.bib50))
+
+, AIME-2024 
+> ([39](#bib.bib51))
+
+, and LiveCodeBench 
+> ([23](#bib.bib52))
+
+, on DeepSeek-R1-Distill-Llama-8B and Gemma-3-12B-IT at W4. KronQ outperforms both baselines on all four benchmarks, with the largest gains on generative reasoning tasks such as LiveCodeBench, where it nearly doubles the GPTAQ scores on both models.
+
+#### Evaluation Details. ####
+
+All models are quantized to W4 (per-channel, asymmetric, weight-only) and calibrated on 128 WikiText-2 sequences with no fine-tuning, using identical settings across methods. MMLU, GPQA-Diamond, and AIME-2024 are evaluated through the lm-evaluation-harness 
+> ([14](#bib.bib54))
+
+ in the zero-shot setting, while LiveCodeBench uses its official runner with vLLM. We report log-likelihood accuracy on MMLU (57 subjects) and GPQA-Diamond (198 questions), exact-match accuracy on AIME-2024 (30 problems), and pass@1 on LiveCodeBench (release\_v5, code-generation scenario, 32,768 maximum new tokens). For DeepSeek-R1-Distill-Llama-8B we follow the decoding protocol of
+> [35](#bib.bib53)
+
+, using temperature 0.6, top-p 0.95, and 32,768 maximum new tokens with stochastic sampling, reporting AIME-2024 as avg@8. Gemma-3-12B-IT is decoded greedily with a 2,048-token budget, reporting AIME-2024 as pass@1.
+
+Table 12: WikiText-2 perplexity (↓\\downarrow) on newer 2025 model families (WxA16, W4/W2).
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+Table 13: Accuracy (↑\\uparrow, %) on harder benchmarks (W4A16).
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+### C.4 Comparison of KronQ and YAQA Hessians ###
+
+To separate the effect of the Hessian estimator from that of the rounding algorithm, we fix KronQ’s pipeline (KronQ+GPTQ) and swap only the Hessian pair. The drift correction is disabled in this study, since its statistics are collected from the activations observed during sequential quantization and cannot be paired consistently with an external 𝐇X\\mathbf{H}\_{X}. “KronQ” is our estimator computed on the WikiText-2 calibration set. The other two rows use YAQA’s Sketch-B Hessians, either recomputed on the same WikiText-2 tokens or as released (RedPajama). Table [14](#A3.T14) shows that neither estimator dominates. Sketch-B is better on L2-7B and the K-FAC estimate is better on L3.1-8B, with the largest gaps at W2, while at W3 and W4 the differences are small.
+
+Table 14: Hessian estimator swap under a fixed pipeline (KronQ+GPTQ,
+WikiText-2 PPL, L2-7B ctx 2048, L3.1-8B ctx 8192).
+
+### C.5 Comparison with Previous Works on Group Quantization ###
+
+Table [15](#A3.T15) reports WikiText-2 perplexity under group quantization (g=128g{=}128), where OmniQuant 
+> ([46](#bib.bib7))
+
+ and AWQ 
+> ([34](#bib.bib9))
+
+ results are taken from their papers.
+
+Table 15: Weight-only group quantization (WxA16, g=128) WikiText-2 perplexity.
+
+### C.6 Additional Bit-width Results on Group Quantization ###
+
+Table [16](#A3.T16) provides full W2/W3/W4 results under group quantization (g=128g{=}128). KronQ maintains its lead across all bit-widths and model sizes, with particularly large margins at W2 where per-channel methods struggle.
+
+Table 16: Group quantization (WxA16, g=128g{=}128), full results (W2/W3/W4).
+
+|   Model   |Method|Bits |Wiki2↓\\!\\downarrow|PiQA|ArcE|ArcC| HS | WG |BoolQ|OBQA|Avg↑\\!\\uparrow|
+|-----------|------|-----|--------------------|----|----|----|----|----|-----|----|----------------|
+|LLaMA-2-7B | GPTQ |  4  |        5.57        |78.6|72.6|44.7|75.2|69.0|77.8 |44.0|      66.0      |
+|   GPTAQ   |  4   |5.56 |        79.1        |73.8|44.5|75.2|69.0|76.4|43.6 |65.9|                |
+|   KronQ   |  4   |5.54 |        78.0        |73.1|44.6|75.4|68.9|77.9|43.6 |65.9|                |
+|   GPTQ    |  3   |6.02 |        76.7        |68.6|41.3|71.8|67.9|72.9|41.2 |62.9|                |
+|   GPTAQ   |  3   |5.88 |        77.3        |69.7|41.2|72.4|68.7|66.9|40.6 |62.4|                |
+|   KronQ   |  3   |5.77 |        77.8        |73.2|44.5|73.0|67.1|72.9|43.4 |64.6|                |
+|LLaMA-3-8B | GPTQ |  4  |        6.41        |80.3|78.2|52.0|78.3|73.6|80.9 |44.4|      69.7      |
+|   GPTAQ   |  4   |6.38 |        80.0        |76.8|51.9|78.3|73.8|78.6|44.0 |69.1|                |
+|   KronQ   |  4   |6.34 |        80.4        |78.9|53.2|78.4|73.3|80.9|45.8 |70.1|                |
+|   GPTQ    |  3   |7.42 |        77.9        |74.2|48.8|61.2|71.5|79.2|41.6 |64.9|                |
+|   GPTAQ   |  3   |7.51 |        77.0        |73.3|46.4|72.0|72.0|76.8|42.0 |65.6|                |
+|   KronQ   |  3   |6.96 |        78.7        |74.2|49.1|74.9|71.7|81.7|42.4 |67.5|                |
+|LLaMA-2-13B| GPTQ |  4  |        4.95        |80.2|76.4|48.2|78.5|72.1|79.4 |45.0|      68.5      |
+|   GPTAQ   |  4   |4.94 |        79.7        |76.5|48.0|78.7|72.7|79.0|44.0 |68.4|                |
+|   KronQ   |  4   |4.93 |        80.3        |75.7|48.6|79.0|72.1|80.8|45.0 |68.8|                |
+|   GPTQ    |  3   |5.22 |        79.2        |74.2|46.6|76.0|70.9|78.2|43.4 |66.9|                |
+|   GPTAQ   |  3   |5.16 |        79.1        |75.3|46.4|76.1|71.1|77.7|44.4 |67.2|                |
+|   KronQ   |  3   |5.13 |        79.2        |76.3|48.7|77.5|72.1|81.6|44.6 |68.6|                |
+|LLaMA-2-70B| GPTQ |  4  |        3.39        |82.8|80.9|57.2|83.5|78.1|82.7 |48.0|      73.3      |
+|   GPTAQ   |  4   |3.39 |        82.7        |80.6|57.5|83.4|77.9|83.6|48.6 |73.5|                |
+|   KronQ   |  4   |3.38 |        82.7        |79.2|56.2|84.1|79.8|85.0|48.4 |73.6|                |
+|   GPTQ    |  3   |3.64 |        82.3        |80.0|55.6|82.5|75.5|79.1|44.6 |71.4|                |
+|   GPTAQ   |  3   |3.64 |        82.4        |80.8|55.5|82.2|76.9|83.2|47.6 |72.7|                |
+|   KronQ   |  3   |3.60 |        82.2        |80.7|57.1|83.0|79.0|83.8|47.8 |73.4|                |
+|   GPTQ    |  2   |5.22 |        77.7        |73.3|47.1|68.4|71.0|76.0|39.0 |64.6|                |
+|   GPTAQ   |  2   |5.28 |        78.4        |75.3|46.3|69.1|73.0|75.5|41.6 |65.6|                |
+|   KronQ   |  2   |4.85 |        79.2        |75.8|49.8|74.5|76.6|78.1|44.2 |68.3|                |
+|LLaMA-3-70B| GPTQ |  4  |        3.23        |83.5|84.7|62.5|84.3|79.6|85.8 |47.6|      75.4      |
+|   GPTAQ   |  4   |3.17 |        83.2        |82.9|61.3|84.3|80.7|85.4|48.4 |75.2|                |
+|   KronQ   |  4   |3.15 |        83.7        |80.7|60.7|85.0|80.7|87.0|47.6 |75.1|                |
+|   GPTQ    |  3   |4.49 |        82.1        |80.0|58.4|82.6|78.8|85.1|44.6 |73.1|                |
+|   GPTAQ   |  3   |6.56 |        81.7        |78.8|54.6|77.5|74.4|77.0|43.4 |69.6|                |
+|   KronQ   |  3   |4.20 |        82.2        |79.5|59.0|83.1|78.9|84.9|47.6 |73.6|                |
+|   GPTQ    |  2   |16.60|        74.2        |68.3|42.6|40.2|69.3|74.7|38.4 |58.2|                |
+|   GPTAQ   |  2   |20.62|        56.4        |37.9|24.7|37.3|50.7|53.6|28.2 |41.3|                |
+|   KronQ   |  2   |7.65 |        79.0        |76.4|49.7|72.2|73.8|80.7|43.4 |67.9|                |
+
+### C.7 Comparison with Previous Works on Weight-and-activation Quantization ###
+
+Table [17](#A3.T17) reports WikiText-2 perplexity for weight-and-activation quantization. All methods apply the QuaRot 
+> ([3](#bib.bib18))
+
+ rotation framework for activation quantization. QuaRot and SpinQuant 
+> ([36](#bib.bib8))
+
+ results are taken from their respective papers.
+
+Table 17: Weight-and-activation quantization (WxA4) WikiText-2 perplexity.
+
+### C.8 3 and 4-bit Results on Weight-and-activation Quantization ###
+
+Table [18](#A3.T18) extends the weight-and-activation evaluation to W3A4/W4A4. KronQ achieves the lowest perplexity across all settings, with gains increasing at lower bit-widths.
+
+Table 18: Weight-and-activation quantization (WxA4), W3A4/W4A4 results.
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+### C.9 Mixed Precision Quantization on LLaMA ###
+
+Table [19](#A3.T19) and right figures extend the mixed-precision analysis of Section [5.3](#S5.SS3) to LLaMA-3-8B and LLaMA-2-13B. The KronQ joint score yields strictly better PPL–bits tradeoffs than the activation-only score on both architectures. We also compare KronQ with SliM-LLM 
+> ([22](#bib.bib28))
+
+ and CMPQ 
+> ([8](#bib.bib40))
+
+, consistent with the LLaMA-2-7B results in the main paper.
+
+Table 19: Sublayer sensitivity rankings and WikiText-2 perplexity on LLaMA-3-8B and LLaMA-2-13B. Each row cumulatively upgrades one additional sublayer to W3 across all layers.
+
+### C.10 Comparison with Inter-Layer Mixed-Precision Quantization ###
+
+Since KronQ allocates bit-widths across sublayers, we further compare against the inter-layer methods AMQ 
+> ([31](#bib.bib43))
+
+, Q-Palette 
+> ([30](#bib.bib44))
+
+, and HIGGS 
+> ([37](#bib.bib45))
+
+. All comparisons are conducted under a matched data-aware setting: every method uses the same real-text calibration set (128 WikiText-2 sequences of length 2048) that KronQ uses for 𝐇𝐆\\mathbf{H\_{G}}, so the comparison isolates the allocation methodology from calibration-data access.
+
+For the allocation comparisons, we hold the base quantizer fixed and vary only the allocation. Table [22](#A3.T22) holds GPTQ fixed (LLaMA-2-7B, context 2048), where KronQ’s allocation beats AMQ’s data-aware NSGA-II search at a matched 3.1-bit budget. Table [22](#A3.T22) holds Q-Palette’s quantizer fixed (LLaMA-3.1-8B, context 8192) and compares against Q-Palette’s data-aware actual-loss allocation. KronQ’s allocation achieves lower perplexity at every budget. Table [22](#A3.T22) instead isolates the quantizer: against the data-aware GPTQ+HIGGS configuration (LLaMA-2-7B, context 4096), KronQ’s scalar grid leads at every bit-width despite HIGGS using a vector quantizer.
+Crucially, KronQ’s allocation is a closed-form analytic score that needs only the single 𝐇𝐆\\mathbf{H\_{G}} backward pass already computed for BiIP, with no dedicated search or per-bit precompute. It is therefore free within the KronQ pipeline, versus roughly 5 GPU-hours for AMQ’s NSGA-II search and 79 GPU-hours for Q-Palette’s data-aware actual-loss term. KronQ thus matches the data-aware allocation quality at roughly one twentieth of the cost.
+
+Table 20: KronQ vs. AMQ allocation, GPTQ fixed (L2-7B, ctx 2048).<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+Table 21: KronQ vs. Q-Palette allocation, Q-Palette quantizer fixed (L3.1-8B, ctx 8192).<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+Table 22: KronQ scalar vs. HIGGS vector quantizer (L2-7B, ctx 4096).<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup>nicematrix-placeholder: NiceTabular (nicematrix)
+
+Appendix D Why GPTQ and GPTAQ Fail on LLaMA-3-70B
+----------
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="190" id="A4.F6.sf1.g1" src="2607.07964v2/weight_distribution_llama2_70b.png" width="521">(a) Weight distributions of LLaMA-2-70B
+
+<img alt="Refer to caption" class="ltx_graphics ltx_img_landscape" height="191" id="A4.F6.sf2.g1" src="2607.07964v2/weight_distribution_llama3_70b.png" width="521">(b) Weight distributions of LLaMA-3-70B
+
+Figure 6: Weight magnitude distribution of the Q projection in the first layer under three configurations: original weights, after column-side incoherence (𝐇X\\mathbf{H}\_{X} only), and after bidirectional incoherence (𝐇X+𝐇G\\mathbf{H}\_{X}+\\mathbf{H}\_{G}). Top histograms show column norms; right histograms show row norms. CVin\\text{CV}\_{\\text{in}} and CVout\\text{CV}\_{\\text{out}} denote the coefficient of variation of column and row norms, respectively.
+
+Figure [6](#A4.F6) compares the weight magnitude distributions of LLaMA-3-70B and LLaMA-2-70B. In LLaMA-3-70B, the original weights exhibit extreme column-wise outliers (CVin=9.21\\text{CV}\_{\\text{in}}=9.21) concentrated on specific input dimensions, a phenomenon previously identified by
+> [43](#bib.bib37)
+
+ as unique to the LLaMA-3/3.1-70B family. These outliers expand the quantization range by orders of magnitude, causing the column-wise OBS updates in GPTQ and GPTAQ to produce degenerate solutions. In contrast, LLaMA-2-70B shows a substantially milder distribution (CVin=0.37\\text{CV}\_{\\text{in}}=0.37), consistent with its robustness to per-channel quantization. Applying 𝐇X\\mathbf{H}\_{X}-only incoherence suppresses the input-side outliers in LLaMA-3-70B (CVin:9.21→0.39\\text{CV}\_{\\text{in}}:9.21\\to 0.39) but leaves the output-side heterogeneity largely unaddressed (CVout:0.93→0.54\\text{CV}\_{\\text{out}}:0.93\\to 0.54). BiIP further resolves the output-side structure via 𝐇G\\mathbf{H}\_{G}, achieving CVin=0.29\\text{CV}\_{\\text{in}}=0.29 and CVout=0.24\\text{CV}\_{\\text{out}}=0.24, comparable to the post-BiIP values of LLaMA-2-70B (0.270.27 and 0.250.25).
+
+Appendix E Per-Sublayer Calibration Memory
+----------
+
+Table [23](#A5.T23) details the memory required to perform calibration
+per sublayer for LLaMA-2-7B, LLaMA-3-8B, and LLaMA-2-13B, following the same
+convention as
+> [32](#bib.bib17)
+
+ (Table 9), with block slices of size B=128B=128included in all reported values.
+The Cholesky factor 𝐋\\mathbf{L} is stored as a lower-triangular matrix
+and the correction matrix 𝐏\\mathbf{P} as an upper-triangular matrix.KronQ additionally stores 𝐇G\\mathbf{H}\_{G} as a full dout×doutd\_{\\mathrm{out}}\\times d\_{\\mathrm{out}}matrix during BiIP; once released, the remaining memory footprint is identical to GPTAQ.
+The peak memory overhead is therefore transient and confined to the BiIP preprocessing step.
+
+Table 23: Memory needed to perform calibration (GiB) per sublayer.<sup class="ltx_sup" id="A5.T23.3">†</sup>𝐇G\\mathbf{H}\_{G} released after BiIP, remaining memory matches GPTAQ.
+
+Appendix F Limitations
+----------
+
+KronQ requires a backward pass over the calibration set to estimate the gradient covariance 𝐇G\\mathbf{H}\_{G} prior to quantization, introducing additional offline computation relative to activation-only methods such as GPTQ and GPTAQ. Furthermore, 𝐇G\\mathbf{H}\_{G} is a full dout×doutd\_{\\mathrm{out}}\\times d\_{\\mathrm{out}} matrix, incurring additional peak memory during BiIP preprocessing. Nevertheless, once 𝐇G\\mathbf{H}\_{G} is precomputed and stored, it incurs no additional computation during quantization itself, as 𝐇G\\mathbf{H}\_{G} cancels algebraically in the column-wise updates (Proposition [1](#Thmproposition1)) and is released upon completion of BiIP. During inference, KronQ requires online reversion of the orthogonal transforms 𝐔\\mathbf{U} and 𝐕\\mathbf{V}, introducing Θ⁡(din​log⁡din+dout​log⁡dout)\\Theta(d\_{\\mathrm{in}}\\log d\_{\\mathrm{in}}+d\_{\\mathrm{out}}\\log d\_{\\mathrm{out}}) overhead per layer. This is identical to QuIP# 
+> ([49](#bib.bib19))
+
+ and our fused CUDA kernel keeps the per-layer cost close to that of the Θ⁡(din​dout)\\Theta(d\_{\\mathrm{in}}d\_{\\mathrm{out}}) weight matrix-vector multiply alone.
+
+</body>
+(Response complete. 591960 bytes total. Content-type: text/html; charset=utf-8. Fetched in 660ms.)

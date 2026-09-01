@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user has pasted what looks like an incident report / status update from some kind of automated system or agent (perhaps \"Hermes Gateway\" \u2014 sounds like a self-hosted gateway, maybe their own agent infrastructure). The report describes:\n\n1. Root cause: `.venv` was deleted while gateway process was running. Python binary kept executing via mmap, but lazy open() on files inside the venv failed \u2192 FileNotFoundError from ssl.create_default_context inside httpx, on every new AnthropicBedrock client init.\n\n2. What was done: recreated venv with `uv sync --frozen --all-extras` (full",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user has pasted what looks like an incident report / status update from some kind of automated system or agent (perhaps \"Hermes Gateway\" \u2014 sounds like a self-hosted gateway, maybe their own agent infrastructure). The report describes:\n\n1. Root cause: `.venv` was deleted while gateway process was running. Python binary kept executing via mmap, but lazy open() on files inside the venv failed \u2192 FileNotFoundError from ssl.create_default_context inside httpx, on every new AnthropicBedrock client init.\n\n2. What was done: recreated venv with `uv sync --frozen --all-extras` (full"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 453,
+  "completion_tokens": 128,
+  "total_tokens": 581,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.211767168,
+  "spec": {
+   "rounds": 52,
+   "drafted": 156,
+   "accepted": 75,
+   "acceptance_rate": 0.4807692307692308
+  }
+ },
+ "id": "chatcmpl-13b51b8ec451e955124f574a247d7a5d",
+ "created": 1788082141,
+ "system_fingerprint": "REDACTED"
+}

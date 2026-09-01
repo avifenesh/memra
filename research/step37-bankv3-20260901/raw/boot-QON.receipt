@@ -1,0 +1,29 @@
+arm=QON
+mode=gflip-on
+boot_nonce=bv3-QON-1788221014-14310
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-c5c311998
+bin_md5=d0bc648a75909b757fed87fee6facb93
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=c5c31199819919890e32d893d7681ffccc2305fc
+git_log_1=c5c311998 Merge remote-tracking branch 'origin/main' into lane/step37-bankv3-20260901
+server_pid=84830
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-c5c311998
+environ_nonce=bv3-QON-1788221014-14310
+environ_mode=gflip-on
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-QON.txt (41 MEMRA_/BV3 vars)
+0, 74067 MiB, 600.00 W, 2317 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=gflip-on (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=0 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+--- engagement (gflip-on) ---
+[nvfp4-bank] layout=slot-major source=default-on tp=2 experts=288 in_f=4096 out_f=1280
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel_v2 slot_major=true in_f=4096 out_f=640 nsb=128 row_bytes=2304
+[nvfp4-sel] kernel=qmatvec_nvfp4_dp4a_sel_v2 slot_major=true in_f=640 out_f=4096 nsb=20 row_bytes=360
+[nvfp4-sweep] down8=false door=true door_source=default-on device_routed=false slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] down8=true door=true door_source=default-on device_routed=true slot_major=true nsb=20 in_class=true n_sel=8
+[nvfp4-sweep] gu_fused=false door=false slot_major=true geometry_match=true in_f=4096 out_f=640 n_sel=8
+ENGAGE_OK   gflip-on :: [nvfp4-bank] layout=slot-major source=default-on
+ENGAGE_OK   gflip-on :: down8=true door=true door_source=default-on
+ENGAGE_OK   gflip-on :: slot_major=true
+ENGAGE_OK   gflip-on :: [nvfp4-sel]
+ENGAGEMENT VERIFIED arm=QON mode=gflip-on (4 required facts)

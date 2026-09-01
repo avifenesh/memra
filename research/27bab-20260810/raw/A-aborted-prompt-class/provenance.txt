@@ -1,0 +1,15 @@
+block=A
+started_utc=2026-08-10T16:53:12Z
+host=a89be09b37be
+## lane/cx-27bab
+commit=dc77de733c1615da8a3c93788ee221032ec3fd2d
+subject=Merge lane/specmech: c=2 stage-resident spec pipeline increment 1 — HOLD, and the receipt KILLS the increment-2 branch too. Pipelined c=2 N=5 median 53.691 tok/s: +0.27% over serial spec, -53.26% vs plain. The phase decomposition closes the pricing question: even an OPTIMISTIC schedule hiding every draft/readback/commit ms under the opposite session's verify projects only 55.195 tok/s (-51.95% vs plain) — the missing gain is in VERIFY ISSUE ITSELF (whole-PP-body serialization), not the primary-engine tail. Any future attempt needs boundary-level release after stage-0 TX (mid-body), a different mechanism with its own exactness re-proof. MEMRA_SPEC_PIPE stays experimental opt-in, default OFF; K=0 PP-2 policy unchanged; exactness gate PASS, c=1 fallback PASS, admission matrix deliberately narrow with serial fallback everywhere else. KEEPER shipped en route: fix(server) join GPU worker on graceful shutdown — SIGTERM drain didn't join the GPU worker thread (the deploy restart-race class seen twice on Vast), regression retained. Spec program conclusion: PP-2 decode spec is closed at the schedule level (specpp2 + this); remaining PP-2 spec paths per the landscape survey = DSpark-style confidence-scheduled verify + trained-head acceptance (single-card SKUs keep their 2.3x).
+de9c201d27993275b1448f778e6942bbaca5e902864e867090366c5fe13087e8  /workspace/memra/target/release/memra-server
+9432d85eb1b243788d266dd8e35f41ee92ad3506785ca0c27d06384eba8b9916  /root/cx-27bab/measure.py
+193295e0e8a1c375f2a7bfdaa053464932894a5adcf04b6a8297aed0576ade50  /root/serve-env.sh
+/workspace/models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf 15705920064 bytes 2026-06-30 02:47:04.313106221 +0000
+/workspace/models/qwen36-27b-nvfp4-mtp/mtp-Qwen3.6-27B-NVFP4.gguf 5946009088 bytes 2026-05-30 23:57:29.843235949 +0000
+/workspace/models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf 1242867296 bytes 2026-07-18 02:51:51.642796089 +0000
+Build cuda_13.1.r13.1/compiler.37061995_0
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 580.105.08, 97887 MiB
+1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 580.105.08, 97887 MiB

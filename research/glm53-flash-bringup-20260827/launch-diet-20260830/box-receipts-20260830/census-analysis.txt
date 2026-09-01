@@ -1,0 +1,30 @@
+=============== DECODE census (2-card arm C + fused epilogue ON) ===============
+window: wall 6.305 s = 443-token prime + 192 greedy decode; per-token divisor 193
+family             gpu_ms   launch   l/tok gpu us/tok
+kda-proj-bf16      1591.8    28417   147.2     8247.9
+mla-decode          918.6    19646   101.8     4759.4
+moe-epilogue        907.3    32340   167.6     4701.1
+mhc-sites           638.1    69866   362.0     3306.3
+prime-class         401.2     9844    (short-prime share, excluded from /tok)
+nvfp4-mmvq          296.0    26304   136.3     1533.8
+cublas-f32-gemv     227.3    99681   516.5     1177.6
+kda-scan+conv       134.9    59160   306.5      699.1
+rms-norm             62.1    21809   113.0      321.7
+quantize             54.7    42432   219.9      283.2
+other                17.0    10556    54.7       88.0
+DECODE-CLASS       4847.8   410211  2125.4    25118.2
+TOTAL window GPU 5249 ms, launches 420055
+
+=============== PREFILL attribution (cold 4626-token prime, wall 6.706 s) ===============
+family               gpu_ms  launches share of GPU
+mla-prefill-attn     4998.9        66        75.8%
+moe-grouped          1025.6       983        15.5%
+kda                   221.6       646         3.4%
+trunk-gemm            172.2       440         2.6%
+mhc-sites             111.8       724         1.7%
+other                  22.6       543         0.3%
+mla-indexer+kpool      17.5       143         0.3%
+quantize+norm          17.0       626         0.3%
+bf16-matvec             9.2       149         0.1%
+cublas-f32-gemv         1.7       653         0.0%
+TOTAL GPU-busy 6598 ms of 6706 ms wall (98%); launches 4973

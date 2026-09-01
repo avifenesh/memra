@@ -1,0 +1,38 @@
+[server] starting; models config = [("step", "/opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step" <- /opt/scratch/nvme/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step: regime draft attached (/opt/scratch/nvme/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step": 45 layers, eos=128007
+[worker] step: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step: decode chunk cap 8
+[prefix-cache] on: budget 537MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "step": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step"]
+[server] listening on http://127.0.0.1:18241
+[meter] admit id=cmpl-4808cbbdb4ad626aa8563b6a44272195 tenant=default lane=interactive model="step"
+[admission] request cost: model="step" ctx=262144 path=plain = 83520 B/token x ctx + 0MB fixed = 21894MB
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=37823 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[prefix-cache] skip seed insert: entry 3159.0MB > budget 537MB
+[ttft] id=cmpl-4808cbbdb4ad626aa8563b6a44272195 model="step" path="/v1/completions" prompt_tokens=37823 outcome=first_sse_byte request_parse_ms=0.227 admission_ms=0.025 queue_wait_ms=0.015 tokenize_ms=38.131 prime_wait_ms=39.365 prime_ms=101909.402 decode_wait_ms=0.144 sse_handoff_ms=0.053 request_parse_end_ms=0.227 admission_end_ms=0.252 tokenize_start_ms=0.267 tokenize_end_ms=38.398 prime_start_ms=77.763 prime_end_ms=101987.165 first_decode_ms=101987.309 first_sse_byte_ms=101987.362 total_ms=101987.362
+[meter] admit id=cmpl-94e273826ccd561d8a36c43c916c036c tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=39159 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[prefix-cache] skip seed insert: entry 3270.6MB > budget 537MB
+[ttft] id=cmpl-94e273826ccd561d8a36c43c916c036c model="step" path="/v1/completions" prompt_tokens=39159 outcome=first_sse_byte request_parse_ms=0.238 admission_ms=0.021 queue_wait_ms=0.013 tokenize_ms=41.646 prime_wait_ms=38.437 prime_ms=105709.076 decode_wait_ms=0.143 sse_handoff_ms=0.029 request_parse_end_ms=0.238 admission_end_ms=0.259 tokenize_start_ms=0.272 tokenize_end_ms=41.918 prime_start_ms=80.355 prime_end_ms=105789.431 first_decode_ms=105789.574 first_sse_byte_ms=105789.603 total_ms=105789.603
+[meter] admit id=cmpl-5774b90e438386609445a23417584bb2 tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cachespec-20260809" K=0 source=pp2-placement prompt=40495 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[prefix-cache] skip seed insert: entry 3382.1MB > budget 537MB
+[ttft] id=cmpl-5774b90e438386609445a23417584bb2 model="step" path="/v1/completions" prompt_tokens=40495 outcome=first_sse_byte request_parse_ms=0.121 admission_ms=0.026 queue_wait_ms=0.011 tokenize_ms=41.756 prime_wait_ms=39.234 prime_ms=109848.951 decode_wait_ms=0.133 sse_handoff_ms=0.029 request_parse_end_ms=0.121 admission_end_ms=0.147 tokenize_start_ms=0.158 tokenize_end_ms=41.914 prime_start_ms=81.148 prime_end_ms=109930.099 first_decode_ms=109930.232 first_sse_byte_ms=109930.261 total_ms=109930.261
+[meter] admit id=cmpl-98429daa9651786e05b3ef5ad565a389 tenant=default lane=interactive model="step"
+[ttft] id=cmpl-98429daa9651786e05b3ef5ad565a389 model="step" path="/v1/completions" prompt_tokens=41831 outcome=first_sse_byte request_parse_ms=0.130 admission_ms=0.022 queue_wait_ms=0.009 tokenize_ms=42.388 prime_wait_ms=na prime_ms=na decode_wait_ms=na sse_handoff_ms=na request_parse_end_ms=0.130 admission_end_ms=0.152 tokenize_start_ms=0.161 tokenize_end_ms=42.549 prime_start_ms=na prime_end_ms=na first_decode_ms=na first_sse_byte_ms=70.050 total_ms=70.050
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

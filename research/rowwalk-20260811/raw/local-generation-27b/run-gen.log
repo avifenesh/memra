@@ -1,0 +1,17 @@
+loaded qwen35 (64 trunk layers; optional MTP skipped)
+prompt text: "Write a short paragraph explaining how a CPU pipeline improves instruction throughput, and mention one hazard."
+prompt tokens: [7734, 264, 2716, 13901, 24228, 1204, 264, 13540, 14855, 33793, 7359, 61610, 11, 321, 6088, 799, 29309, 13]
+prefill argmax=271  decode argmax=271  logit maxdiff=3.872e-1  MATCH
+batched-prime argmax=271  tokenwise argmax=271  logit maxdiff=3.788e-1  MATCH
+prefill 18 tok in 0.0985s = 182.8 tok/s (pp18)
+generated 64 tokens in 1.424s = 44.93 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.110s) [stop: MaxNew]
+tokens: [271, 248068, 271, 248069, 271, 32, 13540, 14855, 33793, 7359, 61610, 539, 48142, 279, 10993, 314, 5081, 10895, 11, 13057, 14293, 1441, 279, 7359, 10458, 1083, 12103, 17102, 1680, 430, 7560, 11, 16401, 11, 8754, 11, 4779, 2528, 11, 321, 3165, 15007, 13, 11746, 314, 8318, 364, 799, 7359, 310, 4434, 660, 17102, 1518, 5732, 279, 1727, 11, 279, 17128, 11690, 8427, 264, 491]
+OUTPUT TEXT: "\n\n<think>\n\n</think>\n\nA CPU pipeline improves instruction throughput by overlapping the execution of multiple instructions, effectively breaking down the instruction cycle into distinct stages such as fetch, decode, execute, memory access, and write-back. Instead of waiting for one instruction to complete all stages before starting the next, the processor begins processing a new"
+--- generated text ---
+
+
+<think>
+
+</think>
+
+A CPU pipeline improves instruction throughput by overlapping the execution of multiple instructions, effectively breaking down the instruction cycle into distinct stages such as fetch, decode, execute, memory access, and write-back. Instead of waiting for one instruction to complete all stages before starting the next, the processor begins processing a new

@@ -1,0 +1,30 @@
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+captured_utc=2026-08-10T16:40:58Z
+host=a89be09b37be
+commit=650a2aecf5d6798f57108b705d71862924c41829
+## lane/cx-hostbounce
+processes_before:
+  16734 Mon Aug 10 13:20:35 2026 ./target/release/memra-server
+listeners_before:
+LISTEN 0      128          0.0.0.0:8002      0.0.0.0:*    users:(("memra-server",pid=16734,fd=48))
+server_fd_targets:
+pid=16734 cwd=/workspace/memra stdout=/var/log/memra-server.log stderr=/var/log/memra-server.log
+server_env_selected:
+CUDA_VISIBLE_DEVICES=0,1
+MEMRA_ADDR=0.0.0.0:8002
+MEMRA_CTX=262144
+MEMRA_MODELS=stepfun/step-3.7-flash=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf+/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+MEMRA_MOE_GROUPED=1
+MEMRA_PREFILL_TICK=2048
+MEMRA_PREFIX_CACHE_MB=2048
+health_before:
+{"status":"ready","models":["stepfun/step-3.7-flash"],"worker":{"phase":"idle","beat_age_ms":10734306,"tick_max_ms":3657,"stall_threshold_ms":120000,"generation":0,"xid_warnings":0}}
+{"admitted":19,"completed":19,"tokens_out":1372,"step_p50_ms":13.978266716003418,"step_p99_ms":16.198993682861328,"prompt_tokens_in":7019,"cached_tokens_in":0,"computed_tokens_in":7019,"cache_hit_token_ratio":0.0,"prefix_cache_hits":0,"prefix_cache_entries":0,"prefix_cache_bytes":0,"prefix_cache_misses":0,"prefix_cache_inserts":0,"prefix_cache_evictions":0,"prefix_cache_hit_tokens":0,"admission_session_defers":0,"admission_vram_defers":0,"step_oom_parks":0,"continuation_pool_hits":0,"continuation_pool_evictions":17,"plain_affinity_rewinds":0,"spec_pool_hits":0,"spec_pool_misses":0,"spec_pool_affinity_rewinds":0,"spec_pool_evictions":0,"active_sessions":0,"queued_requests":0,"continuation_pool_entries":2,"spec_pool_entries":0,"cuda_driver_free_bytes":42424991744,"cuda_pool_reserved_bytes":58753810432,"cuda_pool_used_bytes":58371421944,"cuda_pool_cached_bytes":382388488,"lcp_histogram":{"edges":[0,1,16,32,64,128,256,512,1024,2048,4096],"counts":[0,0,0,0,0,0,0,0,0,0,0]},"serve_idle_seconds":10734.316,"tenants":{"":{"prompt_tokens_in":7019,"cached_tokens_in":0,"cache_hit_token_ratio":0.0}}}
+gpu_before:
+0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 97887 MiB, 46673 MiB, 50576 MiB, 24, P8, 13.32 W, 180 MHz
+1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 97887 MiB, 56789 MiB, 40460 MiB, 24, P8, 10.95 W, 180 MHz
+candidate_commit:
+fatal: git cat-file: could not get object info
+candidate_branch:
+fatal: bad object dc77de733c1615da8a3c93788ee221032ec3fd2d

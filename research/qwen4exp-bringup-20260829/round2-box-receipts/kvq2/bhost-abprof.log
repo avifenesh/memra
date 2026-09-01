@@ -1,0 +1,33 @@
+# qwen4exp_real_gate	label=bhost-abprof	binary_sha256=d1776ed5b2092946fdf48fa68002019daeafe5eaee31384b5cd7d8180a84f014	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# vram	post-engine	0, 92851 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+# load	192.4s
+# vram	post-load	0, 93011 MiB, 97887 MiB | 1, 89971 MiB, 97887 MiB
+# ladder	state-allocated	0, 93011 MiB, 97887 MiB | 1, 92883 MiB, 97887 MiB
+# ladder-progress	fill=16384	elapsed_s=81.3	0, 93011 MiB, 97887 MiB | 1, 94291 MiB, 97887 MiB
+# ladder-progress	fill=32768	elapsed_s=165.1	0, 93858 MiB, 97887 MiB | 1, 94387 MiB, 97887 MiB
+# ladder-progress	fill=49152	elapsed_s=249.5	0, 93858 MiB, 97887 MiB | 1, 94515 MiB, 97887 MiB
+# ladder-progress	fill=65536	elapsed_s=334.9	0, 93858 MiB, 97887 MiB | 1, 94547 MiB, 97887 MiB
+# ladder-progress	fill=81920	elapsed_s=421.1	0, 595 MiB, 97887 MiB | 1, 94867 MiB, 97887 MiB
+# ladder-progress	fill=98304	elapsed_s=508.4	0, 595 MiB, 97887 MiB | 1, 94867 MiB, 97887 MiB
+# ladder-progress	fill=114688	elapsed_s=596.5	0, 595 MiB, 97887 MiB | 1, 94867 MiB, 97887 MiB
+# ladder-progress	fill=131072	elapsed_s=686.6	0, 595 MiB, 97887 MiB | 1, 94867 MiB, 97887 MiB
+# ladder-rung	131072	686.6	686.6	64	34.8	33.5	33.6	28.77	rounds=3x12 medians=[33.6, 33.5, 33.5] spread=0.18%	false	167737	0, 595 MiB, 97887 MiB | 1, 95419 MiB, 97887 MiB	262,333,198,262,7379,1250,4568,8,198,92,271,8556,3165,7073,18,17,82,5406,25,594,1757,11,2663,25,43112,84,18,17,2387,1411,5536,66514,8003,89649,1407,476,815
+
+# ladder-jitter	rung=131072	arm=rung-default	n=34 mean=34.75 med=33.54 sd=6.856 cv=19.73% p99=74.13 max=74.13 outliers_1.5x=1
+# ladder-ab	rung=131072	seam=plecache	arm=off	median_ms=33.52	tok_per_s=29.83	reps=3	medians=[33.54, 33.52, 33.51]	spread=0.09%	n=48 mean=33.77 med=33.52 sd=0.836 cv=2.48% p99=37.00 max=37.00 outliers_1.5x=0
+# ladder-ab	rung=131072	seam=plecache	arm=on	median_ms=25.91	tok_per_s=38.60	reps=3	medians=[25.91, 25.91, 25.9]	spread=0.02%	n=48 mean=25.90 med=25.90 sd=0.028 cv=0.11% p99=25.97 max=25.97 outliers_1.5x=0
+# ladder-ab-verdict	rung=131072	seam=plecache	off_ms=33.52	on_ms=25.91	speedup=1.2938x	delta_pct=22.71%	reps_per_arm=3	host_probe=true	vol_cs=66	nonvol_cs=12	threads=4	launch_cpu_migrations=0	launch_cpus_seen=1
+# ladder-ab-restore	seam=plecache	arm=off
+# ladder-progress	fill=147605	elapsed_s=92.8	0, 93474 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=163989	elapsed_s=186.4	0, 93570 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=180373	elapsed_s=280.9	0, 93181 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=196757	elapsed_s=376.3	0, 93533 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=213141	elapsed_s=470.7	0, 93533 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=229525	elapsed_s=565.4	0, 93533 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=245909	elapsed_s=660.9	0, 93533 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-progress	fill=262144	elapsed_s=756.6	0, 0 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB
+# ladder-rung	262144	756.7	1443.3	64	42.5	40.2	40.3	23.53	rounds=3x12 medians=[40.3, 40.2, 40.2] spread=0.24%	false	167736	0, 0 MiB, 97887 MiB | 1, 96635 MiB, 97887 MiB	476,815,476,1401,2372,313,198,262,1042,378,283,7943,476,902,7,15,11504,26,198,262,1042,318,15518,11,19687,11,19687,41973,8,283,318,17,20,21,50132,11,220
+
+# ladder-jitter	rung=262144	arm=rung-default	n=34 mean=42.50 med=40.22 sd=12.838 cv=30.21% p99=116.22 max=116.22 outliers_1.5x=1

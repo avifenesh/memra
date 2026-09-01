@@ -1,0 +1,1428 @@
++ date --iso-8601=seconds
+2026-08-13T07:38:34+03:00
++ git rev-parse HEAD
+56610d0f513ad4e41b36f9ad7de2e792dbd1d7ee
++ git merge-base --is-ancestor c3976d488 56f7ac0d8
++ git show -s --format=%H%n%P%n%s c3976d488
+c3976d48855e0f87ad5155692dec323e3e3c6462
+2ade97ed6f88ecb4b03095d47bd72d4719d50db3
+feat: restore transformer prefixes at LCP splits
++ git show --format= --no-ext-diff c3976d488 -- crates/memra-server/src/worker.rs
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 3401648c9..a55a7b3cc 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -29,6 +29,7 @@ use memra_engine::hybrid::HybridModel;
+ use memra_engine::sampler::{Sampler, SamplerConfig};
+ use memra_gguf::GgufFile;
+ use memra_tokenizer::Tokenizer;
++use sha2::{Digest, Sha256};
+
+ /// Max concurrently-active sessions in legacy round-robin mode (MEMRA_SERVE_BATCH=0).
+ /// Batched scheduling caps at MEMRA_MAX_SESSIONS (default 64). Admits beyond the cap queue (FIFO).
+@@ -1241,10 +1242,11 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
+ // prefix, and are REUSABLE (a hit deep-copies the entry into the new session's cache — one
+ // marketplace system prompt serves any number of sessions, unlike the move-out pool).
+ //
+-// WHY snapshots, not truncation: hybrid models (qwen35-class GDN) carry recurrent conv/ssm
+-// state that cannot roll back to an arbitrary shorter prefix, so a longer cache can never be
+-// trimmed to the shared prefix. Instead the state is captured AT the boundary while a fresh
+-// session primes:
++// SPLIT LAW: full-attention K/V planes are context-linear token rows, so a transformer-only
++// entry can be copied through an arbitrary LCP boundary and the current request primes only its
++// suffix. Hybrid models (qwen35-class GDN) carry recurrent conv/ssm state that cannot roll back
++// to an arbitrary shorter prefix; routed-MoE mid-entry reuse is also unqualified after the
++// coldfix/fencealias history. Those classes refuse observably and retain boundary learning:
+ //   - SEED: a cold session's full prompt is inserted at prefill-done (before any decode).
+ //   - LCP SPLIT (the learning step): a cold miss whose prompt shares >= PREFIX_CACHE_MIN_TOKENS
+ //     tokens with an existing entry splits its own prime at the longest-common-prefix point,
+@@ -1273,6 +1275,11 @@ fn plain_ckpt_nominatable(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -> b
+ /// chat-template header — common to every request of a model — out of the cache).
+ const PREFIX_CACHE_MIN_TOKENS: usize = 64;
+
++/// In-process prefix-entry ABI. Entries never cross a process today, but an explicit version
++/// makes a stale/corrupt object fail before any bounded device copy and keeps the same identity
++/// rule a future host tier will need.
++const PREFIX_ENTRY_LAYOUT_VERSION: u32 = 1;
++
+ /// Max distinct per-tenant metering rows in `Metrics::ns_tokens` (lane/cache-metering).
+ /// Past the cap, new tenants/salts aggregate under "(other)" — the totals stay exact,
+ /// only per-row attribution saturates. 256 covers any realistic keyring; the bound
+@@ -1619,6 +1626,20 @@ fn prefix_dedup_enabled() -> bool {
+     *D.get_or_init(|| std::env::var("MEMRA_PREFIX_DEDUP").as_deref() != Ok("0"))
+ }
+
++/// Immediate LCP-boundary restore. Default ON; `=0` is the rollback/measurement seam for the
++/// pre-lane arm-only behavior (cold-prime to the split, snapshot it, then continue).
++fn partial_prefix_restore_enabled() -> bool {
++    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ENABLED.get_or_init(|| std::env::var("MEMRA_PREFIX_PARTIAL_RESTORE").as_deref() != Ok("0"))
++}
++
++/// Expensive split-state evidence: D2H-hash every restored K/V byte and len mirror. Diagnostics
++/// only; production pays no copy or synchronization unless explicitly armed.
++fn prefix_split_trace_enabled() -> bool {
++    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ENABLED.get_or_init(|| std::env::var("MEMRA_PREFIX_SPLIT_TRACE").as_deref() == Ok("1"))
++}
++
+ /// Batched scheduling on? (read once — mirrors the run-loop static; the prefix cache only
+ /// engages in batched mode, the default.)
+ fn serve_batching() -> bool {
+@@ -2185,11 +2206,15 @@ struct PrefixPlane {
+     k: CudaSlice<u8>,
+     v: CudaSlice<u8>,
+     len: usize,
++    k_tok_bytes: usize,
++    v_tok_bytes: usize,
+ }
+
+ /// A cached token-prefix: per-layer KV byte copies + recurrent conv/ssm copies + the logits
+ /// row AT the boundary (empty-suffix resumes sample from it, same as the continuation pool).
+ struct PrefixEntry {
++    layout_version: u32,
++    pool_key: PoolKey,
+     toks: Vec<u32>,
+     kv: Vec<Option<PrefixPlane>>,
+     conv: Vec<Option<CudaSlice<f32>>>,
+@@ -2206,6 +2231,100 @@ struct PrefixEntry {
+     pins: usize,
+ }
+
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum PartialPrefixDecision {
++    Restore,
++    RefuseNoSuffix,
++    RefuseRoutedMoe,
++    RefuseRecurrentMidEntry,
++}
++
++impl PartialPrefixDecision {
++    fn refusal(self) -> Option<&'static str> {
++        match self {
++            Self::Restore => None,
++            Self::RefuseNoSuffix => Some(
++                "request ends at the split and the longer entry has no logits for that boundary",
++            ),
++            Self::RefuseRoutedMoe => Some(
++                "routed-MoE mid-entry split is unqualified (Q35-A3B class stays on cold/snapshot fallback)",
++            ),
++            Self::RefuseRecurrentMidEntry => Some(
++                "hybrid conv/SSM state exists only at the entry endpoint and cannot be truncated",
++            ),
++        }
++    }
++}
++
++/// Decide only the NEW mid-entry path. Whole-entry lookup remains unchanged and already restores
++/// recurrent state exactly at its captured endpoint. For an actual mid-entry split, recurrent
++/// state and routed-MoE are fail-closed until their own boundary exactness receipts exist.
++fn partial_prefix_decision(
++    entry_has_recurrent: bool,
++    routed_moe: bool,
++    lcp: usize,
++    entry_pos: usize,
++    prompt_len: usize,
++) -> PartialPrefixDecision {
++    if lcp >= prompt_len {
++        PartialPrefixDecision::RefuseNoSuffix
++    } else if routed_moe {
++        PartialPrefixDecision::RefuseRoutedMoe
++    } else if entry_has_recurrent && lcp != entry_pos {
++        PartialPrefixDecision::RefuseRecurrentMidEntry
++    } else {
++        PartialPrefixDecision::Restore
++    }
++}
++
++/// Device-independent half of restore preflight. This is deliberately one atomic check so the
++/// corruption gate can exercise every range/layout/version class without constructing CUDA state.
++#[allow(clippy::too_many_arguments)]
++fn validate_prefix_plane_shape(
++    entry_pos: usize,
++    restore_len: usize,
++    src_len: usize,
++    src_k_tok_bytes: usize,
++    src_v_tok_bytes: usize,
++    src_k_bytes: usize,
++    src_v_bytes: usize,
++    dst_k_tok_bytes: usize,
++    dst_v_tok_bytes: usize,
++    dst_k_bytes: usize,
++    dst_v_bytes: usize,
++) -> Result<(usize, usize), String> {
++    if src_len != entry_pos {
++        return Err(format!("source len {src_len} != entry pos {entry_pos}"));
++    }
++    if src_k_tok_bytes != dst_k_tok_bytes || src_v_tok_bytes != dst_v_tok_bytes {
++        return Err(format!(
++            "KV layout {src_k_tok_bytes}/{src_v_tok_bytes} != cache \
++             {dst_k_tok_bytes}/{dst_v_tok_bytes} bytes/token",
++        ));
++    }
++    let expected_k = src_len.checked_mul(src_k_tok_bytes)
++        .ok_or_else(|| "source K byte count overflow".to_string())?;
++    let expected_v = src_len.checked_mul(src_v_tok_bytes)
++        .ok_or_else(|| "source V byte count overflow".to_string())?;
++    if src_k_bytes != expected_k.max(1) || src_v_bytes != expected_v.max(1) {
++        return Err(format!(
++            "truncated/corrupt source planes: K {src_k_bytes} != {}, V {src_v_bytes} != {}",
++            expected_k.max(1), expected_v.max(1),
++        ));
++    }
++    let copy_k = restore_len.checked_mul(dst_k_tok_bytes)
++        .ok_or_else(|| "restore K byte count overflow".to_string())?;
++    let copy_v = restore_len.checked_mul(dst_v_tok_bytes)
++        .ok_or_else(|| "restore V byte count overflow".to_string())?;
++    if dst_k_bytes < copy_k || dst_v_bytes < copy_v {
++        return Err(format!(
++            "destination planes too small: K {dst_k_bytes} < {copy_k}, \
++             V {dst_v_bytes} < {copy_v}",
++        ));
++    }
++    Ok((copy_k, copy_v))
++}
++
+ #[derive(Clone, Debug, PartialEq, Eq)]
+ struct PrefixPin {
+     key: PoolKey,
+@@ -2377,11 +2496,18 @@ impl PrefixCache {
+         best.map(|(i, _)| i)
+     }
+
++    /// Entry with the longest common prefix against `prompt`, plus that exact boundary. Ties
++    /// prefer the longer stored entry, then its stable pool order; the copied span is identical.
++    fn best_lcp_entry(&self, key: &PoolKey, prompt: &[u32]) -> Option<(usize, usize)> {
++        self.entries.get(key)?.iter().enumerate()
++            .map(|(i, e)| (i, Self::lcp(&e.toks, prompt), e.toks.len()))
++            .max_by_key(|&(i, lcp, entry_len)| (lcp, entry_len, std::cmp::Reverse(i)))
++            .map(|(i, lcp, _)| (i, lcp))
++    }
++
+     /// Longest common prefix of `prompt` with ANY entry (the LCP-split learning signal).
+     fn best_lcp(&self, key: &PoolKey, prompt: &[u32]) -> usize {
+-        self.entries.get(key)
+-            .map(|pool| pool.iter().map(|e| Self::lcp(&e.toks, prompt)).max().unwrap_or(0))
+-            .unwrap_or(0)
++        self.best_lcp_entry(key, prompt).map(|(_, lcp)| lcp).unwrap_or(0)
+     }
+
+     /// Is any entry (>= min tokens) already a full prefix of `prompt`? (seed dedupe)
+@@ -2531,6 +2657,19 @@ impl PrefixCache {
+         budget: usize,
+         initial_pins: usize,
+     ) -> Option<u64> {
++        if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
++            eprintln!(
++                "[prefix-cache] REFUSED {why} insert: entry identity/version mismatch \
++                 (entry model {}{}, version {}; pool model {}{}, version {})",
++                e.pool_key.0,
++                ns_suffix(&e.pool_key.1),
++                e.layout_version,
++                key.0,
++                ns_suffix(&key.1),
++                PREFIX_ENTRY_LAYOUT_VERSION,
++            );
++            return None;
++        }
+         if let Some(i) = self.key_index(key, &e.toks) {
+             return if initial_pins > 0 {
+                 self.pin_n(key, i, initial_pins).map(|pin| pin.id)
+@@ -2610,12 +2749,22 @@ fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
+ fn prefix_snapshot(
+     engine: &Engine,
+     cache: &Cache,
++    pool_key: &PoolKey,
+     toks: &[u32],
+     last_logits: &[f32],
+ ) -> Result<PrefixEntry, Box<dyn std::error::Error>> {
+     if cache.has_swa_ring() {
+         return Err("SWA ring sessions do not support flat-history prefix snapshots".into());
+     }
++    if cache.pos != toks.len() {
++        return Err(format!(
++            "prefix snapshot cache pos {} != token boundary {}",
++            cache.pos, toks.len(),
++        ).into());
++    }
++    if last_logits.is_empty() {
++        return Err("prefix snapshot has no boundary logits".into());
++    }
+     let n = cache.kv.len();
+     let mut kv = Vec::with_capacity(n);
+     let mut conv = Vec::with_capacity(n);
+@@ -2624,6 +2773,12 @@ fn prefix_snapshot(
+     for il in 0..n {
+         match &cache.kv[il] {
+             Some(l) => {
++                if l.len != cache.pos {
++                    return Err(format!(
++                        "prefix snapshot layer {il} len {} != cache pos {}",
++                        l.len, cache.pos,
++                    ).into());
++                }
+                 let kb = l.len * l.k_tok_bytes;
+                 let vb = l.len * l.v_tok_bytes;
+                 let mut k = engine.alloc_u8(kb.max(1))?;
+@@ -2631,7 +2786,13 @@ fn prefix_snapshot(
+                 if kb > 0 { engine.copy_u8_into(&mut k, 0, &l.k, kb)?; }
+                 if vb > 0 { engine.copy_u8_into(&mut v, 0, &l.v, vb)?; }
+                 bytes += kb + vb;
+-                kv.push(Some(PrefixPlane { k, v, len: l.len }));
++                kv.push(Some(PrefixPlane {
++                    k,
++                    v,
++                    len: l.len,
++                    k_tok_bytes: l.k_tok_bytes,
++                    v_tok_bytes: l.v_tok_bytes,
++                }));
+             }
+             None => kv.push(None),
+         }
+@@ -2648,6 +2809,8 @@ fn prefix_snapshot(
+         }
+     }
+     Ok(PrefixEntry {
++        layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
++        pool_key: pool_key.clone(),
+         toks: toks.to_vec(),
+         kv,
+         conv,
+@@ -2661,57 +2824,318 @@ fn prefix_snapshot(
+     })
+ }
+
+-/// Deep-copy an entry INTO a freshly allocated session cache: KV bytes at [0..len), per-layer
+-/// len + device len mirror, recurrent conv/ssm state, pos. The ssm ping-pong spare and
+-/// last_logits_dev stay as allocated (scratch — overwritten before any read).
+-fn prefix_restore(
++/// Deep-copy the first `restore_len` tokens of an entry INTO a freshly allocated session cache:
++/// K/V bytes at [0..restore_len), per-layer len + device mirror, and pos. Recurrent state is
++/// copied only at the entry's captured endpoint; a mid-entry recurrent split fails closed.
++/// The ssm ping-pong spare and last_logits_dev stay as allocated (scratch — overwritten before
++/// any read). All identity/shape/bounds checks precede the first device copy.
++fn prefix_restore_at(
+     engine: &Engine,
+     cache: &mut Cache,
+     e: &PrefixEntry,
++    expected_key: &PoolKey,
++    restore_len: usize,
+ ) -> Result<(), Box<dyn std::error::Error>> {
+     if cache.has_swa_ring() {
+         return Err("SWA ring sessions do not support flat-history prefix restores".into());
+     }
+-    if cache.kv.len() != e.kv.len() {
+-        return Err(format!("prefix entry layer count {} != cache {}", e.kv.len(), cache.kv.len()).into());
++    if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
++        return Err(format!(
++            "prefix entry layout version {} != runtime {}",
++            e.layout_version, PREFIX_ENTRY_LAYOUT_VERSION,
++        ).into());
+     }
+-    // H6 (code-audit-20260809 §2.6): copy_u8_into -> slice_mut PANICS on an out-of-range range,
+-    // so an entry with more rows than the destination cache holds would take the worker down
+-    // instead of returning the `Err` the `?` suggests. Unreachable today (lookup bounds the entry
+-    // to <= the destination ctx), but this lane is a right-sizing change and one wrong sizing
+-    // decision here must be a clean error, not a crash. Precondition it once, up front.
+-    let cache_cap = cache.max_ctx;
++    if &e.pool_key != expected_key {
++        return Err(format!(
++            "prefix entry identity mismatch (entry model {}{}, requested model {}{})",
++            e.pool_key.0,
++            ns_suffix(&e.pool_key.1),
++            expected_key.0,
++            ns_suffix(&expected_key.1),
++        ).into());
++    }
++    if e.pos != e.toks.len() {
++        return Err(format!(
++            "prefix entry pos {} != token boundary {}",
++            e.pos, e.toks.len(),
++        ).into());
++    }
++    if restore_len == 0 || restore_len > e.pos {
++        return Err(format!(
++            "prefix restore boundary {restore_len} outside entry [1,{}]",
++            e.pos,
++        ).into());
++    }
++    if restore_len > cache.max_ctx {
++        return Err(format!(
++            "prefix restore boundary {restore_len} exceeds cache capacity {}",
++            cache.max_ctx,
++        ).into());
++    }
++    if cache.pos != 0 || cache.kv.iter().flatten().any(|layer| layer.len != 0) {
++        return Err("prefix restore destination is not fresh".into());
++    }
++    if cache.kv.len() != e.kv.len()
++        || cache.recur.len() != e.conv.len()
++        || cache.recur.len() != e.ssm.len()
++    {
++        return Err(format!(
++            "prefix entry layer counts kv/conv/ssm={}/{}/{} != cache kv/recur={}/{}",
++            e.kv.len(), e.conv.len(), e.ssm.len(), cache.kv.len(), cache.recur.len(),
++        ).into());
++    }
++    let has_recurrent = e.conv.iter().any(Option::is_some) || e.ssm.iter().any(Option::is_some);
++    if has_recurrent && restore_len != e.pos {
++        return Err(format!(
++            "hybrid mid-entry prefix restore refused at {restore_len} of {}: recurrent state \
++             exists only at the captured endpoint",
++            e.pos,
++        ).into());
++    }
++    if restore_len == e.pos && e.last_logits.is_empty() {
++        return Err("whole-entry prefix restore has no boundary logits".into());
++    }
++
++    // Validate every source/destination range and recurrent shape before queueing any copy. A
++    // malformed entry must not leave a half-restored cache that a fallback could accidentally use.
+     for il in 0..cache.kv.len() {
+-        match (cache.kv[il].as_mut(), &e.kv[il]) {
++        match (cache.kv[il].as_ref(), &e.kv[il]) {
+             (Some(dst), Some(src)) => {
+-                if src.len > cache_cap {
+-                    return Err(format!(
+-                        "prefix entry layer {il} len {} exceeds cache capacity {cache_cap}",
+-                        src.len).into());
+-                }
+-                let kb = src.len * dst.k_tok_bytes;
+-                let vb = src.len * dst.v_tok_bytes;
+-                if kb > 0 { engine.copy_u8_into(&mut dst.k, 0, &src.k, kb)?; }
+-                if vb > 0 { engine.copy_u8_into(&mut dst.v, 0, &src.v, vb)?; }
+-                dst.len = src.len;
+-                engine.set_i32_one(&mut dst.len_d, src.len as i32)?;
++                validate_prefix_plane_shape(
++                    e.pos,
++                    restore_len,
++                    src.len,
++                    src.k_tok_bytes,
++                    src.v_tok_bytes,
++                    src.k.len(),
++                    src.v.len(),
++                    dst.k_tok_bytes,
++                    dst.v_tok_bytes,
++                    dst.k.len(),
++                    dst.v.len(),
++                ).map_err(|err| format!("prefix entry layer {il}: {err}"))?;
+             }
+             (None, None) => {}
+             _ => return Err(format!("prefix entry layer {il} kind mismatch").into()),
+         }
+-        match (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il]) {
++        match (cache.recur[il].as_ref(), &e.conv[il], &e.ssm[il]) {
+             (Some(dst), Some(c), Some(s)) => {
+-                engine.copy_into(&mut dst.conv_state, 0, c, c.len())?;
+-                engine.copy_into(&mut dst.ssm_state, 0, s, s.len())?;
++                if c.len() != dst.conv_state.len() || s.len() != dst.ssm_state.len() {
++                    return Err(format!(
++                        "prefix entry recur {il} shape conv/ssm={}/{} != cache {}/{}",
++                        c.len(), s.len(), dst.conv_state.len(), dst.ssm_state.len(),
++                    ).into());
++                }
+             }
+             (None, None, None) => {}
+             _ => return Err(format!("prefix entry recur {il} mismatch").into()),
+         }
+     }
+-    cache.pos = e.pos;
++
++    for il in 0..cache.kv.len() {
++        if let (Some(dst), Some(src)) = (cache.kv[il].as_mut(), &e.kv[il]) {
++            let kb = restore_len * dst.k_tok_bytes;
++            let vb = restore_len * dst.v_tok_bytes;
++            if kb > 0 { engine.copy_u8_into(&mut dst.k, 0, &src.k, kb)?; }
++            if vb > 0 { engine.copy_u8_into(&mut dst.v, 0, &src.v, vb)?; }
++            dst.len = restore_len;
++            engine.set_i32_one(&mut dst.len_d, restore_len as i32)?;
++        }
++        if let (Some(dst), Some(c), Some(s)) =
++            (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il])
++        {
++            engine.copy_into(&mut dst.conv_state, 0, c, c.len())?;
++            engine.copy_into(&mut dst.ssm_state, 0, s, s.len())?;
++        }
++    }
++    cache.pos = restore_len;
+     Ok(())
+ }
+
++fn prefix_restore(
++    engine: &Engine,
++    cache: &mut Cache,
++    e: &PrefixEntry,
++    expected_key: &PoolKey,
++) -> Result<(), Box<dyn std::error::Error>> {
++    prefix_restore_at(engine, cache, e, expected_key, e.pos)
++}
++
++fn digest_usize(hasher: &mut Sha256, value: usize) {
++    hasher.update((value as u64).to_le_bytes());
++}
++
++fn digest_f32_plane(hasher: &mut Sha256, values: &[f32]) {
++    digest_usize(hasher, values.len());
++    for value in values {
++        hasher.update(value.to_bits().to_le_bytes());
++    }
++}
++
++/// HIRADIX-EXACT-ISO diagnostic: hash the exact logical state represented by an entry at one
++/// boundary. Mid-entry recurrent state is intentionally inexpressible and returns an error.
++fn prefix_entry_state_digest(
++    engine: &Engine,
++    entry: &PrefixEntry,
++    at: usize,
++) -> Result<String, Box<dyn std::error::Error>> {
++    if at == 0 || at > entry.pos {
++        return Err(format!("entry digest boundary {at} outside [1,{}]", entry.pos).into());
++    }
++    let has_recurrent = entry.conv.iter().any(Option::is_some)
++        || entry.ssm.iter().any(Option::is_some);
++    if has_recurrent && at != entry.pos {
++        return Err("entry digest refuses mid-entry recurrent state".into());
++    }
++    let mut hasher = Sha256::new();
++    hasher.update(b"memra-prefix-split-state-v1");
++    digest_usize(&mut hasher, at);
++    digest_usize(&mut hasher, entry.kv.len());
++    for il in 0..entry.kv.len() {
++        digest_usize(&mut hasher, il);
++        match &entry.kv[il] {
++            Some(plane) => {
++                hasher.update([1]);
++                digest_usize(&mut hasher, plane.k_tok_bytes);
++                digest_usize(&mut hasher, plane.v_tok_bytes);
++                let kb = at.checked_mul(plane.k_tok_bytes)
++                    .ok_or("entry digest K byte count overflow")?;
++                let vb = at.checked_mul(plane.v_tok_bytes)
++                    .ok_or("entry digest V byte count overflow")?;
++                if plane.k.len() < kb || plane.v.len() < vb {
++                    return Err(format!("entry digest layer {il} plane is truncated").into());
++                }
++                let k = engine.dtoh_u8_view(&plane.k.slice(0..kb))?;
++                let v = engine.dtoh_u8_view(&plane.v.slice(0..vb))?;
++                digest_usize(&mut hasher, k.len());
++                hasher.update(&k);
++                digest_usize(&mut hasher, v.len());
++                hasher.update(&v);
++            }
++            None => hasher.update([0]),
++        }
++        match (&entry.conv[il], &entry.ssm[il]) {
++            (Some(conv), Some(ssm)) => {
++                hasher.update([1]);
++                digest_f32_plane(&mut hasher, &engine.dtoh(conv)?);
++                digest_f32_plane(&mut hasher, &engine.dtoh(ssm)?);
++            }
++            (None, None) => hasher.update([0]),
++            _ => return Err(format!("entry digest recur {il} mismatch").into()),
++        }
++    }
++    Ok(format!("{:x}", hasher.finalize()))
++}
++
++/// Same digest over the actual freshly-restored Cache. Device `len_d` mirrors are read and must
++/// equal the split before a digest can be reported.
++fn prefix_cache_state_digest(
++    engine: &Engine,
++    cache: &Cache,
++    at: usize,
++) -> Result<String, Box<dyn std::error::Error>> {
++    if cache.pos != at {
++        return Err(format!("cache digest pos {} != split {at}", cache.pos).into());
++    }
++    let mut hasher = Sha256::new();
++    hasher.update(b"memra-prefix-split-state-v1");
++    digest_usize(&mut hasher, at);
++    digest_usize(&mut hasher, cache.kv.len());
++    for il in 0..cache.kv.len() {
++        digest_usize(&mut hasher, il);
++        match &cache.kv[il] {
++            Some(plane) => {
++                if plane.len != at {
++                    return Err(format!(
++                        "cache digest layer {il} len {} != split {at}", plane.len,
++                    ).into());
++                }
++                let len_d = engine.dtoh_i32(&plane.len_d)?;
++                if len_d.as_slice() != [at as i32] {
++                    return Err(format!(
++                        "cache digest layer {il} len_d {len_d:?} != [{at}]",
++                    ).into());
++                }
++                hasher.update([1]);
++                digest_usize(&mut hasher, plane.k_tok_bytes);
++                digest_usize(&mut hasher, plane.v_tok_bytes);
++                let kb = at.checked_mul(plane.k_tok_bytes)
++                    .ok_or("cache digest K byte count overflow")?;
++                let vb = at.checked_mul(plane.v_tok_bytes)
++                    .ok_or("cache digest V byte count overflow")?;
++                let k = engine.dtoh_u8_view(&plane.k.slice(0..kb))?;
++                let v = engine.dtoh_u8_view(&plane.v.slice(0..vb))?;
++                digest_usize(&mut hasher, k.len());
++                hasher.update(&k);
++                digest_usize(&mut hasher, v.len());
++                hasher.update(&v);
++            }
++            None => hasher.update([0]),
++        }
++        match &cache.recur[il] {
++            Some(recur) => {
++                hasher.update([1]);
++                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.conv_state)?);
++                digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_state)?);
++            }
++            None => hasher.update([0]),
++        }
++    }
++    Ok(format!("{:x}", hasher.finalize()))
++}
++
++fn prefix_logits_digest(logits: &[f32]) -> String {
++    let mut hasher = Sha256::new();
++    hasher.update(b"memra-prefix-boundary-logits-v1");
++    digest_f32_plane(&mut hasher, logits);
++    format!("{:x}", hasher.finalize())
++}
++
++fn trace_prefix_entry_state(
++    engine: &Engine,
++    entry: &PrefixEntry,
++    at: usize,
++    role: &str,
++    why: &str,
++) {
++    if !prefix_split_trace_enabled() {
++        return;
++    }
++    match prefix_entry_state_digest(engine, entry, at) {
++        Ok(state) => {
++            let logits = if at == entry.pos {
++                prefix_logits_digest(&entry.last_logits)
++            } else {
++                "n/a-not-consumed".to_string()
++            };
++            eprintln!(
++                "[prefix-cache-split-state] role={role} why={why} split={at} entry_pos={} \
++                 state_sha256={state} boundary_logits_sha256={logits}",
++                entry.pos,
++            );
++        }
++        Err(err) => eprintln!(
++            "[prefix-cache-split-state] ERROR role={role} why={why} split={at}: {err}",
++        ),
++    }
++}
++
++fn trace_prefix_cache_state(engine: &Engine, cache: &Cache, at: usize, role: &str, why: &str) {
++    if !prefix_split_trace_enabled() {
++        return;
++    }
++    match prefix_cache_state_digest(engine, cache, at) {
++        Ok(state) => eprintln!(
++            "[prefix-cache-split-state] role={role} why={why} split={at} cache_pos={} \
++             state_sha256={state} boundary_logits_sha256=n/a-not-consumed",
++            cache.pos,
++        ),
++        Err(err) => eprintln!(
++            "[prefix-cache-split-state] ERROR role={role} why={why} split={at}: {err}",
++        ),
++    }
++}
++
+ /// Snapshot + insert the session's CURRENT primed state (fed tokens, boundary logits).
+ /// No-op when the session cannot serve an empty-suffix resume (no host logits yet).
+ fn prefix_insert_from_session(engine: &Engine, px: &mut PrefixCache, s: &Session, why: &str) {
+@@ -2722,8 +3146,12 @@ fn prefix_insert_from_session(engine: &Engine, px: &mut PrefixCache, s: &Session
+     if s.last_logits.is_empty() {
+         return;
+     }
+-    match prefix_snapshot(engine, cache, &s.fed, &s.last_logits) {
+-        Ok(e) => px.insert(&s.pool_key(), e, why),
++    let pool_key = s.pool_key();
++    match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits) {
++        Ok(e) => {
++            trace_prefix_entry_state(engine, &e, e.pos, "snapshot", why);
++            px.insert(&pool_key, e, why);
++        }
+         Err(err) => eprintln!("[prefix-cache] snapshot failed ({err}); prefix not cached"),
+     }
+ }
+@@ -3455,8 +3883,13 @@ pub fn run(
+         );
+     }
+     if prefix_cache_budget_bytes() > 0 && serve_batching() {
+-        eprintln!("[prefix-cache] on: budget {:.0}MB (MEMRA_PREFIX_CACHE_MB), min prefix {} tokens",
+-                  prefix_cache_budget_bytes() as f64 / 1e6, PREFIX_CACHE_MIN_TOKENS);
++        eprintln!(
++            "[prefix-cache] on: budget {:.0}MB (MEMRA_PREFIX_CACHE_MB), min prefix {} tokens, \
++             immediate partial restore={} (transformer-only; hybrid mid-entry + routed-MoE N/A)",
++            prefix_cache_budget_bytes() as f64 / 1e6,
++            PREFIX_CACHE_MIN_TOKENS,
++            if partial_prefix_restore_enabled() { "on" } else { "off (rollback)" },
++        );
+     }
+     // Request-shaped session cost: exact context-linear cache/scratch geometry plus a measured
+     // fixed high-water residual. Unlike the old first-admit scalar, this is armed before request 1
+@@ -6132,9 +6565,10 @@ fn admit(
+
+     // CROSS-REQUEST PREFIX CACHE probe (2026-08-02; module doc at PrefixCache). Only when the
+     // continuation pool missed, the session won't go spec, and batched scheduling is live.
+-    // A hit deep-copies the longest matching entry into a fresh session cache (entries are
+-    // reusable); a miss with a long-enough LCP against an existing entry arms the split-prime
+-    // learning insert; cold long prompts arm the seed insert.
++    // A whole-entry hit deep-copies the longest matching entry into a fresh session cache. On a
++    // miss, an eligible mid-entry LCP immediately restores its context-linear K/V rows and primes
++    // only the suffix. Recurrent and routed-MoE mid-entry splits fail closed to the old boundary-
++    // snapshot learning path; cold long prompts arm the seed insert.
+     let mut prefix_hit = false;
+     let mut prefix_pin = None;
+     let mut snapshot_at: Option<usize> = None;
+@@ -6148,7 +6582,7 @@ fn admit(
+                 // (see the session-cache site below for the full reason). `prefix_restore`
+                 // then copies plane-by-plane into whatever device each layer landed on.
+                 match memra_engine::pp::new_cache(engine, &lm.model.cfg, ctx_cap) {
+-                    Ok(mut c) => match prefix_restore(engine, &mut c, e) {
++                    Ok(mut c) => match prefix_restore(engine, &mut c, e, &pool_key) {
+                         // A prefix-cache restore is a transient carrier consumed straight into a
+                         // fresh session below (never re-parked from here), so the plain-affinity
+                         // fields are inert defaults — a new checkpoint is armed at Session build.
+@@ -6191,9 +6625,116 @@ fn admit(
+                 }
+             }
+         }
++
++        let mut best_lcp = None;
++        if reused.is_none() {
++            best_lcp = px.best_lcp_entry(&pool_key, &prompt);
++            if partial_prefix_restore_enabled()
++                && best_lcp.is_some_and(|(_, lcp)| lcp >= PREFIX_CACHE_MIN_TOKENS)
++            {
++                let (i, lcp) = best_lcp.unwrap();
++                let (decision, source_len) = {
++                    let e = &px.entries[&pool_key][i];
++                    let has_recurrent = e.conv.iter().any(Option::is_some)
++                        || e.ssm.iter().any(Option::is_some);
++                    let routed_moe = lm.model.cfg.arch.is_moe()
++                        || lm.model.cfg.moe.as_ref()
++                            .is_some_and(|config| config.expert_count > 0);
++                    (
++                        partial_prefix_decision(
++                            has_recurrent,
++                            routed_moe,
++                            lcp,
++                            e.pos,
++                            prompt.len(),
++                        ),
++                        e.toks.len(),
++                    )
++                };
++                if let Some(reason) = decision.refusal() {
++                    eprintln!(
++                        "[prefix-cache] partial restore REFUSED: split {lcp} of source \
++                         {source_len}, prompt {} (model {}{}): {reason}; cold/snapshot fallback",
++                        prompt.len(), req.model, ns_suffix(&pool_key.1),
++                    );
++                } else {
++                    let restored = {
++                        let e = &px.entries[&pool_key][i];
++                        trace_prefix_entry_state(engine, e, lcp, "source", "immediate-partial");
++                        match memra_engine::pp::new_cache(engine, &lm.model.cfg, ctx_cap) {
++                            Ok(mut c) => match prefix_restore_at(
++                                engine,
++                                &mut c,
++                                e,
++                                &pool_key,
++                                lcp,
++                            ) {
++                                Ok(()) => {
++                                    trace_prefix_cache_state(
++                                        engine,
++                                        &c,
++                                        lcp,
++                                        "restored",
++                                        "immediate-partial",
++                                    );
++                                    Ok(ReuseEntry {
++                                        fed: e.toks[..lcp].to_vec(),
++                                        cache: c,
++                                        // A supported partial hit always has a non-empty suffix,
++                                        // so the endpoint logits are recomputed by suffix prime.
++                                        last_logits: Vec::new(),
++                                        cap: ctx_cap,
++                                        ckpt: None,
++                                        affinity: None,
++                                        fingerprint: Vec::new(),
++                                        parked_at: Instant::now(),
++                                    })
++                                }
++                                Err(err) => Err(format!("partial restore failed: {err}")),
++                            },
++                            Err(err) => Err(format!("session cache alloc failed: {err}")),
++                        }
++                    };
++                    match restored {
++                        Ok(entry) => {
++                            prefix_pin = px.pin(&pool_key, i);
++                            debug_assert!(
++                                prefix_pin.is_some(),
++                                "partial lookup entry vanished before pin",
++                            );
++                            px.hits += 1;
++                            px.hit_tokens += lcp as u64;
++                            px.record_lcp(lcp);
++                            prefix_hit = true;
++                            eprintln!(
++                                "[prefix-cache] partial hit: {lcp} of {} prompt tokens from \
++                                 source {source_len} (model {}{}) — priming suffix {} only",
++                                prompt.len(),
++                                req.model,
++                                ns_suffix(&pool_key.1),
++                                prompt.len() - lcp,
++                            );
++                            reused = Some(entry);
++                        }
++                        Err(msg) => {
++                            if msg.starts_with("session cache alloc failed") {
++                                let n = px.evict_all();
++                                eprintln!(
++                                    "[prefix-cache] {msg}; evicted {n} entries, \
++                                     cold/snapshot fallback",
++                                );
++                            } else {
++                                eprintln!("[prefix-cache] {msg}; cold/snapshot fallback");
++                            }
++                        }
++                    }
++                }
++            }
++        }
+         if reused.is_none() {
+             px.misses += 1;
+-            let l = px.best_lcp(&pool_key, &prompt);
++            let l = best_lcp.map(|(_, lcp)| lcp)
++                .unwrap_or_else(|| px.best_lcp(&pool_key, &prompt));
+             px.record_lcp(l); // histogram: best available LCP on a miss
+             prefix_miss_lcp = Some(l);
+             if l >= PREFIX_CACHE_MIN_TOKENS && l < prompt.len()
+@@ -6999,6 +7540,7 @@ fn dedup_interactive_prefixes(
+         let snapshot = prefix_snapshot(
+             engine,
+             active[leader_i].cache.as_ref().unwrap(),
++            &key,
+             &prefix,
+             &leader_logits,
+         );
+@@ -7014,7 +7556,10 @@ fn dedup_interactive_prefixes(
+             s.prefix_miss_lcp = None;
+         }
+         let entry = match snapshot {
+-            Ok(entry) => entry,
++            Ok(entry) => {
++                trace_prefix_entry_state(engine, &entry, entry.pos, "snapshot", "fanout");
++                entry
++            }
+             Err(err) => {
+                 eprintln!("[prefix-dedup] snapshot failed ({err}); siblings prime cold");
+                 continue;
+@@ -7030,6 +7575,7 @@ fn dedup_interactive_prefixes(
+                 engine,
+                 active[i].cache.as_mut().unwrap(),
+                 &entry,
++                &key,
+             );
+             if let Err(err) = restored {
+                 let _ = active[i].tx.send(Event::Error(EngineError::engine(
+@@ -8370,7 +8916,9 @@ mod tests {
+     };
+     use super::{
+         PoolKey, PrefixCache, PrefixEntry, PrefixFanoutCandidate, PrefixFanoutGroup,
+-        PREFIX_CACHE_MIN_TOKENS, prefix_fanout_groups, retire_prefix_pin,
++        PartialPrefixDecision, PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION,
++        partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
++        validate_prefix_plane_shape,
+     };
+     use super::{meter_account, meter_cached_credit, HashMap, METER_TENANT_CAP};
+     use super::{
+@@ -9550,8 +10098,10 @@ mod tests {
+
+     /// Device-free PrefixEntry (empty kv/conv/ssm planes) — the namespace-visibility laws
+     /// under test live entirely in the host-side key/toks matching.
+-    fn entry(toks: Vec<u32>) -> PrefixEntry {
++    fn entry(pool_key: &PoolKey, toks: Vec<u32>) -> PrefixEntry {
+         PrefixEntry {
++            layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
++            pool_key: pool_key.clone(),
+             toks,
+             kv: Vec::new(),
+             conv: Vec::new(),
+@@ -9643,13 +10193,107 @@ mod tests {
+     fn prefix_cache_same_namespace_same_prefix_hits() {
+         let mut px = PrefixCache::default();
+         let prefix = toks(PREFIX_CACHE_MIN_TOKENS);
+-        px.insert(&key("tenant-a"), entry(prefix.clone()), "test");
++        px.insert(
++            &key("tenant-a"),
++            entry(&key("tenant-a"), prefix.clone()),
++            "test",
++        );
+         // same namespace + same prefix (prompt extends the entry) -> hit.
+         assert!(px.lookup(&key("tenant-a"), &toks(PREFIX_CACHE_MIN_TOKENS + 32)).is_some());
+         assert!(px.has_covering(&key("tenant-a"), &prefix));
+         assert_eq!(px.best_lcp(&key("tenant-a"), &prefix), prefix.len());
+     }
+
++    #[test]
++    fn immediate_partial_restore_support_matrix_is_fail_closed() {
++        assert_eq!(
++            partial_prefix_decision(false, false, 96, 160, 128),
++            PartialPrefixDecision::Restore,
++            "transformer-only mid-entry splits are the supported first arm",
++        );
++        assert_eq!(
++            partial_prefix_decision(true, false, 96, 160, 128),
++            PartialPrefixDecision::RefuseRecurrentMidEntry,
++        );
++        assert_eq!(
++            partial_prefix_decision(true, false, 160, 160, 192),
++            PartialPrefixDecision::Restore,
++            "recurrent state is exact at its captured endpoint",
++        );
++        assert_eq!(
++            partial_prefix_decision(false, true, 96, 160, 128),
++            PartialPrefixDecision::RefuseRoutedMoe,
++        );
++        assert_eq!(
++            partial_prefix_decision(false, false, 128, 160, 128),
++            PartialPrefixDecision::RefuseNoSuffix,
++            "a truncated entry does not carry logits for an interior endpoint",
++        );
++    }
++
++    #[test]
++    fn best_lcp_entry_returns_longest_exact_match_inside_namespace() {
++        let k = key("tenant-a");
++        let mut px = PrefixCache::default();
++        let mut first = toks(160);
++        first[80] = 50_000;
++        let mut longest = toks(192);
++        longest[112] = 60_000;
++        px.insert(&k, entry(&k, first), "test");
++        px.insert(&k, entry(&k, longest), "test");
++
++        let prompt = toks(144);
++        let (i, lcp) = px.best_lcp_entry(&k, &prompt).unwrap();
++        assert_eq!(lcp, 112);
++        assert_eq!(px.entries[&k][i].toks.len(), 192);
++        assert!(px.best_lcp_entry(&key("tenant-b"), &prompt).is_none());
++    }
++
++    #[test]
++    fn prefix_cache_rejects_wrong_identity_and_layout_version_at_insert() {
++        let mut px = PrefixCache::default();
++        let target = key("tenant-a");
++        px.insert(
++            &target,
++            entry(&key("tenant-b"), toks(PREFIX_CACHE_MIN_TOKENS)),
++            "test",
++        );
++        assert_eq!(px.n_entries(), 0, "wrong namespace must not enter the pool");
++
++        let mut stale = entry(&target, toks(PREFIX_CACHE_MIN_TOKENS));
++        stale.layout_version = PREFIX_ENTRY_LAYOUT_VERSION + 1;
++        px.insert(&target, stale, "test");
++        assert_eq!(px.n_entries(), 0, "wrong layout version must fail closed");
++    }
++
++    #[test]
++    fn prefix_restore_plane_preflight_rejects_corrupt_layouts_before_copy() {
++        assert_eq!(
++            validate_prefix_plane_shape(128, 96, 128, 16, 16, 2048, 2048, 16, 16, 4096, 4096),
++            Ok((1536, 1536)),
++        );
++        assert!(
++            validate_prefix_plane_shape(128, 96, 127, 16, 16, 2032, 2032, 16, 16, 4096, 4096)
++                .unwrap_err()
++                .contains("source len"),
++        );
++        assert!(
++            validate_prefix_plane_shape(128, 96, 128, 8, 16, 1024, 2048, 16, 16, 4096, 4096)
++                .unwrap_err()
++                .contains("KV layout"),
++        );
++        assert!(
++            validate_prefix_plane_shape(128, 96, 128, 16, 16, 2047, 2048, 16, 16, 4096, 4096)
++                .unwrap_err()
++                .contains("truncated/corrupt"),
++        );
++        assert!(
++            validate_prefix_plane_shape(128, 96, 128, 16, 16, 2048, 2048, 16, 16, 1024, 4096)
++                .unwrap_err()
++                .contains("destination planes too small"),
++        );
++    }
++
+     /// LCP histogram bucketing (lane/cache-metering): edges are lower bounds, the last
+     /// bucket is unbounded, and the [64,512) tick-seg window is exactly buckets 4..=6.
+     #[test]
+@@ -9820,7 +10464,11 @@ mod tests {
+         let prompt = toks(PREFIX_CACHE_MIN_TOKENS + 32);
+         // tenant-a seeds; the identical prefix is INVISIBLE to tenant-b and to the
+         // default namespace (a -> b direction).
+-        px.insert(&key("tenant-a"), entry(toks(PREFIX_CACHE_MIN_TOKENS)), "test");
++        px.insert(
++            &key("tenant-a"),
++            entry(&key("tenant-a"), toks(PREFIX_CACHE_MIN_TOKENS)),
++            "test",
++        );
+         assert!(px.lookup(&key("tenant-b"), &prompt).is_none());
+         assert!(px.lookup(&key(""), &prompt).is_none());
+         // ... and the learning/seed signals stay scoped too (no cross-ns LCP split).
+@@ -9828,7 +10476,11 @@ mod tests {
+         assert!(!px.has_covering(&key("tenant-b"), &prompt));
+         // tenant-b seeds its OWN copy (no cross-ns dedupe: has_key is per key) and hits
+         // it, while tenant-a still hits only its own (b -> a direction).
+-        px.insert(&key("tenant-b"), entry(toks(PREFIX_CACHE_MIN_TOKENS)), "test");
++        px.insert(
++            &key("tenant-b"),
++            entry(&key("tenant-b"), toks(PREFIX_CACHE_MIN_TOKENS)),
++            "test",
++        );
+         assert_eq!(px.n_entries(), 2);
+         assert!(px.lookup(&key("tenant-a"), &prompt).is_some());
+         assert!(px.lookup(&key("tenant-b"), &prompt).is_some());
+@@ -9843,9 +10495,9 @@ mod tests {
+         let mut px = PrefixCache::default();
+         let short = toks(PREFIX_CACHE_MIN_TOKENS);
+         let long = toks(PREFIX_CACHE_MIN_TOKENS + 16);
+-        px.insert(&key(""), entry(short.clone()), "test");
+-        px.insert(&key(""), entry(long.clone()), "test");
+-        px.insert(&key(""), entry(long.clone()), "test"); // exact-key dedupe still holds
++        px.insert(&key(""), entry(&key(""), short.clone()), "test");
++        px.insert(&key(""), entry(&key(""), long.clone()), "test");
++        px.insert(&key(""), entry(&key(""), long.clone()), "test"); // exact-key dedupe still holds
+         assert_eq!(px.n_entries(), 2);
+         // longest entry prefixing the prompt wins, floor PREFIX_CACHE_MIN_TOKENS.
+         let hit = px.lookup(&key(""), &toks(PREFIX_CACHE_MIN_TOKENS + 64)).unwrap();
+@@ -9864,8 +10516,10 @@ mod tests {
+
+     /// Entry with an explicit identity + byte size (identity = the single token, so the
+     /// exact-key dedupe never collides and survivors are readable back out of the pools).
+-    fn entry_b(ident: u32, bytes: usize) -> PrefixEntry {
++    fn entry_b(pool_key: &PoolKey, ident: u32, bytes: usize) -> PrefixEntry {
+         PrefixEntry {
++            layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
++            pool_key: pool_key.clone(),
+             toks: vec![ident],
+             kv: Vec::new(),
+             conv: Vec::new(),
+@@ -9969,7 +10623,7 @@ mod tests {
+                 // INSERT: 1..=8 bytes into one of the namespaces.
+                 let k = key(namespaces[step() % namespaces.len()]);
+                 let bytes = 1 + step() % 8;
+-                px.insert_with_budget(&k, entry_b(ident, bytes), "test", BUDGET);
++                px.insert_with_budget(&k, entry_b(&k, ident, bytes), "test", BUDGET);
+                 old.insert(ident, bytes, BUDGET);
+                 placed.push((ident, k));
+                 ident += 1;
+@@ -9990,12 +10644,12 @@ mod tests {
+         // Recency semantics end-to-end: the oldest entry, once touched, survives an
+         // eviction that takes the second-oldest instead.
+         let mut px = PrefixCache::default();
+-        px.insert_with_budget(&key(""), entry_b(0, 4), "test", 8);
+-        px.insert_with_budget(&key(""), entry_b(1, 4), "test", 8);
++        px.insert_with_budget(&key(""), entry_b(&key(""), 0, 4), "test", 8);
++        px.insert_with_budget(&key(""), entry_b(&key(""), 1, 4), "test", 8);
+         let idx = px.entries[&key("")].iter().position(|e| e.toks[0] == 0).unwrap();
+         next_instant();
+         px.touch(&key(""), idx);
+-        px.insert_with_budget(&key(""), entry_b(2, 4), "test", 8);
++        px.insert_with_budget(&key(""), entry_b(&key(""), 2, 4), "test", 8);
+         assert_eq!(px_survivors(&px), vec![0, 2], "touched 0 must survive, untouched 1 evicts");
+     }
+
+@@ -10003,26 +10657,26 @@ mod tests {
+     fn prefix_cache_pin_refcount_blocks_eviction_until_last_release() {
+         let k = key("");
+         let mut px = PrefixCache::default();
+-        px.insert_with_budget(&k, entry_b(0, 4), "test", 8);
+-        px.insert_with_budget(&k, entry_b(1, 4), "test", 8);
++        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", 8);
++        px.insert_with_budget(&k, entry_b(&k, 1, 4), "test", 8);
+         let idx = px.entries[&k].iter().position(|e| e.toks[0] == 0).unwrap();
+         let pin = px.pin_n(&k, idx, 2).unwrap();
+
+         // Both leases name one stable entry. While either is live, ordinary inserts
+         // evict the oldest UNPINNED entry instead.
+-        px.insert_with_budget(&k, entry_b(2, 4), "test", 8);
++        px.insert_with_budget(&k, entry_b(&k, 2, 4), "test", 8);
+         assert_eq!(px_survivors(&px), vec![0, 2]);
+         assert_eq!(px.entries[&k].iter().find(|e| e.id == pin.id).unwrap().pins, 2);
+         assert!(px.unpin(&pin));
+-        px.insert_with_budget(&k, entry_b(3, 4), "test", 8);
++        px.insert_with_budget(&k, entry_b(&k, 3, 4), "test", 8);
+         assert_eq!(px_survivors(&px), vec![0, 3]);
+
+         // Last release returns the entry to LRU. It is recent at release, survives the
+         // first insert, then becomes the oldest evictable entry on the next insert.
+         assert!(px.unpin(&pin));
+-        px.insert_with_budget(&k, entry_b(4, 4), "test", 8);
++        px.insert_with_budget(&k, entry_b(&k, 4, 4), "test", 8);
+         assert_eq!(px_survivors(&px), vec![0, 4]);
+-        px.insert_with_budget(&k, entry_b(5, 4), "test", 8);
++        px.insert_with_budget(&k, entry_b(&k, 5, 4), "test", 8);
+         assert_eq!(px_survivors(&px), vec![4, 5]);
+         assert!(!px.unpin(&pin), "an evicted lease id must not release another entry");
+     }
+@@ -10031,7 +10685,7 @@ mod tests {
+     fn retiring_session_releases_prefix_pin_in_release() {
+         let k = key("");
+         let mut px = PrefixCache::default();
+-        px.insert_with_budget(&k, entry_b(0, 4), "test", 8);
++        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", 8);
+         let idx = px.entries[&k].iter().position(|e| e.toks[0] == 0).unwrap();
+         let pin = px.pin(&k, idx).unwrap();
+         let pin_id = pin.id;
+@@ -10050,8 +10704,8 @@ mod tests {
+     fn prefix_cache_emergency_flush_preserves_inflight_pins() {
+         let k = key("");
+         let mut px = PrefixCache::default();
+-        px.insert_with_budget(&k, entry_b(0, 4), "test", 8);
+-        px.insert_with_budget(&k, entry_b(1, 4), "test", 8);
++        px.insert_with_budget(&k, entry_b(&k, 0, 4), "test", 8);
++        px.insert_with_budget(&k, entry_b(&k, 1, 4), "test", 8);
+         let idx = px.entries[&k].iter().position(|e| e.toks[0] == 0).unwrap();
+         let pin = px.pin(&k, idx).unwrap();
+
+@@ -10072,11 +10726,11 @@ mod tests {
+         const E: usize = 10_000;
+         let mut px = PrefixCache::default();
+         for i in 0..E {
+-            px.insert_with_budget(&key(""), entry_b(i as u32, 1), "test", E);
++            px.insert_with_budget(&key(""), entry_b(&key(""), i as u32, 1), "test", E);
+         }
+         assert_eq!(px.n_entries(), E);
+         let t0 = std::time::Instant::now();
+-        px.insert_with_budget(&key(""), entry_b(u32::MAX, E / 2), "test", E);
++        px.insert_with_budget(&key(""), entry_b(&key(""), u32::MAX, E / 2), "test", E);
+         let dt = t0.elapsed();
+         // half the pool evicted in ONE insert, oldest-first
+         assert_eq!(px.n_entries(), E / 2 + 1);
++ nl -ba crates/memra-server/src/worker.rs
++ sed -n '2853,2979p;3002,3055p;3396,3414p'
+  2853	    /// Insert (exact-key deduped per namespace) into probation, then SLRU-evict back under
+  2854	    /// MEMRA_PREFIX_CACHE_MB. The byte budget and both segment targets stay GLOBAL across
+  2855	    /// namespaces (VRAM is one resource); only visibility is namespaced.
+  2856	    fn insert(&mut self, key: &PoolKey, e: PrefixEntry, why: &str) {
+  2857	        let _ = self.insert_with_budget_pins_and_pct(
+  2858	            key, e, why, prefix_cache_budget_bytes(), prefix_cache_protected_pct(), 0);
+  2859	    }
+  2860
+  2861	    /// Insert a prefix already serving `pins` in-flight sessions. Returns one stable
+  2862	    /// handle which each participating Session clones and releases once.
+  2863	    fn insert_pinned(
+  2864	        &mut self,
+  2865	        key: &PoolKey,
+  2866	        e: PrefixEntry,
+  2867	        why: &str,
+  2868	        pins: usize,
+  2869	    ) -> Option<PrefixPin> {
+  2870	        let id = self.insert_with_budget_pins_and_pct(
+  2871	            key, e, why, prefix_cache_budget_bytes(), prefix_cache_protected_pct(), pins)?;
+  2872	        Some(PrefixPin { key: key.clone(), id })
+  2873	    }
+  2874
+  2875	    /// `insert` with the budget as a parameter (the env-independent seam the eviction
+  2876	    /// unit tests drive; production also supplies the configured protected percentage).
+  2877	    #[cfg_attr(not(test), allow(dead_code))]
+  2878	    fn insert_with_budget(&mut self, key: &PoolKey, e: PrefixEntry, why: &str, budget: usize) {
+  2879	        let _ = self.insert_with_budget_pins_and_pct(
+  2880	            key, e, why, budget, DEFAULT_PREFIX_CACHE_PROTECTED_PCT, 0);
+  2881	    }
+  2882
+  2883	    fn insert_with_budget_pins_and_pct(
+  2884	        &mut self,
+  2885	        key: &PoolKey,
+  2886	        mut e: PrefixEntry,
+  2887	        why: &str,
+  2888	        budget: usize,
+  2889	        protected_pct: usize,
+  2890	        initial_pins: usize,
+  2891	    ) -> Option<u64> {
+  2892	        if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
+  2893	            eprintln!(
+  2894	                "[prefix-cache] REFUSED {why} insert: entry identity/version mismatch \
+  2895	                 (entry model {}{}, version {}; pool model {}{}, version {})",
+  2896	                e.pool_key.0,
+  2897	                ns_suffix(&e.pool_key.1),
+  2898	                e.layout_version,
+  2899	                key.0,
+  2900	                ns_suffix(&key.1),
+  2901	                PREFIX_ENTRY_LAYOUT_VERSION,
+  2902	            );
+  2903	            return None;
+  2904	        }
+  2905	        if let Some(i) = self.key_index(key, &e.toks) {
+  2906	            return if initial_pins > 0 {
+  2907	                self.pin_n(key, i, initial_pins).map(|pin| pin.id)
+  2908	            } else {
+  2909	                None
+  2910	            };
+  2911	        }
+  2912	        if e.bytes > budget {
+  2913	            eprintln!("[prefix-cache] skip {why} insert: entry {:.1}MB > budget {:.0}MB",
+  2914	                      e.bytes as f64 / 1e6, budget as f64 / 1e6);
+  2915	            return None;
+  2916	        }
+  2917	        if initial_pins > 0 && e.bytes > budget.saturating_sub(self.pinned_bytes()) {
+  2918	            eprintln!("[prefix-cache] skip pinned {why} insert: entry {:.1}MB cannot fit \
+  2919	                       beside {:.1}MB already pinned (budget {:.0}MB)",
+  2920	                      e.bytes as f64 / 1e6, self.pinned_bytes() as f64 / 1e6,
+  2921	                      budget as f64 / 1e6);
+  2922	            return None;
+  2923	        }
+  2924	        self.protected_target_bytes = prefix_cache_protected_bytes(budget, protected_pct);
+  2925	        self.rebalance_protected();
+  2926	        if initial_pins > 0 {
+  2927	            let needed = self.total_bytes.saturating_add(e.bytes).saturating_sub(budget);
+  2928	            let reclaimable = self.pinned_admission_reclaimable_bytes(e.bytes, initial_pins > 1);
+  2929	            if needed > reclaimable {
+  2930	                eprintln!("[prefix-cache] skip pinned {why} insert: entry {:.1}MB would evict \
+  2931	                           protected bytes below their {:.0}MB share (need {:.1}MB, \
+  2932	                           probation/demotable {:.1}MB)",
+  2933	                          e.bytes as f64 / 1e6,
+  2934	                          self.protected_target_bytes as f64 / 1e6,
+  2935	                          needed as f64 / 1e6,
+  2936	                          reclaimable as f64 / 1e6);
+  2937	                return None;
+  2938	            }
+  2939	        }
+  2940	        self.total_bytes += e.bytes;
+  2941	        self.probation_bytes += e.bytes;
+  2942	        self.inserts += 1;
+  2943	        eprintln!("[prefix-cache] insert probation ({why}): {} tokens, {:.1}MB (resident {:.1}MB / {:.0}MB, model {}{})",
+  2944	                  e.toks.len(), e.bytes as f64 / 1e6,
+  2945	                  self.total_bytes as f64 / 1e6, budget as f64 / 1e6,
+  2946	                  key.0, ns_suffix(&key.1));
+  2947	        e.id = self.next_id;
+  2948	        self.next_id += 1;
+  2949	        e.segment = PrefixSegment::Probation;
+  2950	        e.pins = initial_pins;
+  2951	        let inserted_id = e.id;
+  2952	        let lk = Self::lru_key(&e);
+  2953	        let idx = {
+  2954	            let pool = self.entries.entry(key.clone()).or_default();
+  2955	            pool.push(e);
+  2956	            pool.len() - 1
+  2957	        };
+  2958	        if initial_pins == 0 {
+  2959	            self.probation_lru.insert(lk, (key.clone(), idx));
+  2960	        } else if initial_pins > 1 {
+  2961	            // In-batch fanout computes once for multiple participants: sibling two is already a
+  2962	            // measured reuse, so the new entry enters probation and immediately earns promotion.
+  2963	            self.promote_segment(key, idx);
+  2964	            self.rebalance_protected();
+  2965	        }
+  2966	        while self.total_bytes > budget {
+  2967	            let Some((k, i)) = self.capacity_victim() else { break };
+  2968	            let Some(dead) = self.remove_at(&k, i) else { break };
+  2969	            self.evictions += 1;
+  2970	            eprintln!("[prefix-cache] evict ({:?} LRU): {} tokens, {:.1}MB (model {}{})",
+  2971	                      dead.segment, dead.toks.len(), dead.bytes as f64 / 1e6,
+  2972	                      k.0, ns_suffix(&k.1));
+  2973	        }
+  2974	        debug_assert!(self.total_bytes <= budget,
+  2975	                      "pinned-admission preflight must preserve the prefix-cache byte ceiling");
+  2976	        self.entries.get(key)
+  2977	            .and_then(|pool| pool.iter().find(|entry| entry.id == inserted_id))
+  2978	            .map(|_| inserted_id)
+  2979	    }
+  3002	/// Deep-copy the primed prefix state OUT of a live session cache into a compact entry.
+  3003	/// All copies are stream-ordered on the engine worker stream (the CUDA owner thread), so no
+  3004	/// sync is needed against the prime that produced the bytes or the decode that follows.
+  3005	fn prefix_snapshot(
+  3006	    engine: &Engine,
+  3007	    cache: &Cache,
+  3008	    pool_key: &PoolKey,
+  3009	    toks: &[u32],
+  3010	    last_logits: &[f32],
+  3011	) -> Result<PrefixEntry, Box<dyn std::error::Error>> {
+  3012	    if cache.has_swa_ring() {
+  3013	        return Err("SWA ring sessions do not support flat-history prefix snapshots".into());
+  3014	    }
+  3015	    if cache.pos != toks.len() {
+  3016	        return Err(format!(
+  3017	            "prefix snapshot cache pos {} != token boundary {}",
+  3018	            cache.pos, toks.len(),
+  3019	        ).into());
+  3020	    }
+  3021	    if last_logits.is_empty() {
+  3022	        return Err("prefix snapshot has no boundary logits".into());
+  3023	    }
+  3024	    let n = cache.kv.len();
+  3025	    let mut kv = Vec::with_capacity(n);
+  3026	    let mut conv = Vec::with_capacity(n);
+  3027	    let mut ssm = Vec::with_capacity(n);
+  3028	    let mut bytes = 0usize;
+  3029	    for il in 0..n {
+  3030	        match &cache.kv[il] {
+  3031	            Some(l) => {
+  3032	                if l.len != cache.pos {
+  3033	                    return Err(format!(
+  3034	                        "prefix snapshot layer {il} len {} != cache pos {}",
+  3035	                        l.len, cache.pos,
+  3036	                    ).into());
+  3037	                }
+  3038	                let kb = l.len * l.k_tok_bytes;
+  3039	                let vb = l.len * l.v_tok_bytes;
+  3040	                let mut k = engine.alloc_u8(kb.max(1))?;
+  3041	                let mut v = engine.alloc_u8(vb.max(1))?;
+  3042	                if kb > 0 { engine.copy_u8_into(&mut k, 0, &l.k, kb)?; }
+  3043	                if vb > 0 { engine.copy_u8_into(&mut v, 0, &l.v, vb)?; }
+  3044	                bytes += kb + vb;
+  3045	                kv.push(Some(PrefixPlane {
+  3046	                    k,
+  3047	                    v,
+  3048	                    len: l.len,
+  3049	                    k_tok_bytes: l.k_tok_bytes,
+  3050	                    v_tok_bytes: l.v_tok_bytes,
+  3051	                }));
+  3052	            }
+  3053	            None => kv.push(None),
+  3054	        }
+  3055	        match &cache.recur[il] {
+  3396	/// Snapshot + insert the session's CURRENT primed state (fed tokens, boundary logits).
+  3397	/// No-op when the session cannot serve an empty-suffix resume (no host logits yet).
+  3398	fn prefix_insert_from_session(engine: &Engine, px: &mut PrefixCache, s: &Session, why: &str) {
+  3399	    if memra_engine::pp::pp_host_bounce_active() {
+  3400	        return;
+  3401	    }
+  3402	    let Some(cache) = s.cache.as_ref() else { return };
+  3403	    if s.last_logits.is_empty() {
+  3404	        return;
+  3405	    }
+  3406	    let pool_key = s.pool_key();
+  3407	    match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits) {
+  3408	        Ok(e) => {
+  3409	            trace_prefix_entry_state(engine, &e, e.pos, "snapshot", why);
+  3410	            px.insert(&pool_key, e, why);
+  3411	        }
+  3412	        Err(err) => eprintln!("[prefix-cache] snapshot failed ({err}); prefix not cached"),
+  3413	    }
+  3414	}
++ nl -ba crates/memra-kv/src/lib.rs
++ sed -n 480,570p
+   480	    /// Shared allocation walk: `pick(il)` supplies the device that OWNS layer il's
+   481	    /// cache state (always the same device outside the pp2 door).
+   482	    fn new_inner<'a>(
+   483	        pick: &dyn Fn(usize) -> &'a dyn KvDev,
+   484	        cfg: &ModelConfig,
+   485	        max_ctx: usize,
+   486	    ) -> Result<Self, Box<dyn std::error::Error>> {
+   487	        let n = cfg.n_layer as usize;
+   488	        let mut kv = Vec::with_capacity(n);
+   489	        let mut recur = Vec::with_capacity(n);
+   490	        let head_dim_k = cfg.head_dim_k as usize;
+   491	        let head_dim_v = cfg.head_dim_v as usize;
+   492	        assert!(head_dim_k % 32 == 0 && head_dim_v % 32 == 0,
+   493	                "KVQUANT requires head_dim_k%32==0 && head_dim_v%32==0 (got k={head_dim_k} v={head_dim_v})");
+   494	        let (conv_dim, d_state, num_v, d_conv) = if let Some(s) = &cfg.ssm {
+   495	            let num_k = s.group_count as usize;
+   496	            let num_v = s.time_step_rank as usize;
+   497	            let ds = s.state_size as usize;
+   498	            (
+   499	                ds * num_k * 2 + ds * num_v,
+   500	                ds,
+   501	                num_v,
+   502	                s.conv_kernel as usize,
+   503	            )
+   504	        } else {
+   505	            (0, 0, 0, 0)
+   506	        };
+   507	        for il in 0..cfg.n_layer {
+   508	            // stage-owned allocation (pp2): the device that runs this layer allocates it.
+   509	            let e = pick(il as usize);
+   510	            // E4B KV-SHARING: the trailing shared_kv_layers have no k/v of their own — they
+   511	            // attend an earlier layer's cache (hybrid_forward resolves the target). No KvLayer
+   512	            // here: any accidental use is a loud unwrap at bring-up, and rewind/len loops
+   513	            // (iter_mut().flatten()) skip None naturally.
+   514	            let g4_shared = cfg.gemma4.as_ref().map(|g| g.shared_kv_layers).unwrap_or(0);
+   515	            if g4_shared > 0 && il >= cfg.n_layer - g4_shared {
+   516	                kv.push(None);
+   517	                recur.push(None);
+   518	                continue;
+   519	            }
+   520	            match cfg.layer_kind(il) {
+   521	                LayerKind::FullAttention => {
+   522	                    // Gemma per-layer geometry and every KV-format door are resolved by the same
+   523	                    // helper admission uses for its analytic byte coefficient.
+   524	                    let (kv_dim_k, kv_dim_v, kbb_l, vbb_l) =
+   525	                        full_attention_kv_layout(cfg, il);
+   526	                    let k_tok_bytes = (kv_dim_k / 32) * kbb_l;
+   527	                    let v_tok_bytes = (kv_dim_v / 32) * vbb_l;
+   528	                    let ring = if swa_ring_on() && cfg.arch.is_step35() {
+   529	                        cfg.layer_geometry(il)
+   530	                            .and_then(|geometry| geometry.window)
+   531	                            .map(|window| {
+   532	                                let window = window as usize;
+   533	                                KvRing::new(swa_ring_rows(window, max_ctx), window)
+   534	                            })
+   535	                    } else {
+   536	                        None
+   537	                    };
+   538	                    let alloc_rows = ring.as_ref().map(KvRing::rows).unwrap_or(max_ctx);
+   539	                    kv.push(Some(KvLayer {
+   540	                        // +8B tail pad: the v4 stage's aligned funnelshift window reads up to
+   541	                        // 4B past the final block (PR #3's finding, adopted pad-style — the
+   542	                        // expert-dot precedent; zero hot-loop branches, values discarded).
+   543	                        k: e.alloc_u8(kv_plane_allocation_bytes(alloc_rows, k_tok_bytes))?,
+   544	                        v: e.alloc_u8(kv_plane_allocation_bytes(alloc_rows, v_tok_bytes))?,
+   545	                        kv_dim_k,
+   546	                        kv_dim_v,
+   547	                        k_tok_bytes,
+   548	                        v_tok_bytes,
+   549	                        len: 0,
+   550	                        ring,
+   551	                        len_d: e.htod_i32(&[0])?,
+   552	                    }));
+   553	                    recur.push(None);
+   554	                }
+   555	                LayerKind::LinearAttention => {
+   556	                    kv.push(None);
+   557	                    recur.push(Some(RecurLayer {
+   558	                        conv_state: e.zeros(conv_dim * (d_conv - 1))?,
+   559	                        ssm_state: e.zeros(d_state * d_state * num_v)?,
+   560	                        ssm_state_alt: e.zeros(d_state * d_state * num_v)?,
+   561	                    }));
+   562	                }
+   563	            }
+   564	        }
+   565	        Ok(Cache { kv, recur, pos: 0, max_ctx, dflash_taps: None, last_logits_dev: None })
+   566	    }
+   567
+   568	    pub fn has_swa_ring(&self) -> bool {
+   569	        self.kv.iter().flatten().any(|layer| layer.ring.is_some())
+   570	    }
++ sed -n 1298,1312p
++ nl -ba crates/memra-engine/src/hybrid.rs
+  1298	        // dp4a lane, −2% measured 2026-07-12; gemma keys its KV formats independently
+  1299	        // of this flag). The 9B dense loader is the only ON site.
+  1300	        crate::KV_FP8_FORCE.store(0, std::sync::atomic::Ordering::Relaxed);
+  1301
+  1302	        // B0 FIX (hoisted): cfg.n_layer == block_count INCLUDES the MTP/NextN block(s)
+  1303	        // (41 for the 35B-MoE); the trunk is n_layer - nextn. Computed before any tensor
+  1304	        // upload because the M2 sharded loader (crate::pp::layer_engine) places tensors
+  1305	        // by the trunk stage map.
+  1306	        let n_trunk = (cfg.n_layer - cfg.nextn_predict_layers) as usize;
+  1307	        crate::pp::init_model_transport(e, &cfg, n_trunk)?;
+  1308	        let embd = EmbedHost::from_source(src, "token_embd.weight");
+  1309	        // M2 increment 2 (weight sharding): output_norm + lm head upload through the LAST
+  1310	        // stage's engine — the stage that runs them (outside the pp door / MEMRA_PP_SHARD=0
+  1311	        // this is the primary engine, byte-identical to the M1 loader).
+  1312	        let e_head = crate::pp::layer_engine(e, n_trunk, n_trunk - 1)?;
++ rg -n -m 1 'loaded qwen35 \(33 layers, nextn=1\)' research/v072-prep-20260808/raw/perfE-20260808T003124Z.log
+8:loaded qwen35 (33 layers, nextn=1)
++ rg -n -m 1 'loaded qwen35moe \(41 layers, nextn=1\)' research/eosclass-20260813/raw/post-local-gates-clean/run-spec-q35.log
+5:loaded qwen35moe (41 layers, nextn=1)

@@ -1,0 +1,13 @@
+# qwen4exp_real_gate	label=dt3-raw	binary_sha256=3ba81e7e2e96a9103a0ca6a581ff2a139003c0bc1af56ef9f46c80e6c48e3f09	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# spec-gate k=5 tokens=256: plain greedy vs spec chains, byte identity
+prompt	first_divergence	accept_rate	mean_accept_len	hist	spec_ms_per_token	plain_ms_per_token	pass
+0	-1	0.861	4.41	2,5,12,9,8,22	8.91	16.44	true
+# round-cost	prompt=0	rounds=58	chain_ms=5.16	replay_ms=0.75	verify_ms=33.24	cross_ms=0.022	zero_draft=1	guard_stops=1
+1	-1	0.486	1.90	79,21,18,8,6,3	14.25	16.34	true
+# round-cost	prompt=1	rounds=135	chain_ms=2.11	replay_ms=0.54	verify_ms=24.07	cross_ms=0.019	zero_draft=0	guard_stops=3
+2	-1	0.701	3.01	17,21,16,14,9,8	10.78	16.37	true
+# round-cost	prompt=2	rounds=85	chain_ms=3.62	replay_ms=0.63	verify_ms=28.03	cross_ms=0.021	zero_draft=1	guard_stops=4
+3	-1	0.675	2.81	18,29,16,15,7,6	11.07	16.28	true
+# round-cost	prompt=3	rounds=91	chain_ms=3.33	replay_ms=0.61	verify_ms=27.01	cross_ms=0.020	zero_draft=1	guard_stops=3
+# verdict	policy=byte-identity	pass=true

@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is showing me output that looks like a security/network monitoring tool (possibly something like Little Snitch, Port autoridades, or a similar network monitor \u2014 actually this looks like output from \"Port Authority\" or more likely it's from a tool like \"lsof\" wrapper or maybe \"PortKnox\" \u2014 actually the format \"is open on :4173, listening on every interface \u2014 reachable from your network, not just this machine\" strongly resembles **LuLu** or **Ports Monitor**... Actually, this looks like it could be from \"Owlyshield\" or more likely \"Netdata\" or... Let",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is showing me output that looks like a security/network monitoring tool (possibly something like Little Snitch, Port autoridades, or a similar network monitor \u2014 actually this looks like output from \"Port Authority\" or more likely it's from a tool like \"lsof\" wrapper or maybe \"PortKnox\" \u2014 actually the format \"is open on :4173, listening on every interface \u2014 reachable from your network, not just this machine\" strongly resembles **LuLu** or **Ports Monitor**... Actually, this looks like it could be from \"Owlyshield\" or more likely \"Netdata\" or... Let"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 281,
+  "completion_tokens": 128,
+  "total_tokens": 409,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.884326272,
+  "spec": {
+   "rounds": 62,
+   "drafted": 186,
+   "accepted": 65,
+   "acceptance_rate": 0.34946236559139787
+  }
+ },
+ "id": "chatcmpl-22fdcd84fbfa7df77538eca4ca34b618",
+ "created": 1788082166,
+ "system_fingerprint": "REDACTED"
+}

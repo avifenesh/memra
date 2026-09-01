@@ -1,0 +1,61 @@
+lock_acquired=2026-08-10T08:20:15Z host=<private-host-redacted> stamp=20260810T082015Z
+source_commit=019428e217e297cb5981d201a4a520aee69222a6
+binary_sha256=7f04f76715d637c46a379366a833d518aed9d465a5dcfd1ffee53be79d9b9cef
+serve_smoke_sha256=6fe579edda88f4a5c669f987059aa1a67069f1d6e653f18339e6a3cb0b6ef0bd
+cache_meter_gate_sha256=228d67e406c3ab3baccc6a888ee2086c29d3255a6c8c71d38cfbb083e9669236
+target_link=/home/ubuntu/memra-cx-ringval-target-ringval
+## lane/cx-ringval-box1
+artifact=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-06 12:39:44.670328147 +0000
+artifact=/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-06 12:37:13.136888212 +0000
+== serve-smoke: plain serving ==
+  ok: /models lists the model
+  ok: chat non-stream (text + usage + finish_reason)
+  ok: chat stream (SSE chunks + [DONE])
+  ok: /v1/completions
+  ok: greedy determinism (2 runs identical)
+  ok: 3 concurrent chats
+  ok: long generation (>=100 tok)
+== serve-smoke: cache-metering exactness ==
+  FAIL: A fanout cached_tokens == [0] + [256]x4 — got [0, 0, 0, 0, 0]
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  FAIL: cached_tokens_in == 1024 — got 0
+  FAIL: computed_tokens_in == prompt - cached — got 1632
+  FAIL: cache_hit_token_ratio matches arithmetic — got 0.0
+  FAIL: prefix_cache_hits == N-1 — got 0
+  FAIL: prefix_cache_misses == 2 (one A leader + cross-salt B) — got 0
+  FAIL: prefix_cache_inserts == 2 (shared A prefix + B seed) — got 0
+  FAIL: prefix_cache_hit_tokens == 1024 — got 0
+  FAIL: lcp_histogram: 6 probes total — got 0
+  FAIL: lcp_histogram: 2 cold probes in bucket [0] — got [0]
+  FAIL: lcp_histogram: 4 probes in K's bucket (edge 256) — got 0
+  FAIL: tick-seg [64,512) window carries the shared-prefix probes — got 0
+  FAIL: tenants[meter-A] split exact — got {'prompt_tokens_in': 1360, 'cached_tokens_in': 0, 'cache_hit_token_ratio': 0.0}
+  ok: tenants[meter-B] split exact (0 cached)
+  FAIL: economics revenue_multiplier == 2.6842 (factor 1.0) — got 1.0
+cache-meter-gate: 14 failed
+  FAIL: cache-metering gate
+== serve-smoke: spec serving (draft attached) ==
+  ok: spec == plain greedy text (serving exactness)
+== serve-smoke: sampled truncation matrix (spec server) ==
+  (immune baseline: untruncated t0.8 seed=7, bangs=0)
+  ok: trunc top_k=40 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc top_p=0.95 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc min_p=0.05 (reproducible, bangs=0 <= baseline 0)
+  ok: trunc llama-default k40+p0.95+m0.05 (reproducible, bangs=0 <= baseline 0)
+== serve-smoke: session-affinity resume exactness ==
+  ok: affinity resume is deterministic across servers (4 rewritten turns)
+  ok: replay arm resumed too (3 rewind(s))
+  ok: affinity fired (3 rewind(s) on a rewritten history)
+  ok: no failed rewinds
+== serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+serve-smoke: 1 failed
+serve-smoke: 1 failed
+serve_smoke_rc=1
+lock_released=2026-08-10T08:23:57Z

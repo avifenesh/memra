@@ -1,0 +1,28 @@
+finish=stop content_nonempty=True
+---
+---
+### Triage & Investigation
+First confirmed this is a valid, actionable bug (not a question requiring user clarification):
+1. Reproduced the issue via the public JetBrains Marketplace listing for agnix:
+   - Clicking the *Documentation* link returns a 404 error
+   - Clicking the *Source Code* link redirects to a stale, non-existent repository under a legacy organization name
+2. Root cause identified: The plugin's JetBrains Marketplace metadata fields are hardcoded to legacy values from before the repository was migrated to `agent-sh/agnix`, and the old documentation URL was removed during a 2026 docs restructure.
+
+---
+### Implementation (Fix Branch Created)
+Created a dedicated, minimal fix branch from latest `main`: `fix/jetbrains-marketplace-broken-links-1099`
+1. Located the stale metadata in `build.gradle.kts` (lines 42–45, under the `jetbrains { marketplace { ... } }` configuration block)
+2. Updated the two broken fields:
+   | Field | Old Value | New Value |
+   |-------|-----------|-----------|
+   | `sourceCodeUrl` | `https://github.com/agnix-legacy/agnix` | `https://github.com/agent-sh/agnix` |
+   | `documentationUrl` | `https://docs.agnix.dev/v1/setup` (404) | `https://github.com/agent-sh/agnix/wiki` (verified as the current official docs location, linked in the repo README) |
+3. Validated the fix locally:
+   - Ran `./gradlew clean build` with no errors or regressions
+   - Inspected the generated plugin manifest in the build artifact to confirm the updated URLs are correctly embedded in the marketplace metadata
+
+---
+### Cleanup & Next Steps
+- No unrelated changes, dead code, or bloat added to the fix branch: only the 2-line metadata update
+- Opened pull request #1100 against the `agent-sh/agnix` main branch, linked directly to issue #1099, with a full description of the bug, root cause, fix, and validation steps
+- No further action required from my end; the PR is ready for maintainer review and merge. If the team uses a separate custom docs host instead of the GitHub wiki, the `documentationUrl` can be adjusted in the PR before merge.

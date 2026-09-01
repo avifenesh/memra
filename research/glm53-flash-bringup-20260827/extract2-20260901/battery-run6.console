@@ -1,0 +1,133 @@
+== phase 1: standing + extra GPU suites (default arm — the ship program) ==
+########## glm5_matvec_doors_gpu.log :: glm5_matvec_doors_gpu  ##########
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+########## glm5_moe_loc_doors_gpu.log :: glm5_moe_loc_doors_gpu  ##########
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+########## glm5_ep_diet_doors_gpu.log :: glm5_ep_diet_doors_gpu  ##########
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+########## glm5_dedup_sched_gpu.log :: glm5_dedup_sched_gpu  ##########
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+########## glm5_verify_batch_gpu.log :: glm5_verify_batch_gpu  ##########
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+########## glm5_tparallel_verify_gpu.log :: glm5_tparallel_verify_gpu  ##########
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.31s
+########## glm5_spec_session_gpu.log :: glm5_spec_session_gpu  ##########
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.17s
+########## glm5_dflash_session_gpu.log :: glm5_dflash_session_gpu  ##########
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.86s
+########## glm5_moe_epilogue_gpu.log :: glm5_moe_epilogue_gpu  ##########
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.55s
+########## glm5_mtp_head_gpu.log :: glm5_mtp_head_gpu  ##########
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+########## glm5_kpool_indexer_gpu.log :: glm5_kpool_indexer_gpu  ##########
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+########## hyper_connections_gpu.log :: hyper_connections_gpu  ##########
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
+########## hc_fused_pre_gpu.log :: hc_fused_pre_gpu  ##########
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+########## hc_decode_ws_gpu.log :: hc_decode_ws_gpu  ##########
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+########## mla_decode_split_gpu.log :: mla_decode_split_gpu  ##########
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+########## kda_fixture_gpu.log :: kda_fixture_gpu  ##########
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.41s
+########## kda_fused_proj_gpu.log :: kda_fused_proj_gpu  ##########
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+########## kda_fused_proj_bf16_gpu.log :: kda_fused_proj_bf16_gpu  ##########
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.07s
+########## kda_quant_operand_gpu.log :: kda_quant_operand_gpu  ##########
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+########## mla_gpu_forward.log :: mla_gpu_forward  ##########
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.97s
+########## glm5_bf16_tc_trunk_prefill_gpu.log :: glm5_bf16_tc_trunk_prefill_gpu  ##########
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.15s
+########## glm5_chunked_prime_gpu.log :: glm5_chunked_prime_gpu  ##########
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.10s
+########## glm5_moe_grouped_prefill_gpu.log :: glm5_moe_grouped_prefill_gpu  ##########
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.31s
+########## glm5_moe_residency_gpu.log :: glm5_moe_residency_gpu  ##########
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+########## glm5_routed_router_gpu.log :: glm5_routed_router_gpu  ##########
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+########## mla_tc_prefill_gpu.log :: mla_tc_prefill_gpu  ##########
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 57.71s
+########## swiglu_preclamp_gpu.log :: swiglu_preclamp_gpu  ##########
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.43s
+########## glm5_admission_cost.log :: glm5_admission_cost  ##########
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+########## glm5_prime_capacity.log :: glm5_prime_capacity  ##########
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+########## glm5_vision_gpu.log :: glm5_vision_gpu MEMRA_GLM5_VISION_SHARD=/home/avifenesh/ai-ml/models/glm53-vision/model-00062-of-00062.safetensors ##########
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.24s
+== phase 2: glm5-tp-gate P=16 N=12 (release — the ep-map arms exercise the renamed seam via the ALIAS name) ==
+glm5-tp-gate PASS: [T trace-identity] trace ON vs banked plain: decode byte-identical=true prime byte-identical=true (same walk, same program — any differing bit is a tap side effect)
+glm5-tp-gate PASS: [T trace-rows-counted] events per MoE layer {1: 56, 2: 56, 3: 56} (expected 56 on layers [1, 2, 3]), file rows=123
+glm5-tp-gate: ALL ARMS PASS (P=16 N=12, fixture kda_heads=2 mla_heads=2 experts=4 top-2, same-device dual-context emulation, host-canonical transport)
+== phase 3: ppn / hppn / hbatch matrices (the banked arm shapes) ==
+########## ppn-gate/10-n2-even.log :: - 2 24 20 ##########
+PASS lines: 24
+########## ppn-gate/11-n2-split1.log :: MEMRA_PP_SPLITS=1 2 24 20 ##########
+PASS lines: 24
+########## ppn-gate/12-n2-split3.log :: MEMRA_PP_SPLITS=3 2 24 20 ##########
+PASS lines: 24
+########## ppn-gate/13-n2-streams0.log :: MEMRA_PP_STREAMS=0 2 24 20 ##########
+PASS lines: 24
+########## ppn-gate/14-n2-overlap0.log :: MEMRA_PP_OVERLAP=0 2 24 20 ##########
+PASS lines: 24
+########## ppn-gate/16-n3-even.log :: - 3 24 20 ##########
+PASS lines: 24
+########## ppn-gate/17-n3-asym.log :: MEMRA_PP_SPLITS=1,3 3 24 20 ##########
+PASS lines: 24
+########## ppn-gate/18-n3-streams0.log :: MEMRA_PP_STREAMS=0 3 24 20 ##########
+PASS lines: 24
+########## ppn-gate/19-n2-spectrace2.log :: MEMRA_SPEC_TRACE=2 2 24 20 ##########
+PASS lines: 24
+########## hppn-gate/10-n2-even.log :: - 2 6 8 ##########
+PASS lines: 6
+########## hppn-gate/11-n2-split1.log :: MEMRA_PP_SPLITS=1 2 6 8 ##########
+PASS lines: 6
+########## hppn-gate/12-n2-split3.log :: MEMRA_PP_SPLITS=3 2 6 8 ##########
+PASS lines: 6
+########## hppn-gate/13-n2-streams0.log :: MEMRA_PP_STREAMS=0 2 6 8 ##########
+PASS lines: 6
+########## hppn-gate/14-n2-overlap0.log :: MEMRA_PP_OVERLAP=0 2 6 8 ##########
+PASS lines: 6
+########## hppn-gate/15-n2-shard0.log :: MEMRA_PP_SHARD=0 2 6 8 ##########
+PASS lines: 6
+########## hppn-gate/16-n3-asym.log :: MEMRA_PP_SPLITS=1,3 3 6 8 ##########
+PASS lines: 6
+########## hppn-gate/17-n4-even.log :: - 4 6 8 ##########
+PASS lines: 6
+########## hppn-gate/18-n4-streams0.log :: MEMRA_PP_STREAMS=0 4 6 8 ##########
+PASS lines: 6
+########## hppn-gate/19-n2-longer.log :: - 2 16 24 ##########
+PASS lines: 6
+########## hbatch-gate/10-b3-default.log :: - 3 5 8 1 ##########
+PASS lines: 3
+########## hbatch-gate/11-b8-wide.log :: - 8 5 8 1 ##########
+PASS lines: 3
+########## hbatch-gate/12-b2-longer.log :: - 2 12 24 1 ##########
+PASS lines: 3
+########## hbatch-gate/13-b3-ppn2.log :: - 3 5 8 2 ##########
+PASS lines: 3
+########## hbatch-gate/14-b3-ppn2-streams0.log :: MEMRA_PP_STREAMS=0 3 5 8 2 ##########
+PASS lines: 3
+########## hbatch-gate/15-b3-ppn4.log :: - 3 5 8 4 ##########
+PASS lines: 3
+########## hbatch-gate/16-b8-ppn2.log :: - 8 5 8 2 ##########
+PASS lines: 3
+########## hbatch-gate/17-b12.log :: - 12 5 8 1 ##########
+PASS lines: 3
+########## hbatch-gate/18-b15-cap.log :: - 15 5 8 1 ##########
+PASS lines: 3
+########## hbatch-gate/19-b15-ppn2.log :: - 15 5 8 2 ##########
+PASS lines: 3
+== phase 4: memra-server suite (release, the ep-place shape) ==
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+== phase 5: engine lib unit tests + check-flags + fmt ==
+test result: ok. 322 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 8.77s
+check-flags: no uncovered runtime names
+check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+==========================================================
+extract2 battery: ALL GATES PASS

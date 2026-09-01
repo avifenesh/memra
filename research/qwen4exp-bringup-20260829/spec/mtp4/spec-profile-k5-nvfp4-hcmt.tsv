@@ -1,0 +1,39 @@
+# qwen4exp_real_gate	label=nvfp4-hcmt	binary_sha256=5f673826e76ad12fee4c0cc9510688515f61c055b2dbd4bf99598f7228aa3daf	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# spec-profile k=5 tokens=64 rounds=13 total_ms=982.0 draft_ms=119.2 verify_ms=516.0 attributed_ms=913.8
+section	calls_per_round	total_ms	ms_per_round	pct_of_attributed
+moe.dequant	177.2	143.7	11.050	15.7
+moe.sel_grouped	48.0	124.2	9.555	13.6
+moe.expert_gemms	177.2	94.9	7.299	10.4
+hyper.read	103.4	90.8	6.983	9.9
+gdn.proj	38.8	67.7	5.210	7.4
+mtp.lm_head	5.2	61.8	4.757	6.8
+gdn.conv_scan	38.8	38.8	2.982	4.2
+moe.idx_gather	177.2	37.4	2.877	4.1
+moe.shared	56.8	33.8	2.596	3.7
+qsa.proj	18.1	25.8	1.986	2.8
+mtp.moe	5.2	23.6	1.813	2.6
+gdn.norm_gate_out	38.8	22.1	1.698	2.4
+moe.router	56.8	20.0	1.540	2.2
+lm_head	1.1	18.9	1.457	2.1
+moe.sel_bf16	5.2	17.8	1.368	1.9
+mtp.qsa	5.2	14.4	1.110	1.6
+hyper.write	103.4	14.3	1.099	1.6
+qsa.sdpa	18.1	10.8	0.833	1.2
+qsa.gate_wo	18.1	10.6	0.816	1.2
+qsa.idx_proj	18.1	10.1	0.779	1.1
+ple.key_gate	1.1	9.6	0.741	1.1
+mtp.hyper.read	10.3	5.6	0.429	0.6
+mtp.fuse	5.2	5.0	0.386	0.5
+mtp.exit	5.2	2.7	0.205	0.3
+ple.conv_write	1.1	1.9	0.148	0.2
+qsa.mask_h2d	18.1	1.7	0.132	0.2
+mtp.hyper.write	10.3	1.4	0.106	0.2
+exit.mixer	1.1	0.9	0.072	0.1
+moe.reduce	3.7	0.7	0.054	0.1
+logits.dtoh	0.1	0.6	0.046	0.1
+logits.argmax	1.0	0.6	0.043	0.1
+entry.embed	1.1	0.4	0.034	0.0
+ple.host_ngram_gather	1.1	0.4	0.032	0.0
+qsa.idx_host	18.1	0.4	0.031	0.0
+ple.h2d	1.1	0.3	0.021	0.0

@@ -1,0 +1,27 @@
+warning: memra-engine@0.76.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.76.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.76.0 (/home/avifenesh/projects/wt-cx-dspark2/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/bin/dspark_export_shared.rs (target/debug/deps/dspark_export_shared-7c50884d1291f80e)
+
+running 2 tests
+test tests::rank_parser_rejects_duplicates_and_out_of_range ... ok
+test tests::bf16_conversion_rounds_to_nearest_even ... FAILED
+
+failures:
+
+---- tests::bf16_conversion_rounds_to_nearest_even stdout ----
+
+thread 'tests::bf16_conversion_rounds_to_nearest_even' (1240794) panicked at crates/memra-engine/src/bin/dspark_export_shared.rs:214:13:
+assertion `left == right` failed
+  left: NaN
+ right: 0.0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::bf16_conversion_rounds_to_nearest_even
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-engine --bin dspark-export-shared`

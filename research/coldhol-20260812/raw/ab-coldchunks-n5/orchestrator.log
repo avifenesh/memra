@@ -1,0 +1,73 @@
+LOCK_QUEUE_CHECK ts=2026-08-12T14:23:58Z
+COLDHOL_AB_LOCK_ACQUIRED ts=2026-08-12T14:23:58Z pid=1044712
+AB_ARM_START ts=2026-08-12T14:23:58Z round=1 order=1 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T14:23:58Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1044739 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:25:47Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r01-o01-baseline
+AB_ARM_PASS ts=2026-08-12T14:25:47Z round=1 order=1 arm=baseline
+AB_ARM_START ts=2026-08-12T14:25:47Z round=1 order=2 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T14:25:47Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1045035 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:27:36Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r01-o02-candidate
+AB_ARM_PASS ts=2026-08-12T14:27:36Z round=1 order=2 arm=candidate
+AB_ARM_START ts=2026-08-12T14:27:36Z round=2 order=1 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T14:27:36Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1045323 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:29:23Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r02-o01-candidate
+AB_ARM_PASS ts=2026-08-12T14:29:23Z round=2 order=1 arm=candidate
+AB_ARM_START ts=2026-08-12T14:29:23Z round=2 order=2 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T14:29:23Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1045612 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:31:12Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r02-o02-baseline
+AB_ARM_PASS ts=2026-08-12T14:31:12Z round=2 order=2 arm=baseline
+AB_ARM_START ts=2026-08-12T14:31:12Z round=3 order=1 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T14:31:12Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1045912 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:33:01Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r03-o01-baseline
+AB_ARM_PASS ts=2026-08-12T14:33:01Z round=3 order=1 arm=baseline
+AB_ARM_START ts=2026-08-12T14:33:01Z round=3 order=2 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T14:33:01Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1046200 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:34:50Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r03-o02-candidate
+AB_ARM_PASS ts=2026-08-12T14:34:50Z round=3 order=2 arm=candidate
+AB_ARM_START ts=2026-08-12T14:34:50Z round=4 order=1 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T14:34:50Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1046488 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:36:39Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r04-o01-candidate
+AB_ARM_PASS ts=2026-08-12T14:36:39Z round=4 order=1 arm=candidate
+AB_ARM_START ts=2026-08-12T14:36:39Z round=4 order=2 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T14:36:39Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1046781 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:38:28Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r04-o02-baseline
+AB_ARM_PASS ts=2026-08-12T14:38:28Z round=4 order=2 arm=baseline
+AB_ARM_START ts=2026-08-12T14:38:28Z round=5 order=1 arm=baseline
+LOCK_QUEUE_CHECK ts=2026-08-12T14:38:28Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1047071 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:40:17Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r05-o01-baseline
+AB_ARM_PASS ts=2026-08-12T14:40:17Z round=5 order=1 arm=baseline
+AB_ARM_START ts=2026-08-12T14:40:17Z round=5 order=2 arm=candidate
+LOCK_QUEUE_CHECK ts=2026-08-12T14:40:17Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1044712 F.... bash
+                     ubuntu    1047362 F.... bash
+COLDHOL_RUN_PASS ts=2026-08-12T14:42:06Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5/r05-o02-candidate
+AB_ARM_PASS ts=2026-08-12T14:42:06Z round=5 order=2 arm=candidate
+COLDHOL_AB_PASS ts=2026-08-12T14:42:06Z out=/opt/scratch/nvme/cx-coldhol/raw/ab-coldchunks-n5

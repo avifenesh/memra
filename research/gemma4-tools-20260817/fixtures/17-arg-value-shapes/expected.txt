@@ -1,0 +1,7 @@
+<|turn>system
+<|tool>declaration:shell{description:<|"|>Runs a shell command and returns its output<|"|>,parameters:{properties:{command:{description:<|"|>The command to execute<|"|>,items:{type:<|"|>STRING<|"|>},type:<|"|>ARRAY<|"|>},timeout_ms:{description:<|"|>Timeout in milliseconds<|"|>,nullable:true,type:<|"|>NUMBER<|"|>},with_escalated_permissions:{type:<|"|>BOOLEAN<|"|>}},required:[<|"|>command<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+<|turn>user
+Shapes.<turn|>
+<|turn>model
+<|tool_call>call:shell{command:[<|"|>printf<|"|>,<|"|>a{b,c}:d
+e<|"|>],timeout_ms:1500.5,with_escalated_permissions:false,workdir:None}<tool_call|><|tool_response>response:shell{value:<|"|>ok<|"|>}<tool_response|>

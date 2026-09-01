@@ -1,0 +1,19 @@
+=== K SWEEP (DFlash2, one boot per K, marker held; plain reference = the cell-4 5-round interleave) ===
+plain reference: 35.41 tok/s => 28.24 ms per decoded token
+  K  dec tok/s   ratio    deep  ttft0.4k  ttft3.7k  tok/cyc roundwall_ms  need tok/cyc  short by
+  1      34.98   0.988   28.55     1.525     3.978    1.839         52.6         1.862    +0.023
+  2      34.32   0.969   28.11     1.495     4.180    2.458         71.6         2.536    +0.078
+  3      31.72   0.896   26.05     1.781     4.614    2.907         91.6         3.245    +0.338
+  5      26.14   0.738   21.40     2.186     5.094    3.421        130.9         4.635    +1.214
+  7      21.10   0.596   17.56     2.695     5.819    3.662        173.5         6.145    +2.483
+
+round-wall linear fit over 5 K points: round_wall = 31.6 + 20.1 * K  ms
+  per-draft marginal cost        : 20.1 ms per extra draft token
+  FIXED per-round cost (K=0)     : 31.6 ms
+  plain per-token decode cost    : 28.24 ms
+  => the spec round's fixed cost alone is 1.119x a plain decode step,
+     i.e. every round starts +3.4 ms in the hole before a single draft is judged.
+
+ceiling arithmetic at K=1 (round wall 51.7 ms):
+  a PERFECT drafter (acc@1 = 1.0, tok/cyc 2.0) reaches 38.66 tok/s = 1.092x plain — that is the CEILING for spec here
+  to merely TIE plain at K=1 the drafter needs tok/cyc >= 1.832, i.e. acc@1 >= 0.832

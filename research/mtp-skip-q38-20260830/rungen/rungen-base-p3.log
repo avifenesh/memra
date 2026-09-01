@@ -1,0 +1,26 @@
+loaded qwen35 (64 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+List the shell commands to find the five largest files under /var and archive them.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "List the shell commands to find the five largest files under /var and archive them."
+prompt tokens: [248045, 846, 198, 826, 279, 12168, 10966, 310, 1423, 279, 4097, 7526, 3425, 1172, 593, 917, 321, 17593, 1070, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+prefill argmax=760  decode argmax=760  logit maxdiff=5.510e-1  MATCH
+batched-prime argmax=760  tokenwise argmax=760  logit maxdiff=4.811e-1  MATCH
+prefill 27 tok in 0.1210s = 223.1 tok/s (pp27)
+generated 64 tokens in 1.449s = 44.16 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.107s) [stop: MaxNew]
+tokens: [760, 1156, 6587, 12168, 10966, 310, 25, 198, 16, 13, 7145, 279, 4097, 7526, 3425, 1172, 593, 917, 198, 17, 13, 28732, 1070, 271, 9764, 728, 1683, 883, 279, 1786, 5313, 25, 271, 2381, 8996, 279, 4097, 7526, 3425, 1172, 593, 917, 25, 198, 12, 1510, 3772, 593, 917, 471, 1267, 281, 63, 310, 1423, 660, 3425, 198, 12, 1510, 1019, 471, 65, 63]
+OUTPUT TEXT: "The user wants shell commands to:\n1. Find the five largest files under /var\n2. Archive them\n\nLet me think about the best approach:\n\nFor finding the five largest files under /var:\n- `find /var -type f` to find all files\n- `du -b`"
+--- generated text ---
+The user wants shell commands to:
+1. Find the five largest files under /var
+2. Archive them
+
+Let me think about the best approach:
+
+For finding the five largest files under /var:
+- `find /var -type f` to find all files
+- `du -b`

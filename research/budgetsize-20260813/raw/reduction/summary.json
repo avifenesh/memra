@@ -1,0 +1,307 @@
+{
+  "acceptance": {
+    "arm_a_reproduces_defect": "PASS",
+    "arm_b_n3_hit_and_geometry": "PASS",
+    "c64_zero_defers_and_oom_parks": "FAIL",
+    "explicit_4096_mib_parity": "PASS",
+    "overall": "FAIL"
+  },
+  "arms": {
+    "A": {
+      "measurement": {
+        "cells": [
+          {
+            "completion_receipt": "a1-clock-validator-recovery",
+            "gpu": {
+              "clock_max_mhz": 1192,
+              "clock_min_mhz": 210,
+              "gpu_free_min_mib": 4724,
+              "gpu_used_peak_mib": 19260,
+              "n": 181
+            },
+            "path": "raw/local-ab/01-a-r1",
+            "repetition": 1
+          },
+          {
+            "completion_receipt": "CELL_PASS",
+            "gpu": {
+              "clock_max_mhz": 1192,
+              "clock_min_mhz": 210,
+              "gpu_free_min_mib": 4728,
+              "gpu_used_peak_mib": 19256,
+              "n": 181
+            },
+            "path": "raw/local-ab/04-a-r2",
+            "repetition": 2
+          },
+          {
+            "completion_receipt": "CELL_PASS",
+            "gpu": {
+              "clock_max_mhz": 1200,
+              "clock_min_mhz": 210,
+              "gpu_free_min_mib": 4728,
+              "gpu_used_peak_mib": 19256,
+              "n": 181
+            },
+            "path": "raw/local-ab/06-a-r3",
+            "repetition": 3
+          }
+        ],
+        "cold_request_ttft_ms": {
+          "max": 5690.6697320519015,
+          "median": 5623.868277994916,
+          "min": 5597.964186104946,
+          "n": 15
+        },
+        "counter_totals": {
+          "admission_session_defers": 0,
+          "admission_vram_defers": 0,
+          "admitted": 15,
+          "cached_tokens_in": 0,
+          "completed": 15,
+          "prefix_cache_bytes": 0,
+          "prefix_cache_entries": 0,
+          "prefix_cache_evictions": 0,
+          "prefix_cache_hit_tokens": 0,
+          "prefix_cache_hits": 0,
+          "prefix_cache_inserts": 0,
+          "prefix_cache_misses": 15,
+          "prefix_cache_skips_budget": 15,
+          "prefix_cache_skips_pinned": 0,
+          "prompt_tokens_in": 72900,
+          "step_oom_parks": 0
+        },
+        "first_hit_ttft_ms": null,
+        "first_request_ttft_ms": {
+          "max": 5690.6697320519015,
+          "median": 5689.765638089739,
+          "min": 5687.679871916771,
+          "n": 3
+        },
+        "hit_rate": 0.0,
+        "hit_request_ttft_ms": null,
+        "n_boots": 3,
+        "n_requests": 15,
+        "output_sha256": [
+          "200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7"
+        ]
+      },
+      "protocol": {
+        "binary_sha256": "ec0c2fed4aa25fa904ab072fc2af53cee34dbee7c352d0eefb257c52f88a2a2f",
+        "budget_behavior": "pristine v0.81.3 naked 256 MiB default",
+        "instrumentation": "refusal observability only: counters/publication plus first-refusal warning; common to both arms and excluded from the mechanism comparison",
+        "name": "baseline-metrics-instrumented",
+        "source_commit": "093a214a9e1bc7170dd655bb417b0fd7fc6d13c8"
+      }
+    },
+    "B": {
+      "measurement": {
+        "cells": [
+          {
+            "completion_receipt": "CELL_PASS",
+            "gpu": {
+              "clock_max_mhz": 1192,
+              "clock_min_mhz": 210,
+              "gpu_free_min_mib": 4728,
+              "gpu_used_peak_mib": 19256,
+              "n": 92
+            },
+            "path": "raw/local-ab/03-b-r1",
+            "repetition": 1
+          },
+          {
+            "completion_receipt": "CELL_PASS",
+            "gpu": {
+              "clock_max_mhz": 1192,
+              "clock_min_mhz": 210,
+              "gpu_free_min_mib": 4728,
+              "gpu_used_peak_mib": 19256,
+              "n": 92
+            },
+            "path": "raw/local-ab/05-b-r2",
+            "repetition": 2
+          },
+          {
+            "completion_receipt": "CELL_PASS",
+            "gpu": {
+              "clock_max_mhz": 1192,
+              "clock_min_mhz": 210,
+              "gpu_free_min_mib": 4728,
+              "gpu_used_peak_mib": 19256,
+              "n": 96
+            },
+            "path": "raw/local-ab/07-b-r3",
+            "repetition": 3
+          }
+        ],
+        "cold_request_ttft_ms": {
+          "max": 5695.863772998564,
+          "median": 5688.697092002258,
+          "min": 5684.452096000314,
+          "n": 3
+        },
+        "counter_totals": {
+          "admission_session_defers": 0,
+          "admission_vram_defers": 0,
+          "admitted": 15,
+          "cached_tokens_in": 58320,
+          "completed": 15,
+          "prefix_cache_bytes": 903647232,
+          "prefix_cache_entries": 3,
+          "prefix_cache_evictions": 0,
+          "prefix_cache_hit_tokens": 58320,
+          "prefix_cache_hits": 12,
+          "prefix_cache_inserts": 3,
+          "prefix_cache_misses": 3,
+          "prefix_cache_skips_budget": 0,
+          "prefix_cache_skips_pinned": 0,
+          "prompt_tokens_in": 72900,
+          "step_oom_parks": 0
+        },
+        "first_hit_ttft_ms": {
+          "max": 2.616064972244203,
+          "median": 2.267981064505875,
+          "min": 1.9999939249828458,
+          "n": 3
+        },
+        "first_request_ttft_ms": {
+          "max": 5695.863772998564,
+          "median": 5688.697092002258,
+          "min": 5684.452096000314,
+          "n": 3
+        },
+        "hit_rate": 0.8,
+        "hit_request_ttft_ms": {
+          "max": 3.718040999956429,
+          "median": 2.124134509358555,
+          "min": 1.7935939831659198,
+          "n": 12
+        },
+        "n_boots": 3,
+        "n_requests": 15,
+        "output_sha256": [
+          "200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7"
+        ]
+      },
+      "protocol": {
+        "binary_sha256": "29f1a64e8935bfc5b97ea1e9b6cf02e5fd4b562c05dd844b2b6566a53f9b77a8",
+        "budget_behavior": "geometry-derived naked default clamped against boot free VRAM",
+        "instrumentation": "same refusal observability as arm A",
+        "name": "derived-default-candidate",
+        "source_commit": "13b4918ee5cc69b73bd045c036440d065303fd9a"
+      }
+    }
+  },
+  "c64": {
+    "counter_deltas": {
+      "admission_session_defers": 0,
+      "admission_vram_defers": 7072,
+      "admitted": 64,
+      "cached_tokens_in": 311040,
+      "completed": 64,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hit_tokens": 311040,
+      "prefix_cache_hits": 64,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "prompt_tokens_in": 311040,
+      "step_oom_parks": 0
+    },
+    "cuda_driver_free_bytes_after": 562036736,
+    "cuda_pool_cached_bytes_after": 6598816510,
+    "failure_count": 65,
+    "gpu": {
+      "clock_max_mhz": 1192,
+      "clock_min_mhz": 210,
+      "gpu_free_min_mib": 536,
+      "gpu_used_peak_mib": 23448,
+      "n": 239
+    },
+    "output_sha256_counts": {
+      "5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66": 59,
+      "9e3551d020a7f94379717a5b816e8a3a02d379b5b7bd873d0ae1cb9cd3b23755": 5
+    },
+    "path": "raw/local-c64/10-b-c64-r1",
+    "requests": 64,
+    "seed_counter_deltas": {
+      "admission_session_defers": 0,
+      "admission_vram_defers": 0,
+      "admitted": 1,
+      "cached_tokens_in": 0,
+      "completed": 1,
+      "prefix_cache_bytes": 301215744,
+      "prefix_cache_entries": 1,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_inserts": 1,
+      "prefix_cache_misses": 1,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "prompt_tokens_in": 4860,
+      "step_oom_parks": 0
+    },
+    "seed_output_sha256": "200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7",
+    "ttft_max_ms": 40113.79416892305,
+    "ttft_median_ms": 20103.616346023045,
+    "verdict": "FAIL"
+  },
+  "derived_boot_geometry": [
+    {
+      "boot_driver_free_bytes": 9957277696,
+      "entry_bytes": 400162816,
+      "entry_count": 2,
+      "path": "raw/local-ab/03-b-r1",
+      "post_reserve_clamp_bytes": 8346664960,
+      "requested_budget_bytes": 800325632
+    },
+    {
+      "boot_driver_free_bytes": 9957277696,
+      "entry_bytes": 400162816,
+      "entry_count": 2,
+      "path": "raw/local-ab/05-b-r2",
+      "post_reserve_clamp_bytes": 8346664960,
+      "requested_budget_bytes": 800325632
+    },
+    {
+      "boot_driver_free_bytes": 9957277696,
+      "entry_bytes": 400162816,
+      "entry_count": 2,
+      "path": "raw/local-ab/07-b-r3",
+      "post_reserve_clamp_bytes": 8346664960,
+      "requested_budget_bytes": 800325632
+    }
+  ],
+  "explicit_4096_mib": {
+    "a_path": "raw/local-explicit/08-explicit-a-r1",
+    "b_path": "raw/local-explicit/09-explicit-b-r1",
+    "behavior_equal": true,
+    "counter_deltas": {
+      "admission_session_defers": 0,
+      "admission_vram_defers": 0,
+      "admitted": 5,
+      "cached_tokens_in": 19440,
+      "completed": 5,
+      "prefix_cache_bytes": 301215744,
+      "prefix_cache_entries": 1,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hit_tokens": 19440,
+      "prefix_cache_hits": 4,
+      "prefix_cache_inserts": 1,
+      "prefix_cache_misses": 1,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "prompt_tokens_in": 24300,
+      "step_oom_parks": 0
+    },
+    "output_sha256": [
+      "200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7"
+    ]
+  },
+  "schema": "memra.cx-budgetsize.summary.v1",
+  "thermal_regime": "persistent 210-1200 MHz SM lock; every captured sample must remain in range"
+}

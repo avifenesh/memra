@@ -1,0 +1,67 @@
+[auth] keyring loaded: 2 key(s) from /home/avifenesh/tmp-lanes/cx-apifix-runtime.1AlBjw/keys.toml
+[server] OpenRouter metadata loaded: 1 model(s) from /home/avifenesh/projects/wt-cx-apifix/deploy/gateway/q27-models.toml
+[ledger] durable request-cost ledger enabled: /home/avifenesh/tmp-lanes/cx-apifix-runtime.1AlBjw/ledger-final.jsonl
+[server] starting; models config = [("qwen/qwen3.6-35b-a3b", "/home/avifenesh/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "qwen/qwen3.6-35b-a3b" <- /home/avifenesh/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.32GB (expert budget 19.72GB) -> RESIDENT
+[worker]   loaded "qwen/qwen3.6-35b-a3b": 41 layers, eos=248046
+[worker] qwen/qwen3.6-35b-a3b: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] qwen/qwen3.6-35b-a3b: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 537MB (536870912 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "qwen/qwen3.6-35b-a3b": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["qwen/qwen3.6-35b-a3b"]
+[server] listening on http://127.0.0.1:18084
+[meter] admit id=cmpl-e8cfe4aa87f57927b3d3a8832da29393 tenant=apifix-long lane=interactive model="qwen/qwen3.6-35b-a3b"
+[meter] admit id=cmpl-ae5eeaf792526e6493a0368c76a3714c tenant=apifix-long lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=262208 path=plain = 10208 B/token x ctx + 0MB fixed = 2677MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-long" K=0 source=eligibility-fallback prompt=262143 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="qwen/qwen3.6-35b-a3b" 129MB (observed 2805MB at ctx 262144 path=plain)
+[prefix-cache] WARNING: first prefix insert is larger than the entire byte budget; this shape cannot produce cross-request hits. Subsequent refusals remain visible in prefix_cache_skips_budget
+[prefix-cache] skip seed insert: entry 2498.6MB > budget 537MB
+[meter] admit id=chatcmpl-9edb1bac86bb0a5a96cf98234a181c1d tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=111 path=plain = 10208 B/token x ctx + 129MB fixed = 130MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-b0c77d73334407adf002625ca5b5d172 tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=23 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-4a6dc1fdcd522c2abfee3a4596617178 tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=485 path=plain = 10208 B/token x ctx + 129MB fixed = 134MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=293 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 293 tokens, 68.6MB (resident 68.6MB / 537MB, model qwen/qwen3.6-35b-a3b, ns "t:apifix-gate\u{1f}")
+[meter] admit id=chatcmpl-fa2467fd963f8deddced67f3495452ef tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[prefix-cache] hit: 293 of 293 prompt tokens from cache (model qwen/qwen3.6-35b-a3b)
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=293 cached=293 lcp=293 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-9428d5d2eb80f31c8b0cab50f82c35ff tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=160 path=plain = 10208 B/token x ctx + 129MB fixed = 130MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=32 cached=0 lcp=1 active=1 placement=single-or-non-pp2
+[constrained] qwen/qwen3.6-35b-a3b: 21 masked steps, mask total 1.19 ms (0.057 ms/step)
+[meter] admit id=chatcmpl-e5b683eb016d168dd19ce0ea11134f88 tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=32 cached=0 lcp=1 active=1 placement=single-or-non-pp2
+[constrained] qwen/qwen3.6-35b-a3b: 21 masked steps, mask total 0.31 ms (0.015 ms/step)
+[meter] admit id=cmpl-df6be9875e44305c37bc987cd8f26687 tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=4984 path=plain = 10208 B/token x ctx + 129MB fixed = 180MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 179.5MB / 537MB, model qwen/qwen3.6-35b-a3b, ns "t:apifix-gate\u{1f}servetest-cache-1786626826967400361")
+[meter] admit id=cmpl-085a370fec1a259a10f7431de923fbde tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model qwen/qwen3.6-35b-a3b)
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-97351ca4819e67d4bbb8a93e37108724 tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model qwen/qwen3.6-35b-a3b)
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5ab53fc8269b99c66f6135ee8239c05d tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[meter] admit id=cmpl-7722a5ff207b6ec6277765070cad888f tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[meter] admit id=cmpl-01a31699454d9542214648311f3d1b63 tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-9822191a36691ee7e0bdd60ef420a16e tenant=apifix-gate lane=interactive model="qwen/qwen3.6-35b-a3b"
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-gate" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 290.5MB / 537MB, model qwen/qwen3.6-35b-a3b, ns "t:apifix-gate\u{1f}servetest-overload-1786626830415382509-0")
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 401.5MB / 537MB, model qwen/qwen3.6-35b-a3b, ns "t:apifix-gate\u{1f}servetest-overload-1786626830415990580-5")
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 512.4MB / 537MB, model qwen/qwen3.6-35b-a3b, ns "t:apifix-gate\u{1f}servetest-overload-1786626830415594512-1")
+[prefix-cache] insert probation (seed): 4860 tokens, 111.0MB (resident 623.4MB / 537MB, model qwen/qwen3.6-35b-a3b, ns "t:apifix-gate\u{1f}servetest-overload-1786626830416137561-7")
+[prefix-cache] evict (Probation LRU): 4860 tokens, 111.0MB (model qwen/qwen3.6-35b-a3b, ns "t:apifix-gate\u{1f}servetest-overload-1786626830415382509-0")

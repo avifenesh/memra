@@ -1,0 +1,11 @@
+=== /v1/responses greedy effort ladder, binary 263963b6f0b11834 @ 0b46351fdd ===
+Fri Aug 28 14:58:41 UTC 2026
+  effort=    None: sha=b1ac34989bc5b0d7 in_tok=22 out_tok=203 cached=0 chars=1085
+  effort=     low: sha=cb7e22c9675f3ecb in_tok=22 out_tok=32 cached=0 chars=178
+  effort=    high: sha=89a77f8fef0f4574 in_tok=22 out_tok=36 cached=0 chars=204
+  effort=     max: sha=b1ac34989bc5b0d7 in_tok=22 out_tok=203 cached=0 chars=1085
+
+  shas: {"omitted": "b1ac34989bc5b0d7", "low": "cb7e22c9675f3ecb", "high": "89a77f8fef0f4574", "max": "b1ac34989bc5b0d7"}
+  omitted == max ? True   (chat surface measured TRUE)
+  omitted == low ? False
+  low == high  ? False

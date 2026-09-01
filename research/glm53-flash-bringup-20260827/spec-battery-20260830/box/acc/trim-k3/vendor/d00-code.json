@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what the user is asking for. They're describing a tool they want built \u2014 a context/session capture agent that works across multiple parallel work contexts. Key requirements:\n\n1. **Not Rust this time** \u2014 so pick something else. Given \"frictionless\" and CLI-heavy, probably Python or Go. Python is fastest to prototype, has good ecosystem. Let's go Python.\n\n2. **It should call a model to do the arrangements** \u2014 LLM-powered. The agent calls an LLM API (e.g., Claude API or OpenAI) to summarize, structure, and arrange captured context.\n\n3. **The",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what the user is asking for. They're describing a tool they want built \u2014 a context/session capture agent that works across multiple parallel work contexts. Key requirements:\n\n1. **Not Rust this time** \u2014 so pick something else. Given \"frictionless\" and CLI-heavy, probably Python or Go. Python is fastest to prototype, has good ecosystem. Let's go Python.\n\n2. **It should call a model to do the arrangements** \u2014 LLM-powered. The agent calls an LLM API (e.g., Claude API or OpenAI) to summarize, structure, and arrange captured context.\n\n3. **The"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 239,
+  "completion_tokens": 128,
+  "total_tokens": 367,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.702305767,
+  "spec": {
+   "rounds": 61,
+   "drafted": 183,
+   "accepted": 68,
+   "acceptance_rate": 0.37158469945355194
+  }
+ },
+ "id": "chatcmpl-91016b50b9a7c2512e002fc570a03a8b",
+ "created": 1788082122,
+ "system_fingerprint": "REDACTED"
+}

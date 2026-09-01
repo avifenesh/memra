@@ -1,0 +1,36 @@
+{
+ "name": "p03-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 453,
+   "completion_tokens": 128,
+   "total_tokens": 581,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 24.806676074,
+   "spec": {
+    "rounds": 50,
+    "drafted": 250,
+    "accepted": 77,
+    "acceptance_rate": 0.308
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "The user has pasted what looks like an incident report / handoff summary from an AI assistant (possibly their own AI agent called \"hermes\"?) that crashed and was recovered. The report describes:\n\n1. Root cause: `.venv` was deleted while a gateway process was still running. Python kept running via mmap but lazy `open()` calls failed (certifi/cacert.pem), causing `FileNotFoundError` in `ssl.create_default_context` inside httpx on every new `AnthropicBedrock` client init.\n\n2. What was done:\n- Recreated venv with `uv sync --frozen --all-ex"
+    }
+   }
+  ]
+ }
+}

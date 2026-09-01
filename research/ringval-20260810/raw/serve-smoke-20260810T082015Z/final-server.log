@@ -1,0 +1,53 @@
+[server] starting; models config = [("smoke", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy disabled by MEMRA_SPEC_GATE=0: always-spec
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "smoke" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] smoke: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "smoke": 45 layers, eos=128007
+[worker] smoke: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] smoke: decode chunk cap 8
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "smoke": plain 83520 B/token (61248 capped at 4639 rows), spec 85376 B/token (63104 capped); fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["smoke"]
+[server] listening on http://127.0.0.1:8177
+[meter] admit id=cmpl-84c98bae14ce65a49a5376e60bb67c03 tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=161 path=spec = 85376 B/token x ctx + 0MB fixed = 14MB
+[prefix-cache] refused for MEMRA_SWA_RING=1 Step35 session (flat-history snapshots/restores are excluded)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=49 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-acc] ctx=49 burst=15/48 cum=15/48=0.312
+[meter] admit id=cmpl-756601d6e762f63fb16aac50e97a5796 tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=186 path=spec = 85376 B/token x ctx + 0MB fixed = 16MB
+[prefix-cache] refused for MEMRA_SWA_RING=1 Step35 session (flat-history snapshots/restores are excluded)
+[worker] spec-affinity: grew parked session 105 -> 186 rows (request-owned need)
+[worker] spec-affinity: rewound to 49 of 74 prompt tokens (explicit; priming 25 suffix; model smoke)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=74 cached=49 lcp=0 active=1 placement=pp2-cross-device
+[spec-acc] ctx=25 burst=18/48 cum=18/48=0.375
+[spec-acc] ctx=60 burst=7/18 cum=25/66=0.379
+[meter] admit id=cmpl-8d547f468396622e2bae4a4de6b39461 tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=230 path=spec = 85376 B/token x ctx + 0MB fixed = 20MB
+[prefix-cache] refused for MEMRA_SWA_RING=1 Step35 session (flat-history snapshots/restores are excluded)
+[worker] spec-affinity: grew parked session 186 -> 230 rows (request-owned need)
+[worker] spec-affinity: rewound to 74 of 118 prompt tokens (explicit; priming 44 suffix; model smoke)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=118 cached=74 lcp=0 active=1 placement=pp2-cross-device
+[spec-acc] ctx=44 burst=15/48 cum=15/48=0.312
+[spec-acc] ctx=76 burst=10/21 cum=25/69=0.362
+[meter] admit id=cmpl-34fd9b540c84a708685a1f5be53ba44a tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=276 path=spec = 85376 B/token x ctx + 0MB fixed = 24MB
+[prefix-cache] refused for MEMRA_SWA_RING=1 Step35 session (flat-history snapshots/restores are excluded)
+[worker] spec-affinity: grew parked session 230 -> 276 rows (request-owned need)
+[worker] spec-affinity: rewound to 118 of 164 prompt tokens (explicit; priming 46 suffix; model smoke)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=164 cached=118 lcp=0 active=1 placement=pp2-cross-device
+[spec-acc] ctx=46 burst=17/42 cum=17/42=0.405
+[spec-acc] ctx=78 burst=7/27 cum=24/69=0.348
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[worker] spec pending flush failed (DriverError(CUDA_ERROR_DEINITIALIZED, "<Failure when calling cuGetErrorString()>")); dropping session

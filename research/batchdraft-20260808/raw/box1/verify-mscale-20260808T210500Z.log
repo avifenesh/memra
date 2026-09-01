@@ -1,0 +1,11 @@
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+primed depth=256 in 0.90s
+verify tokens (greedy continuation): [223, 19, 16, 223, 20, 16, 223, 21, 16, 223, 22, 16, 223, 23, 16, 223]
+measurement order: alternating forward/reverse by repetition
+verify m=4 @d256: median  35200.1 us  p10  35124.3  p90  35265.7  | x1.000 vs m=4  |  8800.0 us/tok
+verify m=8 @d256: median  66425.1 us  p10  66316.2  p90  66479.0  | x1.887 vs m=4  |  8303.1 us/tok
+verify m=12 @d256: median  97723.1 us  p10  97622.4  p90  97913.3  | x2.776 vs m=4  |  8143.6 us/tok
+verify m=16 @d256: median 146162.5 us  p10 146083.5  p90 146408.9  | x4.152 vs m=4  |  9135.2 us/tok

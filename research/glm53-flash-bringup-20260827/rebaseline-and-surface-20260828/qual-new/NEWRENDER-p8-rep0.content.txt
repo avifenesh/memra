@@ -1,0 +1,22 @@
+It looks like you've pasted output from failed commands, but I'm not able to actually run those commands or connect to those services — I can only read the text you've shared with me.
+
+What I can see:
+
+1. **Both model runs failed** (`nvidia/z-ai/glm-5.2` and `nvidia/qwen/qwen3.5-122b-a10b`) using `opencode run` in your re-entry agent directory.
+2. The command itself appears syntactically fine (`--pure --dir ... --model ... --agent reentry-status --format json --title ...`), so the failures are likely runtime issues.
+
+Common causes worth checking:
+
+- **Model IDs may not exist or aren't available** on the configured NVIDIA (NIM/NVIDIA API) provider — e.g., `glm-5.2` and `qwen3.5-122b-a10b` may not be valid slugs for your `nvidia/` provider mapping in opencode.
+- **Missing or invalid API key** for the NVIDIA provider (check the env var opencode expects, e.g., `NVIDIA_API_KEY`).
+- **Agent `reentry-status` not defined** in the config under `~/.config/atrium/reentry-agent` (e.g., missing from `opencode.json` / `.opencode/agents/`).
+- The actual error message got truncated — the text after "Command failed:" is just the command echo, not the underlying failure.
+
+If you re-run one of these directly, the stderr output should show the real error. Could you share that? Also helpful:
+
+```bash
+opencode auth list
+opencode models | grep nvidia
+```
+
+That would confirm whether the models are actually available to you. Once you share the real error, I can help debug it.

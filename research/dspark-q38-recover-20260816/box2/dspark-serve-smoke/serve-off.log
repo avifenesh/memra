@@ -1,0 +1,29 @@
+[server] starting; models config = [("gate", "/home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "gate" <- /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[worker]   loaded "gate": 65 layers, eos=248046
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[server] worker ready; serving models: ["gate"]
+[prefix-cache] on: budget 800MB (800325632 B, derived: 2 x 400162816 B max entry for model "gate" at MEMRA_CTX=8192, requested 800325632 B; boot driver free 86521741312 B, post-reserve clamp 84911128576 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18094
+[meter] admit id=chatcmpl-8dca2330e1e359e60b566b7995ab47eb tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=189 path=plain = 31552 B/token x ctx + 0MB fixed = 6MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=29 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 312MB at ctx 133 path=plain)
+[meter] admit id=chatcmpl-3dba693885ecec9e85373b19c3739dc1 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=186 path=plain = 31552 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 26 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=26 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-00cc9cc87653475952f15c15eda4fb24 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=187 path=plain = 31552 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 27 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=27 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

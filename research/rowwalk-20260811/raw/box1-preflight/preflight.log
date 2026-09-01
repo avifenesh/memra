@@ -1,0 +1,7 @@
+bash: line 29: \\; then
+  :
+else
+  echo lock=busy
+  fuser -v /tmp/memra-gpu.lock 2>&1 || true
+fi
+: No such file or directory

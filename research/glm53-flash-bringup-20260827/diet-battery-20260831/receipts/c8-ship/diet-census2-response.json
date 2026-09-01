@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse this. The user pasted what looks like a fragment of a prompt or notes \u2014 it's not actually code. It reads like a design note / instruction for building a tool: \"we don't go with rust this time, and it should call a model to do the arrangements. i just write minimal few sentences, the agent will capture, put in place, track the relevant jsonl from whatever tool i was using and compact it, will ask me if i want to elaborate on some question he found helpful to note, and if so will ask with 1 2 3 ... preferably, not by letting me writing long answers unless i want. context switch sometime, or mostly means, i have 100 things to do, some im doing, and i always want to start something new. so i will switch between 5 cli with 5 project, will answer to user issues on my projects, will look for a new contribution,",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse this. The user pasted what looks like a fragment of a prompt or notes \u2014 it's not actually code. It reads like a design note / instruction for building a tool: \"we don't go with rust this time, and it should call a model to do the arrangements. i just write minimal few sentences, the agent will capture, put in place, track the relevant jsonl from whatever tool i was using and compact it, will ask me if i want to elaborate on some question he found helpful to note, and if so will ask with 1 2 3 ... preferably, not by letting me writing long answers unless i want. context switch sometime, or mostly means, i have 100 things to do, some im doing, and i always want to start something new. so i will switch between 5 cli with 5 project, will answer to user issues on my projects, will look for a new contribution,"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 189,
+  "completion_tokens": 192,
+  "total_tokens": 381,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 3.859210287,
+  "spec": {
+   "rounds": 59,
+   "drafted": 152,
+   "accepted": 135,
+   "acceptance_rate": 0.8881578947368421
+  }
+ },
+ "id": "<redacted>",
+ "created": 1788151820,
+ "system_fingerprint": "<redacted: build fingerprint>"
+}

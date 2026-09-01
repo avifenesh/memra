@@ -1,0 +1,24 @@
+CAMPAIGN_START ts=2026-08-13T07:34:09Z host=avifenesh
+repo=/home/avifenesh/projects/wt-cx-armrig5090 out=/home/avifenesh/projects/wt-cx-armrig5090/research/armrig5090-20260813/raw/attempt1-local5090 binary_source=57ebcf8d319dc8ea9bb351b39fc1ab28d18c20db
+LOCK_QUEUE_CHECK ts=2026-08-13T07:34:33Z
+GPU_LOCK_ACQUIRED ts=2026-08-13T07:34:33Z pid=1523004
+ACTIVATION_START ts=2026-08-13T07:34:33Z
+{"cached_tokens": [172], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 17.189688786049373, "decode_window_tok_s": 29.727123414515333, "finish_reasons": ["length"], "kind": "summary", "label": "activation-q27-eager", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "policy_arm": "eager", "prompt_tokens": [172], "prompt_utf8_sha256": "52c2e296ada2a4d17ff319f5e838d9c8ea8726a5e0be3996c5a0e25ebdfb7172", "rep": 0, "target": "q27", "total_window_tok_s": 29.579539083452243, "ttft_max_s": 0.11939705291297287, "ttft_min_s": 0.11939705291297287, "ttft_p50_s": 0.11939705291297287, "wall_s": 17.309262276045047}
+ACTIVATION_PASS ts=2026-08-13T07:34:59Z
+QUALIFICATION_START concurrency=16 ts=2026-08-13T07:34:59Z
+{"cached_tokens": [172], "completion_tokens_total": 8192, "concurrency": 16, "decode_window_s": 87.13273508299608, "decode_window_tok_s": 93.83385007038008, "finish_reasons": ["length"], "kind": "summary", "label": "qualification-q27-c16-eager", "max_tokens": 512, "n_error": 0, "n_ok": 16, "n_requests": 16, "policy_arm": "eager", "prompt_tokens": [172], "prompt_utf8_sha256": "52c2e296ada2a4d17ff319f5e838d9c8ea8726a5e0be3996c5a0e25ebdfb7172", "rep": 0, "target": "q27", "total_window_tok_s": 94.00771936009622, "ttft_max_s": 0.08874668506905437, "ttft_min_s": 0.00891511992085725, "ttft_p50_s": 0.08635381102794781, "wall_s": 87.14178001298569}
+QUALIFICATION_PASS concurrency=16 ts=2026-08-13T07:36:37Z
+FULL_POINT_START label=full-q27-c1-r1-repaired ts=2026-08-13T07:36:37Z
+{"cached_tokens": [172], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 19.28884726704564, "decode_window_tok_s": 26.491992648675623, "finish_reasons": ["length"], "kind": "summary", "label": "full-q27-c1-r1-repaired", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "policy_arm": "repaired", "prompt_tokens": [172], "prompt_utf8_sha256": "52c2e296ada2a4d17ff319f5e838d9c8ea8726a5e0be3996c5a0e25ebdfb7172", "rep": 1, "target": "q27", "total_window_tok_s": 26.539803383396652, "ttft_max_s": 0.0027291689766570926, "ttft_min_s": 0.0027291689766570926, "ttft_p50_s": 0.0027291689766570926, "wall_s": 19.29177818703465}
+FULL_POINT_PASS label=full-q27-c1-r1-repaired ts=2026-08-13T07:37:05Z
+FULL_POINT_START label=full-q27-c1-r1-eager ts=2026-08-13T07:37:05Z
+{"cached_tokens": [172], "completion_tokens_total": 512, "concurrency": 1, "decode_window_s": 17.201882382971235, "decode_window_tok_s": 29.706051269473704, "finish_reasons": ["length"], "kind": "summary", "label": "full-q27-c1-r1-eager", "max_tokens": 512, "n_error": 0, "n_ok": 1, "n_requests": 1, "policy_arm": "eager", "prompt_tokens": [172], "prompt_utf8_sha256": "52c2e296ada2a4d17ff319f5e838d9c8ea8726a5e0be3996c5a0e25ebdfb7172", "rep": 1, "target": "q27", "total_window_tok_s": 29.578508943669394, "ttft_max_s": 0.10786142200231552, "ttft_min_s": 0.10786142200231552, "ttft_p50_s": 0.10786142200231552, "wall_s": 17.309865111019462}
+FULL_POINT_PASS label=full-q27-c1-r1-eager ts=2026-08-13T07:37:32Z
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-cx-armrig5090/research/armrig5090-20260813/pair_gate.py", line 88, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/avifenesh/projects/wt-cx-armrig5090/research/armrig5090-20260813/pair_gate.py", line 71, in main
+    raise ValueError(f"BYTE MISMATCH across A/B pair: {by_label}")
+ValueError: BYTE MISMATCH across A/B pair: {'full-q27-c1-r1-repaired': ['210933f9d1c2e8e111b6a633829934d518f149d5c92204ffa70d1933f2e1e70e'], 'full-q27-c1-r1-eager': ['c1491b4b22305fb2e74aa77fb111a7a4dfb6f4832c69a1239210be2831dbf1e3']}
+CAMPAIGN_EXIT rc=1 ts=2026-08-13T07:37:32Z

@@ -1,0 +1,1247 @@
+research/downkernel-20260812/../../crates/memra-engine/cu/qmatvec.cu(4719): warning #550-D: variable "s1" was set but never used
+          int s0 = whichHalf * 2, s1 = s0 + 1;
+                                  ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+ptxas info    : 2064 bytes gmem
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b16_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b16_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 0 barriers
+ptxas info    : Compile time = 28.398 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b8_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b8_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 16.066 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b4_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b4_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 11.534 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers
+ptxas info    : Compile time = 8.644 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b16_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b16_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 68 registers, used 0 barriers
+ptxas info    : Compile time = 28.344 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b8_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b8_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 0 barriers
+ptxas info    : Compile time = 16.648 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b4_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b4_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 10.704 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 7.374 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 7.508 ms
+ptxas info    : Compiling entry function 'q6_K_split_rp_build' for 'sm_120a'
+ptxas info    : Function properties for q6_K_split_rp_build
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 128 registers, used 0 barriers
+ptxas info    : Compile time = 54.979 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 0 barriers
+ptxas info    : Compile time = 5.939 ms
+ptxas info    : Compiling entry function 'q4_K_split_rp_build' for 'sm_120a'
+ptxas info    : Function properties for q4_K_split_rp_build
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 24.551 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_fused3_mr1_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_fused3_mr1_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 50 registers, used 0 barriers
+ptxas info    : Compile time = 15.545 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_fused2_mr1_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_fused2_mr1_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers
+ptxas info    : Compile time = 25.204 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 15.053 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b16_r2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b16_r2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 101 registers, used 0 barriers
+ptxas info    : Compile time = 52.018 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b16_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b16_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 70 registers, used 0 barriers
+ptxas info    : Compile time = 25.793 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b8_r2ms_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b8_r2ms_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 0 barriers
+ptxas info    : Compile time = 18.644 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b4_r2ms_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b4_r2ms_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 68 registers, used 0 barriers
+ptxas info    : Compile time = 12.058 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b2_r2ms_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b2_r2ms_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 14.368 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b8_r2sm_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b8_r2sm_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers
+ptxas info    : Compile time = 31.149 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b4_r2sm_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b4_r2sm_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers
+ptxas info    : Compile time = 20.507 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b2_r2sm_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b2_r2sm_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 55 registers, used 1 barriers
+ptxas info    : Compile time = 14.467 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b8_r2la_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b8_r2la_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 90 registers, used 0 barriers
+ptxas info    : Compile time = 32.436 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b4_r2la_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b4_r2la_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 78 registers, used 0 barriers
+ptxas info    : Compile time = 19.090 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b2_r2la_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b2_r2la_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 11.478 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b8_r2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b8_r2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 79 registers, used 0 barriers
+ptxas info    : Compile time = 28.332 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b4_r2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b4_r2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 68 registers, used 0 barriers
+ptxas info    : Compile time = 16.385 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b2_r2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b2_r2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 0 barriers
+ptxas info    : Compile time = 10.839 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b8_f2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b8_f2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 79 registers, used 0 barriers
+ptxas info    : Compile time = 55.972 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b4_f2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b4_f2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 68 registers, used 0 barriers
+ptxas info    : Compile time = 30.548 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b2_f2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b2_f2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 19.786 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b8_f3_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b8_f3_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 79 registers, used 0 barriers
+ptxas info    : Compile time = 88.359 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b4_f3_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b4_f3_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 68 registers, used 0 barriers
+ptxas info    : Compile time = 45.401 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b2_f3_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b2_f3_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 27.659 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b8_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b8_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 14.707 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b4_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b4_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 9.008 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 10.657 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_fused3_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_fused3_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 59 registers, used 0 barriers
+ptxas info    : Compile time = 16.285 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_fused2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_fused2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 50 registers, used 0 barriers
+ptxas info    : Compile time = 26.043 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_mr2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_mr2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 12.028 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers
+ptxas info    : Compile time = 10.893 ms
+ptxas info    : Compiling entry function 'q4_0_split_rp_build' for 'sm_120a'
+ptxas info    : Function properties for q4_0_split_rp_build
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 2.410 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_b16_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_b16_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 0 barriers
+ptxas info    : Compile time = 23.011 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_b8_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_b8_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 12.941 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_b4_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_b4_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers
+ptxas info    : Compile time = 8.604 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_b2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_b2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 9.405 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_mr2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_mr2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 12.958 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_rpca' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_rpca
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers, 13056 bytes smem
+ptxas info    : Compile time = 10.085 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_rp_g2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_rp_g2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 9.013 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 8.958 ms
+ptxas info    : Compiling entry function 'q8_0_split_rp_build' for 'sm_120a'
+ptxas info    : Function properties for q8_0_split_rp_build
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 3.596 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_fused3' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_fused3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 12.974 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_fused2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_fused2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 22.001 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_mr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_mr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 13.307 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_csr_iq4' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_csr_iq4
+    40 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 66 registers, used 0 barriers, 40 bytes cumulative stack size
+ptxas info    : Compile time = 109.484 ms
+ptxas info    : Compiling entry function 'moe_gate_up_gelu8_dev_q8_csr' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_gelu8_dev_q8_csr
+    40 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 66 registers, used 0 barriers, 40 bytes cumulative stack size
+ptxas info    : Compile time = 93.201 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 31 registers, used 1 barriers, 16 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 21.334 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 35 registers, used 1 barriers, 16 bytes cumulative stack size, 144 bytes smem
+ptxas info    : Compile time = 44.347 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_s2z' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_s2z
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 16 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 49.499 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_u64' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_u64
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 189.407 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_gs4' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_gs4
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 16 bytes cumulative stack size, 272 bytes smem
+ptxas info    : Compile time = 46.631 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_s2' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_s2
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 16 bytes cumulative stack size, 16 bytes smem
+ptxas info    : Compile time = 48.022 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_j8sg' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_j8sg
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 1 barriers, 16 bytes cumulative stack size, 2048 bytes smem
+ptxas info    : Compile time = 88.673 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_sg' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_sg
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers, 16 bytes cumulative stack size, 2048 bytes smem
+ptxas info    : Compile time = 89.868 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_j8' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_j8
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 88.637 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_w8h2v_rows' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_w8h2v_rows
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 43 registers, used 1 barriers, 16 bytes cumulative stack size, 64 bytes smem
+ptxas info    : Compile time = 54.003 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_rows_w8' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_rows_w8
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 16 bytes cumulative stack size, 32 bytes smem
+ptxas info    : Compile time = 60.670 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_rows_g' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_rows_g
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 51.881 ms
+ptxas info    : Compiling entry function 'moe_gate_up_gelu8_dev_q8_rows' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_gelu8_dev_q8_rows
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 53 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 97.392 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_v_rows' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_v_rows
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 118.285 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_vsm2' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_vsm2
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 268.660 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_vsm' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_vsm
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 107.371 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_v' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_v
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 106.256 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_w8h2r2v' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_w8h2r2v
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 16 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 117.732 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_w8h2v' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_w8h2v
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 43 registers, used 1 barriers, 16 bytes cumulative stack size, 64 bytes smem
+ptxas info    : Compile time = 54.475 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_w8h2r2' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_w8h2r2
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 1 barriers, 16 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 110.420 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_w8h2' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_w8h2
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 43 registers, used 1 barriers, 16 bytes cumulative stack size, 64 bytes smem
+ptxas info    : Compile time = 52.609 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_h2' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_h2
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 45.650 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_w8r4' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_w8r4
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 16 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 217.491 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_w8r2' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_w8r2
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 16 bytes cumulative stack size, 64 bytes smem
+ptxas info    : Compile time = 92.157 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8_w8r1' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8_w8r1
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 16 bytes cumulative stack size, 32 bytes smem
+ptxas info    : Compile time = 51.613 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_r4' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_r4
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 520.604 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_r2' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_r2
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 213.812 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8_r1' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8_r1
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 47 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 85.386 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_dev_q8' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_dev_q8
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 42.019 ms
+ptxas info    : Compiling entry function 'moe_w_exscale' for 'sm_120a'
+ptxas info    : Function properties for moe_w_exscale
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 0 barriers
+ptxas info    : Compile time = 1.379 ms
+ptxas info    : Compiling entry function 'moe_gate_up_gelu8_dev_q8' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_gelu8_dev_q8
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 81.737 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_dev_q8' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_dev_q8
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 84.836 ms
+ptxas info    : Compiling entry function 'moe_w_scale_by_expert' for 'sm_120a'
+ptxas info    : Function properties for moe_w_scale_by_expert
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, used 0 barriers
+ptxas info    : Compile time = 1.341 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_f32' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_f32
+    112 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 34 registers, used 1 barriers, 112 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 21.636 ms
+ptxas info    : Compiling entry function 'moe_down8_fma_q8' for 'sm_120a'
+ptxas info    : Function properties for moe_down8_fma_q8
+    112 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers, 112 bytes cumulative stack size
+ptxas info    : Compile time = 40.283 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_q8' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_q8
+    144 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 0 barriers, 144 bytes cumulative stack size
+ptxas info    : Compile time = 89.633 ms
+ptxas info    : Compiling entry function 'moe_gate_up_silu8_f32' for 'sm_120a'
+ptxas info    : Function properties for moe_gate_up_silu8_f32
+    144 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 144 bytes cumulative stack size, 144 bytes smem
+ptxas info    : Compile time = 48.041 ms
+ptxas info    : Compiling entry function 'qmatvec_f32' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_f32
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 31 registers, used 1 barriers, 16 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 23.470 ms
+ptxas info    : Compiling entry function 'qmatvec_iq4_XS_dp4a' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_iq4_XS_dp4a
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 1 barriers, 128 bytes smem
+ptxas info    : Compile time = 14.170 ms
+ptxas info    : Compiling entry function 'moe_pairs_scatter' for 'sm_120a'
+ptxas info    : Function properties for moe_pairs_scatter
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 6.757 ms
+ptxas info    : Compiling entry function 'moe_pairs_gelu_mul' for 'sm_120a'
+ptxas info    : Function properties for moe_pairs_gelu_mul
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 14 registers, used 0 barriers
+ptxas info    : Compile time = 1.948 ms
+ptxas info    : Compiling entry function 'moe_pairs_silu_mul' for 'sm_120a'
+ptxas info    : Function properties for moe_pairs_silu_mul
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 16 registers, used 0 barriers
+ptxas info    : Compile time = 5.766 ms
+ptxas info    : Compiling entry function 'moe_pairs_matvec_q8_dec' for 'sm_120a'
+ptxas info    : Function properties for moe_pairs_matvec_q8_dec
+    128 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers, 128 bytes cumulative stack size
+ptxas info    : Compile time = 45.187 ms
+ptxas info    : Compiling entry function 'moe_pairs_matvec_q8_em' for 'sm_120a'
+ptxas info    : Function properties for moe_pairs_matvec_q8_em
+    80 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 102 registers, used 0 barriers, 80 bytes cumulative stack size
+ptxas info    : Compile time = 266.769 ms
+ptxas info    : Compiling entry function 'moe_pairs_matvec_q8' for 'sm_120a'
+ptxas info    : Function properties for moe_pairs_matvec_q8
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 41.005 ms
+ptxas info    : Compiling entry function 'qmatvec_expert_q8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_expert_q8
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 39.176 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_dp4a' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_dp4a
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 39 registers, used 1 barriers, 128 bytes smem
+ptxas info    : Compile time = 9.347 ms
+ptxas info    : Compiling entry function 'qmatvec_q3_K_dp4a' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q3_K_dp4a
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 16 bytes cumulative stack size, 128 bytes smem
+ptxas info    : Compile time = 15.732 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_dp4a' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_dp4a
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 128 bytes smem
+ptxas info    : Compile time = 10.782 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_dp4a' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_dp4a
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 43 registers, used 1 barriers, 128 bytes smem
+ptxas info    : Compile time = 21.288 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_dp4a' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_dp4a
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 128 bytes smem
+ptxas info    : Compile time = 8.316 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_dp4a' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_dp4a
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 1 barriers, 128 bytes smem
+ptxas info    : Compile time = 11.957 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b8_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b8_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 0 barriers
+ptxas info    : Compile time = 33.272 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b4_r2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b4_r2w8
+    32 bytes stack frame, 28 bytes spill stores, 28 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 32 bytes cumulative stack size
+ptxas info    : Compile time = 25.707 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b4_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b4_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 0 barriers
+ptxas info    : Compile time = 25.313 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b2_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b2_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 20.510 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_b8_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_b8_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 0 barriers
+ptxas info    : Compile time = 33.648 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_b4_r2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_b4_r2w8
+    16 bytes stack frame, 20 bytes spill stores, 20 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 24.751 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_b4_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_b4_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 0 barriers
+ptxas info    : Compile time = 23.892 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_b2_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_b2_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 19.050 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b8_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b8_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 0 barriers
+ptxas info    : Compile time = 27.990 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b4_r2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b4_r2w8
+    8 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 17.044 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b4_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b4_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 70 registers, used 0 barriers
+ptxas info    : Compile time = 17.989 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b2_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b2_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 63 registers, used 0 barriers
+ptxas info    : Compile time = 13.475 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b16' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 68 registers, used 0 barriers
+ptxas info    : Compile time = 31.625 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 19.973 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 14.580 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 10.649 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_b16' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_b16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 35.178 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 21.194 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 15.138 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 11.246 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b16' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 68 registers, used 0 barriers
+ptxas info    : Compile time = 28.906 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 16.070 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers
+ptxas info    : Compile time = 10.488 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.281 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_blk_mmvq_b16' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_blk_mmvq_b16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 121 registers, used 0 barriers
+ptxas info    : Compile time = 65.128 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_blk_mmvq_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_blk_mmvq_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 76 registers, used 0 barriers
+ptxas info    : Compile time = 31.274 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_blk_mmvq_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_blk_mmvq_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 17.827 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_blk_mmvq_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_blk_mmvq_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 11.498 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_blk_mmvq' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_blk_mmvq
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 7.511 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_fused3_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_fused3_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 18.509 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_fused3_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_fused3_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 12.150 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_fused2_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_fused2_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 75 registers, used 0 barriers
+ptxas info    : Compile time = 30.058 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_fused2_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_fused2_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 17.882 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_fused2_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_fused2_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 58 registers, used 0 barriers
+ptxas info    : Compile time = 11.776 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_b16' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_b16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 117 registers, used 0 barriers
+ptxas info    : Compile time = 57.235 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 75 registers, used 0 barriers
+ptxas info    : Compile time = 29.311 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 17.265 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 58 registers, used 0 barriers
+ptxas info    : Compile time = 11.150 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_fused3' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_fused3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 0 barriers
+ptxas info    : Compile time = 7.636 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq_fused2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq_fused2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 37 registers, used 0 barriers
+ptxas info    : Compile time = 7.128 ms
+ptxas info    : Compiling entry function 'qmatvec_e4m3_mmvq' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_e4m3_mmvq
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 0 barriers
+ptxas info    : Compile time = 7.145 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_fused3_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_fused3_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 8.753 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_fused3_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_fused3_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 10.908 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_fused2_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_fused2_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 0 barriers
+ptxas info    : Compile time = 12.133 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_fused2_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_fused2_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 8.198 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_fused2_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_fused2_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 37 registers, used 0 barriers
+ptxas info    : Compile time = 9.937 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_b16' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_b16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 21.583 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 12.471 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.202 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 0 barriers
+ptxas info    : Compile time = 9.875 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b16_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b16_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 95 registers, used 0 barriers
+ptxas info    : Compile time = 48.029 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b16' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 24.818 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 14.238 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 0 barriers
+ptxas info    : Compile time = 8.648 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 0 barriers
+ptxas info    : Compile time = 11.080 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b8_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b8_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 71 registers, used 0 barriers
+ptxas info    : Compile time = 26.472 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b4_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b4_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 61 registers, used 0 barriers
+ptxas info    : Compile time = 16.524 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_0_mmvq_b2_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_0_mmvq_b2_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 0 barriers
+ptxas info    : Compile time = 11.282 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_dp4a_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_dp4a_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 1 barriers, 128 bytes smem
+ptxas info    : Compile time = 8.979 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_mr2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_mr2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 0 barriers
+ptxas info    : Compile time = 11.524 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_mr2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_mr2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 11.993 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 41 registers, used 0 barriers
+ptxas info    : Compile time = 7.692 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_rpksc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_rpksc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 71 registers, used 1 barriers, 4480 bytes smem
+ptxas info    : Compile time = 43.342 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rpksc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rpksc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 1 barriers, 4416 bytes smem
+ptxas info    : Compile time = 31.360 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_rpksc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_rpksc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 4384 bytes smem
+ptxas info    : Compile time = 26.622 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_rpks' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_rpks
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 1 barriers, 128 bytes smem
+ptxas info    : Compile time = 26.219 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rpks' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rpks
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 67 registers, used 1 barriers, 64 bytes smem
+ptxas info    : Compile time = 18.917 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_rpks' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_rpks
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 1 barriers, 32 bytes smem
+ptxas info    : Compile time = 15.155 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_rpmsc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_rpmsc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 80 registers, used 0 barriers, 8704 bytes smem
+ptxas info    : Compile time = 32.629 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rpmsc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rpmsc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 8704 bytes smem
+ptxas info    : Compile time = 26.634 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_rpmsc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_rpmsc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 0 barriers, 8704 bytes smem
+ptxas info    : Compile time = 21.951 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_rpms' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_rpms
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 86 registers, used 0 barriers
+ptxas info    : Compile time = 24.300 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rpms' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rpms
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 16.627 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_rpms' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_rpms
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 13.026 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_b7_rpr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_b7_rpr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 0 barriers
+ptxas info    : Compile time = 22.903 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_b6_rpr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_b6_rpr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 0 barriers
+ptxas info    : Compile time = 20.813 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_b5_rpr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_b5_rpr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 0 barriers
+ptxas info    : Compile time = 19.200 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b7_rpr2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b7_rpr2w8
+    8 bytes stack frame, 24 bytes spill stores, 24 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 23.219 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b6_rpr2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b6_rpr2w8
+    8 bytes stack frame, 4 bytes spill stores, 8 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 8 bytes cumulative stack size
+ptxas info    : Compile time = 21.156 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b5_rpr2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b5_rpr2w8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 19.213 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b7_rpsc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b7_rpsc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 70 registers, used 0 barriers, 8704 bytes smem
+ptxas info    : Compile time = 32.615 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b6_rpsc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b6_rpsc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 0 barriers, 8704 bytes smem
+ptxas info    : Compile time = 30.949 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b5_rpsc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b5_rpsc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 0 barriers, 8704 bytes smem
+ptxas info    : Compile time = 29.679 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_rpsc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_rpsc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 72 registers, used 0 barriers, 8704 bytes smem
+ptxas info    : Compile time = 34.197 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rpsc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rpsc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 8704 bytes smem
+ptxas info    : Compile time = 27.098 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_rpsc' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_rpsc
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers, 8704 bytes smem
+ptxas info    : Compile time = 23.478 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_rpr2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_rpr2w8
+    16 bytes stack frame, 48 bytes spill stores, 48 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 24.994 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_b4_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_b4_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers
+ptxas info    : Compile time = 11.353 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_b4_rpr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_b4_rpr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 70 registers, used 0 barriers
+ptxas info    : Compile time = 17.785 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_b2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_b2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.763 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_b4_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_b4_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 69 registers, used 0 barriers
+ptxas info    : Compile time = 17.903 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.596 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b16_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b16_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 25.985 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_rpr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_rpr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 76 registers, used 0 barriers
+ptxas info    : Compile time = 24.945 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 52 registers, used 0 barriers
+ptxas info    : Compile time = 15.323 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rpr2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rpr2w8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 17.259 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rpr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rpr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 67 registers, used 0 barriers
+ptxas info    : Compile time = 18.171 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_rpr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_rpr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 0 barriers
+ptxas info    : Compile time = 14.883 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers
+ptxas info    : Compile time = 12.320 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_rp' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_rp
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.817 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_rpcar2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_rpcar2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers, 13824 bytes smem
+ptxas info    : Compile time = 17.918 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_rpca' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_rpca
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers, 9216 bytes smem
+ptxas info    : Compile time = 10.957 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rpcar2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rpcar2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 0 barriers, 13824 bytes smem
+ptxas info    : Compile time = 23.688 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_rpca' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_rpca
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 0 barriers, 9216 bytes smem
+ptxas info    : Compile time = 14.753 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_car2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_car2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 54 registers, used 0 barriers, 13824 bytes smem
+ptxas info    : Compile time = 23.997 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_car2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_car2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers, 13824 bytes smem
+ptxas info    : Compile time = 18.699 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_ca' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_ca
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 42 registers, used 0 barriers, 9216 bytes smem
+ptxas info    : Compile time = 13.208 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_ca' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_ca
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers, 9216 bytes smem
+ptxas info    : Compile time = 10.421 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_pfr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_pfr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 68 registers, used 0 barriers
+ptxas info    : Compile time = 21.911 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_pfr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_pfr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 0 barriers
+ptxas info    : Compile time = 17.356 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_r2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_r2w8
+    24 bytes stack frame, 44 bytes spill stores, 44 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers, 24 bytes cumulative stack size
+ptxas info    : Compile time = 29.043 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 77 registers, used 0 barriers
+ptxas info    : Compile time = 27.839 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_r2w8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_r2w8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 20.346 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 69 registers, used 0 barriers
+ptxas info    : Compile time = 19.894 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_r2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_r2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 62 registers, used 0 barriers
+ptxas info    : Compile time = 17.036 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8_pf' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8_pf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 19.231 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4_pf' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4_pf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 47 registers, used 0 barriers
+ptxas info    : Compile time = 13.766 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2_pf' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2_pf
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 10.605 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b16' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b16
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 64 registers, used 0 barriers
+ptxas info    : Compile time = 29.175 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b8' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b8
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 17.951 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b4' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b4
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 12.632 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_b2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_b2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 9.718 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_dual_mr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_dual_mr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 46 registers, used 0 barriers
+ptxas info    : Compile time = 14.269 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq_mr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq_mr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 48 registers, used 0 barriers
+ptxas info    : Compile time = 13.800 ms
+ptxas info    : Compiling entry function 'qmatvec_nvfp4_mmvq' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_nvfp4_mmvq
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.615 ms
+ptxas info    : Compiling entry function 'qmatvec_q6_K_mmvq' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q6_K_mmvq
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 44 registers, used 0 barriers
+ptxas info    : Compile time = 9.725 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_mr2_il' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_mr2_il
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 56 registers, used 0 barriers
+ptxas info    : Compile time = 26.149 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_il' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_il
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 15.626 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq_mr2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq_mr2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 45 registers, used 0 barriers
+ptxas info    : Compile time = 15.408 ms
+ptxas info    : Compiling entry function 'qmatvec_q5_K_mmvq' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q5_K_mmvq
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 9.379 ms
+ptxas info    : Compiling entry function 'qmatvec_q4_K_mmvq' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q4_K_mmvq
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 7.057 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_fused3' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_fused3
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.942 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq_fused2' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq_fused2
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.150 ms
+ptxas info    : Compiling entry function 'qmatvec_q8_0_mmvq' for 'sm_120a'
+ptxas info    : Function properties for qmatvec_q8_0_mmvq
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 40 registers, used 0 barriers
+ptxas info    : Compile time = 8.787 ms
+ptxas info    : Compiling entry function 'quantize_fp4_act' for 'sm_120a'
+ptxas info    : Function properties for quantize_fp4_act
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 34 registers, used 0 barriers
+ptxas info    : Compile time = 29.496 ms
+ptxas info    : Compiling entry function 'quantize_q8_1' for 'sm_120a'
+ptxas info    : Function properties for quantize_q8_1
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 22 registers, used 0 barriers
+ptxas info    : Compile time = 14.564 ms
+ptxas info    : Compiling entry function 'inc_i32' for 'sm_120a'
+ptxas info    : Function properties for inc_i32
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 8 registers, used 0 barriers
+ptxas info    : Compile time = 1.045 ms
+ptxas info    : Compiling entry function 'embed_gather_u32_t' for 'sm_120a'
+ptxas info    : Function properties for embed_gather_u32_t
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 26 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 25.176 ms
+ptxas info    : Compiling entry function 'embed_gather_u32' for 'sm_120a'
+ptxas info    : Function properties for embed_gather_u32
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 26 registers, used 0 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 22.753 ms

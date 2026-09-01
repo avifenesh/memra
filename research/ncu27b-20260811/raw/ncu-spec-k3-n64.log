@@ -1,0 +1,114 @@
+capture-start 2026-08-10T23:48:31Z
+tree 417778dc2dbef8654df916ecc0252940de492c0d
+branch lane/cx-ncu27b
+run-spec-sha256 220d527beeb4bd2306cfd017ababdf2c501326bff9fcf87bcf4015e38c84561c
+model-sha256 d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517
+draft-sha256 b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581
+prompt-sha256 6e00d76296069277dc7717115f977aedcab502b610c95a042c63c30eefdb86b2
+shape c=1 K=3 NGEN=64 CHAT=1 PROFILE_SPEC=2 CUDA_VISIBLE_DEVICES=0
+[gpu 2026-08-10T23:48:56Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P8, 63, 10.16 W, [N/A], 180 MHz, 405 MHz, 31 MiB, 24463 MiB, 0 %
+profiler ncu; profile-from-start=off; graph=node; per-launch-config; one launch/config; base clocks
+kernel-regex ^(qmatvec_.*|fa_decode_.*|.*rms.*|rope_neox_f32|argmax_.*|gdn_scan_s128|l2_norm_f32|silu_mul_scaled_q8_1|ssm_conv1d_tm_state_f32|qkv_to_gdn_repack_f32|append_quantize_kv_q8_0_q5_1|sigmoid_f32|ssm_conv_ring_update_f32|gdn_glog_f32|quantize_q8_1)$
+==PROF== Connected to process 25811 (/home/avifenesh/projects/wt-cx-ncu27b/target/release/run-spec)
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 3.816s = 16.51 tok/s (gen-only; this run's prime 0.101s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+==PROF== Profiling "rms_norm_f32": 0%
+==WARNING== Backing up device memory in system memory. Kernel replay might be slow. Consider using "--replay-mode application" to avoid memory save-and-restore.
+....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q4_K_mmvq": 0%....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q4_K_mmvq": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q4_K_mmvq": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q6_K_mmvq": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rope_neox_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rope_neox_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "fa_decode_vec_q_v4_deep_dc": 0%....50%....100% - 16 passes
+==PROF== Profiling "fa_decode_combine_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "sigmoid_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q4_K_mmvq": 0%....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q6_K_mmvq": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_nvfp4_mmvq_mr2_rp": 0%....50%....100% - 16 passes
+==PROF== Profiling "argmax_partial_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "argmax_final_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_nvfp4_mmvq_b4_rpr2w8": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_nvfp4_mmvq_b4_rp": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_nvfp4_mmvq_b4_rp": 0%....50%....100% - 16 passes
+==PROF== Profiling "ssm_conv1d_tm_state_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "ssm_conv_ring_update_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "qkv_to_gdn_repack_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "l2_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "sigmoid_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "gdn_glog_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "gdn_scan_s128": 0%....50%....100% - 16 passes
+==PROF== Profiling "gated_rmsnorm_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_nvfp4_mmvq_b4_rpr2w8": 0%....50%....100% - 16 passes
+==PROF== Profiling "add_rms_norm_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_nvfp4_mmvq_dual_b4_rpr2": 0%....50%....100% - 16 passes
+==PROF== Profiling "silu_mul_scaled_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_nvfp4_mmvq_b4_rpr2": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_nvfp4_mmvq_b4_rp": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rope_neox_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rope_neox_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "append_quantize_kv_q8_0_q5_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "fa_decode_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "sigmoid_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q5_K_mmvq_b4_r2": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q4_K_mmvq_b4_r2": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q4_K_mmvq_b4": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q6_K_mmvq_b4": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "ssm_conv1d_tm_state_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "qkv_to_gdn_repack_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "l2_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "gated_rmsnorm_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "add_rms_norm_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "silu_mul_scaled_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rope_neox_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rope_neox_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "sigmoid_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "quantize_q8_1": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q4_K_mmvq_b2_r2": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q4_K_mmvq_b2": 0%....50%....100% - 16 passes
+==PROF== Profiling "qmatvec_q6_K_mmvq_b2": 0%....50%....100% - 16 passes
+==PROF== Profiling "rms_norm_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "rope_neox_f32": 0%....50%....100% - 16 passes
+==PROF== Profiling "fa_decode_vec_q_rows_v4": 0%....50%....100% - 16 passes
+==PROF== Profiling "fa_decode_combine_rows": 0%....50%....100% - 16 passes
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+[spec-phase] draft=90464.8ms (26.6%) verify-issue=197868.1ms (58.3%) verify-wait=27.4ms (0.0%) commit-host=51219.4ms (15.1%) rounds=21
+
+[generate_spec K=3] 64 tok in 339.675s = 0.19 tok/s (0.01x vs generate; this run's prime 0.103s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+==PROF== Disconnected from process 25811
+==PROF== Report: /home/avifenesh/projects/wt-cx-ncu27b/research/ncu27b-20260811/raw/ncu-spec-k3-n64.ncu-rep
+[gpu 2026-08-10T23:54:50Z]
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P0, 66, 47.77 W, [N/A], 2130 MHz, 14001 MHz, 157 MiB, 24463 MiB, 24 %
+capture-end 2026-08-10T23:54:50Z rc=0

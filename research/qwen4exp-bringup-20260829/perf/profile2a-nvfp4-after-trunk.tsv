@@ -1,0 +1,26 @@
+# qwen4exp_real_gate	label=nvfp4	binary_sha256=2bd432bffeff0d719eb3e87e1eaabcec079e76a9a1cd0a39e8e02aea6ce7b1d4	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# profile	steps=64	t_kv_start=94	profiled_wall_ms_per_token=30.12	attributed_ms_per_token=27.73	unprofiled_mean_ms_per_token=22.61
+section	calls_per_token	total_ms	ms_per_token	pct_of_attributed
+hyper.read	96.0	416.9	6.514	23.5
+moe.sel_grouped	48.0	337.2	5.268	19.0
+gdn.proj	36.0	184.8	2.887	10.4
+moe.shared	48.0	122.0	1.906	6.9
+gdn.conv_scan	36.0	120.2	1.878	6.8
+gdn.norm_gate_out	36.0	109.8	1.716	6.2
+hyper.write	96.0	104.6	1.634	5.9
+moe.router	48.0	93.7	1.464	5.3
+qsa.sdpa	12.0	70.7	1.105	4.0
+qsa.proj	12.0	61.3	0.958	3.5
+lm_head	1.0	54.4	0.850	3.1
+qsa.gate_wo	12.0	31.9	0.499	1.8
+qsa.idx_proj	12.0	23.8	0.371	1.3
+ple.key_gate	1.0	14.5	0.226	0.8
+ple.conv_write	1.0	8.1	0.126	0.5
+qsa.mask_h2d	12.0	6.5	0.102	0.4
+logits.dtoh	1.0	6.0	0.094	0.3
+exit.mixer	1.0	2.9	0.045	0.2
+entry.embed	1.0	2.1	0.033	0.1
+ple.host_ngram_gather	1.0	1.3	0.021	0.1
+qsa.idx_host	12.0	1.3	0.020	0.1
+ple.h2d	1.0	0.6	0.010	0.0

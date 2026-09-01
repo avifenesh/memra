@@ -1,0 +1,56 @@
+EXACTNESS_LOCK_ACQUIRED 2026-08-10T16:06:08Z
+host=<private-host-redacted>
+source_commit=4e0a8ce25eb9c1801e7c9c84ac71ad60347925ba
+## lane/specmech
+=== run-spec K=1..8 2026-08-10T16:06:41Z ===
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[mtp-draft] loading external MTP draft: /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 layers, nextn=0)
+text prompt (472 chars) -> 91 tokens
+prompt tokens: [0, 671, 8412, 6005, 15246, 39105, 28499, 14712, 8739, 23997, 538, 60944, 9130, 1407, 83119, 5908, 84152, 1060, 63310, 71, 1055, 5291, 6464, 14, 1479, 5059, 1766, 1781, 8086, 87375, 28907, 1066, 16, 8829, 6632, 344, 9720, 3672, 418, 270, 3628, 14, 1754, 260, 13058, 29009, 588, 20118, 260, 1499, 2641, 105209, 18103, 16, 39843, 14, 3132, 513, 3132, 14, 1192, 260, 13376, 9934, 86473, 1648, 67940, 63203, 305, 74638, 1009, 13523, 362, 260, 4031, 17840, 14, 305, 8470, 778, 6632, 81252, 52636, 1082, 270, 8739, 6939, 38504, 5291, 6464, 603]
+
+[generate]   31 tok in 0.405s = 76.50 tok/s (gen-only; this run's prime 0.284s)
+  oracle: Step35 live B=1 batched target
+  tokens: [128799, 201, 795, 8850, 10531, 75405, 30872, 73815, 295, 260, 21857, 10672, 9934, 15, 123047, 343, 28608, 39, 11, 5629, 14880, 271, 19, 16, 2619, 14907, 99761, 343, 41, 1217, 22604, 2143]
+
+[generate_spec K=1] 32 tok in 0.485s = 63.89 tok/s (0.84x vs generate; this run's prime 0.284s)
+  acceptance: 13/19 = 68.4%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 32 tok in 0.644s = 48.12 tok/s (0.63x vs generate; this run's prime 0.284s)
+  acceptance: 16/34 = 47.1%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=3] 32 tok in 0.900s = 34.45 tok/s (0.45x vs generate; this run's prime 0.284s)
+  acceptance: 16/54 = 29.6%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 32 tok in 0.994s = 31.18 tok/s (0.41x vs generate; this run's prime 0.284s)
+  acceptance: 18/64 = 28.1%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 32 tok in 1.266s = 24.49 tok/s (0.32x vs generate; this run's prime 0.283s)
+  acceptance: 17/85 = 20.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=6] 32 tok in 1.470s = 21.09 tok/s (0.28x vs generate; this run's prime 0.284s)
+  acceptance: 17/102 = 16.7%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 32 tok in 1.674s = 18.52 tok/s (0.24x vs generate; this run's prime 0.284s)
+  acceptance: 17/119 = 14.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 32 tok in 1.895s = 16.36 tok/s (0.21x vs generate; this run's prime 0.289s)
+  acceptance: 17/136 = 12.5%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+=== plain 2026-08-10T16:07:32Z ===
+{"actual_start_offsets_ms": [0.024, 0.248], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "plain", "latency_p50_s": 2.216449, "latency_p99_s": 2.216534, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 1.115777, "ttft_p99_s": 1.115812, "wall_s": 2.216663}
+arm=plain spec_lines=0 pipe_lines=0
+=== serial 2026-08-10T16:08:13Z ===
+{"actual_start_offsets_ms": [0.025, 0.238], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "serial", "latency_p50_s": 2.788441, "latency_p99_s": 3.071744, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 0.867897, "ttft_p99_s": 1.134451, "wall_s": 3.071858}
+arm=serial spec_lines=4 pipe_lines=0
+=== pipe 2026-08-10T16:08:58Z ===
+{"actual_start_offsets_ms": [0.026, 0.234], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 2, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 2}, "label": "pipe", "latency_p50_s": 3.062315, "latency_p99_s": 3.062331, "n_error": 0, "n_ok": 2, "requests": 2, "scheduled_delays_ms": [0.0, 0.0], "ttft_p50_s": 0.870409, "ttft_p99_s": 1.136636, "wall_s": 3.062593}
+arm=pipe spec_lines=4 pipe_lines=1
+{"golden_bytes": 326, "golden_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "pipe_requests": 2, "plain_requests": 2, "plain_vs_serial_vs_pipe": "byte-identical", "serial_requests": 2, "unique_completion_sha256": ["21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de"]}
+EXACTNESS_PASS 2026-08-10T16:09:42Z

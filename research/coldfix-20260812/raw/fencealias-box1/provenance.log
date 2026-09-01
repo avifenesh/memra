@@ -1,0 +1,36 @@
+source_commit=cfc43630713c9a504ca2de84e1418526ff84eddf
+source_describe=cfc43630
+host=<private-host-redacted>
+start_ts=2026-08-12T21:54:54Z
+Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+## box1/cx-fencealias
+9:version = "0.81.2"
+18:memra-gguf = { path = "crates/memra-gguf", version = "=0.81.2" }
+19:memra-sampling = { path = "crates/memra-sampling", version = "=0.81.2" }
+20:memra-validate = { path = "crates/memra-validate", version = "=0.81.2" }
+21:memra-kv = { path = "crates/memra-kv", version = "=0.81.2" }
+22:memra-lanes = { path = "crates/memra-lanes", version = "=0.81.2" }
+23:memra-tokenizer = { path = "crates/memra-tokenizer", version = "=0.81.2" }
+24:memra-runtime = { path = "crates/memra-runtime", version = "=0.81.2" }
+25:memra-engine = { path = "crates/memra-engine", version = "=0.81.2" }
+d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
+ce404f9ec20c6aab37220a2428254c6f7dc59286f1620d9060bb30e9d5ad9027  /opt/scratch/nvme/cx-fencealias/memra/research/e2e/prompts/pp512.txt
+4c8382370a988e24bc09f73fac484b2657d73a872116071cacb3e9d486cd74ea  tools/kernel-check-27b.cells
+80c07e8bfeacb897aeddbbbd10e4bed63db8094149340c6ef449d341317d1f46  tools/kernel-check-step35.cells
+2847ab0bfdead9c62302a36b9a46dcfa3d0ecd6aa67cbfa09adee0cd269a585c  tools/serve-smoke.sh
+b98b6c0234ba286192cb9c276cfd7295c746fd6fcf1d7fc3049944ff393812b1  tools/serve-stress-gate.sh
+783c22310084413b8d3608443c7c8f096feb36f777cf85f9f8eb334ddaa8d223  tools/q35-cold-mixed-gate.py
+artifact=/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf bytes=15705920064 mtime=2026-06-30 02:47:04.313106221 +0000
+artifact=/opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf bytes=1242867296 mtime=2026-07-18 02:51:51.642796089 +0000
+artifact=/opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf bytes=18209036576 mtime=2026-06-21 17:38:04.402413150 +0000
+artifact=/opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf bytes=944118560 mtime=2026-07-18 04:06:39.438907949 +0000

@@ -1,0 +1,147 @@
+14:52:38 waiting for GPU (capacity lane owns it first)...
+17:03:41 GPU free (stable) + lock held; rerun battery starts
+17:03:41 ENGINE-IDENTITY: PASS (run-spec base md5 == lane md5: lane changes memra-server only)
+17:03:41 runspec + engine identity banked in battery.txt (engine unchanged by the fix commit); skipping
+17:03:41 base identity banked (base binary unchanged); comparing new-lane identity against it
+17:03:41 boot bin=/home/ubuntu/pt-bins/memra-server-pt-45359b4e2 md5=5d3e9829a41fe70b77fe7f42c6e3abbe extra='' log=serve-lane2-main.log
+17:06:06 HEALTH=200 pid=371256
+[identity] greedy-seed0-r0 PASS {"finish": "length", "reasoning_len": 1257, "content_len": 0, "rc_sha": "7083f00481db758aa7fec840bd8ac7e1d348f80db8eeacd3903da43deeda26c3", "usage": {"prompt_tokens": 248, "completion_tokens": 256, "total_tokens": 504, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 2.9841070910000003, "spec": {"rounds": 125, "drafted": 181, "accepted": 131, "acceptance_rate": 0.7237569060773481}}, "se
+[identity] greedy-seed0-r1 PASS {"finish": "length", "reasoning_len": 1257, "content_len": 0, "rc_sha": "7083f00481db758aa7fec840bd8ac7e1d348f80db8eeacd3903da43deeda26c3", "usage": {"prompt_tokens": 248, "completion_tokens": 256, "total_tokens": 504, "prompt_tokens_details": {"cached_tokens": 224}, "elapsed_s": 2.419661947, "spec": {"rounds": 122, "drafted": 181, "accepted": 134, "acceptance_rate": 0.7403314917127072}}, "secs": 
+[identity] greedy-seed0-r2 PASS {"finish": "length", "reasoning_len": 1257, "content_len": 0, "rc_sha": "7083f00481db758aa7fec840bd8ac7e1d348f80db8eeacd3903da43deeda26c3", "usage": {"prompt_tokens": 248, "completion_tokens": 256, "total_tokens": 504, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 2.656850222, "spec": {"rounds": 125, "drafted": 181, "accepted": 131, "acceptance_rate": 0.7237569060773481}}, "secs": 2.
+[identity] greedy-seed0-r3 PASS {"finish": "length", "reasoning_len": 1257, "content_len": 0, "rc_sha": "7083f00481db758aa7fec840bd8ac7e1d348f80db8eeacd3903da43deeda26c3", "usage": {"prompt_tokens": 248, "completion_tokens": 256, "total_tokens": 504, "prompt_tokens_details": {"cached_tokens": 224}, "elapsed_s": 2.417794051, "spec": {"rounds": 122, "drafted": 181, "accepted": 134, "acceptance_rate": 0.7403314917127072}}, "secs": 
+[identity] greedy-seed0-r4 PASS {"finish": "length", "reasoning_len": 1257, "content_len": 0, "rc_sha": "7083f00481db758aa7fec840bd8ac7e1d348f80db8eeacd3903da43deeda26c3", "usage": {"prompt_tokens": 248, "completion_tokens": 256, "total_tokens": 504, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 2.652935579, "spec": {"rounds": 125, "drafted": 181, "accepted": 131, "acceptance_rate": 0.7237569060773481}}, "secs": 2.
+[identity] sampled-seed42-r0 PASS {"finish": "length", "reasoning_len": 1155, "content_len": 0, "rc_sha": "68363877347e1eba7d6d31e224d24a1a41926af8d2143ef3debcaa4a349e0736", "usage": {"prompt_tokens": 248, "completion_tokens": 256, "total_tokens": 504, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 2.682824096, "spec": {"rounds": 121, "drafted": 155, "accepted": 128, "acceptance_rate": 0.8258064516129032}}, "secs": 2.
+[identity] sampled-seed42-r1 PASS {"finish": "length", "reasoning_len": 1187, "content_len": 0, "rc_sha": "42cbdc4159552712813dadcf6c2c2b3436eab277401043f73fbf95aedd6b6aaa", "usage": {"prompt_tokens": 248, "completion_tokens": 256, "total_tokens": 504, "prompt_tokens_details": {"cached_tokens": 224}, "elapsed_s": 2.583375227, "spec": {"rounds": 123, "drafted": 169, "accepted": 126, "acceptance_rate": 0.7455621301775148}}, "secs": 
+[identity] sampled-seed42-r2 PASS {"finish": "length", "reasoning_len": 1155, "content_len": 0, "rc_sha": "68363877347e1eba7d6d31e224d24a1a41926af8d2143ef3debcaa4a349e0736", "usage": {"prompt_tokens": 248, "completion_tokens": 256, "total_tokens": 504, "prompt_tokens_details": {"cached_tokens": 0}, "elapsed_s": 2.68111233, "spec": {"rounds": 121, "drafted": 155, "accepted": 128, "acceptance_rate": 0.8258064516129032}}, "secs": 2.7
+SUMMARY mode=identity pass=8 length=0 fail=0 total=8
+[B-json_object] agentic8-0 PASS {"finish": "stop", "reasoning_len": 8283, "content_len": 5256, "rc_sha": "30d5458b7b23ae65", "completion_tokens": 3193, "spec_in_usage": false, "secs": 44.0}
+[B-json_object] agentic8-1 LENGTH {"finish": "length", "reasoning_len": 11338, "content_len": 5557, "rc_sha": "436266d950657e1c", "completion_tokens": 4096, "spec_in_usage": false, "secs": 57.0}
+[B-json_object] agentic8-2 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[B-json_object] agentic8-3 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[B-json_object] agentic8-4 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[B-json_object] agentic8-5 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[B-json_object] agentic8-6 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[B-json_object] agentic8-7 LENGTH {"finish": "length", "reasoning_len": 10075, "content_len": 7073, "rc_sha": "b46214224521c19a", "completion_tokens": 4096, "spec_in_usage": false, "secs": 56.2}
+[B-json_object] curve-0008 PASS {"finish": "stop", "reasoning_len": 872, "content_len": 276, "rc_sha": "5db42c3e2d8653c4", "completion_tokens": 279, "spec_in_usage": false, "secs": 3.9}
+[B-json_object] curve-0128 PASS {"finish": "stop", "reasoning_len": 5223, "content_len": 1652, "rc_sha": "8ff370be7a4fe942", "completion_tokens": 1419, "spec_in_usage": false, "secs": 19.0}
+[B-json_object] curve-0400 PASS {"finish": "stop", "reasoning_len": 5012, "content_len": 1889, "rc_sha": "99df4813b32e859f", "completion_tokens": 1397, "spec_in_usage": false, "secs": 19.0}
+[B-json_object] curve-1000 LENGTH {"finish": "length", "reasoning_len": 12620, "content_len": 3809, "rc_sha": "760513bef7aefb17", "completion_tokens": 4096, "spec_in_usage": false, "secs": 57.9}
+[B-json_object] curve-3000 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[B-json_object] ft-0400 PASS {"finish": "stop", "reasoning_len": 4883, "content_len": 1926, "rc_sha": "73f9fbf6bec50112", "completion_tokens": 1412, "spec_in_usage": false, "secs": 19.2}
+[B-json_object] curve-30k-1 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[B-json_object] curve-30k-2 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[C-json_schema] agentic8-0 PASS {"finish": "stop", "reasoning_len": 2720, "content_len": 764, "rc_sha": "66dba10643058e4a", "completion_tokens": 739, "spec_in_usage": false, "secs": 9.9}
+[C-json_schema] agentic8-1 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[C-json_schema] agentic8-2 PASS {"finish": "stop", "reasoning_len": 14793, "content_len": 1742, "rc_sha": "10d3adaa9d482cfb", "completion_tokens": 3836, "spec_in_usage": false, "secs": 53.2}
+[C-json_schema] agentic8-3 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[C-json_schema] agentic8-4 PASS {"finish": "stop", "reasoning_len": 10503, "content_len": 1030, "rc_sha": "2f776f9cd37c488e", "completion_tokens": 2656, "spec_in_usage": false, "secs": 36.3}
+[C-json_schema] agentic8-5 PASS {"finish": "stop", "reasoning_len": 13069, "content_len": 990, "rc_sha": "c13346b9a5f12372", "completion_tokens": 3476, "spec_in_usage": false, "secs": 47.7}
+[C-json_schema] agentic8-6 PASS {"finish": "stop", "reasoning_len": 15817, "content_len": 1021, "rc_sha": "4636652b1bc0f77d", "completion_tokens": 4073, "spec_in_usage": false, "secs": 56.3}
+[C-json_schema] agentic8-7 PASS {"finish": "stop", "reasoning_len": 13933, "content_len": 3138, "rc_sha": "25880b59ec0bc965", "completion_tokens": 4066, "spec_in_usage": false, "secs": 56.0}
+[C-json_schema] curve-0008 PASS {"finish": "stop", "reasoning_len": 722, "content_len": 570, "rc_sha": "edc68689167f4118", "completion_tokens": 309, "spec_in_usage": false, "secs": 4.0}
+[C-json_schema] curve-0128 PASS {"finish": "stop", "reasoning_len": 4695, "content_len": 1096, "rc_sha": "bebdfc5bb5f3cd3c", "completion_tokens": 1186, "spec_in_usage": false, "secs": 15.8}
+[C-json_schema] curve-0400 PASS {"finish": "stop", "reasoning_len": 13333, "content_len": 2422, "rc_sha": "ea99c279fc67ce8b", "completion_tokens": 3486, "spec_in_usage": false, "secs": 46.4}
+[C-json_schema] curve-1000 PASS {"finish": "stop", "reasoning_len": 12413, "content_len": 3858, "rc_sha": "3c451d7bd353475d", "completion_tokens": 3564, "spec_in_usage": false, "secs": 49.9}
+[C-json_schema] curve-3000 PASS {"finish": "stop", "reasoning_len": 11547, "content_len": 915, "rc_sha": "800e93d968df4fdd", "completion_tokens": 3048, "spec_in_usage": false, "secs": 43.8}
+[C-json_schema] ft-0400 PASS {"finish": "stop", "reasoning_len": 4781, "content_len": 1422, "rc_sha": "1aa88a7339f7ee4b", "completion_tokens": 1277, "spec_in_usage": false, "secs": 16.9}
+[C-json_schema] curve-30k-1 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[C-json_schema] curve-30k-2 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[D-eos-in-think] agentic8-7-r0 LENGTH {"finish": "length", "reasoning_len": 15383, "content_len": 277, "rc_sha": "edd6d91757f97d12", "completion_tokens": 4096, "spec_in_usage": false, "secs": 57.1}
+[D-eos-in-think] agentic8-6-r0 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[D-eos-in-think] agentic8-4-r0 LENGTH {"finish": "length", "reasoning_len": 12712, "content_len": 4942, "rc_sha": "803c1721ce41653b", "completion_tokens": 4096, "spec_in_usage": false, "secs": 56.9}
+[D-eos-in-think] agentic8-5-r0 FAILCLOSED-400 {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 4096 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to 
+[D-eos-in-think] agentic8-7-r1 LENGTH {"finish": "length", "reasoning_len": 11819, "content_len": 4969, "rc_sha": "61bf2019bd188a53", "completion_tokens": 4096, "spec_in_usage": false, "secs": 56.8}
+[D-eos-in-think] agentic8-6-r1 PASS {"finish": "stop", "reasoning_len": 14113, "content_len": 2510, "rc_sha": "67562f3fd78de833", "completion_tokens": 4064, "spec_in_usage": false, "secs": 56.2}
+[D-eos-in-think] agentic8-4-r1 PASS {"finish": "stop", "reasoning_len": 9999, "content_len": 3509, "rc_sha": "08d69fd5a575806f", "completion_tokens": 2943, "spec_in_usage": false, "secs": 40.7}
+[D-eos-in-think] agentic8-5-r1 LENGTH {"finish": "length", "reasoning_len": 15282, "content_len": 1587, "rc_sha": "e31c9057043d7cfb", "completion_tokens": 4096, "spec_in_usage": false, "secs": 56.9}
+[E-length-face] agentic8-0 PASS {"error": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 64 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large budgets), or have the operator set MEMRA_POSTTHINK_CEILING to force the reasoning to cl
+[F-stream] F0-agentic8-1 FAILCLOSED-STREAM {"finish": null, "reasoning_len": 16999, "content_len": 0, "rc_sha": "1aa42fa5f19cf8ff", "usage_present": false, "spec_in_usage": false, "order_ok": true}
+[F-stream] F1-curve-0400 PASS {"finish": "stop", "reasoning_len": 3703, "content_len": 1832, "rc_sha": "efdd30244c8c4e6e", "usage_present": true, "spec_in_usage": false, "order_ok": true}
+[F-stream] F2-agentic8-2 LENGTH {"finish": "length", "reasoning_len": 16830, "content_len": 1058, "rc_sha": "7dd559b9719e5f75", "usage_present": true, "spec_in_usage": false, "order_ok": true}
+[F-stream] F3-curve-0128 PASS {"finish": "stop", "reasoning_len": 4419, "content_len": 1109, "rc_sha": "7ddf7b4ddf942ace", "usage_present": true, "spec_in_usage": false, "order_ok": true}
+[N-failclosed] agentic8-1 PASS {"status": 400, "body": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large b", "secs": 14.3}
+[N-failclosed] agentic8-2 PASS {"status": 400, "body": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large b", "secs": 13.9}
+[N-failclosed] agentic8-3 PASS {"status": 400, "body": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large b", "secs": 13.5}
+[N-failclosed] agentic8-5 PASS {"status": 400, "body": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large b", "secs": 13.8}
+[N-failclosed] agentic8-7 PASS {"status": 400, "body": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large b", "secs": 14.0}
+[N-failclosed] curve-1000 PASS {"status": 400, "body": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large b", "secs": 14.7}
+[N-failclosed] curve-30k-1 PASS {"status": 400, "body": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large b", "secs": 33.7}
+[N-failclosed] curve-30k-2 PASS {"status": 400, "body": "{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large b", "secs": 31.1}
+[N-failclosed-stream] agentic8-1 PASS {"n_events": 1025, "err_events": 1, "err_head": "[{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large ", "finish": null, "content_len": 0}
+[N-failclosed-stream] agentic8-2 PASS {"n_events": 1024, "err_events": 1, "err_head": "[{\"error\": {\"message\": \"response_format could not be honored: max_tokens was reached inside the model's reasoning channel after 1024 reasoning tokens, before the think-close token, so no schema-constrained content was produced. This model reasons before answering; raise max_tokens (stream for large ", "finish": null, "content_len": 0}
+[P-plain] agentic8-3 PASS {"finish": "length", "reasoning_len": 1986, "content_len": 0, "spec_in_usage": true, "secs": 4.9}
+[P-plain] curve-0400 PASS {"finish": "length", "reasoning_len": 2277, "content_len": 0, "spec_in_usage": true, "secs": 4.7}
+SUMMARY mode=battery pass=34 length=8 fail=23 total=57
+  FAIL: B-json_object/agentic8-1: LENGTH
+  FAIL: B-json_object/agentic8-2: FAILCLOSED-400
+  FAIL: B-json_object/agentic8-3: FAILCLOSED-400
+  FAIL: B-json_object/agentic8-4: FAILCLOSED-400
+  FAIL: B-json_object/agentic8-5: FAILCLOSED-400
+  FAIL: B-json_object/agentic8-6: FAILCLOSED-400
+  FAIL: B-json_object/agentic8-7: LENGTH
+  FAIL: B-json_object/curve-1000: LENGTH
+  FAIL: B-json_object/curve-3000: FAILCLOSED-400
+  FAIL: B-json_object/curve-30k-1: FAILCLOSED-400
+  FAIL: B-json_object/curve-30k-2: FAILCLOSED-400
+  FAIL: C-json_schema/agentic8-1: FAILCLOSED-400
+  FAIL: C-json_schema/agentic8-3: FAILCLOSED-400
+  FAIL: C-json_schema/curve-30k-1: FAILCLOSED-400
+  FAIL: C-json_schema/curve-30k-2: FAILCLOSED-400
+  FAIL: D-eos-in-think/agentic8-7-r0: LENGTH
+  FAIL: D-eos-in-think/agentic8-6-r0: FAILCLOSED-400
+  FAIL: D-eos-in-think/agentic8-4-r0: LENGTH
+  FAIL: D-eos-in-think/agentic8-5-r0: FAILCLOSED-400
+  FAIL: D-eos-in-think/agentic8-7-r1: LENGTH
+  FAIL: D-eos-in-think/agentic8-5-r1: LENGTH
+  FAIL: F-stream/F0-agentic8-1: FAILCLOSED-STREAM
+  FAIL: F-stream/F2-agentic8-2: LENGTH
+17:44:13 battery rc=0
+--- receipts lane-main (serve-lane2-main.log)
+postthink_boot: 1
+postthink_armed: 55
+postthink_finish_model_close: 29
+postthink_finish_forced: 0
+postthink_finish_never: 26
+speck_k0_lines: 55
+speck_sample: [spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[spec-k] model="step37" tenant="" K=3 source=operator-pin prompt=248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+constrained_lines: 55
+illegal=0 sentinel87=0 panic=0
+LIVE-IDENTITY: PASS (8 rows compared; lane greedy rep-stable=True)
+17:44:18 boot bin=/home/ubuntu/pt-bins/memra-server-pt-45359b4e2 md5=5d3e9829a41fe70b77fe7f42c6e3abbe extra='MEMRA_POSTTHINK_CEILING=256' log=serve-lane2-ceiling.log
+17:46:43 HEALTH=200 pid=373020
+[G-ceiling] agentic8-0 LENGTH {"finish": "length", "reasoning_len": 1216, "content_len": 7679, "rc_sha": "b96575f8d88c7ffe", "completion_tokens": 4096, "spec_in_usage": false, "secs": 43.2}
+[G-ceiling] agentic8-4 PASS {"finish": "stop", "reasoning_len": 1215, "content_len": 7, "rc_sha": "881872040eda19c9", "completion_tokens": 261, "spec_in_usage": false, "secs": 3.5}
+[G-ceiling] curve-0400 PASS {"finish": "stop", "reasoning_len": 1045, "content_len": 2039, "rc_sha": "b38ef8a687855a74", "completion_tokens": 700, "spec_in_usage": false, "secs": 9.2}
+[G-ceiling] curve-1000 PASS {"finish": "stop", "reasoning_len": 1218, "content_len": 449, "rc_sha": "e4ca47d4d0b1ad2d", "completion_tokens": 368, "spec_in_usage": false, "secs": 5.4}
+SUMMARY mode=ceiling pass=3 length=1 fail=1 total=4
+  FAIL: G-ceiling/agentic8-0: LENGTH
+--- receipts lane-ceiling (serve-lane2-ceiling.log)
+postthink_boot: 1
+postthink_armed: 4
+postthink_finish_model_close: 0
+postthink_finish_forced: 4
+postthink_finish_never: 0
+speck_k0_lines: 4
+speck_sample: [spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=187 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+constrained_lines: 4
+illegal=0 sentinel87=0 panic=0
+17:47:50 boot bin=/home/ubuntu/pt-bins/memra-server-pt-45359b4e2 md5=5d3e9829a41fe70b77fe7f42c6e3abbe extra='MEMRA_STEP_VISION_DIR=/root/models/step37-flash-nvfp4' log=serve-lane2-vision.log
+17:50:20 HEALTH=200 pid=373334
+[H-vision] img0 PASS {"finish": "stop", "reasoning_len": 7509, "content_len": 2925, "rc_sha": "62301712c10fc84b", "completion_tokens": 3084, "spec_in_usage": false, "secs": 77.6}
+[H-vision] img1 FAIL-content-not-json(Expecting value: line 1 column 1 (char 0)) {"finish": "error", "reasoning_len": 11786, "content_len": 0, "rc_sha": "ede8939a8935ee2e", "completion_tokens": 3644, "spec_in_usage": false, "secs": 90.0}
+SUMMARY mode=vision pass=1 length=0 fail=1 total=2
+  FAIL: H-vision/img1: FAIL-content-not-json(Expecting value: line 1 column 1 (char 0))
+--- receipts lane-vision (serve-lane2-vision.log)
+postthink_boot: 1
+postthink_armed: 2
+postthink_finish_model_close: 1
+postthink_finish_forced: 0
+postthink_finish_never: 0
+speck_k0_lines: 2
+speck_sample: [spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[spec-k] model="step37" tenant="" K=0 source=eligibility-fallback prompt=688 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+constrained_lines: 1
+illegal=0 sentinel87=0 panic=0
+17:53:12 BATTERY_DONE

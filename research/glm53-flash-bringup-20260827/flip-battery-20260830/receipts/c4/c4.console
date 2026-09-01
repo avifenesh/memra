@@ -1,0 +1,32 @@
+######## C4 BOOT native ########
+[fb] no pidfile, nothing to stop
+[fb] launched pid=75805 boot=c4-native nonce=2775aa85-3779-4ad9-9222-56e8d74129a0
+[fb] READY after 35s
+[fb] GATES GREEN boot=c4-native
+[sample] ok=True wall=3.5s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[timed] d00-code ttft=1.793 tok/s=28.4 spec={'rounds': 100, 'drafted': 300, 'accepted': 155, 'acceptance_rate': 0.5166666666666667} err=None
+[timed] d01-code ttft=1.825 tok/s=28.3 spec={'rounds': 100, 'drafted': 300, 'accepted': 155, 'acceptance_rate': 0.5166666666666667} err=None
+[timed] d02-code ttft=1.751 tok/s=20.8 spec={'rounds': 126, 'drafted': 378, 'accepted': 130, 'acceptance_rate': 0.3439153439153439} err=None
+[timed] d03-code ttft=1.904 tok/s=25.4 spec={'rounds': 108, 'drafted': 324, 'accepted': 148, 'acceptance_rate': 0.4567901234567901} err=None
+[timed] d04-code ttft=1.733 tok/s=29.7 spec={'rounds': 85, 'drafted': 255, 'accepted': 147, 'acceptance_rate': 0.5764705882352941} err=None
+[timed] d05-code ttft=1.565 tok/s=26.8 spec={'rounds': 104, 'drafted': 312, 'accepted': 152, 'acceptance_rate': 0.48717948717948717} err=None
+[timed] d06-prose ttft=1.71 tok/s=30.5 spec={'rounds': 95, 'drafted': 285, 'accepted': 161, 'acceptance_rate': 0.5649122807017544} err=None
+[timed] d07-prose ttft=1.904 tok/s=28.0 spec={'rounds': 102, 'drafted': 306, 'accepted': 154, 'acceptance_rate': 0.5032679738562091} err=None
+[timed] d08-prose ttft=1.779 tok/s=28.1 spec={'rounds': 101, 'drafted': 303, 'accepted': 155, 'acceptance_rate': 0.5115511551155115} err=None
+[timed] d09-prose ttft=2.007 tok/s=27.9 spec={'rounds': 106, 'drafted': 318, 'accepted': 149, 'acceptance_rate': 0.46855345911949686} err=None
+[timed l3] l3-WARM ttft=1.686 tok/s=26.6 ptok=427 err=None
+[timed l3] l3-A4630 ttft=4.151 tok/s=22.2 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=4.256 tok/s=20.6 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=4.599 tok/s=22.6 ptok=6467 err=None
+[timed deep] l3-WARM ttft=1.691 err=None
+[timed deep] l3-A4630 ttft=4.153 err=None
+[timed vendor] d04-code tok/s=23.7 spec={'rounds': 110, 'drafted': 330, 'accepted': 147, 'acceptance_rate': 0.44545454545454544} err=None
+engagement: glm5spec=20 acc=126
+[glm5-spec] serve route ARMED: MTP head loaded; draft head FULL target vocab (no FR-Spec trim)
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[admission] request cost: model="zai/glm-5.3-flash" ctx=367 path=plain = 23936 B/token x ctx + 259MB prefill-workspace + 0MB fixed = 268MB
+[fb] SIGTERM pid=75805 exe=/root/memra/target/release/memra-server
+[fb] stopped
+=== LOOP-LAW SCREEN (c4 tapes) ===
+[loop-law] screened=14 flagged=0
+C4_ALL_DONE

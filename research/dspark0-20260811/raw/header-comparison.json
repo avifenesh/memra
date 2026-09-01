@@ -1,0 +1,554 @@
+{
+  "reference_metadata": {
+    "general.architecture": {
+      "index": 3,
+      "type": "STRING",
+      "offset": 24,
+      "value": "qwen35"
+    },
+    "general.type": {
+      "index": 4,
+      "type": "STRING",
+      "offset": 70,
+      "value": "model"
+    },
+    "general.name": {
+      "index": 5,
+      "type": "STRING",
+      "offset": 107,
+      "value": "C202236235762E1C871Ad0Ccb60C8Ee5Ba337B9A"
+    },
+    "general.size_label": {
+      "index": 6,
+      "type": "STRING",
+      "offset": 179,
+      "value": "9.2B"
+    },
+    "general.license": {
+      "index": 7,
+      "type": "STRING",
+      "offset": 221,
+      "value": "apache-2.0"
+    },
+    "general.license.link": {
+      "index": 8,
+      "type": "STRING",
+      "offset": 266,
+      "value": "https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE"
+    },
+    "general.base_model.count": {
+      "index": 9,
+      "type": "UINT32",
+      "offset": 362,
+      "value": 1
+    },
+    "general.base_model.0.name": {
+      "index": 10,
+      "type": "STRING",
+      "offset": 402,
+      "value": "Qwen3.5 9B Base"
+    },
+    "general.base_model.0.organization": {
+      "index": 11,
+      "type": "STRING",
+      "offset": 462,
+      "value": "Qwen"
+    },
+    "general.base_model.0.repo_url": {
+      "index": 12,
+      "type": "STRING",
+      "offset": 519,
+      "value": "https://huggingface.co/Qwen/Qwen3.5-9B-Base"
+    },
+    "general.tags": {
+      "index": 13,
+      "type": "ARRAY",
+      "offset": 611,
+      "array_types": [
+        "STRING"
+      ]
+    },
+    "qwen35.block_count": {
+      "index": 14,
+      "type": "UINT32",
+      "offset": 673,
+      "value": 33
+    },
+    "qwen35.context_length": {
+      "index": 15,
+      "type": "UINT32",
+      "offset": 707,
+      "value": 262144
+    },
+    "qwen35.embedding_length": {
+      "index": 16,
+      "type": "UINT32",
+      "offset": 744,
+      "value": 4096
+    },
+    "qwen35.feed_forward_length": {
+      "index": 17,
+      "type": "UINT32",
+      "offset": 783,
+      "value": 12288
+    },
+    "qwen35.attention.head_count": {
+      "index": 18,
+      "type": "UINT32",
+      "offset": 825,
+      "value": 16
+    },
+    "qwen35.attention.head_count_kv": {
+      "index": 19,
+      "type": "UINT32",
+      "offset": 868,
+      "value": 4
+    },
+    "qwen35.rope.dimension_sections": {
+      "index": 20,
+      "type": "ARRAY",
+      "offset": 914,
+      "array_types": [
+        "INT32"
+      ]
+    },
+    "qwen35.rope.freq_base": {
+      "index": 21,
+      "type": "FLOAT32",
+      "offset": 984,
+      "value": 10000000.0
+    },
+    "qwen35.attention.layer_norm_rms_epsilon": {
+      "index": 22,
+      "type": "FLOAT32",
+      "offset": 1021,
+      "value": 9.999999974752427E-7
+    },
+    "qwen35.attention.key_length": {
+      "index": 23,
+      "type": "UINT32",
+      "offset": 1076,
+      "value": 256
+    },
+    "qwen35.attention.value_length": {
+      "index": 24,
+      "type": "UINT32",
+      "offset": 1119,
+      "value": 256
+    },
+    "qwen35.ssm.conv_kernel": {
+      "index": 25,
+      "type": "UINT32",
+      "offset": 1164,
+      "value": 4
+    },
+    "qwen35.ssm.state_size": {
+      "index": 26,
+      "type": "UINT32",
+      "offset": 1202,
+      "value": 128
+    },
+    "qwen35.ssm.group_count": {
+      "index": 27,
+      "type": "UINT32",
+      "offset": 1239,
+      "value": 16
+    },
+    "qwen35.ssm.time_step_rank": {
+      "index": 28,
+      "type": "UINT32",
+      "offset": 1277,
+      "value": 32
+    },
+    "qwen35.ssm.inner_size": {
+      "index": 29,
+      "type": "UINT32",
+      "offset": 1318,
+      "value": 4096
+    },
+    "qwen35.full_attention_interval": {
+      "index": 30,
+      "type": "UINT32",
+      "offset": 1355,
+      "value": 4
+    },
+    "qwen35.rope.dimension_count": {
+      "index": 31,
+      "type": "UINT32",
+      "offset": 1401,
+      "value": 64
+    },
+    "qwen35.nextn_predict_layers": {
+      "index": 32,
+      "type": "UINT32",
+      "offset": 1444,
+      "value": 1
+    },
+    "general.quantization_version": {
+      "index": 42,
+      "type": "UINT32",
+      "offset": 10942650,
+      "value": 2
+    },
+    "general.file_type": {
+      "index": 43,
+      "type": "UINT32",
+      "offset": 10942694,
+      "value": 39
+    }
+  },
+  "converter_metadata": {
+    "general.architecture": {
+      "index": 3,
+      "type": "STRING",
+      "offset": 24,
+      "value": "qwen35"
+    },
+    "qwen35.block_count": {
+      "index": 4,
+      "type": "UINT32",
+      "offset": 70,
+      "value": 1
+    },
+    "qwen35.nextn_predict_layers": {
+      "index": 5,
+      "type": "UINT32",
+      "offset": 104,
+      "value": 1
+    },
+    "qwen35.embedding_length": {
+      "index": 6,
+      "type": "UINT32",
+      "offset": 147,
+      "value": 4096
+    },
+    "qwen35.attention.head_count": {
+      "index": 7,
+      "type": "UINT32",
+      "offset": 186,
+      "value": 16
+    },
+    "qwen35.attention.head_count_kv": {
+      "index": 8,
+      "type": "UINT32",
+      "offset": 229,
+      "value": 4
+    },
+    "qwen35.attention.key_length": {
+      "index": 9,
+      "type": "UINT32",
+      "offset": 275,
+      "value": 256
+    },
+    "qwen35.attention.value_length": {
+      "index": 10,
+      "type": "UINT32",
+      "offset": 318,
+      "value": 256
+    },
+    "qwen35.feed_forward_length": {
+      "index": 11,
+      "type": "UINT32",
+      "offset": 363,
+      "value": 12288
+    },
+    "qwen35.vocab_size": {
+      "index": 12,
+      "type": "UINT32",
+      "offset": 405,
+      "value": 248320
+    },
+    "qwen35.context_length": {
+      "index": 13,
+      "type": "UINT32",
+      "offset": 438,
+      "value": 262144
+    },
+    "qwen35.attention.layer_norm_rms_epsilon": {
+      "index": 14,
+      "type": "FLOAT32",
+      "offset": 475,
+      "value": 9.999999974752427E-7
+    },
+    "qwen35.rope.freq_base": {
+      "index": 15,
+      "type": "FLOAT32",
+      "offset": 530,
+      "value": 10000000.0
+    },
+    "qwen35.rope.dimension_count": {
+      "index": 16,
+      "type": "UINT32",
+      "offset": 567,
+      "value": 64
+    }
+  },
+  "reference_tensors": [
+    {
+      "name": "output.weight",
+      "type": "Q6_K",
+      "shape": [
+        4096,
+        248320
+      ]
+    },
+    {
+      "name": "output_norm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "token_embd.weight",
+      "type": "NVFP4",
+      "shape": [
+        4096,
+        248320
+      ]
+    },
+    {
+      "name": "blk.32.attn_k.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        1024
+      ]
+    },
+    {
+      "name": "blk.32.attn_k_norm.weight",
+      "type": "F32",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "name": "blk.32.attn_norm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "blk.32.attn_output.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "name": "blk.32.attn_q.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        8192
+      ]
+    },
+    {
+      "name": "blk.32.attn_q_norm.weight",
+      "type": "F32",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "name": "blk.32.attn_v.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        1024
+      ]
+    },
+    {
+      "name": "blk.32.ffn_down.weight",
+      "type": "Q8_0",
+      "shape": [
+        12288,
+        4096
+      ]
+    },
+    {
+      "name": "blk.32.ffn_gate.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        12288
+      ]
+    },
+    {
+      "name": "blk.32.ffn_up.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        12288
+      ]
+    },
+    {
+      "name": "blk.32.nextn.eh_proj.weight",
+      "type": "Q8_0",
+      "shape": [
+        8192,
+        4096
+      ]
+    },
+    {
+      "name": "blk.32.nextn.enorm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "blk.32.nextn.hnorm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "blk.32.nextn.shared_head_norm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "blk.32.post_attention_norm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    }
+  ],
+  "converter_tensors": [
+    {
+      "name": "blk.0.nextn.enorm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "blk.0.nextn.hnorm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "blk.0.nextn.eh_proj.weight",
+      "type": "Q8_0",
+      "shape": [
+        8192,
+        4096
+      ]
+    },
+    {
+      "name": "blk.0.attn_norm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "blk.0.attn_q.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        8192
+      ]
+    },
+    {
+      "name": "blk.0.attn_k.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        1024
+      ]
+    },
+    {
+      "name": "blk.0.attn_v.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        1024
+      ]
+    },
+    {
+      "name": "blk.0.attn_output.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        4096
+      ]
+    },
+    {
+      "name": "blk.0.attn_q_norm.weight",
+      "type": "F32",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "name": "blk.0.attn_k_norm.weight",
+      "type": "F32",
+      "shape": [
+        256
+      ]
+    },
+    {
+      "name": "blk.0.post_attention_norm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "blk.0.ffn_gate.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        12288
+      ]
+    },
+    {
+      "name": "blk.0.ffn_up.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        12288
+      ]
+    },
+    {
+      "name": "blk.0.ffn_down.weight",
+      "type": "Q8_0",
+      "shape": [
+        12288,
+        4096
+      ]
+    },
+    {
+      "name": "blk.0.nextn.shared_head_norm.weight",
+      "type": "F32",
+      "shape": [
+        4096
+      ]
+    },
+    {
+      "name": "output.weight",
+      "type": "Q8_0",
+      "shape": [
+        4096,
+        248320
+      ]
+    },
+    {
+      "name": "d2t",
+      "type": "I32",
+      "shape": [
+        248320
+      ]
+    }
+  ]
+}

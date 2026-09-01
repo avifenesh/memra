@@ -1,0 +1,162 @@
+name: release
+
+# Tag push vX.Y.Z => compile gate across the target matrix, auto-draft changelog from
+# conventional commits, publish the GitHub release with prebuilt binaries attached.
+# The exactness battery already ran on the rig before the tag (docs/RELEASING.md) —
+# CI here is the build check + the paperwork. Matrix: glibc floor (ubuntu-22.04 = 2.35,
+# ubuntu-24.04 = 2.39) x CUDA arch (sm_120a primary, sm_90a Hopper, sm_89 portable Ada).
+# Binaries are self-contained (fatbins embedded, crates-release lane 2026-08-04); users
+# need the NVIDIA driver + CUDA 13 runtime libs, not the toolkit. The ubuntu-22.04
+# sm_120a cell additionally uploads under a stable name (no glibc in the filename) —
+# that's the cargo-binstall / install.sh target. crates.io publishing: publish.yml.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  # Refuse BEFORE the 6-cell build matrix spends a minute: the 2026-08-22/23 tag races
+  # shipped three GitHub releases whose binaries self-report a different version than
+  # their tag (v0.102.0 = 0.101.0 bits; v0.104.0/v0.104.1 = 0.103.0 bits) because only
+  # publish.yml guarded the tag. Same script both places; teeth in ci.yml
+  # (tools/test_release_guard.sh). Claim protocol: docs/RELEASING.md.
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse version mismatch / unclaimed tag
+        run: tools/release-guard.sh "$GITHUB_REF_NAME"
+      # The structural censuses run here too, even though ci.yml runs them on every push: a tag
+      # can point at any commit, including one whose CI predates a census. Cheap enough that
+      # there is no reason to trust history instead of checking (under 2 s, no cargo/nvcc).
+      # v0.106.0 is why: its guard passed, its matrix then failed to LINK on sm_89, and its
+      # publish half-finished — both conditions these three refuse.
+      - name: Releasability censuses (publish list, stub ABI, arch matrix)
+        run: |
+          tools/workspace-publish-census.sh
+          tools/stub-abi-census.py
+          tools/arch-matrix-census.sh
+
+  build:
+    needs: guard
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        # All three arches ship. sm_89 was briefly removed on 2026-08-23 when a name-level
+        # census reported 20 looked-up kernels missing from its fatbins; tracing every call site
+        # showed 18 were unreachable (the GDN varlen chain is gated through gdn_mma_enabled ->
+        # !portable_mma_gated()) and the other two were reachable only through env doors that now
+        # refuse. Reasons are written per symbol in tools/fatbin-lookup-exceptions.txt.
+        # Owner ruling: fix the guard, do not drop the arch — "we stopped offering it" is a worse
+        # answer to a user than "it works".
+        cuda_arch: ["120a", "90a", "89"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install CUDA 13.1 (nvcc + headers)
+        run: |
+          ubuntu=$(. /etc/os-release && echo "ubuntu${VERSION_ID/./}")
+          wget -q "https://developer.download.nvidia.com/compute/cuda/repos/$ubuntu/x86_64/cuda-keyring_1.1-1_all.deb"
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update -q
+          sudo apt-get install -y -q cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}-sm${{ matrix.cuda_arch }}
+
+      - name: Build
+        run: cargo build --release --bins
+        env:
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: ${{ matrix.cuda_arch }}
+
+      - name: Package binaries
+        run: |
+          glibc=$(ldd --version | head -1 | grep -oE '[0-9]+\.[0-9]+$')
+          pkg="memra-$GITHUB_REF_NAME-linux-x86_64-glibc$glibc-sm${{ matrix.cuda_arch }}"
+          mkdir -p "/tmp/$pkg"
+          cp target/release/{run-gen,run-spec,memra-server,kernel-check} "/tmp/$pkg/"
+          {
+            echo "memra $GITHUB_REF_NAME — prebuilt Linux x86_64 binaries (sm_${{ matrix.cuda_arch }} fatbin, embedded)"
+            echo ""
+            echo "Requirements: NVIDIA driver with CUDA 13.x runtime support (>= 580), the CUDA 13"
+            echo "runtime libraries (cudart, cublas, cublasLt), and glibc >= $glibc."
+            echo "sm_120a = RTX 50-series (the tuned target); sm_90a = Hopper/H100 lane;"
+            echo "sm_89 = portable Ada build (runs, NOT performance-tuned — see README)."
+            echo ""
+            echo "Quick start: ./kernel-check   # expect: ALL GREEN: kernels match CPU reference."
+            echo "Docs: https://github.com/avifenesh/memra"
+          } > "/tmp/$pkg/README.txt"
+          tar -C /tmp -czf "/tmp/$pkg.tar.gz" "$pkg"
+          echo "PKG_NAME=$pkg" >> "$GITHUB_ENV"
+          cp "/tmp/$pkg.tar.gz" .
+          # The glibc-floor sm_120a build doubles as the STABLE-NAME artifact that
+          # cargo-binstall's pkg-url template and tools/install.sh point at.
+          if [ "${{ matrix.os }}" = "ubuntu-22.04" ] && [ "${{ matrix.cuda_arch }}" = "120a" ]; then
+            stable="memra-server-$GITHUB_REF_NAME-x86_64-unknown-linux-gnu"
+            cp -r "/tmp/$pkg" "/tmp/$stable"
+            rm "/tmp/$stable/README.txt" && cp "/tmp/$pkg/README.txt" "/tmp/$stable/README.txt"
+            tar -C /tmp -czf "$stable.tar.gz" "$stable"
+            echo "STABLE_NAME=$stable" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PKG_NAME }}
+          path: ${{ env.PKG_NAME }}.tar.gz
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: env.STABLE_NAME != ''
+        with:
+          name: ${{ env.STABLE_NAME }}
+          path: ${{ env.STABLE_NAME }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # changelog needs tag history
+
+      - name: Draft changelog
+        run: bash tools/changelog.sh > /tmp/notes.md && cat /tmp/notes.md
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/pkgs
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd /tmp/pkgs && sha256sum *.tar.gz > SHA256SUMS
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file /tmp/notes.md \
+            --verify-tag \
+            /tmp/pkgs/*.tar.gz /tmp/pkgs/SHA256SUMS
+
+      # The claim branch (docs/RELEASING.md "Claiming a version number") has done its
+      # job once the release exists — sweep it so the namespace shows only in-flight
+      # claims. The guard proved it existed at run start; if it is gone by now someone
+      # swept early, which is worth a warning but not a red release.
+      - name: Sweep the claim branch
+        run: |
+          claim="refs/heads/release/claim-$GITHUB_REF_NAME"
+          if git ls-remote --exit-code origin "$claim" >/dev/null; then
+            git push origin ":$claim"
+          else
+            echo "::warning::claim branch release/claim-$GITHUB_REF_NAME already gone — the guard saw it at run start"
+          fi

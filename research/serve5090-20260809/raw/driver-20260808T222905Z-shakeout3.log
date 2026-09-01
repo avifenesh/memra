@@ -1,0 +1,80 @@
+=== serve5090 floor sweep 20260808T222905Z-shakeout3 ===
+measurement_commit=9746d52a88a71af1fcc1d0a7b6a1b8d17a5483a1 engine_tip=96a09705895af120a0f706558a8c8c0d6fd8520a
+branch=lane/cx-5090-queue hostname=avifenesh
+?? research/serve5090-20260809/cached_ttft.py
+?? research/serve5090-20260809/cold_ttft.py
+?? research/serve5090-20260809/raw/
+?? research/serve5090-20260809/run-sweep.sh
+binary_sha256=c44c93db5ca5a95994f592390976956ee2d1d361d9019aad8099f5631f54699e
+model=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf 15705920064 bytes
+draft=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf 1242867296 bytes
+cd24cd177c6fef7fbb8fa0ba8ce6539380c846f8e273b993fe6114aed7100ffd  /home/avifenesh/projects/wt-cx-5090q/research/serve-ready-20260808/raw/short-prompt.txt
+23c1d8384a16c7c0bcb7736b412d43e64c0b4d8e238703864e928565f824ae11  /home/avifenesh/projects/wt-cx-5090q/research/step-sku-20260807/prompt-pp4096.txt
+window_clean=false reason=owner-approved Hermes idle CUDA context
+platform_profile=performance
+nv_dynamic_boost=25
+nv_tgp=150
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 24463 MiB, 595.84
+GPU lock acquired 2026-08-08T22:29:12Z
+=== arm onpolicy-r1 ===
+command: env -u MEMRA_SERVE_SPEC -u MEMRA_SPEC_K -u MEMRA_SPEC_GATE -u MEMRA_SPEC_GATE_LOW -u MEMRA_SPEC_GATE_HIGH -u MEMRA_PREFIX_DEDUP -u MEMRA_PRIME_CHUNK -u MEMRA_PRIME_CHUNK_SCHED -u MEMRA_SERVE_BATCH -u MEMRA_DECODE_BATCH_CAP -u MEMRA_API_KEY -u MEMRA_API_KEYS CUDA_VISIBLE_DEVICES=0 MEMRA_MODELS=q27=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf+/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf MEMRA_ADDR=127.0.0.1:8189 MEMRA_COMPAT=openai MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 MEMRA_REUSE_POOL=1 MEMRA_PREFIX_CACHE_MB=512 /home/avifenesh/projects/wt-cx-5090q/target/release/memra-server
+server ready pid=3955421 2026-08-08T22:29:20Z
+--- developer-role smoke ---
+{"object":"chat.completion","model":"q27","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"Here's a thinking process:\n\n1.","reasoning_details":[{"type":"reasoning.text","text":"Here's a thinking process:\n\n1."}]},"finish_reason":"length"}],"usage":{"prompt_tokens":27,"completion_tokens":9,"total_tokens":36,"prompt_tokens_details":{"cached_tokens":0},"elapsed_s":0.256943117,"spec":{"rounds":2,"drafted":6,"accepted":6,"acceptance_rate":1.0}},"id":"chatcmpl-a36c16b395c1901b2fe2515a9c238027","created":1786228160,"system_fingerprint":"memra-9746d52a88a7"}--- cold short TTFT: one warmup + one scored row ---
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 0, "client_ttft_ms": 182.66654101898894, "completion_tokens": 9, "id": "chatcmpl-dba0d6dfa086dc0b7d9988d3da00dfeb", "label": "q27-onpolicy-r1", "latency_ms": 260.0306459935382, "phase": "warmup", "prompt_tokens": 229, "shape": "short", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 2}, "ts": "2026-08-08T22:29:21.465586+00:00"}
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 0, "client_ttft_ms": 202.93777802726254, "completion_tokens": 9, "id": "chatcmpl-6769f4b73be576d74cc506cf2478b7bf", "label": "q27-onpolicy-r1", "latency_ms": 280.7423320482485, "phase": "measured", "prompt_tokens": 229, "shape": "short", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 2}, "ts": "2026-08-08T22:29:21.746407+00:00"}
+{"summary": {"client_ttft_p50_ms": 202.93777802726254, "label": "q27-onpolicy-r1", "n": 1, "prompt_tokens": 229, "shape": "short"}}
+--- cold 4k TTFT: one warmup + one scored row ---
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 0, "client_ttft_ms": 2998.5493610147387, "completion_tokens": 9, "id": "chatcmpl-d95f58c451018bc85328dda99b666a61", "label": "q27-onpolicy-r1", "latency_ms": 3107.9708809847943, "phase": "warmup", "prompt_tokens": 4107, "shape": "4k", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 2}, "ts": "2026-08-08T22:29:24.915233+00:00"}
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 0, "client_ttft_ms": 3034.9601919879206, "completion_tokens": 9, "id": "chatcmpl-f24f0aada3d7d740b1fd0a65fb24eb83", "label": "q27-onpolicy-r1", "latency_ms": 3145.404435985256, "phase": "measured", "prompt_tokens": 4107, "shape": "4k", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 2}, "ts": "2026-08-08T22:29:28.060952+00:00"}
+{"summary": {"client_ttft_p50_ms": 3034.9601919879206, "label": "q27-onpolicy-r1", "n": 1, "prompt_tokens": 4107, "shape": "4k"}}
+--- cached 4k continuation TTFT ---
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 4160, "client_ttft_ms": 136.43865898484364, "completion_tokens": 10, "expect_spec": "on", "label": "q27-onpolicy-r1", "latency_ms": 235.5832500034012, "prompt_tokens": 4179, "setup_completion_tokens": 66, "setup_prompt_tokens": 4094, "setup_wall_ms": 3573.6025369842537, "shape": "cached-continuation-4k", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 3}, "text_sha256": "549f539cfad07915f38e584e626dbe01e35fb9f3a916f8b7fa1fa9bbdd2f462c", "ts": "2026-08-08T22:29:31.935081+00:00"}
+--- decode ladder (pair-receipt protocol) ---
+{"ts": "2026-08-09T01:29:43+0300", "label": "q27-onpolicy-r1-c1", "base": "http://127.0.0.1:8189", "concurrency": 1, "requests": 8, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 128, "greedy": false, "wall_s": 11.251855009992141, "n_ok": 8, "n_shed": 0, "n_err": 0, "completion_tokens_total": 1032, "prompt_tokens_total": 1808, "agg_tok_s": 91.71820993814252, "req_per_s": 0.710993875489477, "lat_p50_s": 1.4195125499973074, "lat_p95_s": 1.4382683979929425, "lat_mean_s": 1.4063619836160797, "lat_max_s": 1.4382683979929425, "errors_sample": [], "ttft_p50_s": 0.1823862289893441, "ttft_p95_s": 0.20137081999564543, "ttft_mean_s": 0.1851151100054267, "ttft_max_s": 0.20137081999564543, "n_ttft": 8}
+{"ts": "2026-08-09T01:29:55+0300", "label": "q27-onpolicy-r1-c2", "base": "http://127.0.0.1:8189", "concurrency": 2, "requests": 8, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 128, "greedy": false, "wall_s": 11.458445950003807, "n_ok": 8, "n_shed": 0, "n_err": 0, "completion_tokens_total": 1030, "prompt_tokens_total": 1808, "agg_tok_s": 89.89002561902016, "req_per_s": 0.6981749562642343, "lat_p50_s": 2.8416866599582136, "lat_p95_s": 3.3285173270269297, "lat_mean_s": 2.779264139368024, "lat_max_s": 3.3285173270269297, "errors_sample": [], "ttft_p50_s": 0.2510411120019853, "ttft_p95_s": 0.6549967040191405, "ttft_mean_s": 0.29555333287135, "ttft_max_s": 0.6549967040191405, "n_ttft": 8}
+{"ts": "2026-08-09T01:30:12+0300", "label": "q27-onpolicy-r1-c4", "base": "http://127.0.0.1:8189", "concurrency": 4, "requests": 16, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 128, "greedy": false, "wall_s": 16.90246782900067, "n_ok": 16, "n_shed": 0, "n_err": 0, "completion_tokens_total": 2050, "prompt_tokens_total": 3616, "agg_tok_s": 121.28406459574387, "req_per_s": 0.9466073334301961, "lat_p50_s": 3.5560995179694146, "lat_p95_s": 6.627917274017818, "lat_mean_s": 3.8496957854331413, "lat_max_s": 6.628471600997727, "errors_sample": [], "ttft_p50_s": 0.029180650017224252, "ttft_p95_s": 1.1550948129734024, "ttft_mean_s": 0.2413398464304919, "ttft_max_s": 1.1560775819816627, "n_ttft": 16}
+arm complete onpolicy-r1 2026-08-08T22:30:17Z
+=== arm specoff-r1 ===
+command: env -u MEMRA_SERVE_SPEC -u MEMRA_SPEC_K -u MEMRA_SPEC_GATE -u MEMRA_SPEC_GATE_LOW -u MEMRA_SPEC_GATE_HIGH -u MEMRA_PREFIX_DEDUP -u MEMRA_PRIME_CHUNK -u MEMRA_PRIME_CHUNK_SCHED -u MEMRA_SERVE_BATCH -u MEMRA_DECODE_BATCH_CAP -u MEMRA_API_KEY -u MEMRA_API_KEYS CUDA_VISIBLE_DEVICES=0 MEMRA_SERVE_SPEC=0 MEMRA_MODELS=q27=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf+/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf MEMRA_ADDR=127.0.0.1:8189 MEMRA_COMPAT=openai MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 MEMRA_REUSE_POOL=1 MEMRA_PREFIX_CACHE_MB=512 /home/avifenesh/projects/wt-cx-5090q/target/release/memra-server
+server ready pid=3959968 2026-08-08T22:30:27Z
+--- exact B=4 prefix dedup/pinning + metering gate (fresh metrics) ---
+  ok: A fanout cached_tokens == [0] + [256]x3
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1360
+  ok: cached_tokens_in == 768
+  ok: computed_tokens_in == prompt - cached
+  ok: cache_hit_token_ratio matches arithmetic
+  ok: prefix_cache_hits == N-1
+  ok: prefix_cache_misses == 2 (one A leader + cross-salt B)
+  ok: prefix_cache_inserts == 2 (shared A prefix + B seed)
+  ok: prefix_cache_hit_tokens == 768
+  ok: lcp_histogram: 6 probes total
+  ok: lcp_histogram: 2 cold probes in bucket [0]
+  ok: lcp_histogram: 3 probes in K's bucket (edge 256)
+  ok: tick-seg [64,512) window carries the shared-prefix probes
+  ok: tenants[meter-A] split exact
+  ok: tenants[meter-B] split exact (0 cached)
+  ok: economics revenue_multiplier == 2.2973 (factor 1.0)
+cache-meter-gate: 0 failed
+--- developer-role smoke ---
+{"object":"chat.completion","model":"q27","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"Here's a thinking process:\n\n1","reasoning_details":[{"type":"reasoning.text","text":"Here's a thinking process:\n\n1"}]},"finish_reason":"length"}],"usage":{"prompt_tokens":27,"completion_tokens":8,"total_tokens":35,"prompt_tokens_details":{"cached_tokens":0},"elapsed_s":0.265790374},"id":"chatcmpl-40a870f2842cea50de870c7b6afb2159","created":1786228228,"system_fingerprint":"memra-9746d52a88a7"}--- cold short TTFT: one warmup + one scored row ---
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 0, "client_ttft_ms": 188.94027400529012, "completion_tokens": 8, "id": "chatcmpl-17b85cb5ba5fb61d3d3efd40925f0276", "label": "q27-specoff-r1", "latency_ms": 351.68578097363934, "phase": "warmup", "prompt_tokens": 229, "shape": "short", "spec": null, "ts": "2026-08-08T22:30:29.454879+00:00"}
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 0, "client_ttft_ms": 193.19617695873603, "completion_tokens": 8, "id": "chatcmpl-22f1e27d2a696a1c3281f00deeb8c0d3", "label": "q27-specoff-r1", "latency_ms": 355.93426798004657, "phase": "measured", "prompt_tokens": 229, "shape": "short", "spec": null, "ts": "2026-08-08T22:30:29.810913+00:00"}
+{"summary": {"client_ttft_p50_ms": 193.19617695873603, "label": "q27-specoff-r1", "n": 1, "prompt_tokens": 229, "shape": "short"}}
+--- cold 4k TTFT: one warmup + one scored row ---
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 0, "client_ttft_ms": 3077.759250998497, "completion_tokens": 8, "id": "chatcmpl-4c23c14f2c1575069829157388f616ed", "label": "q27-specoff-r1", "latency_ms": 3250.5631849635392, "phase": "warmup", "prompt_tokens": 4107, "shape": "4k", "spec": null, "ts": "2026-08-08T22:30:33.124328+00:00"}
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 0, "client_ttft_ms": 3092.250353016425, "completion_tokens": 8, "id": "chatcmpl-b6ca1261f9d77454a3b739be87f99a9e", "label": "q27-specoff-r1", "latency_ms": 3262.438140984159, "phase": "measured", "prompt_tokens": 4107, "shape": "4k", "spec": null, "ts": "2026-08-08T22:30:36.386898+00:00"}
+{"summary": {"client_ttft_p50_ms": 3092.250353016425, "label": "q27-specoff-r1", "n": 1, "prompt_tokens": 4107, "shape": "4k"}}
+--- cached 4k continuation TTFT ---
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 4158, "client_ttft_ms": 116.28100503003225, "completion_tokens": 8, "expect_spec": "off", "label": "q27-specoff-r1", "latency_ms": 282.8030550153926, "prompt_tokens": 4177, "setup_completion_tokens": 64, "setup_prompt_tokens": 4094, "setup_wall_ms": 4334.673202014528, "shape": "cached-continuation-4k", "spec": null, "text_sha256": "1ef69a748042dda8b7d76907d62da6811c269dda66144b65c9da2c6adbbd0733", "ts": "2026-08-08T22:30:41.071772+00:00"}
+--- decode ladder (pair-receipt protocol) ---
+{"ts": "2026-08-09T01:31:02+0300", "label": "q27-specoff-r1-c1", "base": "http://127.0.0.1:8189", "concurrency": 1, "requests": 8, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 128, "greedy": false, "wall_s": 21.270463198015932, "n_ok": 8, "n_shed": 0, "n_err": 0, "completion_tokens_total": 1024, "prompt_tokens_total": 1808, "agg_tok_s": 48.14187591812842, "req_per_s": 0.3761084056103783, "lat_p50_s": 2.6502318450366147, "lat_p95_s": 2.694052276026923, "lat_mean_s": 2.658647463140369, "lat_max_s": 2.694052276026923, "errors_sample": [], "ttft_p50_s": 0.003203400003258139, "ttft_p95_s": 0.00474946602480486, "ttft_mean_s": 0.003319042378279846, "ttft_max_s": 0.00474946602480486, "n_ttft": 8}
+{"ts": "2026-08-09T01:31:15+0300", "label": "q27-specoff-r1-c2", "base": "http://127.0.0.1:8189", "concurrency": 2, "requests": 8, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 128, "greedy": false, "wall_s": 12.545934965019114, "n_ok": 8, "n_shed": 0, "n_err": 0, "completion_tokens_total": 1024, "prompt_tokens_total": 1808, "agg_tok_s": 81.62006282155471, "req_per_s": 0.6376567407933962, "lat_p50_s": 3.124735874007456, "lat_p95_s": 3.178028409020044, "lat_mean_s": 3.133638879247883, "lat_max_s": 3.178028409020044, "errors_sample": [], "ttft_p50_s": 0.023577728017698973, "ttft_p95_s": 0.02819065999938175, "ttft_mean_s": 0.01754645699111279, "ttft_max_s": 0.02819065999938175, "n_ttft": 8}
+{"ts": "2026-08-09T01:31:30+0300", "label": "q27-specoff-r1-c4", "base": "http://127.0.0.1:8189", "concurrency": 4, "requests": 16, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 128, "greedy": false, "wall_s": 14.400165046041366, "n_ok": 16, "n_shed": 0, "n_err": 0, "completion_tokens_total": 2048, "prompt_tokens_total": 3616, "agg_tok_s": 142.2205921565461, "req_per_s": 1.1110983762230164, "lat_p50_s": 3.599262750998605, "lat_p95_s": 3.6051684730337, "lat_mean_s": 3.5978902435708733, "lat_max_s": 3.6061308219796047, "errors_sample": [], "ttft_p50_s": 0.028611679037567228, "ttft_p95_s": 0.02967866597464308, "ttft_mean_s": 0.027082574561063666, "ttft_max_s": 0.03191577800316736, "n_ttft": 16}
+FAIL: specoff-r1 missing retained B=4 prefix-dedup receipt

@@ -1,0 +1,402 @@
+[server] starting; models config = [("zai/glm-5.3-flash", "/home/ubuntu/models/glm53-nvfp4", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "zai/glm-5.3-flash" <- /home/ubuntu/models/glm53-nvfp4
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.711
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=668.614
+[loader-law] WARNING: output.weight loads as 2D Float ne=[4096, 154880] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_b.weight loads as 2D Float ne=[4096, 64] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[8192, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_q_b.weight loads as 2D Float ne=[1536, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk3-gate: 1296 MiB in 1.2s (1095 MiB/s)
+[st-spill] free_pinnable_ram=286623 MiB
+[slab-populate] blk3-up: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk3-down: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk4-gate: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk4-up: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk4-down: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk5-gate: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk5-up: 1296 MiB in 4.0s (323 MiB/s)
+[slab-populate] blk5-down: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk6-gate: 1296 MiB in 4.0s (325 MiB/s)
+[slab-populate] blk6-up: 1296 MiB in 4.0s (323 MiB/s)
+[slab-populate] blk6-down: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk7-gate: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk7-up: 1296 MiB in 4.0s (323 MiB/s)
+[slab-populate] blk7-down: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk8-gate: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk8-up: 1296 MiB in 4.0s (323 MiB/s)
+[slab-populate] blk8-down: 1296 MiB in 4.0s (323 MiB/s)
+[slab-populate] blk9-gate: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk9-up: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk9-down: 1296 MiB in 4.0s (323 MiB/s)
+[slab-populate] blk10-gate: 1296 MiB in 4.0s (321 MiB/s)
+[slab-populate] blk10-up: 1296 MiB in 4.0s (321 MiB/s)
+[slab-populate] blk10-down: 1296 MiB in 4.0s (322 MiB/s)
+[slab-populate] blk11-gate: 1296 MiB in 4.0s (325 MiB/s)
+[slab-populate] blk11-up: 1296 MiB in 4.0s (323 MiB/s)
+[slab-populate] blk11-down: 1296 MiB in 4.0s (323 MiB/s)
+[slab-populate] blk12-gate: 1296 MiB in 4.0s (323 MiB/s)
+[slab-populate] blk12-up: 1296 MiB in 0.5s (2670 MiB/s)
+[slab-populate] blk12-down: 1296 MiB in 0.2s (8535 MiB/s)
+[slab-populate] blk13-gate: 1296 MiB in 0.2s (8547 MiB/s)
+[slab-populate] blk13-up: 1296 MiB in 0.2s (8569 MiB/s)
+[slab-populate] blk13-down: 1296 MiB in 0.2s (8582 MiB/s)
+[slab-populate] blk14-gate: 1296 MiB in 0.1s (8649 MiB/s)
+[slab-populate] blk14-up: 1296 MiB in 0.1s (8661 MiB/s)
+[slab-populate] blk14-down: 1296 MiB in 0.2s (8635 MiB/s)
+[slab-populate] blk15-gate: 1296 MiB in 0.2s (8550 MiB/s)
+[slab-populate] blk15-up: 1296 MiB in 0.2s (7576 MiB/s)
+[slab-populate] blk15-down: 1296 MiB in 0.2s (8127 MiB/s)
+[slab-populate] blk16-gate: 1296 MiB in 0.2s (8552 MiB/s)
+[slab-populate] blk16-up: 1296 MiB in 0.2s (8602 MiB/s)
+[slab-populate] blk16-down: 1296 MiB in 0.2s (8623 MiB/s)
+[slab-populate] blk17-gate: 1296 MiB in 0.2s (8622 MiB/s)
+[slab-populate] blk17-up: 1296 MiB in 0.2s (8635 MiB/s)
+[slab-populate] blk17-down: 1296 MiB in 0.2s (8625 MiB/s)
+[slab-populate] blk18-gate: 1296 MiB in 0.2s (8636 MiB/s)
+[slab-populate] blk18-up: 1296 MiB in 0.1s (8659 MiB/s)
+[slab-populate] blk18-down: 1296 MiB in 0.2s (8635 MiB/s)
+[slab-populate] blk19-gate: 1296 MiB in 0.2s (8604 MiB/s)
+[slab-populate] blk19-up: 1296 MiB in 0.2s (8615 MiB/s)
+[slab-populate] blk19-down: 1296 MiB in 0.2s (8100 MiB/s)
+[slab-populate] blk20-gate: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk20-up: 1296 MiB in 1.2s (1084 MiB/s)
+[slab-populate] blk20-down: 1296 MiB in 0.2s (8573 MiB/s)
+[slab-populate] blk21-gate: 1296 MiB in 0.2s (8563 MiB/s)
+[slab-populate] blk21-up: 1296 MiB in 0.2s (8408 MiB/s)
+[slab-populate] blk21-down: 1296 MiB in 0.2s (8634 MiB/s)
+[slab-populate] blk22-gate: 1296 MiB in 0.1s (8646 MiB/s)
+[slab-populate] blk22-up: 1296 MiB in 0.1s (8653 MiB/s)
+[slab-populate] blk22-down: 1296 MiB in 0.1s (8640 MiB/s)
+[slab-populate] blk23-gate: 1296 MiB in 0.2s (8594 MiB/s)
+[slab-populate] blk23-up: 1296 MiB in 1.7s (767 MiB/s)
+[slab-populate] blk23-down: 1296 MiB in 0.2s (8483 MiB/s)
+[slab-populate] blk24-gate: 1296 MiB in 0.2s (8130 MiB/s)
+[slab-populate] blk24-up: 1296 MiB in 0.2s (8103 MiB/s)
+[slab-populate] blk24-down: 1296 MiB in 0.2s (8412 MiB/s)
+[slab-populate] blk25-gate: 1296 MiB in 0.2s (8467 MiB/s)
+[slab-populate] blk25-up: 1296 MiB in 0.2s (8409 MiB/s)
+[slab-populate] blk25-down: 1296 MiB in 0.2s (8428 MiB/s)
+[slab-populate] blk26-gate: 1296 MiB in 0.2s (8452 MiB/s)
+[slab-populate] blk26-up: 1296 MiB in 0.2s (8439 MiB/s)
+[slab-populate] blk26-down: 1296 MiB in 0.2s (8450 MiB/s)
+[slab-populate] blk27-gate: 1296 MiB in 0.2s (8480 MiB/s)
+[slab-populate] blk27-up: 1296 MiB in 0.2s (8487 MiB/s)
+[slab-populate] blk27-down: 1296 MiB in 0.2s (8445 MiB/s)
+[slab-populate] blk28-gate: 1296 MiB in 0.2s (8412 MiB/s)
+[slab-populate] blk28-up: 1296 MiB in 0.2s (8151 MiB/s)
+[slab-populate] blk28-down: 1296 MiB in 0.2s (8447 MiB/s)
+[slab-populate] blk29-gate: 1296 MiB in 0.2s (8484 MiB/s)
+[slab-populate] blk29-up: 1296 MiB in 0.2s (8505 MiB/s)
+[slab-populate] blk29-down: 1296 MiB in 0.2s (8492 MiB/s)
+[slab-populate] blk30-gate: 1296 MiB in 0.2s (8495 MiB/s)
+[slab-populate] blk30-up: 1296 MiB in 0.2s (8484 MiB/s)
+[slab-populate] blk30-down: 1296 MiB in 0.2s (8528 MiB/s)
+[slab-populate] blk31-gate: 1296 MiB in 0.2s (8567 MiB/s)
+[slab-populate] blk31-up: 1296 MiB in 0.2s (8574 MiB/s)
+[slab-populate] blk31-down: 1296 MiB in 0.2s (8485 MiB/s)
+[slab-populate] blk32-gate: 1296 MiB in 0.2s (8506 MiB/s)
+[slab-populate] blk32-up: 1296 MiB in 0.2s (8398 MiB/s)
+[slab-populate] blk32-down: 1296 MiB in 0.2s (8437 MiB/s)
+[slab-populate] blk33-gate: 1296 MiB in 0.2s (8547 MiB/s)
+[slab-populate] blk33-up: 1296 MiB in 0.2s (8366 MiB/s)
+[slab-populate] blk33-down: 1296 MiB in 0.2s (8570 MiB/s)
+[slab-populate] blk34-gate: 1296 MiB in 0.2s (8565 MiB/s)
+[slab-populate] blk34-up: 1296 MiB in 0.2s (8568 MiB/s)
+[slab-populate] blk34-down: 1296 MiB in 0.2s (8572 MiB/s)
+[slab-populate] blk35-gate: 1296 MiB in 0.2s (8558 MiB/s)
+[slab-populate] blk35-up: 1296 MiB in 0.2s (8579 MiB/s)
+[slab-populate] blk35-down: 1296 MiB in 0.2s (8557 MiB/s)
+[slab-populate] blk36-gate: 1296 MiB in 0.2s (8540 MiB/s)
+[slab-populate] blk36-up: 1296 MiB in 0.2s (8265 MiB/s)
+[slab-populate] blk36-down: 1296 MiB in 0.2s (8347 MiB/s)
+[slab-populate] blk37-gate: 1296 MiB in 0.2s (8538 MiB/s)
+[slab-populate] blk37-up: 1296 MiB in 0.2s (8544 MiB/s)
+[slab-populate] blk37-down: 1296 MiB in 0.2s (8538 MiB/s)
+[slab-populate] blk38-gate: 1296 MiB in 0.2s (8518 MiB/s)
+[slab-populate] blk38-up: 1296 MiB in 0.2s (8511 MiB/s)
+[slab-populate] blk38-down: 1296 MiB in 0.2s (8529 MiB/s)
+[slab-populate] blk39-gate: 1296 MiB in 0.2s (8532 MiB/s)
+[slab-populate] blk39-up: 1296 MiB in 0.2s (8515 MiB/s)
+[slab-populate] blk39-down: 1296 MiB in 0.2s (8487 MiB/s)
+[slab-populate] blk40-gate: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk40-up: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk40-down: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk41-gate: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk41-up: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk41-down: 1296 MiB in 4.0s (324 MiB/s)
+[slab-populate] blk42-gate: 1296 MiB in 4.0s (325 MiB/s)
+[slab-populate] blk42-up: 1296 MiB in 4.0s (326 MiB/s)
+[slab-populate] blk42-down: 1296 MiB in 4.0s (326 MiB/s)
+[slab-populate] blk43-gate: 1296 MiB in 4.0s (327 MiB/s)
+[slab-populate] blk43-up: 1296 MiB in 4.0s (327 MiB/s)
+[slab-populate] blk43-down: 1296 MiB in 4.0s (327 MiB/s)
+[slab-populate] blk44-gate: 1296 MiB in 4.0s (326 MiB/s)
+[slab-populate] blk44-up: 1296 MiB in 4.0s (326 MiB/s)
+[slab-populate] blk44-down: 1296 MiB in 4.0s (326 MiB/s)
+[worker]   loaded "zai/glm-5.3-flash": 46 layers, eos=154820, stop=[154820, 154827, 154829]
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 2 (dual PP, default-off arm)
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[prefix-cache] on: budget 305MB (305266688 B, derived: 2 x 152633344 B max entry for model "zai/glm-5.3-flash" at MEMRA_CTX=8192, requested 305266688 B; boot driver free 88331583488 B, post-reserve clamp 86720970752 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "zai/glm-5.3-flash": plain 0 B/token, spec 0 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["zai/glm-5.3-flash"]
+[server] listening on http://127.0.0.1:18401
+[meter] admit id=chatcmpl-e89edb0cf92f5dc2c9d0a421e6b10a59 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=320 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[admission] dual PP per-stage plan: stage0 session 0MB + reserve 0MB; stage1 session 0MB + reserve 0MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 0MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 0MB + boundary 0.000MB; dev1 session 0MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 0MB + boundary 0.033MB]
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 144MB (observed 144MB at ctx 264 path=plain)
+[prefix-cache] insert probation (seed): 192 tokens, 152.6MB (resident 152.6MB / 305MB, model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-ef64ca263abd2af66f58d2740d8ac222 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=367 path=plain = 0 B/token x ctx + 144MB fixed = 144MB
+[admission] dual PP per-stage plan: stage0 session 144MB + reserve 144MB; stage1 session 144MB + reserve 144MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 144MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 144MB + boundary 0.000MB; dev1 session 144MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 144MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 239 prompt tokens; model zai/glm-5.3-flash)
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 145MB (observed 145MB at ctx 311 path=plain)
+[prefix-cache] insert probation (seed): 239 tokens, 152.6MB (resident 305.3MB / 305MB, model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-f876d1e75b5ebd8a74f724e50e2328de tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=417 path=plain = 0 B/token x ctx + 145MB fixed = 145MB
+[admission] dual PP per-stage plan: stage0 session 145MB + reserve 145MB; stage1 session 145MB + reserve 145MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 145MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 145MB + boundary 0.000MB; dev1 session 145MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 145MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 289 prompt tokens; model zai/glm-5.3-flash)
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 146MB (observed 146MB at ctx 361 path=plain)
+[prefix-cache] insert probation (seed): 289 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 192 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-561cff2ce47748e8bcb3a1678e5aa434 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=320 path=plain = 0 B/token x ctx + 146MB fixed = 146MB
+[admission] dual PP per-stage plan: stage0 session 146MB + reserve 146MB; stage1 session 146MB + reserve 146MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 146MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 146MB + boundary 0.000MB; dev1 session 146MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 146MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 192 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 239 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-c20b48335f421b2817876fd6914071fe tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=581 path=plain = 0 B/token x ctx + 146MB fixed = 146MB
+[admission] dual PP per-stage plan: stage0 session 146MB + reserve 146MB; stage1 session 146MB + reserve 146MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 146MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 146MB + boundary 0.000MB; dev1 session 146MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 146MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 453 prompt tokens; model zai/glm-5.3-flash)
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 149MB (observed 149MB at ctx 525 path=plain)
+[prefix-cache] insert probation (seed): 453 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 289 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-447e85bd5ecd7582d34638a06500f588 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=648 path=plain = 0 B/token x ctx + 149MB fixed = 149MB
+[admission] dual PP per-stage plan: stage0 session 149MB + reserve 149MB; stage1 session 149MB + reserve 149MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 149MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 149MB + boundary 0.000MB; dev1 session 149MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 149MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 520 prompt tokens; model zai/glm-5.3-flash)
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 150MB (observed 150MB at ctx 592 path=plain)
+[prefix-cache] insert probation (seed): 520 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 192 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-68693f391aeabe6b64ec9a6024558e47 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=320 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 192 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 453 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-f351e8c0b35487e1c6b6d9ce241a35ac tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=259 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 131 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 131 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 520 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-9e50e096d15b3bc9113bb9f5ae87c2fa tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=409 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 281 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 281 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 192 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-ad0e473f3e3193005bee4b28205fb91b tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=320 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 192 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 131 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-ea908a5057359feeb833c107fa1ffa0b tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-5077cd601a9651c3241f36e0f6e3adeb tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-88ea90665bd7e89cbe5c53739436b0e5 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=367 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 239 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 239 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 281 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-f252afc8a632f36cce958e7fe5486435 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=417 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 289 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 289 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 239 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-5577649240429a0c0dfd09ea28ba28cf tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=581 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 453 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 453 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 289 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-4c682d36fb27b16093d8df47890116f5 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=648 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 520 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 520 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 453 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-0ed89a49b67a5c0b068687b8f889deb9 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=320 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-b211407d0c0e4b1293dd5223a75e4e3b tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=259 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 131 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 131 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 520 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-f9d55c626d53b056f10dbd8db3677906 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=409 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 281 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 281 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 131 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-e608a85cabf86374555ef3c4059c070b tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=367 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 239 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 239 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 281 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-d5918bbe5a1b947a341011edf5234e9c tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=417 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 289 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 289 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 239 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-a8263991bde70d5203d8bd91fc8b8692 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=581 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 453 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 453 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 289 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-68c83165cad768beee5d6322c214aca4 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=648 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 520 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 520 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 453 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-48a1cbbf767e85ad2a9d4d6867267621 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=320 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-05108610dd138dfd55117fa8b45a1c8e tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=259 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 131 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 131 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 520 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-d6eac2a8db36cead96e684eb907197c7 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=409 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 281 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] insert probation (seed): 281 tokens, 152.6MB (resident 457.9MB / 305MB, model zai/glm-5.3-flash)
+[prefix-cache] evict (Probation LRU): 131 tokens, 152.6MB (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-fe9b19b96b1afc716c4e825663176421 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=280 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-756fe8bb16b6ab5015eb433b993e26e4 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=448 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-f1f9c4b25fcfc51d175c5d87578106fe tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-3644c798723257759c50d277f5a9d96e tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-0da24ecaae47398222a5fd07a09a6254 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-3fb33842b3e43c28c67b2abeff926943 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=280 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-9a312ff4abba520337d167a9260cbdf1 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=448 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-d94c00f29f961d9ef8fcaaf3f7e97459 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-59bb92becc35488516295361b50b8a55 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-03ad2aaecd37968448a891af665b8ddf tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 192 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 192 of 192 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-ca245b5281ef1227bcd7f9aac7c0ca08 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=369 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 281 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] demote (protected bytes): 152.6MB to probation (model zai/glm-5.3-flash)
+[prefix-cache] hit: 281 of 281 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-24ba31c7b49ac12c46fc08e62ad1342d tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=537 path=plain = 0 B/token x ctx + 150MB fixed = 150MB
+[admission] dual PP per-stage plan: stage0 session 150MB + reserve 150MB; stage1 session 150MB + reserve 150MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.000MB; dev1 session 150MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 150MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 281 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 281 of 281 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-485225c3e95947f054fa01aaff4bfb57 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 281 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 281 of 281 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-43c92c685b7a351f48f3325cbb49e797 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 281 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 281 of 281 prompt tokens from cache (model zai/glm-5.3-flash)
+[meter] admit id=chatcmpl-0cd52853887b52df25fdb7320d4726a5 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 281 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] hit: 281 of 281 prompt tokens from cache (model zai/glm-5.3-flash)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

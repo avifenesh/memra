@@ -1,0 +1,65 @@
+{
+  "categories": {
+    "chat": 64,
+    "code": 64,
+    "if": 64,
+    "math": 64
+  },
+  "chunks": 4,
+  "end": 256,
+  "format": "memra-dspark-corpus-summary-v1",
+  "label": "smoke",
+  "manifest_fingerprint": "edfd02d361a0cbdeff1d877cb4b8fbe1c27a7ae3fa8bcc7ca230818179549118",
+  "manifests": [
+    {
+      "chunk": "smoke-00000-00064",
+      "sha256": "bd2135c3b83d21f97f12b8fedc4a8e847b47eb336bed05133080170f2c510f1b"
+    },
+    {
+      "chunk": "smoke-00064-00128",
+      "sha256": "eeb9cc87d03d9a6fa0af9bc1aae9986078994d08ba73baf83d271e9135d6f0ec"
+    },
+    {
+      "chunk": "smoke-00128-00192",
+      "sha256": "0ba56059ebb0966c82412e286a542445c26634764c582afe6315f83f99487805"
+    },
+    {
+      "chunk": "smoke-00192-00256",
+      "sha256": "6fa769fc888b3f8085464dcba7fbd6c526067d454af91b0b3c2fc90ec204e294"
+    }
+  ],
+  "modes": {
+    "nothink": 128,
+    "think": 128
+  },
+  "pairs": 256,
+  "prompt_tokens": {
+    "max": 2953,
+    "min": 19,
+    "p50": 73,
+    "p95": 490,
+    "total": 37640
+  },
+  "records": 1024,
+  "response_tokens": {
+    "max": 512,
+    "max_new_512_count": 193,
+    "min": 39,
+    "p50": 512,
+    "p95": 512,
+    "total": 117580
+  },
+  "skipped_short_pairs": 0,
+  "splits": {
+    "heldout": 13,
+    "train": 243
+  },
+  "start": 0,
+  "validation": {
+    "max_logit_probability_ratio_error": 9.598196157867278e-07,
+    "max_probability_mass_error": 3.398456094316771e-08,
+    "sampled_token_top64_rate": 0.9994140625,
+    "tail_mass_max": 0.06595248728990555,
+    "tail_mass_mean": 0.0001444539755922563
+  }
+}

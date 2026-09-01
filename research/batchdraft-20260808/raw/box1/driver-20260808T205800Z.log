@@ -1,0 +1,40 @@
+=== batchdraft box1 20260808T205800Z ===
+host=<private-host-redacted> utc=2026-08-08T20:57:08Z commit=3248e4f91ab8dbe892d7b27c7f0fd30abd2c2009
+branch=lane/cx-batchdraft
+status-before:
+?? research/batchdraft-20260808/load-interleaved.py
+?? research/batchdraft-20260808/raw/
+?? research/batchdraft-20260808/run-box1.sh
+mounts:
+Filesystem                      Size  Used Avail Use% Mounted on
+/dev/root                       387G  253G  135G  66% /
+/dev/mapper/vg.01-lv_ephemeral  3.5T  751M  3.3T   1% /opt/scratch/nvme
+artifacts:
+/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf 46483327296 bytes
+/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf 3707276416 bytes
+b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259  /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+469a81667a6cd6d87a85d501d57155fd90cee5af7010fd289c5169881763fd57  /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+37226dc0c903031d38c0e0a94b169d1e4785c70c60b8be1fa5c9942641d18aff  /opt/scratch/nvme/cx-batchdraft-target/release/memra-server
+0f83396fa0ef69f7c8791582855a5c52e30b7793ea3a6d879bb49653e56c7a34  /opt/scratch/nvme/cx-batchdraft-target/release/verify-mscale
+SERVING_LOCK_ACQUIRED 2026-08-08T20:57:40Z
+{"concurrency": 4, "divergent_contract": "four prompt suffixes, greedy, isolated cache salts", "kind": "protocol", "max_tokens": 96, "order": "odd=sync,divergent; even=divergent,sync", "reps": 5, "sync_contract": "four identical greedy prompts with isolated cache salts", "utc": "2026-08-08T20:58:15.426+00:00"}
+{"aggregate_output_tok_s": 0.0, "arm": "warmup", "completion_tokens": 0, "concurrency": 4, "end_utc": "2026-08-08T20:58:21.208+00:00", "kind": "point", "latency_median_s": null, "max_tokens": 32, "n_err": 4, "n_ok": 0, "rep": 0, "start_skew_ms": 0.665952, "start_utc": "2026-08-08T20:58:15.426+00:00", "traces": ["r0-sync-q0", "r0-sync-q1", "r0-sync-q2", "r0-sync-q3"], "wall_s": 5.781647324}
+{"end_ns": 205693044462223, "end_utc": "2026-08-08T20:58:20.750+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 5.321895101, "ok": false, "start_ns": 205687722567122, "start_utc": "2026-08-08T20:58:15.428+00:00", "trace_id": "r0-sync-q0"}
+{"end_ns": 205693502039792, "end_utc": "2026-08-08T20:58:21.208+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 5.779257308, "ok": false, "start_ns": 205687722782484, "start_utc": "2026-08-08T20:58:15.429+00:00", "trace_id": "r0-sync-q1"}
+{"end_ns": 205690198563751, "end_utc": "2026-08-08T20:58:17.904+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 2.475581182, "ok": false, "start_ns": 205687722982569, "start_utc": "2026-08-08T20:58:15.429+00:00", "trace_id": "r0-sync-q2"}
+{"end_ns": 205691621349551, "end_utc": "2026-08-08T20:58:19.327+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 3.899032934, "ok": false, "start_ns": 205687722316617, "start_utc": "2026-08-08T20:58:15.428+00:00", "trace_id": "r0-sync-q3"}
+{"aggregate_output_tok_s": 0.0, "arm": "sync", "completion_tokens": 0, "concurrency": 4, "end_utc": "2026-08-08T20:58:32.826+00:00", "kind": "point", "latency_median_s": null, "max_tokens": 96, "n_err": 4, "n_ok": 0, "rep": 1, "start_skew_ms": 0.325087, "start_utc": "2026-08-08T20:58:22.208+00:00", "traces": ["r1-sync-q0", "r1-sync-q1", "r1-sync-q2", "r1-sync-q3"], "wall_s": 10.617838235}
+{"end_ns": 205704482813921, "end_utc": "2026-08-08T20:58:32.189+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 9.97957693, "ok": false, "start_ns": 205694503236991, "start_utc": "2026-08-08T20:58:22.209+00:00", "trace_id": "r1-sync-q0"}
+{"end_ns": 205705120136192, "end_utc": "2026-08-08T20:58:32.826+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 10.616660106, "ok": false, "start_ns": 205694503476086, "start_utc": "2026-08-08T20:58:22.209+00:00", "trace_id": "r1-sync-q1"}
+{"end_ns": 205703845758929, "end_utc": "2026-08-08T20:58:31.552+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 9.342440648, "ok": false, "start_ns": 205694503318281, "start_utc": "2026-08-08T20:58:22.209+00:00", "trace_id": "r1-sync-q2"}
+{"end_ns": 205703208027764, "end_utc": "2026-08-08T20:58:30.914+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 8.704876765, "ok": false, "start_ns": 205694503150999, "start_utc": "2026-08-08T20:58:22.209+00:00", "trace_id": "r1-sync-q3"}
+{"aggregate_output_tok_s": 0.0, "arm": "divergent", "completion_tokens": 0, "concurrency": 4, "end_utc": "2026-08-08T20:58:44.054+00:00", "kind": "point", "latency_median_s": null, "max_tokens": 96, "n_err": 4, "n_ok": 0, "rep": 1, "start_skew_ms": 0.268324, "start_utc": "2026-08-08T20:58:33.826+00:00", "traces": ["r1-divergent-q0", "r1-divergent-q1", "r1-divergent-q2", "r1-divergent-q3"], "wall_s": 10.227397987}
+{"end_ns": 205715783867472, "end_utc": "2026-08-08T20:58:43.490+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 9.662637258, "ok": false, "start_ns": 205706121230214, "start_utc": "2026-08-08T20:58:33.827+00:00", "trace_id": "r1-divergent-q0"}
+{"end_ns": 205716347755660, "end_utc": "2026-08-08T20:58:44.054+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 10.226342134, "ok": false, "start_ns": 205706121413526, "start_utc": "2026-08-08T20:58:33.827+00:00", "trace_id": "r1-divergent-q1"}
+{"end_ns": 205714695438669, "end_utc": "2026-08-08T20:58:42.401+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 8.574139657, "ok": false, "start_ns": 205706121299012, "start_utc": "2026-08-08T20:58:33.827+00:00", "trace_id": "r1-divergent-q2"}
+{"end_ns": 205715183106992, "end_utc": "2026-08-08T20:58:42.889+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 9.06196179, "ok": false, "start_ns": 205706121145202, "start_utc": "2026-08-08T20:58:33.827+00:00", "trace_id": "r1-divergent-q3"}
+{"aggregate_output_tok_s": 0.0, "arm": "divergent", "completion_tokens": 0, "concurrency": 4, "end_utc": "2026-08-08T20:58:55.242+00:00", "kind": "point", "latency_median_s": null, "max_tokens": 96, "n_err": 4, "n_ok": 0, "rep": 2, "start_skew_ms": 0.239291, "start_utc": "2026-08-08T20:58:45.054+00:00", "traces": ["r2-divergent-q0", "r2-divergent-q1", "r2-divergent-q2", "r2-divergent-q3"], "wall_s": 10.187733908}
+{"end_ns": 205727535691099, "end_utc": "2026-08-08T20:58:55.242+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 10.186981148, "ok": false, "start_ns": 205717348709951, "start_utc": "2026-08-08T20:58:45.055+00:00", "trace_id": "r2-divergent-q0"}
+{"end_ns": 205726935503842, "end_utc": "2026-08-08T20:58:54.641+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 9.5866277, "ok": false, "start_ns": 205717348876142, "start_utc": "2026-08-08T20:58:45.055+00:00", "trace_id": "r2-divergent-q1"}
+{"end_ns": 205726372913763, "end_utc": "2026-08-08T20:58:54.079+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 9.024136036, "ok": false, "start_ns": 205717348777727, "start_utc": "2026-08-08T20:58:45.055+00:00", "trace_id": "r2-divergent-q2"}
+{"end_ns": 205725885856772, "end_utc": "2026-08-08T20:58:53.592+00:00", "error": "KeyError: 'choices'", "kind": "request", "latency_s": 8.537219921, "ok": false, "start_ns": 205717348636851, "start_utc": "2026-08-08T20:58:45.054+00:00", "trace_id": "r2-divergent-q3"}

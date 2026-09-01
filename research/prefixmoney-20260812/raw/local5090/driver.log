@@ -1,0 +1,13 @@
+lock_acquired=2026-08-11T23:04:50Z
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-cx-prefixmoney/research/prefixmoney-20260812/prefix_gate.py", line 290, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/avifenesh/projects/wt-cx-prefixmoney/research/prefixmoney-20260812/prefix_gate.py", line 174, in main
+    a1 = {"kind": "request", "rep": rep, "case": "repeat-cold", **request(
+                                                                  ^^^^^^^^
+  File "/home/avifenesh/projects/wt-cx-prefixmoney/research/prefixmoney-20260812/prefix_gate.py", line 65, in request
+    raise RuntimeError(json.dumps(event["error"], sort_keys=True))
+RuntimeError: {"code": "engine_error", "message": "prefill error: prime chunk pipeline refused with 2 stage streams on one device \u2014 that concurrent-stream placement remains quarantined by the deferred pp flake record. Use one device per stage or MEMRA_PRIME_PIPE=0 for the serial split.", "param": null, "type": "server_error"}
+gate_rc=1
+lock_release=2026-08-11T23:05:26Z

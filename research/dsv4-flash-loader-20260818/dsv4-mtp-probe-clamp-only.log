@@ -1,0 +1,12 @@
+dsv4-mtp-probe | model /home/ubuntu/models/dsv4-flash-nvfp4 | variant ClampOnly | 52 tokens
+  trunk layer 7 done t=21.4s
+  trunk layer 15 done t=41.5s
+  trunk layer 23 done t=61.6s
+  trunk layer 31 done t=81.8s
+  trunk layer 39 done t=102.1s
+trunk next-token top5: [(223, 28.230738), (201, 10.459464), (1, 9.862197), (262, 7.6279683), (539, 7.3890085)]
+MTP UNSHIFTED (same ids)   top5: [(223, 27.897924), (1, 18.107883), (15, 17.0853), (201, 16.926977), (33, 15.662907)]
+MTP SHIFTED (ids[1..]+greedy) top5: [(907, 51.01836), (736, 33.176544), (929, 32.2495), (6895, 29.04053), (19, 28.89418)]
+
+summary: trunk t+1 = 223; unshifted mtp top1 = 223; shifted mtp top1 = 907
+elapsed: 116.6s

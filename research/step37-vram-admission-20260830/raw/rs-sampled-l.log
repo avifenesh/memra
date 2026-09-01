@@ -1,0 +1,742 @@
+[step37-defaults] serving doors armed ON for the SlidingGatedMoe program (per-flag =0 kills, =1 forces; owner flip 2026-08-27)
+[step-tp-preflight] layers=45 full_trunk=true runtime_groups=1 dense_attention_layers=3 tensor_expert_layers=42 expert_owner_layers=0 qualified_fp8_expert_projection_slices=36288 owner_first=true hardware=rtx-pro-6000-blackwell native_p2p=true bulk_p2p=false device_arithmetic=false weights_loaded=false performance_claim=false
+[bf16-mmv] RESIDENT output.weight ne=[4096, 128896] n=527958016 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[loader-law] WARNING: blk.*.attn_gate.weight loads as 2D Float ne=[4096, 64] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[tp] native peer byte-integrity probe PASS: devices=[0, 1] directions=2 byte_ladder=[16384, 65536, 1048576, 67108864] mismatches=0
+[tp] correctness transport=native-p2p devices=[0, 1] native_p2p=true activation=host-canonical bulk_p2p=false performance_claim=false
+[step-tp-qkv] load layer=0 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=0 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=0 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[bf16-mmv] RESIDENT blk.0.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=1 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=1 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=1 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[bf16-mmv] RESIDENT blk.1.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=2 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=2 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=2 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[bf16-mmv] RESIDENT blk.2.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.3.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.3.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.3.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.3.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=3 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=3 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=3 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=3 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.3.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.3.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.3.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=4 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=4 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=4 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=4 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.4.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.4.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=5 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=5 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=5 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=5 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.5.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.5.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=6 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=6 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=6 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=6 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.6.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.6.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.7.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.7.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.7.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.7.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=7 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=7 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=7 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=7 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.7.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.7.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.7.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=8 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=8 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=8 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=8 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.8.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.8.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=9 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=9 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=9 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=9 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.9.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.9.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=10 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=10 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=10 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=10 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.10.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.10.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.11.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.11.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.11.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.11.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=11 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=11 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=11 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=11 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.11.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.11.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.11.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=12 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=12 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=12 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=12 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.12.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.12.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=13 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=13 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=13 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=13 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.13.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.13.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=14 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=14 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=14 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=14 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.14.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.14.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.15.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.15.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.15.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.15.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=15 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=15 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=15 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=15 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.15.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.15.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.15.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=16 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=16 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=16 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=16 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.16.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.16.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=17 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=17 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=17 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=17 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.17.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.17.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=18 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=18 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=18 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=18 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.18.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.18.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.19.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.19.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.19.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.19.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=19 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=19 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=19 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=19 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.19.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.19.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.19.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=20 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=20 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=20 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=20 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.20.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.20.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=21 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=21 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=21 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=21 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.21.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.21.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=22 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=22 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=22 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=22 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.22.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.22.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.23.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.23.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.23.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.23.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=23 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=23 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=23 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=23 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.23.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.23.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.23.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=24 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=24 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=24 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=24 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.24.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.24.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=25 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=25 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=25 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=25 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.25.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.25.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=26 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=26 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=26 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=26 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.26.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.26.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.27.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.27.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.27.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.27.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=27 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=27 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=27 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=27 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.27.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.27.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.27.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=28 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=28 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=28 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=28 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.28.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.28.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=29 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=29 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=29 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=29 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.29.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.29.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=30 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=30 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=30 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=30 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.30.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.30.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.31.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.31.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.31.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.31.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=31 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=31 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=31 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=31 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.31.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.31.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.31.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=32 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=32 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=32 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=32 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.32.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.32.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=33 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=33 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=33 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=33 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.33.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.33.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=34 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=34 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=34 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=34 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.34.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.34.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.35.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.35.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.35.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.35.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=35 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=35 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=35 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=35 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.35.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.35.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.35.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=36 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=36 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=36 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=36 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.36.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.36.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=37 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=37 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=37 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=37 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.37.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.37.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=38 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=38 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=38 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=38 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.38.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.38.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.39.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.39.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.39.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.39.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=39 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=39 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=39 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=39 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.39.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.39.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.39.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=40 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=40 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=40 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=40 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.40.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.40.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=41 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=41 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=41 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=41 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.41.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.41.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=42 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=42 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=42 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=42 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[bf16-mmv] RESIDENT blk.42.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.42.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.43.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.43.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.43.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.43.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[step-tp-qkv] load layer=43 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=43 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-swa-ring transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=43 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=43 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[step-tp-clamp] load layer=43 routed_clamp=7 formula=min-silu-times-clamped-up performance_claim=false
+[bf16-mmv] RESIDENT blk.43.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.43.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.43.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=44 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=44 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=44 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=44 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[step-tp-clamp] load layer=44 routed_clamp=7 formula=min-silu-times-clamped-up performance_claim=false
+[bf16-mmv] RESIDENT blk.44.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.nextn.eh_proj.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv
+[mtp-head] blk.45.nextn.shared_head_head.weight: BF16 -> NVFP4 (283 MiB, was 1007 MiB)
+[bf16-mmv] RESIDENT blk.45.nextn.shared_head.weight ne=[4096, 128896] n=527958016 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.nextn.eh_proj.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv
+[mtp-head] blk.46.nextn.shared_head_head.weight: BF16 -> NVFP4 (283 MiB, was 1007 MiB)
+[bf16-mmv] RESIDENT blk.46.nextn.shared_head.weight ne=[4096, 128896] n=527958016 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.47.nextn.eh_proj.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.47.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.47.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.47.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.47.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.47.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.47.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.47.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv
+[mtp-head] blk.47.nextn.shared_head_head.weight: BF16 -> NVFP4 (283 MiB, was 1007 MiB)
+[bf16-mmv] RESIDENT blk.47.nextn.shared_head.weight ne=[4096, 128896] n=527958016 admit=bf16_mmv
+[mtp-draft] embedded chain: heads=3 blocks=45..=47 scratch=per-head
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded safetensors (48 layers, nextn=3)
+text prompt (2731 chars, chat-templated) -> 613 tokens
+prompt tokens: [0, 128006, 5265, 201, 61, 5265, 2859, 223, 19, 63, 2042, 13313, 304, 4863, 270, 8003, 103860, 19706, 367, 9431, 19633, 15239, 343, 939, 24, 15, 2642, 15, 864, 11, 565, 41802, 21121, 28, 4550, 964, 869, 19861, 343, 75, 46, 35890, 14, 420, 9422, 14, 63904, 11, 764, 20460, 40004, 39711, 119165, 63, 565, 9431, 6107, 28, 69911, 284, 5566, 667, 46469, 105027, 16106, 4306, 34201, 418, 1492, 32031, 343, 60861, 8883, 11, 2136, 1699, 17569, 295, 6951, 418, 44298, 47509, 42557, 11684, 29, 83295, 10436, 10156, 418, 16897, 223, 18, 343, 84076, 4006, 10461, 15313, 295, 2501, 17, 42852, 23074, 513, 852, 1715, 2276, 797, 565, 12983, 4866, 28, 6195, 20518, 6915, 8003, 5572, 509, 1492, 21983, 17, 724, 59586, 24750, 17, 47691, 17, 116149, 17, 939, 24, 15, 2642, 15, 864, 46370, 964, 869, 15, 49461, 1878, 43305, 71163, 2417, 24765, 2641, 19793, 26887, 343, 64915, 3077, 10869, 14, 10159, 70142, 14, 33715, 113776, 14, 10200, 12511, 14, 305, 17157, 797, 565, 20673, 28, 16420, 5553, 16, 20414, 3811, 305, 28272, 11336, 362, 3988, 6915, 16, 3011, 3631, 4653, 26088, 16, 764, 624, 15059, 63, 36968, 436, 14, 2513, 734, 28780, 566, 16, 5978, 14, 270, 3967, 8900, 260, 13672, 294, 786, 118316, 3607, 2632, 377, 35062, 19861, 343, 75, 46, 35890, 14, 420, 9422, 14, 63904, 11, 362, 65160, 14, 1748, 33, 5978, 14, 342, 1531, 24997, 270, 10156, 3607, 7231, 1257, 14, 1539, 10796, 3477, 304, 1694, 418, 2894, 6531, 4524, 304, 270, 8003, 851, 1960, 14, 1748, 33, 37157, 14, 1257, 14, 2513, 734, 13742, 1205, 851, 611, 28, 851, 11127, 260, 5212, 29606, 377, 1948, 8668, 35062, 19861, 4836, 362, 65160, 14, 611, 260, 3530, 8003, 4866, 16, 5978, 14, 4337, 38824, 377, 270, 10156, 2632, 14, 396, 734, 1894, 16, 5715, 14, 1205, 6923, 2924, 588, 342, 3477, 33, 4480, 734, 2310, 3338, 2894, 6531, 396, 12628, 418, 786, 3607, 3618, 14, 2918, 851, 4750, 4843, 65160, 538, 8390, 14, 1748, 33, 5978, 14, 10796, 3477, 304, 1694, 418, 3549, 5949, 294, 270, 8003, 855, 851, 1970, 304, 3862, 33, 12554, 14, 855, 851, 1970, 304, 4961, 1407, 270, 1008, 46, 35890, 66376, 14, 469, 12131, 420, 9422, 8062, 1008, 46, 35890, 7752, 850, 74268, 891, 14, 469, 63904, 9963, 81648, 362, 65160, 343, 8679, 362, 532, 19765, 36454, 14, 14812, 42817, 14, 396, 3576, 294, 2953, 1347, 2352, 797, 9085, 14, 10796, 10200, 2894, 6531, 28, 1277, 855, 851, 1970, 304, 4678, 260, 4654, 1008, 46, 35890, 60950, 362, 260, 223, 20, 38, 1752, 4273, 469, 260, 223, 19, 38, 14812, 20706, 14, 342, 588, 1694, 418, 396, 33715, 113776, 469, 32669, 4653, 16, 2709, 855, 851, 1970, 304, 8013, 270, 8003, 418, 1347, 2352, 3549, 13750, 14, 1277, 362, 9924, 20110, 22314, 63904, 14, 469, 2883, 1797, 35062, 19861, 14, 396, 734, 411, 7284, 2727, 16, 37157, 990, 14, 270, 13672, 43375, 436, 734, 538, 764, 20460, 40004, 39711, 119165, 3031, 832, 851, 4750, 6162, 5345, 59972, 65160, 4134, 16, 17519, 990, 3477, 304, 7872, 566, 304, 18885, 12179, 851, 2786, 366, 3607, 2894, 14, 1277, 855, 851, 4750, 8067, 304, 8984, 7874, 14, 469, 2703, 6129, 33171, 14, 469, 1487, 14470, 362, 2645, 4890, 2703, 14, 396, 734, 7723, 16, 37157, 2513, 734, 4456, 436, 17574, 28, 223, 19, 16, 5978, 14, 24997, 270, 10156, 3607, 2632, 14, 396, 734, 260, 7527, 5212, 29606, 377, 8668, 2645, 4890, 35062, 19861, 4836, 396, 477, 3777, 59972, 362, 65160, 343, 35868, 362, 532, 19765, 36454, 14, 14812, 42817, 14, 35155, 84293, 26, 88027, 83, 63339, 2990, 28, 223, 18, 764, 5265, 2859, 223, 20, 63, 1350, 128007, 201, 128006, 624, 15059, 201, 128798, 201]
+[step35-prime-batch] first concat prime: B=1 tokens=613
+[moe-sk-form] dev=0 qt=7 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=640 n_active=260 max_m=196
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[step-tp-decode-v2] workspace ranks=2 local_q=4096 local_kv=512 heads=64 o_blocks=4x1024 residency=persistent ordering=evented performance_claim=false
+[fa-pool] grow #0 dev=0 o_len 0 -> 159744 ml_len 0 -> 1248 (retired kept, zero=false)
+[fa-pool] grow #1 dev=1 o_len 0 -> 159744 ml_len 0 -> 1248 (retired kept, zero=false)
+[step-tp-attn-v2] execute layer=0 devices=[0, 1] tokens=1 driver=v2 qkv_tensor_parallel=true qk_norm_rank_local=true rope_rank_local=true kv_cache_distributed=true kv_cache_hydrated=true attention_tensor_parallel=true attention_scope=rank-local-global input_path=root-device-replicated gate_tensor_parallel=false gate_shards=device-staged o_tensor_parallel=true o_reduce=root-device local_cache_shadow=true cache_commit=immediate transport=native-p2p native_p2p=true bulk_p2p=false workspace=persistent ordering=evented output=e-device performance_claim=false (logged once; every decode layer runs this driver)
+[step-tp-decode-v2] workspace ranks=2 local_q=6144 local_kv=512 heads=96 o_blocks=4x1536 residency=persistent ordering=evented performance_claim=false
+[fa-pool] grow #2 dev=0 o_len 159744 -> 319488 ml_len 1248 -> 2496 (retired kept, zero=false)
+[fa-pool] grow #3 dev=1 o_len 159744 -> 319488 ml_len 1248 -> 2496 (retired kept, zero=false)
+[step-tp] execute layer=3 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=4 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=5 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=6 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=7 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=8 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=9 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=10 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=11 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=12 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=13 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=14 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=15 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=16 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=17 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=18 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=19 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=20 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=21 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=22 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=23 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=24 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=25 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=26 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=27 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=28 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=29 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=30 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=31 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=32 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=33 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=34 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=35 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=36 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=37 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=38 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=39 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=40 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=41 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=42 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=43 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[step-tp] execute layer=44 tokens=1 devices=[0, 1] expert_transport=native-p2p native_p2p=true router=device activation=host-canonical accumulation=host-canonical output=e-device io=device performance_claim=false (logged once per layer)
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+
+[generate]   159 tok in 1.549s = 102.67 tok/s (gen-only; this run's prime 0.305s)
+  oracle: sliding-gated-MoE live B=1 batched target
+  tokens: [70935, 436, 14, 2513, 734, 1904, 513, 33581, 17574, 304, 270, 3967, 734, 1257, 2859, 1479, 851, 8900, 786, 10156, 118316, 3607, 13672, 377, 35062, 19861, 343, 75, 46, 35890, 14, 420, 9422, 14, 63904, 11, 362, 786, 65160, 39711, 119165, 3607, 3618, 339, 10318, 14, 24997, 270, 10156, 2632, 1257, 965, 51961, 2038, 4836, 477, 982, 821, 12, 59972, 362, 2645, 4890, 65160, 2703, 14, 396, 734, 260, 2405, 5212, 29606, 304, 10896, 295, 16, 5715, 14, 2918, 851, 611, 270, 3530, 8003, 4866, 14, 3477, 15360, 14, 7723, 2894, 6531, 396, 12628, 418, 786, 582, 20460, 40004, 538, 8390, 4, 3607, 4629, 14, 1748, 1240, 39059, 14, 270, 3967, 734, 1257, 6304, 515, 270, 13672, 294, 786, 10156, 3607, 7231, 14, 1539, 270, 22896, 5271, 33581, 790, 3557, 4619, 1375, 33, 37157, 1119, 14, 4735, 1559, 28, 270, 3967, 734, 1257, 2859, 344, 270, 13672, 294, 786, 118316, 3607, 2632, 14, 1539, 270, 22896, 734, 4256, 515, 4619]
+--- generated text ---
+Got it, let's start by responding naturally to the user's first turn where they shared their completed nightly learning summary on trajectory optimization (iLQR, DDP, MPC) for their robotics_from_zero learning path.
+
+First, acknowledge the completed run first—those three methods are *so* foundational for model-based robotics control, that's a great deep dive to lock in. Then, since they have the full guide written, offer concrete, relevant next steps that align with their "robotics from zero" learning flow, right?
+
+Wait, the user's first message was the summary of their completed learning task, then the assistant started responding but got cut off? Wait no, looking back: the user's first turn is the summary of their nightly learning run, then the assistant's response was cut
+--- end ---
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot=128 rope_base=10000 clamp_shexp=None
+[fa-pool] grow #4 dev=0 o_len 0 -> 393216 ml_len 0 -> 3072 (retired kept, zero=false)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 1, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+[spec] draft-session state high-water: 2619MB (max of parked delta 2609MB and capture-time pool peak 2619MB; charged per spec admission and gating future captures)
+[fa-pool] grow #5 dev=0 o_len 319488 -> 638976 ml_len 2496 -> 4992 (retired kept, zero=false)
+[fa-pool] grow #6 dev=1 o_len 319488 -> 638976 ml_len 2496 -> 4992 (retired kept, zero=false)
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 1, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+
+[generate_spec K=1] 160 tok in 1.568s = 101.43 tok/s (0.99x vs generate; this run's prime 0.305s)
+  acceptance: 69/90 = 76.7%   self-consistency: PASS (seeded rerun identical)
+  sampled tokens: [70935, 436, 14, 2513, 734, 1904, 513, 1257, 56408, 270, 10156, 3607, 2632, 10883, 14, 1748, 33, 455, 3967, 1438, 11127, 260, 5212, 29606, 377, 1008, 46, 35890, 14, 420, 9422, 14, 63904, 362, 65160, 14, 769, 260, 3530, 8003, 4866, 16, 5978, 14, 4337, 38824, 1257, 965, 51961, 477, 3777, 59972, 362, 710, 2645, 4890, 65160, 2703, 14, 4861, 362, 532, 19765, 123774, 14, 14812, 20706, 8984, 7874, 14, 35155, 22314, 14, 396, 734, 260, 8668, 4963, 319, 339, 12808, 14, 1257, 14, 855, 851, 1970, 304, 696, 1117, 14405, 1605, 7550, 377, 270, 8003, 851, 1960, 14, 1205, 6536, 33, 12554, 14, 855, 851, 1970, 304, 1950, 786, 4647, 14, 579, 588, 696, 2924, 1277, 1137, 19, 16, 17103, 1407, 270, 3077, 66376, 26355, 855, 851, 3557, 20920, 18159, 28, 1277, 270, 1957, 26373, 17114, 13163, 294, 270, 2753, 396, 420, 9422, 6623, 8062, 270, 1257, 26373, 362, 1008, 46, 35890, 14, 270, 34555, 2281, 5335, 1469, 270]
+--- sampled text (K=1) ---
+Got it, let's start by first acknowledging the completed learning run properly, right? The user just finished a deep dive on iLQR, DDP, MPC for robotics, has a full guide written. First, positive reinforcement first—those are super foundational for all model-based robotics control, especially for legged locomotion, manipulator motion planning, autonomous navigation, that's a core skillset.
+
+Then, first, if they want to do any immediate follow-up on the guide they made, what options? Like, if they want to test their understanding, we can do things like:
+1. Walk through the key derivation gaps if they got stuck anywhere: like the second-order Taylor expansion of the cost that DDP uses vs the first-order for iLQR, the backward pass difference between the
+--- end ---
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 2, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 2, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+
+[generate_spec K=2] 160 tok in 1.604s = 99.13 tok/s (0.97x vs generate; this run's prime 0.306s)
+  acceptance: 91/138 = 65.9%   self-consistency: PASS (seeded rerun identical)
+  sampled tokens: [70935, 436, 14, 2513, 734, 1904, 513, 1257, 56408, 786, 10156, 3607, 2632, 10883, 14, 1748, 33, 5978, 14, 851, 1438, 11127, 260, 5212, 29606, 377, 1008, 46, 35890, 14, 420, 9422, 14, 63904, 362, 35062, 19861, 412, 892, 294, 786, 65160, 39711, 119165, 3618, 14, 396, 734, 260, 3146, 7527, 59972, 53411, 1754, 1948, 477, 270, 53945, 294, 1473, 2645, 4890, 2703, 362, 10643, 36454, 343, 302, 19765, 36454, 14, 14812, 42817, 14, 62624, 710, 1347, 1305, 19372, 2008, 10318, 14, 1904, 418, 4337, 38824, 28, 582, 81188, 1116, 68143, 798, 566, 5212, 29606, 377, 35062, 19861, 3, 15728, 2038, 4836, 343, 75, 46, 35890, 14, 420, 9422, 14, 63904, 11, 477, 16808, 8668, 304, 4975, 710, 10643, 65160, 2703, 70583, 14, 832, 313, 22555, 566, 1928, 759, 1635, 832, 1623, 36234, 12179, 343, 302, 19765, 20110, 123774, 14, 14812, 20706, 8984, 7874, 14, 52747, 35062, 19873, 11, 1722, 10466, 304, 6009, 890, 3859, 4331, 12808, 14, 2918, 851]
+--- sampled text (K=2) ---
+Got it, let's start by first acknowledging their completed learning run properly, right? First, they just finished a deep dive on iLQR, DDP, MPC for trajectory optimization as part of their robotics_from_zero path, that's a really solid foundational milestone because those are the backbone of most model-based control for dynamic robots (legged robots, manipulators, drones all use these heavily).
+
+First, start with positive reinforcement: "Nice work knocking out this deep dive on trajectory optimization! Those three methods (iLQR, DDP, MPC) are absolutely core to almost all dynamic robotics control pipelines, so nailing this now will make so many downstream topics (legged robot locomotion, manipulator motion planning, drone trajectory tracking) way easier to pick up later."
+
+Then, since they
+--- end ---
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+[fa-pool] grow #7 dev=0 o_len 638976 -> 1277952 ml_len 4992 -> 9984 (retired kept, zero=false)
+[fa-pool] grow #8 dev=1 o_len 638976 -> 1277952 ml_len 4992 -> 9984 (retired kept, zero=false)
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 3, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+
+[generate_spec K=3] 160 tok in 1.717s = 92.63 tok/s (0.90x vs generate; this run's prime 0.306s)
+  acceptance: 101/174 = 58.0%   self-consistency: PASS (seeded rerun identical)
+  sampled tokens: [70935, 436, 14, 2513, 734, 1904, 513, 33581, 17574, 304, 270, 3967, 734, 1605, 7550, 16, 5978, 14, 270, 3967, 734, 2336, 6304, 3557, 4619, 1375, 509, 582, 2581, 1760, 832, 1257, 342, 1531, 24997, 396, 786, 4346, 6179, 34102, 14, 1539, 25293, 1559, 304, 270, 4412, 35062, 19861, 3607, 851, 1438, 11127, 14, 1748, 2755, 39059, 1257, 14, 2513, 734, 96483, 5148, 28, 851, 1438, 10156, 260, 5212, 29606, 377, 1008, 46, 35890, 14, 420, 9422, 14, 63904, 362, 65160, 14, 611, 260, 3530, 8003, 4866, 16, 6583, 786, 6304, 22257, 1375, 509, 582, 2581, 1760, 832, 1257, 342, 1531, 7155, 396, 786, 6304, 6179, 304, 366, 4619, 1375, 14, 1539, 3477, 7723, 2894, 6531, 29311, 418, 786, 3607, 3618, 14, 2918, 851, 4750, 4843, 65160, 39711, 119165, 603, 10318, 14, 2526, 418, 31011, 270, 4619, 14864, 28, 582, 107729, 1277, 782, 6304, 3557, 4619, 1375, 6431, 1715, 51015, 509, 905, 2581, 9, 2136, 2929, 3080, 304, 13480, 1205]
+--- sampled text (K=3) ---
+Got it, let's start by responding naturally to the user's follow-up. First, the user's last message got cut off at "We", so first I should acknowledge that their input seems incomplete, then tie back to the previous trajectory optimization learning they just finished, right?
+Wait first, let's recap context: they just completed a deep dive on iLQR, DDP, MPC for robotics, have a full guide written. Now their message cuts off at "We", so first I should note that their message seems to be cut off, then offer relevant next steps aligned with their learning path, since they're doing robotics_from_zero.
+First, open with noting the cut-off: "Looks like your message got cut off mid-sentence at 'We' — feel free to finish what
+--- end ---
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 4, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 4, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+
+[generate_spec K=4] 160 tok in 1.861s = 85.43 tok/s (0.83x vs generate; this run's prime 0.304s)
+  acceptance: 110/204 = 53.9%   self-consistency: PASS (seeded rerun identical)
+  sampled tokens: [70935, 436, 14, 2513, 734, 1904, 513, 33581, 17574, 304, 270, 3967, 734, 1257, 6304, 1257, 14, 1748, 33, 37157, 6361, 14, 270, 3967, 734, 1257, 6304, 515, 270, 13672, 294, 786, 10156, 118316, 3607, 2632, 377, 35062, 19861, 14, 1539, 270, 22896, 734, 1257, 4256, 515, 4619, 1375, 33, 37157, 1119, 14, 4735, 1559, 28, 270, 3967, 2859, 223, 19, 344, 270, 13672, 14, 1539, 270, 22896, 5271, 260, 4256, 396, 3557, 4619, 1375, 509, 582, 54182, 26, 88027, 83, 63339, 2990, 28, 223, 18, 764, 5265, 2859, 223, 20, 63, 1350, 4, 2136, 6361, 1119, 14, 6361, 270, 3967, 734, 2894, 2859, 344, 1438, 582, 2581, 57008, 37157, 1119, 14, 2513, 678, 322, 9547, 270, 4346, 979, 39059, 270, 4346, 344, 1137, 61, 5265, 2859, 223, 19, 63, 2042, 13313, 304, 4863, 270, 8003, 103860, 19706, 367, 9431, 19633, 15239, 343, 939, 24, 15, 2642, 15, 864, 11, 565, 41802, 21121, 28, 4550, 964, 869, 19861, 343, 75]
+--- sampled text (K=4) ---
+Got it, let's start by responding naturally to the user's first message first, right? Wait wait, the user's first message was the summary of their completed nightly learning run on trajectory optimization, then the assistant's first response was cut off? Wait no, looking back: the user turn 1 is the summary, then the assistant started a response that got cut off at "fp8-mmq dispatches: 0 [user turn 2] We" — wait no, wait the user's next turn is just "We"? Wait no, let me recheck the input:
+
+Wait the input is:
+[user turn 1] You supposed to share the guide digested Nightly Learning Run Summary (2026-05-18) - Topic processed: Trajectory optimization (i
+--- end ---
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 5, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 5, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+
+[generate_spec K=5] 160 tok in 2.838s = 56.02 tok/s (0.55x vs generate; this run's prime 0.304s)
+  acceptance: 94/330 = 28.5%   self-consistency: PASS (seeded rerun identical)
+  sampled tokens: [70935, 436, 14, 2513, 734, 1904, 513, 33581, 17574, 304, 270, 3967, 734, 1605, 7550, 14, 1257, 851, 4619, 1375, 509, 582, 2581, 4, 832, 1257, 342, 1531, 12275, 1066, 304, 13480, 786, 3241, 14, 790, 990, 25293, 1559, 304, 270, 10156, 35062, 19861, 3607, 851, 1438, 1687, 14, 1748, 2755, 10318, 14, 24997, 270, 4619, 14864, 14, 32508, 1066, 304, 13480, 1205, 851, 881, 8174, 14, 1539, 990, 3477, 7723, 2894, 6531, 29311, 418, 786, 1438, 15246, 30154, 3607, 377, 1008, 46, 35890, 19716, 9422, 17, 6806, 37, 362, 65160, 14, 2918, 851, 4750, 377, 270, 65160, 39711, 119165, 3618, 603, 39059, 2513, 734, 1635, 436, 4095, 1137, 4, 107729, 1277, 782, 6304, 3557, 4619, 1375, 6431, 1715, 51015, 3, 47901, 3080, 304, 13480, 1205, 440, 881, 2887, 304, 2507, 53769, 235, 201, 1124, 270, 45721, 14, 2918, 440, 1438, 29751, 396, 5212, 29606, 377, 8668, 35062, 19861, 4836, 362, 65160, 14, 855, 440, 4750, 6892, 943, 2894, 6531]
+--- sampled text (K=5) ---
+Got it, let's start by responding naturally to the user's follow-up, first they cut off at "We" so first I should prompt them to finish their thought, but also tie back to the completed trajectory optimization learning they just did, right?
+First, acknowledge the cut-off, invite them to finish what they were saying, then also offer relevant next steps aligned with their just-completed learning on iLQR/DDP/MPC for robotics, since they're on the robotics_from_zero path.
+Wait let's make it natural:
+"Looks like your message got cut off mid-sentence! Feel free to finish what you were going to say 😊
+In the meantime, since you just wrapped that deep dive on core trajectory optimization methods for robotics, if you're thinking about next steps
+--- end ---
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 6, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+[fa-pool] grow #9 dev=0 o_len 1277952 -> 2555904 ml_len 9984 -> 19968 (retired kept, zero=false)
+[fa-pool] grow #10 dev=1 o_len 1277952 -> 2555904 ml_len 9984 -> 19968 (retired kept, zero=false)
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 6, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+
+[generate_spec K=6] 160 tok in 3.044s = 52.23 tok/s (0.51x vs generate; this run's prime 0.303s)
+  acceptance: 99/366 = 27.0%   self-consistency: PASS (seeded rerun identical)
+  sampled tokens: [70935, 436, 14, 2513, 734, 1904, 513, 33581, 10883, 16, 5978, 14, 270, 3967, 1438, 8900, 786, 10156, 118316, 3607, 13672, 377, 35062, 19861, 343, 75, 46, 35890, 14, 420, 9422, 14, 63904, 11, 362, 786, 65160, 39711, 119165, 3607, 3618, 14, 1748, 1240, 10318, 14, 342, 1531, 2070, 418, 4337, 38824, 1257, 965, 3779, 344, 1345, 260, 1669, 28487, 59972, 5212, 29606, 362, 65160, 14, 4861, 2918, 1948, 2038, 4836, 477, 270, 53945, 294, 1473, 2645, 4890, 2703, 305, 8984, 7874, 70583, 362, 5675, 538, 14812, 42817, 304, 532, 19765, 36454, 304, 9924, 36454, 16, 334, 10190, 3336, 396, 270, 8003, 851, 8398, 344, 260, 2405, 6915, 304, 611, 14, 396, 734, 260, 7527, 5645, 362, 270, 4666, 339, 12808, 14, 2918, 851, 4750, 377, 260, 25136, 3607, 3618, 14, 3477, 15360, 14, 75696, 2894, 6531, 30736, 304, 786, 2192, 14, 1748, 33, 4480, 734, 4189, 1910, 270, 6536, 8947, 832, 851, 588, 6009, 1205, 28056, 786, 7800, 979]
+--- sampled text (K=6) ---
+Got it, let's start by responding properly. First, the user just shared their completed nightly learning summary on trajectory optimization (iLQR, DDP, MPC) for their robotics_from_zero learning path, right?
+
+First, I should lead with positive reinforcement first—this is such a high-value foundational deep dive for robotics, especially since those three methods are the backbone of most model-based control and motion planning pipelines for everything from manipulators to legged robots to mobile robots. Acknowledge that the guide they wrote is a great reference to have, that's a solid win for the night.
+
+Then, since they're on a structured learning path, offer concrete, actionable next steps tailored to their level, right? Let's break down the options clearly so they can pick what fits their goals:
+
+
+--- end ---
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 7, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 7, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+
+[generate_spec K=7] 160 tok in 3.483s = 45.65 tok/s (0.44x vs generate; this run's prime 0.303s)
+  acceptance: 98/427 = 23.0%   self-consistency: PASS (seeded rerun identical)
+  sampled tokens: [70935, 436, 14, 2513, 734, 1904, 513, 1257, 56408, 270, 10156, 3607, 2632, 10883, 1257, 14, 1748, 33, 455, 3967, 1438, 8900, 786, 118316, 3607, 13672, 362, 35062, 19861, 343, 75, 46, 35890, 14, 420, 9422, 14, 63904, 11, 778, 344, 260, 3777, 8668, 10158, 362, 2645, 4890, 65160, 14, 4861, 362, 2924, 1277, 532, 19765, 123774, 14, 14812, 20706, 8984, 7874, 14, 35155, 22314, 396, 851, 4750, 6162, 3946, 377, 412, 892, 294, 270, 65160, 39711, 119165, 6781, 339, 10318, 14, 2070, 418, 4337, 38824, 28, 396, 734, 260, 3146, 7527, 59972, 5212, 29606, 14, 1948, 2038, 4836, 477, 270, 53945, 294, 1473, 1669, 55042, 2645, 4890, 20110, 2703, 70583, 1748, 1928, 16, 5715, 14, 2918, 851, 611, 270, 3530, 8003, 4866, 14, 3477, 15360, 14, 75696, 2894, 6531, 396, 12628, 418, 786, 3607, 3618, 14, 554, 1438, 43200, 582, 1775, 678, 1153, 855, 440, 1309, 1694, 13404, 39059, 14, 270, 3967, 734, 2336, 6304, 4619, 1375, 509, 582]
+--- sampled text (K=7) ---
+Got it, let's start by first acknowledging the completed learning run properly first, right? The user just shared their nightly learning summary for trajectory optimization (iLQR, DDP, MPC) which is a super core topic for model-based robotics, especially for things like legged locomotion, manipulator motion planning, autonomous navigation that they're probably working on as part of the robotics_from_zero track.
+
+First, lead with positive reinforcement: that's a really solid foundational deep dive, those three methods are the backbone of most high-performance model-based robot control pipelines right now. Then, since they have the full guide written, offer concrete, actionable next steps that align with their learning path, not just vague "let me know if you need help".
+
+Wait, the user's last message cut off at "
+--- end ---
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 8, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+[mtp-chain] heads=3 policy=step-modulo prefix-replay kv=per-head
+[gemm-prime] ENGAGED t=613 base=0 seq_end=613 chunks<=4096 (GEMM trunk + grouped MoE)
+[mtp-chain-graph] captured mode=sampled heads=3 interior=3 last=3 filtered=1 key=SampledGraphKey { seed: 4242, temp_bits: 1056964608, k: 8, top_k: 0, top_p_bits: 1063675494, min_p_bits: 0, pen_on: false }
+
+[generate_spec K=8] 160 tok in 4.150s = 38.31 tok/s (0.37x vs generate; this run's prime 0.303s)
+  acceptance: 96/504 = 19.0%   self-consistency: PASS (seeded rerun identical)
+  sampled tokens: [70935, 436, 14, 2513, 734, 1904, 513, 33581, 17574, 304, 270, 3967, 734, 1605, 7550, 14, 1748, 33, 5978, 14, 270, 3967, 4619, 1375, 786, 6304, 509, 582, 2581, 1760, 832, 1257, 342, 1531, 24997, 396, 786, 6304, 6179, 304, 366, 4619, 1375, 14, 1539, 990, 25293, 1559, 304, 270, 10156, 35062, 19861, 3607, 851, 1438, 8900, 14, 3477, 304, 1694, 418, 11782, 851, 881, 8029, 304, 2507, 14, 5582, 7723, 2894, 6531, 29311, 418, 786, 65160, 39711, 119165, 3607, 3618, 339, 39059, 1257, 14, 2513, 734, 1635, 436, 80837, 16, 5978, 14, 7155, 396, 786, 2336, 6304, 3557, 4619, 1375, 509, 582, 2581, 4, 2136, 10796, 851, 881, 2887, 304, 2507, 3061, 1277, 582, 2581, 1970, 304, 4678, 2137, 4, 469, 582, 2581, 611, 260, 3417, 943, 894, 57008, 5715, 14, 25293, 1559, 304, 270, 10156, 8003, 851, 1960, 362, 35062, 19861, 343, 75, 46, 35890, 19716, 9422, 17, 6806, 37, 11, 778, 344, 1345, 260, 8668, 59972, 10158]
+--- sampled text (K=8) ---
+Got it, let's start by responding naturally to the user's follow-up, right? First, the user cut off their message at "We", so first I should acknowledge that their message seems to be cut off, then also tie back to the completed trajectory optimization learning they just shared, offer to help with whatever they were starting to say, plus relevant next steps aligned with their robotics_from_zero learning path.
+
+Wait first, let's make it conversational. First, note that their last message got cut off at "We" — maybe they were going to say something like "We want to implement X" or "We have a question about Y"? Then, tie back to the completed guide they made for trajectory optimization (iLQR/DDP/MPC) which is such a core foundational topic
+--- end ---
+
+=== SELF-CONSISTENCY PASS ===

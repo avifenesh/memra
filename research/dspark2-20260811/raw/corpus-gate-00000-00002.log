@@ -1,0 +1,107 @@
+DSPARK-CHUNK-BEGIN 2026-08-11T08:26:08+03:00 offset=0 limit=2 label=gate
+workspace=/home/avifenesh/projects/wt-cx-dspark2
+chunk_root=/data/projects/dspark/qwen35-9b-corpus-pilot/chunks/gate-00000-00002
+52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de  /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+20a061ddee54bb3113a25cd2abbb150e7e51c65a05670c3be127c242221fffd9  /data/projects/dspark/qwen35-9b-corpus-pilot/prompts/prompts.promptpack
+63d602aae37db268362169be32f293a009ef2e2b1e2bc6bef2d26b8ae73512f8  /data/projects/dspark/qwen35-9b-corpus-pilot/prompts/prompts.tsv
+11e8c8ddd389cc3ef0957dfe8be9051791b99b314d772a0386ff5b13163ffc04  /home/avifenesh/projects/wt-cx-dspark2/target/release/dspark-generate
+5ab227df534ef0680d48014e6e6d7f3e1771d94cfcccbb41756ec3aa3ac63d25  /home/avifenesh/projects/wt-cx-dspark2/target/release/dspark-extract
+2026/08/11 08:26:25.848, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 12.0, 24463 MiB, 21796 MiB, 78, 171.71 W
+589806, target/release/gemma-gate, 21634 MiB
+DSPARK-CHUNK-LOCK-BUSY 2026-08-11T08:26:25+03:00
+DSPARK-CHUNK-BEGIN 2026-08-11T08:34:49+03:00 offset=0 limit=2 label=gate
+workspace=/home/avifenesh/projects/wt-cx-dspark2
+chunk_root=/data/projects/dspark/qwen35-9b-corpus-pilot/chunks/gate-00000-00002
+52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de  /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+20a061ddee54bb3113a25cd2abbb150e7e51c65a05670c3be127c242221fffd9  /data/projects/dspark/qwen35-9b-corpus-pilot/prompts/prompts.promptpack
+63d602aae37db268362169be32f293a009ef2e2b1e2bc6bef2d26b8ae73512f8  /data/projects/dspark/qwen35-9b-corpus-pilot/prompts/prompts.tsv
+11e8c8ddd389cc3ef0957dfe8be9051791b99b314d772a0386ff5b13163ffc04  /home/avifenesh/projects/wt-cx-dspark2/target/release/dspark-generate
+5ab227df534ef0680d48014e6e6d7f3e1771d94cfcccbb41756ec3aa3ac63d25  /home/avifenesh/projects/wt-cx-dspark2/target/release/dspark-extract
+2026/08/11 08:35:06.401, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 12.0, 24463 MiB, 157 MiB, 65, 12.22 W
+DSPARK-CHUNK-LOCK-ACQUIRED 2026-08-11T08:35:06+03:00
+[dspark-generate] range=0..2 resume=0 temp=0.7 max_new=512 model=/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[dspark-generate] id=0 1/2 prompt=32 response=512 elapsed=4.177s
+[dspark-generate] id=1 2/2 prompt=69 response=512 elapsed=4.128s
+DSPARK-GENERATION-DONE 0 2
+[dspark-extract] pair=1/2 id=0 anchors=4 records=4 elapsed=2.08s
+[dspark-extract] pair=2/2 id=1 anchors=4 records=8 elapsed=4.31s
+DSPARK-EXTRACTION-DONE pairs=2 records=8
+2026/08/11 08:35:21.959, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 12.0, 24463 MiB, 157 MiB, 81, 174.51 W
+DSPARK-CHUNK-LOCK-RELEASE 2026-08-11T08:35:21+03:00
+{
+  "format": "memra-dspark-validation-v1",
+  "max_logit_probability_ratio_error": 7.555089425181905e-07,
+  "max_probability_mass_error": 1.7740009683464564e-08,
+  "pairs": 2,
+  "records": 8,
+  "sampled_token_top64_rate": 1.0,
+  "split_records": {
+    "heldout": 4,
+    "train": 4
+  },
+  "tail_mass_max": 0.0010573462350293994,
+  "tail_mass_mean": 4.3720326343332784e-05
+}
+2f246fda4f807aa3e5f459d98586e594bad1984182a43bc790ce0bc841ba3873  /data/projects/dspark/qwen35-9b-corpus-pilot/chunks/gate-00000-00002/sha256.txt
+160K	/data/projects/dspark/qwen35-9b-corpus-pilot/chunks/gate-00000-00002
+extracted/extraction.meta.json: OK
+extracted/hiddens.bf16: OK
+extracted/index.tsv: OK
+extracted/tail_probs.f32: OK
+extracted/tokens.u32: OK
+extracted/top_ids.u32: OK
+extracted/top_logits.f32: OK
+extracted/top_probs.f32: OK
+generated/generation.meta.json: OK
+generated/pairs.tsv: OK
+generated/responses/00000000.txt: OK
+generated/responses/00000001.txt: OK
+validation.json: OK
+DSPARK-CHUNK-DONE 2026-08-11T08:35:29+03:00 tag=gate-00000-00002
+DSPARK-CHUNK-BEGIN 2026-08-11T08:36:59+03:00 offset=0 limit=2 label=gate
+workspace=/home/avifenesh/projects/wt-cx-dspark2
+chunk_root=/data/projects/dspark/qwen35-9b-corpus-pilot/chunks/gate-00000-00002
+52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de  /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+20a061ddee54bb3113a25cd2abbb150e7e51c65a05670c3be127c242221fffd9  /data/projects/dspark/qwen35-9b-corpus-pilot/prompts/prompts.promptpack
+63d602aae37db268362169be32f293a009ef2e2b1e2bc6bef2d26b8ae73512f8  /data/projects/dspark/qwen35-9b-corpus-pilot/prompts/prompts.tsv
+dc757120c3765d10bc670ac68fd1cec22789317057ecaf2d833121ddf6f53129  /home/avifenesh/projects/wt-cx-dspark2/target/release/dspark-generate
+e8abb3bc7674b69ad46766e729ef178c8ed326b44769302d2e6c7f9cf44f044e  /home/avifenesh/projects/wt-cx-dspark2/target/release/dspark-extract
+2026/08/11 08:37:16.213, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 12.0, 24463 MiB, 157 MiB, 60, 10.40 W
+DSPARK-CHUNK-LOCK-ACQUIRED 2026-08-11T08:37:16+03:00
+[dspark-generate] range=0..2 resume=2 temp=0.7 max_new=512 model=/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+DSPARK-GENERATION-DONE 0 2
+[dspark-extract] pair=1/2 id=0 anchors=4 records=4 elapsed=2.05s
+[dspark-extract] pair=2/2 id=1 anchors=4 records=8 elapsed=4.24s
+DSPARK-EXTRACTION-DONE pairs=2 records=8
+2026/08/11 08:37:23.646, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 12.0, 24463 MiB, 157 MiB, 72, 175.05 W
+DSPARK-CHUNK-LOCK-RELEASE 2026-08-11T08:37:23+03:00
+{
+  "format": "memra-dspark-validation-v1",
+  "max_logit_probability_ratio_error": 7.555089425181905e-07,
+  "max_probability_mass_error": 1.7740009683464564e-08,
+  "pairs": 2,
+  "records": 8,
+  "sampled_token_top64_rate": 1.0,
+  "split_records": {
+    "heldout": 4,
+    "train": 4
+  },
+  "tail_mass_max": 0.0010573462350293994,
+  "tail_mass_mean": 4.3720326343332784e-05
+}
+eccf8fd6ec4518a8b73f6c60a7d4728adf788a3ada27f92f3778c3da6feb9629  /data/projects/dspark/qwen35-9b-corpus-pilot/chunks/gate-00000-00002/sha256.txt
+160K	/data/projects/dspark/qwen35-9b-corpus-pilot/chunks/gate-00000-00002
+extracted/extraction.meta.json: OK
+extracted/hiddens.bf16: OK
+extracted/index.tsv: OK
+extracted/tail_probs.f32: OK
+extracted/tokens.u32: OK
+extracted/top_ids.u32: OK
+extracted/top_logits.f32: OK
+extracted/top_probs.f32: OK
+generated/generation.meta.json: OK
+generated/pairs.tsv: OK
+generated/responses/00000000.txt: OK
+generated/responses/00000001.txt: OK
+validation.json: OK
+DSPARK-CHUNK-DONE 2026-08-11T08:37:31+03:00 tag=gate-00000-00002

@@ -1,0 +1,38 @@
+== accept-gate: served-spec acceptance + long-text assertion ==
+   cells: q27-p1 q27-p2 q27-p3 q9-p1 q9-p2 q9-p3 (--full matrix)
+   arm env: MEMRA_MMQ_F8F4=unset
+   logs: /home/ubuntu/cx-kpolicy-gates-b6b1dbff/accept
+-- server: Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf + draft-daily-owntrim-nvfp4head-q4blk.gguf K=3 ctx=8192
+   up in 8s
+  q27-p1: PASS (rounds=42 drafted=126 accepted=85 accept=0.6746, 128 tok text sha-identical)
+  q27-p2: FAIL — 5 assertion(s):
+      spec.rounds: pinned 42 -> got 41
+      spec.drafted: pinned 126 -> got 123
+      spec.accepted: pinned 85 -> got 87
+      text sha256: pinned fddd52f56f8e0f0f -> got 906ccda8889f0685
+      completion_tokens: pinned 128 -> got 129
+      acceptance 0.6746 -> 0.7073 (+3.27pp)   <- clock-independent; a ratio, so this is real, not drift
+      TEXT DIVERGES at char 457 (~word 62; pinned len 466, got 468)
+        common:  ...'Code**:\n   - Uses `axum::serve(listener, app).await?;`\n   - '
+        pinned:  'Runs on `'
+        got:     'Uses `tokio'
+        NOTE: this divergence is at/past the 20-token golden window — the token goldens are BLIND to it. That blindness is why this gate exists.
+  q27-p3: PASS (rounds=39 drafted=117 accepted=91 accept=0.7778, 131 tok text sha-identical)
+-- server: Qwen3.5-9B-NVFP4-MTP-GGUF.gguf + draft-9b-owntrim-nvfp4head-q4blk.gguf K=3 ctx=8192
+   up in 2s
+  q9-p1: PASS (rounds=41 drafted=123 accepted=89 accept=0.7236, 131 tok text sha-identical)
+  q9-p2: FAIL — 3 assertion(s):
+      spec.rounds: pinned 49 -> got 50
+      spec.drafted: pinned 147 -> got 150
+      spec.accepted: pinned 79 -> got 78
+      acceptance 0.5374 -> 0.5200 (-1.74pp)   <- clock-independent; a ratio, so this is real, not drift
+  q9-p3: PASS (rounds=46 drafted=138 accepted=81 accept=0.5870, 128 tok text sha-identical)
+
+accept-gate: 4 pass, 2 fail, 0 unpinned, 0 skip
+
+  ^ An acceptance or long-text FAIL is NOT a drift tripwire. Acceptance is a RATIO
+    (clock-independent) and greedy text at temperature 0 is deterministic, so neither can be
+    explained by thermals, clocks or a contended window. Read it as a real behavior change.
+    DO NOT re-pin to make it green: that is the receipted failure mode (a --refresh-goldens
+    after a kernel change silently re-pins the new arm). Root-cause first; re-pin only after
+    the change is understood, reviewed and committed.

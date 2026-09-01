@@ -1,0 +1,47 @@
+{
+ "name": "p05-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "object": "chat.completion",
+  "model": "zai/glm-5.3-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning": "Let me parse what the user is saying. This appears to be someone updating a set of persistent notes/preferences \u2014 possibly a CLAUDE.md, memory, or skill files. The phrasing \"we need to update itch skill and my prefered work\" suggests they want me to update some kind of skill/notes file about their preferences and current state of work.\n\nWait \u2014 \"itch skill\" \u2014 could be their personal skill file (like Claude Code skills/superpowers style). The message is essentially: update my documentation/memory with these facts:\n\n1. Current inference work is full/complete \u2014 no need for more inference work.\n2.",
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "Let me parse what the user is saying. This appears to be someone updating a set of persistent notes/preferences \u2014 possibly a CLAUDE.md, memory, or skill files. The phrasing \"we need to update itch skill and my prefered work\" suggests they want me to update some kind of skill/notes file about their preferences and current state of work.\n\nWait \u2014 \"itch skill\" \u2014 could be their personal skill file (like Claude Code skills/superpowers style). The message is essentially: update my documentation/memory with these facts:\n\n1. Current inference work is full/complete \u2014 no need for more inference work.\n2."
+      }
+     ]
+    },
+    "finish_reason": "length"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 192,
+   "completion_tokens": 128,
+   "total_tokens": 320,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 16.664283633,
+   "spec": {
+    "rounds": 57,
+    "drafted": 171,
+    "accepted": 70,
+    "acceptance_rate": 0.4093567251461988
+   }
+  },
+  "id": "chatcmpl-931df1ac74a2e2e1b2fc7f2ad1d014db",
+  "created": 1788067748
+ }
+}

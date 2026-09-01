@@ -1,0 +1,18 @@
+{
+ "name": "on-r0-WARM-decode",
+ "ttfd_s": 0.455,
+ "wall_s": 4.643,
+ "prompt_tokens": 415,
+ "completion_tokens": 128,
+ "prefill_tok_s": 912.1,
+ "decode_ms_tok": 32.98,
+ "first_chunk": "</think>**Work summary:*",
+ "out_text": "</think>**Work summary:** The HQMTP project (draft-head speculative decoding for the BW24 model) has reached a locked, reproducible recipe \u2014 naked KD \u2192 CE reinforce \u2014 with the distilled draft hitting chain 0.507, i.e. 85.5% of the teacher's acceptance at ~13% of draft compute, with slots 1\u20133 actually exceeding the teacher. The key enabler was fixing a subset-KL loss bug (top-64 gathered KL left ~32k logits unconstrained, causing pure-KD argmax collapse to 0.000); that gotcha has been generalized onto the knowledge",
+ "error": null,
+ "arm": "on",
+ "round": 0,
+ "prompt": "WARM",
+ "mode": "greedy",
+ "kind": "decode",
+ "log_census": null
+}

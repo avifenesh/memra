@@ -1,0 +1,36 @@
+=== grouped-serve serving 20260810T001946Z commit=188154299064a42b67fc8eb1f41757cf6237300d
+binary=/home/ubuntu/memra-cx-grouped/target/release/memra-server sha256=e7e6515e9f47030a7137ba9fdf7c40d43f0764d02699b38959f134ee0ace65b3
+model=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296
+draft=/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416
+prompt=/home/ubuntu/memra-cx-grouped/research/step-sku-20260807/prompt-pp4096.txt bytes=25036 sha256=23c1d8384a16c7c0bcb7736b412d43e64c0b4d8e238703864e928565f824ae11
+config=PP-2 devices 0,1; MEMRA_CTX=262144; spec off; grouped explicit per arm
+ttft=N=5/arm, alternating, one warmup per boot, unique cold salts
+burst=grouped c=4, N=3 bursts, 4107 cold chat tokens/request
+lock acquired 2026-08-10T00:19:46Z
+snapshot 2026-08-10T00:19:46Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 27, 180 MHz, 30.59 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 27, 180 MHz, 30.49 W, 0 MiB, 0 %
+burst-only recovery: completed TTFT samples are not rerun
+########## grouped c=4 burst N=3 ##########
+snapshot 2026-08-10T00:19:46Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 27, 180 MHz, 30.59 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 27, 180 MHz, 30.49 W, 0 MiB, 0 %
+grouped-serve-burst-c4 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-burst-grouped-20260810T001946Z.log
+{"aggregate_prefill_tps": 554.0904413746144, "aggregate_prompt_tokens": 4107, "burst_start_utc": "2026-08-10T00:20:18.490004+00:00", "concurrency": 1, "kind": "warmup", "label": "grouped-serve-burst-c4", "last_first_visible_utc": "2026-08-10T00:20:26.002260+00:00", "n_requests": 1, "prompt_tokens_each": 4107, "repeat": -1, "ttft_max_s": 7.412128274969291, "ttft_min_s": 7.412128274969291, "ttft_p50_s": 7.412128274969291, "ttft_p95_s": 7.412128274969291, "wall_to_last_first_token_s": 7.412147355964407}
+{"aggregate_prefill_tps": 563.0733570547585, "aggregate_prompt_tokens": 16428, "burst_start_utc": "2026-08-10T00:20:26.003372+00:00", "concurrency": 4, "kind": "summary", "label": "grouped-serve-burst-c4", "last_first_visible_utc": "2026-08-10T00:20:55.416389+00:00", "n_requests": 4, "prompt_tokens_each": 4107, "repeat": 1, "ttft_max_s": 29.17550488503184, "ttft_min_s": 29.118537892994937, "ttft_p50_s": 29.175302803021623, "ttft_p95_s": 29.17550488503184, "wall_to_last_first_token_s": 29.175594608008396}
+{"aggregate_prefill_tps": 566.2533905385807, "aggregate_prompt_tokens": 16428, "burst_start_utc": "2026-08-10T00:20:55.417158+00:00", "concurrency": 4, "kind": "summary", "label": "grouped-serve-burst-c4", "last_first_visible_utc": "2026-08-10T00:21:24.665225+00:00", "n_requests": 4, "prompt_tokens_each": 4107, "repeat": 2, "ttft_max_s": 29.01164991199039, "ttft_min_s": 28.955218904011417, "ttft_p50_s": 29.011323926009936, "ttft_p95_s": 29.01164991199039, "wall_to_last_first_token_s": 29.011746815987863}
+{"aggregate_prefill_tps": 565.9131519688436, "aggregate_prompt_tokens": 16428, "burst_start_utc": "2026-08-10T00:21:24.665992+00:00", "concurrency": 4, "kind": "summary", "label": "grouped-serve-burst-c4", "last_first_visible_utc": "2026-08-10T00:21:53.930923+00:00", "n_requests": 4, "prompt_tokens_each": 4107, "repeat": 3, "ttft_max_s": 29.029072430974338, "ttft_min_s": 28.972711215959862, "ttft_p50_s": 29.028888869972434, "ttft_p95_s": 29.029072430974338, "wall_to_last_first_token_s": 29.02918927196879}
+snapshot 2026-08-10T00:21:58Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 345 MHz, 51.12 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 41, 337 MHz, 50.93 W, 0 MiB, 0 %
+burst assertion PASS: live step35 B=4 batch record
+{"aggregate_prefill_tps_median": 565.9131519688436, "arm": "grouped", "burst_ttft_p50_median_s": 29.028888869972434, "burst_ttft_p95_median_s": 29.029072430974338, "concurrency": 4, "n_bursts": 3, "requests": 12, "wall_samples_s": [29.011746815987863, 29.02918927196879, 29.175594608008396], "wall_to_last_first_token_p50_s": 29.02918927196879}
+server fault scan GREEN
+snapshot 2026-08-10T00:21:58Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 345 MHz, 51.12 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 41, 337 MHz, 50.93 W, 0 MiB, 0 %
+lock released 2026-08-10T00:21:58Z
+=== grouped-serve serving rc=0
+ttft_client=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/ttft-client-20260810T001946Z.jsonl
+burst_client=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/burst-c4-20260810T001946Z.jsonl
+=== done 2026-08-10T00:21:58Z

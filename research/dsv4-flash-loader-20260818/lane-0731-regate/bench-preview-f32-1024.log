@@ -1,0 +1,34 @@
+dsv4-decode-bench | model /home/ubuntu/models/dsv4-flash-nvfp4 | variant clamp-only | n_new 1024 | devices [0, 1] | MEMRA_DSV4_EXPERT_ARM='native' MEMRA_DSV4_DECODE_PATH='device'
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=38s
+[load] layer 15 -> dev0 done t=51s
+[load] layer 19 -> dev0 done t=64s
+[load] layer 23 -> dev1 done t=77s
+[load] layer 27 -> dev1 done t=90s
+[load] layer 31 -> dev1 done t=103s
+[load] layer 35 -> dev1 done t=115s
+[load] layer 39 -> dev1 done t=128s
+[load] layer 42 -> dev1 done t=138s
+[load] drafter: 1 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path not wired (separate lane); trunk-only
+loaded: split at layer 22, t=139s
+[vram post-load] dev0 used 82.24/94.97 GiB (resident 81.51) | dev1 used 78.64/94.97 GiB (resident 77.94)
+[vram post-alloc] dev0 used 82.24/94.97 GiB (resident 81.51) | dev1 used 78.67/94.97 GiB (resident 77.94)
+prefill 32 tokens: 398.3 ms (informational)
+step 0: s=33 tok 1970 29.6 ms t=0.0s
+step 128: s=161 tok 20 29.7 ms t=3.9s
+step 256: s=289 tok 14 30.0 ms t=7.8s
+step 384: s=417 tok 20 30.2 ms t=11.7s
+step 512: s=545 tok 270 30.4 ms t=15.6s
+step 640: s=673 tok 449 30.6 ms t=19.6s
+step 768: s=801 tok 37 30.8 ms t=23.6s
+step 896: s=929 tok 341 31.1 ms t=27.7s
+step 1023: s=1056 tok 37 32.8 ms t=31.7s
+[vram post-run] dev0 used 82.27/94.97 GiB (resident 81.51) | dev1 used 78.67/94.97 GiB (resident 77.94)
+decoded 1024 steps in 32.0s | stream sha256 1acee23f157087a44d801a1de416fca1115dce8866442fb4dee8faefb2fd31f3
+[window] s≈200: median 29.7 ms/step (min 29.7 / max 30.7, n=21) = 33.6 tok/s
+[window] s≈512: median 30.4 ms/step (min 30.3 / max 33.2, n=21) = 32.9 tok/s
+[window] s≈1024: median 31.9 ms/step (min 31.8 / max 34.7, n=21) = 31.4 tok/s
+banked /home/ubuntu/dsv4-0731-regate-out/bench-preview-f32-1024.json | total elapsed 171s | single-run: informational, NOT a perf claim

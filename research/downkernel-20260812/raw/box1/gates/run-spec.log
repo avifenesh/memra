@@ -1,0 +1,44 @@
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.810
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=647.326
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[mtp-draft] loading external MTP draft: /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 layers, nextn=0)
+text prompt (472 chars) -> 91 tokens
+prompt tokens: [0, 671, 8412, 6005, 15246, 39105, 28499, 14712, 8739, 23997, 538, 60944, 9130, 1407, 83119, 5908, 84152, 1060, 63310, 71, 1055, 5291, 6464, 14, 1479, 5059, 1766, 1781, 8086, 87375, 28907, 1066, 16, 8829, 6632, 344, 9720, 3672, 418, 270, 3628, 14, 1754, 260, 13058, 29009, 588, 20118, 260, 1499, 2641, 105209, 18103, 16, 39843, 14, 3132, 513, 3132, 14, 1192, 260, 13376, 9934, 86473, 1648, 67940, 63203, 305, 74638, 1009, 13523, 362, 260, 4031, 17840, 14, 305, 8470, 778, 6632, 81252, 52636, 1082, 270, 8739, 6939, 38504, 5291, 6464, 603]
+
+[generate]   31 tok in 0.311s = 99.69 tok/s (gen-only; this run's prime 0.251s)
+  oracle: Step35 live B=1 batched target
+  tokens: [128799, 201, 795, 8850, 10531, 75405, 30872, 73815, 295, 260, 21857, 10672, 9934, 15, 123047, 343, 28608, 39, 11, 5629, 14880, 271, 19, 16, 2619, 14907, 99761, 343, 41, 1217, 22604, 2143]
+
+[generate_spec K=1] 32 tok in 0.368s = 84.23 tok/s (0.84x vs generate; this run's prime 0.251s)
+  acceptance: 13/19 = 68.4%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 32 tok in 0.484s = 63.99 tok/s (0.64x vs generate; this run's prime 0.251s)
+  acceptance: 16/34 = 47.1%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=3] 32 tok in 0.674s = 46.01 tok/s (0.46x vs generate; this run's prime 0.251s)
+  acceptance: 16/54 = 29.6%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 32 tok in 0.743s = 41.70 tok/s (0.42x vs generate; this run's prime 0.251s)
+  acceptance: 18/64 = 28.1%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 32 tok in 0.938s = 33.05 tok/s (0.33x vs generate; this run's prime 0.251s)
+  acceptance: 17/85 = 20.0%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=6] 32 tok in 1.088s = 28.49 tok/s (0.29x vs generate; this run's prime 0.251s)
+  acceptance: 17/102 = 16.7%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 32 tok in 1.238s = 25.04 tok/s (0.25x vs generate; this run's prime 0.251s)
+  acceptance: 17/119 = 14.3%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 32 tok in 1.386s = 22.36 tok/s (0.22x vs generate; this run's prime 0.251s)
+  acceptance: 17/136 = 12.5%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

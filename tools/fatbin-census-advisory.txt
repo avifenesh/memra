@@ -1,0 +1,24 @@
+# Arches whose fatbin-vs-lookup census is ADVISORY: reported in full, non-blocking.
+#
+# FORMAT:  <arch>   # why it is advisory, and the engine lane that will remove it
+#
+# THE INVARIANT THAT MAKES THIS SAFE, enforced by tools/arch-matrix-census.sh:
+#   AN ADVISORY ARCH MUST NOT APPEAR IN release.yml's BUILD MATRIX.
+# Advisory means "we know kernels are missing and we have not fixed it yet", so the only
+# acceptable place for such an arch is compile coverage in ci.yml — never a published asset. An
+# arch is compile-covered OR shipped, never both. Without that invariant this file would be a
+# way to ship a panicking binary quietly, which is precisely the failure it exists to prevent.
+#
+# Being listed here does NOT weaken the rest of the census. For an advisory arch the census still
+# HARD-FAILS on every structural refusal: no fatbins, a missing module, a fatbin yielding zero
+# kernels, zero Rust lookups, an arch mismatch, and exceptions-file rot. Only "these looked-up
+# kernels are absent" is downgraded to a report.
+
+# EMPTY, and that is the intended steady state. sm_89 was listed here for part of 2026-08-23
+# while a name-level census reported 20 missing kernels; tracing the call sites showed 18 were
+# unreachable and the remaining two were reachable only via env doors that now refuse
+# (refuse_portable_force). It ships again, with every census hit declared and REASONED in
+# tools/fatbin-lookup-exceptions.txt. Nothing is knowingly broken, so nothing is advisory.
+#
+# If an arch ever lands here again, tools/arch-matrix-census.sh will refuse to let it stay in
+# release.yml's matrix — an arch is compile-covered OR shipped, never both.

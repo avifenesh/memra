@@ -1,0 +1,17 @@
+
+NOTICE: Existing SQLite export found: /opt/scratch/nvme/ncuspike-20260811/nsys/decode.sqlite
+        It is assumed file was previously exported from: /opt/scratch/nvme/ncuspike-20260811/nsys/decode.nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [/opt/scratch/nvme/ncuspike-20260811/nsys/decode.sqlite] with [/opt/nvidia/nsight-systems/2026.1.3/target-linux-x64/reports/cuda_gpu_mem_time_sum.py]... 
+
+ ** CUDA GPU MemOps Summary (by Time) (cuda_gpu_mem_time_sum):
+
+ Time (%)  Total Time (ns)  Count  Avg (ns)  Med (ns)  Min (ns)  Max (ns)  StdDev (ns)            Operation           
+ --------  ---------------  -----  --------  --------  --------  --------  -----------  ------------------------------
+     67.6          3217850   4352     739.4     672.0       576      1184        148.5  [CUDA memset]                 
+     23.7          1127037   1696     664.5     352.0       288      2048        425.1  [CUDA memcpy Host-to-Device]  
+      7.1           337920     32   10560.0   10480.0     10048     12544        440.0  [CUDA memcpy Device-to-Host]  
+      1.1            52665     64     822.9     864.0       704       927         77.4  [CUDA memcpy Device-to-Device]
+      0.5            24127     32     754.0     768.0       735       768         16.2  [CUDA memcpy Peer-to-Peer]    
+

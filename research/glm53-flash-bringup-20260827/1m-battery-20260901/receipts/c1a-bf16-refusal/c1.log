@@ -1,0 +1,102 @@
+2026-08-31T16:21:12Z
+######## CELL 1: BOOT + 1M PLAIN PRIME (timed) ########
+[1m] no pidfile, nothing to stop
+[1m] launched pid=171799 boot=c1-plain nonce=55fe311c-62b2-4023-87b5-1f19549ee86f extras=
+[1m] READY after 92s
+boot=c1-plain pid=171799 nonce=55fe311c-62b2-4023-87b5-1f19549ee86f spec_env=0
+stage_lines=9
+--- ctx / window ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / placement ---
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=6 skipped=0 mismatches=0 elapsed_ms=5.093
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev1->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev2->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=2 dev2->dev3 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=2 dev3->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=24 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=2407.938
+[bf16-mmv] RESIDENT output.weight ne=[4096, 154880] n=634388480 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.0.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_v.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.1.kda_out.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.2.kda_k.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+--- prefix-cache ---
+--- spec ---
+--- vram-at-ready (index, used MiB, total MiB) ---
+0, 4534 MiB, 97887 MiB
+1, 4342 MiB, 97887 MiB
+2, 4342 MiB, 97887 MiB
+3, 5846 MiB, 97887 MiB
+[1m] GATES GREEN boot=c1-plain
+vramwatch pid 172214
+
+=== W1K warm rung (greedy, 32 tok): arena populate + session-1 VRAM ===
+vramwatch pid 172214 -> /root/out-1m/receipts/c1/vram.csv every 20s
+### RUNG W1K mode=greedy chars=4200 maxtok=32 boot=c1-plain start=2026-08-31T16:22:44Z
+[W1K] mode=greedy status=200 pt=1108 ct=32
+  TTFD=8.999s (123.12 tok/s prefill)  decode span=37.68 steady_p50=37.82 tok/s  wall=9.8s arrivals=31
+  output[:300]: 'The corpus contains *War and Peace* by Leo Tolstoy (translated by Aylmer and Louise Maude), which is the sole work represented here'
+  rung wall 10s rc=0 end=2026-08-31T16:22:54Z
+--- [glm5-acc] acceptance lines for this request ---
+--- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
+--- error census (must be 0) ---
+0
+--- errors, if any ---
+  vram after: 0, 60666 MiB 1, 59322 MiB|2, 59322 MiB 3, 60762 MiB
+
+=== ENGAGE gate (announces print at first engagement, so AFTER the first request) ===
+engage=mla-tc-prefill(DEFAULT ON, the re-priced lever) expected=1 lines=1
+engage=mla-tc-prefill DECLINED (a cuBLASLt shape decline) expected=0 lines=0
+[1m] ENGAGE FAIL: expected 'moe-grouped-prefill(default ON at this head)' announce, lines=0
+engage=moe-grouped-prefill(default ON at this head) expected=1 lines=0
+engage=door T bf16-tcols-wide(default-on) expected=0 lines=0
+engage=door X bf16-tcols-x1(default-on) expected=0 lines=0
+engage=door K topk-shards(default-on) expected=0 lines=0
+engage=door W glm5-verify-ws(default-on) expected=0 lines=0
+engage=door D (default OFF, never set) expected=0 lines=0
+engage=door R (default OFF, never set) expected=0 lines=0
+--- mla-tc-prefill announce ---
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+--- accept lines ---
+0
+[1m] ENGAGE RED boot=c1-plain
+C1_WARN=engage-red (see logs/boot-c1-plain.engage)
+
+=== R1M PLAIN greedy: THE PRIME (demo baseline 6,419.8 s @ 161.28 tok/s) ===
+### RUNG R1M mode=greedy chars=4282700 maxtok=256 boot=c1-plain start=2026-08-31T16:22:54Z
+[R1M] mode=greedy status=429 pt=None ct=None
+  TTFD=Nones (None tok/s prefill)  decode span=None steady_p50=None tok/s  wall=1.8s arrivals=0
+  ERROR: {"error":{"message":"request context 1035677 does not fit available KV capacity; retry with smaller max_tokens or max_ctx","type":"rate_limit_error","param":null,"code":"rate_limit_exceeded"}}
+  output[:300]: ''
+  rung wall 2s rc=0 end=2026-08-31T16:22:56Z
+--- [glm5-acc] acceptance lines for this request ---
+--- [glm5-phase] / [glm5-phase-v] (empty unless trace armed) ---
+--- error census (must be 0) ---
+0
+--- errors, if any ---
+  vram after: 0, 59962 MiB 1, 58650 MiB|2, 58682 MiB 3, 60090 MiB
+
+=== R1M PLAIN vendor-default sampled twin (serving law: never greedy-only) ===
+R1M greedy FAILED - skipping the sampled twin, the failure is the receipt
+vramwatch 172214 stopped
+
+--- PER-CARD VRAM PEAK over cell 1 (cards are 97,887 MiB) ---
+  gpu0: peak 4534 MiB (4.6% of the card)
+  gpu1: peak 4342 MiB (4.4% of the card)
+  gpu2: peak 4342 MiB (4.4% of the card)
+  gpu3: peak 5846 MiB (6.0% of the card)
+  demo phase7 peaks for reference: 81945 / 80121 / 80089 / 94905 MiB
+--- boot-wide error census (must be 0) ---
+0
+[1m] SIGTERM pid=171799 exe=/root/memra-1m/target/release/memra-server
+[1m] stopped
+2026-08-31T16:23:36Z
+C1_DONE

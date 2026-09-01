@@ -1,0 +1,23 @@
+warning: memra-engine@0.76.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.76.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.76.0 (/home/avifenesh/projects/wt-cx-dspark2/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.21s
+     Running unittests src/bin/dspark_extract.rs (target/debug/deps/dspark_extract-f6f7afdb52fb6495)
+
+running 2 tests
+test tests::anchors_are_deterministic_unique_and_response_bounded ... ok
+test tests::anchor_always_has_a_predecessor_hidden ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+warning: memra-engine@0.76.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.76.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.76.0 (/home/avifenesh/projects/wt-cx-dspark2/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.36s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-6567d1443c87cce9)
+
+running 1 test
+test spec::dspark_sparse_tests::topk_keeps_full_softmax_mass_and_stable_ties ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.00s
+

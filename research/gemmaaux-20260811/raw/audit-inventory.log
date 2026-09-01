@@ -1,0 +1,78 @@
+[GemmaAux definitions and accessors]
+705:    pub e4b: Option<Gemma4E4bLayer>,
+1123:pub struct GemmaAux {
+1126:    pub rope_freqs: Option<Vec<(usize, CudaSlice<f32>)>>,
+1129:    pub ones: Vec<(usize, CudaSlice<f32>)>,
+1132:    pub suppress_d: Option<(CudaSlice<i32>, usize)>,
+1134:    pub e4b: Option<Gemma4E4bModel>,
+1138:    pub fn rope_freqs(&self, e: &Engine) -> Option<&CudaSlice<f32>> {
+1149:    pub fn ones(&self, e: &Engine) -> &CudaSlice<f32> {
+1168:    pub rope_freqs: Option<Vec<(usize, CudaSlice<f32>)>>,
+1172:    pub fn rope_freqs(&self, e: &Engine) -> Option<&CudaSlice<f32>> {
+[GemmaAux and position read sites]
+1452:            let pos_d = e0.htod_i32(&pos)?;
+1509:        let pos_d = e0.htod_i32(&pos)?;
+1539:        let pos_d = e1.htod_i32(&pos)?;
+6465:        if let Some((ids, n)) = self.gemma4_aux.as_ref().and_then(|a| a.suppress_d.as_ref()) {
+6482:        let ones = aux.ones(e);
+6526:            Some(aux.rope_freqs(e).expect("gemma4 global rope needs rope_freqs.weight"))
+7261:        let ones = aux.ones(e);
+7290:            Some(aux.rope_freqs(e).expect("gemma4 global rope needs rope_freqs.weight"))
+7521:        let ones = aux.ones(e);
+7544:            Some(aux.rope_freqs(e).expect("gemma4 global rope needs rope_freqs.weight"))
+7669:        let ones = aux.ones(e);
+7700:            Some(aux.rope_freqs(e).expect("gemma4 global rope needs rope_freqs.weight"))
+8192:        let ones = aux.ones(e);
+8230:            Some(aux.rope_freqs(e).expect("gemma4 global rope needs rope_freqs.weight"))
+8311:        let ones = aux.ones(e);
+8352:            Some(aux.rope_freqs(e).expect("gemma4 global rope needs rope_freqs.weight"))
+8559:            let pos_d = e0.htod_i32(&[pos])?;
+8562:                                                       "gemma4_decode_step_h_pp2.stage0.pos_d");
+8571:        let pos_d = e1.htod_i32(&[pos])?;
+8574:                                                   "gemma4_decode_step_h_pp2.stage1.pos_d");
+8743:            self.step35_aux.as_ref().and_then(|a| a.rope_freqs(e))
+9000:            self.step35_aux.as_ref().and_then(|a| a.rope_freqs(e))
+9117:        let ones = aux.ones(e);
+9129:            Some(aux.rope_freqs(e).expect("e4b global rope needs rope_freqs.weight"))
+[PP-2 stage-engine entry sites]
+864:                            let e1 = rt.engine(1, e);
+889:                    let e1 = rt.engine(1, e);
+1437:                let e1 = rt.engine(1, e);
+1451:            let e0 = rt.engine(0, e);
+1508:        let e0 = rt.engine(0, e);
+1538:        let e1 = rt.engine(1, e);
+1963:                    let e0 = rt.engine(0, e);
+8544:    fn gemma4_decode_step_h_pp2(&self, e: &Engine, token: u32, cache: &mut Cache, split: usize)
+8550:        let e0 = rt.engine(0, e);
+8551:        let e1 = rt.engine(1, e);
+8565:            let x = self.gemma4_decode_layers(e0, x, 0, split, &pos_d, cache)?;
+8576:        let x = self.gemma4_decode_layers(e1, x, split, self.layers.len(), &pos_d, cache)?;
+8592:    fn gemma4_decode_step_h_pp2_samestream(&self, e: &Engine, token: u32, cache: &mut Cache,
+[Head and layer ownership load sites]
+729:pub struct Gemma4E4bModel {
+1134:    pub e4b: Option<Gemma4E4bModel>,
+1274:        let e_head = crate::pp::layer_engine(e, n_trunk, n_trunk - 1)?;
+1275:        let output_norm = load_t(e_head, src, "output_norm.weight")?;
+1278:            load_t(e_head, src, "output.weight")?
+1280:            load_t(e_head, src, "token_embd.weight")?
+1312:            let e = crate::pp::layer_engine(e, n_trunk, il as usize)?;
+1665:                    Some(crate::hybrid::Gemma4E4bModel {
+1878:                let e = crate::pp::layer_engine(e, n_trunk, il)?;
+1961:                    let e = crate::pp::layer_engine(e, n_trunk, il)?;
+[E4B PP routing]
+crates/memra-engine/src/hybrid_forward.rs:506:        if self.is_gemma4_e4b() { return self.gemma4_e4b_forward(e, tokens, false); }
+crates/memra-engine/src/hybrid_forward.rs:677:        if self.is_gemma4_e4b() {
+crates/memra-engine/src/hybrid_forward.rs:7158:        if self.is_gemma4_e4b() { return self.gemma4_e4b_forward(e, tokens, last_only); }
+crates/memra-engine/src/hybrid_forward.rs:7821:        if self.is_gemma4_e4b() {
+crates/memra-engine/src/hybrid_forward.rs:9045:    pub fn is_gemma4_e4b(&self) -> bool {
+crates/memra-engine/src/hybrid_forward.rs:9571:    pub(crate) fn gemma4_e4b_decode_step_h(&self, e: &Engine, token: u32, cache: &mut Cache)
+crates/memra-engine/src/decode.rs:629:        if self.is_gemma4_e4b() {
+crates/memra-engine/src/decode.rs:630:            crate::pp::warn_unwired_once("gemma4-e4b eager decode");
+crates/memra-engine/src/decode.rs:631:            return self.gemma4_e4b_decode_step_h(e, token, cache);
+crates/memra-engine/src/decode.rs:1286:        if self.is_gemma4_e4b() {
+crates/memra-engine/src/decode.rs:2143:            let e4b = self.is_gemma4_e4b();
+crates/memra-engine/src/decode.rs:2399:            let e4b = self.is_gemma4_e4b();
+[Separate Gemma drafter model-level buffers]
+51:    pub rope_freqs: CudaSlice<f32>,
+52:    pub ones: CudaSlice<f32>, // weightless-norm weight (max hd 512)
+500:                e.rope_neox_ff(&mut q, pos_d, hd, hd, nhh, 1, base, 1.0, &d.rope_freqs)?;

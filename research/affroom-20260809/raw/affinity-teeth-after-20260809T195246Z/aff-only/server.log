@@ -1,0 +1,123 @@
+[server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q9: regime draft attached (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q9": 33 layers, eos=248046
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q9: decode chunk cap 16 (exact-16 tier)
+[admission] "q9": plain 16704 B/token, spec 18560 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:18232
+[meter] admit id=cmpl-0ed8b865840cfcecbedb5700b4facb40 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=820 path=plain = 16704 B/token x ctx + 0MB fixed = 14MB
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=748 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q9" 103MB (observed 116MB at ctx 764 path=plain)
+[ttft] id=cmpl-0ed8b865840cfcecbedb5700b4facb40 model="q9" path="/v1/completions" prompt_tokens=748 outcome=first_sse_byte request_parse_ms=0.027 admission_ms=0.022 queue_wait_ms=0.118 tokenize_ms=1.609 prime_wait_ms=0.368 prime_ms=232.996 decode_wait_ms=0.256 sse_handoff_ms=0.090 request_parse_end_ms=0.027 admission_end_ms=0.049 tokenize_start_ms=0.167 tokenize_end_ms=1.776 prime_start_ms=2.144 prime_end_ms=235.140 first_decode_ms=235.396 first_sse_byte_ms=235.486 total_ms=235.486
+[meter] admit id=cmpl-c600d9ad302ad626a9e3ce00a8a647ae tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=856 path=plain = 16704 B/token x ctx + 103MB fixed = 117MB
+[worker] plain-affinity: grew parked cache 764 -> 856 rows (request-owned need)
+[worker] plain-affinity: rewound to 743 of 784 prompt tokens (priming 41 suffix; model q9)
+[worker] kv-reuse: 743 of 784 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=784 cached=743 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-c600d9ad302ad626a9e3ce00a8a647ae model="q9" path="/v1/completions" prompt_tokens=784 outcome=first_sse_byte request_parse_ms=0.025 admission_ms=0.015 queue_wait_ms=0.111 tokenize_ms=1.436 prime_wait_ms=0.532 prime_ms=71.959 decode_wait_ms=0.221 sse_handoff_ms=0.044 request_parse_end_ms=0.025 admission_end_ms=0.040 tokenize_start_ms=0.151 tokenize_end_ms=1.587 prime_start_ms=2.119 prime_end_ms=74.078 first_decode_ms=74.299 first_sse_byte_ms=74.343 total_ms=74.343
+[meter] admit id=cmpl-6be898ba16975915a3a67251b93b78ea tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=893 path=plain = 16704 B/token x ctx + 103MB fixed = 118MB
+[worker] plain-affinity: grew parked cache 856 -> 893 rows (request-owned need)
+[worker] plain-affinity: rewound to 779 of 821 prompt tokens (priming 42 suffix; model q9)
+[worker] kv-reuse: 779 of 821 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=821 cached=779 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-6be898ba16975915a3a67251b93b78ea model="q9" path="/v1/completions" prompt_tokens=821 outcome=first_sse_byte request_parse_ms=0.022 admission_ms=0.011 queue_wait_ms=0.006 tokenize_ms=1.493 prime_wait_ms=0.504 prime_ms=72.507 decode_wait_ms=0.235 sse_handoff_ms=0.165 request_parse_end_ms=0.022 admission_end_ms=0.033 tokenize_start_ms=0.039 tokenize_end_ms=1.532 prime_start_ms=2.036 prime_end_ms=74.543 first_decode_ms=74.778 first_sse_byte_ms=74.943 total_ms=74.943
+[meter] admit id=cmpl-0fcedfca8fb5b4aa02526322fd8822a2 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=932 path=plain = 16704 B/token x ctx + 103MB fixed = 119MB
+[worker] plain-affinity: grew parked cache 893 -> 932 rows (request-owned need)
+[worker] plain-affinity: rewound to 816 of 860 prompt tokens (priming 44 suffix; model q9)
+[worker] kv-reuse: 816 of 860 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=860 cached=816 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-0fcedfca8fb5b4aa02526322fd8822a2 model="q9" path="/v1/completions" prompt_tokens=860 outcome=first_sse_byte request_parse_ms=0.026 admission_ms=0.017 queue_wait_ms=0.105 tokenize_ms=1.899 prime_wait_ms=0.615 prime_ms=72.667 decode_wait_ms=0.218 sse_handoff_ms=0.144 request_parse_end_ms=0.026 admission_end_ms=0.043 tokenize_start_ms=0.148 tokenize_end_ms=2.047 prime_start_ms=2.662 prime_end_ms=75.329 first_decode_ms=75.547 first_sse_byte_ms=75.691 total_ms=75.691
+[meter] admit id=cmpl-b6861089e5a859a70242fa72cad9c713 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=969 path=plain = 16704 B/token x ctx + 103MB fixed = 119MB
+[worker] plain-affinity: grew parked cache 932 -> 969 rows (request-owned need)
+[worker] plain-affinity: rewound to 855 of 897 prompt tokens (priming 42 suffix; model q9)
+[worker] kv-reuse: 855 of 897 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=897 cached=855 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-b6861089e5a859a70242fa72cad9c713 model="q9" path="/v1/completions" prompt_tokens=897 outcome=first_sse_byte request_parse_ms=0.017 admission_ms=0.015 queue_wait_ms=0.169 tokenize_ms=1.503 prime_wait_ms=0.530 prime_ms=72.891 decode_wait_ms=0.248 sse_handoff_ms=0.142 request_parse_end_ms=0.017 admission_end_ms=0.032 tokenize_start_ms=0.201 tokenize_end_ms=1.704 prime_start_ms=2.234 prime_end_ms=75.125 first_decode_ms=75.373 first_sse_byte_ms=75.515 total_ms=75.515
+[meter] admit id=cmpl-980a52ff89ddf8247873407ead6975c8 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=1002 path=plain = 16704 B/token x ctx + 103MB fixed = 120MB
+[worker] plain-affinity: grew parked cache 969 -> 1002 rows (request-owned need)
+[worker] plain-affinity: rewound to 892 of 930 prompt tokens (priming 38 suffix; model q9)
+[worker] kv-reuse: 892 of 930 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=930 cached=892 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-980a52ff89ddf8247873407ead6975c8 model="q9" path="/v1/completions" prompt_tokens=930 outcome=first_sse_byte request_parse_ms=0.027 admission_ms=0.012 queue_wait_ms=0.163 tokenize_ms=1.890 prime_wait_ms=0.525 prime_ms=72.705 decode_wait_ms=0.250 sse_handoff_ms=0.163 request_parse_end_ms=0.027 admission_end_ms=0.039 tokenize_start_ms=0.202 tokenize_end_ms=2.092 prime_start_ms=2.617 prime_end_ms=75.322 first_decode_ms=75.572 first_sse_byte_ms=75.735 total_ms=75.735
+[meter] admit id=cmpl-fcfb249d90f17f07c8b349e79515d0d3 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=1036 path=plain = 16704 B/token x ctx + 103MB fixed = 120MB
+[worker] plain-affinity: grew parked cache 1002 -> 1036 rows (request-owned need)
+[worker] plain-affinity: rewound to 925 of 964 prompt tokens (priming 39 suffix; model q9)
+[worker] kv-reuse: 925 of 964 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=964 cached=925 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-fcfb249d90f17f07c8b349e79515d0d3 model="q9" path="/v1/completions" prompt_tokens=964 outcome=first_sse_byte request_parse_ms=0.027 admission_ms=0.016 queue_wait_ms=0.158 tokenize_ms=1.729 prime_wait_ms=0.563 prime_ms=74.406 decode_wait_ms=0.257 sse_handoff_ms=0.076 request_parse_end_ms=0.027 admission_end_ms=0.043 tokenize_start_ms=0.201 tokenize_end_ms=1.930 prime_start_ms=2.493 prime_end_ms=76.899 first_decode_ms=77.156 first_sse_byte_ms=77.232 total_ms=77.232
+[meter] admit id=cmpl-63237abe579fdd7e385b73f178b76f48 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=1078 path=plain = 16704 B/token x ctx + 103MB fixed = 121MB
+[worker] plain-affinity: grew parked cache 1036 -> 1078 rows (request-owned need)
+[worker] plain-affinity: rewound to 959 of 1006 prompt tokens (priming 47 suffix; model q9)
+[worker] kv-reuse: 959 of 1006 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1006 cached=959 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-63237abe579fdd7e385b73f178b76f48 model="q9" path="/v1/completions" prompt_tokens=1006 outcome=first_sse_byte request_parse_ms=0.024 admission_ms=0.011 queue_wait_ms=0.008 tokenize_ms=1.693 prime_wait_ms=0.552 prime_ms=72.558 decode_wait_ms=0.216 sse_handoff_ms=0.134 request_parse_end_ms=0.024 admission_end_ms=0.035 tokenize_start_ms=0.043 tokenize_end_ms=1.736 prime_start_ms=2.288 prime_end_ms=74.846 first_decode_ms=75.062 first_sse_byte_ms=75.196 total_ms=75.196
+[meter] admit id=cmpl-fc6ab003f1d5fe5bc651741df08eac98 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=1115 path=plain = 16704 B/token x ctx + 103MB fixed = 122MB
+[worker] plain-affinity: grew parked cache 1078 -> 1115 rows (request-owned need)
+[worker] plain-affinity: rewound to 1001 of 1043 prompt tokens (priming 42 suffix; model q9)
+[worker] kv-reuse: 1001 of 1043 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1043 cached=1001 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-fc6ab003f1d5fe5bc651741df08eac98 model="q9" path="/v1/completions" prompt_tokens=1043 outcome=first_sse_byte request_parse_ms=0.019 admission_ms=0.012 queue_wait_ms=0.015 tokenize_ms=1.681 prime_wait_ms=0.542 prime_ms=73.511 decode_wait_ms=0.217 sse_handoff_ms=0.163 request_parse_end_ms=0.019 admission_end_ms=0.031 tokenize_start_ms=0.046 tokenize_end_ms=1.727 prime_start_ms=2.269 prime_end_ms=75.780 first_decode_ms=75.997 first_sse_byte_ms=76.160 total_ms=76.160
+[meter] admit id=cmpl-bd7c657c1590aae87860e3b482cf76b7 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=1153 path=plain = 16704 B/token x ctx + 103MB fixed = 122MB
+[worker] plain-affinity: grew parked cache 1115 -> 1153 rows (request-owned need)
+[worker] plain-affinity: rewound to 1038 of 1081 prompt tokens (priming 43 suffix; model q9)
+[worker] kv-reuse: 1038 of 1081 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1081 cached=1038 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-bd7c657c1590aae87860e3b482cf76b7 model="q9" path="/v1/completions" prompt_tokens=1081 outcome=first_sse_byte request_parse_ms=0.028 admission_ms=0.016 queue_wait_ms=0.008 tokenize_ms=2.238 prime_wait_ms=0.644 prime_ms=73.195 decode_wait_ms=0.233 sse_handoff_ms=0.118 request_parse_end_ms=0.028 admission_end_ms=0.044 tokenize_start_ms=0.052 tokenize_end_ms=2.290 prime_start_ms=2.934 prime_end_ms=76.129 first_decode_ms=76.362 first_sse_byte_ms=76.480 total_ms=76.480
+[meter] admit id=cmpl-0f7f9aebc822b8d61a680a7194a3ece8 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=1189 path=plain = 16704 B/token x ctx + 103MB fixed = 123MB
+[worker] plain-affinity: grew parked cache 1153 -> 1189 rows (request-owned need)
+[worker] plain-affinity: rewound to 1076 of 1117 prompt tokens (priming 41 suffix; model q9)
+[worker] kv-reuse: 1076 of 1117 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1117 cached=1076 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-0f7f9aebc822b8d61a680a7194a3ece8 model="q9" path="/v1/completions" prompt_tokens=1117 outcome=first_sse_byte request_parse_ms=0.025 admission_ms=0.013 queue_wait_ms=0.007 tokenize_ms=1.807 prime_wait_ms=0.561 prime_ms=72.887 decode_wait_ms=0.220 sse_handoff_ms=0.135 request_parse_end_ms=0.025 admission_end_ms=0.038 tokenize_start_ms=0.045 tokenize_end_ms=1.852 prime_start_ms=2.413 prime_end_ms=75.300 first_decode_ms=75.520 first_sse_byte_ms=75.655 total_ms=75.655
+[meter] admit id=cmpl-c22db1138dd776e6ac91171ad6ea4917 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=1225 path=plain = 16704 B/token x ctx + 103MB fixed = 123MB
+[worker] plain-affinity: grew parked cache 1189 -> 1225 rows (request-owned need)
+[worker] plain-affinity: rewound to 1112 of 1153 prompt tokens (priming 41 suffix; model q9)
+[worker] kv-reuse: 1112 of 1153 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1153 cached=1112 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-c22db1138dd776e6ac91171ad6ea4917 model="q9" path="/v1/completions" prompt_tokens=1153 outcome=first_sse_byte request_parse_ms=0.023 admission_ms=0.013 queue_wait_ms=0.016 tokenize_ms=1.989 prime_wait_ms=0.531 prime_ms=72.997 decode_wait_ms=0.216 sse_handoff_ms=0.122 request_parse_end_ms=0.023 admission_end_ms=0.036 tokenize_start_ms=0.052 tokenize_end_ms=2.041 prime_start_ms=2.572 prime_end_ms=75.569 first_decode_ms=75.785 first_sse_byte_ms=75.907 total_ms=75.907
+[meter] admit id=cmpl-0f33bcc713a995cdbe9d44ba9c3cc1e3 tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-0443acd3d7e4587ac5b544f24f8f9624 tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-6c7da56088595fbdadb2a4301d2c5fbe tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-23ca50eaba974aa9b255719a8d106cbf tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=1258 path=plain = 16704 B/token x ctx + 103MB fixed = 124MB
+[worker] plain-affinity: declined (identity did not nominate; 1 parked, 1186 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1186 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] request cost: model="q9" ctx=1256 path=plain = 16704 B/token x ctx + 103MB fixed = 124MB
+[worker] plain-affinity: declined (identity did not nominate; 1 parked, 1184 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1184 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[admission] request cost: model="q9" ctx=1258 path=plain = 16704 B/token x ctx + 103MB fixed = 124MB
+[worker] plain-affinity: declined (identity did not nominate; 1 parked, 1186 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1186 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[admission] request cost: model="q9" ctx=1257 path=plain = 16704 B/token x ctx + 103MB fixed = 124MB
+[worker] plain-affinity: declined (identity did not nominate; 1 parked, 1185 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1185 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[ttft] id=cmpl-0f33bcc713a995cdbe9d44ba9c3cc1e3 model="q9" path="/v1/completions" prompt_tokens=1186 outcome=first_sse_byte request_parse_ms=0.021 admission_ms=0.015 queue_wait_ms=0.034 tokenize_ms=1.888 prime_wait_ms=0.262 prime_ms=1165.558 decode_wait_ms=21.897 sse_handoff_ms=0.114 request_parse_end_ms=0.021 admission_end_ms=0.036 tokenize_start_ms=0.070 tokenize_end_ms=1.958 prime_start_ms=2.220 prime_end_ms=1167.778 first_decode_ms=1189.675 first_sse_byte_ms=1189.789 total_ms=1189.789
+[ttft] id=cmpl-0443acd3d7e4587ac5b544f24f8f9624 model="q9" path="/v1/completions" prompt_tokens=1184 outcome=first_sse_byte request_parse_ms=0.015 admission_ms=0.007 queue_wait_ms=210.535 tokenize_ms=2.259 prime_wait_ms=58.078 prime_ms=932.978 decode_wait_ms=14.614 sse_handoff_ms=0.015 request_parse_end_ms=0.015 admission_end_ms=0.022 tokenize_start_ms=210.557 tokenize_end_ms=212.816 prime_start_ms=270.894 prime_end_ms=1203.872 first_decode_ms=1218.486 first_sse_byte_ms=1218.501 total_ms=1218.501
+[ttft] id=cmpl-6c7da56088595fbdadb2a4301d2c5fbe model="q9" path="/v1/completions" prompt_tokens=1186 outcome=first_sse_byte request_parse_ms=0.010 admission_ms=0.006 queue_wait_ms=213.006 tokenize_ms=1.560 prime_wait_ms=266.032 prime_ms=730.402 decode_wait_ms=7.640 sse_handoff_ms=0.014 request_parse_end_ms=0.010 admission_end_ms=0.016 tokenize_start_ms=213.022 tokenize_end_ms=214.582 prime_start_ms=480.614 prime_end_ms=1211.016 first_decode_ms=1218.656 first_sse_byte_ms=1218.670 total_ms=1218.670
+[ttft] id=cmpl-23ca50eaba974aa9b255719a8d106cbf model="q9" path="/v1/completions" prompt_tokens=1185 outcome=first_sse_byte request_parse_ms=0.016 admission_ms=0.010 queue_wait_ms=214.380 tokenize_ms=1.393 prime_wait_ms=476.728 prime_ms=525.283 decode_wait_ms=0.673 sse_handoff_ms=0.163 request_parse_end_ms=0.016 admission_end_ms=0.026 tokenize_start_ms=214.406 tokenize_end_ms=215.799 prime_start_ms=692.527 prime_end_ms=1217.810 first_decode_ms=1218.483 first_sse_byte_ms=1218.646 total_ms=1218.646
+[meter] admit id=cmpl-09f5d2dd2c304e5533598f7bfce73d23 tenant=default lane=interactive model="q9"
+[admission] request cost: model="q9" ctx=1262 path=plain = 16704 B/token x ctx + 103MB fixed = 124MB
+[worker] plain-affinity: declined (history diverged at 1164 of checkpoint 1181; 4 parked, 1190 prompt tokens; model q9)
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1190 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[ttft] id=cmpl-09f5d2dd2c304e5533598f7bfce73d23 model="q9" path="/v1/completions" prompt_tokens=1190 outcome=first_sse_byte request_parse_ms=0.036 admission_ms=0.022 queue_wait_ms=0.102 tokenize_ms=2.410 prime_wait_ms=0.309 prime_ms=298.846 decode_wait_ms=0.220 sse_handoff_ms=0.101 request_parse_end_ms=0.036 admission_end_ms=0.058 tokenize_start_ms=0.160 tokenize_end_ms=2.570 prime_start_ms=2.879 prime_end_ms=301.725 first_decode_ms=301.945 first_sse_byte_ms=302.046 total_ms=302.046
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

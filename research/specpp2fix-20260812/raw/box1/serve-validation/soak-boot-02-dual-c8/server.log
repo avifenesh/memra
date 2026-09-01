@@ -1,0 +1,925 @@
+[server] starting; models config = [("step37", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-k] operator pin K=1: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "step37" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.765
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=630.766
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step37: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step37": 45 layers, eos=128007
+[worker] step37: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step37: decode wave cap 8; scheduler tick cap 16 (dual PP, default-off arm)
+[admission] "step37": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step37"]
+[server] listening on http://127.0.0.1:18482
+[meter] admit id=chatcmpl-d1b78f63a90fa7f32c44dbdec6fde29c tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-f242ff99c92ded46792756f6fb20063e tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-240e5000ce45715ae5e580ca18ac66e2 tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=356 path=spec = 85376 B/token x ctx + 0MB fixed = 30MB
+[meter] admit id=chatcmpl-c99a27a24781ef9db8f2136ededdfe22 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-2b47e16a33032e769efefe0ccc08c0dc tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-ccf42b604a0594f93a1680bbe62da626 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-81c6b1a6ef1c800f5a50e237e3a921b0 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-375d432c272a2622f188146b7eb2392f tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=16 full_accept=15 len_hist=[0, 16] per_slot=[15/16=0.938] total=15/16=0.938 tok_per_round=1.938
+[spec-acc] ctx=229 burst=15/16 cum=15/16=0.938
+[spec-stats] rounds=17 full_accept=14 len_hist=[0, 17] per_slot=[14/17=0.824] total=14/17=0.824 tok_per_round=1.824
+[spec-acc] ctx=261 burst=14/17 cum=29/33=0.879
+[meter] admit id=chatcmpl-bea4df7af74ddf30b4cc5f5ad859a5c0 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 1 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-dacbdeb37c95c1272196856f7e9a444d tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-c95a77e31a893baa7bf9e0d840db6362 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-dd53b95d5ac7ffe95903fc075817c451 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-b21ff0b0e19d165fa812732b5518e907 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-9f95ebd6de9d9516df035cea2acde8ae tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-3061572d9ccd0dbabda694408e681821 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-f1d0f1a49294db65e6b836c4dc8bea75 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-bb692fedad74f380bb6086ef2c785e37 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-87875a765623517b6bbe3a2d39d04966 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-381f1bcfc589c429a9892c2fede73c63 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-4bf7906d3c529ec418053b96b97ad993 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-864c463f0007eb3712ab1ce172394c0a tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-305ac7d99779ad684d83c3d0b18deb42 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-f8a8c301fbbf39c2cbbfa83b3627f906 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-1425fea0110fbf57912746155a5205f5 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-3927b19ddb9264e7b2e62cb51da8650e tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-918d814bcfb7068b1ab96791a9208aae tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-e947f3cb62110d405bda8c91aff4a754 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-001ae374c8917dfd4f1845601e3e2909 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-461503c86f9858eb98bc472ed3262b5e tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-1b0256600624844af7816802e05f11cf tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-e2045e9d6d48779848430a5627905bd7 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-1d88e1ef561ed21349d4bbd226f21ffb tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-583b4a653dbbf107aa382cd768df22d2 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-36302505470d0c2f9d9e30bb7122b166 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-65e2692329469261e6b50f4f7b5c2031 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-aae49bbdf91fe6b1f6aa0981422f6085 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-cf560098333be58349388ebf3d4bf013 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-d42cb137f19045dca769b1f84533bb74 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-0214c58bb9d33ed45f54550c7372545f tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-f12b205ab48c2691cf042382a3d77410 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-15ebf8aee44fb6a0f66ffc2ff33cf87a tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-b9f62305c30a8111b56831ff12f26834 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-669ed2fe5aeeec087a690bbb32f43c81 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-974a7ee22fdf057e4711161dfb73394d tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-bdfc382b6f00f0993d0c60148cc7ffaf tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-44852043de1187eefe60198637aeebe0 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-e053bcc27899207f2606df6719f660f6 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-29b594fed032e37b02d90be30a3463e2 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-cb3f96ace1bede7a7451bd9908d9d4d9 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-860053b96ed68d05abd85a7b641df5b1 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-b809738a0cb6f1eb3852131d20c4fee5 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-d5721af02f86cfe30377b6a3b81f6d76 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-4f0461e6b1ea12b48c8c5ced39be7936 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-9f707162ff47ea06fc2c99bdfc050d2c tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-74ebaaf9117bb01ee3bb02710b1cec54 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-f98b04c388884fa384d1949b3634e265 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-b84e89a0bd3ec1fc2737b30ce9cfcfd5 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-b272845c287bd260fd47ae4c663d5f22 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-c0b30651bdd6043128a96aeab7c1542b tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-206d9956905f28b236ed68b9b269aedd tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-3082828c7c29f4132e457402885bdb82 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-e5ee881c3fff877c3885111d51def342 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-242bf0488c6c48a9b170f9a872840383 tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[meter] admit id=chatcmpl-dc9c7f8424bf7232a2e38b109ecd776c tenant=default lane=interactive model="step37"
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=17/17=1.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[spec-stats] rounds=0 full_accept=0 len_hist=[0, 0] per_slot=[0/0] total=0/0=0.000 tok_per_round=0.000
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[spec-stats] rounds=16 full_accept=16 len_hist=[0, 16] per_slot=[16/16=1.000] total=16/16=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=16/16 cum=16/16=1.000
+[spec-stats] rounds=17 full_accept=12 len_hist=[0, 17] per_slot=[12/17=0.706] total=12/17=0.706 tok_per_round=1.706
+[spec-acc] ctx=263 burst=12/17 cum=29/34=0.853
+[spec-stats] rounds=18 full_accept=13 len_hist=[0, 18] per_slot=[13/18=0.722] total=13/18=0.722 tok_per_round=1.722
+[spec-acc] ctx=261 burst=13/18 cum=29/34=0.853
+[spec-stats] rounds=18 full_accept=13 len_hist=[0, 18] per_slot=[13/18=0.722] total=13/18=0.722 tok_per_round=1.722
+[spec-acc] ctx=261 burst=13/18 cum=29/34=0.853
+[spec-stats] rounds=18 full_accept=13 len_hist=[0, 18] per_slot=[13/18=0.722] total=13/18=0.722 tok_per_round=1.722
+[spec-acc] ctx=261 burst=13/18 cum=29/34=0.853
+[spec-stats] rounds=18 full_accept=13 len_hist=[0, 18] per_slot=[13/18=0.722] total=13/18=0.722 tok_per_round=1.722
+[spec-acc] ctx=261 burst=13/18 cum=29/34=0.853
+[spec-stats] rounds=18 full_accept=13 len_hist=[0, 18] per_slot=[13/18=0.722] total=13/18=0.722 tok_per_round=1.722
+[spec-acc] ctx=261 burst=13/18 cum=29/34=0.853
+[spec-stats] rounds=18 full_accept=13 len_hist=[0, 18] per_slot=[13/18=0.722] total=13/18=0.722 tok_per_round=1.722
+[spec-acc] ctx=261 burst=13/18 cum=29/34=0.853
+[spec-stats] rounds=18 full_accept=13 len_hist=[0, 18] per_slot=[13/18=0.722] total=13/18=0.722 tok_per_round=1.722
+[spec-acc] ctx=261 burst=13/18 cum=29/34=0.853
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

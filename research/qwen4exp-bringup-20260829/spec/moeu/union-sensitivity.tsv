@@ -1,0 +1,16 @@
+# experts=512 selected=10 t=6 pairs=60 trials=2000
+# closed-form independent union = 57.15 of 60 (ratio 0.9524, prize 0.0476)
+router model                                    	union	ratio	prize
+independent uniform top-k                       	57.19	0.9532	0.0468
+Zipf hotness a=0.5                              	55.41	0.9235	0.0765
+Zipf hotness a=1.0                              	44.13	0.7355	0.2645
+Zipf hotness a=1.5                              	31.98	0.5331	0.4669
+Zipf hotness a=2.0                              	24.97	0.4162	0.5838
+temporal: re-pick 20% of previous column        	48.17	0.8028	0.1972
+temporal: re-pick 40% of previous column        	38.95	0.6492	0.3508
+temporal: re-pick 60% of previous column        	29.55	0.4925	0.5075
+temporal: re-pick 80% of previous column        	19.86	0.3310	0.6690
+
+# The union lever's reopen bar in MOEUNION.md is union/pairs <= 0.70, i.e. union <= 42.0 of 60.
+# Reachable by a Zipf a=1.0-class or 40%-sticky router -- which is exactly why the
+# verdict rests on the measured payoff curve and not on this table.

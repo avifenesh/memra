@@ -1,0 +1,24 @@
+   Compiling libc v0.2.186
+   Compiling cfg-if v1.0.4
+   Compiling memra-sampling v0.75.0 (/home/avifenesh/projects/wt-opti1/crates/memra-sampling)
+   Compiling memra-validate v0.75.0 (/home/avifenesh/projects/wt-opti1/crates/memra-validate)
+warning: memra-engine@0.75.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling libloading v0.9.0
+   Compiling cudarc v0.19.8
+   Compiling memmap2 v0.9.11
+   Compiling memra-gguf v0.75.0 (/home/avifenesh/projects/wt-opti1/crates/memra-gguf)
+   Compiling memra-tokenizer v0.75.0 (/home/avifenesh/projects/wt-opti1/crates/memra-tokenizer)
+   Compiling memra-kv v0.75.0 (/home/avifenesh/projects/wt-opti1/crates/memra-kv)
+   Compiling memra-runtime v0.75.0 (/home/avifenesh/projects/wt-opti1/crates/memra-runtime)
+   Compiling memra-engine v0.75.0 (/home/avifenesh/projects/wt-opti1/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.85s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-943c5a8e03c300b2)
+
+running 3 tests
+test spec::opti_fork_tests::alternating_mode_flips_by_generation_not_round_parity ... ok
+test spec::opti_fork_tests::live_generation_cannot_be_overwritten ... ok
+test spec::opti_fork_tests::teardown_rejects_a_stale_generation_tag ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 55 filtered out; finished in 0.00s
+

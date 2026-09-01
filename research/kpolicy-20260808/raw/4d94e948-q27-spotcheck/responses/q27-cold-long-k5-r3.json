@@ -1,0 +1,29 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "\n\n<think>\nHere's a thinking process:\n\n1.  **Analyze the User Input:**\n   - **Files Provided:** `Lib/selectors.py` and `Lib/socketserver.py` (partial, cuts off at `def __init__`).\n   - **Session Log:**\n     ```\n     $ python serve.py --workers 4\n     [worker-2] selector registered fd=11 events=EVENT_READ\n     [worker-2] accepted conn from 127.0.0.1:52144\n     Traceback (most recent call last):\n       File \"serve.py\", line"
+    }
+  ],
+  "created": 1786211329,
+  "id": "cmpl-49bff1276849ad81830869f950f02a5d",
+  "model": "q27",
+  "object": "text_completion",
+  "system_fingerprint": "memra-47da3098d8aa",
+  "usage": {
+    "completion_tokens": 133,
+    "elapsed_s": 2.361808387,
+    "prompt_tokens": 5411,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "spec": {
+      "acceptance_rate": 0.6,
+      "accepted": 99,
+      "drafted": 165,
+      "rounds": 33
+    },
+    "total_tokens": 5544
+  }
+}

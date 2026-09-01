@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is showing me output from what appears to be a network monitoring tool (possibly Little Snitch, LuLu, or similar) showing multiple ports listening on all interfaces. They're asking me to \"check those node-MainThread\" processes that are open on port 4173 and other ports.\n\nLet me analyze what they're showing:\n- node-MainThread on :4173 (2h ago)\n- python3 on :4177\n- node-MainThread on :4321\n- unknown process on :5601\n- unknown process on :7443\n- python3 on :",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is showing me output from what appears to be a network monitoring tool (possibly Little Snitch, LuLu, or similar) showing multiple ports listening on all interfaces. They're asking me to \"check those node-MainThread\" processes that are open on port 4173 and other ports.\n\nLet me analyze what they're showing:\n- node-MainThread on :4173 (2h ago)\n- python3 on :4177\n- node-MainThread on :4321\n- unknown process on :5601\n- unknown process on :7443\n- python3 on :"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 281,
+  "completion_tokens": 128,
+  "total_tokens": 409,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 5.752729079,
+  "spec": {
+   "rounds": 51,
+   "drafted": 153,
+   "accepted": 79,
+   "acceptance_rate": 0.5163398692810458
+  }
+ },
+ "id": "chatcmpl-eef85d89b7e24a5ca746489f5c2ffb7a",
+ "created": 1788082050,
+ "system_fingerprint": "REDACTED"
+}

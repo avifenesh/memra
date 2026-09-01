@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is asking me to conduct an independent audit of documents. However, this appears to be a continuation of a conversation that I don't have context for - I'm starting fresh with no prior conversation history, no files mentioned, no document paths, no original prompt details.\n\nThe user claims:\n1. There was a prior conversation where shell calls were cancelled\n2. I now have \"auto-approved tool use\"\n3. I'm under a READ-ONLY instruction\n4. I should read existing files, use pdftotext/pdfinfo, inspect PNG renders\n5. Return a complete structured audit report\n\nThe problem: I don",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is asking me to conduct an independent audit of documents. However, this appears to be a continuation of a conversation that I don't have context for - I'm starting fresh with no prior conversation history, no files mentioned, no document paths, no original prompt details.\n\nThe user claims:\n1. There was a prior conversation where shell calls were cancelled\n2. I now have \"auto-approved tool use\"\n3. I'm under a READ-ONLY instruction\n4. I should read existing files, use pdftotext/pdfinfo, inspect PNG renders\n5. Return a complete structured audit report\n\nThe problem: I don"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 140,
+  "completion_tokens": 128,
+  "total_tokens": 268,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.049521946,
+  "spec": {
+   "rounds": 54,
+   "drafted": 162,
+   "accepted": 76,
+   "acceptance_rate": 0.4691358024691358
+  }
+ },
+ "id": "chatcmpl-2a8ca25221e40964550ecb0cd405d6a4",
+ "created": 1788081685,
+ "system_fingerprint": "REDACTED"
+}

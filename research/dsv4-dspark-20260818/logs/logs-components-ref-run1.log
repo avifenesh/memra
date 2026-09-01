@@ -1,0 +1,68 @@
+dsv4-dspark-gate | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | mode components | fixtures /home/ubuntu/dsv4-dspark/fixtures/dsv4_dspark_fixtures_ref.json | first_pos 32 last_pos 190 | torch accept_mean 3.7862
+npz integrity: 51 arrays sha-verified
+model loaded t=58s
+prefill(32) + ring prime done (argmax 2581) t=137s
+pos 51 done (9 arrays pass, 0 fail, 2 in-band id flips) t=359s
+pos 71 done (15 arrays pass, 3 fail, 4 in-band id flips) t=582s
+pos 91 done (15 arrays pass, 3 fail, 4 in-band id flips) t=806s
+pos 111 done (23 arrays pass, 4 fail, 4 in-band id flips) t=1026s
+pos 131 done (23 arrays pass, 4 fail, 6 in-band id flips) t=1252s
+pos 151 done (28 arrays pass, 8 fail, 8 in-band id flips) t=1477s
+pos 171 done (28 arrays pass, 8 fail, 9 in-band id flips) t=1701s
+  [PASS] pos32_main_hidden: max-abs 5.683e-1 vs thr 4.528e0 (ref: thr = fork arm; absmax 55.898)
+  [PASS] pos32_main_x: max-abs 7.559e-3 vs thr 1.643e-2 (ref: thr = fork arm; absmax 0.289)
+  [PASS] pos32_block0_out: max-abs 1.971e-1 vs thr 4.402e-1 (ref: thr = fork arm; absmax 6.437)
+  [PASS] pos32_block1_out: max-abs 3.391e-1 vs thr 1.019e0 (ref: thr = fork arm; absmax 14.990)
+  [PASS] pos32_block2_out: max-abs 3.619e0 vs thr 8.835e0 (ref: thr = fork arm; absmax 199.886)
+  [PASS] pos32_x_collapsed: max-abs 1.079e-1 vs thr 2.350e-1 (ref: thr = fork arm; absmax 8.502)
+  [PASS] pos32_logits_pre: max-abs 1.977e0 vs thr 2.876e0 (ref: thr = fork arm; absmax 27.696)
+  [PASS] pos32_logits_post[..5]: max-abs 1.977e0 vs thr 2.876e0 (ref: thr = fork arm; absmax 34.848)
+  [PASS] pos32_markov_embed[..5]: max-abs 0.000e0 vs thr 0.000e0 (ref: thr = fork arm; absmax 2.141)
+  [IN-BAND id flip] pos 41 draft slot 3: rust id 9544 vs torch 5718 | torch margin 9.3977e-2, rust margin 1.2959e-1, band 8.0093e0 — chained slots after this one skipped
+  [IN-BAND id flip] pos 44 draft slot 1: rust id 12573 vs torch 5103 | torch margin 7.0925e-2, rust margin 2.3097e-1, band 8.0093e0 — chained slots after this one skipped
+  [IN-BAND id flip] pos 67 draft slot 4: rust id 42499 vs torch 1031 | torch margin 1.9414e-1, rust margin 2.7622e-1, band 8.0093e0 — chained slots after this one skipped
+  [IN-BAND id flip] pos 69 draft slot 1: rust id 5715 vs torch 2143 | torch margin 1.3061e-1, rust margin 7.3933e-2, band 8.0093e0 — chained slots after this one skipped
+  [PASS] pos70_main_hidden: max-abs 6.507e-1 vs thr 7.631e-1 (ref: thr = fork arm; absmax 67.158)
+  [FAIL] pos70_main_x: max-abs 1.012e-2 vs thr 7.107e-3 (ref: thr = fork arm; absmax 0.293)
+  [PASS] pos70_block0_out: max-abs 2.627e-1 vs thr 2.720e-1 (ref: thr = fork arm; absmax 7.977)
+  [PASS] pos70_block1_out: max-abs 9.827e-1 vs thr 1.049e0 (ref: thr = fork arm; absmax 20.062)
+  [FAIL] pos70_block2_out: max-abs 4.182e0 vs thr 3.728e0 (ref: thr = fork arm; absmax 336.669)
+  [FAIL] pos70_x_collapsed: max-abs 3.367e-1 vs thr 7.524e-2 (ref: thr = fork arm; absmax 10.270)
+  [PASS] pos70_logits_pre: max-abs 2.669e0 vs thr 2.761e0 (ref: thr = fork arm; absmax 27.659)
+  [PASS] pos70_logits_post[..5]: max-abs 2.669e0 vs thr 2.403e1 (ref: thr = fork arm; absmax 39.731)
+  [PASS] pos70_markov_embed[..5]: max-abs 0.000e0 vs thr 3.359e0 (ref: thr = fork arm; absmax 2.844)
+  [PASS] pos110_main_hidden: max-abs 9.317e-1 vs thr 1.434e0 (ref: thr = fork arm; absmax 114.751)
+  [PASS] pos110_main_x: max-abs 1.284e-2 vs thr 2.044e-2 (ref: thr = fork arm; absmax 0.248)
+  [FAIL] pos110_block0_out: max-abs 3.756e-1 vs thr 3.487e-1 (ref: thr = fork arm; absmax 6.816)
+  [PASS] pos110_block1_out: max-abs 3.675e-1 vs thr 1.340e0 (ref: thr = fork arm; absmax 12.085)
+  [PASS] pos110_block2_out: max-abs 1.795e0 vs thr 8.914e0 (ref: thr = fork arm; absmax 274.468)
+  [PASS] pos110_x_collapsed: max-abs 2.284e-1 vs thr 3.170e-1 (ref: thr = fork arm; absmax 7.729)
+  [PASS] pos110_logits_pre: max-abs 7.293e-1 vs thr 2.930e0 (ref: thr = fork arm; absmax 30.382)
+  [PASS] pos110_logits_post[..5]: max-abs 7.293e-1 vs thr 2.930e0 (ref: thr = fork arm; absmax 42.409)
+  [PASS] pos110_markov_embed[..5]: max-abs 0.000e0 vs thr 0.000e0 (ref: thr = fork arm; absmax 2.406)
+  [IN-BAND id flip] pos 119 draft slot 1: rust id 343 vs torch 14 | torch margin 6.6864e-2, rust margin 6.5958e-2, band 8.0093e0 — chained slots after this one skipped
+  [IN-BAND id flip] pos 121 draft slot 4: rust id 12485 vs torch 56526 | torch margin 3.7464e-1, rust margin 2.7695e-2, band 8.0093e0 — chained slots after this one skipped
+  [IN-BAND id flip] pos 140 draft slot 2: rust id 53 vs torch 7490 | torch margin 2.7988e-1, rust margin 2.7708e-2, band 8.0093e0 — chained slots after this one skipped
+  [IN-BAND id flip] pos 149 draft slot 2: rust id 27406 vs torch 20 | torch margin 2.4138e-1, rust margin 4.8382e-1, band 8.0093e0 — chained slots after this one skipped
+  [FAIL] pos150_main_hidden: max-abs 7.565e-1 vs thr 5.170e-1 (ref: thr = fork arm; absmax 66.536)
+  [PASS] pos150_main_x: max-abs 1.010e-2 vs thr 1.045e-2 (ref: thr = fork arm; absmax 0.291)
+  [PASS] pos150_block0_out: max-abs 3.237e-1 vs thr 3.250e-1 (ref: thr = fork arm; absmax 6.599)
+  [PASS] pos150_block1_out: max-abs 6.933e-1 vs thr 9.799e-1 (ref: thr = fork arm; absmax 11.929)
+  [FAIL] pos150_block2_out: max-abs 4.341e0 vs thr 3.592e0 (ref: thr = fork arm; absmax 260.263)
+  [PASS] pos150_x_collapsed: max-abs 1.683e-1 vs thr 3.803e-1 (ref: thr = fork arm; absmax 10.748)
+  [FAIL] pos150_logits_pre: max-abs 2.447e0 vs thr 1.872e0 (ref: thr = fork arm; absmax 39.967)
+  [FAIL] pos150_logits_post[..5]: max-abs 2.447e0 vs thr 1.872e0 (ref: thr = fork arm; absmax 59.115)
+  [PASS] pos150_markov_embed[..5]: max-abs 0.000e0 vs thr 0.000e0 (ref: thr = fork arm; absmax 2.844)
+  [IN-BAND id flip] pos 166 draft slot 2: rust id 1512 vs torch 513 | torch margin 1.8495e-1, rust margin 2.2848e0, band 8.0093e0 — chained slots after this one skipped
+  [PASS] pos190_main_hidden: max-abs 9.905e-1 vs thr 1.449e0 (ref: thr = fork arm; absmax 63.266)
+  [PASS] pos190_main_x: max-abs 1.362e-2 vs thr 1.926e-2 (ref: thr = fork arm; absmax 0.263)
+  [PASS] pos190_block0_out: max-abs 2.752e-1 vs thr 2.838e-1 (ref: thr = fork arm; absmax 7.660)
+  [PASS] pos190_block1_out: max-abs 4.847e-1 vs thr 7.266e-1 (ref: thr = fork arm; absmax 14.489)
+  [FAIL] pos190_block2_out: max-abs 3.797e0 vs thr 3.428e0 (ref: thr = fork arm; absmax 94.922)
+  [FAIL] pos190_x_collapsed: max-abs 3.210e-1 vs thr 2.903e-1 (ref: thr = fork arm; absmax 12.733)
+  [FAIL] pos190_logits_pre: max-abs 1.861e0 vs thr 1.398e0 (ref: thr = fork arm; absmax 34.297)
+  [FAIL] pos190_logits_post[..5]: max-abs 1.861e0 vs thr 1.398e0 (ref: thr = fork arm; absmax 41.931)
+  [PASS] pos190_markov_embed[..5]: max-abs 0.000e0 vs thr 0.000e0 (ref: thr = fork arm; absmax 2.359)
+
+COMPONENTS GATE [ref arm] [FAIL]: arrays 33 PASS / 12 FAIL | trunk flips in-band 0 (budget 8) | draft-id flips in-band 9 (budget 5) | accept rows exact 150/159 | confidence worst 1.129e0 (thr 2.959e0) | determinism sha256 f4b81360d3fc892c1035248a852c194f6891b0e7463f33dae5e8cbc9098e48f1
+elapsed 1914s

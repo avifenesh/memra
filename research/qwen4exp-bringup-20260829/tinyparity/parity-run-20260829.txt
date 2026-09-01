@@ -1,0 +1,43 @@
+contract bind: 175 requirements over 176 checkpoint tensors: OK
+
+== probe /tmp/q48fn-tinyparity/goldens-a24.bin (24 tokens) ==
+  OK   layer_hidden.0: max_abs=1.431e-6 max_rel=7.702e-5 (worst at flat index 2616: hf -1.2915313 vs ref -1.2915299)
+  OK   layer_hidden.1: max_abs=3.338e-6 max_rel=1.524e-4 (worst at flat index 515: hf -1.4453225 vs ref -1.4453192)
+  OK   layer_hidden.2: max_abs=4.202e-6 max_rel=2.088e-4 (worst at flat index 1545: hf 0.47399187 vs ref 0.47398767)
+  OK   layer_hidden.3: max_abs=3.874e-6 max_rel=2.228e-4 (worst at flat index 1545: hf 0.578425 vs ref 0.5784211)
+  OK   logits: max_abs=1.788e-6 max_rel=1.155e-4 (worst at flat index 827: hf 0.61645734 vs ref 0.61645555)
+  OK   logits argmax(last token) = 51
+  OK   mtp_hidden: max_abs=3.815e-6 max_rel=1.743e-4 (worst at flat index 61: hf -2.0556402 vs ref -2.055644)
+  OK   mtp_logits: max_abs=1.401e-6 max_rel=7.506e-5 (worst at flat index 286: hf 0.13369212 vs ref 0.13369352)
+
+== probe /tmp/q48fn-tinyparity/goldens-b20eos.bin (20 tokens) ==
+  OK   layer_hidden.0: max_abs=1.639e-6 max_rel=1.322e-4 (worst at flat index 2167: hf 0.3106568 vs ref 0.31065843)
+  OK   layer_hidden.1: max_abs=4.530e-6 max_rel=2.578e-4 (worst at flat index 2240: hf -0.8908613 vs ref -0.89085674)
+  OK   layer_hidden.2: max_abs=1.144e-5 max_rel=3.045e-4 (worst at flat index 2193: hf 2.046219 vs ref 2.0462306)
+  OK   layer_hidden.3: max_abs=1.144e-5 max_rel=2.854e-4 (worst at flat index 2193: hf 2.194957 vs ref 2.1949685)
+  OK   logits: max_abs=4.947e-6 max_rel=1.173e-4 (worst at flat index 1155: hf -0.5260937 vs ref -0.5260888)
+  OK   logits argmax(last token) = 40
+  OK   mtp_hidden: max_abs=1.144e-5 max_rel=2.498e-4 (worst at flat index 2182: hf -2.072363 vs ref -2.0723743)
+  OK   mtp_logits: max_abs=3.308e-6 max_rel=1.271e-4 (worst at flat index 1122: hf 0.20180932 vs ref 0.20181262)
+
+== probe /tmp/q48fn-tinyparity/goldens-c32.bin (32 tokens) ==
+  OK   layer_hidden.0: max_abs=1.691e-6 max_rel=9.872e-5 (worst at flat index 2539: hf -0.05584286 vs ref -0.055844553)
+  OK   layer_hidden.1: max_abs=7.413e-6 max_rel=3.189e-4 (worst at flat index 3453: hf 0.11344521 vs ref 0.113437794)
+  OK   layer_hidden.2: max_abs=1.931e-5 max_rel=1.566e-3 (worst at flat index 2399: hf -0.80762565 vs ref -0.80760634)
+  OK   layer_hidden.3: max_abs=2.015e-5 max_rel=5.901e-4 (worst at flat index 2399: hf -0.7719378 vs ref -0.77191764)
+  OK   logits: max_abs=9.775e-6 max_rel=6.292e-4 (worst at flat index 1159: hf 0.6987355 vs ref 0.69874525)
+  OK   logits argmax(last token) = 15
+  OK   mtp_hidden: max_abs=1.782e-5 max_rel=6.378e-4 (worst at flat index 3407: hf -0.4260702 vs ref -0.4260524)
+  OK   mtp_logits: max_abs=8.941e-6 max_rel=4.701e-4 (worst at flat index 1625: hf 0.5323192 vs ref 0.53231025)
+
+== probe /tmp/q48fn-tinyparity/goldens-d8.bin (8 tokens) ==
+  OK   layer_hidden.0: max_abs=9.537e-7 max_rel=6.966e-5 (worst at flat index 273: hf 1.8091596 vs ref 1.8091606)
+  OK   layer_hidden.1: max_abs=2.742e-6 max_rel=1.203e-4 (worst at flat index 579: hf 1.8670548 vs ref 1.8670576)
+  OK   layer_hidden.2: max_abs=3.099e-6 max_rel=1.624e-4 (worst at flat index 17: hf -0.52913296 vs ref -0.52913606)
+  OK   layer_hidden.3: max_abs=3.040e-6 max_rel=1.766e-4 (worst at flat index 17: hf -0.87179714 vs ref -0.8718002)
+  OK   logits: max_abs=1.550e-6 max_rel=7.828e-5 (worst at flat index 348: hf 0.7051647 vs ref 0.7051662)
+  OK   logits argmax(last token) = 5
+  OK   mtp_hidden: max_abs=3.099e-6 max_rel=1.490e-4 (worst at flat index 674: hf -3.0071483 vs ref -3.0071452)
+  OK   mtp_logits: max_abs=1.073e-6 max_rel=4.524e-5 (worst at flat index 261: hf -0.60227907 vs ref -0.602278)
+
+TINY PARITY PASSED (max_abs<= 0.0001, max_rel <= 0.003)

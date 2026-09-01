@@ -1,0 +1,19 @@
+[package]
+name = "memra-runtime"
+description = "CUDA runtime scaffolding (context, GEMM checks) for the memra inference engine"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shared crates.io browse metadata; see the note in the workspace manifest.
+categories.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[dependencies]
+memra-gguf = { workspace = true }
+cudarc = { version = "0.19", default-features = false, features = ["std", "cuda-13010", "dynamic-loading", "driver", "cublas", "cublaslt", "nvrtc"] }
+
+[[bin]]
+name = "gemm-check"
+path = "src/bin/gemm_check.rs"

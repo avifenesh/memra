@@ -1,0 +1,17 @@
+[gMASK]<sop><|system|>Reasoning Effort: Max<|system|>
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+
+{"name": "book", "description": "Book a trip", "parameters": {"type": "object", "properties": {"days": {"type": "integer"}}}}
+
+
+</tools>
+
+For each function call, output the function name and arguments within the following XML format:
+<tool_call>{function-name}<arg_key>{arg-key-1}</arg_key><arg_value>{arg-value-1}</arg_value><arg_key>{arg-key-2}</arg_key><arg_value>{arg-value-2}</arg_value>...</tool_call><|user|>book it<|assistant|><think></think>
+<tool_call>book<arg_key>days</arg_key><arg_value>3</arg_value><arg_key>ok</arg_key><arg_value>true</arg_value><arg_key>note</arg_key><arg_value>null</arg_value><arg_key>tags</arg_key><arg_value>["a", "b"]</arg_value><arg_key>opts</arg_key><arg_value>{"x": 1}</arg_value><arg_key>who</arg_key><arg_value>Ada</arg_value></tool_call>
+<|observation|><tool_response>booked</tool_response><|assistant|><think>

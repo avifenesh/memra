@@ -1,0 +1,147 @@
+name: publish
+
+# crates.io publishing, same trigger as release.yml (tag vX.Y.Z). `cargo publish
+# --workspace` (cargo >= 1.90) resolves dependency order, waits for index propagation
+# between crates, and verifies each package against a local overlay of the not-yet-live
+# ones — no hand-rolled ordering/sleep loop. memra-probe is publish=false in its
+# manifest AND excluded here (dev spike, not part of the published surface).
+#
+# workflow_dispatch = DRY-RUN ONLY: full package + verify, no upload, no token needed.
+# Run it before tagging to catch packaging drift.
+#
+# Owner setup (docs/RELEASING.md "Publishing to crates.io"): repo secret
+# CARGO_REGISTRY_TOKEN = a crates.io API token with publish-new + publish-update scope.
+# The publish step fails with a clear message if the secret is missing.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "true = REAL publish of the workspace version on this ref (recovery door for a partial tag publish — v0.69.0 shipped 5/9 crates before the new-crate burst limit 429'd). Default false = dry-run."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Shared guard (tools/release-guard.sh, teeth in ci.yml): workspace version must
+      # equal the tag AND the release/claim-<tag> branch must exist (docs/RELEASING.md
+      # "Claiming a version number"). This used to be an inline cargo-metadata check
+      # that lived ONLY here — which is why the 2026-08-22/23 tag races produced crates
+      # refusals (this file caught them) but mismatched GitHub releases (release.yml
+      # had no guard at all). Cargo-free now, so it runs BEFORE the 4-minute CUDA
+      # install and fails fast.
+      - name: Guard — version match + claim branch (tag runs only)
+        if: github.event_name == 'push'
+        run: tools/release-guard.sh "$GITHUB_REF_NAME"
+
+      # The publish census runs on EVERY invocation, dispatch included — the recovery door is
+      # exactly when a stale list does the most damage, because the operator reaching for it is
+      # already repairing a half-published number. v0.106.0 uploaded 6 crates and then died on
+      # `no matching package named memra-reference`; crates.io versions are immutable, so those
+      # six are permanently orphaned. This is the check that would have refused before the first
+      # upload. Text-only, ahead of the 4-minute CUDA install.
+      - name: Census — publish list vs workspace members (all invocations)
+        run: |
+          tools/workspace-publish-census.sh
+          tools/stub-abi-census.py
+
+      - name: Install CUDA 13.1 (nvcc + headers — publish verification compiles the kernels)
+        run: |
+          wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update -q
+          sudo apt-get install -y -q cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: publish-sm120a
+
+      - name: Dry-run (manual dispatch — no upload)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish != true
+        run: cargo publish --workspace --exclude memra-probe --locked --dry-run
+        env:
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: "120a"
+
+      # Per-crate, dependency order, skip-if-live, 429-aware. `cargo publish --workspace`
+      # is all-or-nothing: when the v0.69.0 run 429'd on crates.io's new-crate burst limit
+      # mid-batch (5 crates live, 4 not), the rerun hard-failed on "crate already exists"
+      # instead of resuming. This loop is resumable: already-published versions skip via
+      # the registry API, and a 429 waits out the documented refill (1 new crate/10 min)
+      # instead of dying.
+      #
+      # THE LIST IS A CENSUS, NOT A CONVENIENCE. It must name EVERY publishable workspace
+      # member, in topological order. It said 9 names while the workspace had 11 publishable
+      # members: d143604b0a added crates/memra-reference and crates/memra-cli and did not
+      # touch this file, and because memra-reference is a hard `[dependencies]` entry of
+      # memra-engine with an inherited `version`, cargo strips the path at publish time and
+      # demands it from the registry. Result at v0.106.0: 6 crates uploaded, then
+      # `no matching package named memra-reference found` — 6 of 9 live, 3 orphaned, the
+      # number burned. tools/workspace-publish-census.sh now refuses a stale list (missing
+      # member, wrong order, publish=false made load-bearing, ghost entry) in both tag
+      # workflows AND against the real manifests on every ci.yml run.
+      #
+      # Order below is topological over internal deps; memra-probe is excluded by design
+      # (publish = false, dev spike). Adding a workspace member means adding it HERE.
+      #   gguf        <- (nothing)
+      #   reference   <- gguf
+      #   kv          <- gguf
+      #   runtime     <- gguf
+      #   sampling    <- (nothing)
+      #   tokenizer   <- gguf
+      #   validate    <- (nothing)
+      #   engine      <- sampling validate kv gguf runtime tokenizer reference
+      #   lanes       <- (nothing)
+      #   server      <- engine gguf lanes tokenizer
+      #   cli         <- gguf reference
+      - name: Publish to crates.io (tag runs + dispatch with publish=true)
+        if: github.event_name == 'push' || inputs.publish == true
+        run: |
+          set -o pipefail
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN secret is not set — add a crates.io API token in repo Settings > Secrets (docs/RELEASING.md)"
+            exit 1
+          fi
+          version=$(cargo metadata --format-version 1 --no-deps \
+            | python3 -c "import json,sys; m=json.load(sys.stdin); print(next(p['version'] for p in m['packages'] if p['name']=='memra-server'))")
+          echo "publishing workspace version $version"
+          for crate in memra-gguf memra-reference memra-kv memra-runtime memra-sampling \
+                       memra-tokenizer memra-validate memra-engine memra-lanes memra-server \
+                       memra-cli; do
+            if curl -sf "https://crates.io/api/v1/crates/$crate/$version" \
+                 -A "memra-publish-workflow (github.com/avifenesh/memra)" | grep -q '"version"'; then
+              echo "$crate@$version already on crates.io — skipping"
+              continue
+            fi
+            ok=0
+            for attempt in 1 2 3 4 5 6; do
+              if cargo publish -p "$crate" --locked 2>&1 | tee "/tmp/publish-$crate.log"; then
+                ok=1; break
+              fi
+              if grep -q "429 Too Many Requests" "/tmp/publish-$crate.log"; then
+                echo "::warning::$crate rate-limited (attempt $attempt/6) — waiting 620s for the new-crate window"
+                sleep 620
+              else
+                echo "::error::$crate failed for a non-rate-limit reason — see log above"
+                exit 1
+              fi
+            done
+            if [ "$ok" != "1" ]; then
+              echo "::error::$crate still rate-limited after 6 attempts"
+              exit 1
+            fi
+          done
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
+          MEMRA_CUDA_ARCH: "120a"

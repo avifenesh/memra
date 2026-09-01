@@ -1,0 +1,48 @@
+warning: memra-engine@0.76.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.76.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/bin/dspark_export_shared.rs (target/debug/deps/dspark_export_shared-7c50884d1291f80e)
+
+running 2 tests
+test tests::bf16_conversion_rounds_to_nearest_even ... ok
+test tests::rank_parser_rejects_duplicates_and_out_of_range ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+test_escape_tvd_acceptance_and_full_softmax_gradient (__main__.DSparkTrainingTests.test_escape_tvd_acceptance_and_full_softmax_gradient) ... ok
+test_exact_model_shape_frozen_tables_and_parameter_accounting (__main__.DSparkTrainingTests.test_exact_model_shape_frozen_tables_and_parameter_accounting) ... ok
+test_position_weights_match_contract (__main__.DSparkTrainingTests.test_position_weights_match_contract) ... ok
+test_qwen_partial_rope_leaves_suffix_untouched (__main__.DSparkTrainingTests.test_qwen_partial_rope_leaves_suffix_untouched) ... ok
+test_sequential_temperature_scaling_reduces_prefix_ece (__main__.DSparkTrainingTests.test_sequential_temperature_scaling_reduces_prefix_ece) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 1.738s
+
+OK
+code-sha256.txt: OK
+final-eval.json: OK
+train-config.json: OK
+train-metrics.jsonl: OK
+train.stdout.log: OK
+trajectory.jsonl: OK
+Id=memra-dspark2-pilot-scale.service
+ActiveState=inactive
+SubState=dead
+Result=success
+
+Id=memra-dspark2-pilot-scale-checkpoint.service
+ActiveState=inactive
+SubState=dead
+Result=success
+Result=success
+ExecMainStatus=0
+Id=memra-dspark2-pilot-train.service
+ActiveState=inactive
+SubState=dead
+checkpoint-final.pt: OK
+code-sha256.txt: OK
+final-eval.json: OK
+train-config.json: OK
+train-metrics.jsonl: OK
+train.stdout.log: OK
+trajectory.jsonl: OK

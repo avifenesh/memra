@@ -1,0 +1,50 @@
+[server] starting; models config = [("step37", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step37" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[worker] WARN: step37: step35: no MTP drafter attached — serving plain decode, no speculative decoding. This arch ships its MTP/NextN head in a SEPARATE GGUF, so the trunk's nextn_predict_layers=0 is expected and does NOT mean the model has no drafter. Attach with MEMRA_MODELS="step37=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf+/path/to/Step3.7-flash-mtp-Q8_0.gguf" (the same '+draft' convention every regime drafter uses; docs/DRAFT-REGIME.md).
+[worker]   loaded "step37": 45 layers, eos=128007
+[worker] step37: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step37: decode chunk cap 8
+[admission] "step37": plain 83520 B/token, spec 83520 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step37"]
+[server] listening on http://127.0.0.1:18459
+[meter] admit id=chatcmpl-b3d787147c682a95bc6484b2d5dfb3be tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=95 path=plain = 83520 B/token x ctx + 0MB fixed = 8MB
+[meter] admit id=chatcmpl-567b13403f9a04bab9039aee3aec6ed3 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-1d3a4e07203aae83d66fdbf189b4ea7f tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-61e3bb455d431771263e6a87947dbf13 tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=619 path=plain = 83520 B/token x ctx + 0MB fixed = 52MB
+[meter] admit id=chatcmpl-2acf8f65af0cd3ae04749acacc36c450 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-f4a46ba9d19e6f2da9c1b3246576db8a tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-8501372518b173d463261e4ae62ceee7 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-f3b4d8207e3ffa8e0e0de092aab95398 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-ae8a260d74e9bf3b432dd1257235a0f6 tenant=default lane=interactive model="step37"
+[step35-batch] first B>1 batched step35 walk: B=4 layers=[0,22)
+[dual-pp] dual-active PP-2 decode engaged (default OFF; two waves)
+[meter] admit id=chatcmpl-f50459a89beef851aedbdaeaa5d52e19 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-4b878d79c16441f5441f3884654c4262 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-bc5d7977ed031e81017b3d1346403121 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-3514455c3b1ad680423b9a6388c13ab6 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-db5a89e32af291af09b79c3025ce79d1 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-e72fe29dbeaa03c869cb2e9d8abaa3dd tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-a8cd9ded236454e53a8d1feaabd30ddb tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-685b38bf7af71a1a90d6eacbb16df229 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-2ca4a2daae47b7feed1df55a821100b3 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-fe26eba0a5d8122039ff5abf63873678 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-dbc75a98d4fcf6a3f0ca2d0b53b05e7e tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-88978523ad74562b45436dc7469522ca tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-ca4fea029b5aa0d6448bcf0b52002bfa tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-516a64066a64cf0e51117140037c4409 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-48328e2dc484c47cdf478e0e30788b15 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-efcfd8cd462eb0d48d5976e6ae3ae699 tenant=default lane=interactive model="step37"
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

@@ -1,0 +1,388 @@
+[server] starting; models config = [("gate", "/opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "gate" <- /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[worker]   loaded "gate": 65 layers, eos=248046
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 17180MB (17179869184 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[server] worker ready; serving models: ["gate"]
+[admission] "gate": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18098
+[meter] admit id=cmpl-684c7bf86259cd570962baf874a9f221 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=644 path=spec = 33408 B/token x ctx + 0MB fixed = 22MB
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=520 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 328MB at ctx 588 path=spec)
+[spec-acc] ctx=520 burst=21/33 cum=21/33=0.636
+[prefix-cache] insert probation (spec-boundary): 520 tokens, 173.3MB (resident 173.3MB / 17180MB, model gate)
+[spec-acc] ctx=553 burst=17/36 cum=38/69=0.551
+[meter] admit id=cmpl-8cdfd994292a2a9290d25264b0f07733 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-8c4c0b8db3c75af632020254fc92d1b6 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-e4819df31787788afcc8d0707980a6bd tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-b6890001a01a06a3a3f801252af7cf9e tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-e67b4dec1d95632e36194ef9950eb565 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-97745f743345b27beaf31882543a1de1 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-a7119281d20b8ea9c7ce82b3e55bfd66 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-dcebb9df7c169437356770a24dd926c8 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=209 path=spec = 33408 B/token x ctx + 308MB fixed = 315MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 520; 1 parked, 85 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=85 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=213 path=spec = 33408 B/token x ctx + 308MB fixed = 315MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 520; 1 parked, 89 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=89 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=215 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=91 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=217 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=93 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=219 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=95 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=225 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=101 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=222 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=98 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=227 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=103 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[spec-acc] ctx=85 burst=18/39 cum=18/39=0.462
+[spec-acc] ctx=89 burst=21/36 cum=21/36=0.583
+[prime-batch] B=6 tokens=581 carried=0 partial=0 in 533.7ms
+[prefix-cache] insert probation (seed): 91 tokens, 159.6MB (resident 332.9MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 93 tokens, 159.7MB (resident 492.6MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 95 tokens, 159.7MB (resident 652.3MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 101 tokens, 159.9MB (resident 812.2MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 98 tokens, 159.8MB (resident 972.0MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 103 tokens, 160.0MB (resident 1131.9MB / 17180MB, model gate)
+[prefix-cache] insert probation (spec-boundary): 85 tokens, 159.6MB (resident 1291.5MB / 17180MB, model gate)
+[prefix-cache] insert probation (spec-boundary): 89 tokens, 159.7MB (resident 1451.3MB / 17180MB, model gate)
+[spec-gate] demoted session to batched decode: 8 active >= HIGH=4 (model gate, committed 117, generated 32)
+[spec-gate] demoted session to batched decode: 8 active >= HIGH=4 (model gate, committed 123, generated 34)
+[meter] admit id=cmpl-41c98b3fcd6160ac3ef81c046487fd42 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=656 path=plain = 31552 B/token x ctx + 308MB fixed = 329MB
+[prefix-cache] hit: 520 of 532 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=532 cached=520 lcp=520 active=9 placement=single-or-non-pp2
+[meter] admit id=cmpl-beca44b8d6aa5cd40e0e7f4b81ce4804 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=213 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 89 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=89 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 89 tokens, 159.5MB (resident 1610.8MB / 17180MB, model gate)
+[meter] admit id=cmpl-88766e6296aec3388dbdd5d93d860f79 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=209 path=plain = 31552 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 85 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=85 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 85 tokens, 159.4MB (resident 1770.2MB / 17180MB, model gate)
+[meter] admit id=cmpl-c13a52cbed077ad959e0dd8d634247c1 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-3c6688d3f9348155d7da42cf0bd0f83c tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-c07d7a24ec13ff415b2c21dc16e942b5 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-25ea6a30b56916b5bb1d8704cfbd0e5a tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-c4cbb566140b8efaf8e6b3c7d18da440 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-3befd16d98325ff9ecb4f7368f1464e0 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=215 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 91 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=91 cached=0 lcp=7 active=4 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=225 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 101 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=101 cached=0 lcp=7 active=5 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=227 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 103 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=103 cached=0 lcp=7 active=6 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=222 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 98 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=98 cached=0 lcp=7 active=7 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=217 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 93 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=93 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=219 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 95 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=95 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 91 tokens, 159.6MB (resident 1929.8MB / 17180MB, model gate)
+[prime-batch] B=5 tokens=490 carried=0 partial=0 in 364.5ms
+[prefix-cache] insert probation (seed): 101 tokens, 159.9MB (resident 2089.7MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 103 tokens, 160.0MB (resident 2249.6MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 98 tokens, 159.8MB (resident 2409.4MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 93 tokens, 159.7MB (resident 2569.1MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 95 tokens, 159.7MB (resident 2728.8MB / 17180MB, model gate)
+[meter] admit id=cmpl-88e35012729c83892b045e08e5b27a2f tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=213 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=89 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 89 tokens, 159.5MB (resident 2888.4MB / 17180MB, model gate)
+[meter] admit id=cmpl-18f405b0f0ff984c111e4fcd0ab07f65 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=209 path=plain = 31552 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 85 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=85 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 85 tokens, 159.4MB (resident 3047.8MB / 17180MB, model gate)
+[meter] admit id=cmpl-3b603e277edcc28b647da81286bb26a2 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=215 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 91 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=91 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-efa8b31eadf278ce6377952bf216cad3 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-a8cd20ba100ee370cde1c10a32eb1fd1 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-208f89243d184d3e20758899af82512d tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-279b7d1b71ce968d2693d4fcb6927db4 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-e91684dfce6bf29fae36322e85cd3b58 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=225 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 101 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=101 cached=0 lcp=7 active=4 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=227 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 103 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=103 cached=0 lcp=7 active=5 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=217 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 93 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=93 cached=0 lcp=7 active=6 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=219 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 95 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=95 cached=0 lcp=7 active=7 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=222 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 98 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=98 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 91 tokens, 159.6MB (resident 3207.4MB / 17180MB, model gate)
+[prime-batch] B=5 tokens=490 carried=0 partial=0 in 401.6ms
+[prefix-cache] insert probation (seed): 101 tokens, 159.9MB (resident 3367.3MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 103 tokens, 160.0MB (resident 3527.2MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 93 tokens, 159.7MB (resident 3686.9MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 95 tokens, 159.7MB (resident 3846.6MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 98 tokens, 159.8MB (resident 4006.4MB / 17180MB, model gate)
+[meter] admit id=cmpl-3a4a3be4c1a9b63843c02d765b733b95 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=656 path=plain = 31552 B/token x ctx + 308MB fixed = 329MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 532 prompt tokens; model gate)
+[prefix-cache] hit: 520 of 532 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=532 cached=520 lcp=520 active=9 placement=single-or-non-pp2
+[meter] admit id=cmpl-4c6aec75997a95ee974897047ccdf36b tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=213 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=89 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 89 tokens, 159.5MB (resident 4165.9MB / 17180MB, model gate)
+[meter] admit id=cmpl-f500b90649210e89a4489fd440bcf56e tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=209 path=plain = 31552 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 85 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=85 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 85 tokens, 159.4MB (resident 4325.3MB / 17180MB, model gate)
+[meter] admit id=cmpl-395b4a29bafb90c8ec4ce07d400ad766 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=215 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 91 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=91 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[meter] admit id=cmpl-c61a41f76e3fca23834b0924caa730b2 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-61555493c8dc2b26aed0f39e68aa75ec tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-797e2cd74371fc36a4ff6346f224c603 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-93fe76ec7535b13fa92a96550c067fc1 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-e8967e398d430417daa5ed4f2097cbdc tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=227 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 103 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=103 cached=0 lcp=7 active=5 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=217 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 93 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=93 cached=0 lcp=7 active=6 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=219 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 95 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=95 cached=0 lcp=7 active=7 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=225 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 101 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=101 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=222 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 98 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=98 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 91 tokens, 159.6MB (resident 4484.9MB / 17180MB, model gate)
+[prime-batch] B=5 tokens=490 carried=0 partial=0 in 351.3ms
+[prefix-cache] insert probation (seed): 103 tokens, 160.0MB (resident 4644.9MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 93 tokens, 159.7MB (resident 4804.5MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 95 tokens, 159.7MB (resident 4964.3MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 101 tokens, 159.9MB (resident 5124.1MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 98 tokens, 159.8MB (resident 5283.9MB / 17180MB, model gate)
+[meter] admit id=cmpl-f371328e922ebb6739585b8a8e339d70 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=213 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=89 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 89 tokens, 159.5MB (resident 5443.5MB / 17180MB, model gate)
+[meter] admit id=cmpl-efe791073915660eb00c127d3c09a905 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=209 path=plain = 31552 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 85 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=85 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 85 tokens, 159.4MB (resident 5602.9MB / 17180MB, model gate)
+[meter] admit id=cmpl-bbf5ed1ceb568db9dc534de534f1300d tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=215 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 91 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=91 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-2180ac05be0aa2d4b093ec9cbf2e2959 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-1932a30a1a0f4e8762dcc03132581293 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-45c55d85e44dc21315f049b091871981 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-713f309b2dfc69d03abfa69d714d32e1 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-f7f1c98c66fc773e0526a1ef92d94014 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=217 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 93 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=93 cached=0 lcp=7 active=4 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=219 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 95 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=95 cached=0 lcp=7 active=5 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=222 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 98 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=98 cached=0 lcp=7 active=6 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=227 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 103 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=103 cached=0 lcp=7 active=7 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=225 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 101 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=101 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 91 tokens, 159.6MB (resident 5762.5MB / 17180MB, model gate)
+[meter] admit id=cmpl-f5b1ecaeb33957f6a155852cc81e87bb tenant=default lane=interactive model="gate"
+[prime-batch] B=5 tokens=490 carried=0 partial=0 in 402.4ms
+[prefix-cache] insert probation (seed): 93 tokens, 159.7MB (resident 5922.2MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 95 tokens, 159.7MB (resident 6081.9MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 98 tokens, 159.8MB (resident 6241.7MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 103 tokens, 160.0MB (resident 6401.6MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 101 tokens, 159.9MB (resident 6561.5MB / 17180MB, model gate)
+[admission] request cost: model="gate" ctx=656 path=plain = 31552 B/token x ctx + 308MB fixed = 329MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 532 prompt tokens; model gate)
+[prefix-cache] hit: 520 of 532 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=532 cached=520 lcp=520 active=9 placement=single-or-non-pp2
+[meter] admit id=cmpl-734b0936c345c4cf5726f14db8775a76 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=213 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=89 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 89 tokens, 159.5MB (resident 6721.1MB / 17180MB, model gate)
+[meter] admit id=cmpl-132134bf1d22c2b41e31befb62207e22 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=209 path=plain = 31552 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 85 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=85 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 85 tokens, 159.4MB (resident 6880.5MB / 17180MB, model gate)
+[meter] admit id=cmpl-44f3874e732cb181ecd1376dec6793f5 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=215 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 91 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=91 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[meter] admit id=cmpl-e7c4b05eacf33739b63512c01d3ea52d tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-431798ed80a5373ecf85516b28541480 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-c57431332948f63c44e83c42799ff404 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-f9fd3151256cdb39e05b739a43c4580e tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-be596cca29bacb882abf698d40bb63c0 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=217 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 93 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=93 cached=0 lcp=7 active=5 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=219 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 95 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=95 cached=0 lcp=7 active=6 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=227 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 103 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=103 cached=0 lcp=7 active=7 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=222 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 98 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=98 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=225 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 101 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=101 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 91 tokens, 159.6MB (resident 7040.1MB / 17180MB, model gate)
+[prime-batch] B=5 tokens=490 carried=0 partial=0 in 365.9ms
+[prefix-cache] insert probation (seed): 93 tokens, 159.7MB (resident 7199.7MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 95 tokens, 159.7MB (resident 7359.4MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 103 tokens, 160.0MB (resident 7519.4MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 98 tokens, 159.8MB (resident 7679.2MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 101 tokens, 159.9MB (resident 7839.1MB / 17180MB, model gate)
+[meter] admit id=cmpl-5c38658decfad3cb27d9def096dab116 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=213 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=89 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 89 tokens, 159.5MB (resident 7998.6MB / 17180MB, model gate)
+[meter] admit id=cmpl-0ecfc28bfd924791b17f0626cb6038de tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=209 path=plain = 31552 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 85 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=85 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 85 tokens, 159.4MB (resident 8158.0MB / 17180MB, model gate)
+[meter] admit id=cmpl-b26315a620e087003c1fcd7e00d9b0db tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=215 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 91 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=91 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-8192bcd653697876671cc7b5fe12bcd9 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-ed63c668acd2d4dac97c2c8316a718df tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-196116ddeb4f5ce7c0a459c0c71852d4 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-ae3113c3d90369f2fea1e3b3545ec280 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-029d155160329f911ffb92b24e2e427a tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=222 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 98 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=98 cached=0 lcp=7 active=4 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=225 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 101 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=101 cached=0 lcp=7 active=5 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=217 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 93 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=93 cached=0 lcp=7 active=6 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=227 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 103 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=103 cached=0 lcp=7 active=7 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=219 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 95 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=95 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=189 carried=0 partial=0 in 107.2ms
+[prefix-cache] insert probation (seed): 91 tokens, 159.6MB (resident 8317.6MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 98 tokens, 159.8MB (resident 8477.4MB / 17180MB, model gate)
+[prime-batch] B=4 tokens=392 carried=0 partial=0 in 178.2ms
+[prefix-cache] insert probation (seed): 101 tokens, 159.9MB (resident 8637.3MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 93 tokens, 159.7MB (resident 8797.0MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 103 tokens, 160.0MB (resident 8956.9MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 95 tokens, 159.7MB (resident 9116.6MB / 17180MB, model gate)
+[meter] admit id=cmpl-4034238049cf36153264951511e4531e tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=656 path=plain = 31552 B/token x ctx + 308MB fixed = 329MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 532 prompt tokens; model gate)
+[prefix-cache] hit: 520 of 532 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=532 cached=520 lcp=520 active=9 placement=single-or-non-pp2
+[meter] admit id=cmpl-f5ff9c3f662cb7a5e48a9cdce9005590 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=213 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=89 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 89 tokens, 159.5MB (resident 9276.2MB / 17180MB, model gate)
+[meter] admit id=cmpl-8ec77b7602d6a2f8a9e483f6b51e4440 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=209 path=plain = 31552 B/token x ctx + 308MB fixed = 314MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 85 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=85 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prefix-cache] insert probation (seed): 85 tokens, 159.4MB (resident 9435.6MB / 17180MB, model gate)
+[meter] admit id=cmpl-14dbe836e134f89e339b30a35f496eb8 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-ab9ff83bc955b173a5a4a891689152db tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=215 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 91 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=91 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=222 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 98 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=98 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[meter] admit id=cmpl-965d667f67190b510adfb2a096a20f5c tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-c6c2c83250097177b97e131c761d6ba0 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-044e776289aea94e868fddf7bf05823b tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-69e784cb13aa0af31b5649cb7a1a345a tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=227 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 103 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=103 cached=0 lcp=7 active=6 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=225 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 101 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=101 cached=0 lcp=7 active=7 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=217 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 93 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=93 cached=0 lcp=7 active=8 placement=single-or-non-pp2
+[admission] request cost: model="gate" ctx=219 path=plain = 31552 B/token x ctx + 308MB fixed = 315MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 95 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=concurrency prompt=95 cached=0 lcp=7 active=9 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=189 carried=0 partial=0 in 107.8ms
+[prefix-cache] insert probation (seed): 91 tokens, 159.6MB (resident 9595.2MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 98 tokens, 159.8MB (resident 9755.0MB / 17180MB, model gate)
+[prime-batch] B=4 tokens=392 carried=0 partial=0 in 168.7ms
+[prefix-cache] insert probation (seed): 103 tokens, 160.0MB (resident 9915.0MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 101 tokens, 159.9MB (resident 10074.8MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 93 tokens, 159.7MB (resident 10234.5MB / 17180MB, model gate)
+[prefix-cache] insert probation (seed): 95 tokens, 159.7MB (resident 10394.2MB / 17180MB, model gate)
+[meter] admit id=cmpl-23f417faa2bdf7094aef6b595471225f tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=656 path=spec = 33408 B/token x ctx + 308MB fixed = 330MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 532 prompt tokens; model gate)
+[prefix-cache] hit: 520 of 532 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 520 of 532 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=532 cached=520 lcp=520 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 643MB (observed 663MB at ctx 600 path=spec)
+[spec-acc] ctx=0 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=32 burst=18/30 cum=37/66=0.561
+[meter] admit id=cmpl-ee1283878f6a1545f7d744bc4487236a tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=656 path=spec = 33408 B/token x ctx + 643MB fixed = 665MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 532 prompt tokens; model gate)
+[prefix-cache] hit: 520 of 532 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 520 of 532 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=532 cached=520 lcp=520 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=0 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=32 burst=14/42 cum=33/78=0.423
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

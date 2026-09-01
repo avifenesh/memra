@@ -1,0 +1,39 @@
+{
+  "template": "official",
+  "request": {
+    "model": "g4",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Weather in Paris?"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "c1",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"location\": \"Paris\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "21C",
+        "tool_call_id": "c1"
+      },
+      {
+        "role": "assistant",
+        "content": "It is 21C."
+      },
+      {
+        "role": "user",
+        "content": "Summarize the conversation in one line."
+      }
+    ],
+    "tools": []
+  }
+}

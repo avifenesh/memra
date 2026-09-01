@@ -1,0 +1,70 @@
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[mtp-draft] loading external MTP draft: /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.000
+[opti-controller] issue generation=0 q=0.019040 threshold=0.000 verify=[9, 223]
+[opti-controller] resolve generation=0 hit=false q=0.019040 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.380 reconcile=true breaker=false
+[opti-controller] issue generation=1 q=0.024629 threshold=0.000 verify=[228, 4]
+[opti-controller] resolve generation=1 hit=false q=0.024629 expected_pending=228 n_acc=1 bonus=129 resolution_ms=12.404 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.047457 threshold=0.000 verify=[9, 223]
+[opti-controller] resolve generation=2 hit=false q=0.047457 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.354 reconcile=true breaker=false
+[opti-controller] issue generation=3 q=0.021533 threshold=0.000 verify=[9, 12]
+[opti-controller] resolve generation=3 hit=false q=0.021533 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.363 reconcile=true breaker=false
+[opti-controller] issue generation=4 q=0.016710 threshold=0.000 verify=[9, 12]
+[opti-controller] resolve generation=4 hit=false q=0.016710 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.360 reconcile=true breaker=false
+[opti-controller] issue generation=5 q=0.017855 threshold=0.000 verify=[9, 223]
+[opti-controller] resolve generation=5 hit=false q=0.017855 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.371 reconcile=true breaker=false
+[opti-controller] issue generation=6 q=0.018011 threshold=0.000 verify=[9, 12]
+[opti-controller] resolve generation=6 hit=false q=0.018011 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.346 reconcile=true breaker=false
+[opti-controller] issue generation=7 q=0.071714 threshold=0.000 verify=[223, 301]
+[opti-controller] resolve generation=7 hit=false q=0.071714 expected_pending=223 n_acc=1 bonus=129 resolution_ms=12.340 reconcile=true breaker=false
+[opti-controller] issue generation=8 q=0.020468 threshold=0.000 verify=[238, 28]
+[opti-controller] resolve generation=8 hit=false q=0.020468 expected_pending=238 n_acc=1 bonus=129 resolution_ms=12.364 reconcile=true breaker=false
+[opti-controller] issue generation=9 q=0.010315 threshold=0.000 verify=[108, 63]
+[opti-controller] resolve generation=9 hit=false q=0.010315 expected_pending=108 n_acc=1 bonus=129 resolution_ms=12.361 reconcile=true breaker=false
+[opti-controller] issue generation=10 q=0.050866 threshold=0.000 verify=[240, 4]
+[opti-controller] resolve generation=10 hit=false q=0.050866 expected_pending=240 n_acc=1 bonus=129 resolution_ms=12.388 reconcile=true breaker=false
+[opti-controller] issue generation=11 q=0.024451 threshold=0.000 verify=[9, 12]
+[opti-controller] resolve generation=11 hit=false q=0.024451 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.372 reconcile=true breaker=false
+[opti-controller] issue generation=12 q=0.047711 threshold=0.000 verify=[242, 16]
+[opti-controller] resolve generation=12 hit=false q=0.047711 expected_pending=242 n_acc=1 bonus=129 resolution_ms=12.310 reconcile=true breaker=false
+[opti-controller] issue generation=13 q=0.075180 threshold=0.000 verify=[244, 9]
+[opti-controller] resolve generation=13 hit=false q=0.075180 expected_pending=244 n_acc=1 bonus=129 resolution_ms=12.378 reconcile=true breaker=false
+[opti-controller] issue generation=14 q=0.020191 threshold=0.000 verify=[9, 301]
+[opti-controller] resolve generation=14 hit=false q=0.020191 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.391 reconcile=true breaker=false
+[opti-controller] issue generation=15 q=0.026144 threshold=0.000 verify=[245, 4]
+[opti-controller] resolve generation=15 hit=false q=0.026144 expected_pending=245 n_acc=1 bonus=129 resolution_ms=12.301 reconcile=true breaker=false
+[opti-controller] issue generation=16 q=0.010829 threshold=0.000 verify=[246, 4]
+[opti-controller] resolve generation=16 hit=false q=0.010829 expected_pending=246 n_acc=1 bonus=129 resolution_ms=12.364 reconcile=true breaker=false
+[opti-controller] issue generation=17 q=0.015178 threshold=0.000 verify=[240, 4]
+[opti-controller] resolve generation=17 hit=false q=0.015178 expected_pending=240 n_acc=1 bonus=129 resolution_ms=12.324 reconcile=true breaker=false
+[opti-controller] issue generation=18 q=0.024072 threshold=0.000 verify=[9, 12]
+[opti-controller] resolve generation=18 hit=false q=0.024072 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.377 reconcile=true breaker=false
+[opti-controller] issue generation=19 q=0.013623 threshold=0.000 verify=[95, 223]
+[opti-controller] resolve generation=19 hit=false q=0.013623 expected_pending=95 n_acc=1 bonus=129 resolution_ms=12.336 reconcile=true breaker=false
+[opti-controller] issue generation=20 q=0.017544 threshold=0.000 verify=[8, 16]
+[opti-controller] resolve generation=20 hit=false q=0.017544 expected_pending=8 n_acc=1 bonus=129 resolution_ms=12.346 reconcile=true breaker=false
+[opti-controller] issue generation=21 q=0.032839 threshold=0.000 verify=[251, 4]
+[opti-controller] resolve generation=21 hit=false q=0.032839 expected_pending=251 n_acc=1 bonus=129 resolution_ms=12.337 reconcile=true breaker=false
+[opti-controller] issue generation=22 q=0.081857 threshold=0.000 verify=[4, 223]
+[opti-controller] resolve generation=22 hit=false q=0.081857 expected_pending=4 n_acc=1 bonus=129 resolution_ms=12.328 reconcile=true breaker=false
+[opti-controller] issue generation=23 q=0.054946 threshold=0.000 verify=[4, 223]
+[opti-controller] resolve generation=23 hit=false q=0.054946 expected_pending=4 n_acc=1 bonus=129 resolution_ms=12.254 reconcile=true breaker=false
+[opti-controller] issue generation=24 q=0.047564 threshold=0.000 verify=[9, 12]
+[opti-controller] resolve generation=24 hit=false q=0.047564 expected_pending=9 n_acc=1 bonus=129 resolution_ms=12.329 reconcile=true breaker=false
+[opti-controller] issue generation=25 q=0.024601 threshold=0.000 verify=[255, 4]
+[opti-controller] resolve generation=25 hit=false q=0.024601 expected_pending=255 n_acc=1 bonus=129 resolution_ms=12.293 reconcile=true breaker=false
+[opti-controller] issue generation=26 q=0.013988 threshold=0.000 verify=[38835, 16]
+[opti-controller] resolve generation=26 hit=false q=0.013988 expected_pending=38835 n_acc=1 bonus=2162 resolution_ms=12.326 reconcile=true breaker=false
+[opti-controller] issue generation=27 q=0.019445 threshold=0.000 verify=[33, 223]
+[opti-controller] resolve generation=27 hit=false q=0.019445 expected_pending=33 n_acc=1 bonus=9888 resolution_ms=12.316 reconcile=true breaker=false
+[opti-controller] issue generation=28 q=0.143379 threshold=0.000 verify=[4, 3014]
+[opti-controller] resolve generation=28 hit=false q=0.143379 expected_pending=4 n_acc=1 bonus=49123 resolution_ms=12.312 reconcile=true breaker=false
+[opti-controller] issue generation=29 q=0.033681 threshold=0.000 verify=[62019, 4]
+[opti-controller] resolve generation=29 hit=false q=0.033681 expected_pending=62019 n_acc=1 bonus=61956 resolution_ms=12.354 reconcile=true breaker=false
+RECURRENT RESTORE PRIMITIVE: PASS elements=262144 hit-skip=count/bonus-miss-restore
+STATE IDENTITY: PASS mode=controller q=Some(0.0) cap=448 generated=65 continuation=16 first=OptiForkStateIdentity { trunk_kv_bytes: 16035840, recurrent_bytes: 0, scratch_kv_bytes: 356352, hidden_bytes: 16384 } continued=OptiForkStateIdentity { trunk_kv_bytes: 17372160, recurrent_bytes: 0, scratch_kv_bytes: 386048, hidden_bytes: 16384 } stats=OptiForkGateStats { attempts: 30, hits: 0, misses: 30, abort_drains: 0, refusals: 0, gate_checks: 30, gate_admits: 30, gate_rejects: 0, reconciles: 30, wasted_draft_tokens: 60, shadow_draft_tokens: 60, breaker_trips: 0 }

@@ -1,0 +1,102 @@
+[server] starting; models config = [("gate", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=env-resolved spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[frspec-trim] self-trimmed head: 32768 rows of main output.weight (Q5_K)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[worker]   loaded "gate": 65 layers, eos=248046
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] gate: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-dflash2); greedy+sampled [T>0 rejection verify, sampled penalties included]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] gate: DFlash2 draft head TRIMMED to 32768 rows (FR-Spec d2t; verify stays full-vocab)
+[prefix-cache] on: budget 800MB (800325632 B, derived: 2 x 400162816 B max entry for model "gate" at MEMRA_CTX=8192, requested 800325632 B; boot driver free 8462860288 B, post-reserve clamp 6852247552 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18097
+[meter] admit id=chatcmpl-19ee2af9f4423d2990f3e280933720af tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 0MB fixed = 7MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=71 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 638976 ml_len 24 -> 2496 (retired kept, zero=false)
+[dspark-acc] ctx=71 burst=27/33 cum=27/33=0.818
+[prefix-cache] insert probation (dspark-boundary): 71 tokens, 159.0MB (resident 159.0MB / 800MB, model gate)
+[dspark-acc] ctx=103 burst=22/31 cum=49/64=0.766
+[fa-pool] grow #2 dev=0 o_len 638976 -> 1277952 ml_len 2496 -> 4992 (retired kept, zero=false)
+[dspark-acc] ctx=135 burst=21/37 cum=70/101=0.693
+[meter] admit id=chatcmpl-b0444911828558d021109a2fa53c0a3e tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=228 path=spec = 31552 B/token x ctx + 0MB fixed = 7MB
+[worker] dspark-reuse MISS: 1 parked, best text overlap 254B                              of 368B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=68 cached=0 lcp=45 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=68 burst=23/39 cum=23/39=0.590
+[prefix-cache] insert probation (dspark-boundary): 68 tokens, 158.9MB (resident 317.9MB / 800MB, model gate)
+[dspark-acc] ctx=100 burst=16/41 cum=39/80=0.487
+[dspark-acc] ctx=134 burst=19/33 cum=58/113=0.513
+[meter] admit id=chatcmpl-a1e3cc584701b10deb422fe551311ce0 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=229 path=spec = 31552 B/token x ctx + 0MB fixed = 7MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 254B                              of 378B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=69 cached=0 lcp=45 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=69 burst=28/28 cum=28/28=1.000
+[prefix-cache] insert probation (dspark-boundary): 69 tokens, 158.9MB (resident 476.9MB / 800MB, model gate)
+[dspark-acc] ctx=101 burst=21/40 cum=49/68=0.721
+[dspark-acc] ctx=134 burst=13/40 cum=62/108=0.574
+[meter] admit id=chatcmpl-e813e3815d36140dc682e23900ae25b3 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 0MB fixed = 7MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 254B                              of 379B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=71 cached=0 lcp=71 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=71 burst=32/35 cum=32/35=0.914
+[dspark-acc] ctx=108 burst=19/39 cum=51/74=0.689
+[dspark-acc] ctx=140 burst=19/28 cum=70/102=0.686
+[meter] admit id=chatcmpl-49d4dfb9e476bb9ae5f84dd9ea9d0394 tenant=default lane=interactive model="gate"
+[meter] admit id=chatcmpl-bbd560b47c1c1656c9c17b0092eda5b1 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=228 path=spec = 31552 B/token x ctx + 0MB fixed = 7MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 254B                              of 368B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=68 cached=0 lcp=68 active=1 wave=2 placement=single-or-non-pp2
+[dspark-acc] ctx=68 burst=23/39 cum=23/39=0.590
+[admission] request cost: model="gate" ctx=229 path=spec = 31552 B/token x ctx + 0MB fixed = 7MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 378B                              of 378B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=69 cached=0 lcp=69 active=2 wave=2 placement=single-or-non-pp2
+[dspark-acc] ctx=69 burst=28/28 cum=28/28=1.000
+[dspark-acc] ctx=100 burst=16/41 cum=39/80=0.487
+[dspark-acc] ctx=134 burst=19/33 cum=58/113=0.513
+[dspark-acc] ctx=101 burst=21/40 cum=49/68=0.721
+[dspark-acc] ctx=134 burst=13/40 cum=62/108=0.574
+[meter] admit id=chatcmpl-ed1bbbc3e47143edd873e372f0c732b6 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=656 path=spec = 31552 B/token x ctx + 0MB fixed = 21MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 254B                              of 409B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=80 cached=0 lcp=45 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=80 burst=26/36 cum=26/36=0.722
+[prefix-cache] insert probation (dspark-boundary): 80 tokens, 159.3MB (resident 636.1MB / 800MB, model gate)
+[meter] admit id=chatcmpl-fcc4d9dae8a067987edf488c8778f6ef tenant=default lane=interactive model="gate"
+[dspark-acc] ctx=114 burst=20/41 cum=46/77=0.597
+[admission] request cost: model="gate" ctx=230 path=spec = 31552 B/token x ctx + 0MB fixed = 7MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 254B                              of 389B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=70 cached=0 lcp=45 active=2 wave=2 placement=single-or-non-pp2
+[dspark-acc] ctx=70 burst=22/40 cum=22/40=0.550
+[dspark-acc] ctx=148 burst=21/37 cum=67/114=0.588
+[prefix-cache] insert probation (dspark-boundary): 70 tokens, 159.0MB (resident 795.1MB / 800MB, model gate)
+[dspark-acc] ctx=183 burst=23/38 cum=90/152=0.592
+[dspark-acc] ctx=104 burst=18/38 cum=40/78=0.513
+[fa-pool] grow #3 dev=0 o_len 1277952 -> 2555904 ml_len 4992 -> 9984 (retired kept, zero=false)
+[dspark-acc] ctx=219 burst=21/36 cum=111/188=0.590
+[dspark-acc] ctx=136 burst=16/37 cum=56/115=0.487
+[dspark-acc] ctx=251 burst=21/36 cum=132/224=0.589
+[dspark-acc] ctx=283 burst=19/36 cum=151/260=0.581
+[dspark-acc] ctx=316 burst=16/41 cum=167/301=0.555
+[dspark-acc] ctx=349 burst=20/33 cum=187/334=0.560
+[dspark-acc] ctx=381 burst=22/37 cum=209/371=0.563
+[dspark-acc] ctx=415 burst=21/36 cum=230/407=0.565
+[dspark-acc] ctx=448 burst=21/32 cum=251/439=0.572
+[fa-pool] grow #4 dev=0 o_len 2555904 -> 5111808 ml_len 9984 -> 19968 (retired kept, zero=false)
+[dspark-acc] ctx=480 burst=29/30 cum=280/469=0.597
+[dspark-acc] ctx=515 burst=28/28 cum=308/497=0.620
+[dspark-acc] ctx=547 burst=27/34 cum=335/531=0.631
+[dspark-acc] ctx=581 burst=14/14 cum=349/545=0.640
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

@@ -1,0 +1,18 @@
+bucket               gpu_ms   launches launch/tok gpu_share
+bf16-mmv             1405.5      28417      148.0     33.8%
+moe                  1056.0      41301      215.1     25.4%
+mla+indexer           706.8      46107      240.1     17.0%
+mhc-sites             523.0      69866      363.9     12.6%
+cublas-f32            231.3     100188      521.8      5.6%
+kda-scan+conv         113.1      59160      308.1      2.7%
+rms-norm               52.7      21809      113.6      1.3%
+kda-proj               47.8      42432      221.0      1.2%
+other                  17.7      11205       58.4      0.4%
+TOTAL                4153.9     420485     2190.0
+
+cuda-api families (host side: the allocs+syncs bucket):
+  cuMemcpyHtoDAsync_v2                  10497.7 ms      13229 calls     68.9/tok
+  cuStreamSynchronize                    2183.0 ms       8364 calls     43.6/tok
+  cuMemAllocAsync                        1169.2 ms     476365 calls   2481.1/tok
+  cudaLaunchKernel                        589.7 ms     189986 calls    989.5/tok
+  cuLaunchKernel                          387.0 ms     148018 calls    770.9/tok

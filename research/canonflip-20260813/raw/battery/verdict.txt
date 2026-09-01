@@ -1,0 +1,11 @@
+--- kernel-check start 2026-08-13T16:35:12Z ---
+kernel-check rc=0 duration_s=148
+kernel-check: ALL GREEN
+--- run-gen-q35 start 2026-08-13T16:37:40Z ---
+run-gen-q35 rc=0 duration_s=9
+run-gen-q35: argmax MATCH
+--- run-spec-q35 start 2026-08-13T16:37:49Z ---
+run-spec-q35 rc=0 duration_s=9
+run-spec-q35: self-consistency PASS count=8 (need 8)
+run-spec-q35: overall PASS
+BATTERY_COMPLETE 2026-08-13T16:37:58Z

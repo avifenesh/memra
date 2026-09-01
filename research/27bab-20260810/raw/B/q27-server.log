@@ -1,0 +1,289 @@
+[server] starting; models config = [("q27", "/workspace/models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", Some("/workspace/models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q27" <- /workspace/models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q27: regime draft attached (/workspace/models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q27: decode chunk cap 16 (exact-16 tier)
+[admission] "q27": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q27"]
+[server] listening on http://0.0.0.0:8003
+[meter] admit id=chatcmpl-868334f5ca41081b2255aa17cd0417df tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=109 path=spec = 33408 B/token x ctx + 0MB fixed = 4MB
+[spec-k] model="q27" tenant="cx27-q27-short-r1-1786381608782004861-0-0" K=3 source=operator-pin prompt=13 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q27" 308MB (observed 310MB at ctx 53 path=spec)
+[spec-acc] ctx=13 burst=23/30 cum=23/30=0.767
+[meter] admit id=chatcmpl-9b4fd8b0991f5b1c0cbc0257add726e0 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=483 path=spec = 33408 B/token x ctx + 308MB fixed = 324MB
+[spec-k] model="q27" tenant="cx27-q27-decode-c1-r1-1786381609460869041-0-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[meter] admit id=chatcmpl-9e3e63ecb698246b3fbc02f28ebb3cdf tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-c4894603c7418d9a4153b9e2662c9a9f tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-50b2b6b21ed893a6941e8ba9b68d51ae tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-6c9f97936effb0c667e2f216a2fd28f6 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r1-1786381611231752138-3-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r1-1786381611231752138-0-3" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r1-1786381611231752138-1-2" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r1-1786381611231752138-2-1" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=164 burst=23/24 cum=23/24=0.958
+[spec-acc] ctx=196 burst=26/27 cum=49/51=0.961
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=71/84=0.845
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=91/123=0.740
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=114/156=0.731
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=137/183=0.749
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=158/219=0.721
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=175/243=0.720
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[meter] admit id=chatcmpl-b7e3313936621f8805036d79838a9624 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-f7cd8928e0d68a90e250e8b0ab8f4e58 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-6e55457ccc0d0c0e1732e351a4e101d8 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-ccfec3fe9a3685673300cf3b43702dd8 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r2-1786381618109757001-0-1" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r2-1786381618109757001-3-2" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r2-1786381618109757001-1-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r2-1786381618109757001-2-3" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=164 burst=23/24 cum=23/24=0.958
+[spec-acc] ctx=196 burst=26/27 cum=49/51=0.961
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=71/84=0.845
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=91/123=0.740
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=114/156=0.731
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=137/183=0.749
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=158/219=0.721
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=175/243=0.720
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[meter] admit id=chatcmpl-b2facad8073052fbf3988031f65bcc82 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx27-q27-decode-c1-r2-1786381624984740877-0-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[meter] admit id=chatcmpl-21bdec91567963c0d6d0be0287444c46 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=109 path=spec = 33408 B/token x ctx + 308MB fixed = 312MB
+[spec-k] model="q27" tenant="cx27-q27-short-r2-1786381626737846016-0-0" K=3 source=operator-pin prompt=13 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=13 burst=23/30 cum=23/30=0.767
+[meter] admit id=chatcmpl-3058ce0058c465e4d66b012a4b31f2fc tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx27-q27-short-r3-1786381627212918153-0-0" K=3 source=operator-pin prompt=13 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=13 burst=23/30 cum=23/30=0.767
+[meter] admit id=chatcmpl-e99a8757c56bdd7e501e85c944536f5b tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=483 path=spec = 33408 B/token x ctx + 308MB fixed = 324MB
+[spec-k] model="q27" tenant="cx27-q27-decode-c1-r3-1786381627689123939-0-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[meter] admit id=chatcmpl-d9cdf3135e523016172620b90885469a tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-6fd987423417caa906fac72dcb9bb612 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-19b5e59493f2ba7b577b4ea54b8f8c21 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-1cf7dc7a9fc379393882659402e637a1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r3-1786381629450457511-3-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r3-1786381629450457511-0-2" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r3-1786381629450457511-1-1" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r3-1786381629450457511-2-3" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=164 burst=23/24 cum=23/24=0.958
+[spec-acc] ctx=196 burst=26/27 cum=49/51=0.961
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=71/84=0.845
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=91/123=0.740
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=114/156=0.731
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=137/183=0.749
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=158/219=0.721
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=175/243=0.720
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[meter] admit id=chatcmpl-c67989aaf8c15610037bb21dde9daf55 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-543f507c19befdd79cd09eb59fb2bb44 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-05edbcccd80f01261be1540ed819cf26 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-d41815fe77c5b636b3eac1a91275af53 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r4-1786381636322755941-3-2" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r4-1786381636322755941-0-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r4-1786381636322755941-2-1" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r4-1786381636322755941-1-3" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=164 burst=23/24 cum=23/24=0.958
+[spec-acc] ctx=196 burst=26/27 cum=49/51=0.961
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=71/84=0.845
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=91/123=0.740
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=114/156=0.731
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=137/183=0.749
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=158/219=0.721
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=175/243=0.720
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[meter] admit id=chatcmpl-5c72124f62bf113689d68f6ee8a1e2d1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx27-q27-decode-c1-r4-1786381643192979816-0-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[meter] admit id=chatcmpl-df7701709cd836e3ceb1f50c1038b5b0 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=109 path=spec = 33408 B/token x ctx + 308MB fixed = 312MB
+[spec-k] model="q27" tenant="cx27-q27-short-r4-1786381644960208819-0-0" K=3 source=operator-pin prompt=13 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=13 burst=23/30 cum=23/30=0.767
+[meter] admit id=chatcmpl-ed3e3e6b38e78b1ed0fc62240a300798 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx27-q27-short-r5-1786381645437406861-0-0" K=3 source=operator-pin prompt=13 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=13 burst=23/30 cum=23/30=0.767
+[meter] admit id=chatcmpl-e52f174a7a53e878d6d41d8d6a3178c9 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=483 path=spec = 33408 B/token x ctx + 308MB fixed = 324MB
+[spec-k] model="q27" tenant="cx27-q27-decode-c1-r5-1786381645910326942-0-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[meter] admit id=chatcmpl-8d80e3f418b66f53510d6accc3116990 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-65a6c6c3b45442ad5a3b10a955969918 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-4ad186df5ee0fc5aeade9bd70d873240 tenant=default lane=interactive model="q27"
+[meter] admit id=chatcmpl-4669e423c1b06ab79a7f254832619d53 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r5-1786381647671809800-3-0" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r5-1786381647671809800-0-1" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r5-1786381647671809800-1-2" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27" tenant="cx27-q27-decode-c4-r5-1786381647671809800-2-3" K=3 source=operator-pin prompt=163 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=163 burst=24/24 cum=24/24=1.000
+[spec-acc] ctx=164 burst=23/24 cum=23/24=0.958
+[spec-acc] ctx=196 burst=26/27 cum=49/51=0.961
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=196 burst=26/27 cum=50/51=0.980
+[spec-acc] ctx=231 burst=22/33 cum=71/84=0.845
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=231 burst=22/33 cum=72/84=0.857
+[spec-acc] ctx=264 burst=20/39 cum=91/123=0.740
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=264 burst=20/39 cum=92/123=0.748
+[spec-acc] ctx=297 burst=23/33 cum=114/156=0.731
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=297 burst=23/33 cum=115/156=0.737
+[spec-acc] ctx=331 burst=23/27 cum=137/183=0.749
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=331 burst=23/27 cum=138/183=0.754
+[spec-acc] ctx=363 burst=21/36 cum=158/219=0.721
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=363 burst=21/36 cum=159/219=0.726
+[spec-acc] ctx=396 burst=17/24 cum=175/243=0.720
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[spec-acc] ctx=396 burst=17/24 cum=176/243=0.724
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

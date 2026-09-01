@@ -1,0 +1,67 @@
+== identity ==
+IDENTITY id-off tokens=192 sha=08941d5bb9762b21
+[spec-phase] draft=10.7ms (11.0%) verify-issue=43.1ms (44.1%) verify-wait=0.0ms (0.0%) commit-host=43.9ms (45.0%) rounds=14
+[spec-phase] draft=10.9ms (10.1%) verify-issue=48.7ms (45.0%) verify-wait=0.0ms (0.0%) commit-host=48.5ms (44.9%) rounds=16
+[spec-phase] draft=11.1ms (9.8%) verify-issue=52.6ms (46.4%) verify-wait=0.0ms (0.0%) commit-host=49.7ms (43.8%) rounds=18
+IDENTITY id-on tokens=192 sha=08941d5bb9762b21
+[spec-phase] draft=10.7ms (13.7%) verify-issue=2.1ms (2.7%) verify-wait=0.0ms (0.0%) commit-host=65.5ms (83.7%) rounds=14
+[spec-phase] draft=11.1ms (12.5%) verify-issue=3.8ms (4.4%) verify-wait=0.0ms (0.0%) commit-host=73.5ms (83.1%) rounds=16
+[spec-phase] draft=11.3ms (7.8%) verify-issue=57.2ms (39.4%) verify-wait=0.0ms (0.0%) commit-host=76.9ms (52.9%) rounds=18
+== balanced 8 boots (both orders twice) ==
+SPEED off-1 rep0: 269.9 tok/s
+SPEED off-1 rep1: 261.7 tok/s
+SPEED off-1 rep2: 266.9 tok/s
+SPEED off-1 rep3: 266.1 tok/s
+[spec-phase] draft=13.0ms (10.4%) verify-issue=54.8ms (44.0%) verify-wait=0.0ms (0.0%) commit-host=56.8ms (45.6%) rounds=18
+[spec-phase] draft=12.9ms (9.8%) verify-issue=61.6ms (46.8%) verify-wait=0.0ms (0.0%) commit-host=57.1ms (43.4%) rounds=22
+[spec-phase] draft=9.0ms (11.0%) verify-issue=34.9ms (43.0%) verify-wait=0.0ms (0.0%) commit-host=37.3ms (45.9%) rounds=11
+SPEED on-1 rep0: 307.2 tok/s
+SPEED on-1 rep1: 315.0 tok/s
+SPEED on-1 rep2: 323.8 tok/s
+SPEED on-1 rep3: 322.4 tok/s
+[spec-phase] draft=13.0ms (12.6%) verify-issue=8.0ms (7.8%) verify-wait=0.0ms (0.0%) commit-host=81.8ms (79.6%) rounds=18
+[spec-phase] draft=12.8ms (11.6%) verify-issue=10.0ms (9.0%) verify-wait=0.0ms (0.0%) commit-host=87.9ms (79.4%) rounds=22
+[spec-phase] draft=9.0ms (13.4%) verify-issue=5.2ms (7.8%) verify-wait=0.0ms (0.0%) commit-host=53.0ms (78.8%) rounds=11
+SPEED on-2 rep0: 307.9 tok/s
+SPEED on-2 rep1: 315.2 tok/s
+SPEED on-2 rep2: 323.8 tok/s
+SPEED on-2 rep3: 323.0 tok/s
+[spec-phase] draft=13.0ms (12.6%) verify-issue=8.1ms (7.8%) verify-wait=0.0ms (0.0%) commit-host=81.9ms (79.6%) rounds=18
+[spec-phase] draft=12.8ms (11.6%) verify-issue=10.2ms (9.2%) verify-wait=0.0ms (0.0%) commit-host=87.9ms (79.3%) rounds=22
+[spec-phase] draft=9.2ms (13.5%) verify-issue=5.3ms (7.7%) verify-wait=0.0ms (0.0%) commit-host=53.5ms (78.7%) rounds=11
+SPEED off-2 rep0: 270.4 tok/s
+SPEED off-2 rep1: 261.5 tok/s
+SPEED off-2 rep2: 265.5 tok/s
+SPEED off-2 rep3: 266.0 tok/s
+[spec-phase] draft=13.1ms (10.5%) verify-issue=55.3ms (44.3%) verify-wait=0.0ms (0.0%) commit-host=56.6ms (45.3%) rounds=18
+[spec-phase] draft=12.8ms (9.7%) verify-issue=61.7ms (47.0%) verify-wait=0.0ms (0.0%) commit-host=57.0ms (43.3%) rounds=22
+[spec-phase] draft=9.0ms (11.0%) verify-issue=35.1ms (43.3%) verify-wait=0.0ms (0.0%) commit-host=37.1ms (45.7%) rounds=11
+SPEED off-3 rep0: 270.7 tok/s
+SPEED off-3 rep1: 261.0 tok/s
+SPEED off-3 rep2: 266.9 tok/s
+SPEED off-3 rep3: 265.6 tok/s
+[spec-phase] draft=12.8ms (10.3%) verify-issue=55.3ms (44.7%) verify-wait=0.0ms (0.0%) commit-host=55.6ms (44.9%) rounds=18
+[spec-phase] draft=12.8ms (9.7%) verify-issue=62.5ms (47.5%) verify-wait=0.0ms (0.0%) commit-host=56.3ms (42.8%) rounds=22
+[spec-phase] draft=9.5ms (11.6%) verify-issue=35.7ms (43.4%) verify-wait=0.0ms (0.0%) commit-host=37.0ms (45.0%) rounds=11
+SPEED on-3 rep0: 305.6 tok/s
+SPEED on-3 rep1: 314.2 tok/s
+SPEED on-3 rep2: 323.4 tok/s
+SPEED on-3 rep3: 322.9 tok/s
+[spec-phase] draft=13.0ms (12.7%) verify-issue=8.1ms (7.8%) verify-wait=0.0ms (0.0%) commit-host=81.7ms (79.5%) rounds=18
+[spec-phase] draft=12.9ms (11.6%) verify-issue=10.1ms (9.1%) verify-wait=0.0ms (0.0%) commit-host=87.8ms (79.3%) rounds=22
+[spec-phase] draft=9.1ms (13.5%) verify-issue=5.3ms (7.9%) verify-wait=0.0ms (0.0%) commit-host=53.0ms (78.7%) rounds=11
+SPEED on-4 rep0: 302.1 tok/s
+SPEED on-4 rep1: 316.4 tok/s
+SPEED on-4 rep2: 322.6 tok/s
+SPEED on-4 rep3: 323.9 tok/s
+[spec-phase] draft=12.9ms (12.6%) verify-issue=8.0ms (7.8%) verify-wait=0.0ms (0.0%) commit-host=81.8ms (79.7%) rounds=18
+[spec-phase] draft=12.8ms (11.6%) verify-issue=10.0ms (9.0%) verify-wait=0.0ms (0.0%) commit-host=87.8ms (79.4%) rounds=22
+[spec-phase] draft=9.0ms (13.4%) verify-issue=5.3ms (7.9%) verify-wait=0.0ms (0.0%) commit-host=52.9ms (78.8%) rounds=11
+SPEED off-4 rep0: 270.2 tok/s
+SPEED off-4 rep1: 261.7 tok/s
+SPEED off-4 rep2: 266.3 tok/s
+SPEED off-4 rep3: 266.4 tok/s
+[spec-phase] draft=12.9ms (10.4%) verify-issue=55.0ms (44.4%) verify-wait=0.0ms (0.0%) commit-host=55.9ms (45.2%) rounds=18
+[spec-phase] draft=12.9ms (9.8%) verify-issue=61.9ms (47.0%) verify-wait=0.0ms (0.0%) commit-host=57.0ms (43.3%) rounds=22
+[spec-phase] draft=9.0ms (11.0%) verify-issue=35.1ms (43.2%) verify-wait=0.0ms (0.0%) commit-host=37.2ms (45.7%) rounds=11
+VG-FAST-DONE

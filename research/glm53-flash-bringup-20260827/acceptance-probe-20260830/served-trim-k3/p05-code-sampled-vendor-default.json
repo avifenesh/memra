@@ -1,0 +1,36 @@
+{
+ "name": "p05-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 192,
+   "completion_tokens": 128,
+   "total_tokens": 320,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 15.219360281,
+   "spec": {
+    "rounds": 49,
+    "drafted": 147,
+    "accepted": 78,
+    "acceptance_rate": 0.5306122448979592
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "The user is talking about updating a \"skills\" file (likely a CLAUDE.md, SKILL.md, or similar memory/context file about their work and preferences). They're describing updates to their ML/inference work situation:\n\n1. Current inference work is full \u2014 no need for more inference work\n2. Memra (BW24 successor) is a replacement for llama \u2014 works on BW 50 series and H100, beats llama and vLLM on supported models. Memra is now their default, not llama. New inference ideas go to memra.\n3. Their interest in ML is on the model side \u2014 improving training"
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,14 @@
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 1.365s = 46.16 tok/s (gen-only; this run's prime 0.100s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.649s = 97.08 tok/s (2.10x vs generate; this run's prime 0.102s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

@@ -1,0 +1,26 @@
+profile_build_start=2026-08-11T17:03:21Z
+runtime_source_commit=1808220ead39d515a0854df49d1bb6452b558209
+5bba6caa2ca77dc13ecd425c8f6dbc153631ba572a3ae6f51e31a742f847d27f  /opt/scratch/nvme/ncuspike-20260811/profile-harness/Cargo.toml
+14d965871a587cabcd9a652e9c838358808aa06adf3ac58dc5bb632136806042  /opt/scratch/nvme/ncuspike-20260811/profile-harness/src/main.rs
+    Updating crates.io index
+     Locking 13 packages to latest Rust 1.97.1 compatible versions
+ Downloading crates ...
+  Downloaded libc v0.2.189
+   Compiling libc v0.2.189
+   Compiling cudarc v0.19.8
+   Compiling cfg-if v1.0.4
+   Compiling memra-engine v0.76.0 (/opt/scratch/nvme/memra-cx-ncuspike-src/crates/memra-engine)
+   Compiling memra-validate v0.76.0 (/opt/scratch/nvme/memra-cx-ncuspike-src/crates/memra-validate)
+   Compiling memra-sampling v0.76.0 (/opt/scratch/nvme/memra-cx-ncuspike-src/crates/memra-sampling)
+   Compiling libloading v0.9.0
+   Compiling memmap2 v0.9.11
+   Compiling memra-gguf v0.76.0 (/opt/scratch/nvme/memra-cx-ncuspike-src/crates/memra-gguf)
+   Compiling memra-tokenizer v0.76.0 (/opt/scratch/nvme/memra-cx-ncuspike-src/crates/memra-tokenizer)
+   Compiling memra-kv v0.76.0 (/opt/scratch/nvme/memra-cx-ncuspike-src/crates/memra-kv)
+   Compiling memra-runtime v0.76.0 (/opt/scratch/nvme/memra-cx-ncuspike-src/crates/memra-runtime)
+warning: memra-engine@0.76.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.76.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling ncuspike-profile v0.1.0 (/opt/scratch/nvme/ncuspike-20260811/profile-harness)
+    Finished `release` profile [optimized] target(s) in 3m 39s
+profile_build_end=2026-08-11T17:07:01Z
+5339bc01dfbcfd21d1e8e9c36df68b2485f508db2c4b09955f5eef8fc5746268  /opt/scratch/nvme/ncuspike-20260811/profile-target/release/ncuspike-profile

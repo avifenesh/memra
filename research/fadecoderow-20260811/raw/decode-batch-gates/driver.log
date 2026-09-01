@@ -1,0 +1,256 @@
+2026-08-11T22:14:30Z
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 57, P8, 157 MiB, 24463 MiB, 0 %, 180 MHz, 9.69 W
+gate_start=nvfp4-config-b1 ts=2026-08-11T22:14:30Z
+loaded qwen35 (32 layers); steps=32 batch=1
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=1 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=1 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=nvfp4-config-b1 rc=0 ts=2026-08-11T22:14:36Z
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=1 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=1 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_start=nvfp4-config-b2 ts=2026-08-11T22:14:36Z
+loaded qwen35 (32 layers); steps=32 batch=2
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=2 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=2 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=nvfp4-config-b2 rc=0 ts=2026-08-11T22:14:43Z
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=2 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=2 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_start=nvfp4-config-b4 ts=2026-08-11T22:14:43Z
+loaded qwen35 (32 layers); steps=32 batch=4
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=4 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=4 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=nvfp4-config-b4 rc=0 ts=2026-08-11T22:14:51Z
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=4 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=4 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_start=nvfp4-config-b8 ts=2026-08-11T22:14:51Z
+loaded qwen35 (32 layers); steps=32 batch=8
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=8 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=8 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=nvfp4-config-b8 rc=0 ts=2026-08-11T22:15:03Z
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=8 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=8 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_start=nvfp4-strict-b4 ts=2026-08-11T22:15:03Z
+loaded qwen35 (32 layers); steps=32 batch=4
+gate1 seed 0: agreement all 32 steps
+gate1 (B=1 bit-identity vs decode_step_h, 32 steps, 1 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=4 vs isolated decode_step_h, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=4 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=nvfp4-strict-b4 rc=0 ts=2026-08-11T22:15:10Z
+gate1 seed 0: agreement all 32 steps
+gate1 (B=1 bit-identity vs decode_step_h, 32 steps, 1 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=4 vs isolated decode_step_h, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=4 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_start=q8-config-b1 ts=2026-08-11T22:15:10Z
+[q8rp] split-plane decode mirrors built: 249 tensors
+loaded qwen35 (32 layers); steps=32 batch=1
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=1 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=1 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=q8-config-b1 rc=0 ts=2026-08-11T22:15:22Z
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=1 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=1 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_start=q8-config-b2 ts=2026-08-11T22:15:22Z
+[q8rp] split-plane decode mirrors built: 249 tensors
+loaded qwen35 (32 layers); steps=32 batch=2
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=2 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=2 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=q8-config-b2 rc=0 ts=2026-08-11T22:15:32Z
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=2 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=2 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_start=q8-config-b4 ts=2026-08-11T22:15:32Z
+[q8rp] split-plane decode mirrors built: 249 tensors
+loaded qwen35 (32 layers); steps=32 batch=4
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=4 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=4 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=q8-config-b4 rc=0 ts=2026-08-11T22:15:43Z
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=4 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=4 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_start=q8-config-b8 ts=2026-08-11T22:15:43Z
+[q8rp] split-plane decode mirrors built: 249 tensors
+loaded qwen35 (32 layers); steps=32 batch=8
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=8 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=8 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=q8-config-b8 rc=0 ts=2026-08-11T22:15:59Z
+gate1 seed 0: agreement all 32 steps
+gate1 seed 1: agreement all 32 steps
+gate1 seed 2: agreement all 32 steps
+gate1 seed 3: agreement all 32 steps
+gate1 seed 4: agreement all 32 steps
+gate1 seed 5: agreement all 32 steps
+gate1 early draws (step < 3): 0/6 (FAIL threshold >= 4; plumbing class = every draw)
+gate1 (B=1 argmax agreement vs decode_step_h, 32 steps, 6 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=8 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=8 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_start=q8-strict-b4 ts=2026-08-11T22:15:59Z
+[q8rp] split-plane decode mirrors built: 249 tensors
+loaded qwen35 (32 layers); steps=32 batch=4
+gate1 seed 0: agreement all 32 steps
+gate1 (B=1 bit-identity vs decode_step_h, 32 steps, 1 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=4 vs isolated decode_step_h, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=4 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+gate_done=q8-strict-b4 rc=0 ts=2026-08-11T22:16:07Z
+gate1 seed 0: agreement all 32 steps
+gate1 (B=1 bit-identity vs decode_step_h, 32 steps, 1 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=4 vs isolated decode_step_h, 32 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=4 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery
+aggregate_exit=0
+2026-08-11T22:16:07Z
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 85, P0, 157 MiB, 24463 MiB, 96 %, 1927 MHz, 170.81 W

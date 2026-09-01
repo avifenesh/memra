@@ -1,0 +1,11 @@
+The user has pasted what looks like an error message from some tool called "Atrium" — it appears to be a re-entry agent system that pipes JSON evidence to an LLM (via `opencode run`) and asks it to return a strict JSON status object. The command failed for two models: `nvidia/z-ai/glm-5.2` and `nvidia/qwen/qwen3.5-122b-a10b`.
+
+The message itself is just the error output — the actual JSON evidence that was supposed to be piped after the message isn't included. So I don't have the evidence payload.
+
+What is the user actually asking? They pasted an error. There's no explicit question. Possibilities:
+
+1. They want help debugging why the command failed.
+2. They accidentally pasted this into the wrong window (this looks like it was meant to be piped into an LLM agent, and the user may have pasted it into a chat by mistake).
+3. They want me to act as the reentry-status agent and produce the JSON — but I don't have the evidence, and I don't have the "agent instructions" that describe the strict JSON schema.
+
+The most likely scenario: The user is

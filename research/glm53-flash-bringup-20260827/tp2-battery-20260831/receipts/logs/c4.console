@@ -1,0 +1,114 @@
+[tp2b] arm=pp3 mode=timed prompts=/root/out-tp2/prompts-decode run=t1 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":0.6525,"ttft_s":0.7548,"gen_wall_s":27.6855,"decode_tok_s":9.211,"finish":"length","seed":20260831,"tape_sha16":"9b99df73e75661ba"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":0.3478,"ttft_s":0.4379,"gen_wall_s":27.7132,"decode_tok_s":9.201,"finish":"length","seed":20260831,"tape_sha16":"27f7ecf858461855"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":0.3876,"ttft_s":0.4840,"gen_wall_s":29.2447,"decode_tok_s":8.720,"finish":"length","seed":20260831,"tape_sha16":"078dc0f16a6f5a66"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":0.4676,"ttft_s":0.5996,"gen_wall_s":38.1312,"decode_tok_s":6.687,"finish":"length","seed":20260831,"tape_sha16":"78f947558e0e32f5"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":0.4369,"ttft_s":0.5572,"gen_wall_s":34.5763,"decode_tok_s":7.375,"finish":"length","seed":20260831,"tape_sha16":"6b612ac811ed650d"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":232,"prime_s":0.4566,"ttft_s":0.5847,"gen_wall_s":32.9308,"decode_tok_s":7.015,"finish":"stop","seed":20260831,"tape_sha16":"ef79252cc3a62f57"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":0.3438,"ttft_s":0.4268,"gen_wall_s":25.7879,"decode_tok_s":9.888,"finish":"length","seed":20260831,"tape_sha16":"a6e190cedce752e4"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":0.3026,"ttft_s":0.3737,"gen_wall_s":23.6317,"decode_tok_s":10.791,"finish":"length","seed":20260831,"tape_sha16":"8423897e3f63a863"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":0.3679,"ttft_s":0.4636,"gen_wall_s":29.0467,"decode_tok_s":8.779,"finish":"length","seed":20260831,"tape_sha16":"1b54fb0d98db19d6"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":0.3537,"ttft_s":0.4417,"gen_wall_s":27.2400,"decode_tok_s":9.361,"finish":"length","seed":20260831,"tape_sha16":"275f574e3b8bd17f"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":0.3032,"ttft_s":0.3764,"gen_wall_s":23.9027,"decode_tok_s":10.668,"finish":"length","seed":20260831,"tape_sha16":"f4dc73065c6efbc2"}
+[tp2b] rc=0 arm=pp3 mode=timed run=t1
+[tp2b] arm=pp3 mode=timed prompts=/root/out-tp2/prompts-l3 run=t1l extras=BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":2.5191,"ttft_s":2.8324,"gen_wall_s":76.1779,"decode_tok_s":3.347,"finish":"length","seed":20260831,"tape_sha16":"0ba49555415d4370"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":0.4239,"ttft_s":0.5400,"gen_wall_s":33.8430,"decode_tok_s":7.535,"finish":"length","seed":20260831,"tape_sha16":"70933031b84058ac"}
+[tp2b] rc=0 arm=pp3 mode=timed run=t1l
+[tp2b] arm=tp2 mode=timed prompts=/root/out-tp2/prompts-decode run=t1 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":4.4212,"ttft_s":4.4690,"gen_wall_s":11.2212,"decode_tok_s":22.725,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":4.1163,"ttft_s":4.1606,"gen_wall_s":11.2883,"decode_tok_s":22.590,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":4.9388,"ttft_s":4.9831,"gen_wall_s":11.2645,"decode_tok_s":22.637,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":11.5070,"ttft_s":11.5521,"gen_wall_s":11.4780,"decode_tok_s":22.216,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":8.0633,"ttft_s":8.1078,"gen_wall_s":11.3644,"decode_tok_s":22.438,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":10.5430,"ttft_s":10.5874,"gen_wall_s":7.6964,"decode_tok_s":22.348,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":3.3350,"ttft_s":3.3786,"gen_wall_s":11.2223,"decode_tok_s":22.723,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.2693,"ttft_s":2.3133,"gen_wall_s":11.1439,"decode_tok_s":22.883,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":4.8148,"ttft_s":4.8594,"gen_wall_s":11.2878,"decode_tok_s":22.591,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":3.8494,"ttft_s":3.8940,"gen_wall_s":11.2534,"decode_tok_s":22.660,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.4431,"ttft_s":2.4872,"gen_wall_s":11.1816,"decode_tok_s":22.805,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+[tp2b] rc=0 arm=tp2 mode=timed run=t1
+[tp2b] arm=tp2 mode=timed prompts=/root/out-tp2/prompts-l3 run=t1l extras=BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":94.1229,"ttft_s":94.1761,"gen_wall_s":12.4713,"decode_tok_s":20.447,"finish":"length","seed":20260831,"tape_sha16":"550771eaeb7b992f"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":7.7165,"ttft_s":7.7609,"gen_wall_s":11.3567,"decode_tok_s":22.454,"finish":"length","seed":20260831,"tape_sha16":"dcd1fb09789077af"}
+[tp2b] rc=0 arm=tp2 mode=timed run=t1l
+[tp2b] arm=pp3 mode=timed prompts=/root/out-tp2/prompts-decode run=t2 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":0.6535,"ttft_s":0.7563,"gen_wall_s":27.7167,"decode_tok_s":9.200,"finish":"length","seed":20260831,"tape_sha16":"9b99df73e75661ba"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":0.3481,"ttft_s":0.4380,"gen_wall_s":27.7203,"decode_tok_s":9.199,"finish":"length","seed":20260831,"tape_sha16":"27f7ecf858461855"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":0.3879,"ttft_s":0.4851,"gen_wall_s":29.2628,"decode_tok_s":8.714,"finish":"length","seed":20260831,"tape_sha16":"078dc0f16a6f5a66"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":0.4680,"ttft_s":0.6024,"gen_wall_s":38.2189,"decode_tok_s":6.672,"finish":"length","seed":20260831,"tape_sha16":"78f947558e0e32f5"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":0.4371,"ttft_s":0.5551,"gen_wall_s":34.5826,"decode_tok_s":7.374,"finish":"length","seed":20260831,"tape_sha16":"6b612ac811ed650d"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":232,"prime_s":0.4569,"ttft_s":0.5853,"gen_wall_s":32.8761,"decode_tok_s":7.026,"finish":"stop","seed":20260831,"tape_sha16":"ef79252cc3a62f57"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":0.3437,"ttft_s":0.4247,"gen_wall_s":25.7579,"decode_tok_s":9.900,"finish":"length","seed":20260831,"tape_sha16":"a6e190cedce752e4"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":0.3026,"ttft_s":0.3734,"gen_wall_s":23.6291,"decode_tok_s":10.792,"finish":"length","seed":20260831,"tape_sha16":"8423897e3f63a863"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":0.3679,"ttft_s":0.4649,"gen_wall_s":29.0567,"decode_tok_s":8.776,"finish":"length","seed":20260831,"tape_sha16":"1b54fb0d98db19d6"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":0.3536,"ttft_s":0.4409,"gen_wall_s":27.2286,"decode_tok_s":9.365,"finish":"length","seed":20260831,"tape_sha16":"275f574e3b8bd17f"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":0.3031,"ttft_s":0.3758,"gen_wall_s":23.8833,"decode_tok_s":10.677,"finish":"length","seed":20260831,"tape_sha16":"f4dc73065c6efbc2"}
+[tp2b] rc=0 arm=pp3 mode=timed run=t2
+[tp2b] arm=pp3 mode=timed prompts=/root/out-tp2/prompts-l3 run=t2l extras=BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":2.5301,"ttft_s":2.8466,"gen_wall_s":76.3303,"decode_tok_s":3.341,"finish":"length","seed":20260831,"tape_sha16":"0ba49555415d4370"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":0.4241,"ttft_s":0.5393,"gen_wall_s":33.8706,"decode_tok_s":7.529,"finish":"length","seed":20260831,"tape_sha16":"70933031b84058ac"}
+[tp2b] rc=0 arm=pp3 mode=timed run=t2l
+[tp2b] arm=tp2 mode=timed prompts=/root/out-tp2/prompts-decode run=t2 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":4.4258,"ttft_s":4.4734,"gen_wall_s":11.1661,"decode_tok_s":22.837,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":4.1143,"ttft_s":4.1585,"gen_wall_s":11.2769,"decode_tok_s":22.613,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":4.9425,"ttft_s":4.9868,"gen_wall_s":11.2392,"decode_tok_s":22.689,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":11.4557,"ttft_s":11.5006,"gen_wall_s":11.4589,"decode_tok_s":22.253,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":8.0529,"ttft_s":8.0973,"gen_wall_s":11.3468,"decode_tok_s":22.473,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":10.5616,"ttft_s":10.6060,"gen_wall_s":7.6860,"decode_tok_s":22.378,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":3.3328,"ttft_s":3.3761,"gen_wall_s":11.2110,"decode_tok_s":22.745,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.2669,"ttft_s":2.3106,"gen_wall_s":11.1219,"decode_tok_s":22.928,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":4.8167,"ttft_s":4.8612,"gen_wall_s":11.2388,"decode_tok_s":22.689,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":3.8459,"ttft_s":3.8903,"gen_wall_s":11.2379,"decode_tok_s":22.691,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.4381,"ttft_s":2.4819,"gen_wall_s":11.1851,"decode_tok_s":22.798,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+[tp2b] rc=0 arm=tp2 mode=timed run=t2
+[tp2b] arm=tp2 mode=timed prompts=/root/out-tp2/prompts-l3 run=t2l extras=BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":94.2796,"ttft_s":94.3327,"gen_wall_s":12.4655,"decode_tok_s":20.457,"finish":"length","seed":20260831,"tape_sha16":"550771eaeb7b992f"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":7.7204,"ttft_s":7.7650,"gen_wall_s":11.3823,"decode_tok_s":22.403,"finish":"length","seed":20260831,"tape_sha16":"dcd1fb09789077af"}
+[tp2b] rc=0 arm=tp2 mode=timed run=t2l
+[tp2b] arm=pp3 mode=timed prompts=/root/out-tp2/prompts-decode run=t3 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":0.6576,"ttft_s":0.7604,"gen_wall_s":27.7211,"decode_tok_s":9.199,"finish":"length","seed":20260831,"tape_sha16":"9b99df73e75661ba"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":0.3480,"ttft_s":0.4381,"gen_wall_s":27.7345,"decode_tok_s":9.194,"finish":"length","seed":20260831,"tape_sha16":"27f7ecf858461855"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":0.3879,"ttft_s":0.4851,"gen_wall_s":29.2553,"decode_tok_s":8.716,"finish":"length","seed":20260831,"tape_sha16":"078dc0f16a6f5a66"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":0.4678,"ttft_s":0.6003,"gen_wall_s":38.1571,"decode_tok_s":6.683,"finish":"length","seed":20260831,"tape_sha16":"78f947558e0e32f5"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":0.4372,"ttft_s":0.5554,"gen_wall_s":34.5505,"decode_tok_s":7.381,"finish":"length","seed":20260831,"tape_sha16":"6b612ac811ed650d"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":232,"prime_s":0.4567,"ttft_s":0.5842,"gen_wall_s":32.9156,"decode_tok_s":7.018,"finish":"stop","seed":20260831,"tape_sha16":"ef79252cc3a62f57"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":0.3437,"ttft_s":0.4252,"gen_wall_s":25.7420,"decode_tok_s":9.906,"finish":"length","seed":20260831,"tape_sha16":"a6e190cedce752e4"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":0.3027,"ttft_s":0.3730,"gen_wall_s":23.6351,"decode_tok_s":10.789,"finish":"length","seed":20260831,"tape_sha16":"8423897e3f63a863"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":0.3680,"ttft_s":0.4638,"gen_wall_s":29.0412,"decode_tok_s":8.781,"finish":"length","seed":20260831,"tape_sha16":"1b54fb0d98db19d6"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":0.3537,"ttft_s":0.4411,"gen_wall_s":27.2677,"decode_tok_s":9.352,"finish":"length","seed":20260831,"tape_sha16":"275f574e3b8bd17f"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":0.3033,"ttft_s":0.3765,"gen_wall_s":23.8993,"decode_tok_s":10.670,"finish":"length","seed":20260831,"tape_sha16":"f4dc73065c6efbc2"}
+[tp2b] rc=0 arm=pp3 mode=timed run=t3
+[tp2b] arm=pp3 mode=timed prompts=/root/out-tp2/prompts-l3 run=t3l extras=BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":2.5193,"ttft_s":2.8271,"gen_wall_s":76.2831,"decode_tok_s":3.343,"finish":"length","seed":20260831,"tape_sha16":"0ba49555415d4370"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":0.4242,"ttft_s":0.5423,"gen_wall_s":33.8300,"decode_tok_s":7.538,"finish":"length","seed":20260831,"tape_sha16":"70933031b84058ac"}
+[tp2b] rc=0 arm=pp3 mode=timed run=t3l
+[tp2b] arm=tp2 mode=timed prompts=/root/out-tp2/prompts-decode run=t3 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":4.4242,"ttft_s":4.4718,"gen_wall_s":11.2165,"decode_tok_s":22.734,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":4.1176,"ttft_s":4.1618,"gen_wall_s":11.3166,"decode_tok_s":22.533,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":4.9429,"ttft_s":4.9871,"gen_wall_s":11.2746,"decode_tok_s":22.617,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":11.5077,"ttft_s":11.5525,"gen_wall_s":11.4665,"decode_tok_s":22.239,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":8.0809,"ttft_s":8.1254,"gen_wall_s":11.3727,"decode_tok_s":22.422,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":10.5904,"ttft_s":10.6347,"gen_wall_s":7.6964,"decode_tok_s":22.348,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":3.3303,"ttft_s":3.3738,"gen_wall_s":11.2180,"decode_tok_s":22.731,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.2666,"ttft_s":2.3103,"gen_wall_s":11.1459,"decode_tok_s":22.878,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":4.8142,"ttft_s":4.8587,"gen_wall_s":11.2776,"decode_tok_s":22.611,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":3.8506,"ttft_s":3.8951,"gen_wall_s":11.2871,"decode_tok_s":22.592,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.4417,"ttft_s":2.4858,"gen_wall_s":11.2046,"decode_tok_s":22.758,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+[tp2b] rc=0 arm=tp2 mode=timed run=t3
+[tp2b] arm=tp2 mode=timed prompts=/root/out-tp2/prompts-l3 run=t3l extras=BOXP_MAX_NEW=256 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":94.3359,"ttft_s":94.3891,"gen_wall_s":12.4272,"decode_tok_s":20.520,"finish":"length","seed":20260831,"tape_sha16":"550771eaeb7b992f"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":7.7107,"ttft_s":7.7552,"gen_wall_s":11.3812,"decode_tok_s":22.405,"finish":"length","seed":20260831,"tape_sha16":"dcd1fb09789077af"}
+[tp2b] rc=0 arm=tp2 mode=timed run=t3l

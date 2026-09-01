@@ -1,0 +1,57 @@
+=== PROMPT: Write a Python function that merges two sorted lists into one sorted list.
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Write a Python function that merges two sorted lists into one sorted list.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Write a Python function that merges two sorted lists into one sorted list."
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 78161, 1330, 10300, 11140, 1083, 799, 10300, 1103, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+prefill argmax=760  decode argmax=760  logit maxdiff=1.685e0  MATCH
+batched-prime argmax=760  tokenwise argmax=760  logit maxdiff=1.397e0  MATCH
+prefill 24 tok in 0.0312s = 770.3 tok/s (pp24)
+generated 16 tokens in 0.077s = 206.60 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.031s) [stop: MaxNew]
+tokens: [760, 1156, 6587, 264, 12654, 709, 421, 78161, 1330, 10300, 11140, 1083, 799, 10300, 1103, 13]
+OUTPUT TEXT: "The user wants a Python function that merges two sorted lists into one sorted list."
+--- generated text ---
+The user wants a Python function that merges two sorted lists into one sorted list.
+=== PROMPT: Explain in three sentences why PCIe peer-to-peer copies can be slower than staged host copies.
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Explain in three sentences why PCIe peer-to-peer copies can be slower than staged host copies.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Explain in three sentences why PCIe peer-to-peer copies can be slower than staged host copies."
+prompt tokens: [248045, 846, 198, 814, 20139, 303, 2250, 22157, 3069, 87567, 13984, 4534, 75907, 10672, 628, 381, 27467, 1056, 48372, 3357, 10672, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+prefill argmax=760  decode argmax=760  logit maxdiff=1.066e0  MATCH
+batched-prime argmax=760  tokenwise argmax=760  logit maxdiff=1.698e0  MATCH
+prefill 29 tok in 0.0337s = 861.4 tok/s (pp29)
+generated 16 tokens in 0.076s = 209.26 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.034s) [stop: MaxNew]
+tokens: [760, 1156, 369, 9859, 883, 87567, 13984, 4534, 75907, 318, 47, 17, 47, 8, 10672, 18468]
+OUTPUT TEXT: "The user is asking about PCIe peer-to-peer (P2P) copies versus"
+--- generated text ---
+The user is asking about PCIe peer-to-peer (P2P) copies versus
+=== PROMPT: Give three prime numbers greater than 100 and show they are prime.
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Give three prime numbers greater than 100 and show they are prime.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Give three prime numbers greater than 100 and show they are prime."
+prompt tokens: [248045, 846, 198, 33963, 2250, 9944, 4947, 6826, 1056, 220, 16, 15, 15, 321, 1420, 781, 513, 9944, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+prefill argmax=760  decode argmax=760  logit maxdiff=1.109e0  MATCH
+batched-prime argmax=760  tokenwise argmax=760  logit maxdiff=1.151e0  MATCH
+prefill 26 tok in 0.0321s = 809.3 tok/s (pp26)
+generated 16 tokens in 0.070s = 227.40 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.032s) [stop: MaxNew]
+tokens: [760, 1156, 6587, 2250, 9944, 4947, 6826, 1056, 220, 16, 15, 15, 11, 321, 353, 1144]
+OUTPUT TEXT: "The user wants three prime numbers greater than 100, and I need"
+--- generated text ---
+The user wants three prime numbers greater than 100, and I need

@@ -1,0 +1,51 @@
+ANON=nx15 TURN=8 CHARS=2279 FINISH=stop REPEAT60=1
+======================================================================
+I'll help you investigate and fix the GitHub task related to the JetBrains Marketplace listing issue. Here's how I would approach this:
+
+## Investigation Steps
+
+1. **Access the GitHub Issue**: First, I would navigate to `github.com/agent-sh/agnix/issues/1099` to understand the specific problem reported.
+
+2. **Examine the JetBrains Marketplace Listing**: I would check the current listing to identify:
+   - The documentation link that's returning 404
+   - The source code link referencing a stale repository URL
+
+3. **Verify Link Validity**: 
+   - Test the documentation link to confirm the 404 error
+   - Check if the documentation has been moved, renamed, or deleted
+   - Verify the current repository URL and compare it with the stale link
+
+## Fix Implementation
+
+### For the Documentation Link (404 Error):
+- **Option A**: If documentation was moved, update the link to the new location
+- **Option B**: If documentation was deleted, restore it or link to an alternative (README, wiki, etc.)
+- **Option C**: If the documentation is temporarily unavailable, add a note or redirect
+
+### For the Stale Source Code Link:
+- Update the source code link to point to the current, active repository URL
+- Ensure the link format is correct (HTTPS/SSH) as per JetBrains Marketplace requirements
+- Verify the repository is publicly accessible or properly authenticated
+
+## Verification
+
+After making changes:
+1. Test both links to ensure they resolve correctly
+2. Check that the JetBrains Marketplace listing updates properly
+3. Confirm no other links in the listing are affected
+
+## Summary of Actions
+
+Since I don't have direct access to modify the GitHub repository or JetBrains Marketplace listing, here's what would need to be done:
+
+1. **Update the repository's README or metadata** to correct the source code link
+2. **Fix or restore the documentation** to resolve the 404 error
+3. **Update the JetBrains Marketplace listing** with the corrected links
+4. **Test all links** to ensure they work correctly
+
+If you can provide more specific details about:
+- The current documentation URL and where it should point
+- The correct repository URL that should be used
+- Access to modify the repository or marketplace listing
+
+I can give more targeted guidance on the exact changes needed.

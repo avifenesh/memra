@@ -1,0 +1,37 @@
+== memra oracle, grid 52 (device 1, NVIDIA_TF32_OVERRIDE=0) ==
+step_vision_oracle: grid 52x52 -> 169 rows x 4096 in 9.15s
+out[0][..4] = [0.2716842, -0.6185053, -0.628285, -0.78245527]  out[last][..4] = [1.012999, 0.49755645, 0.2947191, -1.0317175]
+
+== memra oracle, grid 36 ==
+step_vision_oracle: grid 36x36 -> 81 rows x 4096 in 3.80s
+out[0][..4] = [-0.31754452, -0.47104332, -0.6052557, -0.55123913]  out[last][..4] = [0.51121104, 0.48485228, 0.5323175, -0.5925573]
+
+== independent NumPy reference vs dumps, grid 52 ==
+pre_blocks     min_cos 1.000000  mean_cos 1.000000
+blk0           min_cos 1.000000  mean_cos 1.000000
+post_blocks    min_cos 0.999999  mean_cos 1.000000
+downsampled    min_cos 1.000000  mean_cos 1.000000
+projected      min_cos 1.000000  mean_cos 1.000000
+projected min_cos 1.000000 vs bar 0.9997 -> PASS
+
+== independent NumPy reference vs dumps, grid 36 ==
+pre_blocks     min_cos 1.000000  mean_cos 1.000000
+blk0           min_cos 1.000000  mean_cos 1.000000
+post_blocks    min_cos 1.000000  mean_cos 1.000000
+downsampled    min_cos 1.000000  mean_cos 1.000000
+projected      min_cos 1.000000  mean_cos 1.000000
+projected min_cos 1.000000 vs bar 0.9997 -> PASS
+
+== vendor torch reference (checkpoint vision_encoder.py) vs dumps, grid 52 ==
+vendor post_blocks    min_cos 0.999998  mean_cos 1.000000
+vendor downsampled    min_cos 1.000000  mean_cos 1.000000
+vendor projected      min_cos 1.000000  mean_cos 1.000000
+vendor projected min_cos 1.000000 vs bar 0.9997 -> PASS
+
+== vendor torch reference vs dumps, grid 36 ==
+vendor post_blocks    min_cos 0.999999  mean_cos 1.000000
+vendor downsampled    min_cos 1.000000  mean_cos 1.000000
+vendor projected      min_cos 1.000000  mean_cos 1.000000
+vendor projected min_cos 1.000000 vs bar 0.9997 -> PASS
+
+python: Python 3.12.3, numpy 2.5.2, torch 2.13.0+cu130, transformers 5.16.1

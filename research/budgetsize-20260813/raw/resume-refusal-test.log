@@ -1,0 +1,15 @@
+warning: memra-engine@0.81.3: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.81.3 (/home/avifenesh/projects/wt-cx-budgetsize/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.89s
+     Running unittests src/main.rs (target/debug/deps/memra_server-9bd0b11dcb231d5e)
+
+running 1 test
+[prefix-cache] insert (test): 1 tokens, 0.0MB (resident 0.0MB / 0MB, model m)
+[prefix-cache] skip pinned test insert: entry 0.0MB cannot fit beside 0.0MB already pinned (budget 0MB)
+[prefix-cache] WARNING: first prefix insert is larger than the entire byte budget; this shape cannot produce cross-request hits. Subsequent refusals remain visible in prefix_cache_skips_budget
+[prefix-cache] skip test insert: entry 0.0MB > budget 0MB
+test worker::tests::prefix_cache_refusal_counters_separate_total_budget_from_pinned_pressure ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 222 filtered out; finished in 0.00s
+

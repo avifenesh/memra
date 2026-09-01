@@ -1,0 +1,19 @@
+[server] starting; models config = [("q27", "/workspace/models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", Some("/workspace/models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q27" <- /workspace/models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q27: regime draft attached (/workspace/models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[server] worker ready; serving models: ["q27"]
+[worker] q27: decode chunk cap 16 (exact-16 tier)
+[admission] "q27": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://0.0.0.0:8003
+[meter] admit id=chatcmpl-bfa11fb9765c9de9003b7ac764691ec7 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=109 path=spec = 33408 B/token x ctx + 0MB fixed = 4MB
+[spec-k] model="q27" tenant="cx27-final-sanity-q27-1786383409106072194-0-0" K=3 source=operator-pin prompt=13 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q27" 308MB (observed 310MB at ctx 53 path=spec)
+[spec-acc] ctx=13 burst=23/30 cum=23/30=0.767

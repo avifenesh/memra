@@ -1,0 +1,122 @@
+{
+  "format": "memra-hy3-onboarding-sources-v2",
+  "captured_utc": "2026-08-30T12:40:24Z",
+  "source": {
+    "repo": "tencent/Hy3",
+    "revision": "a960ebc3da325ba167f069f76c41eb62c9280d22",
+    "config_sha256": "0c9daab42bff9cce1b6f058b10d7b730f76d583e583e28ad56e92b36373246f0",
+    "index_sha256": "9594f1a9419e62ca7afca51bb644f38ef19039374f7812449381ccf42f0ef79b",
+    "census_sha256": "32617fa342c9044c0e576df80ebd18668b20bb989db1d4bdf1cfa975eb14b44f",
+    "tensor_payload_bytes": 597572342272,
+    "shard_file_bytes": 597578239288,
+    "tensor_count": 47138,
+    "shard_count": 99,
+    "template_sha256": "7fc351fee674c13754656ba7f33a3ca426bfb7231039f48444360a3f3c5ecf3e"
+  },
+  "primary_nvfp4": {
+    "kind": "memra-streaming-modelopt-mint",
+    "publication_repo": null,
+    "source_repo": "tencent/Hy3",
+    "source_revision": "a960ebc3da325ba167f069f76c41eb62c9280d22",
+    "modelopt_version": "0.46.0",
+    "modelopt_commit": "43fd41a58d52c4e6e5dec1d1ff5989ecc737ae1a",
+    "mint_script_sha256": "731f430aa18d3e6855daf47c99623c57e1efbd056dd8d9c7baecf132d30b9423",
+    "mint_wrapper_sha256": "3788a9788392c86fa501479e5a3456094ffb055f22a986f04317fd5b178d8932",
+    "modelopt_recipe_sha256": "f7b8de489fd86fb8b11fc580ec4ac58555bb0177aa4bf2551da9ed6e1b0399ad",
+    "expected_config_sha256": "3cb16aa29d0046ffddd2f8a4866e4c7511e4018c6fced8dd913d1a788d787af9",
+    "expected_hf_quant_config_sha256": "38e5689cd6847427cc28c26c3cd3ca30568822bf311f479f11d21cf8ab632d2e",
+    "expected_index_sha256": "0f22f6fc51ac7e39b7510a77c77098c4fd7c722e9e6cfdb9782247c37f1b6afd",
+    "expected_census_sha256": "566db2975edac5cd1a86061ec6943988ef695cc8ae8c6cda050ad0d354ae2600",
+    "tensor_payload_bytes": 180826481152,
+    "payload_without_mtp_bytes": 178530579456,
+    "mtp_payload_bytes": 2295901696,
+    "stored_tensor_count": 139298,
+    "logical_tensor_count": 47138,
+    "shard_count": 99,
+    "nvfp4_weights": 46080,
+    "trunk_nvfp4_weights": 45504,
+    "mtp_nvfp4_weights": 576,
+    "mtp_bf16_expert_weights": 0,
+    "dense_layer_0_bf16_weights": 3,
+    "tokenizer_sha256": "446e0b59cd941637c0ddfd84e12ee1f49480fd12097f86a9d2fec8ebd0c7ff6c",
+    "template_sha256": "7fc351fee674c13754656ba7f33a3ca426bfb7231039f48444360a3f3c5ecf3e",
+    "quantizer": "NVIDIA ModelOpt NVFP4QTensor.quantize",
+    "calibration": "none; deterministic weight-only group-16 W4A16; fused gate/up share max weight_scale_2",
+    "fused_gate_up_shared_scale_pairs": 15360,
+    "deployment_quant_algo": "W4A16_NVFP4"
+  },
+  "existing_nvfp4_controls": [
+    {
+      "repo": "kodelow/Hy3-NVFP4-W4A16",
+      "revision": "4f7e1f02f32f4662bdc47f1237f34995088867a9",
+      "config_sha256": "7637967434d686c97f9b325d72485c2f5f7637ff10cbd7dc3c542c0e0842509f",
+      "index_sha256": "3976e5f5f991872da5b15ac1cbf7656c33ca7ce25a9643be9e5effb5f74adc29",
+      "census_sha256": "b6b96e84d6d99b7b52e396b34bb1b7f21695155d48209bc903f88ed54bc81da4",
+      "role": "qstream MSE-scale quality and MTP acceptance control"
+    },
+    {
+    "repo": "LibertAIDAI/Hy3-NVFP4",
+    "revision": "8a805d687c4bf02b364af15db5ee85e43ed998bf",
+    "base_repo_reported": "tencent/Hy3",
+    "base_revision_reported": null,
+    "config_sha256": "5f85d4c99708a6f2435cec747721c8c3fe3c3bae346b649dc2dbea9300926cf1",
+    "index_sha256": "7f34ab10daf41cdba6abe2727160bde6164908c53e026f8b3d8c9344b5d23229",
+    "census_sha256": "566db2975edac5cd1a86061ec6943988ef695cc8ae8c6cda050ad0d354ae2600",
+    "tensor_payload_bytes": 180826481152,
+    "stored_tensor_count": 139298,
+    "logical_tensor_count": 47138,
+    "shard_count": 99,
+    "nvfp4_weights": 46080,
+    "trunk_nvfp4_weights": 45504,
+    "mtp_nvfp4_weights": 576,
+    "mtp_bf16_expert_weights": 0,
+    "dense_layer_0_bf16_weights": 3,
+    "tokenizer_sha256": "446e0b59cd941637c0ddfd84e12ee1f49480fd12097f86a9d2fec8ebd0c7ff6c",
+    "template_sha256": "7fc351fee674c13754656ba7f33a3ca426bfb7231039f48444360a3f3c5ecf3e",
+    "modelopt_producer": "0.45.0",
+    "card_mtp_precision_claim": "BF16",
+    "live_index_mtp_precision": "NVFP4",
+    "role": "independent ModelOpt-format control"
+    }
+  ],
+  "rejected_existing_nvfp4": [
+    {
+      "repo": "r0b0tlab/Hy3-295B-NVFP4",
+      "revision": "63949b576084a1c1666ebaf2e62a433d19e316c5",
+      "reason": "current index has zero of 576 required layer-80 MTP expert weights"
+    },
+    {
+      "repo": "kamiyugi/Hy3-NVFP4-W4A16",
+      "revision": "d16c82340fb0aef2a09f2b61ace8360312c63d60",
+      "reason": "MTP is BF16 and current index also quantizes all three dense layer-0 MLP projections"
+    },
+    {
+      "repo": "mmangkad/Hy3-NVFP4",
+      "revision": "beabd28f143fd7b5b9dee9f0b521d31cd60cb263",
+      "reason": "complete MTP remains BF16; owner requires the MTP experts to be NVFP4"
+    }
+  ],
+  "fp8_control": {
+    "repo": "tencent/Hy3-FP8",
+    "revision": "ecc1d8e194e093f33177f2f0ef7ce8f397b2d68b",
+    "config_sha256": "e5985b845821d03b1d5199303b32d8682f60fdee9b612037c71e8e6119a96fa8",
+    "index_sha256": "50156f496352ea45d328b9995edef44eab9aece876ec67afbb6d0db5fb481d54",
+    "census_sha256": "87841f01eb39d3057ac5ac24e6f34ebaae643072f82b6233251df3c607a04b74",
+    "tensor_payload_bytes": 299873413852,
+    "shard_file_bytes": 299889838946,
+    "tensor_count": 47138,
+    "shard_count": 101,
+    "fp8_per_tensor_weights": 46647
+  },
+  "modelopt": {
+    "repo": "NVIDIA/Model-Optimizer",
+    "release": "0.46.0",
+    "commit": "43fd41a58d52c4e6e5dec1d1ff5989ecc737ae1a"
+  },
+  "llama_cpp_control": {
+    "repo": "ggml-org/llama.cpp",
+    "commit": "cc231cb0da565440cf6a3e5b55dfeba477972cb6"
+  },
+  "transformers": "5.6.0",
+  "memra_base": "18954872117d6fda05ecf834e6bf4186a496dc4c"
+}

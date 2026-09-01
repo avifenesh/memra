@@ -1,0 +1,6 @@
+# tag=probe-ctl stages=2 reps=4 prime_reps=8 want_pass=25 env='MEMRA_PP_EXIT_PUBLISH=0' spinners=6 quota=400% gpuload=1
+probe-ctl rep1   exit=1   pass_lines=22  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+probe-ctl rep2   exit=1   pass_lines=24  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=FAIL    dev1=1/8
+probe-ctl rep3   exit=0   pass_lines=25  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=PASS    dev1=0/8
+probe-ctl rep4   exit=1   pass_lines=23  sweep=PASS    accepted=(14/42)  P0=PASS    dev0=0/8 P1=FAIL    dev1=1/8
+probe-ctl FAILS=3 / 4

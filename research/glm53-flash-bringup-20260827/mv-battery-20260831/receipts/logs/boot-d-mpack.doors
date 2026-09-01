@@ -1,0 +1,10 @@
+door=bf16-tcols-wide(T) expected=0 lines=0
+door=bf16-tcols-x1(X) expected=0 lines=0
+door=moe-vrows-pack(M) expected=1 lines=1
+door=topk-shards(K) expected=0 lines=0
+door=glm5-verify-ws(W) expected=0 lines=0
+door=verify-walk-batched expected=1 lines=1
+door=verify-walk-per-row expected=0 lines=0
+door=verify-walk-moe-pairs expected=1 lines=1
+door=glm5-vrows expected=1 lines=1
+[moe-vrows-pack] engaged: 4-warp blocks on the verify-rows MoE pair (MEMRA_MOE_VROWS_PACK=1)

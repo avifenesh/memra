@@ -1,0 +1,30 @@
+lock_acquired=2026-08-10T06:30:55Z host=<private-host-redacted>
+expected_source=019428e217e297cb5981d201a4a520aee69222a6
+From /home/ubuntu/cx-ringval-019428.bundle
+ * [new branch]        lane/cx-ringval -> lane/cx-ringval-box1
+Preparing worktree (checking out 'lane/cx-ringval-box1')
+Updating files:  60% (11821/19496)Updating files:  61% (11893/19496)Updating files:  62% (12088/19496)Updating files:  63% (12283/19496)Updating files:  64% (12478/19496)Updating files:  65% (12673/19496)Updating files:  66% (12868/19496)Updating files:  67% (13063/19496)Updating files:  68% (13258/19496)Updating files:  69% (13453/19496)Updating files:  70% (13648/19496)Updating files:  71% (13843/19496)Updating files:  72% (14038/19496)Updating files:  73% (14233/19496)Updating files:  74% (14428/19496)Updating files:  75% (14622/19496)Updating files:  76% (14817/19496)Updating files:  77% (15012/19496)Updating files:  78% (15207/19496)Updating files:  79% (15402/19496)Updating files:  80% (15597/19496)Updating files:  81% (15792/19496)Updating files:  82% (15987/19496)Updating files:  83% (16182/19496)Updating files:  84% (16377/19496)Updating files:  85% (16572/19496)Updating files:  86% (16767/19496)Updating files:  87% (16962/19496)Updating files:  88% (17157/19496)Updating files:  89% (17352/19496)Updating files:  90% (17547/19496)Updating files:  91% (17742/19496)Updating files:  92% (17937/19496)Updating files:  93% (18132/19496)Updating files:  94% (18327/19496)Updating files:  95% (18522/19496)Updating files:  96% (18717/19496)Updating files:  97% (18912/19496)Updating files:  98% (19107/19496)Updating files:  99% (19302/19496)Updating files: 100% (19496/19496)Updating files: 100% (19496/19496), done.
+HEAD is now at 019428e2 Merge lane/cx-b1fix: P0 FIX SHIPPED — Step3.5/3.7 PP-N decode in one numeric class at every width. b1_stage_fast now requires cfg.step35.is_none() (decode_batch.rs:787); step35_batched selected from metadata at every width, B=1 fails closed with the same explicit error as B>1 if the trunk is disabled (decode_batch.rs:802). No new flag, no scheduler affinity — worker groups freely because all widths enter one trunk. One-hash matrix on the fixed binary: 35/35 fresh boots, 150/150 requests across c=1/c=2/c=8/first-late, zero errors, zero divergences, single 326B completion class — the load-history three-class bug from p0iso is closed. Honest correctness price: sustained c=1 decode 85.42 -> 81.40 tok/s (-4.71%, N=5 interleaved median); short TTFT flat (-0.22%). Below the 10% escalation bar; eager-parity without the numeric-class boundary = step-2 follow-up. Gate gap closed: b2geo35 runs live defaults (B1FAST=0 masking pin removed), adds a tick-traced ready=1 -> ready>=2 transition cell with byte identity, canary teeth verified (gate FAILS under MEMRA_STEP35_BATCH=0). Engine gate keeps stage-fast arm for non-Step35.
+019428e217e297cb5981d201a4a520aee69222a6
+## lane/cx-ringval-box1
+build_start=2026-08-10T06:30:59Z
+   Compiling memra-engine v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-engine)
+   Compiling memra-sampling v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-sampling)
+   Compiling memra-validate v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-validate)
+   Compiling memra-gguf v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-gguf)
+   Compiling memra-tokenizer v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-tokenizer)
+   Compiling memra-runtime v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-runtime)
+   Compiling memra-kv v0.73.1 (/home/ubuntu/memra-cx-ringval/crates/memra-kv)
+warning: memra-engine@0.73.1: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.73.1: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 3m 39s
+6a7c2046eb3197773def91baf012abd629e0b0ced239ec2d38016c93be5ca7e5  /home/ubuntu/memra-cx-ringval-target/release/memra-server
+df41cf0103c80631fb4831f98469a21e674b2f9763bc7ca31047cf745a3ddcc4  /home/ubuntu/memra-cx-ringval-target/release/kernel-check
+0d5fcfef58230a10e0d92cff2f64d08ad9bd93b7a0d2f2afcc0ccfdca92670b4  /home/ubuntu/memra-cx-ringval-target/release/run-gen
+01793f7e873aab5e5408858cda0505ef64c15931ea7945edfe201371345af748  /home/ubuntu/memra-cx-ringval-target/release/run-spec
+81e1a3a39a362fa4bdc0d79b18eb12b9d1473f497c30f452ab4ddd9458943430  /home/ubuntu/memra-cx-ringval-target/release/replay-acceptance
+37327462d614aaede477935af422337932129d79d8408843dc145b9024fe849b  /home/ubuntu/memra-cx-ringval-target/release/concat-prime-probe
+23a1f456616afe7377537c5024ccfa1ca1b0bec31e7ca40f963fe68652b08504  /home/ubuntu/memra-cx-ringval-target/release/prime-batch-gate
+dde444062f53e4c7d56d266f4b3ced8b508e30e399459515e6fbb5040c46eb18  /home/ubuntu/memra-cx-ringval-target/release/decode-batch-gate
+build_done=2026-08-10T06:34:39Z
+receipt=/home/ubuntu/ringval/receipts/build-20260810T063055Z

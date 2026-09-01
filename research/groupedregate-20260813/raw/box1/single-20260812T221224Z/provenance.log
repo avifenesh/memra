@@ -1,0 +1,41 @@
+source_commit=18885ec479d897a3e8c42b0d408a71fa3edaa708
+source_describe=18885ec4
+host=<private-host-redacted>
+start_ts=2026-08-12T22:12:24Z
+coordination_lock=/tmp/memra-gpu-1.lock
+selected_physical_gpu_index=1
+selected_gpu_uuid=GPU-2b4cf166-fd33-f161-8536-ca04bc72280c
+co_tenant_physical_gpu_index=0
+co_tenant_gpu_uuid=GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79
+protocol=N=5 per arm; adjacent interleaved pairs; order alternated; one warmup plus one timed prime per independent process; one flock hold
+Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 595.71.05, 97887 MiB
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 595.71.05, 97887 MiB
+## lane/cx-groupedregate
+e35e23219a81590b9d4174eea4717d716dd62676c8c434f6b708f49a07310e1a  /opt/scratch/nvme/cx-groupedregate/models/Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf
+d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
+dc91551b1e83414616ebb8d65ee88d1af1fc8792dadffe0208b732d094adfc0d  /opt/scratch/nvme/cx-groupedregate/memra/research/depth-decode-20260802/depth-2048-kat.txt
+91eac7250e0d268ac6be8cfd1ee64e346d405dc412824dab45f224e9563e1e5b  /opt/scratch/nvme/cx-groupedregate/memra/research/sellgate-20260812/sellgate_replay.py
+85597a0a28ed874f440b4a966c0b43fd3e31b94fe868266de9e299decc208c34  /opt/scratch/nvme/cx-groupedregate/memra/research/sellgate-20260812/workload.lock.json
+3c5cd150ca3351b88dedd8eab37d4add54f077c7534fbce0ea2a5c1a7ffc48dc  /opt/scratch/nvme/cx-groupedregate/memra/research/e2e/prompts/board-2048.txt
+34a4d3b0bd75b0f55dc8da3623e2ed95b0bf2e97f1c41a25895d20bee38df9d5  /opt/scratch/nvme/cx-groupedregate/harness/serve_ab.py
+702e9d35e2c5732e1c014e63583781c6b2013cc0b6f1868eee2e8b1bf4bee950  /opt/scratch/nvme/cx-groupedregate/memra/target/release/kernel-check
+13a9b4bac5e8237f026614b70711fb06c7c13447de105774cfc59a6cf223d322  /opt/scratch/nvme/cx-groupedregate/memra/target/release/run-gen
+845231dfb7c414edb8019238d26109a02bdbddc4c1b1a345e92d8b43b65be748  /opt/scratch/nvme/cx-groupedregate/memra/target/release/run-spec
+35d560daa1347d2a002c44590d86b58d7915af605b724149b05fd9fa421010fc  /opt/scratch/nvme/cx-groupedregate/memra/target/release/concat-prime-probe
+b62cda3b5da1e935dbb2b273d8a3d547762e8d66dc4c260a16530c4714348573  /opt/scratch/nvme/cx-groupedregate/memra/target/release/memra-server
+artifact=/opt/scratch/nvme/cx-groupedregate/models/Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf bytes=18806446496 mtime=2026-08-01 13:49:10.483548934 +0000
+artifact=/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf bytes=15705920064 mtime=2026-06-30 02:47:04.313106221 +0000
+artifact=/opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf bytes=1242867296 mtime=2026-07-18 02:51:51.642796089 +0000
+artifact=/opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf bytes=18209036576 mtime=2026-06-21 17:38:04.402413150 +0000
+artifact=/opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf bytes=944118560 mtime=2026-07-18 04:06:39.438907949 +0000

@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is telling me about updates to their skills and preferred work areas. Let me parse what they're saying:\n\n1. **Inference work is full** - no need for more inference work\n2. **memra** (bw24 successor) is a replacement for llama - works on BW 50 series (Blackwell B50? or GB50? Actually \"bw 50 series\" likely means Blackwell B200/B50... probably means Blackwell 50 series like B50, or maybe they mean the B200/GB200 family) and on H100, beats llama and vLLM on supported models\n3. **llama is no longer their default usage** - memra is now the default, new inference ideas go to memra\n4. **Their ML interest is on the model side**: improving training, making models smarter, new generation of models with what current LLMs are missing\n5. **Inference world gap**: only missing better ways to keep the full benchmark correct without needing to run the whole bench every change (incremental benchmark validation / regression testing for inference optimizations)\n6. **eigen is under re-work** - currently not used, frozen until re-work is done and it actually becomes better. After the fix",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is telling me about updates to their skills and preferred work areas. Let me parse what they're saying:\n\n1. **Inference work is full** - no need for more inference work\n2. **memra** (bw24 successor) is a replacement for llama - works on BW 50 series (Blackwell B50? or GB50? Actually \"bw 50 series\" likely means Blackwell B200/B50... probably means Blackwell 50 series like B50, or maybe they mean the B200/GB200 family) and on H100, beats llama and vLLM on supported models\n3. **llama is no longer their default usage** - memra is now the default, new inference ideas go to memra\n4. **Their ML interest is on the model side**: improving training, making models smarter, new generation of models with what current LLMs are missing\n5. **Inference world gap**: only missing better ways to keep the full benchmark correct without needing to run the whole bench every change (incremental benchmark validation / regression testing for inference optimizations)\n6. **eigen is under re-work** - currently not used, frozen until re-work is done and it actually becomes better. After the fix"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 192,
+  "completion_tokens": 256,
+  "total_tokens": 448,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 9.452198405,
+  "spec": {
+   "rounds": 86,
+   "drafted": 258,
+   "accepted": 170,
+   "acceptance_rate": 0.6589147286821705
+  }
+ },
+ "id": "<redacted>",
+ "created": 1788091613,
+ "system_fingerprint": "<redacted: build fingerprint>"
+}

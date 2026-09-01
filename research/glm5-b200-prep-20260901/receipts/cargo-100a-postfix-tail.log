@@ -1,0 +1,50 @@
+
+warning: method `qsa_indexer_mask` is never used
+     --> crates/memra-engine/src/qwen4exp_gpu.rs:16582:8
+      |
+15974 | impl Qwen4ExpGpu {
+      | ---------------- method in this implementation
+...
+16582 |     fn qsa_indexer_mask(
+      |        ^^^^^^^^^^^^^^^^
+
+warning: `memra-engine` (lib) generated 3 warnings (run `cargo fix --lib -p memra-engine` to apply 1 suggestion)
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/bin/qwen4exp_real_gate.rs:2396:17
+     |
+2396 |             let mut record = |regime: &str,
+     |                 ----^^^^^^
+     |                 |
+     |                 help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-engine` (bin "qwen4exp_real_gate") generated 1 warning (run `cargo fix --bin "qwen4exp_real_gate" -p memra-engine` to apply 1 suggestion)
+warning: variable does not need to be mutable
+   --> crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs:529:9
+    |
+529 |     let mut record = |phase: &str,
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs:691:9
+    |
+691 |     let mut check_config =
+    |         ----^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs:1708:13
+     |
+1708 |         let mut fold = |s: RowStats, ok: &mut bool, worst: &mut (f32, f32)| {
+     |             ----^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: `memra-engine` (bin "qwen4exp_gpu_gate") generated 3 warnings (run `cargo fix --bin "qwen4exp_gpu_gate" -p memra-engine` to apply 3 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 32s

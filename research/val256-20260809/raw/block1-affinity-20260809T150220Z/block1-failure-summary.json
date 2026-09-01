@@ -1,0 +1,56 @@
+{
+  "block": 1,
+  "verdict": "FAIL",
+  "n_target_per_arm": 3,
+  "n_completed": {
+    "record_on": 1,
+    "affinity_on": 1,
+    "affinity_off": 0
+  },
+  "server_commit": "5b6c28f01259fdf39890185bc30ab7767d4284d3",
+  "ctx": 262144,
+  "pp_stages": 2,
+  "pp_devices": "0,1",
+  "policy_path": "K=0 source=pp2-placement",
+  "record_gate": {
+    "verdict": "PASS",
+    "sequential_turns": 8,
+    "history_rewritten_turns": 8,
+    "min_prompt_tokens": 37823,
+    "max_prompt_tokens": 47175
+  },
+  "affinity_on_completed_arm": {
+    "plain_affinity_rewinds": 8,
+    "continuation_pool_hits": 8,
+    "sequential_turns_completed": 8,
+    "turn_1_ttft_s": 4.13141,
+    "turn_7_ttft_s": 4.244259,
+    "turn_1_cached_tokens": 37817,
+    "turn_7_cached_tokens": 45833
+  },
+  "affinity_off_partial_arm": {
+    "plain_affinity_rewinds": 0,
+    "continuation_pool_entries_at_failure": 3,
+    "sequential_turns_completed": 3,
+    "cached_tokens_each_completed_turn": 0,
+    "ttft_s": [101.987561, 105.789819, 109.930467],
+    "failed_turn": 3,
+    "failure": "cache alloc failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")",
+    "compute_apps_at_capture_mib": {
+      "gpu_0": 87530,
+      "gpu_1": 97036
+    },
+    "admission_vram_defers": 0,
+    "step_oom_parks": 0
+  },
+  "determinism": {
+    "status": "INCOMPLETE",
+    "reason": "the required three affinity-ON replay servers were not reached after the affinity-OFF arm failed"
+  },
+  "slope": {
+    "status": "INCOMPLETE",
+    "reason": "N=3 per arm was not reached; directional N=1 rows are retained but not promoted to the requested comparison"
+  },
+  "artifact_manifest_sha256": "4c22bdce378de2c365cdcbf3ce6dcf94d9dd690b0058e5fb01e3fb71a5b29312",
+  "artifact_hashes_match_pinned_launch_contract": true
+}

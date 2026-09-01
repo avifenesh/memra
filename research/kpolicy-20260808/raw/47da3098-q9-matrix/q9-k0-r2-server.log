@@ -1,0 +1,30 @@
+[server] starting; models config = [("q9", "/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q9" <- /scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q9: regime draft attached (/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q9": 33 layers, eos=248046
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] q9: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:8143
+[meter] admit id=cmpl-348d6decdb77515f6891b1923ced206b tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-q9-cold-short-k0-r92" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d19ef3b8bec706e6e7321d0d973b173a tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-q9-cached-long-k0-r2" K=0 source=operator-pin prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q9": 201MB (admission gate = 2x)
+[prefix-cache] insert (seed): 5411 tokens, 133.0MB (resident 133.0MB / 268MB, model q9, ns "kpolicy-q9-cached-long-k0-r2")
+[meter] admit id=cmpl-81f59cc6b93003201f495134b7ee9bdb tenant=default lane=interactive model="q9"
+[worker] kv-reuse: 5475 of 5494 prompt tokens resumed (model q9)
+[spec-k] model="q9" tenant="kpolicy-q9-cached-long-k0-r2" K=0 source=operator-pin prompt=5494 cached=5475 lcp=5411 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-82ed6c38ac9120a73d72bb1c3d1acb7b tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-q9-cold-long-k0-r2" K=0 source=operator-pin prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 5411 tokens, 133.0MB (resident 266.1MB / 268MB, model q9, ns "kpolicy-q9-cold-long-k0-r2")
+[meter] admit id=cmpl-dca8f75d3321ae3ce920b03465d2194e tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-q9-cold-short-k0-r2" K=0 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

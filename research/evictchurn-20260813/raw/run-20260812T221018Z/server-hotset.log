@@ -1,0 +1,544 @@
+[server] starting; models config = [("q36-35b", "/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q36-35b" <- /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.21GB (expert budget 19.61GB) -> RESIDENT
+[worker]   loaded "q36-35b": 41 layers, eos=248046
+[worker] q36-35b: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q36-35b: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 820MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "q36-35b": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q36-35b"]
+[server] listening on http://127.0.0.1:18514
+[meter] admit id=cmpl-a541404da1e2ec0b0394165df431d27c tenant=default lane=interactive model="q36-35b"
+[admission] request cost: model="q36-35b" ctx=336 path=plain = 10208 B/token x ctx + 0MB fixed = 3MB
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q36-35b" 129MB (observed 132MB at ctx 280 path=plain)
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 68.3MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-81c4fbea417162f285e1748b47dd744b tenant=default lane=interactive model="q36-35b"
+[admission] request cost: model="q36-35b" ctx=336 path=plain = 10208 B/token x ctx + 129MB fixed = 132MB
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 136.6MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-5095e949894421f8d80a5e3b7c75018b tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-3347dd008dfcabe8245b6110d2bcf1a0 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-6ec85d3247572cb924d9e2f7c64b6677 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 204.9MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-2a070de13a2584c7565f76baee5fd4d9 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 273.3MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-b2a3c8cc496d5df9b3caaf4f9005191c tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 341.6MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-93c2ccf2fb8ebb4ec1830ec1f32b09e9 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 409.9MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-ae62177e77adcc2d49ccf9ca35f17022 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q36-35b" 131MB (observed 134MB at ctx 280 path=plain)
+[meter] admit id=cmpl-dbc981d85aa7eb91b65bb208c8147a93 tenant=default lane=interactive model="q36-35b"
+[admission] request cost: model="q36-35b" ctx=336 path=plain = 10208 B/token x ctx + 131MB fixed = 134MB
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 478.2MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-791a43147bbe9c4fe46620d19c8c6862 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-62616a37ce032ddbd5fcd59fd9394ee4 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 546.5MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-9009399f4b9a2792700625fced6179a3 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 614.8MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-acbdd05d1b4c6c3617ad91352f42eb6a tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f317ca812db35c934dfedaa8f28c8b7a tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-35437b38f364065dcb45f135f9530add tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-93ab77de0e35fbec31864207e02ba9b3 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8debd1d97522e98bde45c9adf0317140 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f0f77d123e2f2e0b8dab5dd51e5d5808 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 683.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-c84f62d536b07b64aa5a69dc9c9c764b tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 751.4MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-511df60eeb233677068818ec65eddf19 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-2c54edfe666a19dee2c525e464f3df3a tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-85109335a6b26b76221b882223a88479 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7f3e32e32b2da3e8422bf8263a43c6ca tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 819.8MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-2b42c02984c4f62be481fdb38e208f92 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-2531ecd00193f2f0b7f31019f54a96de tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-03b3b9a7b661be6c49ab6cc46eb17750 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-d6e8b8a80d3f02cb50fdcf40a77dfbda tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-03899c06835a842fe890014c3b41aeab tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-98599a0983a603d88000c0229449cf85 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-653579d37cd48913f90da7644abdb14f tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-3347eaf18c18bf019dff85f0aeeeab5a tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b09298f55276b31619234277c7377170 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4e64a2d0aae139bea43c7008d21aa40a tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-65370dc32703480ab2009e351839c5d1 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-08ee15b4a178146d707e8df92353caec tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-550086753fde100e3f12c005fc1ab182 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-6679c3c4fa087fe6937226ee419524dd tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-3c98b3facda78145c54e3143f77b6699 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-40171d86050e7239151c0d97ddf84091 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-74beb4abd6ac18e2022c007c360a3248 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-448c0137285285619d57cd4ce454f317 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-c576acabed7d4bf600320fd9ab9756a6 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-301fe4d19f6c59d74e8ab1b5fab9293a tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e39952c064eb49900e0358d11a39d5de tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-7f5c2580a941ce19b1fa9504fc35d127 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-971078ddc13963aa7ca21426e464201b tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e13b2086a01bc6d6e1fdfd41732baf7f tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-ae9432cc292ab07ac452d52ee4423740 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d6d8fd6582863b53717b18b61eb15019 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8da9cedb37fa31d5439d0ef3534a64a9 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-70c2974e9e5f8388534db25050b0caae tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-09f6ae9f0f741ede26700504ddfaf7e3 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-3043bcdbd63be89837fd8eb90fe8dfc6 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-7414acee68d59709fbc9bbc924b0ae6a tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-59db13fdab003403582916f7f37e0779 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-afc8d7ae647971f31389b0d95b044271 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-80d14fea348ca2e11021af29a04e6c67 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-675b4d0b13f1a3ddd1609ebffab6a407 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-1c1d6ed466cb864b0924fe212d38403b tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-c1045e6d13f487e06362b8a3c3e7a895 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-27e34248a04a3ed701f44067f23de9f7 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-ecb1b71a992c05c204e6511e98e2b9e0 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4e9a32e535f6d8dc8762f920599b643d tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-177c1ad0f432e07934b88795068b4fc8 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c983fac95a30ecfd31626d7b10fcf700 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-c1a73e322aba605f542d155235d28cc3 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-b111e5931f7d33754bc2ba1304c7d0c7 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7af306a838a6e313be566e0bc8806e1c tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-aa00b6a0677bcd296fe92e417afa4fca tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c5727a9a66066fdc2a1ad479ea130269 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-af1fe33c276e78cf99114250806ccf3e tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-feacf3a884107e3cc8944135f0503232 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-9bddf3c470382598bbe4f3e1f0b70bde tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-75f3c137b4ac21051605c8d9e12dca8f tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-7eb6173257861ca5705dd00f921dbe5a tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-55477d17c7debf712c354d1ac91f0b44 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-208da13cbafe6c25d7a3a03c7a49b014 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4cf5d4e04cd51f4b32568328160844eb tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-74aebd1ce4f425aa1a3c94dd3bb72774 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-02a044c0ae336d1ae1ce779cd3fb4277 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-18f44395f68f330a118a437f236274aa tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-18a759386d67e4818701bd0474c8ad3f tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-e7dca6650353869dfce60b8bb3e0c694 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-bec313adf2d1ad4464ff7d34ffd52337 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-440c9435c3cd85bde46a461710e9e419 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-538052e6043745af14c78fa15a2b2c53 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4a12efadf93f23ad85b4e4b43f9fb245 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8da36cfbf3db4549828f57fbab0b85f9 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-931ce79d0edf2346a4afcf9c1d84fa1c tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-dbdaff57e5168090e1e51a44422ed2e4 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9f81defb45fc8baf4c3bd7f80c84cf1b tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-87ad58f7fc4dbfa625212958f7b7d20d tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-1146d6bad72ebb54f6f91bef25bcb518 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ab99ff8f00480c9b52413e67dcdd2aa7 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-3c2171d15f6f4bc1680c9b46510c79f9 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-b12359f2caf5bf156a4ce3705a10215d tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-9ce0d36184a71524cf94bf10e179b409 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ea4a989d8f0e4e8f9dd9c41a6dc40ca6 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-bc244ea5b60da868eb16fff9d47cea50 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-cdf912078f35e19e7c926b91855e6c83 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a0cacc41c0a6eddd328e4f85866aaac3 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-4a6094ab1444be144bb00f1a76162a1a tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-e237f2d06a17c2aa16fcd07276d37791 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c822a31df8a1a5121e3b8faae3ab1877 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-e0e39b8d0a3ba9c0e6b0af7c53a700ac tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-248fd07e9b298efabbcebd47e14d61fb tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-0a3fce5bac91f5cf25fdab0d11ec2354 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-6b425f3bf9189a7686b4cb0f5a2a6963 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9503d310bd08ac4aa4dd64b462ea46b3 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-320f6cd1fd12352b835449bf0a76b849 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-3022e91ae94abb9df969abafdef0db01 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-11cee49e17276c1596c72226514c7846 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-3fb95132ba25e230543f904892a76063 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-aeee454046e8f04db07006a557edf5b8 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-f35e5d20cf87c9383191177798b1f01e tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-d6a24b0ef479c0819a55bffb57f1cec6 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-fb205232ca0ab9314bc7a95415a810c4 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4079b0e9e0d63f260e92e03fd4559e4f tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d5a7f90ed42a380c6da325c438d8dbee tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-985bc4715f8ce9f3dd69fd0d57b6a89e tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-1fed399374fe18f06e66f0b4c0779fb7 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4f8dff8145581da82ff20d4469a7292b tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-33a952f7b8a8f30c24e3ea58ab4312cd tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-70100e39211c355929b0a83651a1f6ca tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-fb09005a552841353f8f0795060f8fa1 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-eb92fb44c0eb4c5a7631ec968e569168 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-6aa6c33638335fbb5fa6660610cb9870 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f3b4275b94781b67ef1e6cae5b9eb685 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-713c1b5c82e398b3ed41f6c0e3767d16 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-23a697f94965ca0382c5a14312cb9238 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-44a09f53499764c21b78139e99568d64 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-1677fe63f0760fbcc95176beaaf7e6b0 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-afeb9ab697b69e60890c7d4687fea2c7 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5211f6c9beaf8e9c89ea5cfcb437a7d9 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t0")
+[meter] admit id=cmpl-0145e4973821d534f223ffb9a65f1955 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-161a206465d3c10139823c3876c85bee tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-52a7ded11a5d7515f65926795f442f78 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-100395f6bf45cad5b70dc7681dd2738d tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8bfb4c851591d951e5e66b37db2c1f80 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-2ee133da97cad436066de0e37100ca96 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-14c1937116598b6c4d1ba19c99a628ed tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5a8cd00646890192d065b0f65fc406c7 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-69cce4ecc467e907625e0d34f18e6d10 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-cac19a3927329993878c004032f3e63a tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b134b72d6fc483861fa0a950c016d934 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f1b7deb83b632a5ab54c8b1db8659990 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a886a9dc4d3ca6454d3887ed066d1a9c tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-72732edad62c5c62bce3b5dff3753a3e tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t1")
+[meter] admit id=cmpl-503997396296e5c986839d7406c60fbe tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-fb841282224563d4b037a1ffa6a283c3 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f3da4315af6114adc4f38ee44f36dcec tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-3a59e4877b1b29a43b2aff3d1f1c1f21 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t2")
+[meter] admit id=cmpl-236fe492ca4faad071e6b3295d590768 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-56f1e8a93a649096fad0e7ccf931730b tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-hotset-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-hotset-t3")
+[meter] admit id=cmpl-45342c43f34284e9e9c3719ceeed10fd tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-69091f25d86344df051da27bd4d4440c tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7983f370c496a5801c98bdd4f9629da0 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t1" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4de8ed88d3d471ffedd45dadc3a992eb tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t0" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-7fdfe7b9f00c6f3947cb2242a6f4b8d2 tenant=default lane=interactive model="q36-35b"
+[prefix-cache] hit: 264 of 264 prompt tokens from cache (model q36-35b)
+[spec-k] model="q36-35b" tenant="evictchurn-hotset-t3" K=0 source=eligibility-fallback prompt=264 cached=264 lcp=264 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

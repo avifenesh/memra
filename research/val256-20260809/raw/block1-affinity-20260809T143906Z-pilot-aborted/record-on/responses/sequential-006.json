@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-c014399978aaba121d88aee5182c02a9",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 46867,
+    "completion_tokens": 256,
+    "total_tokens": 47123,
+    "prompt_tokens_details": {
+      "cached_tokens": 46577
+    },
+    "elapsed_s": 4.999887788
+  },
+  "text": "The user wants me to add a comparison drawer for spec-default versus spec-off measurements. This is a drawer/side panel that allows comparing measurements when speculative decoding is enabled (spec-default) versus disabled (spec-off).\n\nI need to:\n1. Keep all existing functionality (dashboard with 600 requests, sticky inspector, cache-tier legend, admission-pressure strip, incident timeline, keyboard navigation, etc.)\n2. Add a comparison drawer that shows spec-default vs spec-off measurements\n3. Make it a drawer (likely slides in from the side or bottom)\n4. Include relevant metrics like TTFT, decode time, throughput, etc.\n5. Return a complete, self-contained HTML document\n\nLet me think about the design:\n- A drawer that can be toggled open/closed\n- Shows two columns or sections: Spec-Default and Spec-Off\n- Compares key metrics: average TTFT, average decode time, throughput, cache hit rate, etc.\n- Could be triggered by a button in the header or toolbar\n- Should be accessible (keyboard dismissible, focus management)\n\nI'll add a button in the header to toggle the drawer, and the drawer will slide in from the right side. It will show aggregated statistics comparing the two modes.\n\nGiven"
+}

@@ -1,0 +1,31 @@
+The user wants me to modify the existing system to:
+1. Remove the digest (currently) and replace it with twice-a-day researched content
+2. Add a new MCP for web search (they've provided the config)
+3. Every 12 hours, the hourly researcher should first read the current "paper" (research doc), reason about it, and then deepen the research (at least 3 more sources), and update the page
+4. At 07:00 and 19:00 (they said "22 evening and 22 morning" — I think they meant "7 evening and 7 morning"... wait, no. Let me re-read. "at 22 evening and 22 morning the agent that wake up is a research summary agent" — hmm, "22" is used twice. I think they might mean "2pm evening and 2am morning"? Or maybe they're saying "at 22:00 evening and ... 22 morning" — meaning 22:00 (10pm) and... 10am? No wait.
+
+Actually re-reading: "at 22 evening and 22 morning" — I believe they mean 22:00 (evening) and some morning time. Given context of times in the original system (5,6,7,8,9,11,13,23), and that 23 is taken by the "paper maker" agent. The morning slot for summary... Hmm.
+
+Actually, I think "22 evening and 22 morning" might be a typo for something like "7 evening and 7 morning" or maybe they mean hours 07 and 19 (19 is 7pm evening). Wait — "22 evening and 22 morning" — if 22 is evening (10pm), then "22 morning" doesn't make sense unless they mean 22:00 is the evening one and they want a morning one too. 
+
+Hmm, maybe they're using 24h format loosely: "22 evening" = 22:00 (10pm is evening/night), and "22 morning" might mean... 10am? If 22:00 is 10pm, then 10am would be the "morning 22"? That is, 10 in the morning and 10 in the evening. Wait: 22:00 is 10 PM. So "22 evening" = 10 PM and "22 morning" could be 10 AM (which is 10:00, the morning counterpart of 22:00 in 12-hour terms, since 10 AM = 10:00 and 10 PM = 22:00).
+
+Yes! That makes sense. They're saying: at 10 evening (22:00) and 10 morning (10:00)? No wait, they said "22 evening and 22 morning" — in 12-hour clock, 22:00 is 10 PM. So morning counterpart is 10 AM = 10:00. I think they mean 10:00 (morning) and 22:00 (evening) — the same "10" on the 12-hour dial. That fits nicely because original system had 10:00 for "news-172" and 14:00 for "quarterly-regression-agent". So replacing 10:00-14:00 slots. Hmm, but if we put summary at 10:00 and 22:00, and deepening happens every 12 hours... 
+
+Wait, actually the structure is:
+- Hourly researcher (5,6,7,8,9,11,12,13,14,15,17,18,19,20,21,23?) — wait no.
+
+Let me reconsider the full schedule:
+
+Original schedule:
+- 05:00 => daily-digest
+- 06:00, 07:00, 08:00, 09:00, 11:00, 12:00, 13:00, 14:00 (quarterly-regression-agent), 15:00, 17:00, 18:00, 19:00, 20:00, 21:00, 23:00 => daily-topic-researcher
+- 10:00 => news-172
+- 14:00 => quarterly-regression-agent
+- 23:00 => paper-agent (the "paper" — a new research page with a topic and opener)
+
+New requirements:
+1. Remove "daily-digest" (the 05:00 digest). 
+2. Add web-search MCP (npx open-websearch) so agents can search the web.
+3. Every 12 hours: the daily-topic-researcher should first read the current "paper" file (the research page created by paper-agent), reason about it, then do deeper research on that topic — add at least 3 more sources — and update the page.
+4. Twice a day (10:00 and 22:

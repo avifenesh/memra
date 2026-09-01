@@ -1,0 +1,157 @@
+[server] starting; models config = [("step37", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step37" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.754
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=623.237
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step37: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step37": 45 layers, eos=128007
+[worker] step37: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step37: decode wave cap 8; scheduler tick cap 8
+[admission] "step37": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step37"]
+[server] listening on http://127.0.0.1:18472
+[meter] admit id=chatcmpl-b5ab83c644b403b2d9af08d3cdf6f24d tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=8192 path=plain = 83520 B/token x ctx + 0MB fixed = 684MB
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=chatcmpl-6711ee283dd3448453eae0a515fd67fe tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-5bfcfdfbd60e5377250ac62d093f8ab8 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-4b02ebbfa6e410084a5b8296f7a4d3e4 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-1dca4a4853ce0290399b681b7961187f tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[meter] admit id=chatcmpl-5ed4313e7d25e5acec3f8f4cf665fa9d tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-865d6d745b436f51b0f859d8c773c516 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-1a1cf41e8edc1e292affb03ba2a43ccc tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-63469f07e71e6869f7c500b7dcf87e07 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-23234a5bbc1a0530971813192b59a56e tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-2e4f8796ad39fec6835be3c3f58b4777 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-5ff23c1e939fc5d02666a7c59e88d880 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-a60b78f32532b1599d75fdd28e93e4aa tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-a24abe2950ef5bd5c37e4e5a5f813d58 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-088d72818411b150c4405972157ed09d tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-dfa37e4dc8a843ea63db86c91f6c65a7 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-690f7d8463b6b98a8d975bb285368391 tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[meter] admit id=chatcmpl-9d783078f158d5f48230716ddc721a32 tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=17 placement=pp2-cross-device
+[meter] admit id=chatcmpl-70677e80346d01d3c32cd210e8efae90 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-b1f916e8d8c2599f8ed7a4b035f402e8 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-8454769c492ce3034215fbb83b856f2d tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-6d639412d7e40525af5d6862ee991cb6 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-3b90d213a6408a4ed092a0d6af0002d7 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-7153f33ed84e36399995a0e5adc5b14f tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-d778e88f4fadb5e9c1b592d5f808b693 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-7d26a27e78e4336c537a22295432f50d tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-245c4a748b8d0870c9d26737101fa388 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-e9b59e55d82ffd8056947a09dcd763d2 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-f7a9f253f9247cc8af1c0af9f8753975 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-42e02e4d42bcd1a5917886df458a1a99 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-7ac5cdbbb6018a2bc78304dbc53e8c5b tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-1b149766b5946bf09e1946b8cca0e142 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-3a2389a61bee708dedcbfa0ab91f96c7 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-6c4a60f5c8582a8b1daea7c900fd550a tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-a04870d97f7cd13c5d96d22e13dc77cf tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-6c4aff05f3e2fcc09a0d68297fe711e4 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-71b73d3b1f90a58ecb49d03efd219dbd tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-2aefbc2ec7750f1437959559fefaeb10 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-96c6ea4faa5fb1ec13b2d46b456245af tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-2c2a53bc8e9fcae9efb3465a341e09b3 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-693251d177b85d828db38a4af2217444 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-89b1c146711bb68a7129e0bceee895af tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-d01f0252154193f357164e10cc5d7094 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-6d76c2654a96fa8c951e5fc3dbffc231 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-9e88f110899027fa2615d172692aed76 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-88468abbb39c6c1fd1275c1dea148293 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-b6462ca10fb38ee34e79d6164eaa6e63 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-47c6a4a3f2e5cd2d1cd724e6163eede5 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-71fc17c2cee01c81d847ee901bb48e8a tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-92d65d7b52f1b41e0335a6cc647810af tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-2c43f1420f27ad7075c9a7ac9775193e tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-90d0ebbcde64521c1e12ae4084b9b94e tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-a9bbc64e181783911f2cf7ca04c9f3d4 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-c9b4f4ed04a50875359641358c3b0cf5 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-4830a3582c70c8c5affd37811be6bbfb tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=18 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=19 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=20 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=21 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=22 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=23 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=24 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=25 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=26 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=27 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=28 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=29 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=30 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=31 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=32 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=33 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=34 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=35 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=36 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=37 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=38 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=39 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=40 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=41 placement=pp2-cross-device
+[meter] admit id=chatcmpl-da2ee7891662d2f8aef6b2e9f3d7d71b tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=42 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=43 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=44 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=45 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=46 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=47 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=48 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=49 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=50 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=51 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=52 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=53 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=54 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=55 placement=pp2-cross-device
+[meter] admit id=chatcmpl-691b8222ff8a3c77be3ef2e2bb1b38e7 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-706870674ee0f384ff4fdce083b6f43f tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-d9122a8c5ff7b9d2f3e846a47ea0ec3a tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-20536a0b8c468150d76d56154b39f9bd tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-106d67395be6aa1b21162474d9fe9a69 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-ddc187f1b110ebafdddc89c0248c3838 tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-3679737fe85b4cfc5945150551e4983c tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-9da7c5cee48abaf25574c4f2f42df286 tenant=default lane=interactive model="step37"
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=56 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=57 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=58 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=43 cached=0 lcp=0 active=59 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=34 cached=0 lcp=0 active=60 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=46 cached=0 lcp=0 active=61 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=62 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=44 cached=0 lcp=0 active=63 placement=pp2-cross-device
+[spec-k] model="step37" tenant="" K=0 source=pp2-placement prompt=45 cached=0 lcp=0 active=64 placement=pp2-cross-device
+[step35-batch] first B>1 batched step35 walk: B=5 layers=[0,22)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

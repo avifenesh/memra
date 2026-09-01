@@ -1,0 +1,9 @@
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+loaded qwen35moe (40 layers); steps=32 batch=12
+gate1 (B=1 vs decode_step_h): N/A for the live default; B=1 uses the batched numeric class and gate2 checks B=1 vs B=12
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; global setting = OFF; effective for this architecture = OFF)
+gate2 (B=12 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+[device-penalty] sparse sampled rows=6 unique-counts=6 execution=one-ragged-launch raw-logits=preserved
+gate3d penalty-dispatch tooth: raw=268 cpu-penalized=198 device=198 raw-pristine=true PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=12 vs isolated + lean-logits identity + penalty dispatch): PASS
+ALL GREEN: decode_step_batch exactness battery

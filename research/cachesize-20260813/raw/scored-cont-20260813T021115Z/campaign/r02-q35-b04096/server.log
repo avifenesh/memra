@@ -1,0 +1,1262 @@
+[server] starting; models config = [("q35", "/opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q35" <- /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.88GB (expert budget 96.29GB) -> RESIDENT
+[worker]   loaded "q35": 41 layers, eos=248046
+[worker] q35: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q35: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 4295MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "q35": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q35"]
+[server] listening on http://127.0.0.1:18435
+[meter] admit id=cmpl-502c9360061e3f6cab7c225032d2388c tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4925 path=plain = 10208 B/token x ctx + 0MB fixed = 50MB
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q35" 129MB (observed 178MB at ctx 4869 path=plain)
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 111.0MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-0")
+[meter] admit id=cmpl-1489d48311d1b492354ffad82c88c41b tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4925 path=plain = 10208 B/token x ctx + 129MB fixed = 179MB
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 221.9MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-1")
+[meter] admit id=cmpl-df4842ac5c0c0aae9a16d6299a51ab0f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 332.9MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-2")
+[meter] admit id=cmpl-2a40c21944ade38b807e6040b563f192 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 443.9MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-3")
+[meter] admit id=cmpl-77ac12071e66c4d9038684def796cf7b tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 554.8MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-4")
+[meter] admit id=cmpl-5849afe40a57d55418db6521ec5924f0 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 665.8MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-5")
+[meter] admit id=cmpl-e92bb116ea70a386a83802296ae8f07c tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 776.8MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-6")
+[meter] admit id=cmpl-7fd0b1c9f6cf1328746e97ed0e70dbef tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 887.7MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-7")
+[meter] admit id=cmpl-75c8b0dc2207a2ec619686d5a6d631e2 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-8" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 998.7MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-8")
+[meter] admit id=cmpl-1d2c05e68537c762b092377faaa646ad tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-9" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1109.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-9")
+[meter] admit id=cmpl-e5582d0842c2fccb037f2698e702d4bc tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-10" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1220.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-10")
+[meter] admit id=cmpl-0d08eacede2cc4e0744cd2b5d9e2fe3e tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-11" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1331.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-11")
+[meter] admit id=cmpl-ead4a2eef28f8fadc419137f4bf12740 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-12" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1442.5MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-12")
+[meter] admit id=cmpl-d1c2328206436925b5a10dfde2ed32cd tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-13" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1553.5MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-13")
+[meter] admit id=cmpl-2100f3e5adfc0ab13693b5687cb5162e tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-14" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1664.5MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-14")
+[meter] admit id=cmpl-de60a35ff7aef85b494bfb33b56231d6 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-15" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1775.4MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-15")
+[meter] admit id=cmpl-c7e2f006922b94bec21a9b8c10744789 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-16" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1886.4MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-16")
+[meter] admit id=cmpl-ed5c0180a1a59d688a1507ee5f6118ef tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-17" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 1997.4MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-17")
+[meter] admit id=cmpl-9f160558c4d679d640bd1dc5ad164895 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-18" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2108.3MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-18")
+[meter] admit id=cmpl-2af951b2a2de8744ababcc787f9c0e80 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-19" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2219.3MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-19")
+[meter] admit id=cmpl-af24b46d8956f4750983f10ff6def096 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-20" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2330.3MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-20")
+[meter] admit id=cmpl-26f9acc3e56e62925bf35764edf91c3e tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-21" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2441.2MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-21")
+[meter] admit id=cmpl-9505a1c17a13cd116f17746ac098e646 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-22" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2552.2MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-22")
+[meter] admit id=cmpl-51fe08a3ba167bde5eec152e22290be8 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-23" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2663.1MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-23")
+[meter] admit id=cmpl-310f8da5f4dc40050d64d418e96b518c tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-24" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2774.1MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-24")
+[meter] admit id=cmpl-05d70407bd6413d0a653ecefa442e537 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-25" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2885.1MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-25")
+[meter] admit id=cmpl-8f926a6d3f5419ca0ac83dd4e6febb2f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-26" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 2996.0MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-26")
+[meter] admit id=cmpl-ca1d4c6ce0fe4568d2d1c96a451a45e2 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-27" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 3107.0MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-27")
+[meter] admit id=cmpl-91db2718571df791b7748d873e890cff tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-28" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 3218.0MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-28")
+[meter] admit id=cmpl-56ed2306b55f0ca28437dd2e0219f953 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-29" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 3328.9MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-29")
+[meter] admit id=cmpl-f2190e8106fd170e95f9e5f360626574 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-30" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 3439.9MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-30")
+[meter] admit id=cmpl-c099ec3d3b3d70ddd3957200801e9cdc tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-31" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 3550.9MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-31")
+[meter] admit id=cmpl-8ca780af645791b52206397dcd27d16a tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-32" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 3661.8MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-32")
+[meter] admit id=cmpl-4e29dc26b18064e9947167eb2977e665 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-33" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 3772.8MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-33")
+[meter] admit id=cmpl-a8da1eb2531ec7b5976b26e1444f7f10 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-34" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 3883.8MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-34")
+[meter] admit id=cmpl-1c949afe974f06cea3d4565d7f2aad7a tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-35" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 3994.7MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-35")
+[meter] admit id=cmpl-fc3959a1ba9c8659ae33fdb41ff674d7 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-36" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4105.7MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-36")
+[meter] admit id=cmpl-0598566fd843cda578e505abee3270f8 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-37" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4216.7MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-37")
+[meter] admit id=cmpl-d2a25014ff5b53627e090bed9335cee9 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-38" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-38")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-0")
+[meter] admit id=cmpl-67fa5b3df877a13c9bff80a1413d8806 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-39" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-39")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-1")
+[meter] admit id=cmpl-9c8269d6e7f36d33828206b5921e2015 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-40" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-40")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-2")
+[meter] admit id=cmpl-af4834640c1b9029bcbb3045245ee510 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-41" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-41")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-3")
+[meter] admit id=cmpl-0bc6a183dedd5ec2b069c5781ad184ab tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-42" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-42")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-4")
+[meter] admit id=cmpl-db67aa5947bd3791936ce32ed69e777a tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-43" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-43")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-5")
+[meter] admit id=cmpl-0653d754309b3faec02f5ae233e90f3c tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-44" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-44")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-6")
+[meter] admit id=cmpl-90fea7aad46af7df0fb125c121b84402 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-45" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-45")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-7")
+[meter] admit id=cmpl-2c38215b0320eb1022f715db041434d6 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-46" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-46")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-8")
+[meter] admit id=cmpl-ad6fae7400e904fefb56530223a22f52 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-47" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-47")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-9")
+[meter] admit id=cmpl-e72f785770994910f074f5ebb7040d67 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-48" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-48")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-10")
+[meter] admit id=cmpl-517476ea5d976627982ddc43a9bc19d7 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-49" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-49")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-11")
+[meter] admit id=cmpl-b6bbe611302712b990a574bcd2ccb379 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-50" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-50")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-12")
+[meter] admit id=cmpl-0f6898b9276d80f9212e0aae806f1feb tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-51" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-51")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-13")
+[meter] admit id=cmpl-7bdc486f4ddfae5f8f400d5f83500d37 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-52" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-52")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-14")
+[meter] admit id=cmpl-9ba49a2eb700da8c9b190bfe546fd664 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-53" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-53")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-15")
+[meter] admit id=cmpl-f3152e1acca5aa9df7aada44df403617 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-54" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-54")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-16")
+[meter] admit id=cmpl-4eac6dce9ecb6a32981312b11b0c3b97 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-55" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-55")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-17")
+[meter] admit id=cmpl-f96b9afab92655bce57240136281e443 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-56" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-56")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-18")
+[meter] admit id=cmpl-1cf3bf2cd7cecc1cea4bce25bb04a621 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-57" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-57")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-19")
+[meter] admit id=cmpl-0409194fe26377562fc0a59a9d8242aa tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-58" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-58")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-20")
+[meter] admit id=cmpl-27cbe686d7d48d0c7b5d453b9ddf2c93 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-59" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-59")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-21")
+[meter] admit id=cmpl-44699e76915b2d99027bf4dafef662be tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-60" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-60")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-22")
+[meter] admit id=cmpl-2845f9b5d5afa5cd6a5c29938f1326c2 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-61" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-61")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-23")
+[meter] admit id=cmpl-ec02f4a692d9575f1ae77b4345328a73 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-62" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-62")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-24")
+[meter] admit id=cmpl-3313b6cee090d933fdd4cfdbab926a5e tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-63" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-63")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-25")
+[meter] admit id=cmpl-bc0841d307480f082038c5f4a0753179 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-64" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-64")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-26")
+[meter] admit id=cmpl-eda2fd482a9ae2bcf75774df815b1457 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-65" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-65")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-27")
+[meter] admit id=cmpl-787fd84a7fe7818922266e0994e9703b tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-66" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-66")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-28")
+[meter] admit id=cmpl-9191449a2838345c64a747959b36dea8 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-67" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-67")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-29")
+[meter] admit id=cmpl-1fda3f8a843478b3ff2890d305f97a99 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-68" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-68")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-30")
+[meter] admit id=cmpl-0eaf71b00f418b44cda7190471b8c676 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-69" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-69")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-31")
+[meter] admit id=cmpl-e467b5b352217df95486d05df399392d tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-70" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-70")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-32")
+[meter] admit id=cmpl-bdb277e280bd4e273a0ad445a0b2d96d tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-71" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-71")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-33")
+[meter] admit id=cmpl-dc92ba4567cad5f5489958f980109bc9 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-72" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-72")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-34")
+[meter] admit id=cmpl-9ccd1f158ddc55ac19fd7fe3bf8d02d2 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-73" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-73")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-35")
+[meter] admit id=cmpl-86818e83ed2196e9d10de86df04e3bf5 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-74" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-74")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-36")
+[meter] admit id=cmpl-d630b77a5f4ca235825cc0c1ec2389d1 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-75" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-75")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-37")
+[meter] admit id=cmpl-fb65502a4f1ba0a5c3503182ed19cdf6 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-76" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-76")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-38")
+[meter] admit id=cmpl-bd0a178ad8082bf797ae882816217e54 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-77" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-77")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-39")
+[meter] admit id=cmpl-53bfc81555321422b92aa44e0883c99e tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-78" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-78")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-40")
+[meter] admit id=cmpl-edf3885225b130af6a41eb0930b73c9f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-79" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-79")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-41")
+[meter] admit id=cmpl-375f6a58c78c06800f6cea7edab6a74a tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-80" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-80")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-42")
+[meter] admit id=cmpl-c678673bd40bf0b0c8e82b5366fcb2f1 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-81" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-81")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-43")
+[meter] admit id=cmpl-ddb9969febf020e00243df71ba0ddcdc tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-82" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-82")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-44")
+[meter] admit id=cmpl-844a158e3e3b770394fbf1280d74b377 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-83" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-83")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-45")
+[meter] admit id=cmpl-ca4911350ea6c8d2a8ea9d7986a0f244 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-84" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-84")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-46")
+[meter] admit id=cmpl-407e2c5d2ed537483c3c8553d75c24af tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-85" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-85")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-47")
+[meter] admit id=cmpl-4e347a13e078de9683e605118aadeb5b tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-86" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-86")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-48")
+[meter] admit id=cmpl-63a8768ca5276d3d4e640b31cfc94a58 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-87" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-87")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-49")
+[meter] admit id=cmpl-2df463412d8c4ef3e21bcd773057834a tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-88" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-88")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-50")
+[meter] admit id=cmpl-81fe1bf887d4ea08fdd016fee092163f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-89" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-89")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-51")
+[meter] admit id=cmpl-a74b28ee1d69d219bc71c9a4d6631028 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-90" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-90")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-52")
+[meter] admit id=cmpl-e12c2e4883368dfd7bd60d81159d5ea7 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-91" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-91")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-53")
+[meter] admit id=cmpl-60a73c1c7fe956dd6c53c74b4fcfb7df tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-92" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-92")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-54")
+[meter] admit id=cmpl-25f3cdc2c518fd4044de40c19f2550a2 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-93" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-93")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-55")
+[meter] admit id=cmpl-8759701423db0a73c1c0ace379f4b58f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-94" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-94")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-56")
+[meter] admit id=cmpl-30141eafccaea225288fd0eef3678791 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-95" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-95")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-57")
+[meter] admit id=cmpl-c8e1cf1d10cf83946cdba2914d57a67b tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4984 path=plain = 10208 B/token x ctx + 129MB fixed = 180MB
+[meter] admit id=cmpl-682f5b4dcc8e49e311ff60f4f403d5df tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-8b66771283f8b1ae3a9e0ed67aa43782 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-fd8f1649b0f4bcdc3a0b6678fb451085 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-14" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-32" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-55" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-14")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-58")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-4")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-59")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-32")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-60")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-55")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-61")
+[meter] admit id=cmpl-1e089a6a475d7bf975ce80595bbe5ca3 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-62" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-24a09e38f2fd1c90d3217e0f6d8c6cf1 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-460752764da5343192f0aa139f4cd59a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-12bb8febd37d014dc1b5a2a25f52561f tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-76" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-75" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-82" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-07a994a8e1c1f0297ebb1805984772b0 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-77" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-461a153fa82882cae89d8b51222bd112 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-16e59d0235e3f4988824b719b9e524ee tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a72e33c2fc97ff8527ee11ccb5e517f9 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-30" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-21" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-80" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-30")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-63")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-21")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-64")
+[meter] admit id=cmpl-739c9ba18df2590b0275c4c118a93e01 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-13" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-bf85070a56d146ae957ff5f5fae07a33 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c4-cold-13" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-13")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-65")
+[meter] admit id=cmpl-e3eb0e1b4af2df71c1f69f68fd479a5c tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-eb40597a4741860e202878d63f88126d tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-89" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-7" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c4-cold-13")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-66")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-7")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-67")
+[meter] admit id=cmpl-334aba0549b64065c70699e1fbcbd062 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-19" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-a84afb8e64389ba9c9e8729d037d6c52 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-43" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-41c845d4b5fd3aab152a3c9be7863001 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-48" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-62a9f1b02fcf375d2e8b1aae65a04a12 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c4-cold-19" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-19")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-68")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-43")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-69")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-48")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-70")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c4-cold-19")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-71")
+[meter] admit id=cmpl-71114bd3dd26297613810cb2d7fc1b58 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-1fc4f8f892af9443ba1b9f6695735cd2 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-079e7bff634322e7bea8ff86ba24dea9 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-d6c00afbbf2ff33c3cfe542089b8b3b4 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-dd01c41e7bc1d7bce0a9c95d04b4e763 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-232a95f5828a12074f7b51720e4a2622 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-b0a51aa00a2744ab2d537ce0cebe06fd tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-5bd54dcf0ac9ec88d33a900c750bf159 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-7f4e69ecc5f187ada357fa294f914139 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-9f201941f35191de8f0367e8f95a4da5 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-67" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8e072185929731f23931d03ff0438f77 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a020b1828987eae697a504f1f0ac55bc tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-50" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-fbf28406743ab3f152fe7f0dfccc14eb tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-1b83f35718da7eb8232a57207fb6046b tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-b40660a613b084b329e2a0613fd0935a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-ff8cb03619a6dddee7f0e815197b8d3a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a1fb3f5347a3d3e9acea13bac961d9c2 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-d1dcbe73c94c3fa49b8b42d6170fc2df tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-17" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[meter] admit id=cmpl-07a57aefeffc78970d0da48a8d6c0751 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-cb7627c294039ce40e466e2c386973ec tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-5e370ea041fd51eddcb89c2dcda40757 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-fc60cc350eff4a16c7d77ab44a5a5be4 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-2" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-f3c0c183bd3de9afe13afca168e7b365 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-c2213ab54b1ed16110bc16bbb018c318 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-93c30149c10eec53c2dcf434e0ce63fd tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e15fb098fcabc45b05dd14671fd7b48e tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-9014915beec377a6bb8d1832efc460a4 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-58" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[meter] admit id=cmpl-346a567a3f7823da52b946ea24378679 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-35" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[meter] admit id=cmpl-877c53d1a5b4cd26c9cf1fc9fca64f7c tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-9362ad6ce4f45f2c4639b87a8783eb4e tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-c9059fc9081ffadaf21046a9b1012a4b tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-52" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[meter] admit id=cmpl-0206794905967d2d6dc1adf778b8fa43 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e1fd4b1075556e7036a983a47ca54e74 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-0f45f2e3f73217e5e4cd6ec878ab9cd4 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-396bdd115e70f21b1e445c793d388969 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-674387157d875e2d50ca6f2464350eec tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-339cb23979b827ee71c1e006d196799b tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-8c95017416b6280bccca2d85cbe1292e tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-33" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[meter] admit id=cmpl-0975e4fb662c196e2b4a64a831975128 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-3c2daec52a360cd0d9e02c7a9ca3685f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-51" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-31" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=13 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-42" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-49" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=15 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-9" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=17 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-79" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=18 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-92" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=19 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-18" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=20 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-14" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=21 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-72" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=22 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-23" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=23 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-78" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=24 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-91" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=25 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-60" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=26 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=27 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-12" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=28 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-68" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=29 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-95" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=30 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=31 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-28" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=32 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-56" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=33 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=34 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-46" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=35 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-38" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=36 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-64" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=37 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-71" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=38 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-85" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=39 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-20" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=40 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-67")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-73")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-50")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-74")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-17")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-81")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-2")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-83")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-58")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-84")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-35")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-86")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-52")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-87")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-3")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-88")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-33")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-90")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-6")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-93")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-51")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-94")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-16")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-14")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-31")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-4")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-42")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-32")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-49")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-55")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-5")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-62")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-9")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-82")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-18")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-75")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-14")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-76")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-23")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-30")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-60")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-21")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-1")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-77")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-12")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-80")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-68")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-13")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-16")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c4-cold-13")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-28")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-7")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-56")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-89")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-11")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-19")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-46")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-43")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-38")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-48")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-64")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c4-cold-19")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-71")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-67")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-20")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-50")
+[meter] admit id=cmpl-4a34e726d8da9f85921b081ea313185f tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-df86edd4fe4cae4758fd34e5d9bc18bd tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-8c7b74128a75cc401f5bd327e293e13c tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-db5097dd05172b01ebc5f629081c01e6 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-08020e3dbd9cf9598ef5fedc0964e7c2 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-c3595ff00b6e06b02b72ee3f3473e8ec tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-29" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d17de086fd4b69cff294a47822180b67 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-d75e8453018b69a81de72ef57c8dd68c tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-36" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-a302dca2ff2a07d60d7fce7d050d3291 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-30bfd1c281748cfd98adb56e8be90873 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-2722abd9ad7f4d32d5f6d45675791229 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-c35b59549870c7bf5103d3a529e942f5 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-ecf74a99d7bbb8c286bf600b25955361 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-15" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[meter] admit id=cmpl-2ec3a43af2f8231ebca181338d93ed34 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-ac5555ddf3756da35c807fd6e2b47743 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-8286a4d8a5520eb8662341cd28b7f2d2 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-ba56238da19595b176ebc7029e704bf1 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-7fb217773e0f52f357504685e4cff80c tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-1d084cabbadf37ad176804bbdd99a89d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-7e323e7b16e7f5a356cba6dcf8670e4a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-4b531799080922481bea64aacb82435f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-40" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-28a0024359f28fd06033b1a35d447871 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-25" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[meter] admit id=cmpl-115349d457e7d63bfcb99272c00f62e0 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f613c49661d3be5fa226d4d3d244f83e tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-69" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[meter] admit id=cmpl-64ef2094c09469267f1e72acb4779fdc tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-eb663988263d116715ce77d952bb9088 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-7147c025be8da1d68b39944278eadd4a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-5f357b86d89c0f9a46d1d7b9223a2dc6 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-b414fb65f237bd6d51ead1cf66a243f5 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-54" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-73" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-09d49eaef938e9bcfa898565cf8a04f5 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-66a245a8012fecadfca87189bfe4009a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-4a5fab7d1421e8a51edce6e7a914792d tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-59" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-27" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-88" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-12" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-34" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=13 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-37" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-28" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=15 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-86" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-63" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=17 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-61" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=18 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-81" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=19 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-8" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=20 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-39" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=21 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-84" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=22 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-57" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=23 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-47" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=24 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-4" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=25 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-70" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=26 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-87" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=27 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-41" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=28 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-83" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=29 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-26" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=30 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=31 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-74" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=32 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-29")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-17")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-36")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-2")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-15")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-58")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-40")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-35")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-25")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-52")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-69")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-3")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-54")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-33")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-73")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-6")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-59")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-51")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-27")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-16")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-88")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-31")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-12")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-42")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-34")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-49")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-37")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-5")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-28")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-9")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-86")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-18")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-63")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-14")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-61")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-23")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-81")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-60")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-8")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-1")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-39")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-12")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-84")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-68")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-57")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-16")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-47")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c40-cold-28")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-4")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-56")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-70")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-11")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-87")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-46")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-41")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-38")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-83")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-64")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-26")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-71")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-5")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-20")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-74")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-85")
+[meter] admit id=cmpl-811f900a22bb2c469a9c30c6b957a527 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-980836030568185be2444cce118499b9 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e0a78f29c420bc2069d4790ca4233ab9 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f8684714ebc6edf9ebff972c7081a41f tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-049517cbff75341d88873f1d245aca7e tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-906e5c24123552d0b1f409eeae18d459 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-ba2c4c2f4caaa87f1651cef128e9d33a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-4b59dc4b401a75e69cfc9c6985c7a4a3 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=13 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-66" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-53" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=15 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-45" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-65" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=17 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-44" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=18 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-34" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=19 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-10" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=20 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-0")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-95")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-66")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-91")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-53")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-78")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-45")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-72")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-65")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-92")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-44")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-79")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-34")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-29")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-10")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-36")
+[meter] admit id=cmpl-99ddb121b9b8dc1e7a7295454b932c27 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f649a4371abbbcaae799729d34ac2482 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-87e2e14a97141d9ab37586c72a3cdcd6 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-5b5bf0ec5f79171ce861f8bf216abfce tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a98de34fd4acbfdef9887db833972223 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-fb5a94049e8329286bb64fb26bad9302 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-1f211e99c1b47835ddc82474916211fa tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a698a463d044974adc49f5f63207862c tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-544843df10fc2c5701d82a7e2ad8a714 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-6ca500b941b305701dfb2dd7072306be tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-86cfc3418ce2c3847e4308fab4726d83 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f8d7863f3b52913ff57c2633caee909d tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-69" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d677e62db9d153e54085ae17d4db54de tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-345a8ff12ebda60d1458535dfec88fd9 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-99228f639b1b4d12c9a5caa235d2480d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-2e936579a59515e3226b79ac58ed74d4 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-3e43aae36ae268c81b86ececc907553c tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-b1ecf8252ab7e06e869ba3561f292d15 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-2d54a4528b1d843e570e05f32ab600a4 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-c6345cee015596b51574ce0720de0988 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-0ccb5321d63ed91d47bb9a7e676953c9 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e02acf4f7b1175f0ceedf84707ebe1ea tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-3611d68ee9190513cd99257bc390f64f tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-b3690bf6157b7ea346c152b0e9a1b335 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-38" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-22" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-57" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-30" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-94" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-24" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-28" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-93" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-90" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-76" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c24-cold-5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-47" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c24-cold-10" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-77" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=15 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-26" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-14" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=17 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-40" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=18 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-80" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=19 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-33" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=20 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=21 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-49" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=22 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-32" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=23 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-18" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=24 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-38")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-15")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-22")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-25")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-30")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-54")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-94")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-73")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-24")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-59")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-93")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-27")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-90")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-88")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-76")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-12")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c24-cold-5")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-34")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c24-cold-10")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-37")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-77")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-86")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-26")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-63")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-14")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-61")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-80")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-81")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-33")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-8")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-1")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-39")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-49")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-84")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-32")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-4")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-18")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-70")
+[meter] admit id=cmpl-87be38c8688e91815aa5100ba365e2c2 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-60" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=24 placement=single-or-non-pp2
+[meter] admit id=cmpl-96280a066144cd3c2124a6746505641c tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-d76bf6d9973c7ef5879e1884ad060246 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-729a6023d78b5eb32aba8ca4348b19b8 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-947a31473c14c37cf445902448b03ae9 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-87" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=21 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c24-cold-25" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=22 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-86" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=23 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-5" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=24 placement=single-or-non-pp2
+[meter] admit id=cmpl-6659f711c279432624e5b72d21d3823e tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-68" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-60")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-41")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c24-cold-25")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-83")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-86")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-26")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-5")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-5")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-68")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-74")
+[meter] admit id=cmpl-8a071e03d2159e2fb32dec2af6efd4aa tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-7732a7b85ae028775106ec39ec95fbaa tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-1b69b6327c19f49dc7e703591aa82b78 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f903fd63f5a15425e729f32cdb0202c6 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-217665b24005cf7478e70d968161d5a0 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-da7eb4c110f07f28ac2338fa714501d0 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-fb303481a9ad0bab572f6f038a225a5e tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a3fcb910e63d0f86e8a9bb857b7b11be tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-1e0d6fda070d53d426885f6cd5ca6df1 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-98e6947f1abd27403ac03a198651e35f tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-c94f44af3c60188340abcbeed2fe373a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-ca9cfd096e93efc16c10d992f9ad21e7 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-34" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9e844de598df4fa693f4b45b691b4f95 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a7406ab93a75c7796c5449a70a7ad7ec tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-8" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-057f80c8c3bade2397073cc92e0d18bc tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c16-cold-9" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[meter] admit id=cmpl-a67888b56e94635d8dcd078bcb717223 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-37" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-48" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-89" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-56" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-55" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-94" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c16-cold-2" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-43" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-21" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-65" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-61" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-24" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-53" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-34")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-0")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-8")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-66")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c16-cold-9")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-45")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-37")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-44")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-48")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c32-cold-34")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-89")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-10")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-56")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-38")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-55")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-22")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c16-cold-2")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-30")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-43")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-93")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-21")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-90")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-61")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-76")
+[meter] admit id=cmpl-019ecd72ea0bf4a3057a2e7684673720 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-27" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[meter] admit id=cmpl-096d82be36853e686102203e6eb046e4 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-3b99975b12453c5c65496ccd4c42e482 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-0f8fd25c54a1825c6f83f8b6c0ed2475 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-13" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-52" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=15 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-54" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-27")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c24-cold-5")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-13")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c24-cold-10")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-52")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-77")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-54")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-26")
+[meter] admit id=cmpl-326ec0a99ef712d997f0af5f82468882 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e59be53b594e89cf4db3e82c3cf1c607 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f5c3264eedcb358635aedb6fa12c5df5 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-848abc7018e8a2f58ffab2f2ccef8afd tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-35585e51f466f6601ae6b9c3597d70ba tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-6ec0a2976b2066d3e47f79d92b631a6c tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c8-cold-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-025ea326bfbe41b65c4283d531f9a69c tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c8-cold-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-5beb55863866856d50a34a15201e0d8d tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-73" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-91" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-4" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-83" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-82" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c8-cold-3")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-14")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c8-cold-2")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-80")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-73")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-33")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-91")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-1")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-4")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-49")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-83")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-32")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-6")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-18")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-82")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-69")
+[meter] admit id=cmpl-e41cfb78dbffb99a4c0027ce9bd86ae5 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-52cfac679894047451858c7d9d31fcb6 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-c4441e6af4e6d55e90b61165955d0f81 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-97c18871ea35ebe498ee469f8582c993 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-286900daba02c4f9e0eb5b12962042ed tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-0c9d773b2b800db73188ddea1a16b267 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-88" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c25e67a499db8a58e46882bbe5a34c10 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-728aa73c7c89c48a36bd1be7638cc5f7 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-81" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-59" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-75" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-12" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-44" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-46" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-41" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-88")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-40")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-81")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-47")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-59")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-28")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-75")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-57")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-12")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-60")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-44")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c24-cold-25")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-46")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-86")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-41")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-5")
+[meter] admit id=cmpl-6a3354685e8bb9288051db5e64b9e839 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-607fcd2865a26221962aaf157a303771 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-1031d291d264eac20c4c0cba7b847624 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-22" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-17" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-67" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[meter] admit id=cmpl-765492dd040f1147e5c94283c98bca0f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-85" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-22")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-68")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-17")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-87")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-67")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-34")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-85")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-8")
+[meter] admit id=cmpl-9426544f8200076251587b50f993c799 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-9bae2bf4b00f2948c1006be087d40689 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-bbec2f83ed8522201d1d7c21f12e522b tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-2b5fc2cd8ad6db030acac5ef00efcf3f tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-cdfb7a1f5576ff54cd57bd2cb8d050dc tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-df0129672b1e0db03b2c680b1070ec40 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-bc7ebbc3a2a3d48b67838e9e04b45875 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-93" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-63" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-71" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-19" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-90" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-62" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-7")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c16-cold-9")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-93")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-37")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-63")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-48")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-71")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-89")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-19")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-56")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-90")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-55")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-62")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c16-cold-2")
+[meter] admit id=cmpl-9ae53a09d7d397ec4d3a25743d54ea20 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[meter] admit id=cmpl-b40e1226656e097016401129dc49b1da tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-602c6cfe98de6fc420d6172f3ba73db4 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-4627416b0bf4270a5d505f774e048244 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-fdff8364dad7afbf9d7b632b4ecee70d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-924915420fa81e94cc19cf8301ed3ee9 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c7-cold-10" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-92" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[meter] admit id=cmpl-924366fa18a44b1b2d4aa781d911801a tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-25" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-51" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c7-cold-11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-29" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-0")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-43")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c7-cold-10")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-21")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-92")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-61")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-25")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-94")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-51")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-53")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c7-cold-11")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-24")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-29")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-65")
+[meter] admit id=cmpl-9d2e93a03c93d2706571fca81a9317a4 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-74" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[meter] admit id=cmpl-44f5ef62f6741f9f7e917668287d90fa tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-0429e87620217060fb2fab7059f5b1fa tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-934ba2dd32a6eb0921fedd0efe2a941a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-2de1e0b63dfc678fe9cc9516dbc4de19 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-2b85b03361bbf5581c7de0d27d2c81e5 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-15" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-3" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-2" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-50" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-26" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-74")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-27")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-15")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-13")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-3")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-52")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-2")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-54")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-50")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c8-cold-3")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-26")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c8-cold-2")
+[meter] admit id=cmpl-2487f485af3c7bd4067e74cb6cc0a447 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-66143dbbb260731bccb8eb10c0785a66 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-3fba864e26202210d3177a1756a1b419 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-7331696a0f99791b23604ab9e6da414a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-ef2a71fcafcbae444c7e2d5426691040 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-23684d930103bf80b9b49aac3ae662f7 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-45" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c6-cold-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-16" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-42" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-23" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-36" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-45")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-73")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c6-cold-4")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-91")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-16")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-4")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-42")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-83")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-23")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-6")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-36")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-82")
+[meter] admit id=cmpl-a7d92c9742efce18d16aa0fe15db2151 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-66" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[meter] admit id=cmpl-b3eee3d793ac267e9fabef9da3515715 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f4341e896340ebb5e55cb67f259f391c tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-1974a7bd5305e3676869e514a61d4cc6 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-0eb9351aa71613a602e2ed2a8f489767 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-5af13d83a2510e21ca65179eae6f3736 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-64" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-78" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-58" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c6-cold-11" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-66")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-88")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-64")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-81")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-11")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-59")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-78")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-75")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-58")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-12")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c6-cold-11")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-44")
+[meter] admit id=cmpl-5b78bdd308ba81c6397cb31ccb4d44be tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-72" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[meter] admit id=cmpl-d7a8239f5856637e4a0d62980d9d1b8c tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-287db30690d604c3e8c4eb7ed8dc7578 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-39" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[meter] admit id=cmpl-b1b30d68a6cec7eef2850decf557fe62 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-238004d0e5bb3541fe54eb338f8fdaab tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-9d5f37c9ad35c10f0c8b895db1a1d593 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-95" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-31" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-35" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-70" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-72")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-46")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-39")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-41")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-95")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-22")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-31")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-17")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-35")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-67")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-70")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-85")
+[meter] admit id=cmpl-e282671988e563395be70083f3611b2f tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-9" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[meter] admit id=cmpl-4a298599c287831835e78d101f95c71a tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-79" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-9")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-7")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-79")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-93")
+[meter] admit id=cmpl-2ff7b9f68d19b1f71ee7863fcd9a78ec tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-24006ecd2ec06e090711e7dae65bd4e9 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-73688b2e7222d70b9b194c235f04b411 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-39e4c97b835cdbc8273bb752ccffb691 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-d60f20cfb1bb5620fe8d9a021f3e9e4c tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-10" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-84" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c5-cold-0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-48" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-20" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-10")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-63")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-84")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-71")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c5-cold-0")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-19")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-48")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-90")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-20")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-62")
+[meter] admit id=cmpl-aa626d510e0034ead97660287de23471 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-86" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[meter] admit id=cmpl-602cb0ef30103e57ee440576e5a4948a tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-264061fc1b0369afd096661d769ee05d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f94cc781854a8d023192b93b524053fa tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-e67c5736eade5bb06aab8f15add969b3 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-40" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-q35-b4096-r2-c5-cold-6" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-44" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-94" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-86")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-0")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-40")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c7-cold-10")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c5-cold-6")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-92")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-44")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-25")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-94")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-51")
+[meter] admit id=cmpl-af50178647ea9861cc4990c474f3934a tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-41" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[meter] admit id=cmpl-b6fe4d16710d56f34902ea6c3a3eab17 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-b8b484b84677ffbddef88fa08dc9ab75 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f11d93205f5cd19ed7fca5ab94d2a56d tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-aa0706b036bd67b6d2d9238bbc41fde4 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-77" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-67" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-27" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-53" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-41")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-q35-b4096-r2-c7-cold-11")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-77")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-29")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-67")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-74")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-27")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-15")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-53")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-3")
+[meter] admit id=cmpl-0f894cbd110669c843a649dfc673d1e3 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-16" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[meter] admit id=cmpl-20437e2ca4e76bcd2435e09750858786 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-d2b3b26f07360028e1935a7e1866c5de tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-878f7df9498e27d01146ebb5fbf000c8 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-46c885fdbe532cc0cff236cbff8d4cb9 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-42" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-57" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-52" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="q35" tenant="cx-cachesize-q35-b04096-r02-hot-8" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-57")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-2")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-52")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-50")
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 4327.6MB / 4295MB, model q35, ns "cx-cachesize-q35-b04096-r02-hot-8")
+[prefix-cache] evict (LRU): 4860 tokens, 111.0MB (model q35, ns "cx-cachesize-q35-b04096-r02-hot-26")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

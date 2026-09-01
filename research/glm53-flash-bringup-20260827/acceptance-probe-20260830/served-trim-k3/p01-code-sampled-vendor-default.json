@@ -1,0 +1,36 @@
+{
+ "name": "p01-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 289,
+   "completion_tokens": 128,
+   "total_tokens": 417,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 18.147859356,
+   "spec": {
+    "rounds": 57,
+    "drafted": 171,
+    "accepted": 70,
+    "acceptance_rate": 0.4093567251461988
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "Let me parse what the user is asking for. They have some kind of agent system \u2014 sounds like they're building an autonomous agent setup (probably with Claude agents / cron-style scheduled agents, maybe using something like Claude Code with scheduled tasks, or an agent framework where agents \"wake up\" on schedules). They mention:\n\n1. \"active research is a good one\" \u2014 referencing a previous thing (context I don't have, but seems like there was a previous discussion about an \"active research\" agent/hook).\n2. They want to replace \"the digest\" with \"twice a day researched thing.\"\n3. Add the MCP"
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,6 @@
+[frspec-trim] self-trimmed head: 32768 rows of main output.weight (Q5_K)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[dspark] gate: DFlash2 draft head TRIMMED to 32768 rows (FR-Spec d2t; verify stays full-vocab)

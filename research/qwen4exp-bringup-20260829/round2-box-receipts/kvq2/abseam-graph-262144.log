@@ -1,0 +1,31 @@
+# qwen4exp_real_gate	label=r2abseam-graph-262144	binary_sha256=5f5f708eb0ed27829f35174a062e7234a4ebc8b11a3ad24690ff0642c40d1b3c	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# load	513.1s
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder	state-allocated	0, 92883 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=16384	elapsed_s=81.7	0, 94291 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=32768	elapsed_s=165.5	0, 94387 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=49152	elapsed_s=250.1	0, 94515 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=65536	elapsed_s=335.6	0, 94547 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=81920	elapsed_s=422.3	0, 94867 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=98304	elapsed_s=509.9	0, 94867 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=114688	elapsed_s=598.4	0, 94867 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=131072	elapsed_s=687.9	0, 94867 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=147456	elapsed_s=778.8	0, 95507 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=163840	elapsed_s=870.7	0, 95507 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=180224	elapsed_s=964.1	0, 95507 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=196608	elapsed_s=1057.9	0, 95507 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=212992	elapsed_s=1152.6	0, 95507 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=229376	elapsed_s=1248.1	0, 95507 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=245760	elapsed_s=1344.5	0, 95507 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-progress	fill=262144	elapsed_s=1442.3	0, 95507 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB
+# ladder-rung	262144	1442.3	1442.3	128	42.8	40.9	41.2	23.36	rounds=3x12 medians=[40.8, 40.9, 40.9] spread=0.10%	false	167804	0, 96669 MiB, 97887 MiB | 1, 95507 MiB, 97887 MiB	19687,41973,1174,198,309,364,585,303,220,15,486,83,313,198,388,1042,5041,11857,283,7251,20077,15,69,18,17,26,16656,85,5098,198,388,364,492,303,220,15,486
+
+# ladder-jitter	rung=262144	arm=rung-default	n=34 mean=42.80 med=40.85 sd=11.014 cv=25.73% p99=106.05 max=106.05 outliers_1.5x=1
+# ladder-ab	rung=262144	seam=graph	arm=off	median_ms=41.42	tok_per_s=24.14	reps=7	medians=[41.12, 40.91, 41.42, 41.17, 41.49, 41.52, 41.59]	spread=1.64%	n=224 mean=41.36 med=41.38 sd=0.381 cv=0.92% p99=43.28 max=43.69 outliers_1.5x=0
+# ladder-ab	rung=262144	seam=graph	arm=on	median_ms=41.31	tok_per_s=24.21	reps=7	medians=[41.0, 40.93, 41.22, 41.31, 41.39, 41.48, 41.4]	spread=1.31%	n=224 mean=41.27 med=41.27 sd=0.347 cv=0.84% p99=42.00 max=43.34 outliers_1.5x=0
+# ladder-ab-verdict	rung=262144	seam=graph	off_ms=41.42	on_ms=41.31	speedup=1.0027x	delta_pct=0.27%	reps_per_arm=7 (escalated)	host_probe=false	vol_cs=396	nonvol_cs=93	threads=4	launch_cpu_migrations=0	launch_cpus_seen=0
+# ladder-ab-restore	seam=graph	arm=on
+# ladder receipt: /home/ubuntu/realgate/kvq2/ladder-r2abseam-graph-262144.tsv

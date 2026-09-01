@@ -1,0 +1,112 @@
+GLM-5.3-Flash BASE decode — where the 117 ms token goes (2026-08-28)
+
+GEOMETRY (config.json, verified; not inferred from the card)
+  hidden 4096 | 45 layers = 3 dense + 42 MoE + 1 MTP | 34 KDA + 11 MLA
+  288 routed experts + 1 shared | num_experts_per_tok 8 | moe_intermediate 2048 | vocab 154880
+  One NVFP4 expert projection block = 4096x2048 = 4.72 MB.
+  MEASURED accesses/token = 1008.0 exactly = 42 layers x 8 routed x 3 projections.
+  (The shared expert never enters the SLRU: it is trunk-resident. The MTP layer is unused.)
+  Whole routed-expert set = 42 x 288 x 3 x 4.72 MB = 171.2 GB (159.5 GiB of .memra-repack slab).
+  Trunk on card 0 = 23,635 MiB f32 / 13,907 MiB with MEMRA_BF16_MMV=1.
+
+RESIDENT-TRAFFIC ROOFLINE (RTX PRO 6000 Blackwell, ~1.79 TB/s)
+  term                                                      bytes/token   ms
+  KDA q/k/v/out, f32, 34 layers x 4 x [4096,8192] x 4 B       18.25 GB   10.2
+  MoE experts read from VRAM, 1008 x 4.72 MB                   4.76 GB    2.7
+  lm head output.weight, f32 [4096,154880]                     2.54 GB    1.4
+  everything else on the trunk: MLA + kpool indexer + mHC +
+  norms + dense FFN + the 42 shared experts (0.60 GB)          2.85 GB    1.6
+    -- NOT an estimate: measured trunk VRAM 23.635 GB minus KDA 18.25 minus head 2.54.
+  TOTAL                                                       28.4 GB   15.9   -> a 63 tok/s ceiling
+  With MEMRA_BF16_MMV=1 the first and third rows halve: 18.0 GB -> 10.1 ms -> a 99 tok/s ceiling.
+  CONFIRMED INDEPENDENTLY: trunk VRAM fell 23,635 -> 13,907 MiB = 9.73 GB, against the 10.4 GB
+  the two halved rows predict, and the boot loader-law Float warnings for output.weight,
+  kda_q/k/v/out and indexer.attn_q_b disappear (they now load FloatBf16).
+
+THE DECOMPOSITION (solved from measurement, not modelled)
+  Two arms differing ONLY in MEMRA_MOE_SLOTS, at the same transport:
+    A2    12000 slots:  49.14 ms/token,  797.5 MiB staged/token
+    A2LOW  6000 slots:  68.48 ms/token, 1755.7 MiB staged/token
+    slope = 19.34 ms / 958.2 MiB = 49.55 MiB/ms  (~53 GB/s = PCIe 5.0 x16 line rate, pinned DMA)
+    intercept X = 49.14 - 797.5/49.55 = 33.05 ms  and  68.48 - 1755.7/49.55 = 33.05 ms
+  The same solve on the pageable-mmap arm gives its transport rate:
+    A1    12000 slots: 117.12 ms/token,  795.1 MiB staged/token
+          117.12 - 33.05 = 84.07 ms for 795.1 MiB = 9.46 MiB/ms (~10 GB/s, pageable memcpy class)
+
+  X IS INVARIANT ACROSS EVERY CELL — 5.2x apart in transport, 2x apart in residency, two prompts,
+  and 26x apart in staged volume:
+    cell                                    ms/tok   staging   X = ms - staging   X - roofline
+    A1    p5 greedy  mmap  12000            117.12     84.05        33.07            17.17
+    A1    p2 greedy  mmap  12000 [LOOPED]    40.16      6.81        33.35            17.45
+    A2    p5 greedy  PIN   12000             49.14     16.09        33.05            17.15
+    A2LOW p5 greedy  PIN    6000             68.48     35.43        33.05            17.15
+    A2LOW p7 greedy  PIN    6000             67.40     34.27        33.13            17.23
+    A3    p5 greedy  PIN+BF16 12000          43.00     16.30        26.70            16.60
+
+  So the token splits three ways, and the third term is NOT bandwidth:
+    84.1 ms  H2D staging of ~177 expert-block misses/token over a PAGEABLE mmap  -> 16.1 ms pinned
+    15.9 ms  resident weight traffic at the roofline                             -> 10.1 ms in BF16
+    17.1 ms  launch / latency overhead above the roofline  -- UNCHANGED by both bandwidth levers,
+             which is the evidence that it is launch structure, not bytes.
+
+WHAT THE 17 ms IS (source, not speculation)
+  glm5_next is denied EVERY fused MoE arm:
+    - config.rs swiglu_clamped_at() is TRUE for every glm5 layer (swiglu_limit 10.0, PRE form).
+      That single predicate denies grouped-decode (gdec), moe_pairs_silu_mul and moe_ffn_dev,
+      whose epilogues hardcode plain silu(gate)*up.
+    - hybrid_forward.rs:7048 `no_macros` additionally denies gdec: compressed-tensors NVFP4
+      carries a per-expert weight_scale_2 the fused kernels do not fold.
+    - moe_ffn_dev debug_asserts sigmoid_router().is_none(); glm5 routes sigmoid/noaux_tc.
+  So every token-layer runs the per-expert sequential loop: 8 experts x ~5 launches, plus a
+  router GEMV, a host DtoH of the router logits and a stream sync, x42 layers. Estimated launch
+  census ~3200/token (~1750 of them the MoE loop); 17.1 ms / 3200 = ~5.3 us, which is exactly
+  kernel-launch latency. The engine's own comment for the dev path names the same cost: "removes
+  the per-layer router DtoH + stream sync — the per-token host stall that dominated the 35B
+  decode wall".
+  NOTE the ordering constraint: gdec only fires when ALL 24 blocks of a token-layer are already
+  cache-resident. At the measured 17.5% miss rate P(all 24) = 0.83^24 ~ 1.2%, so a fused epilogue
+  is worth almost nothing until full residency lands. Residency is the keystone, not the epilogue.
+
+MEASURED ARMS — p5 (real 785-char agentic prompt, 203 prompt tokens), 192 completion tokens,
+4 reps, medians; greedy = the INSTRUMENT, vendor-default sampled (temp 1.0 / top_p 0.95, seeded)
+= the PRODUCT. sha = sha256_16 of the full emitted text.
+
+  arm                                   greedy   sampled   p7 greedy   greedy sha
+  A1   mmap staging, 12000 slots          8.538   14.293*      --       fd006d0d50eb59b5
+  A1R  (repeat boot)                      8.506   14.311      8.550     fd006d0d50eb59b5
+  A2   + MEMRA_ST_PINNED=1               20.348   23.693*      --       fd006d0d50eb59b5
+  A2R  (repeat boot)                     20.347   23.771     20.369     fd006d0d50eb59b5
+  A2LOW  ST_PINNED, 6000 slots           14.602   17.265*    14.837     fd006d0d50eb59b5
+  A3   ST_PINNED + BF16_MMV, 12000       23.260   23.615     25.551     ca1e3cc2e4ea7104
+  A4   ST_PINNED + BF16_MMV, 14000       25.912   25.946     27.710     ca1e3cc2e4ea7104
+  * these sampled cells hit EOS at 39 tokens (short, seeded, comparable to each other only);
+    the A3/A4 sampled rows ran the full 192.
+
+BYTE IDENTITY. Five arms — two transports, two slot counts, two boots — produce the IDENTICAL
+greedy text on p5 (fd006d0d50eb59b5) and the identical seeded sampled text (7db18bc5e2a04140).
+MEMRA_ST_PINNED and MEMRA_MOE_SLOTS are therefore proven non-numeric here, exactly as the code
+claims (same HostExps bytes; only the copy's provenance and the residency set change).
+MEMRA_BF16_MMV IS a numeric-class door and its sha differs (ca1e3cc2e4ea7104) — stable across
+both of its arms, but it needs its own documented acceptance (run-gen argmax gate + boot battery)
+and owner ratification before any default change.
+
+INTERLEAVE. The arms are process-level env (OnceLock), so they cannot alternate inside one
+server; the interleave unit is a BOOT. A1/A2 were alternated across boots with 4 reps inside
+each. Reproducibility: A1 8.538 vs A1R 8.506 (0.4%); A2 20.348 vs A2R 20.347 (0.005%). Deviation
+from the strict x5 request-level protocol is stated, not hidden; the effect is 2.4-3.0x.
+
+CONTINUITY with the bring-up receipts. BRINGUP.md's 19.70 greedy / 12.70 sampled came from a
+31-token synthetic prompt ("Write one short sentence about the sea.") with reasoning_effort
+UNPINNED. Re-run here as its own cell it reproduces: A2LOW sea sampled 12.02 (vs the banked
+12.70). That prompt is 31 tokens, below the 64-token prefix-cache floor, so every rep re-prefills
+and its tok/s is prefill-dominated, and it warms one narrow expert set. The 8.5 tok/s real-prompt
+baseline is not an instrument regression — it is what a real agentic prompt costs.
+
+QUALITY FLAG (not a perf row). Prompt idx 2 degenerated into a repeat loop in BOTH arms:
+greedy '{"timestamp": 175175175175...', sampled '{"docs": {"docs": {"docs": ...'. Excluded per
+LAW greedy-is-the-instrument. It happening in the SAMPLED arm too is worth a look from the
+forward-numerics lane that just closed; a loop is expected under greedy, less so under
+temp 1.0 / top_p 0.95.
+
+SPECULATIVE: none engaged, and none can. Every spec entry point refuse_hyper's this residual
+topology (BRINGUP.md, 2026-08-28), so every row above is path=plain generation.

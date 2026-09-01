@@ -1,0 +1,88 @@
+[server] starting; models config = [("step35", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy disabled by MEMRA_SPEC_GATE=0: always-spec
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step35" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step35: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step35": 45 layers, eos=128007
+[worker] step35: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml")
+[worker] step35: decode chunk cap 8
+[server] worker ready; serving models: ["step35"]
+[server] listening on http://127.0.0.1:18209
+[meter] admit id=cmpl-5f871b52f29bae422a3f8541b2d23d10 tenant=default lane=interactive model="step35"
+[spec-k] model="step35" tenant="longdepth-ctx262144-on-t0-d2048-rep1" K=3 source=cold-short prompt=368 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[worker] observed session VRAM cost for "step35": 11677MB (admission gate = 2x)
+[spec-acc] ctx=368 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=400 burst=21/42 cum=40/78=0.513
+[spec-acc] ctx=435 burst=19/42 cum=59/120=0.492
+[spec-acc] ctx=468 burst=18/42 cum=77/162=0.475
+[spec-acc] ctx=500 burst=19/39 cum=96/201=0.478
+[spec-acc] ctx=532 burst=19/39 cum=115/240=0.479
+[spec-acc] ctx=564 burst=20/39 cum=135/279=0.484
+[spec-acc] ctx=597 burst=22/39 cum=157/318=0.494
+[spec-acc] ctx=632 burst=18/45 cum=175/363=0.482
+[spec-acc] ctx=665 burst=19/39 cum=194/402=0.483
+[spec-acc] ctx=697 burst=22/36 cum=216/438=0.493
+[spec-acc] ctx=731 burst=18/42 cum=234/480=0.487
+[spec-acc] ctx=763 burst=22/39 cum=256/519=0.493
+[spec-acc] ctx=798 burst=18/42 cum=274/561=0.488
+[spec-acc] ctx=830 burst=19/42 cum=293/603=0.486
+[spec-acc] ctx=863 burst=21/33 cum=314/636=0.494
+[spec-acc] ctx=895 burst=21/39 cum=335/675=0.496
+[spec-acc] ctx=929 burst=16/48 cum=351/723=0.485
+[spec-acc] ctx=961 burst=22/36 cum=373/759=0.491
+[spec-acc] ctx=995 burst=21/33 cum=394/792=0.497
+[spec-acc] ctx=1027 burst=21/39 cum=415/831=0.499
+[spec-acc] ctx=1061 burst=22/30 cum=437/861=0.508
+[spec-acc] ctx=1093 burst=20/39 cum=457/900=0.508
+[spec-acc] ctx=1126 burst=20/36 cum=477/936=0.510
+[spec-acc] ctx=1158 burst=20/36 cum=497/972=0.511
+[spec-acc] ctx=1190 burst=17/45 cum=514/1017=0.505
+[spec-acc] ctx=1222 burst=19/39 cum=533/1056=0.505
+[spec-acc] ctx=1254 burst=18/45 cum=551/1101=0.500
+[spec-acc] ctx=1287 burst=20/39 cum=571/1140=0.501
+[spec-acc] ctx=1320 burst=21/36 cum=592/1176=0.503
+[spec-acc] ctx=1353 burst=20/39 cum=612/1215=0.504
+[spec-acc] ctx=1386 burst=20/36 cum=632/1251=0.505
+[spec-acc] ctx=1418 burst=20/42 cum=652/1293=0.504
+[spec-acc] ctx=1452 burst=20/36 cum=672/1329=0.506
+[spec-acc] ctx=1484 burst=17/45 cum=689/1374=0.501
+[spec-acc] ctx=1516 burst=20/36 cum=709/1410=0.503
+[spec-acc] ctx=1548 burst=19/42 cum=728/1452=0.501
+[spec-acc] ctx=1581 burst=22/36 cum=750/1488=0.504
+[spec-acc] ctx=1615 burst=22/36 cum=772/1524=0.507
+[spec-acc] ctx=1649 burst=22/33 cum=794/1557=0.510
+[spec-acc] ctx=1682 burst=21/33 cum=815/1590=0.513
+[spec-acc] ctx=1714 burst=20/36 cum=835/1626=0.514
+[spec-acc] ctx=1746 burst=22/36 cum=857/1662=0.516
+[spec-acc] ctx=1780 burst=18/42 cum=875/1704=0.513
+[spec-acc] ctx=1812 burst=16/48 cum=891/1752=0.509
+[spec-acc] ctx=1844 burst=16/51 cum=907/1803=0.503
+[spec-acc] ctx=1877 burst=20/39 cum=927/1842=0.503
+[spec-acc] ctx=1910 burst=21/36 cum=948/1878=0.505
+[spec-acc] ctx=1943 burst=21/36 cum=969/1914=0.506
+[spec-acc] ctx=1976 burst=20/36 cum=989/1950=0.507
+[spec-acc] ctx=2008 burst=23/36 cum=1012/1986=0.510
+[spec-acc] ctx=2043 burst=21/33 cum=1033/2019=0.512
+[spec-acc] ctx=2075 burst=23/33 cum=1056/2052=0.515
+[spec-acc] ctx=2109 burst=22/33 cum=1078/2085=0.517
+[spec-acc] ctx=2142 burst=22/33 cum=1100/2118=0.519
+[spec-acc] ctx=2175 burst=20/36 cum=1120/2154=0.520
+[spec-acc] ctx=2207 burst=22/33 cum=1142/2187=0.522
+[spec-acc] ctx=2240 burst=24/33 cum=1166/2220=0.525
+[spec-acc] ctx=2275 burst=19/39 cum=1185/2259=0.525
+[spec-acc] ctx=2307 burst=20/42 cum=1205/2301=0.524
+[spec-acc] ctx=2341 burst=17/45 cum=1222/2346=0.521
+[spec-acc] ctx=2373 burst=17/48 cum=1239/2394=0.518
+[spec-acc] ctx=2406 burst=6/12 cum=1245/2406=0.517
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[worker] spec pending flush failed (launch_pdl quantize_q8_1: CUDA_ERROR_DEINITIALIZED); dropping session

@@ -1,0 +1,19 @@
+tree=7700e0b68 bin=58f5fa92660e
+arm0 booted=yes
+arm0 bf16_mmv_resident=0
+arm0 captured=8 empty_or_nondet=none
+arm1 booted=yes
+arm1 bf16_mmv_resident=325
+arm1 captured=8 empty_or_nondet=none
+sample                 arm0_len arm1_len result
+agentic8/first         2        2        IDENTICAL
+agentic8/full          333      115      diverge char 4 of 115 (3.5%): 'E0. 1. 2. 3. 4. 5. 6' | '-teaching-approach\n-'
+curve-0128/first       4        4        IDENTICAL
+curve-0128/full        854      1212     diverge char 9 of 854 (1.1%): '. The user. The user' | ' turn 1: "You suppos'
+curve-0400/first       3        3        IDENTICAL
+curve-0400/full        1154     1154     IDENTICAL
+curve-1000/first       3        3        IDENTICAL
+curve-1000/full        1125     1118     diverge char 719 of 1118 (64.3%): "it's a typical arena" | "I don't have the rep"
+
+FIRST-TOKEN (max_tokens=1, no cascade possible) VERDICT: MATCH on all 4 real prompts
+MMVGATE-DONE

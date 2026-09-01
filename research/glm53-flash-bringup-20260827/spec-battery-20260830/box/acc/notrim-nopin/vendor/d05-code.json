@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is asking me to update a \"itch skill\" and their \"preferred work\" \u2014 this seems to reference some kind of skill/preferences file, possibly a CLAUDE.md, a skill definition, or some configuration about what they work on. This sounds like a personal knowledge management / memory update request.\n\nLet me parse what they're saying:\n\n1. **Current inference work is full** \u2014 no need for more inference projects/work\n2. **memra (bw24 successor)** is a replacement for llama \u2014 works on Blackwell B50 series (bw50) and H100, beats llama and vLLM on supported models",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is asking me to update a \"itch skill\" and their \"preferred work\" \u2014 this seems to reference some kind of skill/preferences file, possibly a CLAUDE.md, a skill definition, or some configuration about what they work on. This sounds like a personal knowledge management / memory update request.\n\nLet me parse what they're saying:\n\n1. **Current inference work is full** \u2014 no need for more inference projects/work\n2. **memra (bw24 successor)** is a replacement for llama \u2014 works on Blackwell B50 series (bw50) and H100, beats llama and vLLM on supported models"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 192,
+  "completion_tokens": 128,
+  "total_tokens": 320,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.601700641,
+  "spec": {
+   "rounds": 58,
+   "drafted": 174,
+   "accepted": 71,
+   "acceptance_rate": 0.40804597701149425
+  }
+ },
+ "id": "chatcmpl-64bb45ad480d20ccc46f7df0ca8e09ea",
+ "created": 1788081661,
+ "system_fingerprint": "REDACTED"
+}

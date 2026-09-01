@@ -1,0 +1,11 @@
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 trunk layers; optional MTP skipped)
+prompt tokens: [55]
+prefill argmax=14  decode argmax=14  logit maxdiff=1.011e0  MATCH
+generated 64 tokens in 2.569s = 24.91 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.012s) [stop: MaxNew]
+tokens: [14, 223, 18, 90, 18, 55, 14, 223, 18, 90, 18, 55, 14, 223, 18, 90, 18, 55, 14, 223, 18, 90, 18, 55, 14, 223, 18, 90, 18, 55, 14, 223, 18, 90, 18, 55, 14, 223, 18, 90, 18, 55, 14, 223, 18, 90, 18, 55, 14, 223, 18, 90, 18, 55, 14, 223, 18, 90, 18, 55, 14, 223, 18, 90]
+MoE cache: 15356 slots | cumulative hits=0 misses=552 (hit-rate=0.0%) | Stage-1 baseline = 2678 MB/decode-token (every block, every layer, every token)
+MoE cache STEADY-STATE (32 tokens after warmup): hit-rate=0.0% | 0.0 MB/decode-token (vs 2678 MB/token Stage-1 => infx less PCIe)

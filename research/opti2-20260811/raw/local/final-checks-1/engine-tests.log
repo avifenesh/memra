@@ -1,0 +1,15 @@
+warning: memra-engine@0.75.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.75.0 (/home/avifenesh/projects/wt-cx-opti2/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.37s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-943c5a8e03c300b2)
+
+running 5 tests
+test spec::opti_fork_tests::alternating_mode_flips_by_generation_not_round_parity ... ok
+test spec::opti_fork_tests::controller_threshold_and_three_miss_breaker_are_exact ... ok
+test spec::opti_fork_tests::zero_threshold_is_the_true_unconditional_measurement_arm ... ok
+test spec::opti_fork_tests::live_generation_cannot_be_overwritten ... ok
+test spec::opti_fork_tests::teardown_rejects_a_stale_generation_tag ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 55 filtered out; finished in 0.00s
+

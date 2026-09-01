@@ -1,0 +1,19 @@
+# moe_union_probe (SYNTHETIC banks, no checkpoint — traffic/latency only)
+# geometry experts=512 hidden=2560 ff=640 selected=10 t=9 reps=25
+# per-expert bytes gate+up=1843200 (1.758 MiB) down=921600 (0.879 MiB) total=2764800 (2.637 MiB)
+t	slots	union	gu_us	down_us	section_us	gu_spread	dn_spread	gu_BW_vs_union	gu_BW_vs_slots	vs_t6_full
+1	10	10	56.2	34.6	90.8	0.1252	0.1586	0.328	0.328	6.4631x
+9	90	10	323.4	207.1	530.5	0.0864	0.1302	0.057	0.513	1.1060x
+9	90	18	327.7	207.5	535.2	0.0834	0.1268	0.101	0.506	1.0962x
+9	90	26	327.7	211.2	538.9	0.0890	0.1272	0.146	0.506	1.0887x
+9	90	34	334.0	212.9	546.9	0.0799	0.1295	0.188	0.497	1.0728x
+9	90	42	339.4	216.5	555.8	0.1039	0.1372	0.228	0.489	1.0556x
+9	90	50	342.0	218.5	560.5	0.0943	0.1436	0.269	0.485	1.0467x
+9	90	58	341.8	222.3	564.1	0.0843	0.1404	0.313	0.485	1.0401x
+9	90	66	344.2	224.3	568.5	0.0793	0.1344	0.353	0.482	1.0320x
+9	90	74	351.7	226.5	578.2	0.1014	0.1361	0.388	0.472	1.0148x
+9	90	82	355.5	227.0	582.5	0.1010	0.1311	0.425	0.467	1.0073x
+9	90	90	357.7	229.0	586.7	0.0982	0.1302	0.464	0.464	1.0000x
+# arms INTERLEAVED rep by rep (LAW:interleaved-ab), rep 0 a warmed throwaway for every arm; gu_spread/dn_spread = (max-min)/median over the arm's reps.
+# gu_BW_vs_union = TB/s if only the distinct experts' bytes reach DRAM; gu_BW_vs_slots = TB/s if every slot's bytes do. The true DRAM rate cannot exceed the card's peak, so whichever column stays under peak is the traffic that is real.
+# READ vs_t6_full AGAINST THE SPREAD COLUMNS: if an arm's gain is smaller than its own spread, the lever is unmeasurable at that union, not merely small.

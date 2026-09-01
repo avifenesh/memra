@@ -1,0 +1,23 @@
+boot=diag-poolvar-autok pid=184154 nonce=aed83899-f13a-4716-8a49-087f742a9744 spec_env=1
+stage_lines=9
+--- ctx / window ---
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / placement ---
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=6 skipped=0 mismatches=0 elapsed_ms=5.031
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev1->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=1 dev2->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=2 dev2->dev3 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=2 dev3->dev2 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=24 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=33867.259
+--- prefix-cache ---
+--- spec ---
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+--- vram-at-ready (index, used MiB, total MiB) ---
+0, 7126 MiB, 97887 MiB
+1, 6934 MiB, 97887 MiB
+2, 6934 MiB, 97887 MiB
+3, 6518 MiB, 97887 MiB

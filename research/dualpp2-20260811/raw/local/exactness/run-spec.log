@@ -1,0 +1,34 @@
+[mtp-draft] loading external MTP draft: /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (33 layers, nextn=1)
+text prompt (472 chars) -> 90 tokens
+prompt tokens: [760, 5638, 4534, 11147, 8232, 14855, 10480, 6009, 13914, 494, 23683, 7575, 1472, 46120, 3357, 26502, 888, 87567, 1083, 3545, 4779, 11, 1332, 9966, 1452, 5344, 3947, 61369, 23304, 1070, 13, 8618, 6228, 369, 16384, 3658, 440, 279, 3672, 11, 1521, 264, 10281, 9705, 628, 9959, 264, 795, 1395, 14043, 29551, 13, 58737, 11, 2923, 539, 2923, 11, 1204, 264, 20340, 8404, 17830, 15089, 23776, 47493, 321, 49703, 1141, 11312, 364, 264, 3074, 3817, 11, 321, 10033, 864, 6228, 80018, 37972, 948, 279, 6009, 5883, 34105, 3545, 4779, 13, 198]
+
+[generate]   31 tok in 0.225s = 137.62 tok/s (gen-only; this run's prime 0.036s)
+  tokens: [760, 5638, 4534, 11147, 8232, 14855, 10480, 6009, 13914, 494, 23683, 7575, 1472, 46120, 3357, 26502, 888, 87567, 1083, 3545, 4779, 11, 1332, 9966, 1452, 5344, 3947, 61369, 23304, 1070, 13, 8618]
+
+[generate_spec K=1] 32 tok in 0.167s = 185.49 tok/s (1.35x vs generate; this run's prime 0.039s)
+  acceptance: 15/17 = 88.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=2] 32 tok in 0.126s = 246.02 tok/s (1.79x vs generate; this run's prime 0.039s)
+  acceptance: 19/24 = 79.2%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=3] 32 tok in 0.106s = 292.27 tok/s (2.12x vs generate; this run's prime 0.040s)
+  acceptance: 22/27 = 81.5%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=4] 32 tok in 0.111s = 278.13 tok/s (2.02x vs generate; this run's prime 0.040s)
+  acceptance: 23/32 = 71.9%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=5] 32 tok in 0.123s = 251.25 tok/s (1.83x vs generate; this run's prime 0.039s)
+  acceptance: 23/40 = 57.5%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=6] 32 tok in 0.135s = 230.33 tok/s (1.67x vs generate; this run's prime 0.039s)
+  acceptance: 23/48 = 47.9%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=7] 32 tok in 0.148s = 209.74 tok/s (1.52x vs generate; this run's prime 0.039s)
+  acceptance: 23/56 = 41.1%   self-consistency: PASS (identical to plain target)
+
+[generate_spec K=8] 32 tok in 0.174s = 177.70 tok/s (1.29x vs generate; this run's prime 0.039s)
+  acceptance: 23/64 = 35.9%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===

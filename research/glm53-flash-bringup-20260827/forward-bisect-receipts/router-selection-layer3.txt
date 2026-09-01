@@ -1,0 +1,27 @@
+glm5_next layer 3 (first MoE layer), last prompt position, tokens [1,2,3,4]
+reference = memra-reference f32 streaming runner over ~/models/glm53-nvfp4
+engine    = memra-engine HybridModel::forward_last (run-safetensors), same artifact
+
+router logits (288): cos=0.99999936  maxabs=0.01228   -- the ROUTER MATMUL was never wrong
+
+selected (expert, weight), sorted by expert id:
+  REFERENCE     : [(10, 0.1546), (16, 0.07886), (24, 0.15805), (171, 0.62381), (220, 0.32333), (237, 0.78501), (241, 0.2123), (284, 0.16404)]
+  ENGINE BEFORE : [(41, 0.17321), (171, 0.57392), (220, 0.29742), (237, 0.7226), (241, 0.19514), (253, 0.1945), (255, 0.19311), (284, 0.15009)]
+  ENGINE AFTER  : [(10, 0.15436), (16, 0.07843), (24, 0.15814), (171, 0.6242), (220, 0.32348), (237, 0.78591), (241, 0.21224), (284, 0.16324)]
+
+  before: 5/8 experts in common with the reference; only in ref [10, 16, 24]; only in engine [41, 253, 255]
+  after : 8/8 experts in common with the reference
+
+The engine's BEFORE selection is exactly the top-8 of the raw sigmoid score, i.e. the
+noaux_tc selection bias (e_score_correction_bias) was a zero row: `exp_probs_b.bias`
+had no glm5_next entry in hf_mapping, `find` answered None, and MoeWeights::load
+substituted vec![0.0; n_expert].
+
+  REF    |routed|= 44.8565  |ffn|= 66.4607  shared-expert contribution |ffn-routed|= 33.6435
+  BEFORE |routed|= 41.0105  |ffn|= 41.0105  shared-expert contribution |ffn-routed|=  0.0000
+  AFTER  |routed|= 44.8677  |ffn|= 66.4663  shared-expert contribution |ffn-routed|= 33.6442
+
+BEFORE's shared-expert contribution is EXACTLY ZERO: the three `ffn_*_shexp.weight`
+names resolved to `mlp.shared_expert.*` (SINGULAR, qwen3moe) while this checkpoint
+spells them `mlp.shared_experts.*` (PLURAL), so load_opt answered None and the
+always-on branch was dropped from all 42 MoE layers.

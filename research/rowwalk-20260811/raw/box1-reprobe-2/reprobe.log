@@ -1,0 +1,22 @@
+host=<private-host-redacted>
+ts=2026-08-11T03:28:17Z
+lock=busy rc=1
+ 563189 563615 563618 563675 563728 563767                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    F.... bash
+                     ubuntu    F.... bash
+                     ubuntu    F.... flock
+                     ubuntu    F.... memra-server
+                     ubuntu    F.... journalctl
+                     ubuntu    F.... sleep
+error: improper list
+
+Usage:
+ ps [options]
+
+ Try 'ps --help <simple|list|output|threads|misc|all>'
+  or 'ps --help <s|l|o|t|m|a>'
+ for additional help text.
+
+For more details see ps(1).
+GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 563675, /home/ubuntu/memra-opti2/target/release/memra-server, 45802 MiB
+GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 563675, /home/ubuntu/memra-opti2/target/release/memra-server, 38860 MiB

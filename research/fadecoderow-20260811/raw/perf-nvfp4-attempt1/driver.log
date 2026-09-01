@@ -1,0 +1,13 @@
+baseline_source=ba3e70c9af455320dc661ab023e5c653539bc447
+candidate_code_source=3845bda8358a6fe5883095250d3d8e6df84fda2a
+candidate_lane_head=2241bea916cf3daaf60a805fa3189c611eb80f0f
+baseline_binary=/tmp/memra-fadecoderow-base-target.0vXLcN/release/decode-batch-bench sha256=308e8194e5b15d8ea1dd025cb619a5eb28d436765c53d3edef2b8d3f83aaac36
+candidate_binary=/home/avifenesh/projects/wt-cx-fadecoderow/target/release/decode-batch-bench sha256=3db8c7e9bc9e8a9da745484358443dbf9bd88e1d73dc029a848854d00d6dde7a
+artifact=/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf bytes=5657607424 mtime=2026-06-13 01:32:07.829009509 +0300
+artifact=/tmp/memra-fadecoderow-base-target.0vXLcN/release/decode-batch-bench bytes=43278384 mtime=2026-08-12 01:23:26.220684114 +0300
+artifact=/home/avifenesh/projects/wt-cx-fadecoderow/target/release/decode-batch-bench bytes=43602104 mtime=2026-08-12 01:21:05.696999814 +0300
+protocol=N=5 outer reps; alternating arm order; steps=128; inner warmup=1; inner timed reps=1; B=1,2,4,8; ctx=512; MEMRA_FAST=1; nice=15; ionice=idle
+ts=2026-08-11T22:25:27Z
+2026/08/12 01:25:27.650, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, P8, 59, 10.38 W, [N/A], 180 MHz, 157 MiB, 24463 MiB, 0 %
+research/fadecoderow-20260811/perf-local.sh: line 53: arm: unbound variable
+research/fadecoderow-20260811/perf-local.sh: line 1: wait_for: No record of process 2336434

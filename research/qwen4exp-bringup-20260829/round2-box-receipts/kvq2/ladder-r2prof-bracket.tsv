@@ -1,0 +1,81 @@
+# qwen4exp_real_gate	label=r2prof-bracket	binary_sha256=eff4e5f971ffb7c6dd8af59772763210976c92921c5168932394f70257c35d05	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=(unset)
+# ladder	rungs=[110000, 120000, 140000]	chunk=2048	decode=4	kv_dev1=false	spec=None	ids=1150000	cap=140082
+# vram	pre-ladder	0, 89971 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB
+rung	prefill_seg_s	prefill_cum_s	chunks	decode_warm_mean_ms	decode_median_ms	decode_p90_ms	tok_per_s	timing_rounds	looped	host_rss_mib	vram	continuation_ids
+# prefill-profile	rung=110000	first_chunk_t=2048
+# prefill-profile	moe.sel_grouped	2607.7ms	27.9%	calls=48
+# prefill-profile	moe.router	1406.8ms	15.1%	calls=48
+# prefill-profile	hyper.read	1384.4ms	14.8%	calls=96
+# prefill-profile	gdn.proj	1015.2ms	10.9%	calls=36
+# prefill-profile	qsa.sdpa	937.2ms	10.0%	calls=12
+# prefill-profile	gdn.conv_scan	873.5ms	9.4%	calls=36
+# prefill-profile	gdn.norm_gate_out	357.3ms	3.8%	calls=36
+# prefill-profile	qsa.proj	268.1ms	2.9%	calls=12
+# prefill-profile	moe.shared	266.5ms	2.9%	calls=48
+# prefill-profile	qsa.gate_wo	120.8ms	1.3%	calls=12
+110000	628.0	628.0	54	30.6	30.5	30.9	32.68	rounds=3x8 medians=[30.6, 30.5, 30.6] spread=0.35%	false	167816	0, 93373 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB	15452,11607,516,1469,1958,11,11540,11,348,936,15,11,594,6767,272,11504,26,198,388,37944,8820,2515,11,220,15
+# profile	rung=110000	steps=1
+# profile	qsa.sdpa	10.3ms	29.1%	calls=12
+# profile	ple.host_ngram_gather	5.6ms	15.9%	calls=1
+# profile	hyper.read	3.3ms	9.2%	calls=96
+# profile	moe.sel_grouped	2.6ms	7.5%	calls=48
+# profile	gdn.proj	2.6ms	7.3%	calls=36
+# profile	qsa.idx_host	2.3ms	6.4%	calls=12
+# profile	gdn.norm_gate_out	1.4ms	3.9%	calls=36
+# profile	moe.shared	1.2ms	3.5%	calls=48
+# profile	moe.router	1.1ms	3.2%	calls=48
+# profile	hyper.write	0.9ms	2.7%	calls=96
+# profile	qsa.proj	0.9ms	2.5%	calls=12
+# profile	lm_head	0.8ms	2.4%	calls=1
+# prefill-profile	rung=120000	first_chunk_t=2048
+# prefill-profile	qsa.idx_host	2914.7ms	22.4%	calls=12
+# prefill-profile	moe.sel_grouped	2513.9ms	19.3%	calls=48
+# prefill-profile	qsa.sdpa	1999.1ms	15.4%	calls=12
+# prefill-profile	moe.router	1364.5ms	10.5%	calls=48
+# prefill-profile	hyper.read	1321.2ms	10.2%	calls=96
+# prefill-profile	gdn.proj	984.9ms	7.6%	calls=36
+# prefill-profile	gdn.conv_scan	864.8ms	6.6%	calls=36
+# prefill-profile	gdn.norm_gate_out	348.1ms	2.7%	calls=36
+# prefill-profile	qsa.proj	261.6ms	2.0%	calls=12
+# prefill-profile	moe.shared	256.0ms	2.0%	calls=48
+120000	64.1	692.0	5	31.2	31.2	31.4	32.01	rounds=3x8 medians=[31.2, 31.3, 31.3] spread=0.32%	false	167816	0, 93373 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB	17,29,283,10985,476,902,2061,198,262,364,594,83,303,594,39242,313,198,285,9046,283,1558,15452,11607,2031,68
+# profile	rung=120000	steps=1
+# profile	qsa.sdpa	10.3ms	28.6%	calls=12
+# profile	ple.host_ngram_gather	6.0ms	16.7%	calls=1
+# profile	hyper.read	3.3ms	9.1%	calls=96
+# profile	moe.sel_grouped	2.6ms	7.4%	calls=48
+# profile	gdn.proj	2.6ms	7.2%	calls=36
+# profile	qsa.idx_host	2.5ms	6.9%	calls=12
+# profile	gdn.norm_gate_out	1.4ms	3.8%	calls=36
+# profile	moe.shared	1.2ms	3.3%	calls=48
+# profile	moe.router	1.1ms	3.1%	calls=48
+# profile	hyper.write	0.9ms	2.6%	calls=96
+# profile	qsa.proj	0.9ms	2.5%	calls=12
+# profile	lm_head	0.8ms	2.4%	calls=1
+# prefill-profile	rung=140000	first_chunk_t=2048
+# prefill-profile	qsa.idx_host	3198.7ms	24.0%	calls=12
+# prefill-profile	moe.sel_grouped	2511.9ms	18.9%	calls=48
+# prefill-profile	qsa.sdpa	2008.4ms	15.1%	calls=12
+# prefill-profile	moe.router	1363.0ms	10.2%	calls=48
+# prefill-profile	hyper.read	1321.2ms	9.9%	calls=96
+# prefill-profile	gdn.proj	984.9ms	7.4%	calls=36
+# prefill-profile	gdn.conv_scan	865.0ms	6.5%	calls=36
+# prefill-profile	gdn.norm_gate_out	348.1ms	2.6%	calls=36
+# prefill-profile	qsa.proj	261.5ms	2.0%	calls=12
+# prefill-profile	moe.shared	256.0ms	1.9%	calls=48
+140000	337.8	1029.9	10	55.4	55.4	55.8	18.04	rounds=5x8 medians=[55.8, 55.3, 55.4, 55.4, 55.4] spread=0.93% (escalated x5)	false	167820	0, 93789 MiB, 97887 MiB | 1, 3 MiB, 97887 MiB	18,17,1250,25,594,485,8,1411,10985,61738,18,17,29,313,198,262,1042,292,283,1407,476,3720,476,851,1250,553,15000,8469,60516,21729,68,91,21297,85871,79,15623,313,68,92,31520,198
+# profile	rung=140000	steps=1
+# profile	qsa.idx_host	25.6ms	42.1%	calls=12
+# profile	qsa.sdpa	10.6ms	17.5%	calls=12
+# profile	ple.host_ngram_gather	6.8ms	11.1%	calls=1
+# profile	hyper.read	3.4ms	5.6%	calls=96
+# profile	moe.sel_grouped	2.8ms	4.5%	calls=48
+# profile	gdn.proj	2.6ms	4.3%	calls=36
+# profile	gdn.norm_gate_out	1.4ms	2.3%	calls=36
+# profile	moe.shared	1.2ms	2.0%	calls=48
+# profile	moe.router	1.2ms	1.9%	calls=48
+# profile	hyper.write	1.0ms	1.6%	calls=96
+# profile	lm_head	1.0ms	1.6%	calls=1
+# profile	qsa.proj	0.9ms	1.5%	calls=12

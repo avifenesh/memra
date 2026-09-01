@@ -1,0 +1,87 @@
+glm5-spec-ppn-gate config: stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage
+[loader-law] WARNING: token_embd.weight loads as 2D Float ne=[128, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_gate.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_a.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_b.weight loads as 2D Float ne=[16, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_kv_a_mqa.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_output.weight loads as 2D Float ne=[32, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.76GB (expert budget 22.76GB) -> RESIDENT
+[loader-law] WARNING: blk.*.ffn_gate_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down_shexp.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[loader-law] WARNING: blk.*.nextn.eh_proj.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+hc topology: streams=4 collapse=Mean
+stage fence: [0, 2, 4]; Recurrent(KDA) on stages [0, 1], LatentKvCache(MLA+kpool) on stages [0, 1]
+[phase] references: door OFF
+[moe-grouped-prefill] flag=on t=24 il=1 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=128 out_f=64 n_active=4 max_m=14
+[moe-grouped-prefill] execute layer=1 tokens=24 n_active=4 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=2 tokens=24 n_active=4 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=3 tokens=24 n_active=4 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[phase] arm W0: door ON, plain ppN decode re-pin
+glm5-spec-ppn gate PASS [W0 plain-ppn-decode]: 8 rows bit-identical vs door-OFF (n_vocab=32)
+[phase] arm W1: door ON, verify walk (ppN twin)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[glm5-vrows] verify MoE batched across rows: pairs=16 (t=8 x 2), one gate/up+preclamp launch + one down/FMA launch per layer-call (rides MEMRA_GLM5_VERIFY_BATCH)
+glm5-spec-ppn gate PASS [W1 verify-walk]: 8 verify rows bit-identical to plain decode under the split (and to plain ppN decode via W0)
+[phase] arm A: door ON, accept-j rollback battery
+glm5-spec-ppn gate PASS [A accept-j=0]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=1]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=2]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=3]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=4]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=5]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=6]: 12 continue steps bit-identical
+glm5-spec-ppn gate PASS [A accept-j=7]: 12 continue steps bit-identical
+[phase] arm E: door ON, e2e spec-vs-plain tapes
+[glm5-phase] rounds=19 k=1 total=38.48ms | draft=5.21 verify=32.03 accept=0.42 roll=0.63 maint=0.18 | per-round ms: draft=0.274 verify=1.686 accept=0.022 roll=0.033 maint=0.010 total=2.025
+[glm5-phase-v] rounds=19 k=1 | per-round ms: vkda=1.115 (scan=0.026) vmla=1.053 vrest=0.000 (vffn=0.990)
+glm5-spec-ppn gate PASS [E natural K=1]: tape identical to door-OFF plain greedy (0/19 accepted)
+[glm5-phase] rounds=19 k=2 total=53.41ms | draft=10.12 verify=41.93 accept=0.52 roll=0.65 maint=0.19 | per-round ms: draft=0.533 verify=2.207 accept=0.028 roll=0.034 maint=0.010 total=2.811
+[glm5-phase-v] rounds=19 k=2 | per-round ms: vkda=0.620 (scan=0.018) vmla=0.584 vrest=1.003 (vffn=0.560)
+glm5-spec-ppn gate PASS [E natural K=2]: tape identical to door-OFF plain greedy (0/38 accepted)
+[glm5-phase] rounds=19 k=3 total=67.43ms | draft=14.82 verify=51.18 accept=0.58 roll=0.67 maint=0.19 | per-round ms: draft=0.780 verify=2.693 accept=0.031 roll=0.035 maint=0.010 total=3.549
+[glm5-phase-v] rounds=19 k=3 | per-round ms: vkda=0.779 (scan=0.018) vmla=0.738 vrest=1.176 (vffn=0.684)
+glm5-spec-ppn gate PASS [E natural K=3]: tape identical to door-OFF plain greedy (0/57 accepted)
+[glm5-phase] rounds=19 k=4 total=79.07ms | draft=19.02 verify=58.59 accept=0.63 roll=0.66 maint=0.18 | per-round ms: draft=1.001 verify=3.084 accept=0.033 roll=0.035 maint=0.010 total=4.162
+[glm5-phase-v] rounds=19 k=4 | per-round ms: vkda=0.919 (scan=0.018) vmla=0.863 vrest=1.301 (vffn=0.774)
+glm5-spec-ppn gate PASS [E natural K=4]: tape identical to door-OFF plain greedy (0/76 accepted)
+[glm5-phase] rounds=19 k=5 total=93.76ms | draft=23.94 verify=68.25 accept=0.73 roll=0.66 maint=0.18 | per-round ms: draft=1.260 verify=3.592 accept=0.038 roll=0.035 maint=0.010 total=4.935
+[glm5-phase-v] rounds=19 k=5 | per-round ms: vkda=1.085 (scan=0.019) vmla=1.034 vrest=1.473 (vffn=0.898)
+glm5-spec-ppn gate PASS [E natural K=5]: tape identical to door-OFF plain greedy (0/95 accepted)
+[glm5-phase] rounds=19 k=6 total=107.14ms | draft=28.64 verify=76.87 accept=0.78 roll=0.66 maint=0.18 | per-round ms: draft=1.508 verify=4.046 accept=0.041 roll=0.035 maint=0.010 total=5.639
+[glm5-phase-v] rounds=19 k=6 | per-round ms: vkda=1.235 (scan=0.020) vmla=1.177 vrest=1.634 (vffn=1.012)
+glm5-spec-ppn gate PASS [E natural K=6]: tape identical to door-OFF plain greedy (0/114 accepted)
+[glm5-phase] rounds=19 k=7 total=120.94ms | draft=33.27 verify=85.95 accept=0.87 roll=0.68 maint=0.19 | per-round ms: draft=1.751 verify=4.524 accept=0.046 roll=0.036 maint=0.010 total=6.365
+[glm5-phase-v] rounds=19 k=7 | per-round ms: vkda=1.390 (scan=0.021) vmla=1.333 vrest=1.800 (vffn=1.135)
+glm5-spec-ppn gate PASS [E natural K=7]: tape identical to door-OFF plain greedy (0/133 accepted)
+[glm5-phase] rounds=5 k=3 total=20.02ms | draft=6.55 verify=13.20 accept=0.15 roll=0.04 maint=0.08 | per-round ms: draft=1.310 verify=2.639 accept=0.030 roll=0.009 maint=0.017 total=4.005
+[glm5-phase-v] rounds=5 k=3 | per-round ms: vkda=0.769 (scan=0.018) vmla=0.723 vrest=1.148 (vffn=0.663)
+glm5-spec-ppn gate PASS [E forced-accept K=3]: tape identical, 15/15 accepted (full-accept path exercised)
+[glm5-phase] rounds=3 k=7 total=22.11ms | draft=8.38 verify=13.47 accept=0.14 roll=0.05 maint=0.07 | per-round ms: draft=2.792 verify=4.491 accept=0.045 roll=0.018 maint=0.024 total=7.370
+[glm5-phase-v] rounds=3 k=7 | per-round ms: vkda=1.382 (scan=0.021) vmla=1.324 vrest=1.785 (vffn=1.124)
+glm5-spec-ppn gate PASS [E forced-accept K=7]: tape identical, 17/21 accepted (full-accept path exercised)
+[glm5-phase] rounds=6 k=7 total=40.44ms | draft=12.83 verify=27.03 accept=0.27 roll=0.22 maint=0.09 | per-round ms: draft=2.138 verify=4.505 accept=0.045 roll=0.036 maint=0.016 total=6.740
+[glm5-phase-v] rounds=6 k=7 | per-round ms: vkda=1.383 (scan=0.021) vmla=1.329 vrest=1.793 (vffn=1.125)
+glm5-spec-ppn gate PASS [E forced-rejection sweep K=7]: every partial-keep rollback cycled, tape identical (14/42)
+[phase] arm R1: RED stale-KDA state
+glm5-spec-ppn gate PASS [R1 stale-KDA RED]: bites — 383 differing logits across the continuation
+[phase] arm R2: RED pool-key clamp
+glm5-spec-ppn gate PASS [R2 pool-key RED]: bites by name — layer 1: DSA k-pool selection failed: resident k-pool key plane claims 8 finished pools but the cache holds only 6 complete pools before this call (25 rows / pool 4) — a rewind reduced the latent length without clamping index_pools_ready
+[phase] arm R3: RED rollback disabled
+glm5-spec-ppn gate PASS [R3 rollback-disabled RED]: bites — loop failed loudly: layer 1: latent cache overflow — 56 + 8 rows exceeds capacity 59
+==========================================================
+glm5-spec-ppn gate: ALL ARMS PASS (P=24 N=20 K=7, fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+exit=0

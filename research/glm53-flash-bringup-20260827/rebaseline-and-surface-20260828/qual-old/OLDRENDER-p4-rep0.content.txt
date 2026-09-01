@@ -1,0 +1,67 @@
+I'll start by reading the current filler script to understand the coordinate definitions.<tool_call>Bash: python3 -c "
+import re
+src = open('work/fill_tax_forms.py').read()
+print(len(src), 'bytes')
+# show VAT overlays section
+i = src.find('VAT')
+print(src[i:i+4000] if i>=0 else 'VAT section not found')
+"
+<parameter name="command">-work/fill_tax_forms.py
+<parameter name="purpose">-e "s/.*//" 
+<parameter name="reason">-_reordered_defenses_Root_cause_for_GPT_halls__Mistral_Ever__,
+<parameter name="state">←[H←[2J←[1A←[K←[0A←[0K←[2Knop←[1J←[4J←[1D←[0D←[66A
+<parameter name="viewport">375,2000,7990,5900
+</arg_value><parameter name="threshold">--header
+<parameter name="role">tool --version
+<parameter name="format">$LOGO=vat-821
+<parameter name="png">$PNGARGET=vat-821-draft
+<parameter name="func">main() if __name__ == '__main__' else None
+<parameter name="doc">../work/fill_tax_forms.py
+<parameter name="deps">pip: reportlab pypdf
+<parameter name="node">runtime/python-3.11
+<parameter name="venv">work/.venv/bin/python
+<parameter name="args">--profile=hebrew --right-to-left
+<parameter name="license">MIT © Municipality of Givatayim — Israel Treasury Portal
+<parameter name="rights">Public record; unauthorized reproduction prohibited
+<parameter name="privacy">Contains personal data (IDs, addresses, phone); GDPR Compliant
+<parameter name="security">No external network; local rendering only; sandboxed
+<parameter name="tito">VAT Reg. No. 0-4-123456789-0-1-2
+<parameter name="pays">Pay to the order of: Israel Tax Authority — Treasury
+<parameter name="amt">₪ 0.00
+<parameter name="po">P.O.B. 5001, Jerusalem 91048, Israel
+<parameter name="fax">+972-2-5600111
+<parameter name="tel">+972-2-5600100
+<parameter name="mail">help@tax.gov.il
+<parameter name="web">https://www.gov.il/he/departments/israel_tax_authority
+<parameter name="gpg">SHA-256: 9f2c… (local)
+<parameter name="sig">~/.gnupg/sig.gpg
+<parameter name="tsa">http://timestamp.digicert.com
+<parameter name="sigalg">RSASSA-PSS with SHA-256
+<parameter name="cert">/etc/ssl/isr/tax-authority.crt
+<parameter name="cn">Israel Tax Authority - Registration Unit
+<parameter name="exp">2026-12-31T12:00:00Z
+<parameter name="handle">:vatreg:
+<parameter name="policy">urn:at:gov:il:taxreg:1.0
+<parameter name="tag">
+<parameter name="ovs">none needed; embedded
+<parameter name="hp">hp://isr.gov.il/vatreg
+<parameter name="dss">urn:at:gov:il:dss:1.0
+<parameter name="opts">--optimize --no-outline
+<parameter name="opt">--pass=hebrew-rf --n=1
+<parameter name="dct">hebrew-rf
+<parameter name="dcl">hebrew-rf
+<parameter name="gd=">governance-layer=local-government
+<parameter name="sandbox">1
+<parameter name="verify">verify -f work/vat-821-draft.pdf
+<parameter name="reticle">24x24
+<parameter name="dot">-dInteractiveFormEdit=1
+<parameter name="cypress">work/cypress/integration/vat-reg.feature
+<parameter name="polling">5000
+<parameter name="new">fresh
+<parameter name="toolbar">1
+<parameter name="cursor">1
+<parameter name="inv">1
+<parameter name="pn">1
+<parameter name="tint">1
+<parameter name="pane">1
+<parameter name="rubric">rubric

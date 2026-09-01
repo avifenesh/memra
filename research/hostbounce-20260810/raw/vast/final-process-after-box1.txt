@@ -1,0 +1,16 @@
+2026-08-10T13:42:40Z
+    PID    PPID STAT                  STARTED     ELAPSED %CPU %MEM CMD
+  16734       1 Ssl  Mon Aug 10 13:20:35 2026       22:05  5.9 25.1 ./target/release/memra-server
+/var/log/memra-server.log
+CUDA_VISIBLE_DEVICES=0,1
+LD_LIBRARY_PATH=/usr/local/cuda-13.1/compat:/usr/local/cuda-13.1/lib64:/usr/local/cuda-12.8/lib64
+MEMRA_ADDR=0.0.0.0:8002
+MEMRA_COMPAT=openai
+MEMRA_CTX=262144
+MEMRA_MODELS=stepfun/step-3.7-flash=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf+/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+MEMRA_MOE_GROUPED=1
+MEMRA_PP_DEVICES=0,1
+MEMRA_PP_HOST_BOUNCE=1
+MEMRA_PP_STAGES=2
+MEMRA_PREFILL_TICK=2048
+MEMRA_PREFIX_CACHE_MB=2048

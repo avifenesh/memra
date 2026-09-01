@@ -1,0 +1,23 @@
+{
+ "object": "text_completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "text": " also - i have a new idea for a new project - a new way to run the bench, not on the gpu but on the cpu, using the new avx10.2 instructions that have bf16 support. the idea is to run the bench on the cpu with the new instructions and see how fast it can",
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 180,
+  "completion_tokens": 64,
+  "total_tokens": 244,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 2.152460367
+ },
+ "id": "cmpl-65d4a202406289274ee83d579bec5626",
+ "created": 1788062639,
+ "system_fingerprint": "memra-FINGERPRINT-REDACTED"
+}

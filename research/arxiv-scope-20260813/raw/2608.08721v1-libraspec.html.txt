@@ -1,0 +1,678 @@
+<request>
+  <url>https://arxiv.org/html/2608.08721v1</url>
+  <final_url>https://arxiv.org/html/2608.08721v1</final_url>
+  <method>GET</method>
+  <status>200</status>
+  <content_type>text/html; charset=utf-8</content_type>
+  <redirect_chain>https://arxiv.org/html/2608.08721v1</redirect_chain>
+</request>
+<body extract="markdown">
+# LibraSpec: Dynamic Diffusion-Based Speculative Decoding via Marginal-Gain-Driven Optimization
+
+\\correspondingauthor
+
+Zexun LinAffiliation: Suzhou Institute for Advanced Research, University of Science and Technology of China, Suzhou, Jiangsu, Chinaemail: [zexunlin@mail.ustc.edu.cn](mailto:zexunlin@mail.ustc.edu.cn), Yuan FengAffiliation: Suzhou Institute for Advanced Research, University of Science and Technology of China, Suzhou, Jiangsu, Chinaemail: [yfung@mail.ustc.edu.cn](mailto:yfung@mail.ustc.edu.cn), Junlin LvAffiliation: Suzhou Institute for Advanced Research, University of Science and Technology of China, Suzhou, Jiangsu, Chinaemail: [junlinlv@mail.ustc.edu.cn](mailto:junlinlv@mail.ustc.edu.cn), Kevin S. ZhouAffiliation: Suzhou Institute for Advanced Research, University of Science and Technology of China, Suzhou, Jiangsu, Chinaemail: [skevinzhou@ustc.edu.cn](mailto:skevinzhou@ustc.edu.cn) and Xike XieAffiliation: Suzhou Institute for Advanced Research, University of Science and Technology of China, Suzhou, Jiangsu, Chinaemail: [xkxie@ustc.edu.cn](mailto:xkxie@ustc.edu.cn)
+
+###### Abstract. ######
+
+Speculative decoding accelerates large language model inference by drafting multiple tokens for parallel verification, with efficiency critically determined by the speculative length selected at each decoding round.
+Existing dynamic speculation methods select the speculation length by estimating how many tokens will be accepted, which is reasonable for autoregressive drafters that generates tokens sequentially. The recent wave of diffusion-based drafters, however, generates candidate blocks in parallel at substantially lower drafting cost, shifting the key question from how many tokens to generate to how many generated tokens are worth verifying.
+We therefore reformulate dynamic speculative-length selection as expected-speedup optimization and derive a marginal criterion that extends the speculative sequence only when its acceptance gain outweighs the additional verification cost.
+Building on this criterion, we develop LibraSpec,
+a training-free and plug-and-play algorithm that iteratively determines the speculative length using drafter confidence scores.
+Theoretically, we prove that LibraSpec monotonically converges toward the optimal speculative length. Experiments across six target models, three diffusion-based speculative decoding methods, and math, coding, and chat benchmarks show consistent improvements under both greedy and sampling settings, achieving a further 0.5∼1.5×0.5\\sim 1.5\\times improvement over baselines and up to 8.49×8.49\\times speedup over autoregressive decoding.
+
+1. Introduction
+----------
+
+Autoregressive large language models (LLMs) generate tokens sequentially, making decoding a major bottleneck in long-context reasoning, including code generation and interactive applications
+> ([28](#bib.bib1); [29](#bib.bib37))
+
+.
+Speculative Decoding
+> ([12](#bib.bib2); [1](#bib.bib3); [17](#bib.bib4); [15](#bib.bib5); [16](#bib.bib6); [2](#bib.bib8); [39](#bib.bib36); [35](#bib.bib35))
+
+ alleviates this bottleneck with lossless acceleration with formal guarantees. At each decoding round, a lightweight draft model first proposes a sequence of candidate tokens, which are then verified in parallel by the target model; multiple valid tokens can consequently be accepted at once. The resulting speedup depends critically on the *speculative length*, i.e., the number of candidate tokens submitted for verification. A short length underutilizes parallel verification, whereas an excessively long length wastes target-model computation when an early rejection invalidates the remaining suffix
+> ([20](#bib.bib11); [38](#bib.bib12); [37](#bib.bib31))
+
+.
+Because token predictability varies across decoding rounds, the speedup-maximizing length also changes throughout generation. This motivates *dynamic speculative-length selection*: at each round, the system determines the length that best balances the acceptance gain of additional draft tokens against their computational cost.
+
+Figure 1. Speedup gains achieved by LibraSpec when integrated to different methods (see experiments for other benchmarks).
+
+Existing dynamic-length methods select the speculative length by predicting the accepted length, which is well-suited to autoregressive drafters because each additional candidate incurs sequential drafting cost. The recent wave of diffusion-based drafters, however, is reshaping speculative decoding by generating candidate blocks in parallel at substantially lower drafting cost
+> ([19](#bib.bib7); [2](#bib.bib8))
+
+. This changes the optimization target: the key question shifts from how many tokens to generate to how many generated tokens are worth verifying. Consequently, estimating the expected accepted length alone is insufficient to determine whether extending the speculative prefix will improve speedup, as even a likely accepted extension may provide insufficient gain to justify its additional verification cost
+> ([21](#bib.bib39))
+
+.
+
+Figure 2. Static speculative length vs. LibraSpec vs. optimal speculative length, using the FastdLLM drafter with Qwen2.5-7B as the target model on MATH-500.
+
+To address this mismatch, we reformulate dynamic speculative-length selection from an accepted-length prediction problem into an expected-speedup optimization problem.
+Concretely, extending the speculative sequence improves expected speedup only when the added segment provides a higher acceptance-gain-to-verification-cost ratio than the current sequence. Although the globally optimal speculative length is not directly available in closed form, whether a local length adjustment improves expected speedup can be evaluated under our model. We formalize such a speedup-improving update as a *beneficial adjustment* and derive necessary and sufficient conditions for determining its maximum admissible length.
+We further prove that expected speedup is unimodal with respect to the speculative length.
+This structure recasts dynamic-length selection as iterative optimization: under our speedup model, successive beneficial adjustments monotonically improve expected speedup and converge in finitely many steps to a globally optimal speculative-length interval.
+
+Based on this analysis, we propose LibraSpec, a training-free and plug-and-play algorithm for diffusion-based speculative decoding.
+At each decoding round, LibraSpec uses confidence scores produced by the diffusion drafter for the probabilities unavailable before verification.
+It then iteratively applies the marginal criterion to determine how many candidate tokens should be submitted for verification.
+This design requires neither an auxiliary predictor nor additional training and can be directly integrated with existing diffusion-based speculative decoding methods.
+As illustrated in Figure [2](#S1.F2), LibraSpec closely tracks the oracle optimal length obtained by exhaustive search, while adapting to changes across decoding rounds.
+
+We evaluate LibraSpec with six LLMs and three state-of-the-art (SOTA) diffusion-based speculative decoding methods.
+Extensive experiments on mathematical reasoning, code generation, and chat benchmarks demonstrate consistent improvements brought in by LibraSpecunder both greedy and sampling settings.
+It further improves the end-to-end speedup by 0.5∼1.5×0.5\\sim 1.5\\times over diffusion-based methods and achieves up to 8.49×8.49\\times speedup over vanilla autoregression-based methods. The main contributions are summarized as follows.
+
+* •
+
+  We identify that the emerging shift toward diffusion-based drafters changes the objective of dynamic speculative-length selection from accepted-length estimation to direct optimization of the acceptance-gain–verification-cost trade-off.
+
+* •
+
+  We formulate the problem as expected-speedup optimization, derive a marginal criterion for beneficial length adjustments, and derive necessary and sufficient conditions identifying the maximum admissible adjustment that guarantees improvement.
+
+* •
+
+  We propose LibraSpec, a training-free and plug-and-play dynamic-length algorithm that consistently accelerates multiple diffusion-based speculative decoding methods across models, tasks, and decoding settings.
+
+2. Related work
+----------
+
+### 2.1. Diffusion-Based Speculative Decoding ###
+
+Since Speculative Diffusion Decoding
+> ([4](#bib.bib28))
+
+ first introduced discrete diffusion models as speculative drafters, several follow-up studies have been proposed. Methods
+> ([22](#bib.bib25); [27](#bib.bib24); [26](#bib.bib29))
+
+ represented by DiffuSpec
+> ([13](#bib.bib23))
+
+ employ large-scale pretrained diffusion language models as training-free speculative drafters, leveraging inference-time search strategies or train–test alignment techniques to improve draft quality and acceptance rates. However, these methods depend on large-scale draft models, which incur significant memory overhead and inference latency. In contrast, DFlash
+> ([2](#bib.bib8))
+
+ trains a lightweight block-wise diffusion drafter that exploits KV Injection to extract rich contextual features from the target model, allowing an entire draft block to be generated in a single forward pass. Likewise, methods
+> ([19](#bib.bib7); [30](#bib.bib26); [7](#bib.bib27))
+
+ represented by DDTree
+> ([25](#bib.bib20))
+
+, build draft trees based on the token distributions obtained from a single diffusion forward pass, thereby further improving the accepted draft length.
+Our method can be seamlessly integrated with these diffusion-based speculative drafters. In this work, we demonstrate its effectiveness when combined with representative methods, including FastdLLM, DFlash and DDTree, consistently achieving additional decoding speedups across diverse benchmarks.
+
+### 2.2. Dynamic Speculative Decoding ###
+
+Since the speculative block length plays a critical role in determining the overall decoding efficiency, a growing body of work has focused on dynamically adjusting the draft length during inference.
+Existing methods are mainly divided into two categories. Methods
+> ([8](#bib.bib22); [38](#bib.bib12); [37](#bib.bib31); [9](#bib.bib40))
+
+ represented by DISCO
+> ([20](#bib.bib11))
+
+ train a predictor to forecast the length of draft generation, which achieves relatively accurate prediction of the expected received length. However, they require additional training and rely heavily on the generalization ability of the predictor.
+In contrast, methods
+> ([36](#bib.bib33); [31](#bib.bib32); [6](#bib.bib30))
+
+ such as Gemma 4 MTP
+> ([11](#bib.bib9))
+
+ and FailFast
+> ([24](#bib.bib10))
+
+ leverage heuristic signals, including historical acceptance rates, confidence scores, and entropy, as indirect indicators to guide the expected future acceptance length. While these approaches incur no additional training cost, they fail to account for the computational overhead introduced by the verification stage.
+More importantly, these methods inherit the optimization paradigm of autoregressive speculative decoding, where the objective is to estimate the expected accepted prefix length. In contrast, LibraSpec explicitly models the trade-off between the expected benefit of successful speculation and the verification overhead, providing a novel perspective for dynamic speculative decoding.
+
+3. Methodology
+----------
+
+### 3.1. Preliminaries ###
+
+Speculative decoding accelerates autoregressive generation by combining a lightweight draft model ℳdraft\\mathcal{M}\_{\\mathrm{draft}} with a target model ℳtarget\\mathcal{M}\_{\\mathrm{target}}
+> ([12](#bib.bib2))
+
+.
+Given a prefix x≤tx\_{\\leq t}, the draft model generates a speculative continuation (xt+1,…,xt+d)(x\_{t+1},\\ldots,x\_{t+d}), producing a probability distribution qv=Pℳdraft​(xt+v∣x\<t+v)q\_{v}=P\_{\\mathcal{M}\_{\\mathrm{draft}}}(x\_{t+v}\\mid x\_{\<t+v}) for each drafted position v∈{1,…,d}v\\in\\{1,\\ldots,d\\}.
+The target model then evaluates all drafted positions in parallel via a single forward pass, yielding the target distribution pv=Pℳtarget​(xt+v∣x\<t+v)p\_{v}=P\_{\\mathcal{M}\_{\\mathrm{target}}}(x\_{t+v}\\mid x\_{\<t+v}). A subsequent verification step compares qvq\_{v} and pvp\_{v} to determine whether each drafted token should be accepted or corrected.
+Consequently, this speculative mechanism effectively bypasses the sequential bottleneck of standard autoregressive decoding without altering target output distribution of ℳtarget\\mathcal{M}\_{\\mathrm{target}}.
+
+### 3.2. How Speculative Length Affects Diffusion-Based Speculative Speedup ###
+
+To quantify the speedup of diffusion-based speculative decoding, consider a prefix x≤tx\_{\\leq t} and a length-dd draft block 𝒟1:d=(xt+1,…,xt+d)\\mathcal{D}\_{1:d}=(x\_{t+1},\\ldots,x\_{t+d}). Let TddraftT\_{d}^{\\mathrm{draft}} and TdverifyT\_{d}^{\\mathrm{verify}} denote the time required to generate and verify this block. Assuming the target model accepts τd\\tau\_{d} consecutive tokens and has a standard per-token latency of LdtargetL\_{d}^{\\mathrm{target}}, the overall speculative decoding speedup, ηd\\eta\_{d}, can present as:
+
+|(1)|ηd=LdtargetLdspec=τd​LdtargetTddraft+Tdverify\\eta\_{d}=\\frac{L\_{d}^{\\mathrm{target}}}{L\_{d}^{\\mathrm{spec}}}=\\frac{\\tau\_{d}\\,L\_{d}^{\\mathrm{target}}}{T\_{d}^{\\mathrm{draft}}+T\_{d}^{\\mathrm{verify}}}|
+|---|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+where Ldspec=Tddraft+TdverifyτdL\_{d}^{\\mathrm{spec}}=\\frac{T\_{d}^{\\mathrm{draft}}+T\_{d}^{\\mathrm{verify}}}{\\tau\_{d}} is the average per-token latency of speculative decoding.
+
+In practice, as shown in Fig. [3](#S3.F3), compared with autoregressive drafters, diffusion-based drafters reduce the drafting overhead of speculative decoding by several folds, rendering the drafting cost negligible relative to the target-model inference cost.
+
+Figure 3. Latency breakdown at a speculative length of 16 tokens, measured on an A100 GPU with 1K context length.
+
+Therefore, to analyze how varying the speculative length affects overall efficiency, we consider a simplified setting where an infinitely long draft sequence is already available, allowing us to freely adjust the speculative length.
+
+|(2)|ηd≈τd​LdtargetTdverify.\\eta\_{d}\\approx\\frac{\\tau\_{d}L\_{d}^{\\mathrm{target}}}{T\_{d}^{\\mathrm{verify}}}.|
+|---|----------------------------------------------------------------------------------------------------------------|
+
+In this setting, the drafting cost is fixed and independent of the speculative length, leaving the verification stage as the only component affected by the choice of speculative length. Consequently, the key question becomes how the speculative length should be adjusted to boost the decoding speedup.
+
+Directly optimizing this objective is intractable. Therefore, we instead iteratively adjust the speculative length, allowing the optimization process to progressively converge toward the optimal speculative length. We require every speculative-length adjustment to satisfy the conditions of *a single beneficial adjustment*, as formalized in Definition [3.1](#S3.Thmtheorem1).
+
+###### Definition 3.1 (A Single Beneficial Adjustment). ######
+
+We say that a speculative length adjustment from dd to d′d^{\\prime} is a single beneficial adjustment if it satisfies the following conditions.(3)𝔼⁡[ηd′]\>𝔼⁡[ηd]\\mathbb{E}[\\eta\_{d^{\\prime}}]\>\\mathbb{E}[\\eta\_{d}]
+
+### 3.3. Achieving a Single Beneficial Adjustment of Speculative Length ###
+
+Definition [3.1](#S3.Thmtheorem1) defines the speedup criterion that a single beneficial adjustment from dd to d′d^{\\prime} must satisfy. As shown in Eq. [2](#S3.E2), decoding speedup is jointly determined by the accepted draft length and the verification latency. Therefore, a single beneficial adjustment fundamentally corresponds to achieving a more favorable trade-off between the expected acceptance gain and the additional verification cost. This trade-off can be characterized by quantifying the marginal gain and the marginal cost introduced by the adjustment, as formalized in Theorem [3.2](#S3.Thmtheorem2).
+
+###### Theorem 3.2. ######
+
+A speculative length adjustment achieves a single beneficial adjustment if and only if the marginal benefit of the adjusted draft segment is more favorable than the current average benefit.
+
+|(4)|{𝔼[τd:d′]Tverifyd:d′\>𝔼⁡[τd]Tdverify,d\<d′,𝔼[τd′:d]Tverifyd′:d\<𝔼⁡[τd]Tdverify,d\>d′.\\begin{cases}\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d:d^{\\prime}}]}{T^{\\mathrm{verify}}\_{d:d^{\\prime}}}\>\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\<d^{\\prime},\\\\[15.00002pt]<br/>\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d^{\\prime}:d}]}{T^{\\mathrm{verify}}\_{d^{\\prime}:d}}\<\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\>d^{\\prime}.\\end{cases}|
+|---|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+where the first case (d\<d′d\<d^{\\prime}) corresponds to extending the draft sequence, requiring the marginal benefit of the appended draft segment to exceed the current average benefit, while the second case (d\>d′d\>d^{\\prime}) corresponds to truncating the draft sequence, requiring the marginal benefit of the removed suffix to be lower than the current average benefit.
+
+###### Proof. ######
+
+See Appendix [A.1](#A1.SS1) for details.
+∎
+
+Theorem [3.2](#S3.Thmtheorem2) provides a criterion for determining whether a speculative length adjustment is beneficial. Under prefix acceptance, however, the contribution of later speculative tokens depends on whether all preceding tokens are accepted. As a result, different draft positions contribute differently to the overall gain-cost trade-off. In particular, we strengthen the criterion of a single beneficial adjustment by requiring that the marginal benefit of the speculative suffix starting from position i exceeds the average benefit accumulated up to that position.
+
+By expanding the expressions for the marginal gain, 𝔼[τi:d′]=∑j=id′∏k=ijpk\\mathbb{E}[\\tau\_{i:d^{\\prime}}]=\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}, and the marginal verification cost Ti:d′verify=c(d′−i)T\_{i:d^{\\prime}}^{\\mathrm{verify}}=c\\,(d^{\\prime}-i), where cc denotes the average verification cost per speculative position, we obtain the corresponding necessary condition for a speculative length adjustment to achieve a single beneficial adjustment, as shown in Theorem [3.3](#S3.Thmtheorem3).
+
+###### Theorem 3.3. ######
+
+Under the strengthened position-wise criterion, A Single Beneficial Adjustment from dd to d′d^{\\prime}only if it satisfies:
+
+|             (5)              |                                                                                                       d′\\displaystyle d^{\\prime}                                                                                                       |≤ϵi,∀i∈[1,d],\\displaystyle\\leq\\epsilon\_{i},\\quad\\forall\\,i\\in[1,d],|
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+|ϵi\\displaystyle\\epsilon\_{i}|\=max⁡{d′∈ℤ∣d′\<Tiverifyτi​c​∑j=id′∏k=ijpk+i}.\\displaystyle=\\max\\left\\{d^{\\prime}\\in\\mathbb{Z}\\mid d^{\\prime}\<\\frac{T\_{i}^{\\mathrm{verify}}}{\\tau\_{i}\\,c}\\,\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}+i\\right\\}.|                                                                           |
+
+###### Proof. ######
+
+See Appendix [A.2](#A1.SS2) for details.
+∎
+
+The preceding theorem establishes the position-wise bounds that every beneficial adjustment must satisfy. Necessity alone, however, does not establish that an adjusted length satisfying these bounds actually improves the decoding speedup.
+We therefore prove sufficiency by exploiting the monotonic structure induced by prefix acceptance. As the candidate length increases, each newly added token provides a non-increasing conditional acceptance contribution, and hence the average marginal gain associated with each draft position is also non-increasing. Consequently, the lengths satisfying each position-wise constraint form a contiguous feasible interval. Taking the intersection of these intervals shows that satisfying all position-wise bounds jointly is sufficient for a single beneficial adjustment. A detailed proof is provided in Appendix [A.3](#A1.SS3).
+
+###### Theorem 3.4. ######
+
+A Single Beneficial Adjustment from dd to d′d^{\\prime}if it satisfies:
+
+|             (6)              |                                                                                                       d′\\displaystyle d^{\\prime}                                                                                                       |\=miniϵi,∀i∈[1,d],\\displaystyle=\\min\_{i}\\epsilon\_{i},\\quad\\forall\\,i\\in[1,d],|
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+|ϵi\\displaystyle\\epsilon\_{i}|\=max⁡{d′∈ℤ∣d′\<Tiverifyτi​c​∑j=id′∏k=ijpk+i}.\\displaystyle=\\max\\left\\{d^{\\prime}\\in\\mathbb{Z}\\mid d^{\\prime}\<\\frac{T\_{i}^{\\mathrm{verify}}}{\\tau\_{i}\\,c}\\,\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}+i\\right\\}.|                                                                                      |
+
+Theorem [3.4](#S3.Thmtheorem4) provides a sufficient condition for achieving a single beneficial adjustment. Any speculative length exceeding this bound inevitably violates the necessary condition for achieving a single beneficial adjustment, while choosing a smaller length leads to conservative updates that unnecessarily sacrifice expected acceptance gains without guaranteeing additional speedup improvements.
+
+Algorithm 1 LibraSpec
+
+1: Block size nn, Maximum Speculation Length dmaxd\_{\\text{max}}
+
+2: Draft tokens
+
+3: Generate one draft block of size nn.
+
+4:d←nd\\leftarrow n; B←0B\\leftarrow 0
+
+5:whiled\<dmaxd\<d\_{\\text{max}}do
+
+6:ϵ∗←mini⁡ϵi\\epsilon^{\*}\\leftarrow\\min\\limits\_{i}\\epsilon\_{i} where ϵi=⌊α​∑j=id∏k=ijqk+i⌋\\epsilon\_{i}=\\lfloor\\alpha\\,\\sum\_{j=i}^{d}\\prod\_{k=i}^{j}q\_{k}+i\\rfloor, ∀i=1,…,d\\forall i=1,\\dots,d
+
+7:ifϵ∗≤d\\epsilon^{\*}\\leq dthen
+
+8:d←ϵ∗d\\leftarrow\\epsilon^{\*}; break
+
+9:endif
+
+10:B←B−(ϵ∗−d)B\\leftarrow B-(\\epsilon^{\*}-d); d←ϵ∗d\\leftarrow\\epsilon^{\*}
+
+11:ifB\<0B\<0then
+
+12: Generate ⌈−Bn⌉\\left\\lceil\\frac{-B}{n}\\right\\rceil draft blocks;B←B+⌈−Bn⌉​nB\\leftarrow B+\\left\\lceil\\frac{-B}{n}\\right\\rceil n.
+
+13:endif
+
+14:endwhile
+
+15: Submit dd tokens for verification.
+
+### 3.4. Determining the Final Speculative Length via Iterative Adjustments ###
+
+Theorem [3.4](#S3.Thmtheorem4) provides a theoretically grounded criterion for obtaining a single beneficial adjustment. Repeatedly applying this criterion progressively refines the speculative length toward the optimal decoding speedup. An immediate question is whether repeatedly applying beneficial adjustments indeed converges to an optimal speculative length.
+
+To answer this question, we begin by analyzing the marginal contribution of a single draft token. Under prefix acceptance, the conditional marginal benefit of each additional token is non-increasing, whereas the marginal verification cost remains approximately constant. Therefore, the marginal efficiency of extending the speculative block decreases as the speculative length grows. Once this marginal efficiency no longer exceeds the current average efficiency, subsequent extensions cannot restore an improvement. We therefore establish the unimodality of the expected decoding speedup with respect to the speculative length, as shown in [3.5](#S3.Thmtheorem5).
+
+###### Theorem 3.5. ######
+
+The expected speedup is a unimodal function of the speculative length.
+
+|(7)|𝔼⁡[τd+1]Td+1verify\>𝔼⁡[τd]Tdverify⟺∏i=1d+1pi\>c​𝔼⁡[τd]Tdverify\\frac{\\mathbb{E}[\\tau\_{d+1}]}{T^{\\mathrm{verify}}\_{d+1}}\>\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}}\\Longleftrightarrow\\prod\_{i=1}^{d+1}p\_{i}\>c\\,\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}}|
+|---|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+###### Proof. ######
+
+See Appendix [A.4](#A1.SS4) for details.
+∎
+
+The unimodal structure implies that every beneficial adjustment moves the speculative length toward the unique optimum. We therefore establish the convergence of the iterative adjustment procedure, as shown in [3.6](#S3.Thmtheorem6).
+
+###### Theorem 3.6. ######
+
+By iteratively applying single beneficial adjustments, the speculative length converges in finitely many steps to d′d^{\\prime}, which lies in the globally optimal interval of speculative lengths.
+
+|(8)|𝔼⁡[ηd′]=maxd∈ℤ\>0⁡𝔼⁡[ηd].\\mathbb{E}[\\eta\_{d^{\\prime}}]=\\max\_{d\\in\\mathbb{Z}\_{\>0}}\\mathbb{E}[\\eta\_{d}].|
+|---|-------------------------------------------------------------------------------------------------------------------|
+
+###### Proof. ######
+
+See Appendix [A.5](#A1.SS5) for details.
+∎
+
+To apply the theoretical result in practice, two practical challenges must be addressed. First, the target-model acceptance probabilities pip\_{i} are unavailable before verification. Second, the idealized assumption of an infinitely long draft sequence does not hold in practice. Since draft tokens are generated on demand, the confidence scores of future draft tokens are unavailable before they are generated.
+
+###### Assumption 3.7. ######
+
+The draft-model confidence scores qiq\_{i} are well calibrated with the corresponding target-model acceptance probabilities pip\_{i}
+> ([14](#bib.bib13); [23](#bib.bib38))
+
+.
+
+To address the first challenge, under this assumption, the draft-model confidence scores can be used as a proxy for the unknown target-model acceptance probabilities. However, this calibration generally deteriorates as the speculative horizon increases, and the rate of deterioration varies across draft models. We therefore constrain online speculation with a model-dependent maximum speculative length, dmaxd\_{\\mathrm{max}}. The influence of dmaxd\_{\\mathrm{max}} is further analyzed in Section [4.6](#S4.SS6). To address the second challenge, as a practical compromise, we compute the adjustment criterion using only the confidence scores of the draft tokens generated so far in the current draft block. Since TiverifyT\_{i}^{\\mathrm{verify}}, τi\\tau\_{i}, and cc are runtime-dependent, we absorb them into a single trade-off hyperparameter α=Tiverify​τi−1​c−1\\alpha=T\_{i}^{\\mathrm{verify}}\\tau\_{i}^{-1}c^{-1}, which controls the aggressiveness of speculative length adjustment.
+
+Building upon the above theoretical derivations, we propose a plug-and-play dynamic speculative decoding strategy, LibraSpec (Algorithm [1](#alg1)), which dynamically adjusts the speculative block length through iterative refinements. At each iteration, LibraSpec seeks a single beneficial adjustment, thereby progressively improving the theoretical decoding speedup.
+
+To avoid frequent calls to the draft model caused by continual adjustments of the speculative length, LibraSpec maintains a draft budget BB. At the beginning of each speculative round, an initial draft block is generated, and subsequent length extensions first consume the remaining budget before requesting additional draft blocks. New draft blocks are generated only when the budget is exhausted, reducing unnecessary draft-model calls and the associated I/O overhead.
+
+LibraSpec initializes the iterative refinement from the default block size of each draft model, using it as the initial speculative length d. Inspired by the design philosophy of damping techniques in iterative optimization, LibraSpec performs at most one rollback once the estimated speculative length falls below the current length. Since repeated updates may introduce oscillatory behavior due to the interaction between speculative length adjustment and probability estimation, LibraSpec terminates the adjustment after a single correction. In practice, this design improves stability while avoiding additional computation that often provides limited benefit.
+
+Table 1. Comparison with Dynamic Speculative Length Methods on Qwen2.5-Instruct. FailFast, G4-style, and Ours are all built upon FastdLLM. (FdLLM: FastdLLM; η\\eta: speedup; τ\\tau: avg. acceptance length.)
+
+4. Experiments
+----------
+
+### 4.1. Experimental Setup ###
+
+Models and Evaluations. We conduct experiments on Qwen2.5-{7, 14, 32}B-Instruct
+> ([34](#bib.bib14))
+
+ and Qwen3-{4B, 8B, Coder-30B-A3B-Instruct}
+> ([33](#bib.bib15))
+
+ pre-trained models. We evaluate our method on benchmarks spanning three categories: Math, including MATH-500
+> ([18](#bib.bib16))
+
+ and GSM8K
+> ([5](#bib.bib17))
+
+; Code, including HumanEval
+> ([3](#bib.bib18))
+
+; and Chat, including MT-Bench
+> ([40](#bib.bib19))
+
+. For each benchmark, we assess decoding efficiency using end-to-end speedup (η\\eta) over the autoregressive baseline and average acceptance length (τ\\tau).
+
+Table 2. Performance of LibraSpec Integrated with Diffusion-Based Speculative Decoding Methods (DFlash and DDTree).
+
+Baselines. We use vanilla autoregressive decoding as the baseline, which serves as the benchmark for speedup ratios (1.00×\\times). We compare against representative speculative decoding approaches, including the autoregressive method EAGLE-3
+> ([16](#bib.bib6))
+
+ and diffusion-based approaches Fast-dLLM-v2-1.5B
+> ([32](#bib.bib21))
+
+ (hereinafter referred to as FastdLLM), FailFast
+> ([24](#bib.bib10))
+
+, DFlash
+> ([2](#bib.bib8))
+
+, and DDTree
+> ([25](#bib.bib20))
+
+. We additionally adapt the dynamic speculative length strategy used in Gemma 4 MTP
+> ([11](#bib.bib9))
+
+ to the FastdLLM for comparison with representative dynamic speculative length methods (hereinafter referred to as G4-style). Since our method is a plug-and-play acceleration technique, we further evaluate its integration with existing speculative decoding methods to assess its compatibility and complementary benefits.
+
+Implementation Details. Unless otherwise stated, all experiments are conducted on NVIDIA A100 GPUs. Details of the configurations for each benchmark and draft models are provided in Appendix [B](#A2).
+
+### 4.2. Comparison with Dynamic Speculative Length Methods ###
+
+In this section, we evaluate LibraSpec against existing dynamic speculative length methods. We adopt FastdLLM, a widely used diffusion-based drafter, and follow its officially released Qwen2.5 configuration as our experimental setup. The dynamic speculative length baselines include FailFast, a dynamic speculation strategy specifically designed for FastdLLM, and G4-style, the speculative length strategy proposed in Gemma 4, which is adapted to FastdLLM for a fair comparison. We further include EAGLE-3 as a representative autoregressive speculative decoding baseline.
+
+As shown in Table [1](#S3.T1), LibraSpec consistently outperforms all existing dynamic speculative-length strategies across all Qwen2.5 models, benchmark datasets, and decoding settings. Under greedy decoding (temperature=0\\mathrm{temperature}=0), integrating LibraSpec with FastdLLM improves the average end-to-end speedup by 1.42×\\times, 1.57×\\times, and 1.29×\\times on Qwen2.5-7B, 14B, and 32B, respectively, while consistently surpassing FailFast and G4-style. The performance gains remain robust under non-greedy sampling (temperature=1\\mathrm{temperature}=1), where LibraSpec further improves the average speedup of FastdLLM by 1.32×\\times, 1.48×\\times, and 1.25×\\times, respectively. These results demonstrate that, compared with existing methods, LibraSpec enables substantially more effective speculative length adjustment, and that its performance gains consistently generalize across both greedy decoding and stochastic sampling.
+
+Table 3. Performance Comparison of Reasoning Models on Different Benchmarks.Table 4. Sensitivity of LibraSpec to the Hyperparameter α\\alpha,
+Compared with Static Speculative Length Baselines.
+
+### 4.3. Integration with State-of-the-Art Diffusion-Based Drafters ###
+
+We further integrate LibraSpec into state-of-the-art diffusion-based speculative decoding methods, including DFlash and DDTree, and evaluate them on the Qwen3 models with thinking mode disabled. Following their official configurations, we evaluate the decoding speedup based on their publicly released Qwen3 draft models.
+
+As shown in Table [2](#S4.T2), LibraSpec consistently improves the performance of both DFlash and DDTree across all Qwen3 models, benchmarks, and decoding settings. Compared with the original DFlash, LibraSpec provides an additional average decoding speedup of 0.39∼0.69×0.39\\sim 0.69\\times under greedy decoding and 0.39∼0.67×0.39\\sim 0.67\\times under non-greedy sampling. Similarly, LibraSpec brings an additional average decoding speedup of 0.39∼0.69×0.39\\sim 0.69\\times and 0.45∼0.56×0.45\\sim 0.56\\times over DDTree under greedy decoding and non-greedy sampling, respectively. These results demonstrate that LibraSpec is complementary to existing diffusion-based speculative decoding methods and consistently enhances their decoding efficiency across different model architectures and sampling strategies.
+
+### 4.4. Robustness under Thinking-Mode Decoding ###
+
+In this section, we evaluate LibraSpec on the Qwen3 models with thinking mode enabled. As shown in Table [3](#S4.T3), LibraSpec consistently improves the performance of DFlash across all reasoning models, benchmark datasets, and decoding settings. Compared with the original DFlash, LibraSpec provides an additional average decoding speedup of approximately 0.29∼0.30×0.29\\sim 0.30\\times under greedy decoding (temperature=0\\text{temperature}=0) and 0.27∼0.29×0.27\\sim 0.29\\times under non-greedy sampling (temperature=1\\text{temperature}=1), corresponding to a relative improvement of approximately 9%∼11%9\\%\\sim 11\\% over the original methods.
+
+Notably, the improvements remain evident even under reasoning-intensive scenarios, where the generated outputs typically exhibit higher entropy and greater uncertainty, making speculative decoding more challenging. Nevertheless, LibraSpec consistently improves decoding speed across all evaluated settings, demonstrating that the proposed dynamic speculative-length adjustment generalizes well to reasoning workloads.
+
+### 4.5. Hyperparameter (α\\alpha) Sensitivity Analysis ###
+
+We study the sensitivity of LibraSpec to the trade-off hyperparameter α\\alpha under greedy decoding (temperature=0\\mathrm{temperature}=0), which balances the expected acceptance gain against the verification overhead. Specifically, a larger α\\alpha encourages more aggressive draft expansion by placing greater weight on the acceptance gain, while a smaller α\\alpha favors a more conservative strategy by assigning a higher penalty to failed expansions.
+
+As shown in Table [4](#S4.T4), LibraSpec is robust across a broad range of α\\alpha values, requiring little hyperparameter tuning in practice. Moreover, compared with the corresponding baselines without LibraSpec, all evaluated α\\alpha values consistently improve both decoding speedup and accepted speculative length, demonstrating that LibraSpec remains effective across a wide range of hyperparameter settings. For Qwen2.5-7B with FastdLLM, the best average speedup is achieved at α=2.0\\alpha=2.0, while larger values slightly reduce both speedup and τ\\tau.
+
+In contrast, for Qwen3-8B with DFlash, performance consistently improves as α\\alpha increases, with the best results obtained at α=2.2\\alpha=2.2. This suggests that stronger drafters can benefit from more aggressive speculative expansion because the cost of invalidated draft tokens is lower. Based on these observations, we use α=2.0\\alpha=2.0 for FastdLLM, and α=2.2\\alpha=2.2 for both DFlash and DDTree in all experiments.
+
+Figure 4. Effect of Maximum Speculative Length on the Speedup of LibraSpec, Compared with Static Speculative Length.
+
+### 4.6. Maximum speculative Length (dmaxd\_{\\text{max}}) Sensitivity Analysis ###
+
+In this section, we investigate how the maximum speculative length dmaxd\_{\\mathrm{max}} affects decoding efficiency for different draft models. As shown in Figure [4](#S4.F4), regardless of the choice of dmaxd\_{\\mathrm{max}}, LibraSpec consistently outperforms the original static length decoding strategy (denoted as w/o Ours in the figure) across all evaluated draft models and datasets.
+The performance gap becomes even more pronounced as the maximum speculative length increases, highlighting the advantage of dynamic speculative length adjustment over static length decoding under more aggressive speculation.
+This demonstrates that LibraSpec is robust to the choice of dmaxd\_{\\mathrm{max}}, consistently delivering speedup improvements under different maximum speculative length configurations.
+
+Moreover, as draft confidence calibration deteriorates over longer speculative horizons, different draft models exhibit different effective ranges of dmaxd\_{\\mathrm{max}}. For FastdLLM, speedup increases before plateauing at approximately dmax=50∼70d\_{\\mathrm{max}}=50\\sim 70, suggesting reliable calibration over relatively long horizons. Based on this phenomenon, we therefore set dmax=60d\_{\\mathrm{max}}=60 for all FastdLLM experiments.
+
+In contrast, DFlash has a shorter effective range because its reliance on target model hidden states inherently limits the parallel decoding block size. Beyond approximately 22∼2422\\sim 24 tokens, the calibration of the draft-model distribution qq against the target-model distribution pp gradually deteriorates, leading to larger prediction errors and lower acceptance rates; further extending the speculative length therefore yields little additional benefit, while Assumption [3.7](#S3.Thmtheorem7) becomes less valid. We therefore set dmax=24d\_{\\mathrm{max}}=24 for all DFlash and DDTree experiments.
+
+(a)MATH-500
+
+(b)GSM8K
+
+(c)HumanEval
+
+(d)MT-Bench
+
+Figure 5. Case Study of Dynamic Speculative Length Adjustment with LibraSpec across Four Benchmarks: a FastdLLM Draft Model and a Qwen2.5-7B Target Model.
+
+### 4.7. Case study of dynamic speculative length adjustment ###
+
+In this section, to examine how LibraSpec adapts the speculative length during decoding, Figure [5](#S4.F5) visualizes decoding trajectories from four benchmarks, comparing three schedules: a static speculative length, the oracle optimal length obtained by exhaustive search, and the length selected by our LibraSpec.
+
+The oracle speculative length varies substantially across decoding steps and depends strongly on the local generation context. This confirms the premise of Section [3.2](#S3.SS2) — the optimal gain–cost trade-off drifts with local content predictability, so any static length inevitably alternates between under-speculation and over-speculation. Despite having no access to the oracle schedule, LibraSpec closely tracks it using only the confidence and cost signals available online. Across all four examples, LibraSpec follows the oracle schedule with a mean absolute deviation of only 2.78 tokens — far below the 9.48 deviation tokens of the static length schedule — correctly anticipating both expansions and contractions. This is a direct consequence of Theorem [3.5](#S3.Thmtheorem5): since the expected speedup is unimodal in the speculative length, each beneficial adjustment provably moves toward the current optimum. As the decoding context changes, repeatedly applying such adjustments allows LibraSpec to track the evolving oracle length without explicitly predicting the accepted length.
+
+5. Conclusion
+----------
+
+In this paper, we show that the recent shift toward diffusion-based drafters changes the optimization objective of dynamic speculative-length selection.
+Because diffusion drafters generate candidate blocks in parallel at substantially lower marginal drafting cost, estimating the accepted length is no longer sufficient for maximizing end-to-end speedup.
+We therefore formulate speculative-length selection as expected-speedup optimization and derive a marginal criterion that balances acceptance gain against verification cost.
+Based on this criterion, we develop LibraSpec, a training-free and plug-and-play algorithm that dynamically determines how many draft tokens should be verified.
+We show that beneficial adjustments monotonically improve expected speedup and converge to a globally optimal speculative-length interval, while practical LibraSpec approximates these adjustments using drafter confidence scores.
+Extensive experiments across mathematical reasoning, code generation, and general chat benchmarks demonstrate that LibraSpec consistently improves verification efficiency under both greedy and sampling settings, yielding a consistent and substantial end-to-end improvement over SOTA methods.
+
+References
+----------
+
+* Cai et al. (2024)T. Cai, Y. Li, Z. Geng, H. Peng, J. D. Lee, D. Chen, and T. DaoMedusa: simple llm inference acceleration framework with multiple decoding heads.External Links: 2401.10774,[Link](https://arxiv.org/abs/2401.10774)Cited by: [§1](#S1.p1.1).
+* Chen et al. (2026)J. Chen, Y. Liang, and Z. LiuDFlash: block diffusion for flash speculative decoding.External Links: 2602.06036,[Link](https://arxiv.org/abs/2602.06036)Cited by: [§B.1](#A2.SS1.p1.1),[§1](#S1.p1.1),[§1](#S1.p2.1),[§2.1](#S2.SS1.p1.1),[§4.1](#S4.SS1.p2.1).
+* Chen et al. (2021)M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. de Oliveira Pinto, J. Kaplan, et al.Evaluating large language models trained on code.External Links: 2107.03374,[Link](https://arxiv.org/abs/2107.03374)Cited by: [Table 5](#A2.T5.5.4.1),[§4.1](#S4.SS1.p1.1).
+* Christopher et al. (2025)J. K. Christopher, B. R. Bartoldson, T. Ben-Nun, M. Cardei, B. Kailkhura, and F. FiorettoSpeculative diffusion decoding: accelerating language generation through diffusion.External Links: 2408.05636,[Link](https://arxiv.org/abs/2408.05636)Cited by: [§2.1](#S2.SS1.p1.1).
+* Cobbe et al. (2021)K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. SchulmanTraining verifiers to solve math word problems.External Links: 2110.14168,[Link](https://arxiv.org/abs/2110.14168)Cited by: [Table 5](#A2.T5.5.3.1),[§4.1](#S4.SS1.p1.1).
+* Hou et al. (2025)Y. Hou, F. Zhang, C. Du, X. Zhang, J. Pan, T. Pang, C. Du, V. Y. F. Tan, and Z. YangBanditSpec: adaptive speculative decoding via bandit algorithms.External Links: 2505.15141,[Link](https://arxiv.org/abs/2505.15141)Cited by: [§2.2](#S2.SS2.p1.1).
+* Hu et al. (2026)L. Hu, Z. Feng, Y. Wu, H. Yuan, Y. Zhao, Y. Qian, B. Wang, P. Zhao, D. Jiang, Y. Zhu, T. Rosing, and H. ZhangJetSpec: breaking the scaling ceiling of speculative decoding with parallel tree drafting.External Links: 2606.18394,[Link](https://arxiv.org/abs/2606.18394)Cited by: [§2.1](#S2.SS1.p1.1).
+* Huang et al. (2025)K. Huang, X. Guo, and M. WangSpecDec++: boosting speculative decoding via adaptive candidate lengths.External Links: 2405.19715,[Link](https://arxiv.org/abs/2405.19715)Cited by: [§2.2](#S2.SS2.p1.1).
+* Kim et al. (2026)S. Kim, J. Kim, D. Yoon, J. Shin, J. Lee, and J. SeoSpeculative verification: exploiting information gain to refine speculative decoding.External Links: 2509.24328,[Link](https://arxiv.org/abs/2509.24328)Cited by: [§2.2](#S2.SS2.p1.1).
+* Kwon et al. (2023)W. Kwon, Z. Li, S. Zhuang, Y. Sheng, L. Zheng, C. H. Yu, J. E. Gonzalez, H. Zhang, and I. StoicaEfficient memory management for large language model serving with pagedattention.External Links: 2309.06180,[Link](https://arxiv.org/abs/2309.06180)Cited by: [§B.2](#A2.SS2.p1.1).
+* Lacombe and Grootendorst (2026)O. Lacombe and M. GrootendorstAccelerating gemma 4: faster inference with multi-token prediction drafters.Note: [https://blog.google/innovation-and-ai/technology/developers-tools/multi-token-prediction-gemma-4/](https://blog.google/innovation-and-ai/technology/developers-tools/multi-token-prediction-gemma-4/)Google AI BlogCited by: [§2.2](#S2.SS2.p1.1),[§4.1](#S4.SS1.p2.1).
+* Leviathan et al. (2023)Y. Leviathan, M. Kalman, and Y. MatiasFast inference from transformers via speculative decoding.External Links: 2211.17192,[Link](https://arxiv.org/abs/2211.17192)Cited by: [§1](#S1.p1.1),[§3.1](#S3.SS1.p1.1).
+* Li et al. (2025a)G. Li, Z. Fu, M. Fang, Q. Zhao, M. Tang, C. Yuan, and J. WangDiffuSpec: unlocking diffusion language models for speculative decoding.External Links: 2510.02358,[Link](https://arxiv.org/abs/2510.02358)Cited by: [§2.1](#S2.SS1.p1.1).
+* Li et al. (2026)S. Li, C. Wang, Y. Zhu, Y. Wang, F. Yin, S. Shi, Y. Chen, X. Dong, Q. Chen, J. Pan, J. Li, L. Xie, Y. Zhang, L. Yu, Y. Wen, I. Tsang, and T. ZhangSpecForge: a flexible and efficient open-source training framework for speculative decoding.External Links: 2603.18567,[Link](https://arxiv.org/abs/2603.18567)Cited by: [Assumption 3.7](#S3.Thmtheorem7.p1.1.1).
+* Li et al. (2024)Y. Li, F. Wei, C. Zhang, and H. ZhangEAGLE-2: faster inference of language models with dynamic draft trees.External Links: 2406.16858,[Link](https://arxiv.org/abs/2406.16858)Cited by: [§1](#S1.p1.1).
+* Li et al. (2025b)Y. Li, F. Wei, C. Zhang, and H. ZhangEAGLE-3: scaling up inference acceleration of large language models via training-time test.External Links: 2503.01840,[Link](https://arxiv.org/abs/2503.01840)Cited by: [§1](#S1.p1.1),[§4.1](#S4.SS1.p2.1).
+* Li et al. (2025c)Y. Li, F. Wei, C. Zhang, and H. ZhangEAGLE: speculative sampling requires rethinking feature uncertainty.External Links: 2401.15077,[Link](https://arxiv.org/abs/2401.15077)Cited by: [§1](#S1.p1.1).
+* Lightman et al. (2023)H. Lightman, V. Kosaraju, Y. Burda, H. Edwards, B. Baker, T. Lee, J. Leike, J. Schulman, I. Sutskever, and K. CobbeLet’s verify step by step.External Links: 2305.20050,[Link](https://arxiv.org/abs/2305.20050)Cited by: [Table 5](#A2.T5.5.2.1),[§4.1](#S4.SS1.p1.1).
+* Liu et al. (2026)F. Liu, X. Li, K. Zhao, Y. Gao, Z. Zhou, Z. Zhang, Z. Wang, W. Dou, S. Zhong, and C. TianDART: diffusion-inspired speculative decoding for fast llm inference.External Links: 2601.19278,[Link](https://arxiv.org/abs/2601.19278)Cited by: [§1](#S1.p2.1),[§2.1](#S2.SS1.p1.1).
+* Mamou et al. (2024)J. Mamou, O. Pereg, D. Korat, M. Berchansky, N. Timor, M. Wasserblat, and R. SchwartzDynamic speculation lookahead accelerates speculative decoding of large language models.External Links: 2405.04304,[Link](https://arxiv.org/abs/2405.04304)Cited by: [§1](#S1.p1.1),[§2.2](#S2.SS2.p1.1).
+* Marzollo et al. (2026)M. Marzollo, J. Zhuang, N. Roemer, N. Zwingenberger, L. K. Müller, and L. CavigelliSSSD: simply-scalable speculative decoding.External Links: 2411.05894,[Link](https://arxiv.org/abs/2411.05894)Cited by: [§1](#S1.p2.1).
+* Pan et al. (2025)J. Pan, J. Xu, Y. Zhou, and G. DaiSpecDiff: accelerating diffusion model inference with self-speculation.External Links: 2509.13848,[Link](https://arxiv.org/abs/2509.13848)Cited by: [§2.1](#S2.SS1.p1.1).
+* Pan et al. (2026a)L. Pan, Z. Tao, R. Pang, X. Wang, J. Zhao, and Y. ZhangMaking every verified token count: adaptive verification for moe speculative decoding.External Links: 2605.00342,[Link](https://arxiv.org/abs/2605.00342)Cited by: [Assumption 3.7](#S3.Thmtheorem7.p1.1.1).
+* Pan et al. (2026b)R. Pan, Z. Chen, H. Liu, A. Krishnamurthy, and R. NetravaliFail fast, win big: rethinking the drafting strategy in speculative decoding via diffusion llms.External Links: 2512.20573,[Link](https://arxiv.org/abs/2512.20573)Cited by: [§B.2](#A2.SS2.p1.1),[§2.2](#S2.SS2.p1.1),[§4.1](#S4.SS1.p2.1).
+* Ringel and Romano (2026)L. Ringel and Y. RomanoAccelerating speculative decoding with block diffusion draft trees.External Links: 2604.12989,[Link](https://arxiv.org/abs/2604.12989)Cited by: [§2.1](#S2.SS1.p1.1),[§4.1](#S4.SS1.p2.1).
+* Samragh et al. (2025)M. Samragh, A. Kundu, D. Harrison, K. Nishu, D. Naik, M. Cho, and M. FarajtabarYour llm knows the future: uncovering its multi-token prediction potential.External Links: 2507.11851,[Link](https://arxiv.org/abs/2507.11851)Cited by: [§2.1](#S2.SS1.p1.1).
+* Sandler et al. (2025)J. Sandler, J. K. Christopher, T. Hartvigsen, and F. FiorettoSpecDiff-2: scaling diffusion drafter alignment for faster speculative decoding.External Links: 2511.00606,[Link](https://arxiv.org/abs/2511.00606)Cited by: [§2.1](#S2.SS1.p1.1).
+* Singh et al. (2026)A. Singh, A. Fry, A. Perelman, A. Tart, A. Ganesh, A. El-Kishky, et al.OpenAI gpt-5 system card.External Links: 2601.03267,[Link](https://arxiv.org/abs/2601.03267)Cited by: [§1](#S1.p1.1).
+* Tay et al. (2022)Y. Tay, M. Dehghani, D. Bahri, and D. MetzlerEfficient transformers: a survey.External Links: 2009.06732,[Link](https://arxiv.org/abs/2009.06732)Cited by: [§1](#S1.p1.1).
+* Wang et al. (2026)Z. Wang, J. Huang, and X. ChenTAPS: target-aware prefix tree selection for diffusion-drafted speculative decoding.External Links: 2606.00487,[Link](https://arxiv.org/abs/2606.00487)Cited by: [§2.1](#S2.SS1.p1.1).
+* Wei et al. (2025)Z. Wei, W. Chen, X. Zhu, and Y. MengAdaDecode: accelerating llm decoding with adaptive layer parallelism.External Links: 2506.03700,[Link](https://arxiv.org/abs/2506.03700)Cited by: [§2.2](#S2.SS2.p1.1).
+* Wu et al. (2025)C. Wu, H. Zhang, S. Xue, S. Diao, Y. Fu, Z. Liu, P. Molchanov, P. Luo, S. Han, and E. XieFast-dllm v2: efficient block-diffusion llm.External Links: 2509.26328,[Link](https://arxiv.org/abs/2509.26328)Cited by: [§B.2](#A2.SS2.p2.1),[§4.1](#S4.SS1.p2.1).
+* Yang et al. (2025a)A. Yang, A. Li, B. Yang, B. Zhang, B. Hui, B. Zheng, et al.Qwen3 technical report.External Links: 2505.09388,[Link](https://arxiv.org/abs/2505.09388)Cited by: [§4.1](#S4.SS1.p1.1).
+* Yang et al. (2025b)A. Yang, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, et al.Qwen2.5 technical report.External Links: 2412.15115,[Link](https://arxiv.org/abs/2412.15115)Cited by: [§4.1](#S4.SS1.p1.1).
+* Yang et al. (2026)P. Yang, C. Du, F. Zhang, H. Wang, T. Pang, C. Du, and B. AnLongSpec: long-context lossless speculative decoding with efficient drafting and verification.External Links: 2502.17421,[Link](https://arxiv.org/abs/2502.17421)Cited by: [§1](#S1.p1.1).
+* Zarch et al. (2025)H. E. Zarch, L. Gao, C. Jiang, and M. AnnavaramDEL: context-aware dynamic exit layer for efficient self-speculative decoding.External Links: 2504.05598,[Link](https://arxiv.org/abs/2504.05598)Cited by: [§2.2](#S2.SS2.p1.1).
+* Zhang et al. (2026a)H. Zhang, Y. Hu, Y. Wang, M. Mo, X. Xiao, and X. ChuBlockPilot: instance-adaptive policy learning for diffusion-based speculative decoding.External Links: 2606.31315,[Link](https://arxiv.org/abs/2606.31315)Cited by: [§1](#S1.p1.1),[§2.2](#S2.SS2.p1.1).
+* Zhang et al. (2026b)J. Zhang, Z. Yu, L. Wang, N. Yang, E. J. Yu, Z. Li, Y. Song, D. Zhu, X. Zhang, F. Wei, and S. LiLearning to draft: adaptive speculative decoding with reinforcement learning.External Links: 2603.01639,[Link](https://arxiv.org/abs/2603.01639)Cited by: [§1](#S1.p1.1),[§2.2](#S2.SS2.p1.1).
+* Zhang et al. (2024)J. Zhang, J. Wang, H. Li, L. Shou, K. Chen, G. Chen, and S. MehrotraDraft & verify: lossless large language model acceleration via self-speculative decoding.In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),pp. 11263–11282.External Links: [Link](http://dx.doi.org/10.18653/v1/2024.acl-long.607),[Document](https://dx.doi.org/10.18653/v1/2024.acl-long.607)Cited by: [§1](#S1.p1.1).
+* Zheng et al. (2023)L. Zheng, W. Chiang, Y. Sheng, S. Zhuang, Z. Wu, Y. Zhuang, Z. Lin, Z. Li, D. Li, E. P. Xing, H. Zhang, J. E. Gonzalez, and I. StoicaJudging llm-as-a-judge with mt-bench and chatbot arena.External Links: 2306.05685,[Link](https://arxiv.org/abs/2306.05685)Cited by: [Table 5](#A2.T5.5.5.1),[§4.1](#S4.SS1.p1.1).
+
+Appendix A Theoretical Proofs
+----------
+
+### A.1. Proof for Theorem [3.2](#S3.Thmtheorem2) ###
+
+Theorem [3.2](#S3.Thmtheorem2). A speculative length adjustment achieves a single beneficial adjustment if and only if the marginal benefit of the adjusted draft segment is more favorable than the current average benefit.
+
+|(9)|{𝔼[τd:d′]Tverifyd:d′\>𝔼⁡[τd]Tdverify,d\<d′,𝔼[τd′:d]Tverifyd′:d\<𝔼⁡[τd]Tdverify,d\>d′.\\begin{cases}\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d:d^{\\prime}}]}{T^{\\mathrm{verify}}\_{d:d^{\\prime}}}\>\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\<d^{\\prime},\\\\[15.00002pt]<br/>\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d^{\\prime}:d}]}{T^{\\mathrm{verify}}\_{d^{\\prime}:d}}\<\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\>d^{\\prime}.\\end{cases}|
+|---|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+where the first case (d\<d′d\<d^{\\prime}) corresponds to extending the draft sequence, requiring the marginal benefit of the appended draft segment to exceed the current average benefit, while the second case (d\>d′d\>d^{\\prime}) corresponds to truncating the draft sequence, requiring the marginal benefit of the removed suffix to be lower than the current average benefit.
+
+###### Proof. ######
+
+Substituting the definition of speedup from Definition [3.1](#S3.Thmtheorem1), we obtain:
+
+|                                                                                                                                                                                                                                                                                                                                                                                        (10)                                                                                                                                                                                                                                                                                                                                                                                        |𝔼⁡[ηd′]\>𝔼⁡[ηd]\\displaystyle\\mathbb{E}[\\eta\_{d^{\\prime}}]\>\\mathbb{E}[\\eta\_{d}]|
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+|{(𝔼[τd]+𝔼[τd:d′])LtargetTverifyd+Tverifyd:d′\>𝔼⁡[τd]​LtargetTdverify,d\<d′,(𝔼[τd]−𝔼[τd′:d])LtargetTverifyd−Tverifyd′:d\<𝔼⁡[τd]​LtargetTdverify,d\>d′.\\displaystyle\\begin{cases}\\displaystyle\\frac{(\\mathbb{E}[\\tau\_{d}]+\\mathbb{E}[\\tau\_{d:d^{\\prime}}])\\,L\_{\\mathrm{target}}}{T^{\\mathrm{verify}}\_{d}+T^{\\mathrm{verify}}\_{d:d^{\\prime}}}\>\\frac{\\mathbb{E}[\\tau\_{d}]\\,L\_{\\mathrm{target}}}{T^{\\mathrm{verify}}\_{d}},&d\<d^{\\prime},\\\\[15.00002pt]<br/>\\displaystyle\\frac{(\\mathbb{E}[\\tau\_{d}]-\\mathbb{E}[\\tau\_{d^{\\prime}:d}])\\,L\_{\\mathrm{target}}}{T^{\\mathrm{verify}}\_{d}-T^{\\mathrm{verify}}\_{d^{\\prime}:d}}\<\\frac{\\mathbb{E}[\\tau\_{d}]\\,L\_{\\mathrm{target}}}{T^{\\mathrm{verify}}\_{d}},&d\>d^{\\prime}.\\end{cases}|                                                                                       |
+|                                                                   {𝔼[τd]+𝔼[τd:d′]Tverifyd+Tverifyd:d′\>𝔼⁡[τd]Tdverify,d\<d′,𝔼[τd]−𝔼[τd′:d]Tverifyd−Tverifyd′:d\<𝔼⁡[τd]Tdverify,d\>d′.\\displaystyle\\begin{cases}\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d}]+\\mathbb{E}[\\tau\_{d:d^{\\prime}}]}{T^{\\mathrm{verify}}\_{d}+T^{\\mathrm{verify}}\_{d:d^{\\prime}}}\>\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\<d^{\\prime},\\\\[15.00002pt]<br/>\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d}]-\\mathbb{E}[\\tau\_{d^{\\prime}:d}]}{T^{\\mathrm{verify}}\_{d}-T^{\\mathrm{verify}}\_{d^{\\prime}:d}}\<\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\>d^{\\prime}.\\end{cases}                                                                   |                                                                                       |
+
+Using the ratio comparison identity, we obtain:
+
+|(11)|{𝔼[τd:d′]Tverifyd:d′\>𝔼⁡[τd]Tdverify,d\<d′,𝔼[τd′:d]Tverifyd′:d\<𝔼⁡[τd]Tdverify,d\>d′.\\begin{cases}\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d:d^{\\prime}}]}{T^{\\mathrm{verify}}\_{d:d^{\\prime}}}\>\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\<d^{\\prime},\\\\[15.00002pt]<br/>\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d^{\\prime}:d}]}{T^{\\mathrm{verify}}\_{d^{\\prime}:d}}\<\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\>d^{\\prime}.\\end{cases}|
+|----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+∎
+
+### A.2. Proof for Theorem [3.3](#S3.Thmtheorem3) ###
+
+Theorem [3.3](#S3.Thmtheorem3). Under the strengthened position-wise criterion, A Single Beneficial Adjustment from dd to d′d^{\\prime}only if it satisfies:
+
+|             (12)             |                                                                                                       d′\\displaystyle d^{\\prime}                                                                                                       |≤ϵi,∀i∈[1,d],\\displaystyle\\leq\\epsilon\_{i},\\quad\\forall\\,i\\in[1,d],|
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+|ϵi\\displaystyle\\epsilon\_{i}|\=max⁡{d′∈ℤ∣d′\<Tiverifyτi​c​∑j=id′∏k=ijpk+i}.\\displaystyle=\\max\\left\\{d^{\\prime}\\in\\mathbb{Z}\\mid d^{\\prime}\<\\frac{T\_{i}^{\\mathrm{verify}}}{\\tau\_{i}\\,c}\\,\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}+i\\right\\}.|                                                                           |
+
+###### Proof. ######
+
+Let Ai:j={xi,…,xj are all accepted},i≤j.A\_{i:j}=\\{x\_{i},\\ldots,x\_{j}\\text{ are all accepted}\\},\\ i\\leq j. Since acceptance must occur consecutively,
+
+|(13)|Pr(Ai:j)=∏k=ijpk.\\Pr(A\_{i:j})=\\prod\_{k=i}^{j}p\_{k}.|
+|----|--------------------------------------------------------|
+
+The expected marginal increase in accepted draft tokens is given by
+
+|(14)|𝔼[τi:j]=∑k=ijPr(Ai:k)=∑k=ij∏l=ikpl,\\mathbb{E}[\\tau\_{i:j}]=\\sum\_{k=i}^{j}\\Pr(A\_{i:k})=\\sum\_{k=i}^{j}\\prod\_{l=i}^{k}p\_{l},|
+|----|------------------------------------------------------------------------------------------------------------------------------------|
+
+where the expectation follows from the linearity of expectation. Retaining the draft token at position ii incurs a wasted verification cost of
+
+|(15)|Ti:j=c(j−i).T\_{i:j}=c\\,(j-i).|
+|----|-------------------------------|
+
+where cc denotes the average verification cost per speculative position. We strengthen the criterion of a single beneficial adjustment by requiring that the marginal benefit of the speculative suffix starting from position i exceeds the average benefit accumulated up to that position.
+
+|(16)|𝔼[τi:d′]Tverifyi:d′\>τiTiverify,∀i∈[1,d].\\frac{\\mathbb{E}[\\tau\_{i:d^{\\prime}}]}{T^{\\mathrm{verify}}\_{i:d^{\\prime}}}\>\\frac{\\tau\_{i}}{T^{\\mathrm{verify}}\_{i}},\\,\\forall\\,i\\in[1,d].|
+|----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+Expanding the marginal gain and the marginal cost yields
+
+|                                                                      (17)                                                                       |∑j=id′∏k=ijpkc⁡(d′−i)\\displaystyle\\frac{\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}}{c\\,(d^{\\prime}-i)}|\>τiTiverify\\displaystyle\>\\frac{\\tau\_{i}}{T^{\\mathrm{verify}}\_{i}}|
+|-------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|
+|               Tiverify​∑j=id′∏k=ijpk\\displaystyle T^{\\mathrm{verify}}\_{i}\\,\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}                |                          \>τi​c​(d′−i)\\displaystyle\>\\tau\_{i}\\,c\\,(d^{\\prime}-i)                          |                                                                         |
+|Tiverifyτi​c​∑j=id′∏k=ijpk+i\\displaystyle\\frac{T\_{i}^{\\mathrm{verify}}}{\\tau\_{i}\\,c}\\,\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}+i|                                        \>d′.\\displaystyle\>d^{\\prime}.                                        |                                                                         |
+
+For a single beneficial adjustment, the condition must hold for every draft position ii. Therefore,
+
+|             (18)             |                                                                                                       d′\\displaystyle d^{\\prime}                                                                                                       |≤ϵi,∀i∈[1,d],\\displaystyle\\leq\\epsilon\_{i},\\quad\\forall\\,i\\in[1,d],|
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+|ϵi\\displaystyle\\epsilon\_{i}|\=max⁡{d′∈ℤ∣d′\<Tiverifyτi​c​∑j=id′∏k=ijpk+i}.\\displaystyle=\\max\\left\\{d^{\\prime}\\in\\mathbb{Z}\\mid d^{\\prime}\<\\frac{T\_{i}^{\\mathrm{verify}}}{\\tau\_{i}\\,c}\\,\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}+i\\right\\}.|                                                                           |
+
+∎
+
+### A.3. Proof for Theorem [3.4](#S3.Thmtheorem4) ###
+
+Theorem [3.4](#S3.Thmtheorem4). A Single Beneficial Adjustment from dd to d′d^{\\prime}if it satisfies:
+
+|             (19)             |                                                                                                       d′\\displaystyle d^{\\prime}                                                                                                       |\=miniϵi,∀i∈[1,d],\\displaystyle=\\min\_{i}\\epsilon\_{i},\\quad\\forall\\,i\\in[1,d],|
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+|ϵi\\displaystyle\\epsilon\_{i}|\=max⁡{d′∈ℤ∣d′\<Tiverifyτi​c​∑j=id′∏k=ijpk+i}.\\displaystyle=\\max\\left\\{d^{\\prime}\\in\\mathbb{Z}\\mid d^{\\prime}\<\\frac{T\_{i}^{\\mathrm{verify}}}{\\tau\_{i}\\,c}\\,\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}+i\\right\\}.|                                                                                      |
+
+###### Proof. ######
+
+|(20)|d′=mini⁡ϵid^{\\prime}=\\min\_{i}\\epsilon\_{i}|
+|----|----------------------------------------------|
+
+According to Theorem [3.3](#S3.Thmtheorem3), since d′d^{\\prime} must satisfy d′≤ϵid^{\\prime}\\leq\\epsilon\_{i} for all ii, it follows that
+
+|             (21)             |                                                                                                       d′\\displaystyle d^{\\prime}                                                                                                       |≤ϵi,∀i∈[1,d],\\displaystyle\\leq\\epsilon\_{i},\\quad\\forall\\,i\\in[1,d],|
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+|ϵi\\displaystyle\\epsilon\_{i}|\=max⁡{d′∈ℤ∣d′\<Tiverifyτi​c​∑j=id′∏k=ijpk+i}.\\displaystyle=\\max\\left\\{d^{\\prime}\\in\\mathbb{Z}\\mid d^{\\prime}\<\\frac{T\_{i}^{\\mathrm{verify}}}{\\tau\_{i}\\,c}\\,\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}+i\\right\\}.|                                                                           |
+
+For ∀i∈[1,d]\\forall i\\in[1,d],
+
+|                                                       (22)                                                        |                                            d′\\displaystyle d^{\\prime}                                             |\<Tiverifyτi​c​∑j=id′∏k=ijpk+i\\displaystyle\<\\frac{T\_{i}^{\\mathrm{verify}}}{\\tau\_{i}\\,c}\\,\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}+i|
+|-------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
+|                       Tiverifyτi\\displaystyle\\frac{T\_{i}^{\\mathrm{verify}}}{\\tau\_{i}}                       |\>c⁡(d′−i)∑j=id′∏k=ijpk\\displaystyle\>\\frac{c\\,(d^{\\prime}-i)}{\\sum\_{j=i}^{d^{\\prime}}\\prod\_{k=i}^{j}p\_{k}}|                                                                                                                                                     |
+|𝔼[τi:d′]Tverifyi:d′\\displaystyle\\frac{\\mathbb{E}[\\tau\_{i:d^{\\prime}}]}{T^{\\mathrm{verify}}\_{i:d^{\\prime}}}|                     \>τiTiverify.\\displaystyle\>\\frac{\\tau\_{i}}{T^{\\mathrm{verify}}\_{i}}.                     |                                                                                                                                                     |
+
+In particular, substituting i=di=d,
+
+|(23)|{𝔼[τd:d′]Tverifyd:d′\>𝔼⁡[τd]Tdverify,d\<d′,𝔼[τd′:d]Tverifyd′:d\<𝔼⁡[τd]Tdverify,d\>d′.\\begin{cases}\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d:d^{\\prime}}]}{T^{\\mathrm{verify}}\_{d:d^{\\prime}}}\>\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\<d^{\\prime},\\\\[15.00002pt]<br/>\\displaystyle\\frac{\\mathbb{E}[\\tau\_{d^{\\prime}:d}]}{T^{\\mathrm{verify}}\_{d^{\\prime}:d}}\<\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}},&d\>d^{\\prime}.\\end{cases}|
+|----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+In this case, a single beneficial adjustment can be achieved.
+∎
+
+### A.4. Proof for Theorem [3.5](#S3.Thmtheorem5) ###
+
+Theorem [3.5](#S3.Thmtheorem5). The expected speedup is a unimodal function of the speculative length.
+
+|(24)|𝔼⁡[τd+1]Td+1verify\>𝔼⁡[τd]Tdverify⟺∏i=1d+1pi\>c​𝔼⁡[τd]Tdverify\\frac{\\mathbb{E}[\\tau\_{d+1}]}{T^{\\mathrm{verify}}\_{d+1}}\>\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}}\\Longleftrightarrow\\prod\_{i=1}^{d+1}p\_{i}\>c\\,\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}}|
+|----|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+###### Proof. ######
+
+Since 0≤pi≤10\\leq p\_{i}\\leq 1, the product ∏i=1dpi\\prod\_{i=1}^{d}p\_{i} is monotonically non-increasing with respect to dd.
+
+If the marginal verification cost incurred by adding each speculative position is a constant cc, then there exists a threshold dd such that:
+
+|(25)|∏i=1d+1pic\>𝔼⁡[τd]Tdverify\\frac{\\prod\_{i=1}^{d+1}p\_{i}}{c}\>\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}}|
+|----|--------------------------------------------------------------------------------------------------------------------------|
+
+By Theorem [3.2](#S3.Thmtheorem2), it follows that
+
+|(26)|𝔼⁡[τd+1]Td+1verify\>𝔼⁡[τd]Tdverify⟺∏i=1d+1pi\>c​𝔼⁡[τd]Tdverify.\\frac{\\mathbb{E}[\\tau\_{d+1}]}{T^{\\mathrm{verify}}\_{d+1}}\>\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}}\\Longleftrightarrow\\prod\_{i=1}^{d+1}p\_{i}\>c\\,\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}}.|
+|----|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+Moreover, its contrapositive also holds.
+
+|(27)|𝔼⁡[τd+1]Td+1verify≤𝔼⁡[τd]Tdverify⟺∏i=1d+1pi≤c​𝔼⁡[τd]Tdverify\\frac{\\mathbb{E}[\\tau\_{d+1}]}{T^{\\mathrm{verify}}\_{d+1}}\\leq\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}}\\Longleftrightarrow\\prod\_{i=1}^{d+1}p\_{i}\\leq c\\,\\frac{\\mathbb{E}[\\tau\_{d}]}{T^{\\mathrm{verify}}\_{d}}|
+|----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+This immediately implies that the expected decoding speedup is a unimodal function of the speculative length.
+∎
+
+### A.5. Proof for Theorem [3.6](#S3.Thmtheorem6) ###
+
+Theorem [3.6](#S3.Thmtheorem6). By iteratively applying single beneficial adjustments, the speculative length converges in finitely many steps to d′d^{\\prime}, which lies in the globally optimal interval of speculative lengths.
+
+|(28)|𝔼⁡[ηd′]=maxd∈ℤ\>0⁡𝔼⁡[ηd].\\mathbb{E}[\\eta\_{d^{\\prime}}]=\\max\_{d\\in\\mathbb{Z}\_{\>0}}\\mathbb{E}[\\eta\_{d}].|
+|----|-------------------------------------------------------------------------------------------------------------------|
+
+###### Proof. ######
+
+Choose
+
+|(29)|d⋆∈arg​maxd∈ℤ\>0⁡𝔼​[ηd],d^{\\star}\\in\\operatorname\*{arg\\,max}\_{d\\in\\mathbb{Z}\_{\>0}}\\mathbb{E}[\\eta\_{d}],|
+|----|--------------------------------------------------------------------------------------------------------------------|
+
+Let {d(k)}k≥0\\{d^{(k)}\\}\_{k\\geq 0} denote the sequence of beneficial adjustments. By Definition [3.1](#S3.Thmtheorem1),
+
+|(30)|𝔼⁡[ηdk+1]\>𝔼⁡[ηdk]⟹𝔼⁡[ηdℓ]\>𝔼⁡[ηdk],∀ℓ\>k.\\mathbb{E}[\\eta\_{d\_{k+1}}]\>\\mathbb{E}[\\eta\_{d\_{k}}]\\Longrightarrow\\mathbb{E}[\\eta\_{d\_{\\ell}}]\>\\mathbb{E}[\\eta\_{d\_{k}}],\\qquad\\forall\\,\\ell\>k.|
+|----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+By Theorem [3.5](#S3.Thmtheorem5),
+
+|                                   (31)                                   |k\<ℓ,dk,dℓ\<d⋆\\displaystyle k\<\\ell,\\quad d\_{k},d\_{\\ell}\<d^{\\star}|⟹dk\<dℓ,\\displaystyle\\Longrightarrow d\_{k}\<d\_{\\ell},|
+|--------------------------------------------------------------------------|--------------------------------------------------------------------------|----------------------------------------------------------|
+|k\<ℓ,dk,dℓ\>d⋆\\displaystyle k\<\\ell,\\quad d\_{k},d\_{\\ell}\>d^{\\star}|        ⟹dk\>dℓ.\\displaystyle\\Longrightarrow d\_{k}\>d\_{\\ell}.        |                                                          |
+
+Let,
+
+|(32)|I−={k:dk\<d⋆},I+={k:dk\>d⋆}.I\_{-}=\\{k:d\_{k}\<d^{\\star}\\},\\qquad I\_{+}=\\{k:d\_{k}\>d^{\\star}\\}.|
+|----|--------------------------------------------------------------------------------------------------------|
+
+Then
+
+|(33)||I−|≤d⋆−1,I+≠∅⟹|I+|≤dmin⁡I+−d⋆\<∞.|I\_{-}|\\leq d^{\\star}-1,\\qquad I\_{+}\\neq\\varnothing\\Longrightarrow|I\_{+}|\\leq d\_{\\min I\_{+}}-d^{\\star}\<\\infty.|
+|----|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+Hence, the sequence reaches the globally optimal interval after
+finitely many beneficial adjustments. At the terminal length d′d^{\\prime},
+
+|(34)|∄d∈ℤ\>0:𝔼[ηd]\>𝔼[ηd′].\\nexists\\,d\\in\\mathbb{Z}\_{\>0}:\\mathbb{E}[\\eta\_{d}]\>\\mathbb{E}[\\eta\_{d^{\\prime}}].|
+|----|---------------------------------------------------------------------------------------------------------------------|
+
+Therefore,
+
+|(35)|𝔼⁡[ηd′]=maxd∈ℤ\>0⁡𝔼⁡[ηd].\\mathbb{E}[\\eta\_{d^{\\prime}}]=\\max\_{d\\in\\mathbb{Z}\_{\>0}}\\mathbb{E}[\\eta\_{d}].|
+|----|-------------------------------------------------------------------------------------------------------------------|
+
+∎
+
+Appendix B Baseline and Benchmark Details
+----------
+
+### B.1. Benchmark Details ###
+
+Table [5](#A2.T5) lists the number of evaluated examples for each dataset. We follow the DFlash
+> ([2](#bib.bib8))
+
+ benchmark setup for these sample counts.
+
+Table 5. Number of evaluated examples per dataset in the benchmark suite.
+
+### B.2. Baseline Details ###
+
+EAGLE-3. All EAGLE-3 baselines are run using vLLM v0.13.0
+> ([10](#bib.bib34))
+
+. We run an extensive parameter sweep of speculative length from 3 to 20, and pick a different speculation length that yielded the best speedup for each model-dataset pair. For comparisons with EAGLE-3 on Qwen2.5 models, we use the checkpoints released by FailFast
+> ([24](#bib.bib10))
+
+.
+
+FastdLLM. All FastdLLM baselines are run using Fast-dLLM-v2-1.5B
+> ([32](#bib.bib21))
+
+. we also conduct an extensive parameter sweep of speculative length from 3 to 20, and pick a different speculative length that achieves the best speedup for each model-dataset pair. When combined with LibraSpec, the initial speculative length is set to 10, while the maximum speculative length is set to 60.
+
+FailFast. For the hyperparameters in FailFast, we adopt the optimal configurations reported in the original paper. Specifically, we set τ={0.5,0.45,0.4}\\tau=\\{0.5,0.45,0.4\\} for the Qwen2.5-{7,14,32}B-Instruct target models, respectively. The maximum speculative length is set to 80, following the original paper, while the initial speculative length is set to 10.
+
+G4-style. We adapt the dynamic speculative-length control strategy used in Gemma 4 MTP to the FastdLLM. Following the original heuristic, the speculative length for the next decoding round is increased by 2 if all drafted tokens are accepted in the current round, and decreased by 1 whenever at least one drafted token is rejected.
+
+DFlash. All DFlash experiments use a default initial speculative length (block size) of 16. When integrated with LibraSpec, the maximum speculative length is set to 24.
+
+DDTree. All DDTree experiments also use an initial block size of 16. We search the node budget over {64,128,256,512}\\{64,128,256,512\\} and report the configuration that achieves the highest decoding speedup. When integrated with LibraSpec, the maximum speculative length is likewise set to 24.
+
+</body>
+(Response complete. 519079 bytes total. Content-type: text/html; charset=utf-8. Fetched in 376ms.)

@@ -1,0 +1,52 @@
+[server] starting; models config = [("cap", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "cap" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] cap: regime draft attached (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "cap": 33 layers, eos=248046
+[worker] cap: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] cap: decode chunk cap 16 (exact-16 tier)
+[admission] "cap": plain 16704 B/token, spec 18560 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["cap"]
+[server] listening on http://127.0.0.1:8187
+[meter] admit id=cmpl-2f5045c5010cc9d0ad0f3addbe285d0c tenant=default lane=interactive model="cap"
+[admission] request cost: model="cap" ctx=8192 path=spec = 18560 B/token x ctx + 0MB fixed = 152MB
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-long prompt=8120 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="cap" 103MB (observed 255MB at ctx 8192 path=spec)
+[spec-acc] ctx=8120 burst=24/27 cum=24/27=0.889
+[spec-acc] ctx=8154 burst=22/30 cum=46/57=0.807
+[meter] admit id=chatcmpl-61268130ac1bc04f48236f883b048caf tenant=default lane=interactive model="cap"
+[admission] request cost: model="cap" ctx=131072 path=spec = 18560 B/token x ctx + 103MB fixed = 2536MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 8120; 1 parked, 62 prompt tokens; model cap)
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=62 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=62 burst=12/12 cum=12/12=1.000
+[meter] admit id=chatcmpl-15622c35f3be26f69b352c9550cad685 tenant=default lane=interactive model="cap"
+[admission] request cost: model="cap" ctx=262144 path=spec = 18560 B/token x ctx + 103MB fixed = 4968MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 8120; 2 parked, 58 prompt tokens; model cap)
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=58 burst=12/12 cum=12/12=1.000
+[meter] admit id=chatcmpl-890b0d8855f594f994c4abd2fadb1f18 tenant=default lane=interactive model="cap"
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 62; 2 parked, 58 prompt tokens; model cap)
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=58 burst=12/12 cum=12/12=1.000
+[meter] admit id=chatcmpl-9b33ceb759d97b3b87751aeebd261716 tenant=default lane=interactive model="cap"
+[meter] admit id=chatcmpl-706cc17086b5bd2556b027bf080ec326 tenant=default lane=interactive model="cap"
+[meter] admit id=chatcmpl-267c9661e5cc24c651c1ba723f4411f6 tenant=default lane=interactive model="cap"
+[admission] request cost: model="cap" ctx=131072 path=spec = 18560 B/token x ctx + 103MB fixed = 2536MB
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 58; 2 parked, 58 prompt tokens; model cap)
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 58; 2 parked, 58 prompt tokens; model cap)
+[meter] admit id=chatcmpl-1c9111fe0226ebeae6efba6c13e34780 tenant=default lane=interactive model="cap"
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[admission] request cost: model="cap" ctx=131072 path=plain = 16704 B/token x ctx + 103MB fixed = 2292MB
+[admit-oom] reclaim-on-defer: evicted 0 plain + 1 spec parked sessions (global LRU); effective free 2251MB -> 7341MB
+[spec-k] model="cap" tenant="cap256k" K=0 source=concurrency prompt=58 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="cap" tenant="cap256k" K=0 source=concurrency prompt=58 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-gate] demoted session to batched decode: 4 active >= HIGH=4 (model cap, committed 59, generated 1)
+[spec-gate] demoted session to batched decode: 4 active >= HIGH=4 (model cap, committed 59, generated 1)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

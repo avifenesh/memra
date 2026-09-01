@@ -1,0 +1,15 @@
+selftest PASS [a.cliques-separate]: assignment=[0, 1, 0, 1, 0, 1, 0, 1]
+selftest PASS [a.hot-clique-on-entry]: assignment=[0, 1, 0, 1, 0, 1, 0, 1]
+selftest PASS [a.intra-fraction-1.0]: intra=1.0
+selftest PASS [b.even-8x2]: map=[0, 0, 0, 0, 1, 1, 1, 1]
+selftest PASS [b.even-64x4]: matches expert // (count/ranks) for 64 experts on 4 ranks
+selftest PASS [c.hottest-on-entry]: assignment=[0, 0, 1, 0, 1, 1, 0, 1]
+selftest PASS [c.balanced]: loads=[4, 4]
+selftest PASS [d.coactivation-peer-0]: peer_touch_fraction=0.0
+selftest PASS [d.even-peer-positive]: peer_touch_fraction=1.0
+selftest PASS [d.max-touch-improves]: coact=4.0 even=2.0
+selftest: 10/10 checks green
+
+teeth proof: assertion d.coactivation-peer-0 was temporarily inverted (peer_co == 0.0 -> peer_co != 0.0);
+the run then printed "selftest FAIL [d.coactivation-peer-0]: peer_touch_fraction=0.0" and exited 1.
+The assertion was restored and the suite re-ran 10/10 green (output above).

@@ -1,0 +1,235 @@
+DSPARK-CHUNK-BEGIN 2026-08-11T15:45:53+03:00 offset=2064 limit=64 label=pilot
+workspace=/home/avifenesh/projects/wt-cx-dspark2
+chunk_root=/data/projects/dspark/qwen35-9b-corpus-pilot/chunks/pilot-02064-02128
+52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de  /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+20a061ddee54bb3113a25cd2abbb150e7e51c65a05670c3be127c242221fffd9  /data/projects/dspark/qwen35-9b-corpus-pilot/prompts-v2/prompts.promptpack
+c2f9504c5761de8bfd88657433e259496240e795ec60cf709e4202d76de58e7f  /data/projects/dspark/qwen35-9b-corpus-pilot/prompts-v2/prompts.tsv
+dc757120c3765d10bc670ac68fd1cec22789317057ecaf2d833121ddf6f53129  /home/avifenesh/projects/wt-cx-dspark2/target/release/dspark-generate
+e8abb3bc7674b69ad46766e729ef178c8ed326b44769302d2e6c7f9cf44f044e  /home/avifenesh/projects/wt-cx-dspark2/target/release/dspark-extract
+2026/08/11 15:46:10.061, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 12.0, 24463 MiB, 157 MiB, 62, 10.12 W
+DSPARK-CHUNK-LOCK-ACQUIRED 2026-08-11T15:46:10+03:00
+[dspark-generate] range=2064..2128 resume=0 temp=0.7 max_new=512 model=/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[dspark-generate] id=2064 1/64 prompt=115 response=512 elapsed=6.769s
+[dspark-generate] id=2065 2/64 prompt=45 response=154 elapsed=2.099s
+[dspark-generate] id=2066 3/64 prompt=612 response=512 elapsed=6.903s
+[dspark-generate] id=2067 4/64 prompt=36 response=195 elapsed=2.651s
+[dspark-generate] id=2068 5/64 prompt=30 response=512 elapsed=6.790s
+[dspark-generate] id=2069 6/64 prompt=33 response=512 elapsed=6.798s
+[dspark-generate] id=2070 7/64 prompt=88 response=512 elapsed=6.779s
+[dspark-generate] id=2071 8/64 prompt=64 response=230 elapsed=3.098s
+[dspark-generate] id=2072 9/64 prompt=112 response=512 elapsed=6.787s
+[dspark-generate] id=2073 10/64 prompt=214 response=512 elapsed=6.835s
+[dspark-generate] id=2074 11/64 prompt=97 response=512 elapsed=6.803s
+[dspark-generate] id=2075 12/64 prompt=38 response=512 elapsed=6.853s
+[dspark-generate] id=2076 13/64 prompt=731 response=512 elapsed=7.040s
+[dspark-generate] id=2077 14/64 prompt=68 response=183 elapsed=2.502s
+[dspark-generate] id=2078 15/64 prompt=36 response=142 elapsed=1.971s
+[dspark-generate] id=2079 16/64 prompt=32 response=512 elapsed=6.850s
+[dspark-generate] id=2080 17/64 prompt=38 response=512 elapsed=6.851s
+[dspark-generate] id=2081 18/64 prompt=52 response=512 elapsed=6.847s
+[dspark-generate] id=2082 19/64 prompt=122 response=512 elapsed=6.818s
+[dspark-generate] id=2083 20/64 prompt=54 response=512 elapsed=6.841s
+[dspark-generate] id=2084 21/64 prompt=82 response=512 elapsed=6.821s
+[dspark-generate] id=2085 22/64 prompt=113 response=512 elapsed=6.809s
+[dspark-generate] id=2086 23/64 prompt=394 response=512 elapsed=6.938s
+[dspark-generate] id=2087 24/64 prompt=40 response=512 elapsed=6.851s
+[dspark-generate] id=2088 25/64 prompt=18 response=264 elapsed=3.586s
+[dspark-generate] id=2089 26/64 prompt=58 response=270 elapsed=3.643s
+[dspark-generate] id=2090 27/64 prompt=31 response=512 elapsed=6.854s
+[dspark-generate] id=2091 28/64 prompt=43 response=512 elapsed=6.852s
+[dspark-generate] id=2092 29/64 prompt=146 response=512 elapsed=6.866s
+[dspark-generate] id=2093 30/64 prompt=39 response=512 elapsed=6.862s
+[dspark-generate] id=2094 31/64 prompt=271 response=512 elapsed=6.916s
+[dspark-generate] id=2095 32/64 prompt=112 response=512 elapsed=6.833s
+[dspark-generate] id=2096 33/64 prompt=124 response=512 elapsed=6.837s
+[dspark-generate] id=2097 34/64 prompt=43 response=512 elapsed=6.862s
+[dspark-generate] id=2098 35/64 prompt=40 response=288 elapsed=3.899s
+[dspark-generate] id=2099 36/64 prompt=64 response=512 elapsed=6.847s
+[dspark-generate] id=2100 37/64 prompt=28 response=512 elapsed=6.860s
+[dspark-generate] id=2101 38/64 prompt=48 response=461 elapsed=6.165s
+[dspark-generate] id=2102 39/64 prompt=56 response=512 elapsed=6.857s
+[dspark-generate] id=2103 40/64 prompt=60 response=512 elapsed=6.849s
+[dspark-generate] id=2104 41/64 prompt=67 response=512 elapsed=6.875s
+[dspark-generate] id=2105 42/64 prompt=83 response=496 elapsed=6.611s
+[dspark-generate] id=2106 43/64 prompt=45 response=512 elapsed=6.869s
+[dspark-generate] id=2107 44/64 prompt=31 response=512 elapsed=6.872s
+[dspark-generate] id=2108 45/64 prompt=148 response=512 elapsed=6.863s
+[dspark-generate] id=2109 46/64 prompt=51 response=512 elapsed=6.866s
+[dspark-generate] id=2110 47/64 prompt=53 response=512 elapsed=6.861s
+[dspark-generate] id=2111 48/64 prompt=67 response=512 elapsed=6.851s
+[dspark-generate] id=2112 49/64 prompt=179 response=512 elapsed=6.854s
+[dspark-generate] id=2113 50/64 prompt=45 response=512 elapsed=6.863s
+[dspark-generate] id=2114 51/64 prompt=398 response=512 elapsed=6.955s
+[dspark-generate] id=2115 52/64 prompt=38 response=512 elapsed=6.872s
+[dspark-generate] id=2116 53/64 prompt=1280 response=512 elapsed=7.250s
+[dspark-generate] id=2117 54/64 prompt=89 response=512 elapsed=6.829s
+[dspark-generate] id=2118 55/64 prompt=124 response=512 elapsed=6.828s
+[dspark-generate] id=2119 56/64 prompt=28 response=512 elapsed=6.857s
+[dspark-generate] id=2120 57/64 prompt=114 response=79 elapsed=1.104s
+[dspark-generate] id=2121 58/64 prompt=78 response=512 elapsed=6.827s
+[dspark-generate] id=2122 59/64 prompt=183 response=512 elapsed=6.851s
+[dspark-generate] id=2123 60/64 prompt=48 response=330 elapsed=4.451s
+[dspark-generate] id=2124 61/64 prompt=138 response=349 elapsed=4.682s
+[dspark-generate] id=2125 62/64 prompt=77 response=512 elapsed=6.837s
+[dspark-generate] id=2126 63/64 prompt=257 response=512 elapsed=6.912s
+[dspark-generate] id=2127 64/64 prompt=32 response=512 elapsed=6.869s
+DSPARK-GENERATION-DONE 2064 2128
+[dspark-extract] pair=1/64 id=2064 anchors=4 records=4 elapsed=3.29s
+[dspark-extract] pair=2/64 id=2065 anchors=4 records=8 elapsed=5.03s
+[dspark-extract] pair=3/64 id=2066 anchors=4 records=12 elapsed=11.65s
+[dspark-extract] pair=4/64 id=2067 anchors=4 records=16 elapsed=13.08s
+[dspark-extract] pair=5/64 id=2068 anchors=4 records=20 elapsed=16.17s
+[dspark-extract] pair=6/64 id=2069 anchors=4 records=24 elapsed=19.64s
+[dspark-extract] pair=7/64 id=2070 anchors=4 records=28 elapsed=23.25s
+[dspark-extract] pair=8/64 id=2071 anchors=4 records=32 elapsed=25.05s
+[dspark-extract] pair=9/64 id=2072 anchors=4 records=36 elapsed=28.79s
+[dspark-extract] pair=10/64 id=2073 anchors=4 records=40 elapsed=33.11s
+[dspark-extract] pair=11/64 id=2074 anchors=4 records=44 elapsed=36.76s
+[dspark-extract] pair=12/64 id=2075 anchors=4 records=48 elapsed=40.08s
+[dspark-extract] pair=13/64 id=2076 anchors=4 records=52 elapsed=47.39s
+[dspark-extract] pair=14/64 id=2077 anchors=4 records=56 elapsed=48.94s
+[dspark-extract] pair=15/64 id=2078 anchors=4 records=60 elapsed=50.06s
+[dspark-extract] pair=16/64 id=2079 anchors=4 records=64 elapsed=53.34s
+[dspark-extract] pair=17/64 id=2080 anchors=4 records=68 elapsed=56.43s
+[dspark-extract] pair=18/64 id=2081 anchors=4 records=72 elapsed=60.05s
+[dspark-extract] pair=19/64 id=2082 anchors=4 records=76 elapsed=63.85s
+[dspark-extract] pair=20/64 id=2083 anchors=4 records=80 elapsed=66.96s
+[dspark-extract] pair=21/64 id=2084 anchors=4 records=84 elapsed=70.42s
+[dspark-extract] pair=22/64 id=2085 anchors=4 records=88 elapsed=74.56s
+[dspark-extract] pair=23/64 id=2086 anchors=4 records=92 elapsed=79.92s
+[dspark-extract] pair=24/64 id=2087 anchors=4 records=96 elapsed=83.01s
+[dspark-extract] pair=25/64 id=2088 anchors=4 records=100 elapsed=84.97s
+[dspark-extract] pair=26/64 id=2089 anchors=4 records=104 elapsed=86.98s
+[dspark-extract] pair=27/64 id=2090 anchors=4 records=108 elapsed=90.08s
+[dspark-extract] pair=28/64 id=2091 anchors=4 records=112 elapsed=93.60s
+[dspark-extract] pair=29/64 id=2092 anchors=4 records=116 elapsed=97.54s
+[dspark-extract] pair=30/64 id=2093 anchors=4 records=120 elapsed=100.86s
+[dspark-extract] pair=31/64 id=2094 anchors=4 records=124 elapsed=105.51s
+[dspark-extract] pair=32/64 id=2095 anchors=4 records=128 elapsed=108.76s
+[dspark-extract] pair=33/64 id=2096 anchors=4 records=132 elapsed=113.06s
+[dspark-extract] pair=34/64 id=2097 anchors=4 records=136 elapsed=116.15s
+[dspark-extract] pair=35/64 id=2098 anchors=4 records=140 elapsed=118.40s
+[dspark-extract] pair=36/64 id=2099 anchors=4 records=144 elapsed=121.87s
+[dspark-extract] pair=37/64 id=2100 anchors=4 records=148 elapsed=125.13s
+[dspark-extract] pair=38/64 id=2101 anchors=4 records=152 elapsed=128.20s
+[dspark-extract] pair=39/64 id=2102 anchors=4 records=156 elapsed=131.32s
+[dspark-extract] pair=40/64 id=2103 anchors=4 records=160 elapsed=134.74s
+[dspark-extract] pair=41/64 id=2104 anchors=4 records=164 elapsed=138.54s
+[dspark-extract] pair=42/64 id=2105 anchors=4 records=168 elapsed=142.03s
+[dspark-extract] pair=43/64 id=2106 anchors=4 records=172 elapsed=145.38s
+[dspark-extract] pair=44/64 id=2107 anchors=4 records=176 elapsed=148.66s
+[dspark-extract] pair=45/64 id=2108 anchors=4 records=180 elapsed=152.61s
+[dspark-extract] pair=46/64 id=2109 anchors=4 records=184 elapsed=155.71s
+[dspark-extract] pair=47/64 id=2110 anchors=4 records=188 elapsed=159.11s
+[dspark-extract] pair=48/64 id=2111 anchors=4 records=192 elapsed=162.88s
+[dspark-extract] pair=49/64 id=2112 anchors=4 records=196 elapsed=167.00s
+[dspark-extract] pair=50/64 id=2113 anchors=4 records=200 elapsed=170.09s
+[dspark-extract] pair=51/64 id=2114 anchors=4 records=204 elapsed=175.73s
+[dspark-extract] pair=52/64 id=2115 anchors=4 records=208 elapsed=179.05s
+[dspark-extract] pair=53/64 id=2116 anchors=4 records=212 elapsed=189.55s
+[dspark-extract] pair=54/64 id=2117 anchors=4 records=216 elapsed=193.16s
+[dspark-extract] pair=55/64 id=2118 anchors=4 records=220 elapsed=196.97s
+[dspark-extract] pair=56/64 id=2119 anchors=4 records=224 elapsed=200.06s
+[dspark-extract] pair=57/64 id=2120 anchors=4 records=228 elapsed=201.44s
+[dspark-extract] pair=58/64 id=2121 anchors=4 records=232 elapsed=204.60s
+[dspark-extract] pair=59/64 id=2122 anchors=4 records=236 elapsed=209.13s
+[dspark-extract] pair=60/64 id=2123 anchors=4 records=240 elapsed=211.42s
+[dspark-extract] pair=61/64 id=2124 anchors=4 records=244 elapsed=214.36s
+[dspark-extract] pair=62/64 id=2125 anchors=4 records=248 elapsed=217.92s
+[dspark-extract] pair=63/64 id=2126 anchors=4 records=252 elapsed=222.49s
+[dspark-extract] pair=64/64 id=2127 anchors=4 records=256 elapsed=225.58s
+DSPARK-EXTRACTION-DONE pairs=64 records=256
+2026/08/11 15:56:35.048, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 12.0, 24463 MiB, 157 MiB, 73, 115.88 W
+DSPARK-CHUNK-LOCK-RELEASE 2026-08-11T15:56:35+03:00
+{
+  "format": "memra-dspark-validation-v1",
+  "max_logit_probability_ratio_error": 7.793836616087901e-07,
+  "max_probability_mass_error": 3.632691281119094e-08,
+  "pairs": 64,
+  "records": 256,
+  "sampled_token_top64_rate": 1.0,
+  "split_records": {
+    "heldout": 16,
+    "train": 240
+  },
+  "tail_mass_max": 0.06328096985816956,
+  "tail_mass_mean": 0.00023341278543393865
+}
+f5534a4f505ca6f5ea6c91619427f775610247511e3ae5b4fc9476aa7119a3e3  /data/projects/dspark/qwen35-9b-corpus-pilot/chunks/pilot-02064-02128/sha256.txt
+3.5M	/data/projects/dspark/qwen35-9b-corpus-pilot/chunks/pilot-02064-02128
+extracted/extraction.meta.json: OK
+extracted/hiddens.bf16: OK
+extracted/index.tsv: OK
+extracted/tail_probs.f32: OK
+extracted/tokens.u32: OK
+extracted/top_ids.u32: OK
+extracted/top_logits.f32: OK
+extracted/top_probs.f32: OK
+generated/generation.meta.json: OK
+generated/pairs.tsv: OK
+generated/responses/00002064.txt: OK
+generated/responses/00002065.txt: OK
+generated/responses/00002066.txt: OK
+generated/responses/00002067.txt: OK
+generated/responses/00002068.txt: OK
+generated/responses/00002069.txt: OK
+generated/responses/00002070.txt: OK
+generated/responses/00002071.txt: OK
+generated/responses/00002072.txt: OK
+generated/responses/00002073.txt: OK
+generated/responses/00002074.txt: OK
+generated/responses/00002075.txt: OK
+generated/responses/00002076.txt: OK
+generated/responses/00002077.txt: OK
+generated/responses/00002078.txt: OK
+generated/responses/00002079.txt: OK
+generated/responses/00002080.txt: OK
+generated/responses/00002081.txt: OK
+generated/responses/00002082.txt: OK
+generated/responses/00002083.txt: OK
+generated/responses/00002084.txt: OK
+generated/responses/00002085.txt: OK
+generated/responses/00002086.txt: OK
+generated/responses/00002087.txt: OK
+generated/responses/00002088.txt: OK
+generated/responses/00002089.txt: OK
+generated/responses/00002090.txt: OK
+generated/responses/00002091.txt: OK
+generated/responses/00002092.txt: OK
+generated/responses/00002093.txt: OK
+generated/responses/00002094.txt: OK
+generated/responses/00002095.txt: OK
+generated/responses/00002096.txt: OK
+generated/responses/00002097.txt: OK
+generated/responses/00002098.txt: OK
+generated/responses/00002099.txt: OK
+generated/responses/00002100.txt: OK
+generated/responses/00002101.txt: OK
+generated/responses/00002102.txt: OK
+generated/responses/00002103.txt: OK
+generated/responses/00002104.txt: OK
+generated/responses/00002105.txt: OK
+generated/responses/00002106.txt: OK
+generated/responses/00002107.txt: OK
+generated/responses/00002108.txt: OK
+generated/responses/00002109.txt: OK
+generated/responses/00002110.txt: OK
+generated/responses/00002111.txt: OK
+generated/responses/00002112.txt: OK
+generated/responses/00002113.txt: OK
+generated/responses/00002114.txt: OK
+generated/responses/00002115.txt: OK
+generated/responses/00002116.txt: OK
+generated/responses/00002117.txt: OK
+generated/responses/00002118.txt: OK
+generated/responses/00002119.txt: OK
+generated/responses/00002120.txt: OK
+generated/responses/00002121.txt: OK
+generated/responses/00002122.txt: OK
+generated/responses/00002123.txt: OK
+generated/responses/00002124.txt: OK
+generated/responses/00002125.txt: OK
+generated/responses/00002126.txt: OK
+generated/responses/00002127.txt: OK
+validation.json: OK
+DSPARK-CHUNK-DONE 2026-08-11T15:56:44+03:00 tag=pilot-02064-02128

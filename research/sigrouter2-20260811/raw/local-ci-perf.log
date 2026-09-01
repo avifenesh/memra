@@ -1,0 +1,5 @@
+== local-ci: correctness stage ==
+SKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture)
+kernel-check: ALL GREEN (101 cells, 1 skipped)
+prime-gate FAIL (q35)
+tools/local-ci.sh: line 95: target/release/prime-gate: No such file or directory

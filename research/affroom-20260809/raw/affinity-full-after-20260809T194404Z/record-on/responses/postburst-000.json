@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-9690768c6b060db9c5a2a5f6e004c47f",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 2915,
+    "completion_tokens": 256,
+    "total_tokens": 3171,
+    "prompt_tokens_details": {
+      "cached_tokens": 746
+    },
+    "elapsed_s": 2.370607835
+  },
+  "text": "The user wants me to return to the main branch and audit the page for regressions, then emit the complete final HTML. I need to create a complete, self-contained HTML document that includes all the features from the previous iterations while ensuring everything works correctly.\n\nLet me consolidate all the features:\n1. Request timeline with 8 requests (arrival time, TTFT, token rate, cache source, queue delay, completion state)\n2. Cache hit-rate chart (cumulative)\n3. Admission queue (defer, park, active, queued values)\n4. GPU-memory gauge\n5. Incident annotations\n6. Pool-residency section (driver-free, reserved, used, cached byte gauges)\n7. Eviction-thrash warning state with remediation checklist\n8. Comparison drawer for spec-default vs spec-off\n9. Sticky request inspector explaining TTFT vs decode time\n10. Accessible cache-tier legend (continuation, speculative, prefix reuse)\n11. Responsive incident timeline\n12. Keyboard navigation with visible focus treatment\n13. Sparkline beside every request (no external dependencies)\n14. Print stylesheet preserving request receipt as legible table\n15. Evidence footer with no marketing language\n16."
+}

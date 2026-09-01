@@ -1,0 +1,25 @@
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-primemech/research/primemech-20260810/measure.py", line 196, in <module>
+    main()
+  File "/home/avifenesh/projects/wt-primemech/research/primemech-20260810/measure.py", line 181, in main
+    emit_burst(output, args, 0, 1, 0, excluded=True)
+  File "/home/avifenesh/projects/wt-primemech/research/primemech-20260810/measure.py", line 140, in emit_burst
+    rows, summary = burst(args, burst_index, concurrency, repeat)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/wt-primemech/research/primemech-20260810/measure.py", line 112, in burst
+    rows = [future.result() for future in futures]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/wt-primemech/research/primemech-20260810/measure.py", line 112, in <listcomp>
+    rows = [future.result() for future in futures]
+            ^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/hermes-agent/.hermes-runtime/python/generation-1785863877-57526-3c165979/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/hermes-agent/.hermes-runtime/python/generation-1785863877-57526-3c165979/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/home/avifenesh/projects/hermes-agent/.hermes-runtime/python/generation-1785863877-57526-3c165979/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/wt-primemech/research/primemech-20260810/measure.py", line 81, in one_request
+    raise RuntimeError("request completed without a visible token")
+RuntimeError: request completed without a visible token

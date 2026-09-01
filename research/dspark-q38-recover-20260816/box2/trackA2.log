@@ -1,0 +1,70 @@
++ source /home/ubuntu/.cargo/env
+++ case ":${PATH}:" in
+++ export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+++ PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ export PATH=/usr/local/cuda-13.2/bin:/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ PATH=/usr/local/cuda-13.2/bin:/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ export CUDA_VISIBLE_DEVICES=1
++ CUDA_VISIBLE_DEVICES=1
++ QT=/home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
++ DX=/home/ubuntu/models/dspark/arm-a-cum1000
++ EV=/home/ubuntu/evidence/dspark-e2e
++ mkdir -p /home/ubuntu/evidence/dspark-e2e
++ cd /home/ubuntu/memra-dspark
++ git fetch ../dspark-v0920.bundle lane/dspark-q38-recover
+From ../dspark-v0920.bundle
+ * branch                lane/dspark-q38-recover -> FETCH_HEAD
++ git reset --hard FETCH_HEAD
+HEAD is now at d73697b41 gate(dspark): serve-route smoke — spec-on vs spec-off byte identity over HTTP, engagement via usage.spec + [dspark-acc], sampled scope decline, concurrent-pair coexistence
++ git log --oneline -1
+d73697b41 gate(dspark): serve-route smoke — spec-on vs spec-off byte identity over HTTP, engagement via usage.spec + [dspark-acc], sampled scope decline, concurrent-pair coexistence
++ export MEMRA_CUDA_ARCH=120a CARGO_BUILD_JOBS=40
++ MEMRA_CUDA_ARCH=120a
++ CARGO_BUILD_JOBS=40
++ cargo build --release --bin memra-server --bin dspark_q38_gate
++ tail -1
+    Finished `release` profile [optimized] target(s) in 0.10s
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-rep1.log
+== dspark_q38_gate: FAIL | mean plain 54.5 tok/s | mean spec 52.9 tok/s | 1539 tokens ==
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-rep2.log
+== dspark_q38_gate: FAIL | mean plain 46.1 tok/s | mean spec 42.1 tok/s | 1539 tokens ==
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-rep3.log
+== dspark_q38_gate: FAIL | mean plain 44.7 tok/s | mean spec 45.4 tok/s | 1539 tokens ==
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-rep4.log
+== dspark_q38_gate: FAIL | mean plain 47.9 tok/s | mean spec 45.2 tok/s | 1539 tokens ==
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-rep5.log
+== dspark_q38_gate: FAIL | mean plain 62.8 tok/s | mean spec 62.8 tok/s | 1539 tokens ==
++ MEMRA_DSPARK_CKPT_GATE=1
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-ckptgate.log
+== dspark_q38_gate: FAIL | mean plain 62.2 tok/s | mean spec 6.4 tok/s | 1539 tokens ==
++ echo TRACKA2-DONE
+TRACKA2-DONE

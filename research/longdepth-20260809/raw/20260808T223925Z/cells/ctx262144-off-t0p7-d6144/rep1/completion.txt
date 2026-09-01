@@ -1,0 +1,261 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;color:#1a1a1a;background:#f5f7fa;display:flex;flex-direction:column;min-height:100vh}
+header{position:sticky;top:0;z-index:100;background:#0f172a;color:#e2e8f0;padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 8px rgba(0,0,0,0.25)}
+header h1{font-size:1.4rem;font-weight:700;letter-spacing:0.5px}
+header .search{display:flex;align-items:center;gap:0.5rem}
+header .search input{background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:0.5rem 0.75rem;border-radius:0.375rem;width:16rem;font-size:0.95rem}
+header .search input:focus{outline:2px solid #60a5fa}
+.sidebar{width:260px;background:#1e293b;color:#cbd5e1;padding:1.5rem 1rem;position:fixed;top:4rem;bottom:0;left:0;overflow-y:auto;border-right:1px solid #334155}
+.sidebar nav a{display:block;padding:0.4rem 0.6rem;color:#94a3b8;text-decoration:none;border-radius:0.25rem;margin-bottom:0.25rem;font-size:0.9rem}
+.sidebar nav a:hover,.sidebar nav a:focus{background:#334155;color:#f1f5f9;outline:2px solid #60a5fa}
+main{margin-left工作了 environment effectively. The operations team must monitor system health continuously. Automated alerts are configured for anomalies. Documentation provides quick reference for troubleshooting. All personnel should follow established protocols to maintain service reliability.</p>
+<p>The manual is updated quarterly with feedback from field engineers. Changes are tracked in a revision log. Each section includes examples and command syntax. Users are encouraged to submit improvement suggestions via the internal portal.</p>
+<dl>
+<dt>Availability</dt><dd>99.95% uptime target per month</dd>
+<dt>Response Time</dt><dd>Under 200ms for API calls</dd>
+<dt>Support Tier</dt><dd>24x7 on-call rotation</dd>
+<dt>Escalation</dt><dd>Level 3 within 15 minutes</dd>
+</dl>
+<table>
+<tr><th>Metric</th><th>Target</th><th>Current</th><th>Trend</th><th>Owner</th><th>Notes</th></tr>
+<tr><td>CPU McNett</td><td>&lt;70%</td><td>45%</td><td>Stable</td><td>Infra</td><td>Normal</td></tr>
+<tr><td>Memory</td><td>&lt;80%</td><td>62%</td><td>Rising</td><td>Infra</td><td>Watch</td></tr>
+<tr><td>Disk I/O</td><td>&lt;75%</td><td>38%</td><td>Stable</td><td>Storage</td><td>OK</td></tr>
+<tr><td>Network</td><td>&lt;60%</td><td>22%</td><td>Declining</td><td>Net</td><td>Good</td></tr>
+<tr><td>Errors</td><td>0</td><td>0</td><td>None</td><td>QA</td><td>Pass</td></tr>
+<tr><td>Latency</td><td>&lt;150ms</td><td>98ms</td><td>Stable</td><td>Perf</td><td>OK</td></tr>
+</table>
+<pre>curl -X GET https://api.atlas.internal/v1/status -H "Authorization: Bearer $TOKEN"</ dobrze effective operations rely on clear communication. Teams coordinate across time zones using shared dashboards. Incident response follows a well-defined runbook אותה maintain consistency. Regular drills ensure readiness for critical outages.</p>
+<p>Documentation is version-controlled and accessible to all staff. Changes require peer review before merge. The knowledge base grows with each resolved ticket. Metrics drive continuous improvement.</p>
+<dl>
+<dt>Shift</dt><dd>24x7 coverage with handoff</dd>
+<dt>Tooling</dt><dd>Slack, PagerDuty, Grafana</dd>
+<dt>Review</dt><dd>Weekly postmortems</dd>
+<dt>Training</dt><dd>Quarterly workshops</dd>
+</dl>
+<table>
+<tr><th>Service</th><th>Status</th><th>Uptime</th><th>Latency</th><th>Region</th><th>Owner</th></tr>
+<tr><td>Auth</td><td>Operational</td><td>99.98%</td><td>45ms</td><td>US-East</td><td>Identity</td></tr>
+<tr><td>Billing</td><td>Degraded</td><td>99.90%</td><td>210ms</td><td>US-West</td><td>Finance</td></tr>
+<tr><td>Search</td><td>Operational</td><td>99.95%</td><td>78ms</td><td>EU</td><td>Platform</td></tr>
+<tr><td>Storage</td><td>Operational</td><td>99.99%</td擔心><td>32ms</td><td>APAC</td><td>Data</td></tr>
+<tr><td>Messaging</td><td>Operational</td><td>99.97%</td><td>55ms</td><td>US-East</td><td>Comms</td></tr>
+<tr><td>Analytics</td><td>Maintenance</td><td>99.80%</td><td>120ms</td><td>EU</td><td>Insights</td></tr>
+</table>
+<pre>atlasctl get pod -n production -o wide</pre>
+<button onclick="alert('Section 400 selected')">View Details</button>
+<button onclick="copyToClipboard('curl -X GET https://api.atlas.internal/v1/status -H \"Authorization: Bearer $TOKEN\"')">Copy Command</button>
+</section>
+
+<section id="s401" aria-labelledby="h401">
+<h2 id="h401">401.<｜place▁holder▁no▁573｜> Appendix A: Reference Tables</h2>
+<p>This appendix provides quick reference tables for common configurations. Use them to verify settings during deployments. Each table is curated from production experience.</p>
+<p>Tables are organized by category for easy navigation. Values may change; always check latest documentation. Feedback is welcome to improve accuracy.</p>
+<dl>
+<dt>Table Type</dt><dd>Reference configuration</dd>
+<dt>Audience</dt><dd>Operations engineers</dd>
+<dt>Update Freq</dt><dd>Monthly</dd>
+<dt>Source</dt><dd>Internal wiki</dd>
+</dl>
+<table>
+<tr><th>Parameter</th><th>Default</th><th>Range</th><th>Unit</th><th>Impact</th><th>Comments</th></tr>
+<tr><td>Timeout</td><td>30</td><td>1-300</td><td>seconds</td><td>High</td><td>Adjust per service</td></tr>
+<tr><td>Retries</td><td>3</td><td>0-10</td><td>count</td><td>Medium</td><td>Exponential backoff</td></tr>
+<tr><td>Batch Size</td><td>500</td><td>100-5000</ temps><td>records</td><td>High</td><td>Memory dependent</td></tr>
+<tr><td>Cache TTL</td><td>60</td><td>10-3600</td><td>seconds</td><td>Medium</td><td>Invalidate on update</td></tr>
+<tr><td>Threads</td><td>8</td><td>1-64</td><td>count</td><td>High</td><td>CPU bound</td></tr>
+<tr><td>Buffer</td><td>4KB</td><td>1KB-1MB</td><td>bytes</td><td>Low</td><td>I/O tuning</td></tr>
+</table>
+<pre>atlasctl config set timeout 45</pre>
+<button onclick="alert('Reference updated')">Refresh</button>
+<button onclick="copyToClipboard('atlasctl config set timeout 45')">Copy</button>
+</section>
+
+<section id="s402" aria-labelledby="h402">
+<h2 id="h402">402. Appendix B: Command Index</h2>
+<p>Comprehensive index of CLI commands for Atlas platform. Commands are grouped by functional area. Each entry includes syntax and brief description.</p>
+<p>Use the index to quickly locate commands during troubleshooting. The list is maintained by the tools team. Suggestions can be submitted via the feedback form.</p>
+<dl>
+<dt>Scope</dt><dd>Global command reference</dd>
+<dt>Format</dt><td>Alphabetical</dd>
+<dt>Version</dt><dd>v4.2.1</dd>
+<栋>Owner</dt><dd>Developer Experience</dd>
+</dl>
+<table>
+<tr><th>Command</th><th>Description</th><th>Example</th><th>Flags</th><th>Output</th><th>Notes</th></tr>
+<tr><td>atlasctl</td><td>Main CLI entry</td><td>atlasctl get pods</td><td>-n,-o</td><td>tabular</td><td>Core</td></tr>
+<tr><td>atlasdb</td><td>Database tool</td><td>atlasdb migrate</td><td>--dry-run</td><td>json</td><td>Schema</td></tr>
+<tr><td>atlasnet</td><td>Network diagnostics</td><td>atlas導演><td>traceroute</td><td>--timeout</td><td>text</td><td>Latency</td></tr>
+<tr><td>atlaslog</td><td>Log aggregator</td><td>atlaslog tail</td><td Возраст>-f</td><td>stream</td><td>Real-time</td></tr>
+<tr><td>atlasmon</td><td>Monitoring agent</td><td>atlasmon status</td><td>--verbose</td><td>json</td><td>Metrics</td></tr>
+<tr><td>atlassec</td><td>Security scanner</td><td>atlassec scan</td><td>--deep</td><td>pdf</td><td>Audit</td></tr>
+</table>
+<pre>atlasctl get pods -n default -o json</pre>
+<button onclick="alert('Index refreshed')">Refresh</button>
+<button onclick="copyToClipboard('atlasctl get pods -n default -o json')">Copy</button>
+</section>
+
+<section id="s403" aria-labelledby="h403">
+<h2 id="h403">403. Appendix C: Error Codes</h2>
+<p>Catalog of error codes returned by Atlas services. Each code includes meaning and recommended action.</p>
+<p>Errors are logged with context to aid debugging. Customers may reference codes when contacting support.</p>
+<dl>
+<dt>Format</dt><dd>Numeric code + message</dd>
+<dt>Retrieval</dt><dd>HTTP response body</dd>
+<dt>Logging</dt><dd>Structured JSON</dd>
+<dt>Support</dt><dd>Reference code in ticket</dd>
+</dl>
+<table>
+<tr><th>Code</th><th>Message</th><th>Severity</th><th>Action</th><th>Service</th><th>Doc Link</th></tr>
+<tr><td>1001</td><td>Auth failed</td><td>High</td><td>Check token</td><td>Identity</td><td>#auth</td></tr>
+<tr><td>1002</td><td>Rate limit</td><td>Medium</td><td>Backoff</td><td>Gateway</td><td>#rate</td></tr>
+<tr><td>1003</td><td>Not found</td><td>Low</td><td>Verify ID</td><td>Storage</td><td>#notfound</td></tr>
+<tr><td>1004</td><td>Timeout</td><td>High</td><td>Retry</td><td>API</td><td>#timeout</td></tr>
+<tr><td>1005</td><td>Conflict</td><td>Medium</td><td>Resolve</td><td>Data</td><td>#conflict</td></tr>
+<tr><td>1006</td><td>Internal</td><td>Critical</td><td>Escalate</td><td>Core</td><td>#internal</td></tr>
+</table>
+<pre>curl -s -o /dev/null -w "%{http_code}" https://api.atlas.internal/v1/health</pre>
+<button onclick="alert('Error list updated')">Refresh</button>
+<button onclick="copyToClipboard('curl -s -o /dev/null -w \"%{http_code}\" https://api.atlas.internal/v1/health')">Copy</button>
+</section>
+
+<section id="s404" aria-labelledby="h404">
+<h2 id="h404">404. Appendix D: Glossary</h2>
+<p>Definitions of terms used throughout this manual. Glossary helps onboard new team members.</p>
+<p>Terms are updated as product evolves. Submit new terms via the terminology request form.</p>
+<dl>
+<dt>Term</dt><dd>Atlas platform</dd>
+<dt>Scope</dt><dd>All services</dd>
+<dt>Language</dt><dd>English</dd>
+<dt>Owner</dt><dd>Technical Writing</dd>
+</dl>
+<table>
+<tr><th>Term</th>< exhaust><th>Definition</th><th>Context</th><th>Example</th><th>Related</th></tr>
+<tr><td>Cluster</td><td>Group of nodes</td><td>Infrastructure</td><td>K8s cluster</td><td>Node, Pod</td></tr>
+<tr><td>Pod</td><td>Smallest deploy unit</td><td>Containers</td><td>App pod</td><td>Container, Spec</td></tr>
+<tr><td>Service</td><td>Network endpoint</td><td>K8s</td><td>API service</td><td>Endpoint, Port</td></tr>
+<tr><td>Ingress</td><td>Traffic entry point</td><td>Networking</td><td>HTTPS ingress</td><td>Load balancer</td></tr>
+<tr><td Proper><td>Config map</td><td>Configuration data</td><td>Settings</td><td>Env vars</td><td>Secret</td></tr>
+<tr><td>Secret</td><td> Sensitive data</td><td>Security</td><td>API key</td><td>Encryption</td></tr>
+</table>
+<pre>kubectl get pods -n production</pre>
+<button onclick="alert('ascalator>Glossary updated')">Refresh</button>
+<button onclick="copyToClipboard('kubectl get pods -n production')">Copy</button>
+</section>
+
+<section id="s405" aria-labelledby="h405">
+<h2 id="h405">405. Appendix E: Change Log</h2>
+<p>Record of revisions to this manual. Each entry includes date, author, and summary.</p>
+<p>Change log helps track evolution of procedures. Consult it to understand why instructions changed.</p>
+<dl>
+<dt>Format</dt><dd>Markdown table</dd>
+<dt>Retention</dt><dd>Indefinite</dd>
+<dt>Review</dt><dd>Quarterly</dd>
+<dt>Access</dt><dd>Public internal</dd>
+</dl>
+<table>
+<tr><th>Date</th><th>Author</th><th>Section</th><th>Change</th><th>Reason</th><th>Ticket</th></tr>
+<tr><td>2024-12-01</td><td>J. Doe</td><td>101</td><td>Updated timeout</td><td>Performance</td><td>ATL-1234</td></tr>
+<tr><td>2024-11-15</td><td>A. Smith</td><td>205</td><td>Added new command</td><td>Feature</td><td>ATL-1235</td></tr>
+<tr><td>2024-10-30</td><td>M. Lee</td><td>312</td><td>Fixed typo</td><td>Editorial</td><td>ATL-1236</td></tr>
+<tr><td>2024-10-01</td><td>R. Patel</td><td>405</td><td>Created appendix</td><td>Structure</td><td>ATL-1237</td></tr>
+<tr><td>2024-09-15</td><td>S. Kim</td><td>150</td><td>Revised procedure</td><td>Clarity</td><td>ATL-1238</td></tr>
+<tr><td>2024-09-01</td改善了><td>J. Doe</td><td>100</td><td>Initial release</td><td>Creation</td><td>ATL-1200</td></tr>
+</table>
+<pre>git log --oneline -- docs/operations-manual.md</pre>
+<button onclick="alert('Change log loaded')">Refresh</button>
+<button onclick="copyToClipboard('git log --oneline -- docs/operations-manual.md')">Copy</button>
+</的直接section>
+
+<section id="s406" aria-labelledby="h_prefix406">
+<h2 id="h_prefix406">406. Appendix F: Contact Directory</h2>
+<p>List of key contacts for Atlas operations. Includes on-call rotations and escalation paths.</p>
+<p>Keep this directory updated with current information. Use it during incidents to reach responsible teams.</p>
+<dl>
+<dt>Purpose</dt><dd>Emergency contacts</dd>
+<dt>Update</dt><dd>Monthly</dd>
+<dt>Owner</dt><dd>Service Delivery</dd>
+<dt>Access</dt><dd>Internal only</dd>
+</dl>
+<table>
+<tr><th>Role беременности><th>Name</th><th>Email</th><th>Phone</th><th>Timezone</th><th>Notes</th></tr>
+<tr><td>Primary On-call</td><td>Alice Chen</td><td>alice@atlas.internal</td><td>+1-555-0101</td><td>PST</td><td>Week A</td></tr>
+<tr><td>Secondary</td><td>Bob Martinez</Wir><td>bob@atlas.internal</td><td>+1-555-0102</td><td>EST</td><td>Week B</td></tr>
+<tr><td>Manager</td><td>Carol Nguyen</td><td>carol@atlas.internal</td><td>+1-555-0103</td><td>CST</td><td>Escalation</td></tr>
+<tr><td>Security</td><td>David Kim</td><td>david@atlas.internal</td><td>+1-555-0104</td><td>PST</td><td>Incidents</td></tr>
+<tr><td>Database</td><td>Elena Rossi</td><td>elena@atlas.internal</td><td>+1-555-0105</td><td>GMT</td><td>DBA</td></tr>
+<tr><td>Network</td><td>Frank Liu</td><td>frank@atlas.internal</td><td>+1-555-0106</td><td>PST</td><td>Netops</td></tr Aren</td>
+</table>
+<pre>atlasctl notify --role on-call --message "Incident declared"</pre>
+<button onclick="alert('Contact list refreshed')">Refresh</button>
+<button onclick="copyToClipboard('atlasctl notify --role on-call --message \"Incident declared\"')">Copy</button>
+</section>
+
+<section id="s407" aria-labelledby="h407">
+<h2 id="h407">407. Appendix G: Acronyms</h2>
+<p>Expanded forms of acronyms used in this manual. Helps readers unfamiliar with jargon.</p>
+<p>Acronyms are collected from all departments. Submit new entries via the terminology request form.</p>
+<dl>
+<dt>Category</dt><dd>Technical</dd>
+<dt>Language</dt><dd>English</dd>
+<dt>Update</dt><dd>Quarterly</dd>
+<dt>Owner</dt><dd>Technical Writing</dd>
+</dl>
+<table>
+<tr><th>Acronym</th><th>Expansion</th><th>Field</th><th>Usage</th><th>Notes</th><th>Example</th></tr>
+<tr><td>API</td><td>Application Programming Interface</td><td>Software</td><td>Common</td><td>Core</td><td>REST API</td></tr>
+<tr><td>CI/CD</td><td>Continuous Integration/Continuous Deployment</td><td>Dev分钟左右Ops</td><td>Frequent</td><td>Automation</td><td>Pipeline</td></tr>
+<tr><td>SLA</td><td>Service Level Agreement</td><td>Business</td><td>Contracts</td><td>Metrics</td><td>99.9%</td></tr>
+<tr><td>RTO</td><td>Recovery Time Objective</td><td>Disaster Recovery</td><td>Planning</td><td>Critical</td><td>4 hours</td></tr>
+<tr><td>RPO</td><td>Recovery Point Objective</td><td>Backup</td><td>Planning</td><td>Critical</td><td>15 minutes</td></tr>
+<tr><td>MTTR</td><td>Mean Time To Repair</td><td>Operations</td><td>Measurement</td><td>KPI</td><td>30 minutes</td></tr>
+</table>
+<pre>atlas Runnablectl acronym list --format table</pre>
+<button onclick="alert('Acronyms loaded')">Refresh</button>
+<button onclick="copyToClipboard('atlasctl acronym list --format table')">Copy</button>
+</section>
+
+<section id="s408" aria-labelledby="h408">
+<h2 id="h408">408. Appendix H: Version History</h2>
+<p>Detailed history of manual versions. Includes release notes and migration guides.</p>
+<p>Version history assists in auditing changes over time. Each release is tagged in source control.</p>
+<dl>
+<dt>Tracking</dt><dd>Semantic versioning</dd>
+<dt>Retention</dt><dd>Permanent</dd>
+<dt>Access</dt><dd>Internal</dd>
+<dt>Updates</dt><dd>Per release</dd>
+</dl>
+<table>
+<tr><th>Version</th><th>Date</th><th>Author</th><th>Highlights</th><th>Pages</th><th>Status</th></抬起头>
+<tr><td>1.0.0</td><td>2023-01-01</td><td>J. Doe</td><td>Initial</td><td>120</td><td>Archived</td></tr>
+<tr><td>1.1.0</td><td>2023-06-01</td><td>A. Smith</td><td>Added appendix</td><td>150</td><td>Archived</td></tr>
+<tr><td>2.0.0</td><td>2024-01-01</td><td>M. Lee</td><td>Major rewrite</td><td>300</td><td>Archived</td></tr>
+<tr><td>2.1.0</td><td>2024-07-01</td><td>R. Patel</td><td>Updated tables</td><td>350</td><td>Archived</td></tr>
+<tr><td>3.0.0</td><td>2025-01-01</td><td>S. Kim</td><td>New structure</td><td>400</td><td>Current</td></tr>
+<tr><td>3.1.0</td><td>2025-06-01</td><td>J. Doe</td><td>Pending</td><td>420</td><td>Draft</td></tr>
+</table>
+<pre>git tag -l 'v*' | sort -V | tail -n 10</pre>
+<button onclick="alert('Version history loaded')">Refresh</button>
+<button onclick="copyToClipboard('git tag -l \'v*\' | sort -V | tail -n 10')">Copy</button>
+</section>
+
+<section id="s409" aria-labelledby="h409">
+<h2 id="h409">409. Appendix I: Bibliography</h2>
+<p>References and further reading materials. Includes books, articles, and internal documents.</p>
+<p>Bibliography supports claims made in the manual. It also provides paths for deeper learning.</p>
+<dl>
+<dt>Scope</dt><dd>All references</dd>
+<dt>Style</dt><dd>APA</dd>
+<dt>Update</dt><dd>Annual</dd>
+<dt>Owner</dt><dd>Technical Writing</dd>
+</dl>
+<table>
+<tr><th>Title</th><th>Author</th><th>Year</th><th>Type</th><th>URL</th><th>Notes</th></tr>
+<tr><td>Site Reliability Engineering</td><td>Google</td><td>2016</td><td>Book</td><td>https://sre.google</td><td>Found

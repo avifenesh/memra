@@ -1,0 +1,27 @@
+=== cachespec receipt ts=20260808T222300Z source_commit=980c0c43 host=<private-host-redacted>
+repo=/home/ubuntu/memra-cx-cachespec binary=/home/ubuntu/memra-cx-cachespec/target/release/memra-server
+shape: sequential=12 c=4 max_tokens=768 base_notes=80
+serve: Step-3.7-Flash PP-2 dev01 ctx=262144 prefix_cache=2048MB spec-policy=default
+=== artifact manifest
+b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259  /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+e7e0caaaf0057fabc8bf9b71cbe41322f9945a44df7240bb58e6b7c375e7ffec  /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf
+ccbd3df81b4f4cb8e73d899734944bcbdefcf436faec9203353419c6750c0590  /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf
+469a81667a6cd6d87a85d501d57155fd90cee5af7010fd289c5169881763fd57  /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+=== release build
+source_commit=980c0c43
+start=2026-08-08T22:23:20Z
+warning: memra-engine@0.72.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.72.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.06s
+end=2026-08-08T22:23:20Z
+rc=0
+cc49b5e77b71648975aa1d79fe1599f5bccd18e3ba6585c121724c343842cf65  /home/ubuntu/memra-cx-cachespec/target/release/memra-server
+=== default-policy arm
+=== arm=default spec=default mode=record lock acquired 2026-08-08T22:23:20Z
+default ready pid=314901 2026-08-08T22:23:52Z
+=== arm=default rc=0 lock released 2026-08-08T22:29:41Z
+=== spec-off arm
+=== arm=spec-off spec=off mode=replay lock acquired 2026-08-08T22:30:46Z
+spec-off ready pid=317622 2026-08-08T22:31:18Z
+=== arm=spec-off rc=0 lock released 2026-08-08T22:37:07Z
+CACHESPEC_RUN_DONE out=/home/ubuntu/memra-cx-cachespec/research/cachespec-20260809/raw/box1/20260808T222300Z 2026-08-08T22:37:07Z

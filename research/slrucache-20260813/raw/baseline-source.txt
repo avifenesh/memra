@@ -1,0 +1,5 @@
+source_commit=7f1788be613f8e4bce22c63a32a1a1a463b37a6d
+source_subject=data: measure prefix cache eviction churn
+source_run=research/evictchurn-20260813/raw/run-20260812T221018Z
+extraction=kind=summary rows from round-robin.jsonl, hotset.jsonl, sequential-scan.jsonl
+destination=research/slrucache-20260813/raw/baseline-summaries.jsonl

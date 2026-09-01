@@ -1,0 +1,34 @@
+dsv4-decode-bench | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | variant ref | n_new 1024 | devices [0, 1] | MEMRA_DSV4_EXPERT_ARM='native' MEMRA_DSV4_DECODE_PATH='device'
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=39s
+[load] layer 15 -> dev0 done t=52s
+[load] layer 19 -> dev0 done t=65s
+[load] layer 23 -> dev1 done t=78s
+[load] layer 27 -> dev1 done t=90s
+[load] layer 31 -> dev1 done t=103s
+[load] layer 35 -> dev1 done t=116s
+[load] layer 39 -> dev1 done t=129s
+[load] layer 42 -> dev1 done t=139s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path not wired (separate lane); trunk-only
+loaded: split at layer 22, t=140s
+[vram post-load] dev0 used 82.24/94.97 GiB (resident 81.51) | dev1 used 78.64/94.97 GiB (resident 77.94)
+[vram post-alloc] dev0 used 82.24/94.97 GiB (resident 81.51) | dev1 used 78.67/94.97 GiB (resident 77.94)
+prefill 32 tokens: 398.5 ms (informational)
+step 0: s=33 tok 1970 24.8 ms t=0.0s
+step 128: s=161 tok 64 24.7 ms t=3.2s
+step 256: s=289 tok 20 25.1 ms t=6.5s
+step 384: s=417 tok 83 25.1 ms t=9.8s
+step 512: s=545 tok 344 25.2 ms t=13.1s
+step 640: s=673 tok 53 25.3 ms t=16.4s
+step 768: s=801 tok 20 25.3 ms t=19.7s
+step 896: s=929 tok 874 25.4 ms t=23.0s
+step 1023: s=1056 tok 260 26.7 ms t=26.3s
+[vram post-run] dev0 used 82.27/94.97 GiB (resident 81.51) | dev1 used 78.67/94.97 GiB (resident 77.94)
+decoded 1024 steps in 26.6s | stream sha256 aa5ea6639cae7f96104f558492db039dc2e75d359c034cadbab9229f6f547a09
+[window] s≈200: median 24.7 ms/step (min 24.7 / max 25.6, n=21) = 40.4 tok/s
+[window] s≈512: median 25.2 ms/step (min 25.2 / max 28.0, n=21) = 39.7 tok/s
+[window] s≈1024: median 25.8 ms/step (min 25.7 / max 28.6, n=21) = 38.8 tok/s
+banked /home/ubuntu/dsv4-0731-regate-out/bench-0731-f32x-1024.json | total elapsed 167s | single-run: informational, NOT a perf claim

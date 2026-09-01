@@ -1,0 +1,29 @@
++ date -u
+Wed Aug 19 01:02:17 UTC 2026
++ mkdir -p /opt/scratch/nvme/receipts/b
++ cd /opt/scratch/nvme/b/memra
++ CUDA_VISIBLE_DEVICES=1
++ MEMRA_GPU_LOCK=/tmp/memra-b.lock
++ MEMRA_GATE_PORT=18099
++ tools/spec-on-cache-hit-gate.sh qwen /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/scratch/nvme/receipts/b/qwen-gate
+== qwen arm: spec-on boot ==
+  ok: server log shows spec restore
+  ok: r1 cold has spec + zero cached
+  ok: r2 hit has cached tokens
+  ok: r2 hit SPEC ENGAGED (accepted > 0)
+  ok: r3 extended hit has cached tokens
+  ok: r3 extended hit SPEC ENGAGED (accepted > 0)
+  ok: r2 text == r1 text (deterministic repeat)
+== qwen arm: spec-off twin boot (identity reference) ==
+  ok: off-boot rows carry no spec
+  ok: r1 spec==plain byte identity
+  ok: r2 spec==plain byte identity
+  ok: r3 spec==plain byte identity
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
++ RC=0
++ echo QWEN_HIT_GATE_RC=0
+QWEN_HIT_GATE_RC=0
++ date -u
+Wed Aug 19 01:02:48 UTC 2026
++ echo B_GATE1_DONE
+B_GATE1_DONE

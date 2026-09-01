@@ -1,0 +1,19 @@
+[frspec-owngen] no prompt sources given — built-in 'mixed' pack (10 prompts)
+[moe] resident-experts decision (dev0): experts 18.57GB + trunk 1.60GB vs free 100.98GB (expert budget 97.38GB) -> RESIDENT
+[frspec-owngen] 10 prompts, ngen 256, temp 0, vocab 248320
+[frspec-owngen] prompt 1/10: +256 tokens (total 256)
+[frspec-owngen] prompt 2/10: +256 tokens (total 512)
+[frspec-owngen] prompt 3/10: +256 tokens (total 768)
+[frspec-owngen] prompt 4/10: +256 tokens (total 1024)
+[frspec-owngen] prompt 5/10: +256 tokens (total 1280)
+[frspec-owngen] prompt 6/10: +256 tokens (total 1536)
+[frspec-owngen] prompt 7/10: +256 tokens (total 1792)
+[frspec-owngen] prompt 8/10: +256 tokens (total 2048)
+[frspec-owngen] prompt 9/10: +256 tokens (total 2304)
+[frspec-owngen] prompt 10/10: +256 tokens (total 2560)
+[frspec-owngen] top 32768 covers 100.00% of 2560 own-generated tokens (793 distinct)
+[frspec-owngen] WARNING: 2560 tokens is a SMALL corpus for topN 32768 — ranks past the distribution head are noise (measured -6.5 acceptance pts at 2.5k tokens). Aim for >= 131072 generated tokens: more prompts, --ngen 512+, or a dataset source.
+[frspec-owngen] wrote ornith15-ranks-owngen-32768.gguf + ornith15-ranks-owngen-32768.gguf.txt
+serve with:
+  MEMRA_FRSPEC_TRIM=ornith15-ranks-owngen-32768.gguf ...            # qwen MTP heads
+  MEMRA_GEMMA_DRAFT_RANKS=ornith15-ranks-owngen-32768.gguf.txt ...  # gemma drafters

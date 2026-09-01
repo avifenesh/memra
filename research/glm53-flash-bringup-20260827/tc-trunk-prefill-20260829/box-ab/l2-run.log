@@ -1,0 +1,353 @@
+L2 AB START 2026-08-29T20:59:09Z
+engine: bac42f759d40343e74e9bfd17f4581b875f2bc28 server build.rs: rerun-if-changed on .git/HEAD so the baked system_fingerprint follows checkouts
+aab0a0a85999a0bb7bc2ff60f92ad092383161fe4ecfa33c2102296cc509aa10  /root/memra/target/release/memra-server
+de57a7a471f9b1632ac49924430aba5cd1737465479cb59081b8fc0074b53e46  /root/l2-ab/prompts.json
+================ 2026-08-29T20:59:10Z BOOT smoke ================
+LOAD smoke ready after ~86s
+  pid=27518 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 99.24GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 0
+    vram 0, 54547 MiB
+    vram 1, 65651 MiB
+    vram 2, 68085 MiB
+    vram 3, 0 MiB
+{"arm": "smoke", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.0229, "ttfd_s": 1.023, "prefill_tok_s": 417.4, "decode_tok_s": 20.37, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "smoke", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.5654, "ttfd_s": 7.5656, "prefill_tok_s": 611.45, "decode_tok_s": 21.41, "first_token": "The", "text_sha16": "3d00b7d9c4ff62b6", "err": null}
+{"arm": "smoke", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 9.0197, "ttfd_s": 9.0198, "prefill_tok_s": 614.98, "decode_tok_s": 21.41, "first_token": "The", "text_sha16": "6a2a054aa8026114", "err": null}
+{"arm": "smoke", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.4232, "ttfd_s": 10.4235, "prefill_tok_s": 620.43, "decode_tok_s": 22.04, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "smoke", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.2426, "ttfd_s": 7.2427, "prefill_tok_s": 638.71, "decode_tok_s": 21.59, "first_token": "The", "text_sha16": "fd7c0550283e0549", "err": null}
+  engagement[smoke]: mmv_resident=0 bf16tc_flag= bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:01:17Z BOOT a1 ================
+LOAD a1 ready after ~98s
+  pid=28004 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 99.24GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 0
+    vram 0, 54547 MiB
+    vram 1, 65651 MiB
+    vram 2, 68085 MiB
+    vram 3, 0 MiB
+{"arm": "a1", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.269, "ttfd_s": 1.2691, "prefill_tok_s": 336.47, "decode_tok_s": 19.17, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "a1", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.5681, "ttfd_s": 7.5682, "prefill_tok_s": 611.24, "decode_tok_s": 19.41, "first_token": "The", "text_sha16": "3d00b7d9c4ff62b6", "err": null}
+{"arm": "a1", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.859, "ttfd_s": 8.8591, "prefill_tok_s": 626.14, "decode_tok_s": 20.73, "first_token": "The", "text_sha16": "6a2a054aa8026114", "err": null}
+{"arm": "a1", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.2432, "ttfd_s": 10.2433, "prefill_tok_s": 631.34, "decode_tok_s": 20.7, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "a1", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.2261, "ttfd_s": 7.2262, "prefill_tok_s": 640.17, "decode_tok_s": 20.25, "first_token": "The", "text_sha16": "71a3af6082d64fef", "err": null}
+  engagement[a1]: mmv_resident=0 bf16tc_flag= bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:03:42Z BOOT b1 ================
+LOAD b1 ready after ~64s
+  pid=28336 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "b1", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.2545, "ttfd_s": 1.2546, "prefill_tok_s": 340.34, "decode_tok_s": 24.34, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "b1", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.8011, "ttfd_s": 7.8012, "prefill_tok_s": 592.98, "decode_tok_s": 26.11, "first_token": "The", "text_sha16": "7323f8adf3222d2d", "err": null}
+{"arm": "b1", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.8746, "ttfd_s": 8.8747, "prefill_tok_s": 625.04, "decode_tok_s": 26.12, "first_token": "The", "text_sha16": "9ddac423d45f8e15", "err": null}
+{"arm": "b1", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.2609, "ttfd_s": 10.261, "prefill_tok_s": 630.25, "decode_tok_s": 26.08, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "b1", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.2483, "ttfd_s": 7.2484, "prefill_tok_s": 638.21, "decode_tok_s": 24.94, "first_token": "User", "text_sha16": "607d5fcfea16bc8d", "err": null}
+  engagement[b1]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=off bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:05:33Z BOOT c1 ================
+LOAD c1 ready after ~62s
+  pid=28617 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "c1", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.1783, "ttfd_s": 1.1784, "prefill_tok_s": 362.35, "decode_tok_s": 24.61, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "c1", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.1074, "ttfd_s": 7.1075, "prefill_tok_s": 650.87, "decode_tok_s": 26.14, "first_token": "The", "text_sha16": "0908061a3fdaddab", "err": null}
+{"arm": "c1", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.3499, "ttfd_s": 8.3499, "prefill_tok_s": 664.32, "decode_tok_s": 26.17, "first_token": "The", "text_sha16": "3ad5d2889683a115", "err": null}
+{"arm": "c1", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 9.3794, "ttfd_s": 9.3795, "prefill_tok_s": 689.48, "decode_tok_s": 26.11, "first_token": "The", "text_sha16": "dfab5cc3dfbfda25", "err": null}
+{"arm": "c1", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 6.613, "ttfd_s": 6.613, "prefill_tok_s": 699.53, "decode_tok_s": 25.52, "first_token": "The", "text_sha16": "58af8abed8432641", "err": null}
+  engagement[c1]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=on bf16tc_engaged=12 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+          1 bf16-tc] ENGAGED m=427 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=427 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=427 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=4626 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=5547 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=6467 n=8192 k=4096
+================ 2026-08-29T21:07:17Z BOOT a2 ================
+LOAD a2 ready after ~98s
+  pid=28905 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 99.24GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 0
+    vram 0, 54547 MiB
+    vram 1, 65651 MiB
+    vram 2, 68085 MiB
+    vram 3, 0 MiB
+{"arm": "a2", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.3178, "ttfd_s": 1.318, "prefill_tok_s": 323.98, "decode_tok_s": 20.33, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "a2", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.4221, "ttfd_s": 7.4222, "prefill_tok_s": 623.27, "decode_tok_s": 21.34, "first_token": "The", "text_sha16": "3d00b7d9c4ff62b6", "err": null}
+{"arm": "a2", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.8458, "ttfd_s": 8.8459, "prefill_tok_s": 627.07, "decode_tok_s": 22.0, "first_token": "The", "text_sha16": "6a2a054aa8026114", "err": null}
+{"arm": "a2", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.4338, "ttfd_s": 10.4339, "prefill_tok_s": 619.81, "decode_tok_s": 21.95, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "a2", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.2173, "ttfd_s": 7.2174, "prefill_tok_s": 640.95, "decode_tok_s": 21.5, "first_token": "The", "text_sha16": "a50fde042067c38e", "err": null}
+  engagement[a2]: mmv_resident=0 bf16tc_flag= bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:09:42Z BOOT b2 ================
+LOAD b2 ready after ~64s
+  pid=29238 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "b2", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.3011, "ttfd_s": 1.3012, "prefill_tok_s": 328.16, "decode_tok_s": 21.57, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "b2", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.4294, "ttfd_s": 7.4294, "prefill_tok_s": 622.66, "decode_tok_s": 26.09, "first_token": "The", "text_sha16": "7323f8adf3222d2d", "err": null}
+{"arm": "b2", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.8647, "ttfd_s": 8.8648, "prefill_tok_s": 625.74, "decode_tok_s": 26.11, "first_token": "The", "text_sha16": "9ddac423d45f8e15", "err": null}
+{"arm": "b2", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.2397, "ttfd_s": 10.2398, "prefill_tok_s": 631.55, "decode_tok_s": 26.07, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "b2", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.2378, "ttfd_s": 7.2379, "prefill_tok_s": 639.14, "decode_tok_s": 25.87, "first_token": "We", "text_sha16": "030e89a4686a09a6", "err": null}
+  engagement[b2]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=off bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:11:33Z BOOT c2 ================
+LOAD c2 ready after ~66s
+  pid=29531 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "c2", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.0944, "ttfd_s": 1.0945, "prefill_tok_s": 390.14, "decode_tok_s": 24.66, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "c2", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 6.8101, "ttfd_s": 6.8101, "prefill_tok_s": 679.28, "decode_tok_s": 26.2, "first_token": "The", "text_sha16": "0908061a3fdaddab", "err": null}
+{"arm": "c2", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.1697, "ttfd_s": 8.1698, "prefill_tok_s": 678.96, "decode_tok_s": 26.15, "first_token": "The", "text_sha16": "3ad5d2889683a115", "err": null}
+{"arm": "c2", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 9.4094, "ttfd_s": 9.4095, "prefill_tok_s": 687.29, "decode_tok_s": 26.06, "first_token": "The", "text_sha16": "dfab5cc3dfbfda25", "err": null}
+{"arm": "c2", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 6.6202, "ttfd_s": 6.6203, "prefill_tok_s": 698.76, "decode_tok_s": 25.5, "first_token": "The", "text_sha16": "e91c7f643459a69c", "err": null}
+  engagement[c2]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=on bf16tc_engaged=12 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+          1 bf16-tc] ENGAGED m=427 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=427 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=427 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=4626 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=5547 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=6467 n=8192 k=4096
+================ 2026-08-29T21:13:21Z BOOT a3 ================
+LOAD a3 ready after ~84s
+  pid=29812 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 99.24GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 0
+    vram 0, 54547 MiB
+    vram 1, 65651 MiB
+    vram 2, 68085 MiB
+    vram 3, 0 MiB
+{"arm": "a3", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.2138, "ttfd_s": 1.2139, "prefill_tok_s": 351.76, "decode_tok_s": 20.08, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "a3", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.5069, "ttfd_s": 7.507, "prefill_tok_s": 616.23, "decode_tok_s": 21.44, "first_token": "The", "text_sha16": "3d00b7d9c4ff62b6", "err": null}
+{"arm": "a3", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.8612, "ttfd_s": 8.8613, "prefill_tok_s": 625.98, "decode_tok_s": 22.13, "first_token": "The", "text_sha16": "6a2a054aa8026114", "err": null}
+{"arm": "a3", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.4332, "ttfd_s": 10.4333, "prefill_tok_s": 619.84, "decode_tok_s": 22.03, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "a3", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.2129, "ttfd_s": 7.213, "prefill_tok_s": 641.34, "decode_tok_s": 21.59, "first_token": "The", "text_sha16": "4366d782e72110f9", "err": null}
+  engagement[a3]: mmv_resident=0 bf16tc_flag= bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:15:32Z BOOT b3 ================
+LOAD b3 ready after ~84s
+  pid=30121 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "b3", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.1623, "ttfd_s": 1.1625, "prefill_tok_s": 367.32, "decode_tok_s": 24.66, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "b3", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.455, "ttfd_s": 7.455, "prefill_tok_s": 620.52, "decode_tok_s": 26.05, "first_token": "The", "text_sha16": "7323f8adf3222d2d", "err": null}
+{"arm": "b3", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.8933, "ttfd_s": 8.8934, "prefill_tok_s": 623.72, "decode_tok_s": 25.97, "first_token": "The", "text_sha16": "9ddac423d45f8e15", "err": null}
+{"arm": "b3", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.3364, "ttfd_s": 10.3364, "prefill_tok_s": 625.65, "decode_tok_s": 25.92, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "b3", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.2464, "ttfd_s": 7.2464, "prefill_tok_s": 638.38, "decode_tok_s": 25.34, "first_token": "The", "text_sha16": "5571f7386d4ccbfc", "err": null}
+  engagement[b3]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=off bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:17:40Z BOOT c3 ================
+LOAD c3 ready after ~60s
+  pid=30438 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "c3", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.0728, "ttfd_s": 1.0729, "prefill_tok_s": 398.0, "decode_tok_s": 24.71, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "c3", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 6.7872, "ttfd_s": 6.7873, "prefill_tok_s": 681.57, "decode_tok_s": 26.22, "first_token": "The", "text_sha16": "0908061a3fdaddab", "err": null}
+{"arm": "c3", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.1268, "ttfd_s": 8.1269, "prefill_tok_s": 682.55, "decode_tok_s": 26.15, "first_token": "The", "text_sha16": "3ad5d2889683a115", "err": null}
+{"arm": "c3", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 9.4013, "ttfd_s": 9.4013, "prefill_tok_s": 687.88, "decode_tok_s": 26.12, "first_token": "The", "text_sha16": "dfab5cc3dfbfda25", "err": null}
+{"arm": "c3", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 6.6177, "ttfd_s": 6.6178, "prefill_tok_s": 699.02, "decode_tok_s": 25.92, "first_token": "                  ", "text_sha16": "e085472098a155e3", "err": null}
+  engagement[c3]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=on bf16tc_engaged=12 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+          1 bf16-tc] ENGAGED m=427 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=427 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=427 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=4626 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=5547 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=6467 n=8192 k=4096
+================ 2026-08-29T21:19:23Z BOOT a4 ================
+LOAD a4 ready after ~100s
+  pid=30710 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 99.24GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 0
+    vram 0, 54547 MiB
+    vram 1, 65651 MiB
+    vram 2, 68085 MiB
+    vram 3, 0 MiB
+{"arm": "a4", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.3223, "ttfd_s": 1.3224, "prefill_tok_s": 322.9, "decode_tok_s": 20.27, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "a4", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.7426, "ttfd_s": 7.7427, "prefill_tok_s": 597.47, "decode_tok_s": 21.34, "first_token": "The", "text_sha16": "3d00b7d9c4ff62b6", "err": null}
+{"arm": "a4", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.8905, "ttfd_s": 8.8906, "prefill_tok_s": 623.92, "decode_tok_s": 21.96, "first_token": "The", "text_sha16": "6a2a054aa8026114", "err": null}
+{"arm": "a4", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.2588, "ttfd_s": 10.2588, "prefill_tok_s": 630.38, "decode_tok_s": 21.95, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "a4", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.2366, "ttfd_s": 7.2366, "prefill_tok_s": 639.25, "decode_tok_s": 21.5, "first_token": "Sum", "text_sha16": "da0423550338d672", "err": null}
+  engagement[a4]: mmv_resident=0 bf16tc_flag= bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:21:50Z BOOT b4 ================
+LOAD b4 ready after ~82s
+  pid=31060 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "b4", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.8627, "ttfd_s": 1.8628, "prefill_tok_s": 229.22, "decode_tok_s": 24.58, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "b4", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.4527, "ttfd_s": 7.4527, "prefill_tok_s": 620.71, "decode_tok_s": 25.73, "first_token": "The", "text_sha16": "7323f8adf3222d2d", "err": null}
+{"arm": "b4", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.907, "ttfd_s": 8.9071, "prefill_tok_s": 622.76, "decode_tok_s": 26.01, "first_token": "The", "text_sha16": "9ddac423d45f8e15", "err": null}
+{"arm": "b4", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.6159, "ttfd_s": 10.6159, "prefill_tok_s": 609.18, "decode_tok_s": 25.95, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "b4", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.2589, "ttfd_s": 7.259, "prefill_tok_s": 637.28, "decode_tok_s": 25.28, "first_token": "The", "text_sha16": "436560ed07dc3bf8", "err": null}
+  engagement[b4]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=off bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:24:00Z BOOT c4 ================
+LOAD c4 ready after ~84s
+  pid=31368 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "c4", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.0118, "ttfd_s": 1.0119, "prefill_tok_s": 421.97, "decode_tok_s": 24.6, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "c4", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 6.8137, "ttfd_s": 6.8138, "prefill_tok_s": 678.92, "decode_tok_s": 25.89, "first_token": "The", "text_sha16": "0908061a3fdaddab", "err": null}
+{"arm": "c4", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.2476, "ttfd_s": 8.2477, "prefill_tok_s": 672.55, "decode_tok_s": 26.03, "first_token": "The", "text_sha16": "3ad5d2889683a115", "err": null}
+{"arm": "c4", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 9.4181, "ttfd_s": 9.4182, "prefill_tok_s": 686.65, "decode_tok_s": 25.56, "first_token": "The", "text_sha16": "dfab5cc3dfbfda25", "err": null}
+{"arm": "c4", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 6.6329, "ttfd_s": 6.633, "prefill_tok_s": 697.42, "decode_tok_s": 24.68, "first_token": "Web", "text_sha16": "3bcfe714c7ae2ba4", "err": null}
+  engagement[c4]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=on bf16tc_engaged=12 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+          1 bf16-tc] ENGAGED m=427 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=427 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=427 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=4626 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=5547 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=6467 n=8192 k=4096
+================ 2026-08-29T21:26:07Z BOOT a5 ================
+LOAD a5 ready after ~82s
+  pid=31679 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 99.24GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 0
+    vram 0, 54547 MiB
+    vram 1, 65651 MiB
+    vram 2, 68085 MiB
+    vram 3, 0 MiB
+{"arm": "a5", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.0401, "ttfd_s": 1.0402, "prefill_tok_s": 410.5, "decode_tok_s": 20.37, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "a5", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.4303, "ttfd_s": 7.4303, "prefill_tok_s": 622.58, "decode_tok_s": 21.42, "first_token": "The", "text_sha16": "3d00b7d9c4ff62b6", "err": null}
+{"arm": "a5", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.8756, "ttfd_s": 8.8756, "prefill_tok_s": 624.97, "decode_tok_s": 22.1, "first_token": "The", "text_sha16": "6a2a054aa8026114", "err": null}
+{"arm": "a5", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.48, "ttfd_s": 10.4801, "prefill_tok_s": 617.08, "decode_tok_s": 22.03, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "a5", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.225, "ttfd_s": 7.2251, "prefill_tok_s": 640.27, "decode_tok_s": 21.15, "first_token": "The", "text_sha16": "82b69c4b53a512a9", "err": null}
+  engagement[a5]: mmv_resident=0 bf16tc_flag= bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:28:16Z BOOT b5 ================
+LOAD b5 ready after ~80s
+  pid=31986 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "b5", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.4082, "ttfd_s": 1.4083, "prefill_tok_s": 303.2, "decode_tok_s": 24.56, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "b5", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 7.4571, "ttfd_s": 7.4572, "prefill_tok_s": 620.34, "decode_tok_s": 26.06, "first_token": "The", "text_sha16": "7323f8adf3222d2d", "err": null}
+{"arm": "b5", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.9993, "ttfd_s": 8.9994, "prefill_tok_s": 616.37, "decode_tok_s": 26.05, "first_token": "The", "text_sha16": "9ddac423d45f8e15", "err": null}
+{"arm": "b5", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 10.2549, "ttfd_s": 10.255, "prefill_tok_s": 630.62, "decode_tok_s": 25.98, "first_token": "The", "text_sha16": "b68df3f95bfc103c", "err": null}
+{"arm": "b5", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 7.246, "ttfd_s": 7.246, "prefill_tok_s": 638.42, "decode_tok_s": 25.37, "first_token": "Sum", "text_sha16": "b98a94f177f8611f", "err": null}
+  engagement[b5]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=off bf16tc_engaged=0 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+================ 2026-08-29T21:30:22Z BOOT c5 ================
+LOAD c5 ready after ~86s
+  pid=32291 exe=/root/memra/target/release/memra-server sha=aab0a0a85999a0bb
+  boot receipts:
+    slab-populate gate lines: 42
+    [moe] resident-experts decision (PP dev0): experts 61.15GB + trunk 0.00GB vs free 100.04GB (expert budget 98.00GB) -> RESIDENT
+    [moe] resident-experts decision (PP dev1): experts 61.15GB + trunk 0.00GB vs free 101.15GB (expert budget 98.00GB) -> RESIDENT
+    bf16-mmv RESIDENT lines: 148
+    vram 0, 51443 MiB
+    vram 1, 62771 MiB
+    vram 2, 64021 MiB
+    vram 3, 0 MiB
+{"arm": "c5", "row": "warmup", "sampled": false, "status": 200, "prompt_tokens": 427, "completion_tokens": 8, "first_line_s": 1.2808, "ttfd_s": 1.2809, "prefill_tok_s": 333.37, "decode_tok_s": 24.33, "first_token": "Sum", "text_sha16": "bebda717eef6c704", "err": null}
+{"arm": "c5", "row": "A4630", "sampled": false, "status": 200, "prompt_tokens": 4626, "completion_tokens": 32, "first_line_s": 6.9275, "ttfd_s": 6.9276, "prefill_tok_s": 667.77, "decode_tok_s": 25.05, "first_token": "The", "text_sha16": "0908061a3fdaddab", "err": null}
+{"arm": "c5", "row": "B5550", "sampled": false, "status": 200, "prompt_tokens": 5547, "completion_tokens": 32, "first_line_s": 8.1628, "ttfd_s": 8.1629, "prefill_tok_s": 679.54, "decode_tok_s": 26.0, "first_token": "The", "text_sha16": "3ad5d2889683a115", "err": null}
+{"arm": "c5", "row": "C6470", "sampled": false, "status": 200, "prompt_tokens": 6467, "completion_tokens": 32, "first_line_s": 9.4233, "ttfd_s": 9.4234, "prefill_tok_s": 686.27, "decode_tok_s": 25.94, "first_token": "The", "text_sha16": "dfab5cc3dfbfda25", "err": null}
+{"arm": "c5", "row": "A4630-sampled", "sampled": true, "status": 200, "prompt_tokens": 4626, "completion_tokens": 64, "first_line_s": 6.6295, "ttfd_s": 6.6297, "prefill_tok_s": 697.77, "decode_tok_s": 25.35, "first_token": "The", "text_sha16": "8ff377f43d6999fb", "err": null}
+  engagement[c5]: mmv_resident=148 bf16tc_flag=bf16-tc] flag=on bf16tc_engaged=12 bf16tc_declined=0 gpf_flag=moe-grouped-prefill] flag=on gpf_execute=42
+          1 bf16-tc] ENGAGED m=427 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=427 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=427 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=4626 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=4626 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=5547 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=5547 n=8192 k=4096
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=1536
+          1 bf16-tc] ENGAGED m=6467 n=4096 k=8192
+          1 bf16-tc] ENGAGED m=6467 n=8192 k=4096
+L2 AB DONE 2026-08-29T21:32:32Z

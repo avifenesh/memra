@@ -1,0 +1,36 @@
+{
+ "name": "p09-prose",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 140,
+   "completion_tokens": 128,
+   "total_tokens": 268,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 23.177125738,
+   "spec": {
+    "rounds": 59,
+    "drafted": 295,
+    "accepted": 69,
+    "acceptance_rate": 0.23389830508474577
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "The user is asking me to resume an \"independent audit\" of what appears to be some document writing project \u2014 likely a\u53d8\u79cd of a common scenario where a previous conversation involved auditing renders of a scanned document or form reconstruction. However, this appears to be a fresh conversation for me \u2014 I have no prior context, no files listed, no shell commands previously run, and no original prompt defining what the audit should contain.\n\nThe message presupposes: (1) I previously ran shell calls that were cancelled, (2) there are existing files (PDFs, PNG renders/crops) to audit, (3) there was an \"original"
+    }
+   }
+  ]
+ }
+}

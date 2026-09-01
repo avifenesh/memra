@@ -1,0 +1,58 @@
+cx-ncuspike local-5090 preflight
+captured_utc 2026-08-11T13:47:59Z
+tree 526ca8e00a429120d039a2a1bfa2627ccffcf8d0
+branch lane/cx-ncuspike
+
+MODEL DISCOVERY
+
+Command:
+  find -L /data -maxdepth 8 -type f \( -iname '*step*.gguf' -o -iname '*step*manifest*.json' \) -printf '%p %s\n'
+
+Result:
+  <no matches>
+
+The only local Step-3.7 Hugging Face cache entry is metadata-only:
+  /data/ai-ml/hf-models/models--stepfun-ai--Step-3.7-Flash/refs/main 40 bytes
+  ref: 5f6244077ac62e04eec3f320501ff8c2b293373a
+
+Repository receipts identify the complete artifact only on box1:
+  shard 1: 46,483,327,296 bytes
+  shard 2: 46,999,941,600 bytes
+  shard 3: 11,510,293,728 bytes
+  total: 104,993,562,624 bytes
+
+RESIDENT-PATH CAPACITY
+
+The required post-sigrouter2 path is gated by
+HybridModel::sigmoid_resident_dev_eligible and requires same-device DevExps.
+Existing Step PP-2 receipts report:
+  stage 0 experts: 45.72 GB; trunk: 3.92 GB
+  stage 1 experts: 55.35 GB; trunk: 3.92 GB
+
+Local device:
+  NVIDIA GeForce RTX 5090 Laptop GPU, 24,463 MiB
+  P8, 50 C, current SM 187 MHz, maximum SM 3090 MHz
+
+Therefore neither Step stage can create the resident slab on this GPU. Downloading
+the checkpoint and using spill/SLRU would exercise a different dispatch path and would
+not measure the zero-D2H post-sigrouter program requested by this lane.
+
+HOST PRESSURE
+
+free -h:
+  Mem: 60 GiB total, 18 GiB used, 3.0 GiB free, 42 GiB available
+  Swap: 31 GiB total, 30 GiB used, 2.0 GiB free
+
+df -h /tmp:
+  tmpfs 31G total, 20G used, 11G available, 65%
+
+swapon --show:
+  /swap2.img 24G, 22.5G used
+  /swap.img   8G,  7.5G used
+
+The standing profiler-pressure gate says not to begin when /tmp exceeds about 15 GB or
+swap is near full. This lane created none of the existing /tmp data and did not remove it.
+
+GPU IDLENESS
+
+nvidia-smi --query-compute-apps returned no rows. No GPU command was started.

@@ -1,0 +1,18 @@
+# qwen4exp_real_gate	label=trim0-nvfp4	binary_sha256=99b04881d7350a8571b9b27ec5e15eb97585034e81fbcd06f6d81cbd2678dc37	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# vgraph-ab k=5 draft_head_rows=5538: verify scan-chain segment graphs OFF vs ON, interleaved, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	verify_ms_share
+0	eager	256	9.94	100.57	0.561	3.82	0.91
+0	vgraph	256	9.97	100.33	0.561	3.82	0.91
+1	eager	256	9.95	100.55	0.561	3.82	0.91
+1	vgraph	256	10.00	100.01	0.561	3.82	0.91
+2	eager	256	9.94	100.63	0.561	3.82	0.91
+2	vgraph	256	9.97	100.27	0.561	3.82	0.91
+3	eager	256	10.05	99.55	0.561	3.82	0.91
+3	vgraph	256	9.95	100.49	0.561	3.82	0.91
+4	eager	256	9.94	100.62	0.561	3.82	0.91
+4	vgraph	256	9.96	100.43	0.561	3.82	0.91
+# arm eager	mean_of_means_ms=9.96	min=9.94	max=10.05	tok_per_s=100.38
+# arm vgraph	mean_of_means_ms=9.97	min=9.95	max=10.00	tok_per_s=100.31
+# speedup_vgraph_over_eager	0.9992
+# rep0_eager_vs_vgraph_first_divergence	-1

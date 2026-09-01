@@ -1,0 +1,313 @@
+{
+  "updated": "2026-08-02",
+  "rig": "RTX 5090 Laptop",
+  "protocol": "N=2+ medians, both engines interleaved in the same thermal window on the same rig, same exact prompts, no flags (tuned paths are defaults); plain/depth rows re-measured 2026-08-02 after the deep fa_decode merge (d14d7d8d) — N=5 same-session interleaved medians, fresh llama denominator, research/board-remeasure-20260802/ — spec rows re-paired 2026-07-18 (35B spec row re-paired 2026-08-02 under the mode-2 grouped-f16 naked default — sk visitor + direct expert tiles — N=3 medians, research/f16g-default-rearb-20260802/), Gemma card rows from the 2026-07-15 best-vs-best re-audit. Full per-run logs: research/tune-data/ (Qwen) and research/gemma4-bringup/ (Gemma) — every win and every loss; Gemma 12B plain row from the 2026-07-24 official N=5 cell stamp (research/gemma4-bringup/g12tg-cellstamp.log)",
+  "plain_decode": {
+    "context": "tg128 at 512-token context, 2026-08-02 post-fa-deep re-measure (both engines same session, N=5 interleaved)",
+    "rows": [
+      {
+        "model": "Qwen3.5-9B NVFP4 (GGUF)",
+        "memra": 137.3,
+        "llama": 121.2
+      },
+      {
+        "model": "Qwen3.6-27B NVFP4 (GGUF)",
+        "memra": 47.6,
+        "llama": 43.7
+      },
+      {
+        "model": "Qwen3.6-35B-A3B MoE (IQ4_XS)",
+        "memra": 187.0,
+        "llama": 164.9
+      }
+    ]
+  },
+  "speculative": {
+    "context": "MTP head, both engines at their measured best config, re-paired 2026-07-18; 35B row re-paired 2026-08-02 under the mode-2 grouped-f16 (sk + direct expert tiles) naked default — N=3 medians, llama b9837 self-MTP at its per-class --spec-draft-n-max optimum (3/2/4, swept same-day same-build by research/q35-spec-repair-20260802/), receipts research/f16g-default-rearb-20260802/. Columns: short-code / medium-code (greedy temp-0, field-standard bounded protocol) / long-agentic SAMPLED (temp 0.7 seed 42, chat-templated, well-formed prompt — rejection-sampling spec decode, distribution-exact; llama at matched temperature). Gemma chat-cell spec rows (12B/31B, 2026-07-25) are BEST-vs-BEST: memra at its K optimum (12B K=4, 31B K=5, per-model adaptive-K floor=4 default) against llama at its own --spec-draft-n-max optimum (12B 2, 31B 4), both swept, re-paired same-session 2026-07-26; N=3 medians, watercycle chat prompt, n_predict 128, temp 0.",
+    "rows": [
+      {
+        "model": "Qwen3.5-9B (K=3 + own-gen trimmed draft)",
+        "memra": [
+          281.0,
+          211.7,
+          187.1
+        ],
+        "llama": [
+          122.2,
+          121.5,
+          117.7
+        ]
+      },
+      {
+        "model": "Qwen3.6-27B (K=3 + own-gen trimmed draft)",
+        "memra": [
+          116.4,
+          101.2,
+          86.0
+        ],
+        "llama": [
+          91.7,
+          93.3,
+          81.5
+        ]
+      },
+      {
+        "model": "Qwen3.6-35B-A3B (K=2 + own-gen trimmed draft)",
+        "memra": [
+          302.4,
+          253.0,
+          270.7
+        ],
+        "llama": [
+          234.7,
+          207.2,
+          235.8
+        ]
+      }
+    ]
+  },
+  "bold_ratio_threshold": 1.05,
+  "samples": [
+    {
+      "source": "speculative",
+      "model": "Qwen3.5-9B (K=3 + own-gen trimmed draft)",
+      "path": "GGUF NVFP4, MTP + masked-ranks trim",
+      "label": "Qwen3.5-9B — speculative decode, short / medium / long-agentic prompt classes"
+    },
+    {
+      "source": "extra_card_rows",
+      "model": "Gemma-4 31B dense 1.7k ctx (K=6 MTP + trim)",
+      "path": "GGUF Q4_0, MTP K=6 + trim",
+      "label": "Gemma-4 31B dense — speculative decode at 1.7k context (NVFP4 safetensors tuning in progress)"
+    },
+    {
+      "source": "plain_decode",
+      "model": "Qwen3.6-35B-A3B MoE (IQ4_XS)",
+      "path": "GGUF IQ4_XS, plain decode",
+      "label": "Qwen3.6-35B-A3B MoE — plain decode, tg128 at 512-token context"
+    },
+    {
+      "source": "plain_decode_depth",
+      "model": "Qwen3.6-35B-A3B MoE (IQ4_XS)",
+      "path": "GGUF IQ4_XS, plain decode",
+      "label": "Qwen3.6-35B-A3B MoE — the same, at 6.3k-token context"
+    }
+  ],
+  "supported_models": [
+    {
+      "model": "Qwen3.5-9B",
+      "class": "dense",
+      "quants": "NVFP4 (5090), Q8_0 (H100)",
+      "drafter": "MTP + own-gen trimmed draft",
+      "since": "v0.1.0"
+    },
+    {
+      "model": "Qwen3.8-27B",
+      "class": "dense hybrid (GDN + gated attention)",
+      "quants": "both paths tuned: safetensors NVFP4 · NVFP4+Q5_K GGUF; performance receipts are not interchangeable",
+      "drafter": "DFlash2 block-diffusion drafter (MEMRA_DSPARK_SPEC=1, q4 default + FR-Spec trim — HF Avifenesh/Qwen3.8-27B-DFlash2-memra; the qualified serving route since v0.113.0, beats the MTP arm on every rung of the vendor sampled shape) · MTP + own-gen FR-Spec masked ranks (safetensors: MEMRA_FRSPEC_TRIM; GGUF: pre-trimmed head — HF Avifenesh/Qwen3.8-27B-NVFP4-MTP-GGUF)",
+      "since": "v0.82.2 (MTP) / v0.113.0 (DFlash2 serving default)"
+    },
+    {
+      "model": "Qwen3.6-27B",
+      "class": "dense",
+      "quants": "NVFP4, Q4_K_M MTP-baked",
+      "drafter": "MTP + own-gen trimmed draft",
+      "since": "v0.1.0"
+    },
+    {
+      "model": "Qwen3.6-35B-A3B",
+      "class": "MoE",
+      "quants": "IQ4_XS",
+      "drafter": "MTP + own-gen trimmed draft",
+      "since": "v0.1.0"
+    },
+    {
+      "model": "Gemma-4 26B-A4B",
+      "class": "MoE",
+      "quants": "QAT Q4_0",
+      "drafter": "Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements",
+      "since": "v0.23.0"
+    },
+    {
+      "model": "Gemma-4 31B",
+      "class": "dense",
+      "quants": "QAT Q4_0 GGUF (supported + tuned) · NVFP4 safetensors tuning in progress",
+      "drafter": "Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements",
+      "since": "v0.35.0"
+    },
+    {
+      "model": "Gemma-4 E4B",
+      "class": "dense",
+      "quants": "QAT Q4_0",
+      "drafter": "Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements",
+      "since": "v0.35.0"
+    },
+    {
+      "model": "Gemma-4 12B",
+      "class": "dense",
+      "quants": "QAT Q4_0",
+      "drafter": "Gemma assistant draft — served since 2026-08-17 via the gspec attach (MEMRA_DRAFT, shipping depth K=5); table spec numbers remain gemma-gate CLI measurements",
+      "since": "v0.40.0"
+    },
+    {
+      "model": "Ornith-1.0-9B",
+      "class": "dense",
+      "quants": "Q8_0",
+      "drafter": "own-gen donor-block draft",
+      "since": "v0.63.0"
+    },
+    {
+      "model": "Ornith-1.0-35B",
+      "class": "MoE",
+      "quants": "Q4_K_M",
+      "drafter": "own-gen donor-block draft",
+      "since": "v0.64.0"
+    },
+    {
+      "model": "Ornith-1.5-35B-A3B",
+      "class": "MoE hybrid (GDN + gated attention)",
+      "quants": "NVFP4+Q5_K GGUF (own-published: HF Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF, first NVFP4 of this model) · image input via the checkpoint ViT (MEMRA_VISION_DIR, parity-gated)",
+      "drafter": "continued-trained MTP head + FR-Spec self-trim (MEMRA_FRSPEC_TRIM; v0.105 serves cached-long at K=5 with a trimmed head, v0.108 replays the verify trunk as a captured graph by default — +19.7% on a current-generation host, and much less host-CPU-sensitive than before) — artifacts on HF",
+      "since": "v0.97.0"
+    },
+    {
+      "model": "Qwen-AgentWorld-35B-A3B",
+      "class": "MoE",
+      "quants": "UD-IQ4_XS (avoid UD-Q4_K_M — its Q5_K expert mix sits outside fast-path coverage)",
+      "drafter": "own-gen drafter",
+      "since": "v0.66.0"
+    },
+    {
+      "model": "Step-3.7-Flash 196B-A11B",
+      "class": "MoE",
+      "quants": "IQ4_XS + Q8_0 MTP head (two-card PP-2), supported · FP8 tuning in progress · image input via the checkpoint perception_encoder ViT (MEMRA_STEP_VISION_DIR, parity- and serve-gated, default off)",
+      "drafter": "MTP (single-card); plain batched decode on PP-2",
+      "since": "v0.73.1"
+    }
+  ],
+  "h100_board": {
+    "updated": "2026-08-01",
+    "rig": "1× H100 80GB",
+    "competitor": "vLLM 0.26",
+    "protocol": "same box, every cell a same-session interleaved pair. One number per arm: end-to-end tok/s — 512 tokens generated on a ~2100-token real-text prompt, single request, total wall time; N=5 medians, argmax exactness gate green on every published row. Cross-artifact by design: vLLM serves what H100 users deploy (w8a8 / FP8-dynamic / bf16 HF checkpoints — it rejects these GGUFs); memra serves its GGUF artifacts.",
+    "rows": [
+      {
+        "model": "Gemma-4 12B",
+        "memra_e2e": 146,
+        "vllm_e2e": 81,
+        "vllm_artifact": "bf16",
+        "ratio": 1.81
+      },
+      {
+        "model": "Qwen3.6-27B",
+        "memra_e2e": 96,
+        "vllm_e2e": 73,
+        "vllm_artifact": "FP8",
+        "ratio": 1.31
+      },
+      {
+        "model": "Gemma-4 31B",
+        "memra_e2e": 75,
+        "vllm_e2e": 64,
+        "vllm_artifact": "FP8-dyn",
+        "ratio": 1.18
+      },
+      {
+        "model": "Qwen3.5-9B",
+        "memra_e2e": 204,
+        "vllm_e2e": 176,
+        "vllm_artifact": "w8a8",
+        "ratio": 1.16
+      },
+      {
+        "model": "Gemma-4 E4B",
+        "memra_e2e": 193,
+        "vllm_e2e": 168,
+        "vllm_artifact": "bf16",
+        "ratio": 1.14
+      },
+      {
+        "model": "Qwen3.6-35B MoE",
+        "memra_e2e": 226,
+        "vllm_e2e": 215,
+        "vllm_artifact": "FP8",
+        "ratio": 1.05
+      },
+      {
+        "model": "Gemma-4 26B MoE",
+        "memra_e2e": 196,
+        "vllm_e2e": 191,
+        "vllm_artifact": "FP8-dyn",
+        "ratio": 1.02
+      }
+    ]
+  },
+  "plain_decode_depth": {
+    "context": "tg128 at 6257-token context (same session/hour-regime, 2026-08-02 post-fa-deep re-measure, N=5 interleaved)",
+    "rows": [
+      {
+        "model": "Qwen3.5-9B NVFP4 (GGUF)",
+        "memra": 131.2,
+        "llama": 117.3
+      },
+      {
+        "model": "Qwen3.6-27B NVFP4 (GGUF)",
+        "memra": 46.2,
+        "llama": 41.8
+      },
+      {
+        "model": "Qwen3.6-35B-A3B MoE (IQ4_XS)",
+        "memra": 177.1,
+        "llama": 156.3
+      }
+    ]
+  },
+  "extra_card_rows": [
+    {
+      "model": "Gemma-4 12B QAT Q4_0 (GGUF)",
+      "memra": 92.55,
+      "llama": 92.36
+    },
+    {
+      "model": "Gemma-4 12B chat (K=4 MTP + own-gen trim)",
+      "memra": 240.9,
+      "llama": 172.4,
+      "spec": true
+    },
+    {
+      "model": "Gemma-4 12B 1.7k ctx (K=4 MTP + trim)",
+      "memra": 269.3,
+      "llama": 175.1,
+      "spec": true
+    },
+    {
+      "model": "Gemma-4 26B-A4B QAT Q4_0 (GGUF)",
+      "memra": 199.7,
+      "llama": 187.6
+    },
+    {
+      "model": "Gemma-4 26B-A4B 1.7k ctx (K=6 MTP + trim)",
+      "memra": 330.4,
+      "llama": 337.9,
+      "spec": true
+    },
+    {
+      "model": "Gemma-4 31B dense 1.7k ctx (K=6 MTP + trim)",
+      "memra": 97.3,
+      "llama": 83.9,
+      "spec": true
+    },
+    {
+      "model": "Gemma-4 31B chat (K=5 MTP + own-gen trim)",
+      "memra": 124.3,
+      "llama": 99.0,
+      "spec": true
+    },
+    {
+      "model": "Gemma-4 E4B QAT Q4_0 (GGUF)",
+      "memra": 199.9,
+      "llama": 181.0
+    }
+  ]
+}

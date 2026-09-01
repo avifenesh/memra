@@ -1,0 +1,16 @@
+block=build out=/workspace/newboxgates-20260811/raw/build-20260810T232828Z start=2026-08-10T23:28:28Z host=eb3f5389a86e
+source_commit=5911de40f48d1d2fe36a92fef7b9b41cebc792f2
+server_sha256=1b2159b50c9bb5cf2703e9f159ac44b6f40d339db6fa078a8a0212ce1d54bf7b
+golden_sha256=21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de
+## HEAD (no branch)
+artifact=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-10 22:05:50.016554273 +0000
+artifact=/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-10 21:14:11.549094887 +0000
+artifact=/workspace/memra/research/darktrain2-20260810/raw/qos/golden-response.bin bytes=326 mtime=2026-08-10 19:53:31.916487270 +0000
+   Compiling cudarc v0.19.8
+   Compiling memra-engine v0.75.0 (/workspace/memra/crates/memra-engine)
+   Compiling memra-runtime v0.75.0 (/workspace/memra/crates/memra-runtime)
+   Compiling memra-kv v0.75.0 (/workspace/memra/crates/memra-kv)
+warning: memra-engine@0.75.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc (newest of 2; also saw 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 33s
+block=build out=/workspace/newboxgates-20260811/raw/build-20260810T232828Z exit=0 restore_exit=0 done=2026-08-10T23:31:02Z

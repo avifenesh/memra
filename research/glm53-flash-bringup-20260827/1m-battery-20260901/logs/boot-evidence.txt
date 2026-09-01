@@ -1,0 +1,144 @@
+##### logs/boot-c1-plain.log
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://<ip>:18400
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 18MB (observed 45MB at ctx 1148 path=plain)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+##### logs/boot-c3-ship.log
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://<ip>:18400
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 18MB (observed 45MB at ctx 1148 path=plain)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 18MB fixed = 5093MB
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1035677 path=plain = 23936 B/token x ctx + 25575MB prefill-workspace + 18MB fixed = 50382MB
+##### logs/boot-c3b-plain.log
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2]; weight home: per-stage (sharded loader))
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://<ip>:18400
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 86MB (observed 113MB at ctx 1148 path=plain)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 86MB fixed = 5161MB
+[admission] request cost: model="zai/glm-5.3-flash" ctx=128758 path=plain = 23936 B/token x ctx + 7004MB prefill-workspace + 86MB fixed = 10171MB
+##### logs/boot-c3b-ship.log
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2]; weight home: per-stage (sharded loader))
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://<ip>:18400
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=1108 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=15766 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=15766 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[admission] request cost: model="zai/glm-5.3-flash" ctx=128758 path=plain = 23936 B/token x ctx + 7004MB prefill-workspace + 0MB fixed = 10085MB
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=128566 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=128566 wave=1 sampled=1 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+##### logs/boot-c4-trace.log
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2]; weight home: per-stage (sharded loader))
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://<ip>:18400
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=1108 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=15766 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[admission] request cost: model="zai/glm-5.3-flash" ctx=128758 path=plain = 23936 B/token x ctx + 7004MB prefill-workspace + 0MB fixed = 10085MB
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=128566 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+##### logs/boot-diag-poolvar-autok.log
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://<ip>:18400
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=64, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=4096 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### logs/boot-diag-poolvar-k3.log
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://<ip>:18400
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=64, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=4096 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+##### logs/boot-ppab-pp3.log
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2]; weight home: per-stage (sharded loader))
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://<ip>:18400
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=15766 wave=1 sampled=0 penalized=0 cold=1
+[glm5-spec] draft confidence gate armed: PMIN=0.700 PMIN0=0 (native chain p-of-pick; DFlash2 selector-q tau-slot truncation)
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=64, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=4096 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[topk-shards] engaged: rows=7 cols=154880 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-verify-ws] engaged: verify-walk buffers recycling through the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)
+##### logs/boot-ppab-pp4.log
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+[glm5-spec] serve route ARMED: draft source = dflash2 @ b33c0347; draft head FULL target vocab; native MTP head NOT loaded (the q38 pattern: a full MoE trunk layer of VRAM saved)
+[postthink] zai/glm-5.3-flash: think-forced template with a derivable close contract (ids [154842]) -- response_format serves two-phase (unconstrained think, grammar after close; spec disengaged)
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[admission] "zai/glm-5.3-flash": plain 23936 B/token, spec 23936 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://<ip>:18400
+[admission] request cost: model="zai/glm-5.3-flash" ctx=15958 path=plain = 23936 B/token x ctx + 4693MB prefill-workspace + 0MB fixed = 5075MB
+[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=4096, t_kv=4096, nh=64, width=2051); dispatches counted in MLA_TC_PREFILL_DISPATCHES
+[moe-grouped-prefill] flag=on t=4096 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)

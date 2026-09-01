@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-ae62c2c5589e00b28e4458975c5f4ae2",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 2614,
+    "completion_tokens": 256,
+    "total_tokens": 2870,
+    "prompt_tokens_details": {
+      "cached_tokens": 2396
+    },
+    "elapsed_s": 1.954744066
+  },
+  "text": "The user wants me to add a small sparkline beside every request in the timeline without using external dependencies. I need to create a simple SVG-based sparkline that shows the token generation rate or latency pattern for each request. I'll use inline SVG with basic path elements to create a simple line chart representation.\n\nLet me update the dashboard to include these sparklines next to each request row in the timeline.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-tertiary: #334155;\n      --text-primary: #f1f5f9;\n      --text-secondary: #94a3b8;\n      --accent-blue: #3b82f6;\n      --accent-green: #22c55e;\n"
+}

@@ -1,0 +1,272 @@
+diff --git a/crates/memra-engine/src/hybrid_forward.rs b/crates/memra-engine/src/hybrid_forward.rs
+index 977f2e74b2..dd81ad4e0e 100644
+--- a/crates/memra-engine/src/hybrid_forward.rs
++++ b/crates/memra-engine/src/hybrid_forward.rs
+@@ -543,6 +543,20 @@ fn cpu_expert_profile_admit_enabled() -> bool {
+ /// kernel needs T >= d_conv-1). Callers: generate / generate_spec.
+ pub const PRIME_MIN_T: usize = 16;
+ 
++/// MEMRA_STEP_GEMM_PRIME_SUFFIX: does a CONTINUATION prime (`cache.pos > 0` — a rewound
++/// session's suffix, or a prompt remainder split across scheduler ticks) ride the batched
++/// GEMM prime, like a fresh prompt does?
++///
++/// DEFAULT ON, by decision (lane/gemm-suffix, 2026-08-28). The reasons, both receipted in
++/// the same commit: the walk continuation costs ~7.2 ms/token against ~1.0 ms/token here, so
++/// session-affinity reuse on a growing agentic conversation was a 1.012x wash; and the arm is
++/// gated on greedy byte-identity against a cold full prime of the same bytes, not on liveness.
++/// `=0` is the suffix-only rollback seam (fresh primes keep the fast path);
++/// `MEMRA_STEP_GEMM_PRIME=0` remains the whole-path seam. Read per call, not cached.
++fn step_gemm_prime_suffix_on() -> bool {
++    std::env::var("MEMRA_STEP_GEMM_PRIME_SUFFIX").as_deref() != Ok("0")
++}
++
+ /// Widest tick the MoE DEV per-token program serves (lane/orndecode-20260822). PRIME_MIN_T
+ /// doubled as the dev-arm's upper bound on the assumption that t==16 only ever meant real
+ /// prefill; the exact-16 decode tier broke that assumption — at B=16 the MoE stage crossed
+@@ -1305,13 +1319,42 @@ impl HybridModel {
+         // chunk loop measured 26.9 s against 3.7 s here. Chunking keeps the transients bounded:
+         // a whole 32k prompt in one call would build a 262144-pair CSR and ~4.3 GB of partials
+         // per rank, the blow-up the chunked prime exists to prevent.
++        //
++        // CONTINUATION (lane/gemm-suffix, 2026-08-28): the entry NO LONGER requires
++        // `cache.pos == 0`. The batch core has been continuation-capable since 7700e0b6
++        // (positions carry each sequence's base; the fresh-prompt guard narrowed to B > 1),
++        // and d99b2ea3 named this outer guard as the remaining blocker in its own message.
++        // Every multi-turn suffix and every tick remainder was paying the walk's measured
++        // ~7.2 ms/token against this path's ~1.0 ms/token, which is why session-affinity
++        // reuse measured a 1.012x wash on a growing conversation.
++        // ONE DEFECT HAD TO BE FIXED FIRST, and it was LIVE before this lift:
++        // `step35_prime_batch_layers` passed `ts[s]` — the CHUNK's length — as `seq_end`.
++        // `seq_end` is the REQUEST's absolute end position and it steers step35's SWA arm
++        // (`seq_end > win`, win = 512 on step37). A chunk SHORTER than the window at a
++        // NONZERO base therefore selected the UNWINDOWED FA arm over a view that the `off`
++        // trim leaves at ~win-1+t rows: it attended OUTSIDE the sliding window. That was
++        // already reachable with no continuation at all — a fresh prompt of 4096+k for k in
++        // [PRIME_MIN_T, 512) ends in a trailing chunk of exactly that shape. `seq_end` is now
++        // threaded from here (request-absolute, `+ queued_after`, computed ONCE before the
++        // chunk loop, chunk-size-invariant exactly as on the walk), which is what makes the
++        // suffix arm expressible at all rather than merely reachable.
++        let legacy_calllocal = std::env::var("MEMRA_PRIME_CALLLOCAL").as_deref() == Ok("1");
++        let seq_end = if legacy_calllocal {
++            cache.pos + t
++        } else {
++            cache.pos + t + queued_after
++        };
++        // MEMRA_STEP_GEMM_PRIME_SUFFIX=0 is the SUFFIX-ONLY rollback seam: continuations go
++        // back to the walk while fresh primes stay on the fast path (MEMRA_STEP_GEMM_PRIME=0
++        // is the whole-path seam). Read per call, never cached — probes flip it in process.
+         if overlay.is_none()
+-            && cache.pos == 0
++            && (cache.pos == 0 || step_gemm_prime_suffix_on())
+             && t >= PRIME_MIN_T
+             && crate::step_gemm_prime_on()
+             && self.uses_sliding_gated_moe_program()
+         {
+             let n_embd = self.cfg.n_embd as usize;
++            let base = cache.pos;
+             let width = crate::cache::PRIME_CHUNK_MAX_TOKENS;
+             let mut hiddens = e.uninit(t * n_embd)?;
+             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
+@@ -1323,8 +1366,12 @@ impl HybridModel {
+                 if t - end > 0 && t - end < PRIME_MIN_T {
+                     end = t;
+                 }
+-                let mut out =
+-                    self.step35_prime_cache_batch(e, &[&tokens[start..end]], &mut [cache])?;
++                let mut out = self.step35_prime_cache_batch(
++                    e,
++                    &[&tokens[start..end]],
++                    &mut [cache],
++                    &[seq_end],
++                )?;
+                 if out.len() != 1 {
+                     return Err("B=1 batched prime returned a non-singleton".into());
+                 }
+@@ -1339,9 +1386,21 @@ impl HybridModel {
+                 start = end;
+             }
+             let (logits, h_seed) = last.expect("prime produced no chunk");
+-            eprintln!("[gemm-prime] ENGAGED t={t} chunks<={width} (GEMM trunk + grouped MoE)");
++            // ENGAGEMENT RECEIPT, both directions. `base` is the discriminator: base=0 is a
++            // fresh prime (this line existed before the lift), base>0 is a SUFFIX riding the
++            // GEMM trunk — the arm this lane added. The declining twin below counts the other
++            // direction, so a log that shows neither line is an instrument fault, not a pass.
++            eprintln!(
++                "[gemm-prime] ENGAGED t={t} base={base} seq_end={seq_end} chunks<={width} (GEMM trunk + grouped MoE)"
++            );
+             return Ok((logits, h_seed, hiddens));
+         }
++        if self.uses_sliding_gated_moe_program() {
++            eprintln!(
++                "[gemm-prime] WALK t={t} base={} seq_end={seq_end} (batched prime declined)",
++                cache.pos
++            );
++        }
+         if overlay.is_none() {
+             if let Some(out) = self.step35_prime_trows(e, tokens, cache)? {
+                 return Ok(out);
+@@ -1421,12 +1480,8 @@ impl HybridModel {
+         // step35_attn_pre_wo. Both halves are required for tickinv35's canary teeth under the FA
+         // default. Read per call, not cached (the probe flips it in-process between arms). Never
+         // on in a measured default run.
+-        let legacy_calllocal = std::env::var("MEMRA_PRIME_CALLLOCAL").as_deref() == Ok("1");
+-        let seq_end = if legacy_calllocal {
+-            cache.pos + t
+-        } else {
+-            cache.pos + t + queued_after
+-        };
++        // `seq_end` (and its MEMRA_PRIME_CALLLOCAL seam) is computed ONCE above the batched
++        // entry so both prime arms read the identical request-absolute value.
+         if ranges.len() == 1 {
+             return self.prime_chunk(e, tokens, cache, seq_end, 0, overlay);
+         }
+@@ -2689,6 +2744,11 @@ impl HybridModel {
+     /// Step35 cross-request prime range: weight-streaming work runs once at `m=sum(T)`;
+     /// sequence-scoped attention/KV work stays on each request's own cache and positions.
+     #[allow(clippy::too_many_arguments)]
++    /// `seq_ends[s]`: sequence s's REQUEST-absolute end position — NOT `ts[s]`. It is the
++    /// only thing step35's SWA arm keys on, so a chunk-local value here decides the attention
++    /// kernel from the chunk size (and, below the 512-row window at a nonzero base, drops the
++    /// window mask entirely). See the batched entry's note in `prime_cache_overlaid`.
++    #[allow(clippy::too_many_arguments)]
+     fn step35_prime_batch_layers(
+         &self,
+         e: &Engine,
+@@ -2697,6 +2757,7 @@ impl HybridModel {
+         hi: usize,
+         ts: &[usize],
+         offs: &[usize],
++        seq_ends: &[usize],
+         pos_ds: &[CudaSlice<i32>],
+         caches: &mut [&mut Cache],
+     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+@@ -2798,7 +2859,7 @@ impl HybridModel {
+                     ts[s],
+                     Some(&mut *caches[s]),
+                     il,
+-                    ts[s],
++                    seq_ends[s],
+                 )?;
+                 e.copy_into(&mut ag_cat, offs[s] * nh * hd, &ag, ts[s] * nh * hd)?;
+             }
+@@ -2939,12 +3000,22 @@ impl HybridModel {
+         Ok(out)
+     }
+ 
++    /// `seq_ends[s]` = sequence s's REQUEST-absolute end position (`cache.pos + prompt_len
++    /// + queued_after`, computed once before any chunk loop). Only step35's SWA arm reads it,
++    /// and it must NOT be this chunk's own length: see the note on the batched entry in
++    /// `prime_cache_overlaid` for the window the chunk-local value opened.
+     fn step35_prime_cache_batch(
+         &self,
+         e: &Engine,
+         prompts: &[&[u32]],
+         caches: &mut [&mut Cache],
++        seq_ends: &[usize],
+     ) -> Result<Vec<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>)>, Box<dyn std::error::Error>> {
++        assert_eq!(
++            seq_ends.len(),
++            prompts.len(),
++            "step35 batched prime: one seq_end per sequence"
++        );
+         validate_step_prime_batch_modes(
+             step_tp_prefill_enabled()?,
+             step_ep_grouped_prefill_enabled()?,
+@@ -2981,11 +3052,29 @@ impl HybridModel {
+             );
+         }
+         for (s, c) in caches.iter().enumerate() {
++            // POS-INCLUSIVE, like the walk's assert: a continuation chunk's rows land at
++            // c.pos.., so the fresh-only `ts[s] <= max_ctx` form under-checked it.
+             assert!(
+-                ts[s] <= c.max_ctx,
++                c.pos + ts[s] <= c.max_ctx,
+                 "step35 batched prime exceeds cache max_ctx"
+             );
++            assert!(
++                seq_ends[s] >= c.pos + ts[s],
++                "step35 batched prime: seq_end must cover this chunk"
++            );
+         }
++        // MEMRA_STEP35_PRIME_BATCH_TSEND=1: CANARY SEAM restoring the pre-fix chunk-local
++        // `seq_end` (this chunk's own length, which `ts[s]` used to supply here). It is suffix-
++        // and chunk-VARIANT by construction, so the suffix byte-identity gate MUST break under
++        // it. That is how the defect is DEMONSTRATED rather than argued: one binary, one seam,
++        // the legacy arm fails cold-vs-rewound identity and the default arm passes. Read per
++        // call; never on in a measured default run.
++        let legacy_tsend = std::env::var("MEMRA_STEP35_PRIME_BATCH_TSEND").as_deref() == Ok("1");
++        let seq_ends_eff: Vec<usize> = if legacy_tsend {
++            ts.clone()
++        } else {
++            seq_ends.to_vec()
++        };
+         let offs: Vec<usize> = ts
+             .iter()
+             .scan(0usize, |a, &t| {
+@@ -3044,7 +3133,15 @@ impl HybridModel {
+                     let pos_ds = upload_positions(e0)?;
+                     let x = self.embed(e0, &cat_tokens)?;
+                     let x = self.step35_prime_batch_layers(
+-                        e0, x, fence[0], fence[1], &ts, &offs, &pos_ds, caches,
++                        e0,
++                        x,
++                        fence[0],
++                        fence[1],
++                        &ts,
++                        &offs,
++                        &seq_ends_eff,
++                        &pos_ds,
++                        caches,
+                     )?;
+                     rt.tx(0, &x, payload)?
+                 };
+@@ -3060,6 +3157,7 @@ impl HybridModel {
+                         fence[s + 1],
+                         &ts,
+                         &offs,
++                        &seq_ends_eff,
+                         &pos_ds,
+                         caches,
+                     )?;
+@@ -3077,6 +3175,7 @@ impl HybridModel {
+                     fence[n_st],
+                     &ts,
+                     &offs,
++                    &seq_ends_eff,
+                     &pos_ds,
+                     caches,
+                 )?;
+@@ -3095,6 +3194,7 @@ impl HybridModel {
+                     self.layers.len(),
+                     &ts,
+                     &offs,
++                    &seq_ends_eff,
+                     &pos_ds,
+                     caches,
+                 )?;
+@@ -3110,6 +3210,7 @@ impl HybridModel {
+                 self.layers.len(),
+                 &ts,
+                 &offs,
++                &seq_ends_eff,
+                 &pos_ds,
+                 caches,
+             )?;
+@@ -3188,7 +3289,16 @@ impl HybridModel {
+         // Step35 has a dedicated concat walk: the generic core below cannot express its
+         // per-layer geometry/SWA/head gate, and under PP the dedicated path is stage-scoped.
+         if self.uses_sliding_gated_moe_program() {
+-            return self.step35_prime_cache_batch(e, prompts, caches);
++            // The cross-request driver hands whole requests (no chunk loop of its own), so each
++            // sequence's request-absolute end IS its base plus its prompt length — the value
++            // `ts[s]` happened to equal for the fresh B>=1 batches this caller admits, which is
++            // why this arm is bit-for-bit unchanged by the seq_end threading.
++            let seq_ends: Vec<usize> = caches
++                .iter()
++                .zip(prompts.iter())
++                .map(|(c, p)| c.pos + p.len())
++                .collect();
++            return self.step35_prime_cache_batch(e, prompts, caches, &seq_ends);
+         }
+         let ts: Vec<usize> = prompts.iter().map(|p| p.len()).collect();
+         for &t in &ts {

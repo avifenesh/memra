@@ -1,0 +1,21 @@
+=== glm5_prime_capacity (host) ===
+running 5 tests
+test the_mhc_prime_transient_is_sub_quadratic_in_context ... ok
+test the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context ... ok
+test the_mhc_prime_schedule_covers_the_prompt_exactly ... ok
+ctx | prime calls | rows/call | per-call transient | whole-prime stack | peak
+    16384 |           4 |      4096 |           2.456 GB |          0.268 GB |  2.724 GB
+    65536 |          16 |      4096 |           2.657 GB |          1.074 GB |  3.731 GB
+   262144 |          64 |      4096 |           3.462 GB |          4.295 GB |  7.757 GB
+  1048576 |         256 |      4096 |           6.684 GB |         17.180 GB | 23.864 GB
+test report_the_per_call_prime_transient_ladder ... ok
+test the_prime_at_the_native_context_leaves_a_working_expert_residency ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+=== memra-engine host lib suite (the crate this lane edits) ===
+test result: ok. 242 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 8.66s
+=== memra-kv host suite ===
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

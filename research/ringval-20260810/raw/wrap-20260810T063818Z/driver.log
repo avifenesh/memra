@@ -1,0 +1,18 @@
+lock_acquired=2026-08-10T06:38:18Z host=<private-host-redacted> stamp=20260810T063818Z
+source_commit=019428e217e297cb5981d201a4a520aee69222a6
+run_gen_sha256=0d5fcfef58230a10e0d92cff2f64d08ad9bd93b7a0d2f2afcc0ccfdca92670b4
+replay_acceptance_sha256=81e1a3a39a362fa4bdc0d79b18eb12b9d1473f497c30f452ab4ddd9458943430
+prompt_sha256=9454aea760c0151ab216346ceea5e6a4b895e83c062323552575f6f15827298a
+force_tape_sha256=a2243a5377d40efc7a115d70f7c1730550579fe578a6d1ac36a1fd776e666bb8
+## lane/cx-ringval-box1
+?? target
+artifact=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-06 12:39:44.670328147 +0000
+artifact=/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-06 12:37:13.136888212 +0000
+artifact=/home/ubuntu/memra-cx-ringval/research/e2e/prompts/p4-16k.txt bytes=78867 mtime=2026-08-10 06:30:56.289341032 +0000
+artifact=/home/ubuntu/ringval/harness/force-tape.txt bytes=80 mtime=2026-08-10 06:38:11.699031943 +0000
+replay_arm=off start=2026-08-10T06:38:18Z
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+ERROR: model has no MTP/NextN head — replay acceptance is undefined.

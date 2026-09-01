@@ -1,0 +1,47 @@
+[P2P (Peer-to-Peer) GPU Bandwidth Latency Test]
+Device: 0, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, pciBusID: 41, pciDeviceID: 0, pciDomainID:0
+Device: 1, NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, pciBusID: 61, pciDeviceID: 0, pciDomainID:0
+Device=0 CAN Access Peer Device=1
+Device=1 CAN Access Peer Device=0
+
+***NOTE: In case a device doesn't have P2P access to other one, it falls back to normal memcopy procedure.
+So you can see lesser Bandwidth (GB/s) and unstable Latency (us) in those cases.
+
+P2P Connectivity Matrix
+     D\D     0     1
+     0	     1     1
+     1	     1     1
+Unidirectional P2P=Disabled Bandwidth Matrix (GB/s)
+   D\D     0      1 
+     0 1486.02  36.08 
+     1  36.02 1525.88 
+Unidirectional P2P=Enabled Bandwidth (P2P Writes) Matrix (GB/s)
+   D\D     0      1 
+     0 1482.45 112.91 
+     1 113.89 1519.94 
+Bidirectional P2P=Disabled Bandwidth Matrix (GB/s)
+   D\D     0      1 
+     0 1484.49  40.61 
+     1  40.39 1505.23 
+Bidirectional P2P=Enabled Bandwidth Matrix (GB/s)
+   D\D     0      1 
+     0 1483.09 225.98 
+     1 225.14 1503.78 
+P2P=Disabled Latency Matrix (us)
+   GPU     0      1 
+     0   2.07  14.45 
+     1  14.34   2.07 
+
+   CPU     0      1 
+     0   2.15   6.86 
+     1   6.81   2.12 
+P2P=Enabled Latency (P2P Writes) Matrix (us)
+   GPU     0      1 
+     0   2.07   0.44 
+     1   0.44   2.07 
+
+   CPU     0      1 
+     0   2.13   1.74 
+     1   1.80   2.13 
+
+NOTE: The CUDA Samples are not meant for performance measurements. Results may vary when GPU Boost is enabled.

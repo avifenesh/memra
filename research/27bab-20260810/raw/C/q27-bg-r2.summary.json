@@ -1,0 +1,288 @@
+{
+  "aggregate_output_tok_s": 117.76076069964928,
+  "base": "http://127.0.0.1:8003",
+  "bos_garbage_count": 0,
+  "completion_tokens": 1792,
+  "concurrency": 2,
+  "decode_tok_s_median": 64.66448778563478,
+  "decode_tok_s_values": [
+    59.01655598550337,
+    61.257483845934914,
+    64.57523058067655,
+    64.57650148373972,
+    64.59749681627895,
+    64.64236502117517,
+    64.66139598559708,
+    64.66757958567247,
+    64.67500280446436,
+    64.83901369585469,
+    68.39431944813407,
+    74.02396218787294,
+    81.70542327061392,
+    88.37325324394045
+  ],
+  "duration_target_s": 14.0,
+  "errors": [],
+  "expected_matches": null,
+  "expected_sha256": null,
+  "label": "q27-bg-r2",
+  "max_tokens": 128,
+  "metrics_after": {
+    "active_sessions": 0,
+    "admission_session_defers": 0,
+    "admission_vram_defers": 0,
+    "admitted": 31,
+    "cache_hit_token_ratio": 0.0,
+    "cached_tokens_in": 0,
+    "completed": 31,
+    "computed_tokens_in": 4603,
+    "continuation_pool_entries": 0,
+    "continuation_pool_evictions": 0,
+    "continuation_pool_hits": 0,
+    "cuda_driver_free_bytes": 32747356160,
+    "cuda_pool_cached_bytes": 1177868040,
+    "cuda_pool_reserved_bytes": 19931332608,
+    "cuda_pool_used_bytes": 18753464568,
+    "lcp_histogram": {
+      "counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edges": [
+        0,
+        1,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,
+        2048,
+        4096
+      ]
+    },
+    "plain_affinity_rewinds": 0,
+    "prefix_cache_bytes": 0,
+    "prefix_cache_entries": 0,
+    "prefix_cache_evictions": 0,
+    "prefix_cache_hit_tokens": 0,
+    "prefix_cache_hits": 0,
+    "prefix_cache_inserts": 0,
+    "prefix_cache_misses": 0,
+    "prompt_tokens_in": 4603,
+    "queued_requests": 0,
+    "serve_idle_seconds": 0.005,
+    "spec": {
+      "q27": {
+        "accept_rate_per_pos": [
+          0.9204753199268738,
+          0.7870201096892139,
+          0.6316270566727605
+        ],
+        "acceptance_rate": 0.779707495429616,
+        "accepted": 2559,
+        "drafted": 3282,
+        "pos_accepted": [
+          1007,
+          861,
+          691
+        ],
+        "pos_drafted": [
+          1094,
+          1094,
+          1094
+        ],
+        "rounds": 1094,
+        "tokens_per_round": 3.3391224862888484
+      }
+    },
+    "spec_pool_affinity_rewinds": 0,
+    "spec_pool_entries": 6,
+    "spec_pool_evictions": 25,
+    "spec_pool_hits": 0,
+    "spec_pool_misses": 31,
+    "step_oom_parks": 0,
+    "step_p50_ms": 7.700117588043213,
+    "step_p99_ms": 12.569497108459473,
+    "tenants": {
+      "cx27-q27-background-worker-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 2282
+      },
+      "cx27-q27-background-worker-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 2282
+      },
+      "cx27-q27-sanity-worker-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 39
+      }
+    },
+    "tokens_out": 3680
+  },
+  "metrics_before": {
+    "active_sessions": 0,
+    "admission_session_defers": 0,
+    "admission_vram_defers": 0,
+    "admitted": 17,
+    "cache_hit_token_ratio": 0.0,
+    "cached_tokens_in": 0,
+    "completed": 17,
+    "computed_tokens_in": 2321,
+    "continuation_pool_entries": 0,
+    "continuation_pool_evictions": 0,
+    "continuation_pool_hits": 0,
+    "cuda_driver_free_bytes": 32780910592,
+    "cuda_pool_cached_bytes": 1177868040,
+    "cuda_pool_reserved_bytes": 19931332608,
+    "cuda_pool_used_bytes": 18753464568,
+    "lcp_histogram": {
+      "counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edges": [
+        0,
+        1,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,
+        2048,
+        4096
+      ]
+    },
+    "plain_affinity_rewinds": 0,
+    "prefix_cache_bytes": 0,
+    "prefix_cache_entries": 0,
+    "prefix_cache_evictions": 0,
+    "prefix_cache_hit_tokens": 0,
+    "prefix_cache_hits": 0,
+    "prefix_cache_inserts": 0,
+    "prefix_cache_misses": 0,
+    "prompt_tokens_in": 2321,
+    "queued_requests": 0,
+    "serve_idle_seconds": 0.068,
+    "spec": {
+      "q27": {
+        "accept_rate_per_pos": [
+          0.9199288256227758,
+          0.7846975088967971,
+          0.6334519572953736
+        ],
+        "acceptance_rate": 0.7793594306049823,
+        "accepted": 1314,
+        "drafted": 1686,
+        "pos_accepted": [
+          517,
+          441,
+          356
+        ],
+        "pos_drafted": [
+          562,
+          562,
+          562
+        ],
+        "rounds": 562,
+        "tokens_per_round": 3.3380782918149468
+      }
+    },
+    "spec_pool_affinity_rewinds": 0,
+    "spec_pool_entries": 6,
+    "spec_pool_evictions": 11,
+    "spec_pool_hits": 0,
+    "spec_pool_misses": 17,
+    "step_oom_parks": 0,
+    "step_p50_ms": 7.860278606414795,
+    "step_p99_ms": 25.578636169433594,
+    "tenants": {
+      "cx27-q27-background-worker-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 1141
+      },
+      "cx27-q27-background-worker-1": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 1141
+      },
+      "cx27-q27-sanity-worker-0": {
+        "cache_hit_token_ratio": 0.0,
+        "cached_tokens_in": 0,
+        "prompt_tokens_in": 39
+      }
+    },
+    "tokens_out": 1888
+  },
+  "metrics_expected_completed": 31,
+  "metrics_settled": true,
+  "model": "q27",
+  "n": 14,
+  "n_error": 0,
+  "n_ok": 14,
+  "prompt_bytes": 915,
+  "prompt_kind": "workload",
+  "prompt_sha256": "4c35a940b701ed49b15fedc64e3ea00e97b71177eba70e6df165dffc4516e3dc",
+  "prompt_tokens_observed": [
+    163
+  ],
+  "requested_requests": null,
+  "session_key": "cx27-q27-background",
+  "spec_metrics_delta": {
+    "acceptance_rate": 0.7800751879699248,
+    "accepted": 1245,
+    "drafted": 1596,
+    "rounds": 532
+  },
+  "temperature": 0.0,
+  "text_hash_counts": {
+    "6eebd518a6b41aa0e75ad38ebeb7f26a71572d958f496bb7a1b12136d6b6dde2": 14
+  },
+  "text_prefixes": [
+    "Here's a thinking process:\n\n1.  **Analyze User Input:**\n   - **Format:** Exactly four concise bullets\n   - **Content:** Explain why a GPU background job must yield to an interactive inference request\n   - **Requirement:** Include one point about memory\n   - **Context:** The operator measures latency, allocator state, checkpoint durability, and exact output while a lower-priority optimizer yields to interactive traffic. (Repeated 5 times, but it's just context emphasizing the metrics and the yielding behavio"
+  ],
+  "ttft_p50_s": 0.249400214292109,
+  "ttft_p99_s": 0.366835068911314,
+  "ttft_values_s": [
+    0.17437682300806046,
+    0.20483373571187258,
+    0.2117581758648157,
+    0.2264007329940796,
+    0.24875834211707115,
+    0.24877845030277967,
+    0.249087231233716,
+    0.24971319735050201,
+    0.2498916806653142,
+    0.2500432478263974,
+    0.25029846001416445,
+    0.2503974214196205,
+    0.25126380752772093,
+    0.366835068911314
+  ],
+  "wall_s": 15.217293004505336
+}

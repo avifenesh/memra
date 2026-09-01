@@ -1,0 +1,116 @@
+{
+  "arms": {
+    "dual": {
+      "N_points": 101,
+      "boots": 5,
+      "golden_matches": 929,
+      "requests": 929
+    },
+    "serial": {
+      "N_points": 101,
+      "boots": 5,
+      "golden_matches": 929,
+      "requests": 929
+    }
+  },
+  "dual_slot_boots": [
+    {
+      "boot": 2,
+      "overlaps": 1473,
+      "slot_collisions": 0,
+      "slot_pairs": 1473,
+      "slot_uses": [
+        1473,
+        1473
+      ]
+    },
+    {
+      "boot": 4,
+      "overlaps": 1911,
+      "slot_collisions": 0,
+      "slot_pairs": 1911,
+      "slot_uses": [
+        1911,
+        1911
+      ]
+    },
+    {
+      "boot": 6,
+      "overlaps": 1908,
+      "slot_collisions": 0,
+      "slot_pairs": 1908,
+      "slot_uses": [
+        1908,
+        1908
+      ]
+    },
+    {
+      "boot": 8,
+      "overlaps": 1915,
+      "slot_collisions": 0,
+      "slot_pairs": 1915,
+      "slot_uses": [
+        1915,
+        1915
+      ]
+    },
+    {
+      "boot": 10,
+      "overlaps": 1916,
+      "slot_collisions": 0,
+      "slot_pairs": 1916,
+      "slot_uses": [
+        1916,
+        1916
+      ]
+    }
+  ],
+  "one_hash_matrix": {
+    "arms": [
+      "serial",
+      "dual"
+    ],
+    "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de",
+    "points": 34,
+    "verdict": "PASS",
+    "widths": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17
+    ]
+  },
+  "protocol": "10 alternating fresh boots; c1..17 matrix then rotated mixed widths; one inherited GPU lock hold",
+  "rig": "box1, 2x RTX PRO 6000 Blackwell Server Edition",
+  "schema": "memra.dualpp1.slot-soak.v1",
+  "slot_totals": {
+    "collisions": 0,
+    "pairs": 9123,
+    "slot_0_uses": 9123,
+    "slot_1_uses": 9123
+  },
+  "source_commit": "64a869252029610b833e9b469f4708044b558b3e",
+  "thermal_regime": {
+    "artificial_cooldown": false,
+    "sample_interval_ms": 250,
+    "samples": 14078,
+    "sm_clock_mhz_max": 2422.0,
+    "sm_clock_mhz_min": 180.0,
+    "temperature_c_max": 52.0,
+    "temperature_c_min": 26.0
+  },
+  "verdict": "PASS"
+}

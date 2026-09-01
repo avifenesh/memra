@@ -1,0 +1,7 @@
+[prime-twin] greedy tape MATCH: 8 tokens, fnv1a=0x50ad4c8f01bf7247
+[phase] arm 3: door ON, prefill-twin split walk
+glm5-hyper-ppn-gate NOTE: pipelined arm skipped — `decode_step_h_ppn_deferred` calls refuse_hyper(), so deferred readback is not wired for the mHC residual. This gate covers the serial split walk only; do not cite it for the pipelined arm.
+glm5-hyper-ppn gate PASS [decode-serial]: 14 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prime-twin]: 9 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prefill-twin]: 2 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=per-stage overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+exit=0

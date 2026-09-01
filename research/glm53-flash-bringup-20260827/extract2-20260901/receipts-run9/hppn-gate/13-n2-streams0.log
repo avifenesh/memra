@@ -1,0 +1,80 @@
+warning: function `expected_census` is never used
+   --> crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:288:15
+    |
+288 | pub(crate) fn expected_census(config: &ModelConfig) -> BTreeMap<String, TensorSpec> {
+    |               ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:7243:9
+     |
+7243 |     let mut run = |label: &str, steps: Vec<Vec<u32>>| -> Res<usize> {
+     |         ----^^^
+     |         |
+     |         help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `indexer_mask_rows` is never used
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:3726:4
+     |
+3726 | fn indexer_mask_rows(
+     |    ^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `qsa_indexer_mask` is never used
+     --> crates/memra-engine/src/qwen4exp_gpu.rs:16582:8
+      |
+15974 | impl Qwen4ExpGpu {
+      | ---------------- method in this implementation
+...
+16582 |     fn qsa_indexer_mask(
+      |        ^^^^^^^^^^^^^^^^
+
+glm5-hyper-ppn-gate config: stages=2 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage
+[loader-law] WARNING: token_embd.weight loads as 2D Float ne=[128, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_gate.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_a.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_b.weight loads as 2D Float ne=[16, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_kv_a_mqa.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_output.weight loads as 2D Float ne=[32, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 23.29GB (expert budget 21.29GB) -> RESIDENT
+[loader-law] WARNING: blk.*.ffn_gate_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down_shexp.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+stage fence: [0, 2, 4] over 4 layers
+state placement: Recurrent(KDA) layers on stages [0, 1], LatentKvCache(MLA+kpool) layers on stages [0, 1]
+[phase] reference A: door OFF, step-by-step decode over the whole sequence
+[phase] reference C: door OFF, stateless prefill (forward / forward_last)
+[phase] reference B: door OFF, prime + decode continuation
+prime schedule: 1 call(s) for P=6 (MEMRA_PRIME_CHUNK=None)
+[phase] reference D: door OFF, substituted-token prime + decode (overlay truth)
+[phase] arm 5a: door OFF, serial overlay splice
+[phase] arm 1: door ON, decode-serial split walk
+[decode-serial] greedy tape MATCH: 14 tokens, fnv1a=0xa7972b1e01ff1f76
+[phase] arm 2: door ON, prime-twin split walk
+[prime-twin] greedy tape MATCH: 8 tokens, fnv1a=0x50ad4c8f01bf7247
+[phase] arm 3: door ON, prefill-twin split walk
+glm5-hyper-ppn-gate NOTE: pipelined arm skipped — `decode_step_h_ppn_deferred` calls refuse_hyper(), so deferred readback is not wired for the mHC residual. This gate covers the serial split walk only; do not cite it for the pipelined arm.
+[phase] arm 5b: door ON, monolithic overlay splice
+[phase] arm 5c: door ON, two-call windowed overlay splice
+glm5-hyper-ppn gate PASS [decode-serial]: 14 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prime-twin]: 10 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prefill-twin]: 2 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [overlay-serial]: 9 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [overlay-ppn]: 9 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [overlay-ppn-windowed]: 9 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 2, 4]; stages=2 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+exit=0

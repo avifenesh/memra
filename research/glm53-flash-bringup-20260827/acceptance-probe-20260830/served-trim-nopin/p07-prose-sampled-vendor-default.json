@@ -1,0 +1,36 @@
+{
+ "name": "p07-prose",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 281,
+   "completion_tokens": 128,
+   "total_tokens": 409,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 16.905887181,
+   "spec": {
+    "rounds": 54,
+    "drafted": 162,
+    "accepted": 73,
+    "acceptance_rate": 0.4506172839506173
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "The user is showing me a list of open ports on their machine, likely from a network monitoring tool (this looks like it could be from Little Snitch, LuLu, or similar firewall monitoring software, or possibly a port scanner output). They're asking me to \"check those node-MainThread\" processes \u2014 they seem concerned about what these open ports are and whether they're a security risk.\n\nLet me analyze the ports listed:\n- :4173 \u2014 node-MainThread \u2014 this is commonly Vite's preview server (vite preview defaults to 4173)\n- :4177 \u2014 python3\n- :"
+    }
+   }
+  ]
+ }
+}

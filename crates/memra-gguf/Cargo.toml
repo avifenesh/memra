@@ -1,0 +1,50 @@
+[package]
+name = "memra-gguf"
+description = "GGUF and HF-safetensors model loading, quant-format decode, and tensor inventory for the memra inference engine"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shared crates.io browse metadata; see the note in the workspace manifest.
+categories.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[dependencies]
+libc = "0.2"
+memmap2 = "0.9"
+# fixture-integrity hashing for the dsv4-forward gate (already in the workspace lockfile
+# via memra-server; no new transitive deps)
+sha2 = "0.10"
+
+[[bin]]
+name = "gguf-inspect"
+path = "src/bin/inspect.rs"
+
+[[bin]]
+name = "nvfp4-validate"
+path = "src/bin/nvfp4_validate.rs"
+
+[[bin]]
+name = "dsv4-census"
+path = "src/bin/dsv4_census.rs"
+
+[[bin]]
+name = "dsv4-forward"
+path = "src/bin/dsv4_forward_gate.rs"
+
+[[bin]]
+name = "dsv4-mtp-probe"
+path = "src/bin/dsv4_mtp_probe.rs"
+
+[[bin]]
+name = "dsv4-greedy-verify"
+path = "src/bin/dsv4_greedy_verify.rs"
+
+[[bin]]
+name = "dsv4-decode-oracle-check"
+path = "src/bin/dsv4_decode_oracle_check.rs"
+
+[[bin]]
+name = "dsv4-dspark-gate"
+path = "src/bin/dsv4_dspark_gate.rs"

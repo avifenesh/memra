@@ -1,0 +1,18 @@
+[tp2b] arm=plain1 mode=tape prompts=/root/out-tp2/prompts-tiny run=tinyref extras=BOXP_MAX_NEW=32 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+[tp2b] rc=0 arm=plain1 mode=tape run=tinyref
+[tp2b] arm=tp2 mode=tape prompts=/root/out-tp2/prompts-tiny run=tinykda extras=BOXP_FORCE_DIR=/root/out-tp2/plain1-tape-tinyref MEMRA_GLM5_TP=0-2@0,1 BOXP_MAX_NEW=32 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+[tp2b] rc=0 arm=tp2 mode=tape run=tinykda
+[tp2b] arm=tp2 mode=tape prompts=/root/out-tp2/prompts-tiny run=tinytp extras=BOXP_FORCE_DIR=/root/out-tp2/plain1-tape-tinyref BOXP_MAX_NEW=32 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+[tp2b] rc=0 arm=tp2 mode=tape run=tinytp
+[tp2b] arm=tp2 mode=tape prompts=/root/out-tp2/prompts-c1 run=e5moe1 extras=BOXP_FORCE_DIR=/root/out-tp2/plain1-tape-c1ref MEMRA_GLM5_TP=3@0,1 MEMRA_MOE_SLOTS=12000 MEMRA_ST_PINNED=1 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+[tp2b] rc=0 arm=tp2 mode=tape run=e5moe1
+[tp2b] arm=tp2red mode=tape prompts=/root/out-tp2/prompts-tiny run=tinyred extras=BOXP_FORCE_DIR=/root/out-tp2/plain1-tape-tinyref BOXP_MAX_NEW=32 bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+[tp2b] rc=0 arm=tp2red mode=tape run=tinyred
+[tp2b] arm=tp2 mode=tape prompts=/root/out-tp2/prompts-c1 run=c1tpfree extras= bin=/root/memra-tp2/target/release/glm5-tp2-box-probe
+340c18b04f25e1803aa3d5bb13ed27b8d38627a86a418d860bfaeebb576a18a7  /root/memra-tp2/target/release/glm5-tp2-box-probe
+[tp2b] rc=0 arm=tp2 mode=tape run=c1tpfree

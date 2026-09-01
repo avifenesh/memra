@@ -1,0 +1,58 @@
+=== Sigrouter2 measured-anchor override ===
+  source: research/sigrouter2-20260811/raw/box1-perf/summary.json
+  c1 default median: 101.281657 tok/s
+  c8 default median: 169.004876 tok/s
+
+=== Step-3.7 active-parameter bill (per token, B=1) ===
+  attention (all layers)         4.52 B params   2.41 GB @4.26bpw
+  dense FFN x3                   0.42 B params   0.22 GB @4.26bpw
+  routed experts 42L x top8      5.28 B params   2.81 GB @4.26bpw
+  shared experts                 0.66 B params   0.35 GB @4.26bpw
+  router                         0.05 B params   0.03 GB @4.26bpw
+  lm_head                        0.53 B params   0.28 GB @4.26bpw
+  TOTAL active                  11.46 B params   6.10 GB/token
+
+=== Decode weight-streaming SOL vs measured (serial PP-2: one card active at a time) ===
+  B  GB/chunk  uniqExp  SOL ms  SOL tok/s meas tok/s   %SOL
+  1      6.10      8.0    3.41        293      101.3  34.5%
+  2      8.77     15.6    4.90        408      119.9  29.4%
+  4     13.96     30.3    7.80        513      144.7  28.2%
+  8     23.51     57.5   13.13        609      169.0  27.7%
+
+=== Achieved per-stage bandwidth at B=1 (specpp2 anatomy stage times) ===
+  stage0: ~2.85 GB / 5.557 ms = 512 GB/s = 28.6% of card
+  stage1: ~3.26 GB / 6.179 ms = 527 GB/s = 29.4% of card
+  reference: q27 Q8_0 dense decode on the same 188-SM class achieved 88-96% per class, 91% aggregate (research/q27-deepdive-20260805)
+
+=== KV bytes per token (q8_0 K 34B/32, q5_1 V 24B/32; memra-kv/src/lib.rs) ===
+  per layer per token: K 1088 B + V 768 B = 1856 B
+  read at depth   512:   42.8 MB/token (0.7% of the B=1 weight bill)
+  read at depth  4096:  122.6 MB/token (2.0% of the B=1 weight bill)
+
+=== Prefill compute SOL (grouped, pp4096 solo) ===
+  ~22.9 GFLOP/token active -> measured 692.7 tok/s = 15.9 TFLOP/s aggregate
+  int8-TC card reference (SM-scaled from measured 82-SM 219 TFLOP/s): 502 TFLOP/s
+  fraction of ONE card's int8 peak: 3.2%
+  per-expert prefill GEMM shape at 4096 tok: m~114 rows, n=1280, k=4096 (small-m regime)
+
+=== Launch/sync bill per token, B=1 (step35_decode_batch_layers walk) ===
+  ~15+9 launches/layer fused-pair (43 layers), ~15+34 on the 2 clamped layers
+  -> ~1130 kernels/token + lm_head + sampler epilogue
+  q27 dense reference: 1015 launches/token = 7.5% launch-gap tax at 92.5% busy
+  sigrouter2 default keeps sel/w device-resident through expert dispatch; the 42
+  increment-1 selected-id/weight readbacks and their stream syncs are removed
+
+=== Per-chunk host sync count at c=64 (8 serial B=8 chunks/tick) ===
+  increment 1: 42 router D2H syncs x 8 chunks = 336 full-stream syncs per tick
+  sigrouter2 default: 0 router D2H syncs in the resident Step dispatch arm
+  + 1 [B]-u32 token readback per chunk (receipted flat to defer)
+
+=== B>1 per-row attention walk (decode_batch.rs:1446-1481) ===
+  B=8: 45 layers x 8 rows x 4 launches = 1440 per-row launches per chunk (the eagerpar class, B>1 edition)
+
+=== PP boundary at decode (receipted) ===
+  B=1: 16 KB f32 peer copy, tx 0.013 ms + rx 0.014 ms = 0.23% of the token walk (specpp2 anatomy)
+
+=== Sigrouter2 SOL fraction movement (same-lock increment-1 control) ===
+  c1: 28.812% -> 34.526% SOL (+5.714 pp; throughput +19.831%)
+  c8: 27.168% -> 27.742% SOL (+0.574 pp; throughput +2.114%)

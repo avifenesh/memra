@@ -1,0 +1,58 @@
+Generating SQLite file /tmp/memra-fa3softmax-20260813/q35-nsys-r1.sqlite from /tmp/memra-fa3softmax-20260813/q35-nsys-r1.nsys-rep
+Processing [/tmp/memra-fa3softmax-20260813/q35-nsys-r1.sqlite] with [/opt/nvidia/nsight-systems/2025.5.2/host-linux-x64/reports/cuda_gpu_kern_sum.py]...
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+12.2,256778107,156,1646013.5,1567460.0,328861,3016298,1213752.9,"void moe_kq_sk128v_kernel<(int)6>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+10.6,224272161,13800,16251.6,5920.0,3104,47744,14220.6,qmatvec_q8_0_mmvq
+10.2,215514372,500,431028.7,168974.5,49600,1986673,538596.8,"void mul_mat_q_q8_0<(int)128, (bool)0>(const char *, const int *, float *, int, int, int, int, int, int)"
+6.5,137427156,78,1761886.6,1721283.5,349021,3223720,1312917.1,"void moe_kq_sk128v_kernel<(int)5>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+5.8,122748552,20,6137427.6,6138354.0,3842499,8435649,2345169.3,fa_prefill_qw_db
+5.2,109705285,156,703239.0,697275.0,534396,934841,87181.4,"void moe_kq_sktail_kernel<(int)6>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+4.5,93778174,2400,39074.2,39087.5,27359,48895,2681.6,moe_gate_up_silu8_dev_q8_v
+3.8,79885607,60,1331426.8,1327253.5,416188,2274639,913872.8,gdn_chunk_state_f32
+3.5,73387985,80,917349.8,916313.5,303934,1548180,608208.6,router_gemv_f32_w8_batch
+2.5,51760379,62,834844.8,834394.0,824890,849370,3318.3,qmatvec_q6_K_mmvq
+2.4,49898412,78,639723.2,630971.0,480317,835802,78476.9,"void moe_kq_sktail_kernel<(int)5>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+2.3,49075384,12782,3839.4,2688.0,2432,208671,13023.6,quantize_q8_1
+2.0,41187146,80,514839.3,507004.0,121119,924697,388419.0,rows_permute_f32
+1.9,38978002,3862,10092.7,9472.0,2784,284636,17575.2,rms_norm_f32
+1.7,36485518,60,608092.0,600587.5,218334,1012249,385683.6,gdn_chunk_output_f32
+1.7,35492431,2400,14788.5,14240.0,12864,26591,1953.8,moe_down8_fma_dev_q8_w8h2v
+1.7,35357523,160,220984.5,171678.5,41152,520413,178577.8,"gather_act_f16_kernel(const float *, const int *, __half *, float *, int, int)"
+1.6,32792588,60,546543.1,543260.0,178975,934521,365634.9,ssm_conv1d_gdn_state_f32
+1.5,32522893,600,54204.8,54079.0,49920,60959,1535.1,fa_decode_vec_q_seqs_v4
+1.4,28766801,2480,11599.5,9344.0,9152,129567,15090.7,moe_router_topk_f32
+1.3,27477865,2400,11449.1,10624.0,9632,16640,1647.6,add_rms_norm_f32
+1.3,26478704,120,220655.9,220302.5,70559,387933,149352.7,qmatvec_q8_0_dp4a
+1.2,25538619,80,319232.7,313470.0,56608,638907,261238.3,moe_pairs_scatter
+1.2,25149665,60,419161.1,417469.0,121535,718267,298063.3,gdn_chunk_attn_f32
+1.0,20105098,80,251313.7,251454.5,72671,469213,176402.1,moe_pairs_silu_mul
+0.9,18680505,2400,7783.5,7648.0,7200,10848,508.1,qmatvec_q8_0_mmvq_fused2
+0.8,16732307,2560,6536.1,2464.0,2400,138783,20569.4,add_f32
+0.8,16356587,2400,6815.2,6816.0,6368,7584,167.9,router_gemv_f32_w8
+0.8,16255332,500,32510.7,14528.0,3392,112543,33089.8,"quantize_mmq_q8_1_d4_q8_0(const float *, void *, long, long, long, int)"
+0.8,16126698,60,268778.3,266510.0,92032,458556,174025.1,gdn_chunk_solve32_f32
+0.7,15648138,120,130401.1,114303.5,15199,281982,113753.2,l2_norm_pp_v2_f32
+0.7,14435021,2480,5820.6,2400.0,2336,188766,23451.1,add_scaled_rows_f32
+0.7,14004407,600,23340.7,23391.0,22688,23488,155.8,fa_decode_combine_seqs
+0.6,13113148,60,218552.5,219678.5,68511,374141,148277.8,gated_rmsnorm_f32
+0.6,13088121,1800,7271.2,7232.0,6752,8576,269.3,gdn_scan_s128_b
+0.6,12884608,6,2147434.7,2123040.0,508733,3829028,1748439.3,"void moe_kq_sk128v_kernel<(int)2>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+0.5,10248482,2480,4132.5,2912.0,2784,75103,8872.7,sigmoid_dot_rows_f32
+0.4,7891711,620,12728.6,3104.0,2944,517884,65406.7,q_gate_split_f32
+0.3,7295295,2480,2941.7,2592.0,2432,21408,2184.4,silu_mul_f32
+0.3,6043186,6,1007197.7,1007144.5,868985,1189911,122361.9,"void moe_kq_sktail_kernel<(int)2>(const unsigned long long *, int, int, const int *, long, const __half *, float *, const float *, const int *, int, int, int, int, int, int)"
+0.3,5861998,1800,3256.7,3232.0,3103,4000,81.3,gated_rmsnorm_q8_1
+0.3,5491117,1800,3050.6,3008.0,2816,3488,114.8,ssm_conv1d_fused_decode_b_f32
+0.3,5454802,680,8021.8,2144.0,2079,324765,39260.5,sigmoid_f32
+0.2,5169790,620,8338.4,2080.0,2047,347582,43637.6,mul_f32
+0.2,5016313,1800,2786.8,2784.0,2655,3168,74.0,gdn_prep_decode_b_f32
+0.2,4407965,1240,3554.8,2656.0,2400,92256,8042.1,rope_neox_f32
+0.1,1978989,600,3298.3,3296.0,3232,3488,26.9,append_quantize_kv_q8_0_q5_1_seqs
+0.1,1450485,20,72524.3,72304.0,63231,83007,8878.9,fa_dequant_kv_ws_bf16
+0.1,1169210,20,58460.5,57775.5,17952,101760,40374.8,append_quantize_kv_q8_0_q5_1_rows
+0.0,420315,60,7005.3,7120.0,3840,9952,2806.9,gdn_chunk_cumgate_f32
+0.0,306461,60,5107.7,5056.0,4960,5440,97.9,argmax_partial_f32
+0.0,290368,60,4839.5,4960.0,3840,5952,712.5,gdn_glog_f32
+0.0,156158,60,2602.6,2592.0,2560,2624,18.3,argmax_final_f32
+0.0,153984,60,2566.4,2560.0,2528,2880,60.6,ssm_conv_ring_update_f32
+0.0,127550,2,63775.0,63775.0,23871,103679,56432.8,embed_gather_u32_t

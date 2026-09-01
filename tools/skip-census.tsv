@@ -1,0 +1,39 @@
+# SKIP CENSUS MANIFEST — the tests that are allowed to skip, and what they need.
+#
+# GATE-INTEGRITY-20260819 section 10. `nv27b_twin_parity` prints "SKIP: ckpt/twin absent" and
+# PASSES, and round 2 gave it a caller (.github/workflows/ci.yml), so CI reports it green in
+# perpetuity on every executor without checkpoints. The count of such tests is now a NUMBER this
+# repo states out loud rather than a property nobody measures.
+#
+# Columns: crate <TAB> test path (as libtest prints it) <TAB> file:line <TAB> the SKIP message
+# exactly as written in the source (format placeholders included — tools/skip-census.py matches
+# the literal prefix at run time and the full string against the source).
+#
+# tools/skip-census.py verify compares this file with a static scan of the crate in BOTH
+# directions. An undeclared skipping test FAILS (it would otherwise be born invisible); a stale
+# row FAILS (it inflates the budget and silently permits a different skip). A moved line number
+# is a NOTE, not a failure.
+#
+# tools/skip-census.py run compares the number that ACTUALLY skipped against a named budget,
+# default 0. Where the budgets live and why:
+#   tools/validate-h100.sh   budget 0  — the rig has the artifacts. Measured 2026-08-20:
+#                                        90 passed, 0 skipped. A skip there means an artifact
+#                                        went missing and the gate should red.
+#   .github/workflows/ci.yml budget 12 — a hosted runner has no /data at all, so all twelve
+#                                        skip. Twelve is therefore the count of model-backed
+#                                        assertions CI is blind to, stated rather than hidden.
+#                                        If it grows, CI reds and someone looks.
+memra-gguf	config::minimax_tests::parse_minimax_m3_vl	crates/memra-gguf/src/config.rs:2570	SKIP parse_minimax_m3_vl: no model at {MINIMAX_DIR}
+memra-gguf	config::minimax_tests::minimax_name_mapping_against_index	crates/memra-gguf/src/config.rs:2609	SKIP minimax_name_mapping_against_index: no model at {MINIMAX_DIR}
+memra-gguf	dequant::tests::iq3s_vs_ggml_oracle	crates/memra-gguf/src/dequant.rs:711	SKIP: /tmp/iq3s_raw.bin missing
+memra-gguf	safetensors::tests::real_qwen3_17b_header	crates/memra-gguf/src/safetensors.rs:572	SKIP real_qwen3_17b_header: no model at {dir}
+memra-gguf	safetensors::tests::real_qwen3_17b_config	crates/memra-gguf/src/safetensors.rs:622	SKIP real_qwen3_17b_config: no config at {cfgp:?}
+memra-gguf	source::hy3_repack_probe::hy3_manifest_offset_roundtrip	crates/memra-gguf/src/source.rs:1820	SKIP: Hy3 repack absent
+memra-gguf	source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions	crates/memra-gguf/src/source.rs:1858	SKIP: Hy3 repack absent
+memra-gguf	source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda	crates/memra-gguf/src/source.rs:1935	SKIP: Hy3 repack absent
+memra-gguf	source::nv27b_probe::nvidia_27b_dtype_routing	crates/memra-gguf/src/source.rs:2004	SKIP: ckpt absent
+memra-gguf	source::nv27b_probe::nvidia_27b_mtp_mapping	crates/memra-gguf/src/source.rs:2040	SKIP: ckpt absent
+memra-gguf	source::m3_probe::minimax_m3_lm_head_q8	crates/memra-gguf/src/source.rs:2098	SKIP: ckpt absent
+memra-gguf	source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity	crates/memra-gguf/src/source.rs:2133	SKIP: ckpt/twin absent
+memra-gguf	model_packs::qwen4_exp::tests::expected_census_matches_the_banked_artifact_and_the_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1084	SKIP qwen4exp census gate: no fixture at {path}
+memra-gguf	model_packs::qwen4_exp::tests::nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1264	SKIP qwen4exp nvfp4 census gate: no fixture at {path}

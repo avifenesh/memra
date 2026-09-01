@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-743c399dd547e5ea420d63d825785020",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 45839,
+    "completion_tokens": 256,
+    "total_tokens": 46095,
+    "prompt_tokens_details": {
+      "cached_tokens": 44497
+    },
+    "elapsed_s": 8.153348255
+  },
+  "text": "The user wants me to continue the iteration pattern. Looking at the previous responses, I need to:\n\n1. Maintain a compact JSON incident ledger\n2. Initially set to revision 0 and counters.turns 0\n3. On every turn, return only one JSON object with keys: revision, change, counters, and note\n4. Carry the prior object forward and apply only the requested delta\n\nFrom the pattern:\n- Iteration 1: Revision 1, change: \"turn-1\", counters.turns: 1\n- Iteration 2: Revision 2, change: \"turn-2\", counters.turns: 2\n- Iteration 3: Revision 3, change: \"turn-3\", counters.turns: 3\n- Iteration 4: Revision 4, change: \"turn-4\", counters.turns: 4\n- Iteration 5: Revision 5, change: \"turn-5\", counters.turns: 5\n- Iteration 6: Revision 6, change: \"turn-6\", counters.turns: 6\n- Iteration 7: Revision 7, change: \"turn-7\", counters.turns: 7\n\nSo for Iter"
+}

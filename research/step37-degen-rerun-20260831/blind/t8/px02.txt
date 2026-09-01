@@ -1,0 +1,41 @@
+finish=length content_nonempty=False
+---
+Got it, let's tackle this GitHub bug issue step by step. First, let's start by understanding the problem: the JetBrains Marketplace listing for the agnix plugin has two broken links: 1) Documentation link returns 404, 2) Source Code link points to a stale repo URL.
+
+First, I need to outline the steps I'd take to resolve this, since I can't directly access the GitHub repo or JetBrains Marketplace console, but I can provide the exact actionable steps, plus if I were implementing it, what the changes would be, and a summary.
+
+First, let's start with investigation/triage:
+1. First, confirm the issue: Check the current JetBrains Marketplace listing for agnix (https://plugins.jetbrains.com/plugin/AGNIX?utm_source=github_issue_1099) to verify both links are broken.
+2. Check the plugin's source repository: The issue says the source code link is stale, so first find the correct current repository URL. Let's assume the current repo is https://github.com/agent-sh/agnix (matches the issue link domain), so the stale link is probably an old org name, like https://github.com/old-org/agnix or a deprecated repo.
+3. Check documentation hosting: The 404 docs link is probably pointing to an old docs site, like old-org.github.io/agnix or a deprecated ReadTheDocs project. The current docs are likely hosted at https://agent-sh.github.io/agnix/ or in the repo's README/wiki.
+
+Next, implementation steps (since this is a config change, not code, but if it's a plugin that has metadata in its build config, like build.gradle.kts for Gradle, or plugin.xml for IntelliJ plugins):
+Wait, JetBrains Marketplace plugin metadata is usually set in the plugin's build configuration (for Gradle-based plugins, it's in the `gradle.properties` or the `org.jetbrains.intellij` plugin block, or in the `META-INF/plugin.xml` for older plugins). Also, if the listing is managed via the JetBrains Marketplace console, you can edit the listing directly there, but if the metadata is pulled from the repo's config, you need to update the repo first.
+
+Wait, let's clarify: For IntelliJ plugins published to JetBrains Marketplace, the listing metadata (including links) can be set in two places:
+1. In the plugin's build configuration (e.g., `gradle.properties` for Gradle plugins, with properties like `pluginUrl`, `documentationUrl`, `sourceCodeUrl`), which is pulled automatically when you publish a new version.
+2. Directly in the JetBrains Marketplace developer console, which overrides the repo metadata for the listing.
+
+So first, let's triage: This is not a question, it's a bug report about broken public-facing links for the plugin. No code changes are needed for the plugin itself, just metadata updates.
+
+Then, steps to fix:
+1. First, identify the correct URLs:
+   - Source Code URL: Confirm the current canonical repo is https://github.com/agent-sh/agnix (matches the issue's repo domain)
+   - Documentation URL: Confirm the current docs are hosted at https://agent-sh.github.io/agnix/ (or if docs are in the repo's README, use the repo URL with /blob/main/README.md, or the official docs site)
+2. Update the plugin metadata:
+   Option A: If metadata is pulled from the repo config:
+   - Open the plugin's `gradle.properties` file (or equivalent build config)
+   - Update the `sourceCodeUrl` property to `https://github.com/agent-sh/agnix`
+   - Update the `documentationUrl` property to the correct docs URL
+   - Commit the change to a new branch (e.g., `fix/marketplace-links-1099`)
+   Option B: If metadata is managed directly in the JetBrains Marketplace console:
+   - Log in to the JetBrains Marketplace developer portal
+   - Navigate to the agnix plugin listing
+   - Edit the "Source Code" and "Documentation" fields to the correct URLs
+   - Save the changes (no repo code change needed for this option)
+3. Verify the fix:
+   - After updating, either publish a new plugin version (if using repo config) or wait for the Marketplace listing to refresh (usually takes a few minutes for console edits)
+   - Confirm both links resolve correctly on the public listing
+4. Close the issue with a reference to the fix: Link the PR or console change, note the updated URLs, and mark the issue as resolved.
+
+Wait, also, the user said "implement on a branch if code is needed"—so if the metadata is in the repo, we create a branch, make the change, open

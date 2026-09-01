@@ -1,0 +1,38 @@
+{
+ "name": "p09-prose",
+ "arm": "greedy",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": [
+   "temperature"
+  ]
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 140,
+   "completion_tokens": 128,
+   "total_tokens": 268,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 21.517756495,
+   "spec": {
+    "rounds": 57,
+    "drafted": 285,
+    "accepted": 71,
+    "acceptance_rate": 0.24912280701754386
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "The user is asking me to resume and complete an \"independent audit\" \u2014 apparently of some document (PDFs, PNG renders). They reference \"the original prompt\" with specific requirements: PASS/FAIL, exact field map, ranked defects, deliberate blanks, and concrete corrections.\n\nHowever, I have no prior context in this conversation. There's no original prompt visible to me, no file paths, no prior shell calls, no document identified. The user says \"Your prior shell calls were cancelled only because permission mode was wrong\" \u2014 but from my perspective, this is the first message in the conversation. There is no conversation history, no"
+    }
+   }
+  ]
+ }
+}

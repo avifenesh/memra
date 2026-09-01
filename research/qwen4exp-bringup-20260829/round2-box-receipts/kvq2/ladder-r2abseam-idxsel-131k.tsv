@@ -1,0 +1,12 @@
+# qwen4exp_real_gate	label=r2abseam-idxsel-131k	binary_sha256=5f5f708eb0ed27829f35174a062e7234a4ebc8b11a3ad24690ff0642c40d1b3c	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# ladder	rungs=[131072]	chunk=2048	decode=36	kv_dev1=false	spec=None	ids=1150000	cap=131676
+# vram	pre-ladder	0, 89971 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+rung	prefill_seg_s	prefill_cum_s	chunks	decode_warm_mean_ms	decode_median_ms	decode_p90_ms	tok_per_s	timing_rounds	looped	host_rss_mib	vram	continuation_ids
+131072	686.2	686.2	64	33.2	32.1	32.1	30.14	rounds=3x12 medians=[32.1, 32.0, 32.1] spread=0.21%	false	167773	0, 94013 MiB, 97887 MiB | 1, 7827 MiB, 97887 MiB	262,333,198,262,7379,1250,4568,8,198,92,271,8556,3165,7073,18,17,82,5406,25,594,1757,11,2663,25,43112,84,18,17,2387,1411,5536,66514,8003,89649,1407,476,815
+# ladder-jitter	rung=131072	arm=rung-default	n=34 mean=33.17 med=32.06 sd=6.337 cv=19.10% p99=69.57 max=69.57 outliers_1.5x=1
+# ladder-ab	rung=131072	seam=idxsel	arm=off	median_ms=56.64	tok_per_s=17.66	reps=7	medians=[56.64, 56.73, 55.88, 57.02, 57.26, 56.55, 56.12]	spread=2.40%	n=224 mean=56.65 med=56.64 sd=0.627 cv=1.11% p99=58.24 max=58.94 outliers_1.5x=0
+# ladder-ab	rung=131072	seam=idxsel	arm=on	median_ms=32.25	tok_per_s=31.01	reps=7	medians=[32.06, 32.08, 32.25, 32.04, 32.73, 32.69, 32.71]	spread=2.12%	n=224 mean=32.36 med=32.25 sd=0.317 cv=0.98% p99=32.82 max=32.91 outliers_1.5x=0
+# ladder-ab-verdict	rung=131072	seam=idxsel	off_ms=56.64	on_ms=32.25	speedup=1.7562x	delta_pct=43.06%	reps_per_arm=7 (escalated)	host_probe=false	vol_cs=4316	nonvol_cs=1868	threads=4	launch_cpu_migrations=0	launch_cpus_seen=0
+# ladder-ab-restore	seam=idxsel	arm=on

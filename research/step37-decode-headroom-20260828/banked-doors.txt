@@ -1,0 +1,47 @@
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+BANKED-DOOR ENGAGEMENT RECEIPTS, step37 plain arm boot, 2026-08-28T16:49:59+00:00
+binary: /root/s37h-spec-server md5=c06b3c8cb9ef tip=553a07247
+
+1. THE OWNER-FLIP DEFAULTS ARE LIVE IN THIS BOOT (so every door they arm is BANKED,
+   already inside the baseline, and is not headroom):
+   [step37-defaults] serving doors armed ON for the SlidingGatedMoe program (per-flag =0 kills, =1 forces; owner flip 2026-08-27)
+
+2. MEMRA_BF16_MMV engaged: [bf16-mmv] RESIDENT admits = 325
+   (the banked qualification measured 325 with the door on and 0 with it off)
+
+3. MEMRA_SWA_RING engaged: every step-TP attention layer reports its scope --
+        13 attention_scope=rank-local-global
+        33 attention_scope=rank-local-swa-ring
+
+4. MEMRA_W8_VIEW is OFF in this arm, proved in the OFF direction:
+   [w8-view] mirror lines = 0
+
+5. Full boot announce census (what actually spoke at load):
+       325 [bf16-mmv]
+        84 [step-tp]
+        46 [step-tp-qkv]
+        46 [step-tp-o]
+        45 [step-tp-attn-plan]
+         9 [worker]
+         6 [admission]
+         5 [gemm-prime]
+         4 [spec-k]
+         4 [prefix-cache]
+         4 [fa-pool]
+         3 [server]
+         3 [meter]
+         2 [tp]
+         2 [step-tp-decode-v2]
+         2 [step-tp-clamp]
+         2 [gpu-watch]
+         1 [step37-defaults]
+         1 [step35-prime-batch]
+         1 [step-tp-preflight]
+         1 [step-tp-attn-v2]
+         1 [spec-gate]
+         1 [mtp-head]
+         1 [mtp-chain]
+         1 [moe-sk-form]
+         1 [loader-law]
+         1 [fa]

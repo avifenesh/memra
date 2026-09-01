@@ -1,0 +1,99 @@
+warning: memra-engine@0.119.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.119.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.119.0 (/home/avifenesh/projects/wt-glm5-vrest/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.92s
+     Running tests/glm5_tparallel_verify_gpu.rs (target/debug/deps/glm5_tparallel_verify_gpu-887e429d9b35820c)
+
+running 9 tests
+test gpu_accept_j_then_continue_is_byte_identical_for_every_j ... [loader-law] WARNING: token_embd.weight loads as 2D Float ne=[128, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[128, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_gate.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_a.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_q_b.weight loads as 2D Float ne=[16, 32] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_kv_a_mqa.weight loads as 2D Float ne=[128, 16] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.attn_output.weight loads as 2D Float ne=[32, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+[loader-law] WARNING: blk.*.ffn_gate_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_up_shexp.weight loads as 2D Float ne=[128, 64] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.ffn_down_shexp.weight loads as 2D Float ne=[64, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[moe-grouped-prefill] flag=on t=24 il=1 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=128 out_f=64 n_active=4 max_m=14
+[moe-grouped-prefill] execute layer=1 tokens=24 n_active=4 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=2 tokens=24 n_active=4 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=3 tokens=24 n_active=4 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[glm5-spec] verify walk BATCHED per layer: kda=one t-call (scan sequential in-kernel), mla=rows-exact t-call, head=rows-exact, moe=pairs rows-call where qualified (MEMRA_GLM5_VERIFY_BATCH default ON)
+[glm5-vrows] verify MoE batched across rows: pairs=16 (t=8 x 2), one gate/up+preclamp launch + one down/FMA launch per layer-call (rides MEMRA_GLM5_VERIFY_BATCH)
+gate 2 PASS j=0: 12 continue steps bit-identical
+gate 2 PASS j=1: 12 continue steps bit-identical
+gate 2 PASS j=2: 12 continue steps bit-identical
+gate 2 PASS j=3: 12 continue steps bit-identical
+gate 2 PASS j=4: 12 continue steps bit-identical
+gate 2 PASS j=5: 12 continue steps bit-identical
+gate 2 PASS j=6: 12 continue steps bit-identical
+gate 2 PASS j=7: 12 continue steps bit-identical
+ok
+test gpu_batched_walk_sees_corrupted_conv_ring ... [moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+gate 1c RED bites: 256 differing logits over the corrupted ring
+ok
+test gpu_disabled_rollback_breaks_the_tape ... [moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[loader-law] WARNING: blk.*.nextn.eh_proj.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+gate 6 RED bites: loop failed loudly with rollback disabled: layer 1: latent cache overflow — 56 + 8 rows exceeds capacity 59
+ok
+test gpu_frspec_trim_equivalence_partial_and_skipped_remap_red ... [moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[frspec-trim] self-trimmed head: 32 rows of main output.weight (F32)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[glm5-spec] draft head TRIMMED to 32 rows (FR-Spec d2t engaged)
+gate 7 PASS full-perm trim: 133 drafts identical to untrimmed, tape identical, acceptance 0/133
+gate 7 PASS trim-on accept-j spot check (j=2): 12 continue steps bit-identical
+[glm5-spec] draft head TRIMMED to 32 rows (FR-Spec d2t engaged)
+[glm5-spec] d2t REMAP SKIPPED — red-arm instrument, drafts are rank ids
+gate 7 RED bites: 133/133 drafts diverge with the remap skipped (acceptance 0/133 vs remapped 0/133); tape stayed identical — exactly the silent defect class this arm makes loud
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[frspec-trim] self-trimmed head: 16 rows of main output.weight (F32)
+[frspec-trim] per-head trim: 0 extra chain head(s) gathered from their own blocks
+[glm5-spec] draft head TRIMMED to 16 rows (FR-Spec d2t engaged)
+gate 7 PASS partial trim (16/32 rows): tape identical, acceptance 0/133 (fixture plumbing receipt; the real acceptance-at-k A/B is the real-artifact + SXC-ranks cell)
+ok
+test gpu_pool_keys_finalized_past_j_mutation_bites ... [moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+gate 4 RED bites: layer 1: DSA k-pool selection failed: resident k-pool key plane claims 8 finished pools but the cache holds only 6 complete pools before this call (25 rows / pool 4) — a rewind reduced the latent length without clamping index_pools_ready
+ok
+test gpu_spec_vs_plain_greedy_tape_byte_identity_k1_to_7 ... [moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+gate 5 PASS K=1 natural drafter: tape identical, 0/19 accepted
+gate 5 PASS K=2 natural drafter: tape identical, 0/38 accepted
+gate 5 PASS K=3 natural drafter: tape identical, 0/57 accepted
+gate 5 PASS K=4 natural drafter: tape identical, 0/76 accepted
+gate 5 PASS K=5 natural drafter: tape identical, 0/95 accepted
+gate 5 PASS K=6 natural drafter: tape identical, 0/114 accepted
+gate 5 PASS K=7 natural drafter: tape identical, 0/133 accepted
+gate 5 PASS K=3 forced-accept: tape identical, 15/15 accepted
+gate 5 PASS K=7 forced-accept: tape identical, 17/21 accepted
+gate 5 PASS K=7 forced-rejection sweep: tape identical, 14/42 accepted
+ok
+test gpu_stale_kda_state_mutation_bites ... [moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+gate 3 RED bites: 383 differing logits across the continuation
+ok
+test gpu_verify_batch_flag_ab_bitwise ... [moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+gate 1b PASS batched=true: rows + rollback bit-identical
+gate 1b PASS batched=false: rows + rollback bit-identical
+ok
+test gpu_verify_rows_match_plain_decode_rows_bitwise ... [moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+gate 1 PASS: 8 verify rows bit-identical to plain decode (n_vocab=32)
+ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.14s
+

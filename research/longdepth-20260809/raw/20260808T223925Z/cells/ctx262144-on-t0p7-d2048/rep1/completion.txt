@@ -1,0 +1,102 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;color:#1a1a1a;background:#f5f7fa;display:flex;flex-direction:column;min-height:100vh}
+a{color:#0b5cff;text-decoration:none}
+a:focus,a:hover{text-decoration:underline}
+header{position:sticky;top:0;z-index:100;background:#0f172a;color:#fff;padding:0.75rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+header h1{font-size:1.25rem;font-weight:700;letter-spacing:0.02em}
+header .search{display:flex;align-items:center;gap:0.5rem}
+header input[type="search"]{padding:0.45rem 0.6rem;border-radius:4px;border:1px solid #334155;background:#1e293b;color:#f1f5f9;min-width:220px}
+header button{background:#0b5cff;color:#fff;border:none;padding:0.45rem 0.7rem;border-radius:4px;cursor:pointer;font-weight:600}
+header button:focus{outline:2px solid #93c5fd;outline-offset:2px}
+.layout{display:flex;flex:1}
+.sidebar{width:260px;background:#fff;border-right:1px solid #e2e8f0;padding:1rem;position:sticky;top:56px;height:calc(100vh - 56px);overflow:auto}
+.sidebar nav ul{list-style:none}
+.sidebar nav li{margin:0.25rem 0}
+.sidebar nav a{display:block;padding:0.35rem 0.5rem;border-radius:4px;color:#334155}
+.sidebar nav a:focus,.sidebar nav a:hover{background:#eef2ff;text-decoration:none}
+.sidebar nav a.active{background:#e0e7ff;color:#1e40af;font-weight:600}
+main{flex:1;padding:1.5rem;max-width:1200px}
+section{margin-bottom:2.5rem;padding:1.25rem;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.03)}
+section h2{font-size:1.15rem;margin-bottom:0.5rem;color:#0f172a}
+section p{margin:0.35rem 0;color:#334155}
+section dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.5rem 1rem;margin:0.75rem 0}
+section dt{font-weight:600;color:#0f172a}
+section dd{color:#475569}
+section table{width:100%;border-collapse:collapse;margin:0.75rem 0;font-size:0.95rem}
+section table caption{font-weight:600;text-align:left;margin-bottom:0.4rem}
+section th,section td{border:1px solid #cbd5e1;padding:0.4rem 0.6rem;text-align:left}
+section th{background:#f8fafc;font-weight:600}
+section tr:nth-child(even){background:#f8fafc}
+section pre{background:#0f172a;color:#e2e8f0;padding:0.75rem;border-radius:6px;overflow:auto;font-size:0.9rem;line-height:1.4}
+section .actions{display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap}
+section button{padding:0.45rem 0.75rem;border:none;border-radius:4px;cursor:pointer;font-weight:600;background:#0f172a;color:#fff}
+section button:focus{outline:2px solid #0b5cff;outline-offset:2px}
+section button.secondary{background:#fff;color:#0f172a;border:1px solid #cbd5e1}
+.status{padding:0.5rem 0.75rem;border-radius:6px;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;margin-bottom:1rem;display:inline-flex;align-items:center;gap:0.5rem}
+.status::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981}
+.toast{position:fixed;bottom:1rem;right:1rem;background:#0f172a;color:#fff;padding:0.6rem 0.9rem;border-radius:6px;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+.appendix table{font-size:0.9rem}
+.appendix th{background:#f1f5f9}
+@media (max-width:800px){
+  .layout{flex-direction:column}
+  .sidebar{width:100%;height:auto;position:static;border-right:none;border-bottom:1px solid #e2e8f0}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Atlas Operations Manual</h1>
+<div class="search">
+<input type="search" id="search" placeholder="Search sections..." aria-label="Search sections">
+<button id="clearSearch">Clear</button>
+</div>
+<div class="status" id="systemStatus">System nominal</div>
+</header>
+<div class="layout">
+<aside class="sidebar" aria-label="Section navigation">
+<nav>
+<ul id="toc"></ul>
+</nav>
+</aside>
+<main id="content">
+<section id="s1">
+<h2>1. Introduction</h2>
+<p>This manual describes operational procedures for the Atlas platform. It is intended for engineers, operators, and auditors who require precise guidance.</p>
+<p>All numbered sections must be reviewed in order. Deviations require documented approval from the operations lead.</p>
+<dl>
+<dt>Scope</dt><dd>Core platform operations and maintenance</dd>
+<dt導演</dt><dd>Operations Director</dd>
+<dt>Revision</dt><dd>2025-06-01</dd>
+<dt>Classification</dt><dd>Internal Use</dd>
+</dl>
+<table>
+<caption>Revision history</caption>
+<thead><tr><th>Rev</th><th>Date</th><th>Author</th><th>Notes</th><th>Approved</th><th>Pages</th></tr></thead>
+<tbody>
+<tr><td>1.0</td><td>2025-06-01</td><td>A. Smith</td><td>Initial release</td><td>Yes</td><td>400</td></tr>
+<tr><td>1.1</td><td>2025-07-15</td><td>B. Jones</td><td>Clarified safety</td><td>Yes</td><td>405</td></tr>
+<tr><td>1.2</td><td>2025-08-20</td><td>C. Lee</td><td>Updated commands</td><td>Pending</td><td>410</td></tr>
+<tr><td>1.3</td><td>2025-09-10</td><td>D. Patel</td><td>Appendix added</td><td>Pending</td><td>420</td></tr>
+<tr><td>1.4</td><td>2025-10-01</td><td>E. Kim</td><td>Formatting</td><td>Pending</td><td>430</td></tr>
+<tr><td>1.5</td><td>2025-10-30</td><td>F. Garcia</td><td>Review complete</td><td>Pending</td><td>440</td></tr>
+</tbody>
+</table>
+<pre>atlas intro --read --verbose</pre>
+<div class="actions">
+<button data-action="ack">Acknowledge</button>
+<button class="secondary" data-action="print">Print Section</button>
+</div>
+</section>
+<section id="s2">
+<h2>2. Purpose</h2>
+<p>The Atlas platform centralizes telemetry, workflow orchestration, and compliance reporting. This manual ensures consistent execution across sites.</p>
+<p>Readers should verify they are using the correct edition before applying procedures.</p>
+<

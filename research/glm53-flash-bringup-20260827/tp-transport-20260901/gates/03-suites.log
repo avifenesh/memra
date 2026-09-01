@@ -1,0 +1,42 @@
+warning: memra-engine@0.121.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.121.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.121.0 (/home/avifenesh/projects/wt-glm5-tp-transport/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 28.72s
+     Running tests/glm5_ep_diet_doors_gpu.rs (target/release/deps/glm5_ep_diet_doors_gpu-6122265b803855f6)
+
+running 3 tests
+test gpu_diet_compact_scatter_matches_the_host_fma_chain_bitwise ... ok
+test gpu_grouped_prime_split_matches_plain_rows_bitwise_and_combine_in_band ... [moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=128 out_f=192 n_active=8 max_m=4
+ok
+test gpu_htod_f32_into_at_lands_at_offset_and_fails_closed ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running tests/glm5_tparallel_verify_gpu.rs (target/release/deps/glm5_tparallel_verify_gpu-d5194efea06a2689)
+
+running 9 tests
+test gpu_accept_j_then_continue_is_byte_identical_for_every_j ... [moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=128 out_f=64 n_active=4 max_m=14
+ok
+test gpu_batched_walk_sees_corrupted_conv_ring ... ok
+test gpu_disabled_rollback_breaks_the_tape ... ok
+test gpu_frspec_trim_equivalence_partial_and_skipped_remap_red ... ok
+test gpu_pool_keys_finalized_past_j_mutation_bites ... ok
+test gpu_spec_vs_plain_greedy_tape_byte_identity_k1_to_7 ... ok
+test gpu_stale_kda_state_mutation_bites ... ok
+test gpu_verify_batch_flag_ab_bitwise ... ok
+test gpu_verify_rows_match_plain_decode_rows_bitwise ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.73s
+
+     Running tests/hyper_connections_gpu.rs (target/release/deps/hyper_connections_gpu-b13f36171e33228c)
+
+running 6 tests
+test a_missing_hc_tensor_is_refused_by_name ... ok
+test hyper_forward_last_matches_the_reference_last_row ... ok
+test hyper_prefill_logits_match_the_reference ... ok
+test hyper_prime_then_decode_matches_a_full_recompute ... ok
+test hyper_two_chunk_prime_then_decode_matches_a_full_recompute ... ok
+test zeroing_an_hc_scale_breaks_the_comparison ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.65s
+

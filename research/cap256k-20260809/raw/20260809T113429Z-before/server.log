@@ -1,0 +1,53 @@
+[server] starting; models config = [("cap", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "cap" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] cap: regime draft attached (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "cap": 33 layers, eos=248046
+[worker] cap: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] cap: decode chunk cap 16 (exact-16 tier)
+[server] worker ready; serving models: ["cap"]
+[server] listening on http://127.0.0.1:8187
+[meter] admit id=chatcmpl-bb5897fab77ef8418196d2b6c4d22dd1 tenant=default lane=interactive model="cap"
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=59 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=59 burst=12/12 cum=12/12=1.000
+[meter] admit id=chatcmpl-6e4e2ebc909a104a78ed1cdfda980ac0 tenant=default lane=interactive model="cap"
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 59; 1 parked, 58 prompt tokens; model cap)
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "cap": 4899MB (admission gate = 2x)
+[spec-acc] ctx=58 burst=12/12 cum=12/12=1.000
+[meter] admit id=chatcmpl-839ddcdf4fcc934696beb7b3a49d09f9 tenant=default lane=interactive model="cap"
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 59; 2 parked, 58 prompt tokens; model cap)
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=58 burst=12/12 cum=12/12=1.000
+[meter] admit id=chatcmpl-2c06e95710c4851922660d46026b727f tenant=default lane=interactive model="cap"
+[meter] admit id=chatcmpl-9963b58624307e54e94170ee43eff223 tenant=default lane=interactive model="cap"
+[meter] admit id=chatcmpl-a9dfb3e8912192ac00b483df64f04c26 tenant=default lane=interactive model="cap"
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 58; 2 parked, 58 prompt tokens; model cap)
+[meter] admit id=chatcmpl-5cf15d83c956849d3cda055a24b6daea tenant=default lane=interactive model="cap"
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 1 active, effective free 6074MB (driver + 40MB pool-cached) < cost 4899MB + reserve 1611MB — queueing (FIFO) [pool res 18354MB used 18315MB; parked spec sessions 2; plain reuse 0; queue 1]
+[admit-oom] VRAM defer: 1 active, effective free 6020MB (driver + 86MB pool-cached) < cost 4899MB + reserve 1611MB — queueing (FIFO) [pool res 18455MB used 18369MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-acc] ctx=59 burst=25/27 cum=25/27=0.926
+[admit-oom] VRAM defer: 1 active, effective free 6020MB (driver + 86MB pool-cached) < cost 4899MB + reserve 1611MB — queueing (FIFO) [pool res 18455MB used 18369MB; parked spec sessions 2; plain reuse 0; queue 2]
+[spec-acc] ctx=94 burst=20/24 cum=45/51=0.882
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 58; 2 parked, 58 prompt tokens; model cap)
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] spec-affinity: declined (history diverged at 6 of checkpoint 58; 2 parked, 58 prompt tokens; model cap)
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[admit-oom] VRAM defer: 2 active, effective free 6005MB (driver + 138MB pool-cached) < cost 4899MB + reserve 1611MB — queueing (FIFO) [pool res 18522MB used 18384MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-acc] ctx=58 burst=22/27 cum=22/27=0.815
+[spec-acc] ctx=58 burst=22/27 cum=22/27=0.815
+[admit-oom] VRAM defer: 2 active, effective free 5897MB (driver + 97MB pool-cached) < cost 4899MB + reserve 1611MB — queueing (FIFO) [pool res 18589MB used 18492MB; parked spec sessions 2; plain reuse 0; queue 0]
+[spec-acc] ctx=90 burst=23/27 cum=45/54=0.833
+[spec-acc] ctx=90 burst=22/30 cum=44/57=0.772
+[worker] spec-affinity: declined (history diverged at 8 of checkpoint 58; 2 parked, 58 prompt tokens; model cap)
+[spec-k] model="cap" tenant="cap256k" K=3 source=cold-short prompt=58 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=58 burst=22/27 cum=22/27=0.815
+[spec-acc] ctx=90 burst=22/33 cum=44/60=0.733
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

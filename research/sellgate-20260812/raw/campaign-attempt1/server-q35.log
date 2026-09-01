@@ -1,0 +1,93 @@
+[server] starting; models config = [("q35", "/opt/scratch/nvme/cx-percard/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q35" <- /opt/scratch/nvme/cx-percard/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.88GB (expert budget 96.29GB) -> RESIDENT
+[worker]   loaded "q35": 41 layers, eos=248046
+[worker] q35: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q35: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 4295MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "q35": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q35"]
+[server] listening on http://127.0.0.1:18435
+[meter] admit id=cmpl-c7cc0792ddaf59315812caadcf627645 tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4984 path=plain = 10208 B/token x ctx + 0MB fixed = 51MB
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q35" 129MB (observed 179MB at ctx 4928 path=plain)
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 111.0MB / 4295MB, model q35, ns "cx-sellgate-q35-exact-r1")
+[meter] admit id=cmpl-fcb220fd4ae9affac7c3ea54d4f02c01 tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4984 path=plain = 10208 B/token x ctx + 129MB fixed = 180MB
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=4374 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (lcp-split): 4374 tokens, 106.5MB (resident 217.4MB / 4295MB, model q35, ns "cx-sellgate-q35-exact-r1")
+[meter] admit id=cmpl-5446441a0e8a54c459d123f60acfc350 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4374 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r1" K=0 source=eligibility-fallback prompt=4860 cached=4374 lcp=4374 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-bc066dfb19e118ed0cde618fadd513be tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-58e2dc792dd9541c3a2e8a1a418f39b9 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-fa08598061d10d6d93a5517c0a273322 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-aa1f913b9dbaa5a63c954b17c20ba9f7 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-d37ca8e68e23d7464b4cbbd3db3929c2 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r1" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r1" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-0b9fdaad46c8d2b9808a183f15d1118b tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 328.4MB / 4295MB, model q35, ns "cx-sellgate-q35-exact-r2")
+[meter] admit id=cmpl-6572d4f6fd12d5f29cbf8f2f142a9990 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=4374 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (lcp-split): 4374 tokens, 106.5MB (resident 434.8MB / 4295MB, model q35, ns "cx-sellgate-q35-exact-r2")
+[meter] admit id=cmpl-f2faaa1c867dfca1a2edf7c5b7ec726d tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4374 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r2" K=0 source=eligibility-fallback prompt=4860 cached=4374 lcp=4374 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-afe6eaeaeddad05b115854b66f5534e2 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c62441905a96d882d9dd80d5e1929198 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-bb1c23bb02ff8245844bb6d3a5112bf8 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-aceb6388450ca4787898525676abfe16 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-f3954e1175903148dc442ec0c9a2940e tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r2" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r2" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-453ec8a72253079a44382ac102ed3b5b tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 545.8MB / 4295MB, model q35, ns "cx-sellgate-q35-exact-r3")
+[meter] admit id=cmpl-90fb47be4e2111c1b2e0478e953e7449 tenant=default lane=interactive model="q35"
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=4374 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (lcp-split): 4374 tokens, 106.5MB (resident 652.3MB / 4295MB, model q35, ns "cx-sellgate-q35-exact-r3")
+[meter] admit id=cmpl-eb87996fc1b8d648a18ccbd15fdcc142 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4374 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r3" K=0 source=eligibility-fallback prompt=4860 cached=4374 lcp=4374 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-cfa0728bc491c07281d6dcc12f0552a7 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-780330b96928a0a466683c07bce79f03 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-a700af3003f30609789c8f9f9f94b183 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-4559d607e96b5e17e7ea795df5a5fd62 tenant=default lane=interactive model="q35"
+[meter] admit id=cmpl-2fd4225e10c5db56ed7e8d3bd9740962 tenant=default lane=interactive model="q35"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r3" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q35)
+[spec-k] model="q35" tenant="cx-sellgate-q35-exact-r3" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

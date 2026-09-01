@@ -1,0 +1,55 @@
+INFO:gguf-dump:* Loading: /tmp/cx-fencealias-qwen35-sparse.gguf
+* File is LITTLE endian, script is running on a LITTLE endian host.
+* Dumping 52 key/value pair(s)
+      1: UINT32     |        1 | GGUF.version = 3
+      2: UINT64     |        1 | GGUF.tensor_count = 851
+      3: UINT64     |        1 | GGUF.kv_count = 49
+      4: STRING     |        1 | general.architecture = 'qwen35'
+      5: STRING     |        1 | general.type = 'model'
+      6: INT32      |        1 | general.sampling.top_k = 20
+      7: FLOAT32    |        1 | general.sampling.top_p = 0.949999988079071
+      8: FLOAT32    |        1 | general.sampling.temp = 0.6000000238418579
+      9: STRING     |        1 | general.name = 'Qwen3.5-27B'
+     10: STRING     |        1 | general.basename = 'Qwen3.5-27B'
+     11: STRING     |        1 | general.quantized_by = 'Unsloth'
+     12: STRING     |        1 | general.size_label = '27B'
+     13: STRING     |        1 | general.license = 'apache-2.0'
+     14: STRING     |        1 | general.license.link = 'https://huggingface.co/Qwen/Qwen3.5-27B/blob/main/LICENSE'
+     15: STRING     |        1 | general.repo_url = 'https://huggingface.co/unsloth'
+     16: UINT32     |        1 | general.base_model.count = 1
+     17: STRING     |        1 | general.base_model.0.name = 'Qwen3.5 27B'
+     18: STRING     |        1 | general.base_model.0.organization = 'Qwen'
+     19: STRING     |        1 | general.base_model.0.repo_url = 'https://huggingface.co/Qwen/Qwen3.5-27B'
+     20: [STRING]   |        3 | general.tags = ['qwen3_5_moe', 'unsloth', 'image-text-to-text']
+     21: UINT32     |        1 | qwen35.block_count = 64
+     22: UINT32     |        1 | qwen35.context_length = 262144
+     23: UINT32     |        1 | qwen35.embedding_length = 5120
+     24: UINT32     |        1 | qwen35.feed_forward_length = 17408
+     25: UINT32     |        1 | qwen35.attention.head_count = 24
+     26: UINT32     |        1 | qwen35.attention.head_count_kv = 4
+     27: [INT32]    |        4 | qwen35.rope.dimension_sections = [11, 11, 10, 0]
+     28: FLOAT32    |        1 | qwen35.rope.freq_base = 10000000.0
+     29: FLOAT32    |        1 | qwen35.attention.layer_norm_rms_epsilon = 9.999999974752427e-07
+     30: UINT32     |        1 | qwen35.attention.key_length = 256
+     31: UINT32     |        1 | qwen35.attention.value_length = 256
+     32: UINT32     |        1 | qwen35.ssm.conv_kernel = 4
+     33: UINT32     |        1 | qwen35.ssm.state_size = 128
+     34: UINT32     |        1 | qwen35.ssm.group_count = 16
+     35: UINT32     |        1 | qwen35.ssm.time_step_rank = 48
+     36: UINT32     |        1 | qwen35.ssm.inner_size = 6144
+     37: UINT32     |        1 | qwen35.full_attention_interval = 4
+     38: UINT32     |        1 | qwen35.rope.dimension_count = 64
+     39: STRING     |        1 | tokenizer.ggml.model = 'gpt2'
+     40: STRING     |        1 | tokenizer.ggml.pre = 'qwen35'
+     41: [STRING]   |   248320 | tokenizer.ggml.tokens = ['!', '"', '#', '$', '%', '&', ...]
+     42: [INT32]    |   248320 | tokenizer.ggml.token_type = [1, 1, 1, 1, 1, 1, ...]
+     43: [STRING]   |   247587 | tokenizer.ggml.merges = ['Ġ Ġ', 'ĠĠ ĠĠ', 'i n', 'Ġ t', 'ĠĠĠĠ ĠĠĠĠ', 'e r', ...]
+     44: UINT32     |        1 | tokenizer.ggml.eos_token_id = 248046
+     45: UINT32     |        1 | tokenizer.ggml.padding_token_id = 248055
+     46: STRING     |        1 | tokenizer.chat_template = '{%- set image_count = namespace(value=0) %}\n{%- set video...'
+     47: UINT32     |        1 | general.quantization_version = 2
+     48: UINT32     |        1 | general.file_type = 15
+     49: STRING     |        1 | quantize.imatrix.file = 'Qwen3.5-27B-GGUF/imatrix_unsloth.gguf'
+     50: STRING     |        1 | quantize.imatrix.dataset = 'unsloth_calibration_Qwen3.5-27B.txt'
+     51: UINT32     |        1 | quantize.imatrix.entries_count = 496
+     52: UINT32     |        1 | quantize.imatrix.chunks_count = 80

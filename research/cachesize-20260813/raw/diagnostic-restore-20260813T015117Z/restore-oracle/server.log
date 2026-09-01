@@ -1,0 +1,388 @@
+[server] starting; models config = [("q27", "/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27" <- /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[worker]   loaded "q27": 65 layers, eos=248046
+[worker] q27: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q27: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 8590MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "q27": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q27"]
+[server] listening on http://127.0.0.1:18427
+[meter] admit id=cmpl-aa30096013dc010ea3cbeb41b9757a72 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4925 path=plain = 31552 B/token x ctx + 0MB fixed = 155MB
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q27" 308MB (observed 462MB at ctx 4869 path=plain)
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 301.2MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-0")
+[meter] admit id=cmpl-371ec0525232d610d9f5c455adadedb9 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4925 path=plain = 31552 B/token x ctx + 308MB fixed = 463MB
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 602.4MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-1")
+[meter] admit id=cmpl-f17ac54e5a788c74ab83591483aeb121 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 903.6MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-2")
+[meter] admit id=cmpl-394b6ab71aff619260117409015e60a6 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-3" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1204.9MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-3")
+[meter] admit id=cmpl-84dab7b53f70452b7fa1a39b721eaf07 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-4" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1506.1MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-4")
+[meter] admit id=cmpl-ab91ad252e12f93e08b7a4e41226ac6a tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-5" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1807.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-5")
+[meter] admit id=cmpl-f83842e1ad01caa540fece000a4974a0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-6" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2108.5MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-6")
+[meter] admit id=cmpl-696663a1a5fe6dcb74e554aa5575a409 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-7" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2409.7MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-7")
+[meter] admit id=cmpl-2707fa590079150c2aad7c9b33479743 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-8" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2710.9MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-8")
+[meter] admit id=cmpl-acc35aa6e6d8292b756a60822aa9f6c6 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-9" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3012.2MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-9")
+[meter] admit id=cmpl-f5677ee3f8b4c6283ab7d34deb115b64 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-10" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3313.4MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-10")
+[meter] admit id=cmpl-a17f59f885e5883b42c921e291192a57 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-11" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3614.6MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-11")
+[meter] admit id=cmpl-636efe7f1ad7e926a66fc8fbb0a05e87 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-12" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3915.8MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-12")
+[meter] admit id=cmpl-f3c7dac7e9568d27fbe9284868184308 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-13" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4217.0MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-13")
+[meter] admit id=cmpl-edad5d632fe757b11ab7fdab2a13164c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-14" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-14")
+[meter] admit id=cmpl-ecbcf917255d4f39dee37f36dfb8c614 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-15" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4819.5MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-15")
+[meter] admit id=cmpl-72b7af13866b5826865df45d2898903e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-16" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 5120.7MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-16")
+[meter] admit id=cmpl-2780e19ce9497d3902c479f7ea6eb97b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-17" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 5421.9MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-17")
+[meter] admit id=cmpl-4ab42f7b82172f1196be88f86e08088f tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-18" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 5723.1MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-18")
+[meter] admit id=cmpl-7dd9eceb13b9f121a206cfb4bdb0c2e4 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-19" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 6024.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-19")
+[meter] admit id=cmpl-65a70c8a53574e42824f167ada2a498d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-20" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 6325.5MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-20")
+[meter] admit id=cmpl-4c7879733c48ab776e4fecd1e2611cc0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-21" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 6626.7MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-21")
+[meter] admit id=cmpl-313a56193522184bb72872dd01bba1bd tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-22" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 6928.0MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-22")
+[meter] admit id=cmpl-f2f6a7472322a149e2d720efe889198b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-23" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 7229.2MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-23")
+[meter] admit id=cmpl-ee6c2cb9abe60c8fd1bdf74f3e76731d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-24" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 7530.4MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-24")
+[meter] admit id=cmpl-0661ed85801c41de2d643f850b1b5328 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-25" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 7831.6MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-25")
+[meter] admit id=cmpl-72895e728a2f034f415cdc9d71178d0f tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-26" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8132.8MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-26")
+[meter] admit id=cmpl-7e19a0872febaa0bc05fb2e6beb67a04 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-27" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8434.0MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-27")
+[meter] admit id=cmpl-a0be58f9a07108096e5cd6e7a0f3deca tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-28" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-28")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-0")
+[meter] admit id=cmpl-355ef7a2c630e5427b8c8cb57ebb4242 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-29" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-29")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-1")
+[meter] admit id=cmpl-1e6882c242e99c59ccf4ea84442ffe64 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-30" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-30")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-2")
+[meter] admit id=cmpl-5dfae7308e6fef028402064bfbabb44e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-31" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-31")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-3")
+[meter] admit id=cmpl-f3db6dc662110025d08fde2a3894b2c0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-32" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-32")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-4")
+[meter] admit id=cmpl-0ead105e598aa96b7f652e2ba87ad1d9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-33" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-33")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-5")
+[meter] admit id=cmpl-e4d0601bf2ea3d109b0bb01dc1caa398 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-34" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-34")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-6")
+[meter] admit id=cmpl-b4bd2e0aec0684fac842cb04d66d18a6 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-35" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-35")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-7")
+[meter] admit id=cmpl-e090be33e5530f7b8a303d6c21c0a79d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-36" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-36")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-8")
+[meter] admit id=cmpl-ce7587bca7aec4ae7f3578f693a31d0e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-37" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-37")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-9")
+[meter] admit id=cmpl-4ca1bcf24ef8d3952ce147bd9186a774 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-38" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-38")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-10")
+[meter] admit id=cmpl-58bd79385edbc0a613ef21d9b7ed5c59 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-39" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-39")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-11")
+[meter] admit id=cmpl-8c1053cc85c015eba4cb9bd7dac51de9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-40" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-40")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-12")
+[meter] admit id=cmpl-2606c07483e2da5ac09c5bfaad6d9172 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-41" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-41")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-13")
+[meter] admit id=cmpl-b18c9a661afd75065201a61729a98310 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-42" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-42")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-14")
+[meter] admit id=cmpl-bd9c3766b4bbc68ef26d9e4a3ab82da9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-43" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-43")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-15")
+[meter] admit id=cmpl-366527bf9ce0cd0e5e40a13470491af1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-44" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-44")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-16")
+[meter] admit id=cmpl-746d1a25ddace11f7d41c41617752a5d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-45" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-45")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-17")
+[meter] admit id=cmpl-16d07098dc392fd36a607cf2b1e25325 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-46" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-46")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-18")
+[meter] admit id=cmpl-c1c8311c24f6493f4d6a62c52a5ff246 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-47" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-47")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-19")
+[meter] admit id=cmpl-1e604ddc0e3e1b56ce9270dc1d902389 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-48" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-48")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-20")
+[meter] admit id=cmpl-ceea2796bf3adc49a9f884c7d4d6c4de tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-49" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-49")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-21")
+[meter] admit id=cmpl-79f1435bc3915708e7b839c37461ccfc tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-50" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-50")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-22")
+[meter] admit id=cmpl-75d8ae0a2a06dead5141e7c1f80b7ee4 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-51" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-51")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-23")
+[meter] admit id=cmpl-2391dab74e2423ab7daa7dc9ef3bb1c4 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-52" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-52")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-24")
+[meter] admit id=cmpl-4cfccbe035689c07506dc2f4e9978fcf tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-53" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-53")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-25")
+[meter] admit id=cmpl-68d2095931c9365be3ced1061f48f671 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-54" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-54")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-26")
+[meter] admit id=cmpl-de078250db53ccaf220f7eae9ca85d9a tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-55" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-55")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-27")
+[meter] admit id=cmpl-6ebee0864b6c677f4bec84820a2102b1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-56" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-56")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-28")
+[meter] admit id=cmpl-dfed5737ea31df4900979aff0643b4b1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-57" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-57")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-29")
+[meter] admit id=cmpl-0dcf3d31c279b9d78c0abf78defb91c7 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-58" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-58")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-30")
+[meter] admit id=cmpl-740570d9211af39a50970a75e4711674 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-59" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-59")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-31")
+[meter] admit id=cmpl-9afba1e4731c584caa31e4018dfae68c tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-60" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-60")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-32")
+[meter] admit id=cmpl-5b4969149492e293e0b5f1970b3ff496 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-61" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-61")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-33")
+[meter] admit id=cmpl-cca8c027e1c59f2415bd244c8997c40f tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-62" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-62")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-34")
+[meter] admit id=cmpl-6f556c692f972c2fb484a1dad9a4c977 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-63" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-63")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-35")
+[meter] admit id=cmpl-ff80f7db09fc5fc43d1a9a24ae32c8fe tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-64" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-64")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-36")
+[meter] admit id=cmpl-3c0471b8913e3661a09510022465c11e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-65" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-65")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-37")
+[meter] admit id=cmpl-62699d202d98eda5410c70e3cefe3b29 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-66" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-66")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-38")
+[meter] admit id=cmpl-d8d604398e7757c1cbb520d1537dc7d1 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-67" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-67")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-39")
+[meter] admit id=cmpl-a7c4e694d633b9bb82f946aa64d8735d tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-68" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-68")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-40")
+[meter] admit id=cmpl-e11296c05593e9d7008c9a20a05f2fa9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-69" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-69")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-41")
+[meter] admit id=cmpl-5dc33f615165a64cb8a1f47c3612de0b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-70" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-70")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-42")
+[meter] admit id=cmpl-862ee16c70bfd94889088472c80a8885 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-71" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-71")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-43")
+[meter] admit id=cmpl-60db8aca5e76338f3631204e517cd36e tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-72" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-72")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-44")
+[meter] admit id=cmpl-92bf862f562e74851b3684097cad1234 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-73" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-73")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-45")
+[meter] admit id=cmpl-ed644a6f1a9eb7def433befcc754cf28 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-74" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-74")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-46")
+[meter] admit id=cmpl-8759dc47cdb9128a532e67f3958c2469 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-75" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-75")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-47")
+[meter] admit id=cmpl-a56b3af39f6ca911b3a835f51e19a3d0 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-76" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-76")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-48")
+[meter] admit id=cmpl-84f5aa4f8371863adc9cc69ff697b855 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-77" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-77")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-49")
+[meter] admit id=cmpl-e15b21acc7692fe7b2e66afcf978e654 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-78" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-78")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-50")
+[meter] admit id=cmpl-358bb318a25f4b3c358c7dae9ead8cf9 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-79" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-79")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-51")
+[meter] admit id=cmpl-572f5b6ed598cad45b2c7b594634702f tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-80" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-80")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-52")
+[meter] admit id=cmpl-9527e72a3a5308ffbb37199f01d37733 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-81" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-81")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-53")
+[meter] admit id=cmpl-985ee167da7c46cb7d128ba763330e12 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-82" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-82")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-54")
+[meter] admit id=cmpl-08d248845a128b57482bd0c3a0b5ff12 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-83" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-83")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-55")
+[meter] admit id=cmpl-bcba0cc6c314d3af80c0f93101c59410 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-84" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-84")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-56")
+[meter] admit id=cmpl-d943f404fe52fe986a1aaa2132137058 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-85" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-85")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-57")
+[meter] admit id=cmpl-0d24d61adb52265ef99fc947d56f3129 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-86" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-86")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-58")
+[meter] admit id=cmpl-a125d9d04116ff3d14bb87686d90e50e tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4984 path=plain = 31552 B/token x ctx + 308MB fixed = 465MB
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-87" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-87")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-59")
+[meter] admit id=cmpl-864c527cc789d040abb4f164f2933fdf tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4925 path=plain = 31552 B/token x ctx + 308MB fixed = 463MB
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-88" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-88")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-60")
+[meter] admit id=cmpl-6ec86532e8b7c4cbc336394a5add7b65 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-89" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-89")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-61")
+[meter] admit id=cmpl-76c3cb049d970ca798b3849c493cf7fe tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-90" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-90")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-62")
+[meter] admit id=cmpl-7b861a0f6c9c8822bcaa1acaec7577c5 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-91" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-91")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-63")
+[meter] admit id=cmpl-73af1dd12cf6bef44579df8babbf796b tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-92" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-92")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-64")
+[meter] admit id=cmpl-c6a0558b3d9801ad92a35ca5a47553f4 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-93" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-93")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-65")
+[meter] admit id=cmpl-49bab80d6f40f8ea7e7789f9c28664aa tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-94" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-94")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-66")
+[meter] admit id=cmpl-6931eacee8878f1b89df1d2997692c64 tenant=default lane=interactive model="q27"
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-95" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 8735.3MB / 8590MB, model q27, ns "cx-cachesize-restore-oracle-hot-95")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27, ns "cx-cachesize-restore-oracle-hot-67")
+[meter] admit id=cmpl-b5fa52cb27a4439115cfee3fe5d3bb22 tenant=default lane=interactive model="q27"
+[admission] request cost: model="q27" ctx=4984 path=plain = 31552 B/token x ctx + 308MB fixed = 465MB
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-87" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9ff0c799057adfb9a025408b04bf31fc tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-87" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-49cf6404b4b062723c0658bd2576999c tenant=default lane=interactive model="q27"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27)
+[spec-k] model="q27" tenant="cx-cachesize-restore-oracle-hot-87" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

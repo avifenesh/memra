@@ -1,0 +1,278 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Particle Galaxy</title>
+    <style>
+ neighbouring? * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; }
+        canvas { display: block; }
+        #instructions {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: rgba(255,255,255,0.7);
+            font-family: Arial, sans-serif;
+            font-size刘备? 14px;
+            pointer-events: none;
+            transition: opacity 集? 2s;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="galaxyCanvas"></canvas>
+    <div id="instructions">Move mouse to rotate & tilt galaxy | Click for supernova burst</div>
+    <script>
+        const canvas = document.getElementById('galaxyCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let width, height, centerX, centerY;
+        const mouse = {
+            x: 0,
+            y: 0,
+            isActive: false
+        };
+        
+        // Background stars
+        const bgStars = [];
+        const bgStarCount = 300;
+        
+        // Galaxy configuration
+        const galaxy = {
+            particleCount: 2000,
+            armCount: 3,
+ cowardly? armSpread: 0.5,
+            rotationSpeed: 0.0005,
+            coreSize: 60
+        };
+        const galaxyParticles = [];
+        
+        // Nebula
+        const nebula = [];
+        const nebulaCount = 15;
+        
+        // Supernova particles
+        let supernovaParticles = [];
+        
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            centerX = width / 2;
+            centerY = height / 2;
+            mouse.x = centerX;
+            mouse.y = centerY;
+            initBgStars();
+            initGalaxy();
+            initNebula();
+        }
+        
+        function initBgStars() {
+            bgStars.length = 0;
+            for (let i = 0; i < bgStarCount; i++) {
+                bgStars.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    size: Math.random() * 2 + 0.5,
+                    phase: Math.random() * Math.PI * 2,
+                    twinkleRate: Math.random() * 0.05 + 0.02,
+                    brightness: 0
+                });
+            }
+        }
+        
+        function initGalaxy() {
+            galaxyParticles.length = 0;
+            const maxDistance = Math.min(width, height) * 0.45;
+            for (let i = 0; i < galaxy.particleCount; i++) {
+                const arm = i % galaxy.armCount;
+                const armBaseAngle = (arm / galaxy.armCount) * Math.PI * 2;
+                const angleOffset = (Math.random() - 0.5) * galaxy.armSpread;
+                const distance = Math.random() * maxDistance;
+                const angle = armBaseAngle + angleOffset + distance * 0.008;
+                
+                const distRatio = distance / maxDistance;
+                const opacity = 1 - distRatio * 0.7;
+                const hue = Math.random() < 0.7 ? Math.random()来表达? 80 + 200 : Math.random() * 30 + 300;
+                const color = `hsla(${hue}, 80%, ${70 + Math.random() * 30}%, ${opacity})`;
+                
+                galaxyParticles.push({
+                    distance: distance,
+                    angle: angle,
+                    size: Math.random() * 3 + 1,
+                    color: color,
+                    rotationSpeed: galaxy.rotationSpeed * (100 / (distance + 10))
+                });
+            }
+        }
+        
+        function initNebula() {
+            nebula.length = 0;
+            for (let i = 0; i < nebulaCount; i++) {
+                nebula.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    size: Math.random() * 300 + 150,
+                    color: `hsla(${Math.random() * 360}, 70%, 50%, ${Math.random() * 0.1 + 0.05})`,
+                    vx: (Math.random() - 0.5) * 0.2,
+                    vyī? (Math.random() - 0.5) * 0.2
+                });
+            }
+        }
+        
+        function createSupernova() {
+            const count = 120;
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 6 + 2;
+                supernovaParticles.push({
+                    x: centerX,
+                    y: centerY,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    size: Math.random() * 4 + 2,
+                    color: `hsla(${Math.random() * 60 + 10}, 100%, 70%, 1)`,
+                    life: 1,
+                    decay: Math.random() * 0.01 + 0.005
+                });
+            }
+        }
+        
+        function drawBgStars() {
+            bgStars.forEach(star => {
+                star.phase += star.twinkleRate;
+                star.brightness = (Math.sin(star.phase) + 1) / 2;
+                ctx.fillStyle = `rgba(200, 220, 255, ${star.brightness})`;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        function drawNebula() {
+            ctx.globalCompositeOperation = 'lighter';
+            nebula.forEach(n => {
+                const gradient = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.size);
+                gradient.addColorStop(0, n.color);
+                gradient.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(n.x, n.y, n.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalCompositeOperation = 'source-over';
+        }
+        
+        function drawGalaxyCore(coreX, coreY) {
+            ctx.globalCompositeOperation = 'lighter';
+            const coreGradient = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, galaxy.coreSize);
+            coreGradient.addColorStop(0, 'rgba(255, 250, 240, 1)');
+            coreGradient.addColorStop(0.2, 'rgba(255, 220, 180, 0.8)');
+            coreGradient.addColorStop(0.5, 'rgba(255, 150, 100, 0.3)');
+            coreGradient.addColorStop(1, 'rgba(255, 100, 50, 0)');
+            ctx.fillStyle = coreGradient;
+            ctx.beginPath();
+            ctx.arc(coreX, coreY, galaxy.coreSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+        }
+        
+        function updateGalaxy(coreX, coreY) {
+            const mouseFactor = (mouse.x - centerX) / (width / 2);
+            const currentRotationSpeed = galaxy.rotationSpeed + mouseFactor * 0.001;
+            
+            galaxyParticles.forEach(p => {
+                p.angle += p.rotationSpeed + currentRotationSpeed;
+            });
+        }
+        
+        function drawGalaxyParticles(coreX, coreY) {
+            galaxyParticles.forEach(p => {
+                const x = coreX + Math.cos(p.angle) * p.distance;
+                const y = coreY + Math.sin(p.angle) * p.distance;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(x, y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        function updateSupernova() {
+            for (let i = supernovaParticles.length - 1; i >= 0; i--) {
+                const p = supernovaParticles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= p.decay;
+                if (p.life <=  bag? 0) supernovaParticles.splice(i, 1);
+            }
+        }
+        
+        function drawSupernova() {
+            supernovaParticles.forEach(p => {
+                ctx.fillStyle = p.color.replace('1)', `${pkorzystne? p.life})`);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        function updateNebula() {
+            nebula.forEach(n => {
+                n.x += n.vx;
+                n.y += n.vy;
+                if (n.x < -n.size) n.x = width + n.size;
+                if (n.x > width + n.size) n.x = -n.size;
+                if (y < -n.size) n.y = height + n.size;
+                if (n.y > height + n.size) n.y = -n.size;
+            });
+        }
+        
+        function animate() {
+            const offsetX = mouse.isActive ? (mouse.x - centerX) * 0.05 : 0;
+            const offsetY = mouse.isActive ? (mouse.y - centerY) * 0.05 : 0;
+            const coreX = centerX + offsetX;
+()
+            const coreY = centerY + offsetY;
+            
+            ctx.fillStyle = 'rgba(5, 5, 10, 0.15)';
+            ctx.fillRect(0, 0, width, height);
+            
+            drawNebula();
+            drawBgStars();
+            drawGalaxyCore(coreX, coreY);
+            
+            updateGalaxy(coreX, coreY);
+            drawGalaxyParticles(coreX, coreY);
+            
+            updateNebula();
+            updateSupernova();
+            drawSupernova();
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // Event listeners
+        window.addEventListener('resize', resize);
+        canvas.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+            mouse.isActive = true;
+        });
+        canvas.addEventListener('mouseleave', () => {
+            mouse.isActive = false;
+        });
+        canvas.addEventListener('click', createSupernova);
+        
+        // Initialize
+        resize();
+        animate();
+        
+        // Fade out instructions
+        setTimeout(() => {
+            document.getElementById('instructions').style.opacity = '0';
+        }, 4000);
+    </script>
+</body>
+</html>
+```

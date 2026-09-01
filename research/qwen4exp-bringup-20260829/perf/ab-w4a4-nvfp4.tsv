@@ -1,0 +1,19 @@
+# qwen4exp_real_gate	label=nvfp4	binary_sha256=8dfd98421f72ee66e1a65d5ec4d0296d5cb2437c57dcad3b08f8a1f0cd124fd3	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ab-w4a4: fresh state + probe prefill per arm, 4 warmup steps excluded per arm
+rep	arm	steps	mean_ms	median_ms	tok_per_s
+0	sel_w4a16	40	15.67	15.69	63.83
+0	sel_w4a4	40	15.04	15.03	66.50
+1	sel_w4a16	40	15.65	15.69	63.88
+1	sel_w4a4	40	15.03	15.03	66.52
+2	sel_w4a16	40	15.64	15.66	63.96
+2	sel_w4a4	40	15.04	15.01	66.50
+3	sel_w4a16	40	15.63	15.65	63.98
+3	sel_w4a4	40	15.09	15.08	66.29
+4	sel_w4a16	40	15.67	15.70	63.81
+4	sel_w4a4	40	15.06	15.05	66.40
+# arm sel_w4a16	mean_of_means_ms=15.65	min=15.63	max=15.67	tok_per_s=63.89
+# arm sel_w4a4	mean_of_means_ms=15.05	min=15.03	max=15.09	tok_per_s=66.44
+# rep0_arm_chain_first_divergence	13
+# rep0_sel_w4a16	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,198,760,1156,682,3106,328,248045,1,864,7701,310,381,264,3175,3817,466,10811,13,1061,5686,1040,424,1362,381,449,4621,310
+# rep0_sel_w4a4	248045,248046,198,248045,846,198,248045,248046,198,248045,74455,198,248068,271,248069,271,2064,5686,1040,488,2908,3162,290,264,11088,93530,2319,318,64,11316,8222,1396,6321,314,279,26887,8,7854,539,1010

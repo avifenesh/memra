@@ -1,0 +1,20 @@
+lock_acquired=2026-08-09T01:10:13Z
+a=MEMRA_MMVQ_0_dp4a b=MEMRA_FAST_0_oracle target=td
+compare n=128896 max_abs=3.862281799 max_abs_id=2686 mean_abs=0.557433913 rms_abs=0.710580683 rms_rel=0.172616021
+a raw_argmax=5333 raw_margin=0.682926178 sampled=5333 sample_margin=3.101566315
+a target=5333 raw_logit=34.506168365 raw_rank=1 probability_t0.7=7.262355069112e-1 gumbel_score=51.079517365 gumbel_rank=1
+a sampled_raw_logit=34.506168365 sampled_probability_t0.7=7.262355069112e-1 sampled_gumbel_score=51.079517365
+b raw_argmax=9787 raw_margin=1.757114410 sampled=9787 sample_margin=0.384204865
+b target=5333 raw_logit=34.695209503 raw_rank=2 probability_t0.7=7.514874056140e-2 gumbel_score=51.349575043 gumbel_rank=2
+b sampled_raw_logit=36.452323914 sampled_probability_t0.7=9.248511847690e-1 sampled_gumbel_score=51.733779907
+verdict same_raw_argmax=false same_sample=false target_selected_a=true target_selected_b=false target_logit_delta=-0.189041138
+a=MEMRA_MMVQ_0_dp4a b=MEMRA_FAST_0_oracle target=dd
+compare n=128896 max_abs=3.862281799 max_abs_id=2686 mean_abs=0.557433913 rms_abs=0.710580683 rms_rel=0.172616021
+a raw_argmax=5333 raw_margin=0.682926178 sampled=5333 sample_margin=3.101566315
+a target=9787 raw_logit=33.823242188 raw_rank=2 probability_t0.7=2.737637503911e-1 gumbel_score=47.977951050 gumbel_rank=2
+a sampled_raw_logit=34.506168365 sampled_probability_t0.7=7.262355069112e-1 sampled_gumbel_score=51.079517365
+b raw_argmax=9787 raw_margin=1.757114410 sampled=9787 sample_margin=0.384204865
+b target=9787 raw_logit=36.452323914 raw_rank=1 probability_t0.7=9.248511847690e-1 gumbel_score=51.733779907 gumbel_rank=1
+b sampled_raw_logit=36.452323914 sampled_probability_t0.7=9.248511847690e-1 sampled_gumbel_score=51.733779907
+verdict same_raw_argmax=false same_sample=false target_selected_a=false target_selected_b=true target_logit_delta=-2.629081726
+lock_released=2026-08-09T01:10:14Z

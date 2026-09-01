@@ -1,0 +1,16 @@
+dsv4-dspark-gate | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | mode components | fixtures /home/ubuntu/dsv4-dspark/fixtures-smoke2/dsv4_dspark_fixtures_ref.json | first_pos 32 last_pos 34 | torch accept_mean 3.3333
+npz integrity: 13 arrays sha-verified
+model loaded t=57s
+prefill(32) + ring prime done, argmax == banked token 2581 t=134s
+  [PASS] pos32_main_hidden: max-abs 5.683e-1 vs thr 1.509e0 (smooth 5.590e-2, fork/3 1.509e0, absmax 55.898)
+  [FAIL] pos32_main_x: max-abs 7.559e-3 vs thr 5.476e-3 (smooth 2.895e-4, fork/3 5.476e-3, absmax 0.289)
+  [FAIL] pos32_block0_out: max-abs 1.971e-1 vs thr 1.467e-1 (smooth 6.437e-3, fork/3 1.467e-1, absmax 6.437)
+  [PASS] pos32_block1_out: max-abs 3.391e-1 vs thr 3.396e-1 (smooth 1.499e-2, fork/3 3.396e-1, absmax 14.990)
+  [FAIL] pos32_block2_out: max-abs 3.619e0 vs thr 2.945e0 (smooth 1.999e-1, fork/3 2.945e0, absmax 199.886)
+  [FAIL] pos32_x_collapsed: max-abs 1.079e-1 vs thr 7.834e-2 (smooth 8.502e-3, fork/3 7.834e-2, absmax 8.502)
+  [FAIL] pos32_logits_pre: max-abs 1.977e0 vs thr 9.588e-1 (smooth 2.770e-2, fork/3 9.588e-1, absmax 27.696)
+  [FAIL] pos32_logits_post[..5]: max-abs 1.977e0 vs thr 9.588e-1 (smooth 3.485e-2, fork/3 9.588e-1, absmax 34.848)
+  [PASS] pos32_markov_embed[..5]: max-abs 0.000e0 vs thr 2.141e-3 (smooth 2.141e-3, fork/3 0.000e0, absmax 2.141)
+
+COMPONENTS GATE [FAIL]: arrays 3 PASS / 6 FAIL | id flips in-band 0 (budget 3) | accept rows exact 3/3 | confidence worst 8.066e-2 (thr 5.299e-1) | determinism sha256 784d71459fc0ccdbe084afd8469d3099b01595ddacb337cadaab44ba635c1ceb
+elapsed 166s

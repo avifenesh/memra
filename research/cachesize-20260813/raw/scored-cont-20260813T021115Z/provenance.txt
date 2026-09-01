@@ -1,0 +1,26 @@
+timestamp=2026-08-13T02:13:11Z
+runtime_source=18885ec479d897a3e8c42b0d408a71fa3edaa708
+runtime_tag=v0.81.2
+segment_kind=resume-57-boots
+shape=physical GPU0 only; GPU1 idle; one model resident at a time
+working_set_entries=96
+budgets_mb=1024,4096,8192,16384,32768,49152
+repetitions=5
+odd_repetitions=q27,q35 and ascending budgets
+even_repetitions=q35,q27 and descending budgets
+<private-host-redacted>
+Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+18885ec4 (HEAD, tag: v0.81.2) chore: workspace 0.81.2 (fencehard default-deny wave)
+134030c7 Merge lane/cx-fencehard: default-deny carried-prime arch fence (hermes a534e6). Exhaustive match, no wildcard — a new Arch variant fails compilation until bring-up classifies it; Arch::Other denied. Behavior identical for all current arches (3 dense eligible, 8 MoE denied). cargo 220+85 green; box1 battery ALL GREEN (kernel 100 cells, argmax x2, spec K=1..8 x2, serve-smoke 0 failed incl Q35 c4 20/20, c=64 64/64).
+be105636 data(connect): serve box cut over to v0.81.1 — 20.0s gap, P0 shape + cache verified on public front
+97e7597e fix(server): default-deny carried prime arch fence
+43e2cc87 Merge lane/cx-focusrecon: FOCUS (2608.01847) recon — class (a) quantizer-side only; learned coefficient changes E2M1 code selection at quantization, deployed bytes stay standard NVFP4+E4M3 in current GGUF layout; source-side (pinned BF16 -> scored artifact), NOT post-hoc repack; future-arm/v2 material, arms.lock untouched
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 595.71.05, 97887 MiB
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 595.71.05, 97887 MiB

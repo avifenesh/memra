@@ -1,0 +1,279 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --muted: #5a5a5a;
+  --accent: #0b4f7c;
+  --accent-light: #d6e8f5;
+  --border: #d1d5db;
+  --focus: #ffbf47;
+  --danger: #b00020;
+  --success: #137333;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+}
+a { color: var(--accent); }
+header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.brand {
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: 0.3px;
+}
+.search {
+  flex: 1 1 260px;
+  display: flex;
+  gap: 0.5rem;
+}
+.search input {
+  flex: 1 1 auto;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+}
+.search button {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 1rem;
+  padding: 1rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+}
+.sidebar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  position: sticky;
+  top: 4.5rem;
+  align-self: start;
+  max-height: calc(100vh - 6rem);
+  overflow: auto;
+}
+.sidebar h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+.sidebar nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sidebar nav li {
+  margin: 0.25rem 0;
+}
+.sidebar nav a {
+  display: block;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  text-decoration: none;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+.sidebar nav a:hover, .sidebar nav a:focus {
+  background: var(--accent-light);
+  outline: none;
+}
+.status {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+.status .item {
+  display: flex;
+  flex-direction: column;
+}
+.status .label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.status .value {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+main section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  scroll-margin-top: 5rem;
+}
+h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+p {
+  margin: 0 0 0.6rem;
+}
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+dt {
+  font-weight: 600;
+  color: var(--muted);
+}
+dd {
+  margin: 0;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+th {
+  background: #f8fafc;
+}
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0.75rem;
+  border-radius: 4px;
+  overflow: auto;
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
+}
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+button {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover, button:focus {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+button.danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+.toast {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: #111;
+  color: #fff;
+  padding: 0.6rem 0.9rem;
+  border-radius: 4px;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  left: 1rem;
+  top: 1rem;
+  background: var(--focus);
+  padding: 0.5rem;
+  z-index: 200;
+}
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header>
+  <div class="brand">Atlas Operations Manual</div>
+  <div class="search">
+    <input type="search" id="search" placeholder="Search sections..." aria-label="Search sections">
+    <button id="searchBtn" type="button">Search</button>
+  </div>
+  <div class="actions">
+    <button id="themeBtn" type="button">Toggle high contrast</button>
+    <button id="tocBtn" type="button">Show table of contents</button>
+  </div>
+</header>
+<div class="layout">
+  <aside class="sidebar" id="sidebar" hidden>
+    <h3>Contents</h3>
+    <nav>
+      <ul id="tocList"></ul>
+    </nav>
+  </aside>
+  <div id="main">
+    <div class="status" role="region" aria-label="System status">
+      <div class="item"><span class="label">Sections</span><span class="value">400</span></div>
+      <div class="item"><span class="label">Uptime</span><span class="value">99.97%</span></div>
+      <div class="item"><span class="label">Incidents</span><span class="value">0</span></div>
+      <div class="item"><span class="label">Version</span><span class="value">4.2.1</span></div>
+    </div>
+
+    <section id="s1">
+      <h2>1. System Overview</h2>
+      <p>The Atlas platform provides centralized operations management for distributed teams. It coordinates scheduling, resource allocation, incident response, and reporting through a unified interface.</p>
+      <p>All components communicate over encrypted

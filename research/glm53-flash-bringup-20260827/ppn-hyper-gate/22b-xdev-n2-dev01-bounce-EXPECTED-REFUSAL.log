@@ -1,0 +1,3 @@
+glm5-hyper-ppn-gate config: stages=2 streams=per-stage overlap=1(double-buffered) devices=0,1 splits=default(even) shard=per-stage
+Error: "MEMRA_PP_HOST_BOUNCE=1 requires the primary engine on the last/head stage (primary dev0, placement [0, 1]); otherwise returned logits/hidden state remain peer reads"
+exit=1 (NON-ZERO IS THE EXPECTED RESULT: the primary-on-last-stage guard must fire)

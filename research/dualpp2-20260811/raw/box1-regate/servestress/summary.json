@@ -1,0 +1,66 @@
+{
+  "PASS": true,
+  "admission_thrash_serial_vs_dual": {
+    "admission_session_defers": {
+      "dual": 0,
+      "dual_excess": 0,
+      "serial": 0
+    },
+    "admission_vram_defers": {
+      "dual": 0,
+      "dual_excess": 0,
+      "serial": 0
+    },
+    "step_oom_parks": {
+      "dual": 0,
+      "dual_excess": 0,
+      "serial": 0
+    }
+  },
+  "arms": {
+    "dual": {
+      "PASS": true,
+      "admission_delta": {
+        "admission_session_defers": 0,
+        "admission_vram_defers": 0,
+        "step_oom_parks": 0
+      },
+      "badlog": "",
+      "completed_all": true,
+      "log_clean": true,
+      "worker_alive": true
+    },
+    "serial": {
+      "PASS": true,
+      "admission_delta": {
+        "admission_session_defers": 0,
+        "admission_vram_defers": 0,
+        "step_oom_parks": 0
+      },
+      "badlog": "",
+      "completed_all": true,
+      "log_clean": true,
+      "worker_alive": true
+    },
+    "teeth": {
+      "admission_bound": false,
+      "admission_delta": {
+        "admission_session_defers": 0,
+        "admission_vram_defers": 0,
+        "step_oom_parks": 0
+      },
+      "completed_all": true,
+      "inverted_failed": false,
+      "log_clean": true,
+      "note": "teeth non-binding on 192GB PRO pair at c=64 (defers==0) \u2014 admission math not exercised here; not a lane failure",
+      "worker_alive": true
+    }
+  },
+  "dual_adds_no_thrash": true,
+  "n_clients": 64,
+  "note_reduction": "re-reduced with canary-fixed bad-log grep (mismatches=0 no longer false-matches MISMATCH)",
+  "rig": "box1, 2x RTX PRO 6000 Blackwell Server Edition",
+  "schema": "memra.dualpp2.regate.servestress.v1",
+  "source_commit": "64a869252029610b833e9b469f4708044b558b3e",
+  "verdict": "PASS"
+}

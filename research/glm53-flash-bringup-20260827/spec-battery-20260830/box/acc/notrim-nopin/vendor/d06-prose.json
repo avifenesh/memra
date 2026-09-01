@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me understand the situation. The user is asking me to continue from edits already made on some PDF work \u2014 rendering regenerated work PDFs at 200 DPI, visually inspecting VAT top, bank, and property bands and Income Tax pages, correcting placement defects, copying verified PDFs to specific output paths, and writing a QA report.\n\nThe problem: I don't have any prior context. This appears to be a continuation request, but I have no memory of previous edits, no files, no workspace visible. There's no prior conversation in this thread \u2014 this is the first human turn. The user says \"Continue from the edits already made",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me understand the situation. The user is asking me to continue from edits already made on some PDF work \u2014 rendering regenerated work PDFs at 200 DPI, visually inspecting VAT top, bank, and property bands and Income Tax pages, correcting placement defects, copying verified PDFs to specific output paths, and writing a QA report.\n\nThe problem: I don't have any prior context. This appears to be a continuation request, but I have no memory of previous edits, no files, no workspace visible. There's no prior conversation in this thread \u2014 this is the first human turn. The user says \"Continue from the edits already made"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 131,
+  "completion_tokens": 128,
+  "total_tokens": 259,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 5.831101033,
+  "spec": {
+   "rounds": 52,
+   "drafted": 156,
+   "accepted": 76,
+   "acceptance_rate": 0.48717948717948717
+  }
+ },
+ "id": "chatcmpl-c96e89c656c64f2f85ac324c5ba01d2c",
+ "created": 1788081667,
+ "system_fingerprint": "REDACTED"
+}

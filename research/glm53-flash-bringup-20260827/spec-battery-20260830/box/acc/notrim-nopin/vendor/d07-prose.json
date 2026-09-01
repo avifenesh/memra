@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user wants me to check those node-MainThread processes that are open on specific ports and listening on all interfaces. Let me analyze what's happening here.\n\nThe user seems to be sharing results from a network port scanner or security tool that detected several processes listening on all interfaces (0.0.0.0). Let me check what these processes are:\n\n1. **node-MainThread on :4173** - This is likely a Vite preview server (Vite's default preview port)\n2. **python3 on :4177** - Some Python service\n3. **node-MainThread on :4",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user wants me to check those node-MainThread processes that are open on specific ports and listening on all interfaces. Let me analyze what's happening here.\n\nThe user seems to be sharing results from a network port scanner or security tool that detected several processes listening on all interfaces (0.0.0.0). Let me check what these processes are:\n\n1. **node-MainThread on :4173** - This is likely a Vite preview server (Vite's default preview port)\n2. **python3 on :4177** - Some Python service\n3. **node-MainThread on :4"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 281,
+  "completion_tokens": 128,
+  "total_tokens": 409,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.003355598,
+  "spec": {
+   "rounds": 50,
+   "drafted": 150,
+   "accepted": 79,
+   "acceptance_rate": 0.5266666666666666
+  }
+ },
+ "id": "chatcmpl-72b10681d14175b8983216c21ac482d5",
+ "created": 1788081673,
+ "system_fingerprint": "REDACTED"
+}

@@ -1,0 +1,204 @@
+########## 10-b3-default.log :: (no env) 3 5 8 1 ##########
+glm5-hyper-batch-gate config: B=3 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 3 concurrent sessions, 8 ticks
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdb46402245b927ec
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xbd88d294821c86cc
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x27a41ecc7752fe66
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 13 tokens, fnv1a=0x70e0032c456c15de
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 42 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 13 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 24 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 11-b8-wide.log :: (no env) 8 5 8 1 ##########
+glm5-hyper-batch-gate config: B=8 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 8 concurrent sessions, 8 ticks
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdb46402245b927ec
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xbd88d294821c86cc
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x27a41ecc7752fe66
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xfd2a5a9d856abbbb
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x433ce997ef398142
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xcbe46e3d5270ea46
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xda80126a8e3455d7
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x4af54bda0c605f8e
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 13 tokens, fnv1a=0x70e0032c456c15de
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 132 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=8 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 13 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=8 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 64 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=8 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 12-b2-longer.log :: (no env) 2 12 24 1 ##########
+glm5-hyper-batch-gate config: B=2 P=12(staggered +bi) N=24 stages=1 streams=per-stage shard=per-stage
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 2 concurrent sessions, 24 ticks
+[staggered-batch] greedy tape MATCH: 24 tokens, fnv1a=0x7bad2b52aa705cf3
+[staggered-batch] greedy tape MATCH: 24 tokens, fnv1a=0xeca87feb9075e20a
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 36 tokens, fnv1a=0x39d17bb60567e001
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 73 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=2 P=12(staggered +bi) N=24 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 36 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=2 P=12(staggered +bi) N=24 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 48 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=2 P=12(staggered +bi) N=24 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 13-b3-ppn2.log :: (no env) 3 5 8 2 ##########
+glm5-hyper-batch-gate config: B=3 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 3 concurrent sessions, 8 ticks
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdb46402245b927ec
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xbd88d294821c86cc
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x27a41ecc7752fe66
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 13 tokens, fnv1a=0x70e0032c456c15de
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 42 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 13 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 24 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+exit=0
+########## 14-b3-ppn2-streams0.log :: MEMRA_PP_STREAMS=0 3 5 8 2 ##########
+glm5-hyper-batch-gate config: B=3 P=5(staggered +bi) N=8 stages=2 streams=OFF(same-stream seam) shard=per-stage
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 3 concurrent sessions, 8 ticks
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdb46402245b927ec
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xbd88d294821c86cc
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x27a41ecc7752fe66
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 13 tokens, fnv1a=0x70e0032c456c15de
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 42 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=2 streams=OFF(same-stream seam) shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 13 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=2 streams=OFF(same-stream seam) shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 24 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=2 streams=OFF(same-stream seam) shard=per-stage)
+exit=0
+########## 15-b3-ppn4.log :: (no env) 3 5 8 4 ##########
+glm5-hyper-batch-gate config: B=3 P=5(staggered +bi) N=8 stages=4 streams=per-stage shard=per-stage
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 3 concurrent sessions, 8 ticks
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdb46402245b927ec
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xbd88d294821c86cc
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x27a41ecc7752fe66
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 13 tokens, fnv1a=0x70e0032c456c15de
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 42 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=4 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 13 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=4 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 24 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=4 streams=per-stage shard=per-stage)
+exit=0
+########## 16-b8-ppn2.log :: (no env) 8 5 8 2 ##########
+glm5-hyper-batch-gate config: B=8 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 8 concurrent sessions, 8 ticks
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdb46402245b927ec
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xbd88d294821c86cc
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x27a41ecc7752fe66
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xfd2a5a9d856abbbb
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x433ce997ef398142
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xcbe46e3d5270ea46
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xda80126a8e3455d7
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x4af54bda0c605f8e
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 13 tokens, fnv1a=0x70e0032c456c15de
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 132 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=8 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 13 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=8 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 64 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=8 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+exit=0
+########## 17-b12.log :: (no env) 12 5 8 1 ##########
+glm5-hyper-batch-gate config: B=12 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 12 concurrent sessions, 8 ticks
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdb46402245b927ec
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xbd88d294821c86cc
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x27a41ecc7752fe66
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xfd2a5a9d856abbbb
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x433ce997ef398142
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xcbe46e3d5270ea46
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xda80126a8e3455d7
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x4af54bda0c605f8e
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x167a1e7e55b20ce0
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x92c41dacbda8961b
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdf1cf884e6a3848e
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x896021dbcc5f3b6f
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 13 tokens, fnv1a=0x70e0032c456c15de
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 222 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=12 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 13 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=12 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 96 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=12 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 18-b15-cap.log :: (no env) 15 5 8 1 ##########
+glm5-hyper-batch-gate config: B=15 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 15 concurrent sessions, 8 ticks
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdb46402245b927ec
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xbd88d294821c86cc
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x27a41ecc7752fe66
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xfd2a5a9d856abbbb
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x433ce997ef398142
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xcbe46e3d5270ea46
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xda80126a8e3455d7
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x4af54bda0c605f8e
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x167a1e7e55b20ce0
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x92c41dacbda8961b
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdf1cf884e6a3848e
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x896021dbcc5f3b6f
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xba7c1c05ebe84ba7
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x26ccc3e126755858
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xcc81dc0bc81adf4e
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 13 tokens, fnv1a=0x70e0032c456c15de
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 300 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=15 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 13 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=15 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 120 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=15 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 19-b15-ppn2.log :: (no env) 15 5 8 2 ##########
+glm5-hyper-batch-gate config: B=15 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.72GB (expert budget 22.72GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 15 concurrent sessions, 8 ticks
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdb46402245b927ec
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xbd88d294821c86cc
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x27a41ecc7752fe66
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xfd2a5a9d856abbbb
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x433ce997ef398142
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xcbe46e3d5270ea46
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xda80126a8e3455d7
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x4af54bda0c605f8e
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x167a1e7e55b20ce0
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x92c41dacbda8961b
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xdf1cf884e6a3848e
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x896021dbcc5f3b6f
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xba7c1c05ebe84ba7
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0x26ccc3e126755858
+[staggered-batch] greedy tape MATCH: 8 tokens, fnv1a=0xcc81dc0bc81adf4e
+[phase] arm 2: B=1 through the batched body (one numeric class per width law)
+[b1-class-pin] greedy tape MATCH: 13 tokens, fnv1a=0x70e0032c456c15de
+[phase] arm 3: device-sample greedy batch (the serving epilogue contract)
+glm5-hyper-batch gate PASS [staggered-batch]: 300 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=15 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [b1-class-pin]: 13 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=15 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+glm5-hyper-batch gate PASS [devsample-greedy]: 120 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=15 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+exit=0
+==========================================================
+glm5-hyper-batch-gate matrix: ALL ARMS PASS

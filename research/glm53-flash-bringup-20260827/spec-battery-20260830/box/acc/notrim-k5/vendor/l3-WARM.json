@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what's going on here. The user pasted text that appears to be grep output from their wiki files, and there's a note that the grep output masks their search term \u2014 showing `il` where the actual content has something else. The note says \"file content itself is\" and then cuts off \u2014 wait, actually re-reading: \"Note: grep output masks my search term (shows `il`) \u2014 file content itself is\" \u2014 the sentence is incomplete in the paste, but presumably it means the file contains something like \"hidden-state\" or a term that includes \"il\" (the grep replaced the matched",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what's going on here. The user pasted text that appears to be grep output from their wiki files, and there's a note that the grep output masks their search term \u2014 showing `il` where the actual content has something else. The note says \"file content itself is\" and then cuts off \u2014 wait, actually re-reading: \"Note: grep output masks my search term (shows `il`) \u2014 file content itself is\" \u2014 the sentence is incomplete in the paste, but presumably it means the file contains something like \"hidden-state\" or a term that includes \"il\" (the grep replaced the matched"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 427,
+  "completion_tokens": 128,
+  "total_tokens": 555,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 10.842842148,
+  "spec": {
+   "rounds": 63,
+   "drafted": 315,
+   "accepted": 64,
+   "acceptance_rate": 0.20317460317460317
+  }
+ },
+ "id": "chatcmpl-5a00b713d43ebe6809d8052321e08b96",
+ "created": 1788081383,
+ "system_fingerprint": "REDACTED"
+}

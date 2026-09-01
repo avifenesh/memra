@@ -1,0 +1,13 @@
+warning: memra-engine@0.77.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.77.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.77.0 (/home/avifenesh/projects/wt-cx-peerprobe/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.57s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-48b148447a57e937)
+
+running 4 tests
+test pp::host_bounce_tests::host_bounce_capacity_rejects_invalid_or_overflowing_geometry ... ok
+test pp::host_bounce_tests::step37_geometry_sizes_each_slot_from_the_prime_cap ... ok
+test pp::host_bounce_tests::transport_selection_keeps_peer_default_and_bounces_only_cross_device ... ok
+test pp::host_bounce_tests::corrupted_peer_readback_fails_closed_unless_host_bounce_is_selected ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.00s

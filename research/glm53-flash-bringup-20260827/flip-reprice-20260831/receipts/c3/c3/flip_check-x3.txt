@@ -1,0 +1,111 @@
+{
+ "plain": {
+  "n_boots": 3,
+  "dec_tok_s_median": 35.42261008532362,
+  "dec_boot_medians": [
+   35.438,
+   35.414,
+   35.423
+  ],
+  "spread_abs_tok_s": 0.0238,
+  "spread_rel_pct": 0.0672,
+  "deep_tok_s_median": 30.036811313203124,
+  "pool_ttft_median": 0.3616113238967955,
+  "ttft_04k_median": 0.42174587212502956,
+  "ttft_37k_median": 2.20691098109819,
+  "vendor_tok_s_median": 33.56158191025985,
+  "vendor_excluded": [
+   "ct=35 finish=stop err=None"
+  ],
+  "tok_cyc_median": null,
+  "round_wall_ms": null
+ },
+ "k1": {
+  "n_boots": 3,
+  "dec_tok_s_median": 41.2211611592932,
+  "dec_boot_medians": [
+   41.221,
+   41.222,
+   41.209
+  ],
+  "spread_abs_tok_s": 0.0123,
+  "spread_rel_pct": 0.0299,
+  "deep_tok_s_median": 35.65580584375576,
+  "pool_ttft_median": 1.2815634654834867,
+  "ttft_04k_median": 1.3659802339971066,
+  "ttft_37k_median": 3.7235072338953614,
+  "vendor_tok_s_median": 38.785345895124834,
+  "vendor_excluded": [],
+  "tok_cyc_median": 1.839,
+  "round_wall_ms": 44.62,
+  "gap_vs_plain_tok_s": 5.799,
+  "ratio_vs_plain": 1.1637,
+  "pooled_spread_tok_s": 0.0238,
+  "verdict": "FLIP"
+ },
+ "k2": {
+  "n_boots": 3,
+  "dec_tok_s_median": 44.24524575622878,
+  "dec_boot_medians": [
+   44.247,
+   44.245,
+   44.239
+  ],
+  "spread_abs_tok_s": 0.0085,
+  "spread_rel_pct": 0.0193,
+  "deep_tok_s_median": 39.264136673611105,
+  "pool_ttft_median": 1.222956959507428,
+  "ttft_04k_median": 1.2693269359879196,
+  "ttft_37k_median": 3.7689687369856983,
+  "vendor_tok_s_median": 43.217293817079,
+  "vendor_excluded": [],
+  "tok_cyc_median": 2.458,
+  "round_wall_ms": 55.56,
+  "gap_vs_plain_tok_s": 8.823,
+  "ratio_vs_plain": 1.2491,
+  "pooled_spread_tok_s": 0.0238,
+  "verdict": "FLIP"
+ },
+ "k3": {
+  "n_boots": 3,
+  "dec_tok_s_median": 43.42030245419621,
+  "dec_boot_medians": [
+   43.426,
+   43.42,
+   43.42
+  ],
+  "spread_abs_tok_s": 0.0061,
+  "spread_rel_pct": 0.0141,
+  "deep_tok_s_median": 39.45630292178699,
+  "pool_ttft_median": 1.2868209989974275,
+  "ttft_04k_median": 1.4250184299889952,
+  "ttft_37k_median": 3.9611111420672387,
+  "vendor_tok_s_median": 46.21365294050239,
+  "vendor_excluded": [],
+  "tok_cyc_median": 2.907,
+  "round_wall_ms": 66.95,
+  "gap_vs_plain_tok_s": 7.998,
+  "ratio_vs_plain": 1.2258,
+  "pooled_spread_tok_s": 0.0238,
+  "verdict": "FLIP"
+ },
+ "zctl": {
+  "n_boots": 1,
+  "dec_tok_s_median": 31.89793036484775,
+  "dec_boot_medians": [
+   31.898
+  ],
+  "spread_abs_tok_s": 0.0,
+  "spread_rel_pct": 0.0,
+  "deep_tok_s_median": 26.1865289016612,
+  "pool_ttft_median": 1.6031876910710707,
+  "ttft_04k_median": 1.7757618359755725,
+  "ttft_37k_median": 4.6008612781297415,
+  "vendor_tok_s_median": 30.32754783863332,
+  "vendor_excluded": [],
+  "tok_cyc_median": 2.907,
+  "round_wall_ms": 91.14,
+  "note": "=0 control (old per-row walk): seam receipt only, never enters the flip table; round_wall_ms reads against the flip-battery 91.08 ms @ K=3"
+ }
+}
+X3_SUFFICIENT: no escalation rule fired (spreads receipted above)

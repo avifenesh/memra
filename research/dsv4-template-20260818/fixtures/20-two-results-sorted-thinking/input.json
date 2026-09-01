@@ -1,0 +1,101 @@
+{
+  "turns": [
+    {
+      "role": "system",
+      "content": "Use tools."
+    },
+    {
+      "role": "user",
+      "content": "Weather and calc."
+    },
+    {
+      "role": "assistant",
+      "reasoning": "two calls",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "cA",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"location\": \"Beijing\"}"
+          }
+        },
+        {
+          "id": "cB",
+          "type": "function",
+          "function": {
+            "name": "calculate",
+            "arguments": "{\"expr\": \"2+2\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "cB",
+      "content": "4"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "cA",
+      "content": "sunny"
+    },
+    {
+      "role": "assistant",
+      "reasoning": "done",
+      "content": "Done."
+    }
+  ],
+  "think": "thinking",
+  "reasoning_effort": null,
+  "req_tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a specific location",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "The city name"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "celsius",
+                "fahrenheit"
+              ],
+              "description": "Temperature unit"
+            }
+          },
+          "required": [
+            "location"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "calculate",
+        "description": "Evaluate an arithmetic expression",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "expr": {
+              "type": "string",
+              "description": "The expression"
+            }
+          },
+          "required": [
+            "expr"
+          ]
+        }
+      }
+    }
+  ],
+  "add_generation_prompt": true
+}

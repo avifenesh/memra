@@ -1,0 +1,32 @@
+finish=length content_nonempty=False
+---
+Got it, let's tackle this GitHub bug report step by step. First, I need to start by investigating the issue as described: the JetBrains Marketplace listing for AgniX has a broken docs link (404) and a stale source code repo URL.
+
+First, let's confirm the context: the issue is at https://github.com/agent-sh/agnix/issues/1099, so first I should check the current AgniX repo's marketplace metadata, right? Wait, JetBrains Marketplace listings for plugins are usually configured either in the plugin's build config (like in Gradle for Kotlin plugins, which AgniX is, since it's a JetBrains plugin) or in the marketplace listing settings on the JetBrains Marketplace dashboard, but also the source code link is often pulled from the repo's GitHub metadata, or set in the plugin's descriptor.
+
+First step: Triage the issue first. Let's confirm it's a bug, not a question. The user reported two concrete broken links, so it's a bug, not a question. Next, investigate the root cause:
+
+1. First, check the current AgniX repository's public-facing metadata: what's the default source code link? Wait, the issue says the source code link references a stale repo URL. Let's assume the old repo was maybe `agent-sh/agnix-legacy` or something, and they moved to `agent-sh/agnix`? Wait no, the issue is on the agnix repo, so maybe the plugin's marketplace config still points to an old URL.
+
+2. Check the documentation link: 404 means the docs URL configured in the marketplace listing is either wrong, or the docs were moved. Let's say the old docs were at `https://agent-sh.github.io/agnix-legacy-docs` and they moved to `https://docs.agnix.sh` or the repo's GitHub Pages at `https://agent-sh.github.io/agnix/`.
+
+Next, since this is a code/config fix needed, I should create a feature branch off main, make the changes, then open a PR. Wait, but first, let's outline the investigation steps first, then the fix, then validation.
+
+Wait, also, JetBrains Marketplace plugin metadata is often defined in the `plugin.xml` file, or in the Gradle build script (like `build.gradle.kts`) under the `jetbrains` plugin configuration, where you set `marketplace` properties like `documentationUrl` and `sourceCodeUrl`. Oh right, that's the common place for these links for IntelliJ plugins.
+
+So first, investigation steps I would take:
+1. Reproduce the issue: Navigate to the AgniX listing on the JetBrains Marketplace, click the Documentation link to confirm 404, click Source Code to confirm it redirects to a stale/404 repo URL.
+2. Check the plugin's build configuration: Open `build.gradle.kts` in the AgniX repo, look for the `jetbrains` plugin block where marketplace metadata is set. Confirm that `documentationUrl` and `sourceCodeUrl` are set to stale values.
+3. Check if the docs have a new canonical URL: Confirm the current live docs are hosted at `https://docs.agnix.sh` (or the repo's GitHub Pages URL, e.g., `https://agent-sh.github.io/agnix/`), and the source code canonical URL is `https://github.com/agent-sh/agnix`.
+
+Then, the fix: Update the two URLs in the build config to the correct, live values. Wait, but also, sometimes the marketplace listing can have overrides in the JetBrains Marketplace dashboard, but the source of truth for open source plugins is usually the repo's build config, so fixing it there will propagate on the next plugin release.
+
+Wait, also, need to make sure that the links are correct: no typos, HTTPS, no trailing slashes if needed, etc.
+
+Then, validation: After updating the config, build the plugin locally, check that the generated plugin metadata (in the build output, like `META-INF/plugin.xml` or the marketplace metadata bundle) has the correct URLs. Then, if we push the branch, open a PR, and once merged, the next release to the marketplace will have the fixed links.
+
+Also, need to check if there are any other places where these stale URLs are referenced, like the README.md, the repo's GitHub description, etc., to make sure there's no inconsistency.
+
+Wait, also, the user said to answer/triage if it's a question first: this is definitely a bug report, not a question, so triage is "confirmed bug, reproducible, no additional info needed from reporter".
+
+Then, implement on a branch: create a branch `fix/marketplace-broken-links-1099` off `main`, make the changes, commit, push, open

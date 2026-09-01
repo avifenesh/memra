@@ -1,0 +1,34 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+29.8,1538031,1251,1229.4,1216.0,1184,2464,45.6,qmatvec_expert_q8
+13.1,675517,44,15352.7,14960.0,14720,23808,1782.2,dsv4_hc_sinkhorn_m_kernel
+11.6,600444,556,1079.9,1088.0,1024,1920,52.3,quantize_q8_1
+7.9,408156,439,929.7,928.0,896,1024,21.1,swiglu_preclamped_mul_scaled_f32
+7.1,368286,417,883.2,896.0,832,1152,21.4,axpy_f32
+4.3,224734,80,2809.2,2752.0,2592,4704,238.6,void cutlass::Kernel2<cutlass_80_simt_sgemm_64x64_8x5_tn_align1>(T1::Params)
+3.5,181598,136,1335.3,1312.0,1248,2368,135.8,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)5, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+3.1,161503,136,1187.5,1184.0,1088,2240,141.8,"void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, float, float, float, (bool)0, float, float, float, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)"
+2.7,138685,22,6303.9,1584.0,1152,28960,8069.9,memra_kda_scan_s128
+1.9,96288,51,1888.0,1696.0,1504,3040,497.1,"void gemmSN_TN_kernel<float, (int)128, (int)16, (int)2, (int)4, (int)8, (int)9, (bool)0, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(cublasGemmSmallNParams<T9, T10, T11, T1>)"
+1.8,95584,44,2172.4,2112.0,2080,3616,312.8,dsv4_rowsq_scale_kernel
+1.5,78688,55,1430.7,1408.0,1376,1728,56.0,rms_norm_f32_v2
+1.0,54080,42,1287.6,1280.0,1152,1376,50.4,memra_kda_conv_ring_roll_f32
+1.0,49696,44,1129.5,1120.0,1088,1280,45.6,dsv4_hc_post_kernel
+1.0,49568,37,1339.7,1344.0,1248,1536,56.5,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+0.9,47648,44,1082.9,1088.0,1056,1152,19.5,l2_norm_f32
+0.8,42751,42,1017.9,992.0,960,1120,40.7,memra_kda_conv_silu_f32
+0.8,42464,20,2123.2,2080.0,2048,2912,186.1,"void gemv2T_kernel_val<int, int, float, float, float, float, (int)128, (int)16, (int)2, (int)2, (bool)0, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13, T6, T6)"
+0.8,40732,44,925.7,928.0,896,1120,43.3,dsv4_hc_collapse_kernel
+0.8,39711,24,1654.6,1408.0,1376,4160,623.1,"void gemmSN_TN_kernel<float, (int)128, (int)16, (int)2, (int)4, (int)2, (int)2, (bool)1, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(cublasGemmSmallNParams<T9, T10, T11, T1>)"
+0.6,33024,24,1376.0,1376.0,1344,1440,26.7,memra_kda_conv_silu_decode_f32
+0.6,32576,11,2961.5,2976.0,2848,3072,82.7,moe_router_sigmoid_topk_f32
+0.5,28064,22,1275.6,1280.0,1248,1312,17.9,memra_kda_gated_rmsnorm_f32
+0.4,21312,22,968.7,960.0,928,992,17.6,sigmoid_f32
+0.4,20960,22,952.7,960.0,928,960,13.7,memra_kda_gate_f32
+0.4,19072,16,1192.0,1184.0,1152,1216,18.5,"void dot_kernel<float, (int)128, (int)0, cublasDotParams<cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>>(T4)"
+0.4,18399,16,1149.9,1152.0,1120,1184,14.2,"void reduce_1Block_kernel<float, (int)128, (int)7, cublasGemvTensorStridedBatched<float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>>(const T1 *, T1, T4, int, const T1 *, T1, T5, T6, cublasPointerMode_t, cublasLtEpilogue_t, cublasGemvTensorStridedBatched<const biasType<T6::value_type, T1>::type>)"
+0.3,15072,5,3014.4,3008.0,3008,3040,14.3,router_gemv_f32_w8_batch
+0.2,11232,11,1021.1,1024.0,992,1056,22.4,dsv4_hc_mean_kernel
+0.2,10784,11,980.4,960.0,896,1056,62.8,add_scaled_rows_f32
+0.2,10560,11,960.0,896.0,864,1536,193.1,dsv4_hc_expand_kernel
+0.1,7520,7,1074.3,1088.0,1024,1120,31.2,embed_gather_u32_t
+0.1,6208,6,1034.7,1024.0,1024,1056,16.5,router_gemv_f32_w8

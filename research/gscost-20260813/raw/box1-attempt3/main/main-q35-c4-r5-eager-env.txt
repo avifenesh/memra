@@ -1,0 +1,15 @@
+label=main/main-q35-c4-r5-eager
+model=q35
+model_path=/opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+policy_arm=eager
+MEMRA_SERVE_B1FAST=1
+MEMRA_SERVE_GS=1
+MEMRA_GS_MIN=<unset; default 384>
+MEMRA_SERVE_SPEC=0
+MEMRA_PREFIX_CACHE_MB=4096
+MEMRA_PREFIX_DEDUP=1
+MEMRA_REUSE_POOL=0
+MEMRA_AFFINITY=0
+MEMRA_CTX=8192
+MEMRA_MAX_SESSIONS=96
+MEMRA_GRAPH_CENSUS=<unset>

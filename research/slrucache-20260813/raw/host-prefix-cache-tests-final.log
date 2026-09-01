@@ -1,0 +1,22 @@
+warning: memra-engine@0.81.3: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.81.3 (/home/avifenesh/projects/wt-cx-slrucache/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.43s
+     Running unittests src/main.rs (target/debug/deps/memra_server-9bd0b11dcb231d5e)
+
+running 12 tests
+test worker::tests::prefix_cache_default_namespace_preserves_single_tenant_behavior ... ok
+test worker::tests::prefix_cache_namespaces_isolate_both_directions ... ok
+test worker::tests::prefix_cache_emergency_flush_preserves_inflight_pins ... ok
+test worker::tests::prefix_cache_pin_refcount_blocks_eviction_until_last_release ... ok
+test worker::tests::prefix_cache_same_namespace_same_prefix_hits ... ok
+test worker::tests::prefix_cache_same_window_fanout_counts_as_reuse_and_keeps_pin_refcounts ... ok
+test worker::tests::prefix_cache_pinned_probation_refuses_before_displacing_protected_share ... ok
+test worker::tests::prefix_cache_slru_demotes_by_protected_bytes_not_entry_count ... ok
+test worker::tests::prefix_cache_touch_rescues_the_would_be_victim ... ok
+test worker::tests::prefix_cache_slru_protects_reused_bytes_from_cross_tenant_scan ... ok
+test worker::tests::prefix_cache_still_refuses_an_entry_larger_than_total_budget ... ok
+test worker::tests::prefix_cache_eviction_large_pool_flush_smoke ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 212 filtered out; finished in 0.44s
+

@@ -1,0 +1,29 @@
+[server] starting; models config = [("q35", "/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q35" <- /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.32GB (expert budget 19.72GB) -> RESIDENT
+[worker]   loaded "q35": 41 layers, eos=248046
+[worker] q35: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q35: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 1074MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "q35": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q35"]
+[server] listening on http://127.0.0.1:18813
+[meter] admit id=cmpl-592e5f93c899662c8845546a845d10b9 tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=129 path=plain = 10208 B/token x ctx + 0MB fixed = 1MB
+[spec-k] model="q35" tenant="fa3softmax-warmup-11-q35-candidate" K=0 source=eligibility-fallback prompt=64 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q35" 129MB (observed 130MB at ctx 80 path=plain)
+[prefix-cache] insert (seed): 64 tokens, 66.5MB (resident 66.5MB / 1074MB, model q35, ns "fa3softmax-warmup-11-q35-candidate")
+[ttft] id=cmpl-592e5f93c899662c8845546a845d10b9 model="q35" path="/v1/completions" prompt_tokens=64 outcome=ended_without_sse request_parse_ms=0.036 admission_ms=0.025 queue_wait_ms=0.118 tokenize_ms=0.000 prime_wait_ms=4.681 prime_ms=196.013 decode_wait_ms=0.218 sse_handoff_ms=na request_parse_end_ms=0.036 admission_end_ms=0.061 tokenize_start_ms=0.179 tokenize_end_ms=0.179 prime_start_ms=4.860 prime_end_ms=200.873 first_decode_ms=201.091 first_sse_byte_ms=na total_ms=201.091
+[meter] admit id=cmpl-3e4ab380fe6a9460cc8aa92d99afa710 tenant=default lane=interactive model="q35"
+[admission] request cost: model="q35" ctx=4984 path=plain = 10208 B/token x ctx + 129MB fixed = 180MB
+[spec-k] model="q35" tenant="fa3softmax-scored-11-q35-candidate-r1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 4860 tokens, 111.0MB (resident 177.4MB / 1074MB, model q35, ns "fa3softmax-scored-11-q35-candidate-r1")
+[ttft] id=cmpl-3e4ab380fe6a9460cc8aa92d99afa710 model="q35" path="/v1/completions" prompt_tokens=4860 outcome=first_sse_byte request_parse_ms=0.127 admission_ms=0.016 queue_wait_ms=0.115 tokenize_ms=0.003 prime_wait_ms=6.181 prime_ms=1419.729 decode_wait_ms=0.221 sse_handoff_ms=0.173 request_parse_end_ms=0.127 admission_end_ms=0.143 tokenize_start_ms=0.258 tokenize_end_ms=0.261 prime_start_ms=6.442 prime_end_ms=1426.171 first_decode_ms=1426.392 first_sse_byte_ms=1426.565 total_ms=1426.565
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

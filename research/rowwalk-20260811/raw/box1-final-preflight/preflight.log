@@ -1,0 +1,19 @@
+host=<private-host-redacted>
+ts=2026-08-11T03:29:13Z
+lock=busy rc=1
+ 563189 563615 563618 564064 564117 564136                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    F.... bash
+                     ubuntu    F.... bash
+                     ubuntu    F.... flock
+                     ubuntu    F.... memra-server
+                     ubuntu    F.... journalctl
+                     ubuntu    F.... sleep
+    PID    PPID     ELAPSED STAT CMD
+ 563189  563145       03:13 Ss   bash research/opti2-20260811/box1-serial-boots.sh
+ 563615  563614       01:57 Ss   bash research/sigrouter-20260811/box1-perf.sh
+ 563618  563615       01:57 S    flock -w 3600 9
+ 564064  563189       00:02 Sl   /home/ubuntu/memra-opti2/target/release/memra-server
+ 564117  564064       00:02 S    journalctl -k -n 0 -f --no-pager
+ 564136  563189       00:00 S    sleep 2
+GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 564064, /home/ubuntu/memra-opti2/target/release/memra-server, 8106 MiB
+GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 564064, /home/ubuntu/memra-opti2/target/release/memra-server, 1036 MiB

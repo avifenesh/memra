@@ -1,0 +1,44 @@
+Reading additional input from stdin...
+OpenAI Codex v0.147.0
+--------
+workdir: /home/avifenesh/.cache/ornith15-codex-gate/work
+model: ornith15
+provider: memra
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: none
+reasoning summaries: none
+session id: 01a01c80-b79e-7b20-b39b-630d67febce0
+--------
+user
+run this exact shell command: echo ORNITH-TOOLS-GATE — then tell me what it printed
+warning: Ignored unsupported project-local config keys in /home/avifenesh/.codex/config.toml: model_provider, model_providers. If you want these settings to apply, manually set them in your user-level config.toml.
+warning: Configured service tier `priority` is not advertised as supported for model `ornith15` and will be omitted from requests.
+warning: Model metadata for `ornith15` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
+2026-08-20T00:09:53.935655Z ERROR codex_memories_write::phase2::agent: memory consolidation artifacts are invalid: read consolidated memory artifact /home/avifenesh/.cache/ornith15-codex-gate/home/memories/MEMORY.md
+codex
+I'll run that exact command and report what it prints.
+
+
+exec
+/usr/bin/zsh -lc 'echo ORNITH-TOOLS-GATE' in /home/avifenesh/.cache/ornith15-codex-gate/work
+ succeeded in 0ms:
+ORNITH-TOOLS-GATE
+
+codex
+It printed:
+
+```
+ORNITH-TOOLS-GATE
+```
+
+The `echo` command output the literal text `ORNITH-TOOLS-GATE` and the process exited with code 0.
+tokens used
+9,555
+It printed:
+
+```
+ORNITH-TOOLS-GATE
+```
+
+The `echo` command output the literal text `ORNITH-TOOLS-GATE` and the process exited with code 0.

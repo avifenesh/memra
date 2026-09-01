@@ -1,0 +1,16 @@
+Running as unit: memra-dspark2-pilot.service; invocation ID: 149c01cbec614f44a9729ce6a2bdce1a
+Running as unit: memra-dspark2-pilot-checkpoint.service; invocation ID: 6585ce7355d049c9b1a993ca0d0486fb
+Id=memra-dspark2-pilot.service
+ActiveState=active
+SubState=running
+InvocationID=149c01cbec614f44a9729ce6a2bdce1a
+ExecMainStatus=0
+
+Id=memra-dspark2-pilot-checkpoint.service
+ActiveState=active
+SubState=running
+InvocationID=6585ce7355d049c9b1a993ca0d0486fb
+ExecMainStatus=0
+DSPARK-RANGE-BEGIN 2026-08-11T09:47:56+03:00 label=pilot start=0 end=2000 chunk_size=64
+DSPARK-RANGE-WAIT 2026-08-11T09:47:56+03:00 next=pilot-00000-00064
+DSPARK-CHECKPOINT-BEGIN 2026-08-11T09:47:56+03:00 label=pilot committed_end=0 end=2000

@@ -1,0 +1,13 @@
+warning: memra-engine@0.122.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.122.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.122.0 (/home/avifenesh/projects/wt-glm5-extract2/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.91s
+     Running tests/hc_decode_ws_gpu.rs (target/debug/deps/hc_decode_ws_gpu-0c6d5db262a0596c)
+
+running 2 tests
+test decode_24_steps_are_byte_identical_ws_on_vs_off_and_alloc_calls_drop ... ok
+test ws_composes_with_the_fused_prechain_bitwise ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+
+exit=0

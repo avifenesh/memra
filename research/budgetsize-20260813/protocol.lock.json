@@ -1,0 +1,41 @@
+{
+  "schema": "memra.cx-budgetsize.protocol.v1",
+  "base_source": "7cf5fd842ebc76f6e8a82910a8e6d4b864b6b42d",
+  "arms": {
+    "A": {
+      "name": "baseline-metrics-instrumented",
+      "source_commit": "093a214a9e1bc7170dd655bb417b0fd7fc6d13c8",
+      "binary_sha256": "ec0c2fed4aa25fa904ab072fc2af53cee34dbee7c352d0eefb257c52f88a2a2f",
+      "budget_behavior": "pristine v0.81.3 naked 256 MiB default",
+      "instrumentation": "refusal observability only: counters/publication plus first-refusal warning; common to both arms and excluded from the mechanism comparison"
+    },
+    "B": {
+      "name": "derived-default-candidate",
+      "source_commit": "13b4918ee5cc69b73bd045c036440d065303fd9a",
+      "binary_sha256": "29f1a64e8935bfc5b97ea1e9b6cf02e5fd4b562c05dd844b2b6566a53f9b77a8",
+      "budget_behavior": "geometry-derived naked default clamped against boot free VRAM",
+      "instrumentation": "same refusal observability as arm A"
+    }
+  },
+  "model": "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf",
+  "model_sha256": "d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517",
+  "frozen_replay": "research/sellgate-20260812/sellgate_replay.py",
+  "frozen_replay_sha256": "91eac7250e0d268ac6be8cfd1ee64e346d405dc412824dab45f224e9563e1e5b",
+  "frozen_workload": "research/sellgate-20260812/workload.lock.json",
+  "frozen_workload_sha256": "85597a0a28ed874f440b4a966c0b43fd3e31b94fe868266de9e299decc208c34",
+  "prompt_tokens": 4860,
+  "completion_tokens": 60,
+  "server_ctx": 8192,
+  "default_entries": 2,
+  "transient_reserve_bytes": 1610612736,
+  "q27_entry_bytes": {
+    "4096": 278528000,
+    "4860": 301215744,
+    "8192": 400162816
+  },
+  "expected_q27_8192_requested_budget_bytes": 800325632,
+  "local_thermal_regime": "persistent 210-1200 MHz SM lock; every captured sample must remain in range",
+  "local_lock": "/tmp/memra-5090.lock",
+  "box1_lock": "/tmp/memra-gpu.lock",
+  "box1_gpu": 0
+}

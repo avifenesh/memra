@@ -1,0 +1,76 @@
+lock_acquired=2026-08-10T16:59:18Z host=<private-host-redacted> stamp=candidate-20260810
+fixed_source=711fbcaaef54491d22488a84d40b7fc35e5a58dd
+eager_source=188154299064a42b67fc8eb1f41757cf6237300d
+91544a0d32977dac792bc548b609ce26dafda1c4ce92bf7fb071534660bb7e3f  /home/ubuntu/memra-cx-eagerpar/target/release/decode-batch-bench
+f74d703f20c18c962ceeba1d96568667fae2b43e692fcb92ff9fb7226ecb8cc8  /home/ubuntu/memra-cx-grouped/target/release/decode-batch-bench
+b940497a9cec2f801f07e3a9783f2115fd8bf79cbd453225b4f73d86bcd11259  /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+artifact=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-06 12:39:44.670328147 +0000
+cell_start=wall-batched ts=2026-08-10T16:59:47Z phase= steps=64 reps=3
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 layers); steps=64 reps=3 batches=[1] primary_dev=0
+B=1: aggregate 85.4 tok/s, per-seq 85.4 tok/s (median of 3)
+scale B=1: 1.00x aggregate vs B=1
+[host-sample] n_vocab=128896 greedy argmax 132 us/row | temp0.7 sample 481 us/row | x B=1 rows/tick = 0.13 ms (greedy) / 0.48 ms (temp) [sink 1747300]
+cell_done=wall-batched ts=2026-08-10T17:00:29Z rc=0
+cell_start=wall-eager ts=2026-08-10T17:00:29Z phase= steps=64 reps=3
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 layers); steps=64 reps=3 batches=[1] primary_dev=0
+B=1: aggregate 85.9 tok/s, per-seq 85.9 tok/s (median of 3)
+scale B=1: 1.00x aggregate vs B=1
+[host-sample] n_vocab=128896 greedy argmax 133 us/row | temp0.7 sample 483 us/row | x B=1 rows/tick = 0.13 ms (greedy) / 0.48 ms (temp) [sink 1712389]
+cell_done=wall-eager ts=2026-08-10T17:01:09Z rc=0
+cell_start=phase-batched ts=2026-08-10T17:01:09Z phase=1 steps=8 reps=1
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 layers); steps=8 reps=1 batches=[1] primary_dev=0
+B=1: aggregate 69.7 tok/s, per-seq 69.7 tok/s (median of 1)
+scale B=1: 1.00x aggregate vs B=1
+[batch-phase] total 227.6 ms (sync-bounded; shares rank, not walltime)
+   114.0 ms  50.1%  ffn (add/norm/gate/up/act/down)
+    47.4 ms  20.8%  attn batched pre (norm/qkv/rope)
+    27.0 ms  11.9%  attn post (gate+o-proj)
+    24.3 ms  10.7%  attn per-seq: fa_decode
+     7.9 ms   3.5%  attn per-seq: kv append
+     5.0 ms   2.2%  lm_head (norm+matmul)
+     1.6 ms   0.7%  logits D2H + host split
+     0.3 ms   0.2%  setup(ptrs+embed H2D)
+     0.0 ms   0.0%  attn per-seq: q/a dtod copies
+     0.0 ms   0.0%  gdn batched projections
+     0.0 ms   0.0%  gdn state ops (conv/prep/scan)
+     0.0 ms   0.0%  gdn out (gated norm+proj)
+
+[host-sample] n_vocab=128896 greedy argmax 133 us/row | temp0.7 sample 484 us/row | x B=1 rows/tick = 0.13 ms (greedy) / 0.48 ms (temp) [sink 1747300]
+cell_done=phase-batched ts=2026-08-10T17:01:48Z rc=0
+cell_start=phase-eager ts=2026-08-10T17:01:48Z phase=1 steps=8 reps=1
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+loaded step35 (45 layers); steps=8 reps=1 batches=[1] primary_dev=0
+B=1: aggregate 86.0 tok/s, per-seq 86.0 tok/s (median of 1)
+scale B=1: 1.00x aggregate vs B=1
+[batch-phase] total 184.4 ms (sync-bounded; shares rank, not walltime)
+   182.3 ms  98.9%  lm_head (norm+matmul)
+     1.8 ms   1.0%  logits D2H + host split
+     0.3 ms   0.2%  setup(ptrs+embed H2D)
+     0.0 ms   0.0%  attn batched pre (norm/qkv/rope)
+     0.0 ms   0.0%  attn per-seq: kv append
+     0.0 ms   0.0%  attn per-seq: q/a dtod copies
+     0.0 ms   0.0%  attn per-seq: fa_decode
+     0.0 ms   0.0%  attn post (gate+o-proj)
+     0.0 ms   0.0%  gdn batched projections
+     0.0 ms   0.0%  gdn state ops (conv/prep/scan)
+     0.0 ms   0.0%  gdn out (gated norm+proj)
+     0.0 ms   0.0%  ffn (add/norm/gate/up/act/down)
+
+[host-sample] n_vocab=128896 greedy argmax 133 us/row | temp0.7 sample 484 us/row | x B=1 rows/tick = 0.13 ms (greedy) / 0.48 ms (temp) [sink 1712389]
+cell_done=phase-eager ts=2026-08-10T17:02:26Z rc=0
+lock_released=2026-08-10T17:02:26Z

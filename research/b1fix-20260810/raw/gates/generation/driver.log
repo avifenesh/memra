@@ -1,0 +1,29 @@
+lock_acquired=2026-08-10T05:26:15Z head=2ef6d75cbf9ff7a09f685bcc1fc54b84bb8f81fb
+0, 28, 31.09 W, 600.00 W, 180 MHz, 0 MiB
+1, 28, 31.22 W, 600.00 W, 180 MHz, 0 MiB
+G3 run-gen start
+run_gen_rc=0
+prefill argmax=6776  decode argmax=6776  logit maxdiff=8.228e-1  MATCH
+batched-prime argmax=6776  tokenwise argmax=6776  logit maxdiff=7.178e-1  MATCH
+G4 run-spec K=1..8 start
+run_spec_rc=0
+[generate_spec K=1] 32 tok in 0.383s = 80.93 tok/s (3.56x vs generate; this run's prime 0.153s)
+  acceptance: 14/17 = 82.4%   self-consistency: PASS (identical to generate)
+[generate_spec K=2] 32 tok in 0.513s = 60.41 tok/s (2.65x vs generate; this run's prime 0.153s)
+  acceptance: 15/32 = 46.9%   self-consistency: PASS (identical to generate)
+[generate_spec K=3] 32 tok in 0.664s = 46.69 tok/s (2.05x vs generate; this run's prime 0.153s)
+  acceptance: 15/48 = 31.2%   self-consistency: PASS (identical to generate)
+[generate_spec K=4] 32 tok in 0.816s = 37.99 tok/s (1.67x vs generate; this run's prime 0.153s)
+  acceptance: 15/64 = 23.4%   self-consistency: PASS (identical to generate)
+[generate_spec K=5] 32 tok in 0.969s = 32.01 tok/s (1.41x vs generate; this run's prime 0.154s)
+  acceptance: 15/80 = 18.8%   self-consistency: PASS (identical to generate)
+[generate_spec K=6] 32 tok in 1.121s = 27.66 tok/s (1.22x vs generate; this run's prime 0.153s)
+  acceptance: 15/96 = 15.6%   self-consistency: PASS (identical to generate)
+[generate_spec K=7] 32 tok in 1.275s = 24.31 tok/s (1.07x vs generate; this run's prime 0.153s)
+  acceptance: 15/112 = 13.4%   self-consistency: PASS (identical to generate)
+[generate_spec K=8] 32 tok in 1.432s = 21.65 tok/s (0.95x vs generate; this run's prime 0.153s)
+  acceptance: 15/128 = 11.7%   self-consistency: PASS (identical to generate)
+=== SELF-CONSISTENCY PASS ===
+0, 33, 93.50 W, 600.00 W, 2407 MHz, 0 MiB
+1, 34, 92.26 W, 600.00 W, 2325 MHz, 0 MiB
+lock_released=2026-08-10T05:27:49Z

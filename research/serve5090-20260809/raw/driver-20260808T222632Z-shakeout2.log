@@ -1,0 +1,75 @@
+=== serve5090 floor sweep 20260808T222632Z-shakeout2 ===
+measurement_commit=9746d52a88a71af1fcc1d0a7b6a1b8d17a5483a1 engine_tip=96a09705895af120a0f706558a8c8c0d6fd8520a
+branch=lane/cx-5090-queue hostname=avifenesh
+?? research/serve5090-20260809/cached_ttft.py
+?? research/serve5090-20260809/cold_ttft.py
+?? research/serve5090-20260809/raw/
+?? research/serve5090-20260809/run-sweep.sh
+binary_sha256=c44c93db5ca5a95994f592390976956ee2d1d361d9019aad8099f5631f54699e
+model=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf 15705920064 bytes
+draft=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf 1242867296 bytes
+cd24cd177c6fef7fbb8fa0ba8ce6539380c846f8e273b993fe6114aed7100ffd  /home/avifenesh/projects/wt-cx-5090q/research/serve-ready-20260808/raw/short-prompt.txt
+23c1d8384a16c7c0bcb7736b412d43e64c0b4d8e238703864e928565f824ae11  /home/avifenesh/projects/wt-cx-5090q/research/step-sku-20260807/prompt-pp4096.txt
+window_clean=false reason=owner-approved Hermes idle CUDA context
+platform_profile=performance
+nv_dynamic_boost=25
+nv_tgp=150
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 24463 MiB, 595.84
+GPU lock acquired 2026-08-08T22:26:37Z
+=== arm onpolicy-r1 ===
+command: env -u MEMRA_SERVE_SPEC -u MEMRA_SPEC_K -u MEMRA_SPEC_GATE -u MEMRA_SPEC_GATE_LOW -u MEMRA_SPEC_GATE_HIGH -u MEMRA_PREFIX_DEDUP -u MEMRA_PRIME_CHUNK -u MEMRA_PRIME_CHUNK_SCHED -u MEMRA_SERVE_BATCH -u MEMRA_DECODE_BATCH_CAP -u MEMRA_API_KEY -u MEMRA_API_KEYS CUDA_VISIBLE_DEVICES=0 MEMRA_MODELS=q27=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf+/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf MEMRA_ADDR=127.0.0.1:8189 MEMRA_COMPAT=openai MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 MEMRA_REUSE_POOL=1 MEMRA_PREFIX_CACHE_MB=512 /home/avifenesh/projects/wt-cx-5090q/target/release/memra-server
+server ready pid=3940504 2026-08-08T22:26:46Z
+--- developer-role smoke ---
+{"object":"chat.completion","model":"q27","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"Here's a thinking process:\n\n1.","reasoning_details":[{"type":"reasoning.text","text":"Here's a thinking process:\n\n1."}]},"finish_reason":"length"}],"usage":{"prompt_tokens":27,"completion_tokens":9,"total_tokens":36,"prompt_tokens_details":{"cached_tokens":0},"elapsed_s":0.283712282,"spec":{"rounds":2,"drafted":6,"accepted":6,"acceptance_rate":1.0}},"id":"chatcmpl-a7f7c50603d719bab058ded45a45eaca","created":1786228006,"system_fingerprint":"memra-9746d52a88a7"}--- cold short TTFT: one warmup + one scored row ---
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 0, "client_ttft_ms": 184.45144599536434, "completion_tokens": 9, "id": "chatcmpl-58150b3641c4edffd9d221973838eb5f", "label": "q27-onpolicy-r1", "latency_ms": 263.21330899372697, "phase": "warmup", "prompt_tokens": 229, "shape": "short", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 2}, "ts": "2026-08-08T22:26:46.661436+00:00"}
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 0, "client_ttft_ms": 213.4136669919826, "completion_tokens": 9, "id": "chatcmpl-6c4ff59ddeb50b79841584fe4da90794", "label": "q27-onpolicy-r1", "latency_ms": 291.8228149646893, "phase": "measured", "prompt_tokens": 229, "shape": "short", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 2}, "ts": "2026-08-08T22:26:46.953335+00:00"}
+{"summary": {"client_ttft_p50_ms": 213.4136669919826, "label": "q27-onpolicy-r1", "n": 1, "prompt_tokens": 229, "shape": "short"}}
+--- cold 4k TTFT: one warmup + one scored row ---
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 0, "client_ttft_ms": 2996.7360320151784, "completion_tokens": 9, "id": "chatcmpl-a999c189c908345a816ec1c398b2b0ee", "label": "q27-onpolicy-r1", "latency_ms": 3108.1261950312182, "phase": "warmup", "prompt_tokens": 4107, "shape": "4k", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 2}, "ts": "2026-08-08T22:26:50.145289+00:00"}
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 0, "client_ttft_ms": 3026.5422009979375, "completion_tokens": 9, "id": "chatcmpl-39e81f26ce5262d29e125ffbdc258ef1", "label": "q27-onpolicy-r1", "latency_ms": 3136.602471990045, "phase": "measured", "prompt_tokens": 4107, "shape": "4k", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 2}, "ts": "2026-08-08T22:26:53.282027+00:00"}
+{"summary": {"client_ttft_p50_ms": 3026.5422009979375, "label": "q27-onpolicy-r1", "n": 1, "prompt_tokens": 4107, "shape": "4k"}}
+--- cached 4k continuation TTFT ---
+{"cache_salt": "q27-onpolicy-r1-shared", "cached_tokens": 4160, "client_ttft_ms": 136.25863200286403, "completion_tokens": 10, "expect_spec": "on", "label": "q27-onpolicy-r1", "latency_ms": 235.9005970065482, "prompt_tokens": 4179, "setup_completion_tokens": 66, "setup_prompt_tokens": 4094, "setup_wall_ms": 3568.980107025709, "shape": "cached-continuation-4k", "spec": {"acceptance_rate": 1.0, "accepted": 6, "drafted": 6, "rounds": 3}, "text_sha256": "549f539cfad07915f38e584e626dbe01e35fb9f3a916f8b7fa1fa9bbdd2f462c", "ts": "2026-08-08T22:26:57.152964+00:00"}
+--- decode ladder (pair-receipt protocol) ---
+{"ts": "2026-08-09T01:27:09+0300", "label": "q27-onpolicy-r1-c1", "base": "http://127.0.0.1:8189", "concurrency": 1, "requests": 8, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 128, "greedy": false, "wall_s": 11.8139658140135, "n_ok": 8, "n_shed": 0, "n_err": 0, "completion_tokens_total": 1032, "prompt_tokens_total": 1808, "agg_tok_s": 87.3542395709205, "req_per_s": 0.677164647836593, "lat_p50_s": 1.434036879974883, "lat_p95_s": 1.6407048809924163, "lat_mean_s": 1.4765201388727291, "lat_max_s": 1.6407048809924163, "errors_sample": [], "ttft_p50_s": 0.18670219101477414, "ttft_p95_s": 0.20294248999562114, "ttft_mean_s": 0.18934980963240378, "ttft_max_s": 0.20294248999562114, "n_ttft": 8}
+{"ts": "2026-08-09T01:27:22+0300", "label": "q27-onpolicy-r1-c2", "base": "http://127.0.0.1:8189", "concurrency": 2, "requests": 8, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 128, "greedy": false, "wall_s": 12.377420849050395, "n_ok": 8, "n_shed": 0, "n_err": 0, "completion_tokens_total": 1030, "prompt_tokens_total": 1808, "agg_tok_s": 83.21604416311193, "req_per_s": 0.6463382070921314, "lat_p50_s": 3.027000625967048, "lat_p95_s": 3.72052693401929, "lat_mean_s": 3.0044364939894876, "lat_max_s": 3.72052693401929, "errors_sample": [], "ttft_p50_s": 0.2672013989649713, "ttft_p95_s": 0.7539459330146201, "ttft_mean_s": 0.3205279634858016, "ttft_max_s": 0.7539459330146201, "n_ttft": 8}
+{"ts": "2026-08-09T01:27:39+0300", "label": "q27-onpolicy-r1-c4", "base": "http://127.0.0.1:8189", "concurrency": 4, "requests": 16, "duration_s": null, "lane": null, "tenant": null, "max_tokens": 128, "greedy": false, "wall_s": 17.1085694989888, "n_ok": 16, "n_shed": 0, "n_err": 0, "completion_tokens_total": 2050, "prompt_tokens_total": 3616, "agg_tok_s": 119.82299280610019, "req_per_s": 0.9352038462915137, "lat_p50_s": 3.620036163018085, "lat_p95_s": 6.621956855989993, "lat_mean_s": 3.898353488442808, "lat_max_s": 6.622915257001296, "errors_sample": [], "ttft_p50_s": 0.0300069929799065, "ttft_p95_s": 1.1594362629693933, "ttft_mean_s": 0.24270253612485249, "ttft_max_s": 1.1607488509616815, "n_ttft": 16}
+arm complete onpolicy-r1 2026-08-08T22:27:44Z
+=== arm specoff-r1 ===
+command: env -u MEMRA_SERVE_SPEC -u MEMRA_SPEC_K -u MEMRA_SPEC_GATE -u MEMRA_SPEC_GATE_LOW -u MEMRA_SPEC_GATE_HIGH -u MEMRA_PREFIX_DEDUP -u MEMRA_PRIME_CHUNK -u MEMRA_PRIME_CHUNK_SCHED -u MEMRA_SERVE_BATCH -u MEMRA_DECODE_BATCH_CAP -u MEMRA_API_KEY -u MEMRA_API_KEYS CUDA_VISIBLE_DEVICES=0 MEMRA_SERVE_SPEC=0 MEMRA_MODELS=q27=/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf+/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/draft-daily-owntrim-nvfp4head-q4blk.gguf MEMRA_ADDR=127.0.0.1:8189 MEMRA_COMPAT=openai MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 MEMRA_REUSE_POOL=1 MEMRA_PREFIX_CACHE_MB=512 /home/avifenesh/projects/wt-cx-5090q/target/release/memra-server
+server ready pid=3949314 2026-08-08T22:27:52Z
+--- developer-role smoke ---
+{"object":"chat.completion","model":"q27","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning":"Here's a thinking process:\n\n1","reasoning_details":[{"type":"reasoning.text","text":"Here's a thinking process:\n\n1"}]},"finish_reason":"length"}],"usage":{"prompt_tokens":27,"completion_tokens":8,"total_tokens":35,"prompt_tokens_details":{"cached_tokens":0},"elapsed_s":0.342023759},"id":"chatcmpl-33dcf7554d7c4c5e1e9e4b793c922672","created":1786228072,"system_fingerprint":"memra-9746d52a88a7"}--- cold short TTFT: one warmup + one scored row ---
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 0, "client_ttft_ms": 191.0450030118227, "completion_tokens": 8, "id": "chatcmpl-ff185c9005fd5b1d5a7aa8f8b92f297b", "label": "q27-specoff-r1", "latency_ms": 355.5169000173919, "phase": "warmup", "prompt_tokens": 229, "shape": "short", "spec": null, "ts": "2026-08-08T22:27:53.136752+00:00"}
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 0, "client_ttft_ms": 195.8959309849888, "completion_tokens": 8, "id": "chatcmpl-1075caae32ec069f1182e7b378b37e61", "label": "q27-specoff-r1", "latency_ms": 381.94309099344537, "phase": "measured", "prompt_tokens": 229, "shape": "short", "spec": null, "ts": "2026-08-08T22:27:53.518808+00:00"}
+{"summary": {"client_ttft_p50_ms": 195.8959309849888, "label": "q27-specoff-r1", "n": 1, "prompt_tokens": 229, "shape": "short"}}
+--- cold 4k TTFT: one warmup + one scored row ---
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 0, "client_ttft_ms": 3222.393647010904, "completion_tokens": 8, "id": "chatcmpl-681152e3d9340458a17019d2333e45ab", "label": "q27-specoff-r1", "latency_ms": 3399.9417740269564, "phase": "warmup", "prompt_tokens": 4107, "shape": "4k", "spec": null, "ts": "2026-08-08T22:27:56.987337+00:00"}
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 0, "client_ttft_ms": 3209.9702099803835, "completion_tokens": 8, "id": "chatcmpl-5aa99db9b69ab2974b8b8cfb0dbb4172", "label": "q27-specoff-r1", "latency_ms": 3388.7270080158487, "phase": "measured", "prompt_tokens": 4107, "shape": "4k", "spec": null, "ts": "2026-08-08T22:28:00.376196+00:00"}
+{"summary": {"client_ttft_p50_ms": 3209.9702099803835, "label": "q27-specoff-r1", "n": 1, "prompt_tokens": 4107, "shape": "4k"}}
+--- cached 4k continuation TTFT ---
+{"cache_salt": "q27-specoff-r1-shared", "cached_tokens": 4158, "client_ttft_ms": 122.28834099369124, "completion_tokens": 8, "expect_spec": "off", "label": "q27-specoff-r1", "latency_ms": 298.26234094798565, "prompt_tokens": 4177, "setup_completion_tokens": 64, "setup_prompt_tokens": 4094, "setup_wall_ms": 4602.081208024174, "shape": "cached-continuation-4k", "spec": null, "text_sha256": "1ef69a748042dda8b7d76907d62da6811c269dda66144b65c9da2c6adbbd0733", "ts": "2026-08-08T22:28:05.341609+00:00"}
+--- cold same-window prefix dedup/pinning probe ---
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-cx-5090q/research/prefixdedup-20260808/fanout_ttft.py", line 141, in <module>
+    main()
+  File "/home/avifenesh/projects/wt-cx-5090q/research/prefixdedup-20260808/fanout_ttft.py", line 103, in main
+    rows = burst(args, f"{args.label}-measured-{time.time_ns()}", args.n)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/wt-cx-5090q/research/prefixdedup-20260808/fanout_ttft.py", line 80, in burst
+    return [future.result() for future in futures]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/wt-cx-5090q/research/prefixdedup-20260808/fanout_ttft.py", line 80, in <listcomp>
+    return [future.result() for future in futures]
+            ^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/hermes-agent/.hermes-runtime/python/generation-1785863877-57526-3c165979/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/hermes-agent/.hermes-runtime/python/generation-1785863877-57526-3c165979/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/home/avifenesh/projects/hermes-agent/.hermes-runtime/python/generation-1785863877-57526-3c165979/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/avifenesh/projects/wt-cx-5090q/research/prefixdedup-20260808/fanout_ttft.py", line 55, in one
+    raise RuntimeError("stream completed without a non-empty text chunk")
+RuntimeError: stream completed without a non-empty text chunk

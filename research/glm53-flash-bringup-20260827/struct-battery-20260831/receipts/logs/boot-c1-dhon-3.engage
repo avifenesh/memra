@@ -1,0 +1,11 @@
+engage=bf16-tcols-wide(T,default-on) expected=1 lines=1
+engage=bf16-tcols-x1(X,default-on) expected=1 lines=1
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=1 lines=1
+engage=glm5-verify-ws(W,default-on) expected=1 lines=1
+engage=moe-vrows-dev-tables(D) expected=1 lines=1
+engage=moe-vrows-dedup(S) expected=0 lines=0
+engage=verify-walk-batched expected=1 lines=1
+engage=verify-walk-per-row expected=0 lines=0
+engage=glm5-vrows expected=1 lines=1
+[moe-vrows-dev-tables] engaged: pointer/scale tables built on device from the router's own sel/w; the per-layer pinned readback and its cuStreamSynchronize are skipped (MEMRA_MOE_VROWS_DEV_TABLES=1)

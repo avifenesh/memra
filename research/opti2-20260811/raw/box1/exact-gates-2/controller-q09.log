@@ -1,0 +1,70 @@
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[mtp-draft] loading external MTP draft: /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.900
+[opti-controller] reject q=0.019040 threshold=0.900
+[opti-controller] shadow q=0.019040 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.024629 threshold=0.900
+[opti-controller] shadow q=0.024629 admitted=false v_n=false expected_d2=228 n_acc=1 bonus=129
+[opti-controller] reject q=0.047457 threshold=0.900
+[opti-controller] shadow q=0.047457 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.021533 threshold=0.900
+[opti-controller] shadow q=0.021533 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.016710 threshold=0.900
+[opti-controller] shadow q=0.016710 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.017855 threshold=0.900
+[opti-controller] shadow q=0.017855 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.018011 threshold=0.900
+[opti-controller] shadow q=0.018011 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.071714 threshold=0.900
+[opti-controller] shadow q=0.071714 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=129
+[opti-controller] reject q=0.020468 threshold=0.900
+[opti-controller] shadow q=0.020468 admitted=false v_n=false expected_d2=238 n_acc=1 bonus=129
+[opti-controller] reject q=0.010315 threshold=0.900
+[opti-controller] shadow q=0.010315 admitted=false v_n=false expected_d2=108 n_acc=1 bonus=129
+[opti-controller] reject q=0.050866 threshold=0.900
+[opti-controller] shadow q=0.050866 admitted=false v_n=false expected_d2=240 n_acc=1 bonus=129
+[opti-controller] reject q=0.024451 threshold=0.900
+[opti-controller] shadow q=0.024451 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.047711 threshold=0.900
+[opti-controller] shadow q=0.047711 admitted=false v_n=false expected_d2=242 n_acc=1 bonus=129
+[opti-controller] reject q=0.075180 threshold=0.900
+[opti-controller] shadow q=0.075180 admitted=false v_n=false expected_d2=244 n_acc=1 bonus=129
+[opti-controller] reject q=0.020191 threshold=0.900
+[opti-controller] shadow q=0.020191 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.026144 threshold=0.900
+[opti-controller] shadow q=0.026144 admitted=false v_n=false expected_d2=245 n_acc=1 bonus=129
+[opti-controller] reject q=0.010829 threshold=0.900
+[opti-controller] shadow q=0.010829 admitted=false v_n=false expected_d2=246 n_acc=1 bonus=129
+[opti-controller] reject q=0.015178 threshold=0.900
+[opti-controller] shadow q=0.015178 admitted=false v_n=false expected_d2=240 n_acc=1 bonus=129
+[opti-controller] reject q=0.024072 threshold=0.900
+[opti-controller] shadow q=0.024072 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.013623 threshold=0.900
+[opti-controller] shadow q=0.013623 admitted=false v_n=false expected_d2=95 n_acc=1 bonus=129
+[opti-controller] reject q=0.017544 threshold=0.900
+[opti-controller] shadow q=0.017544 admitted=false v_n=false expected_d2=8 n_acc=1 bonus=129
+[opti-controller] reject q=0.032839 threshold=0.900
+[opti-controller] shadow q=0.032839 admitted=false v_n=false expected_d2=251 n_acc=1 bonus=129
+[opti-controller] reject q=0.081857 threshold=0.900
+[opti-controller] shadow q=0.081857 admitted=false v_n=false expected_d2=4 n_acc=1 bonus=129
+[opti-controller] reject q=0.054946 threshold=0.900
+[opti-controller] shadow q=0.054946 admitted=false v_n=false expected_d2=4 n_acc=1 bonus=129
+[opti-controller] reject q=0.047564 threshold=0.900
+[opti-controller] shadow q=0.047564 admitted=false v_n=false expected_d2=9 n_acc=1 bonus=129
+[opti-controller] reject q=0.024601 threshold=0.900
+[opti-controller] shadow q=0.024601 admitted=false v_n=false expected_d2=255 n_acc=1 bonus=129
+[opti-controller] reject q=0.013988 threshold=0.900
+[opti-controller] shadow q=0.013988 admitted=false v_n=false expected_d2=38835 n_acc=1 bonus=2162
+[opti-controller] reject q=0.019445 threshold=0.900
+[opti-controller] shadow q=0.019445 admitted=false v_n=false expected_d2=33 n_acc=1 bonus=9888
+[opti-controller] reject q=0.143379 threshold=0.900
+[opti-controller] shadow q=0.143379 admitted=false v_n=false expected_d2=4 n_acc=1 bonus=49123
+[opti-controller] reject q=0.033681 threshold=0.900
+[opti-controller] shadow q=0.033681 admitted=false v_n=false expected_d2=62019 n_acc=1 bonus=61956
+RECURRENT RESTORE PRIMITIVE: PASS elements=262144 hit-skip=count/bonus-miss-restore
+STATE IDENTITY: PASS mode=controller q=Some(0.9) cap=448 generated=65 continuation=16 first=OptiForkStateIdentity { trunk_kv_bytes: 16035840, recurrent_bytes: 0, scratch_kv_bytes: 356352, hidden_bytes: 16384 } continued=OptiForkStateIdentity { trunk_kv_bytes: 17372160, recurrent_bytes: 0, scratch_kv_bytes: 386048, hidden_bytes: 16384 } stats=OptiForkGateStats { attempts: 0, hits: 0, misses: 0, abort_drains: 0, refusals: 0, gate_checks: 30, gate_admits: 0, gate_rejects: 30, reconciles: 0, wasted_draft_tokens: 30, shadow_draft_tokens: 30, breaker_trips: 0 }

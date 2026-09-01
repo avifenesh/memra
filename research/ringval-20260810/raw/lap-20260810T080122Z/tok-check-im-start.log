@@ -1,0 +1,4 @@
+pre=deepseek-v3 vocab=128896 eos=128007 bos=Some(0)
+encode("<|im_start|>") = [0, 128006]
+decode = "<｜begin▁of▁sentence｜><|im_start|>"
+round-trip DIFFERS

@@ -1,0 +1,655 @@
+<request>
+  <url>https://arxiv.org/html/2608.05448v1</url>
+  <final_url>https://arxiv.org/html/2608.05448v1</final_url>
+  <method>GET</method>
+  <status>200</status>
+  <content_type>text/html; charset=utf-8</content_type>
+  <redirect_chain>https://arxiv.org/html/2608.05448v1</redirect_chain>
+</request>
+<body extract="markdown">
+# DBLast: Dependent Block Drafting for Stochastic Speculative Decoding
+
+Amirmohammad KarimiChao GaoNegar Hassanpour
+
+###### Abstract ######
+
+Speculative decoding accelerates large language models’ inference by using a lightweight drafter to propose multiple future tokens and a target model to verify them. While recent block and diffusion-style drafters can predict several positions in a single pass, their training and sampling procedures are typically optimized for greedy decoding or assume that positions in the draft block are conditionally independent. This assumption becomes brittle in non-greedy speculative decoding, where the target distribution is deliberately stochastic and multiple continuations become plausible. We study this mismatch for block diffusion drafters and show that the accepted draft length degrades as the entropy of the target sampling distribution increases. We propose a dependent block drafter based on a low-rank latent mixture over token positions, complemented by an acceptance-oriented training objective that directly targets the expected verified length. Experiments with Qwen3-4B and Qwen3-8B on GSM8K, MT-Bench, HumanEval, and creative-writing benchmarks show that our approach, namely DBLast, consistently improves accepted length over independent block sampling, especially in higher-entropy decoding regimes.
+
+<sup class="ltx_note_mark">†</sup><sup class="ltx_note_mark">†</sup> Preprint
+
+1 Introduction
+----------
+
+Large language models (LLMs) are increasingly used in settings where inference cost, latency, and throughput are limiting factors.
+Speculative decoding 
+> ([13](#bib.bib1); [4](#bib.bib2))
+
+ addresses this bottleneck by pairing a target model with a lightweight drafter. The drafter proposes future tokens,
+and the target model verifies those proposals in parallel while preserving the target distribution.
+Recent multi-token prediction (MTP) drafters 
+> ([9](#bib.bib4); [3](#bib.bib5))
+
+ further
+reduce drafting overhead by predicting several future positions in a single low-cost forward pass.
+Block diffusion drafters such as DFlash 
+> ([5](#bib.bib3))
+
+ are a strong representative of this direction. Such methods use a non-autoregressive drafter to propose a block of future tokens and they can achieve high acceptance rates under greedy or low-entropy target decoding.
+
+Greedy or low-entropy decoding, however, is not always desired.
+Open-ended tasks such as dialogue and creative writing require diverse continuations 
+> ([14](#bib.bib18); [11](#bib.bib17); [22](#bib.bib19))
+
+,
+and reinforcement-learning post-training pipelines often rely on non-greedy rollouts for exploration rather than only high-probability completions 
+> ([21](#bib.bib20); [18](#bib.bib21); [24](#bib.bib22))
+
+.
+When the target model is stochastic, achieving high acceptance rates requires distributional matching between the drafter and target model.
+A common design in parallel drafting avoids the exponential cost of exact joint modeling by factorizing the proposal block across positions, as in MTP, Medusa-style, and DFlash-style drafters 
+> ([9](#bib.bib4); [3](#bib.bib5); [5](#bib.bib3))
+
+. The drafter is then trained to match the marginal target distribution at each future position, and at inference, it samples all block tokens independently given the prefix.
+
+Speculative verification, however, is sequential: the iith draft token is checked against the target distribution conditioned on the
+prefix and previously accepted draft tokens.
+Thus, a block with accurate per-position marginals can still be a poor speculative proposal if its tokens do not form a coherent conditional trajectory.
+The challenge is therefore to capture dependencies within the drafted block tokens, without sacrificing the one-pass parallel prediction that makes block speculative decoding efficient.
+
+Existing approaches address this tension in two ways.
+Sequential or semi-autoregressive draft heads 
+> ([1](#bib.bib15); [17](#bib.bib16); [7](#bib.bib14))
+
+ model dependencies directly, but sacrifice part of the parallelism that makes block speculative decoding attractive.
+Alternatively, tensor-decomposition and probabilistic-circuit approaches 
+> ([2](#bib.bib7); [10](#bib.bib8))
+
+ define dependent joint distributions while retaining parallel prediction.
+However, these methods primarily optimize the block negative log-likelihood (NLL) of target tokens rather than the sequential acceptance process that determines speculative speedup.
+Their empirical scope is also limited:
+> [2](#bib.bib7)
+
+ focus mainly on smaller-scale or pretraining-style evaluations, while
+> [10](#bib.bib8)
+
+ study byte-level language models.
+
+To address these gaps, we propose to inject dependence into a DFlash-style block diffusion drafter for subword target models and use a training surrogate aligned with the verifier’s accepted-prefix behavior. We refer to the resulting method as DBlast, a dependent block sampler trained with a loss on accepted length (AL).DBlast augments the drafter with a categorical latent variable over the block by adding lightweight category output heads:
+conditioned on the latent category, all positions are still predicted in a single parallel pass,
+while marginalizing over categories induces a joint distribution that correlates positions within the block.
+
+We further diagnose where independent block modeling fails. We finetune a Qwen3-8B DFlash checkpoint on task of creative writing in two cases of independent sampling with NLL and dependent sampling with AL loss training, then measure expected accepted length at randomly truncated target responses. We group samples by target-block early determinism, emphasizing early positions.<sup class="ltx_note_mark">1</sup><sup class="ltx_note_mark">1</sup>1 For prefix yy and block length bb, we define and empirically measure the target block early determinism as𝔼x1:b∼ptarget(⋅∣y)[1b∑j=1b∏i=1jptarget(xi∣y,x\<i)]\\mathbb{E}\_{x\_{1:b}\\sim p\_{\\mathrm{target}}(\\cdot\\mid y)}\\left[\\frac{1}{b}\\sum\_{j=1}^{b}\\prod\_{i=1}^{j}p\_{\\mathrm{target}}(x\_{i}\\mid y,x\_{\<i})\\right].As shown in Figure [1](#S1.F1), independent proposals become increasingly fragile as determinism decreases. DBlast improves accepted length in every bin, with the largest relative gains in the least deterministic regions, supporting the value of coherent block-level alternatives and acceptance-oriented training for stochastic speculative decoding.
+
+The following summarizes our contributions:
+
+* •
+
+  Diagnosis. We identify a mismatch between independent block sampling and non-greedy speculative verification,
+  and show empirically that the mismatch becomes more severe in less deterministic target-sampling regions, resulting in reduced accepted length.
+
+* •
+
+  Dependent Block Sampling. We propose a dependent block drafter based on a canonical polyadic (CP)-style latent mixture that preserves parallel token prediction while inducing correlations among positions. To our knowledge, this is the first application of CP-style dependent block proposals to subword block-diffusion drafters for non-greedy speculative sampling.
+
+* •
+
+  Loss on Accepted Length. We propose an acceptance-oriented log-domain surrogate motivated by expected accepted length,
+  with threshold-truncated prefixes for stable early training. This surrogate targets the verifier’s sequential acceptance behavior, complementing dependent modeling when block likelihood alone does not optimize the accepted prefix length.
+
+Figure 1: Accepted draft length vs. target-block early determinism on creative-writing continuations. We bin truncated points by the early determinism of the next 15-token target block. Bars report the mean accepted length, and error bars represent ±1\\pm 1 standard error of the mean for the independent DFlash baseline and DBlast. Annotations show the relative improvement of DBlast over DFlash in each bin. Gains increase as target continuations become less deterministic. See Appendix Section [C](#A3) for the relationship between early determinism, target block diversity, and the diagnosis setting.
+
+Our experimental results on Qwen3-4B and Qwen3-8B across GSM8K, MT-Bench, HumanEval, and creative-writing benchmarks show that DBlast consistently improves accepted length, with macro-average gains above 12%12\\% in the high-entropy Qwen3-8B setting.
+
+2 Preliminaries
+----------
+
+#### Notation. ####
+
+Let yy denote the current prefix and let x1:b=(x1,…,xb)x\_{1:b}=(x\_{1},\\ldots,x\_{b}) denote a draft block of length bb. We write x\<ix\_{\<i} for the previously drafted tokens in the block. The target language model defines an autoregressive distribution pp, and the drafter defines a proposal distribution qq over draft blocks.
+For any joint proposal q(x1:b∣y)q(x\_{1:b}\\mid y) the conditional token-level proposal can be derived form the same joint proposal as:
+
+|q(xi∣y,x\<i)=q(x1:i∣y)q⁡(x\<i∣y).q(x\_{i}\\mid y,x\_{\<i})=\\frac{q(x\_{1:i}\\mid y)}{q(x\_{\<i}\\mid y)}.|(1)|
+|----------------------------------------------------------------------------------------------------------|---|
+
+#### Speculative decoding. ####
+
+Given a sampled draft block x1:bx\_{1:b}, non-greedy speculative verification accepts token xix\_{i} with probability
+
+|Ai=min⁡(1,p⁡(xi∣y,x\<i)q⁡(xi∣y,x\<i)).A\_{i}=\\min\\!\\left(1,\\,\\frac{p(x\_{i}\\mid y,x\_{\<i})}{q(x\_{i}\\mid y,x\_{\<i})}\\right).|(2)|
+|--------------------------------------------------------------------------------------------------------------------------------------|---|
+
+The probability of accepting at least the first ii draft tokens is∏j=1iAj,\\prod\_{j=1}^{i}A\_{j},therefore, the expected accepted length of the block is
+
+|ALb(x1:b)=∑i=1b∏j=1iAj.AL\_{b}(x\_{1:b})=\\sum\_{i=1}^{b}\\prod\_{j=1}^{i}A\_{j}.|(3)|
+|---------------------------------------------------------------------------------|---|
+
+#### Block proposal families. ####
+
+A non-autoregressive DFlash-style drafter predicts the entire block at once in a single pass, with the standard proposal factorized across draft positions:
+
+|qind(x1:b∣y)=∏i=1bqi(xi∣y).q\_{\\mathrm{ind}}(x\_{1:b}\\mid y)=\\prod\_{i=1}^{b}q\_{i}(x\_{i}\\mid y).|(4)|
+|------------------------------------------------------------------------------------------------------|---|
+
+This proposal is efficient, but the joint probability of a block is only the product of its position-wise marginals.
+
+We compare this baseline with a dependent block proposal based on a low-rank canonical polyadic mixture over block positions introduced by
+> [2](#bib.bib7)
+
+> ([2](#bib.bib7))
+
+ which defines the joint distribution using categorical latent variable z∈{1,…,K}z\\in\\{1,\\ldots,K\\} as:
+
+|qdep(x1:b∣y)=∑z=1Kq(z∣y)∏i=1bqi(xi∣y,z).q\_{\\mathrm{dep}}(x\_{1:b}\\mid y)=\\sum\_{z=1}^{K}q(z\\mid y)\\prod\_{i=1}^{b}q\_{i}(x\_{i}\\mid y,z).|(5)|
+|------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+#### Likelihood training baselines. ####
+
+The likelihood baselines minimize the negative log-likelihood of a target block x1:b⋆x\_{1:b}^{\\star} under the drafter proposal,
+
+|ℒNLL=−logq(x1:b⋆∣y).\\mathcal{L}\_{\\mathrm{NLL}}=-\\log q(x\_{1:b}^{\\star}\\mid y).|(6)|
+|-------------------------------------------------------------------------------------|---|
+
+For the independent proposal in Equation [4](#S2.E4), this is the usual sum of per-position cross-entropies,
+
+|ℒNLLind=−∑i=1blogqi(xi⋆∣y).\\mathcal{L}\_{\\mathrm{NLL}}^{\\mathrm{ind}}=-\\sum\_{i=1}^{b}\\log q\_{i}(x\_{i}^{\\star}\\mid y).|(7)|
+|-------------------------------------------------------------------------------------------------------------------------------|---|
+
+For the dependent proposal in Equation [5](#S2.E5), it is the marginalized block negative log-likelihood,
+
+|ℒNLLdep=−log∑z=1Kq(z∣y)∏i=1bqi(xi⋆∣y,z).\\mathcal{L}\_{\\mathrm{NLL}}^{\\mathrm{dep}}=-\\log\\sum\_{z=1}^{K}q(z\\mid y)\\prod\_{i=1}^{b}q\_{i}(x\_{i}^{\\star}\\mid y,z).|(8)|
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+3 Methodology
+----------
+
+DBlast modifies a DFlash-style block diffusion drafter in two ways. First, it adds a categorical latent variable that induces dependencies among block positions while preserving parallel decoding. Second, it trains the drafter with an acceptance-oriented objective that indirectly rewards sampled blocks likely to survive speculative verification. We first describe the dependent block drafting and verification procedure in our framework, then explain the architectural modification, and finally present the training objective.
+
+### 3.1 Dependent Block Drafting and Verification ###
+
+We add dependencies with the latent-mixture proposal in Equation [5](#S2.E5). Sampling from Equation [5](#S2.E5) is equivalently performed by first sampling z^∼q⁡(z∣y)\\hat{z}\\sim q(z\\mid y) and then sampling all block positions in parallel from qi(⋅∣y,z^)q\_{i}(\\cdot\\mid y,\\hat{z}). The category acts as a block-level routing variable: each branch can represent a different continuation mode, while positions inside a selected branch are still generated in one parallel pass. Marginalizing over zz induces correlations among positions, and setting K=1K=1 recovers the independent baseline.
+
+#### Drafter sampling during inference. ####
+
+In our reported evaluations, we use a deterministic branch decoder: we sample the latent category from the learned prior, select the corresponding branch, and decode the branch tokens greedily within the DFlash block update. We model q⁡(z∣y)q(z\\mid y) by softmax over category logits, ℓz​(y)\\ell\_{z}(y), and optionally apply an inference-time category temperature ZTZ\_{T} before sampling the latent category,
+
+|qZT​(z∣y)=softmax⁡(ℓz​(y)/ZT).q\_{Z\_{T}}(z\\mid y)=\\mathrm{softmax}(\\ell\_{z}(y)/Z\_{T}).|
+|--------------------------------------------------------------------------------------------|
+
+Smaller ZTZ\_{T} sharpens the branch prior, while larger ZTZ\_{T} increases category stochasticity. This greedy branch decoding results in block proposal distribution
+
+|qdep(x1:b∣y)=∑z=1KqZT(z∣y)∏i=1b𝟏{xi=x^i,z(y)},q\_{\\mathrm{dep}}(x\_{1:b}\\mid y)=\\sum\_{z=1}^{K}q\_{Z\_{T}}(z\\mid y)\\prod\_{i=1}^{b}\\mathbf{1}\\{x\_{i}=\\hat{x}\_{i,z}(y)\\},|(9)|
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+
+where
+
+|x^i,z​(y)=arg⁡maxx​qi​(x∣y,z)\\hat{x}\_{i,z}(y)=\\arg\\max\_{x}q\_{i}(x\\mid y,z)|
+|---------------------------------------------------------------------------------|
+
+defines the greedy token at position ii in branch zz.
+
+#### Stochastic block verification. ####
+
+For speculative verification of a sampled block in Equation [2](#S2.E2), the token-level proposal conditional is obtained from the same joint distribution used in drafting by prefix marginalization:
+
+|qdep(xi∣y,x\<i)=qdep(x1:i∣y)qdep​(x\<i∣y).q\_{\\mathrm{dep}}(x\_{i}\\mid y,x\_{\<i})=\\frac{q\_{\\mathrm{dep}}(x\_{1:i}\\mid y)}{q\_{\\mathrm{dep}}(x\_{\<i}\\mid y)}.|(10)|
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+Equivalently, after each accepted token, verification updates the category posterior,
+
+|q⁡(z∣y,x\<i)=q⁡(z∣y)​∏j\<iqj​(xj∣y,z)∑z′=1Kq⁡(z′∣y)​∏j\<iqj​(xj∣y,z′),q(z\\mid y,x\_{\<i})=\\frac{q(z\\mid y)\\prod\_{j\<i}q\_{j}(x\_{j}\\mid y,z)}{\\sum\_{z^{\\prime}=1}^{K}q(z^{\\prime}\\mid y)\\prod\_{j\<i}q\_{j}(x\_{j}\\mid y,z^{\\prime})},|(11)|
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+and forms the drafter next-token distribution:
+
+|qdep(⋅∣y,x\<i)=∑z=1Kq(z∣y,x\<i)qi(⋅∣y,z).q\_{\\mathrm{dep}}(\\cdot\\mid y,x\_{\<i})=\\sum\_{z=1}^{K}q(z\\mid y,x\_{\<i})q\_{i}(\\cdot\\mid y,z).|(12)|
+|------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+#### Distributional correctness. ####
+
+The non-greedy speculative-sampling proof applies to any proposal distribution qq as long as the acceptance probability and residual sampler use the same proposal conditional that generated the draft. Our change only modifies how the proposal block is parameterized and sampled. In our evaluations verification uses the conditional distribution induced by greedy branch decoding in Equation [9](#S3.E9) and the replacement token after rejection is sampled from the usual normalized positive residual distribution max(p(⋅∣y,x\<i)−q(⋅∣y,x\<i),0)\\max(p(\\cdot\\mid y,x\_{\<i})-q(\\cdot\\mid y,x\_{\<i}),0) using the corresponding proposal conditional in Equation [12](#S3.E12). Therefore, the vanilla speculative-sampling correction remains exact for the target distribution for the greedy-branch proposal used in our evaluations.
+
+#### Architecture. ####
+
+We make a minimal output-side modification to the original DFlash architecture. The final transformer layer of DFlash trunk produces a hidden state hih\_{i} for each block position. A category hidden expander maps this state to KK category-specific offsets, producing hidden branches
+
+|hi,z=hi+gz​(hi),z∈{1,…,K}.h\_{i,z}=h\_{i}+g\_{z}(h\_{i}),\\qquad z\\in\\{1,\\ldots,K\\}.|(13)|
+|----------------------------------------------------------------------------------------|----|
+
+The target LM head is then reused to obtain token logits from each branch to compute qi(.∣y,z)q\_{i}(.\\mid y,z). A separate category-prior head maps the block-anchor hidden state to KK logits for q⁡(z∣y)q(z\\mid y). This modification adds only the expander and category-prior parameters. In this way the new model can be easily initialized from an existing DFlash checkpoint to benefit from the pre-trained knowledge. In the current experiments, the expander is a single linear layer and the prior is a single linear head; An example of parameter overhead for 4 categories is summarized in Table [1](#S3.T1). As the expander can parallelize the computation across categories, all branch outputs can be computed in one model forward pass. We further investigate the latency overhead of this modification in Appendix Section [D](#A4).
+
+Table 1: Parameter overhead of the category hidden expander and category-prior head used in our experiments. For hidden size HH, the added parameters are K​H2+2​K​H+KKH^{2}+2KH+K. Percentages in parentheses are relative to the corresponding original DFlash drafter checkpoints.
+
+### 3.2 Acceptance-Oriented Training ###
+
+The NLL baselines in Equations [6](#S2.E6)–[8](#S2.E8) are simple and stable, and they improve the likelihood of target-generated blocks under the proposal. However, they do not account for the verifier’s sequential acceptance behavior. We therefore use expected accepted length to motivate an acceptance-oriented training surrogate. Decomposing accepted length into prefix-acceptance events gives
+
+|                         𝔼x1:b∼q(⋅∣y)[ALb(x1:b)]\\displaystyle\\mathbb{E}\_{x\_{1:b}\\sim q(\\cdot\\mid y)}\\!\\left[AL\_{b}(x\_{1:b})\\right]                          |\=∑ℓ=1b𝔼x1:ℓ∼q(⋅∣y)[∏j=1ℓAj]\\displaystyle=\\sum\_{\\ell=1}^{b}\\mathbb{E}\_{x\_{1:\\ell}\\sim q(\\cdot\\mid y)}\\left[\\prod\_{j=1}^{\\ell}A\_{j}\\right]|(14)|
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+|\=∑ℓ=1b𝔼x1:ℓ∼p(⋅∣y)[rℓ∏j=1ℓAj],\\displaystyle=\\sum\_{\\ell=1}^{b}\\mathbb{E}\_{x\_{1:\\ell}\\sim p(\\cdot\\mid y)}\\left[r\_{\\ell}\\prod\_{j=1}^{\\ell}A\_{j}\\right],|                                                                                                                                                          |    |
+
+where
+
+|rℓ=q(x1:ℓ∣y)p(x1:ℓ∣y)r\_{\\ell}=\\frac{q(x\_{1:\\ell}\\mid y)}{p(x\_{1:\\ell}\\mid y)}|
+|--------------------------------------------------------------------------------------|
+
+is the importance ratio for prefix x1:ℓx\_{1:\\ell}. Here pp is the target distribution after applying the same temperature, top-pp, and top-kk transformation used to generate the training trajectory and to compute the acceptance probabilities. The second equality in Equation [14](#S3.E14) changes measure separately for each accepted-prefix term. Ratios are evaluated only on target-sampled prefixes, for which p(x1:ℓ∣y)\>0p(x\_{1:\\ell}\\mid y)\>0.
+
+This prefix-wise form also handles the zero probabilities introduced by top-pp and top-kk filtering. If a draft first leaves the filtered target support at position jj, then according to [2](#S2.E2), Aj=0A\_{j}=0, so its contribution is zero for every prefix length ℓ≥j\\ell\\geq j. Any positive contribution from the accepted prefix before position jj is retained in the separate terms with ℓ\<j\\ell\<j. Thus, Equation [14](#S3.E14) does not require applying a full-block importance ratio to trajectories outside the filtered target support.
+
+Equation [14](#S3.E14) lets us evaluate the exact accepted-length criterion using target-generated trajectories, but we do not directly optimize its raw importance-weighted terms. Early in training, the drafter and target distributions can have weak overlap, making these terms difficult to optimize. Instead, for each target prefix we define
+
+|Sℓ=∑i=1ℓ∏j=1iAj,S\_{\\ell}=\\sum\_{i=1}^{\\ell}\\prod\_{j=1}^{i}A\_{j},|
+|-----------------------------------------------------------------------|
+
+where SℓS\_{\\ell} is the conditional expected accepted length within sub-block x1:ℓx\_{1:\\ell}. We retain prefixes through the first position at which rℓr\_{\\ell} falls below a threshold τ\\tau. Formally,
+
+|ℓτ=min⁡({ℓ∈{1,…,b}:rℓ\<τ}∪{b}),\\ell\_{\\tau}=\\min\\left(\\{\\ell\\in\\{1,\\ldots,b\\}:r\_{\\ell}\<\\tau\\}\\cup\\{b\\}\\right),|
+|---------------------------------------------------------------------------------------------------------------------------------|
+
+|𝒯τ(x1:b)={1,…,ℓτ}.\\qquad\\mathcal{T}\_{\\tau}(x\_{1:b})=\\{1,\\ldots,\\ell\_{\\tau}\\}.|
+|----------------------------------------------------------------------------------------|
+
+The resulting log-domain surrogate is
+
+|𝒥AL=𝔼x1:b∼p(⋅∣y)[∑ℓ∈𝒯τ(x1:b)(logrℓ+logSℓ)].\\displaystyle\\mathcal{J}\_{\\mathrm{AL}}=\\mathbb{E}\_{x\_{1:b}\\sim p(\\cdot\\mid y)}\\left[\\sum\_{\\ell\\in\\mathcal{T}\_{\\tau}(x\_{1:b})}\\left(\\log r\_{\\ell}+\\log S\_{\\ell}\\right)\\right].|(15)|
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+The retained set depends on the current drafter and is treated as a stop-gradient selection rule: gradients pass through the selected terms but not through membership in 𝒯τ\\mathcal{T}\_{\\tau}. The logarithm and parameter-dependent truncation mean that Equation [15](#S3.E15) is neither an unbiased estimator nor a claimed lower bound or statistically consistent estimator of expected accepted length. Rather, it is an acceptance-oriented surrogate that combines proposal probability, through log⁡rℓ\\log r\_{\\ell}, with the verifier’s accepted-prefix signal, through log⁡Sℓ\\log S\_{\\ell}, while excluding longer target prefixes to which the current drafter assigns negligible probability. Our training loss minimizes
+
+|ℒ=−𝒥AL.\\mathcal{L}=-\\mathcal{J}\_{\\mathrm{AL}}.|(16)|
+|--------------------------------------------------|----|
+
+Likelihood-trained drafters are used as comparison baselines in our experiments. We test the practical effect of the surrogate in Section [4](#S4): threshold truncation focuses training on prefixes with non-negligible drafter–target overlap, while summing all retained sub-blocks in 𝒯τ(x1:b)\\mathcal{T}\_{\\tau}(x\_{1:b}) provides denser supervision than optimizing a single retained prefix.
+
+#### Target probabilities during training. ####
+
+The target probabilities in Equations [14](#S3.E14)–[15](#S3.E15) are computed from the target hidden states that are already used for the drafter. We apply the target LM head to the previous-position target hidden state, apply the same target sampling filter used to generate the target trajectory, and gather the probability assigned to each realized next token. Products of these per-token probabilities give p(x1:ℓ∣y)p(x\_{1:\\ell}\\mid y) for each prefix length ℓ\\ell.
+
+4 Experiments and Results
+----------
+
+Experiments are designed to evaluate DBlast against baselines along four dimensions:
+Section [4.1](#S4.SS1) investigates wether dependent block proposals and acceptance-oriented training improve accepted length across a variety of tasks and target-sampling regimes.
+Section [4.2](#S4.SS2) studies how the number of latent categories KK affects performance in terms of accepted length.
+Sections [4.3](#S4.SS3) and [4.4](#S4.SS4) examine the method’s sensitivity to inference-time category temperature and acceptance-loss construction respectively.
+
+Table 2: Holdout comparison of DFlash variants and DBlast using Qwen3-4B
+and Qwen3-8B. Simple task names denote the corresponding held-out benchmark
+splits. Results for both models are shown side by side at high, medium, and
+low target determinism. The dependent-sampling rows use the ZTZ\_{T} selected
+for each model, loss, and target-sampling setting exclusively
+on a disjoint 10%10\\% split and frozen before evaluation on the remaining90%90\\%. Each cell reports
+average accepted draft length rounded to two decimals, with percentage gain
+over the corresponding DFlash baseline in parentheses. Bold marks
+the largest accepted draft length, and underlined marks the
+second-largest distinct value within each model, task, and target-sampling
+setting. Tied values receive the same formatting. Shaded rows report averages
+across the three holdout benchmarks.
+
+#### Models. ####
+
+We evaluate drafters for Qwen3-4B and Qwen3-8B target models 
+> ([20](#bib.bib9))
+
+. For each target model, we follow the architecture design in Section [3](#S3) and initialize the dependent drafter models from the official pre-trained DFlash checkpoints provided by 
+> [5](#bib.bib3)
+
+ with five full-attention layers. In our experiments we instantiate the same expander form for the K=1K\\!=\\!1 baselines, so the capacity to generate a single branch is matched across objective comparisons.
+
+#### Training. ####
+
+We use prompts from the Tulu3 SFT mixture 
+> ([12](#bib.bib10))
+
+. Training responses are generated by the target model with temperature 0.70.7, top-pp0.80.8, and top-kk2020.
+Moreover, unless otherwise stated, AL denotes the sub-block objective in Equation [15](#S3.E15) with threshold τ=0.1\\tau=0.1. In all experiments we finetune the whole drafter model including the pre-trained DFlash parameters for one epoch. We adapt the SpecForge framework 
+> ([16](#bib.bib24); [15](#bib.bib23))
+
+ to our setting. Training hyperparameters are reported in Appendix Section [E](#A5).
+
+#### Tasks. ####
+
+For general evaluation, we use prompts from GSM8K 
+> ([8](#bib.bib11))
+
+, MT-Bench 
+> ([25](#bib.bib13))
+
+, and HumanEval 
+> ([6](#bib.bib12))
+
+. We evaluate three target-sampling settings: temperature 0.70.7, top-pp0.80.8; temperature 1.01.0, top-pp0.950.95; and temperature 1.51.5, top-pp0.950.95, with top-kk fixed to 2020.
+
+#### Evaluation. ####
+
+We report macro-average accepted length while generating up to 256 tokens, excluding the bonus token sampled after accepted tokens. Verification uses vanilla non-greedy speculative decoding with the residual sampler. Independent K=1K\\!=\\!1 drafters decode each block greedily. Dependent K\>1K\\!\>\\!1 drafters first sample a category from the learned prior, optionally after applying category temperature ZTZ\_{T}, and then decode the selected branch greedily. For these greedy-branch evaluations, verification uses the conditional distribution induced by the deterministic mixture proposal in Equation [9](#S3.E9). Since the category prior controls branch diversity and was trained under a fixed target-sampling distribution, we treat ZTZ\_{T} as an inference calibration parameter and report calibrated variants where applicable.
+
+#### Category-temperature calibration. ####
+
+We partition the benchmark prompts into disjoint 10%10\\% calibration and 90%90\\% evaluation splits. We select ZTZ\_{T} from {0.0,0.2,…,1.4}\\{0.0,0.2,\\ldots,1.4\\} using only the calibration split, separately for each target model, training loss, and target-sampling setting, by maximizing macro-average accepted length across the three calibration tasks. We then freeze the selected value and report main results on the held-out evaluation split.
+The evaluation sets contain 1,170 unique GSM8K prompts, 160 unique HumanEval prompts, and 72 unique MT-Bench prompts. We generate 1,170 continuations per task: one per GSM8K prompt and repeated generations from the HumanEval and MT-Bench prompt sets.
+
+### 4.1 Main results ###
+
+Table [2](#S4.T2) compares four drafter variants that isolate the two proposed ingredients:DFlash denotes the independent K=1K\\!=\\!1 drafter trained with NLL;DFlash + AL keeps K=1K\\!=\\!1 but trains with AL;DFlash + DS uses dependent K=4K\\!=\\!4 sampling trained with NLL; andDBlast combines dependent K=4K\\!=\\!4 sampling trained with AL.
+These variants are evaluated across a variety of tasks, target models, and target-sampling settings.
+
+The full ablation separates the effect of the training objective from that of dependency modeling. Acceptance-oriented training improves the independent K=1K\\!=\\!1 drafter over NLL optimization strategy in all average rows, while dependent sampling is most useful as target sampling becomes less deterministic. Combining the two gives the strongest average accepted length for both target models in all three target-sampling regimes. For Qwen3-8B, the average gain of DBlast over DFlash grows from 5.6%5.6\\% in the high-determinism setting to 12.1%12.1\\% in the low-determinism setting. In the same low-determinism setting, independent AL improves by 5.1%5.1\\% and dependent NLL improves by 6.4%6.4\\%, showing that dependency and acceptance-oriented training are complementary.
+
+### 4.2 Ablation on number of categories ###
+
+Table [3](#S4.T3) studies the number of latent categories using the Qwen3-4B DFlash checkpoint in the high-entropy target setting. We fine-tune for one epoch on Tulu3-generated responses and evaluate the mean accepted length across GSM8K, HumanEval, and MT-Bench. Increasing KK improves both NLL and AL variants, but most of the benefit is reached by K=4K\\!=\\!4. AL outperforms NLL for every KK, and its gain from increasing KK is larger, suggesting that the acceptance-oriented objective uses the additional branch capacity more effectively.
+
+Table 3: Qwen3-4B category-count ablation at target samplingT=1.5T\\!=\\!1.5, p=0.95p\\!=\\!0.95 and 1 epoch of finetuning. Entries report
+mean accepted draft length across GSM8K, HumanEval, and MT-Bench.
+
+### 4.3 Ablation on drafter stochasticity at inference ###
+
+Figure 2: Average Acceptance Length for Dependent DFlash-Qwen3-8B with K=4K\\!=\\!4 under NLL and AL variants over category temperatures. Colors correspond to target sampling parameters.
+
+Figure [2](#S4.F2) evaluates inference-time category temperature for the dependent K=4K\\!=\\!4Qwen3-8B drafter under NLL and AL training. Across the full range of ZTZ\_{T}, the AL-trained drafter consistently remains above the NLL-trained drafter in terms of average accepted length. In both cases, the best category temperature also shifts upward as the target distribution becomes less deterministic. This argmax trend suggests a meaningful match between target stochasticity and draft stochasticity: broader target distributions benefit from more category diversity in the drafter. Very large ZTZ\_{T} does not keep improving accepted length, so the benefit comes from calibrated diversity rather than arbitrary noise.
+
+### 4.4 Ablation on acceptance-oriented training loss ###
+
+Table 4: Qwen3-8B ablation of the acceptance-oriented log surrogate at target samplingT=1.5T\\!=\\!1.5, p=0.95p\\!=\\!0.95 and 1 epoch of finetuning. Entries report mean accepted draft length on GSM8K.
+
+Table [4](#S4.T4) ablates the AL construction using 140K-step Qwen3-8B checkpoints evaluated on GSM8K in the high-entropy target setting with ZT=1.0Z\_{T}=1.0. We compare three variants of the log-domain surrogate:
+(i) using only the whole block (ℓ=b\\ell=b),
+(ii) optimizing one threshold-selected prefix, and
+(iii) summing all retained prefixes with τ=0.1\\tau=0.1.
+The whole-block log surrogate is close to the NLL baseline in Table [2](#S4.T2). This variant optimizes log⁡rb+log⁡Sb\\log r\_{b}+\\log S\_{b}, rather than the raw importance-weighted quantity in Equation [14](#S3.E14). When the drafter is still poor, rb=q(x1:b∣y)/p(x1:b∣y)r\_{b}=q(x\_{1:b}\\mid y)/p(x\_{1:b}\\mid y) is often very small, while the acceptance factors AjA\_{j} saturate near 11 on target-sampled prefixes. Consequently, SbS\_{b} changes slowly and the gradient is dominated by log⁡rb\\log r\_{b}, making the update resemble block NLL. Truncating low-overlap prefixes improves the training signal, and summing all retained prefixes gives the strongest result for both K=1K\\!=\\!1 and K=4K\\!=\\!4.
+
+5 Related Work
+----------
+
+#### Speculative decoding and speculative sampling. ####
+
+Speculative decoding accelerates autoregressive generation by proposing tokens with a cheap draft model and verifying them with the target model
+> ([13](#bib.bib1))
+
+. Speculative sampling extends the same principle to stochastic decoding while preserving the target distribution
+> ([4](#bib.bib2))
+
+. Most analyses and systems focus on improving draft accuracy or target-model verification efficiency. Our work focuses on a different failure mode: when the drafter proposes an entire block non-autoregressively, the block’s joint structure can matter as much as the marginal accuracy of individual positions.
+
+#### Parallel and block drafters. ####
+
+Multi-token prediction and block drafting reduce the number of target-model invocations by proposing several future tokens per pass 
+> ([9](#bib.bib4); [3](#bib.bib5))
+
+. DFlash uses a block diffusion drafter to generate draft tokens efficiently and is especially effective for greedy speculative decoding 
+> ([5](#bib.bib3))
+
+. D-PACE changes the training objective for parallel speculative drafters by assigning dynamic position-aware cross-entropy weights 
+> ([23](#bib.bib6))
+
+. Other draft-head methods introduce sequential or semi-autoregressive structure inside the draft, including Hydra, EAGLE, and DSpark 
+> ([1](#bib.bib15); [17](#bib.bib16); [7](#bib.bib14))
+
+. These methods improve drafting quality, but they either retain independent block sampling or introduce within-draft serialization. Our focus is the conditional mismatch introduced by independent non-autoregressive block sampling under non-greedy verification.
+
+#### Dependent multi-token modeling. ####
+
+Recent tensor-decomposition and probabilistic-circuit approaches to multi-token prediction show that explicitly modeling dependencies among future positions can improve the expressiveness of parallel predictors 
+> ([2](#bib.bib7); [10](#bib.bib8))
+
+. These methods typically train by maximizing the likelihood of a target future block under the proposal distribution. For a factorized proposal, this reduces to the standard sum of per-position cross-entropies; for a CP-style latent-mixture proposal, it becomes a marginalized block negative log-likelihood that distributes credit across latent branches according to the learned prior. We use these objectives as likelihood baselines for both independent and dependent drafters.
+
+6 Limitations
+----------
+
+The current study establishes the draft proposal quality benefits of both dependent block drafting and acceptance-oriented training, while leaving three directions for further investigation.
+
+#### Effect of training data stochasticity ####
+
+We primarily evaluated the drafters trained with a set of target responses that are generated using the default sampling parameters. However, inherently, dependent modeling may benefit from more stochasticity in training target blocks since the drafter is exposed to a more accurate representation of target block distribution. We leave the exploration of training dataset stochasticity to future work.
+
+#### Acceptance-oriented objective. ####
+
+We optimize a threshold-truncated, log-domain surrogate motivated by expected accepted length.
+The surrogate is designed to provide a practical training signal when drafter–target overlap is limited,
+and our experiments show that it consistently improves accepted length.
+It does not,
+however,
+provide the formal guarantees of an unbiased estimator or lower bound,
+leaving tighter acceptance-aligned objectives as an interesting direction for future work.
+
+#### Training and inference proposals. ####
+
+Training uses the differentiable soft latent-mixture proposal,
+whereas our primary evaluation samples a category and greedily decodes its corresponding branch.
+This design enables differentiable training while retaining efficient block decoding at inference,
+and its consistent gains across models,
+tasks,
+and sampling regimes demonstrate effective empirical transfer.
+A formal characterization of the relationship between the soft training distribution and the resulting greedy-branch proposal remains open.
+
+7 Conclusion
+----------
+
+We studied block diffusion drafters for non-greedy speculative decoding and showed that independent block sampling creates a fundamental mismatch in non-greedy speculative decoding:
+the drafter predicts future positions separately,
+while the target verifies them conditionally in a sequential manner.
+We show that this mismatch becomes increasingly costly as target decoding grows more stochastic,
+causing independently sampled blocks to lose acceptance precisely when multiple continuations are plausible.
+
+To address this limitation, we introduced DBlast, a dependent block drafter that represents coherent block-level alternatives through a low-rank latent mixture and trains them with an acceptance-oriented objective aligned with sequential verification.DBlast preserves efficient one-pass parallel drafting while consistently improving accepted length across math, coding, chat, and creative-writing tasks,
+with a 12.1%12.1\\% macro-average gain for Qwen3-8B in the highest-entropy setting.
+These results demonstrate that within-block dependency modeling and acceptance-aligned training are complementary ingredients for efficient stochastic speculative decoding.
+
+References
+----------
+
+* Ankner et al. (2024)Z. Ankner, R. Parthasarathy, A. Nrusimha, C. Rinard, J. Ragan-Kelley, and W. BrandonHydra: sequentially-dependent draft heads for medusa decoding.In First Conference on Language Modeling,Cited by: [§1](#S1.p4.1),[§5](#S5.SS0.SSS0.Px2.p1.1).
+* Basharin et al. (2025)A. Basharin, A. Chertkov, and I. OseledetsFaster language models with better multi-token prediction using tensor decomposition.arXiv preprint arXiv:2410.17765.Cited by: [§1](#S1.p4.1),[§2](#S2.SS0.SSS0.Px3.p3.1),[§5](#S5.SS0.SSS0.Px3.p1.1).
+* Cai et al. (2024)T. Cai, Y. Li, Z. Geng, H. Peng, J. D. Lee, D. Chen, and T. DaoMedusa: simple LLM inference acceleration framework with multiple decoding heads.In Proceedings of the 41st International Conference on Machine Learning,Cited by: [§1](#S1.p1.1),[§1](#S1.p2.1),[§5](#S5.SS0.SSS0.Px2.p1.1).
+* Chen et al. (2023)C. Chen, S. Borgeaud, G. Irving, J. Lespiau, L. Sifre, and J. JumperAccelerating large language model decoding with speculative sampling.arXiv preprint arXiv:2302.01318.Cited by: [§1](#S1.p1.1),[§5](#S5.SS0.SSS0.Px1.p1.1).
+* Chen et al. (2026)J. Chen, Y. Liang, and Z. LiuDFlash: block diffusion for flash speculative decoding.arXiv preprint arXiv:2602.06036.Cited by: [§1](#S1.p1.1),[§1](#S1.p2.1),[§4](#S4.SS0.SSS0.Px1.p1.1),[§5](#S5.SS0.SSS0.Px2.p1.1).
+* Chen et al. (2021)M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. d. O. Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, A. Ray, R. Puri, G. Krueger, M. Petrov, H. Khlaaf, G. Sastry, P. Mishkin, B. Chan, S. Gray, N. Ryder, M. Pavlov, A. Power, L. Kaiser, M. Bavarian, C. Winter, P. Tillet, F. P. Such, D. Cummings, M. Plappert, F. Chantzis, E. Barnes, A. Herbert-Voss, W. H. Guss, A. Nichol, A. Paino, N. Tezak, J. Tang, I. Babuschkin, S. Balaji, S. Jain, W. Saunders, C. Hesse, A. N. Carr, J. Leike, J. Achiam, V. Misra, E. Morikawa, A. Radford, M. Knight, M. Brundage, M. Murati, K. Mayer, P. Welinder, B. McGrew, D. Amodei, S. McCandlish, I. Sutskever, and W. ZarembaEvaluating large language models trained on code.arXiv preprint arXiv:2107.03374.Cited by: [§4](#S4.SS0.SSS0.Px3.p1.1).
+* Cheng et al. (2026)X. Cheng, X. Yu, C. Shao, J. Li, Y. Xiong, Y. Qian, J. Zhu, S. Ma, X. Zhang, J. Ye, et al.DSpark: confidence-scheduled speculative decoding with semi-autoregressive generation.arXiv preprint arXiv:2607.05147.Cited by: [§1](#S1.p4.1),[§5](#S5.SS0.SSS0.Px2.p1.1).
+* Cobbe et al. (2021)K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. SchulmanTraining verifiers to solve math word problems.arXiv preprint arXiv:2110.14168.Cited by: [§4](#S4.SS0.SSS0.Px3.p1.1).
+* Gloeckle et al. (2024)F. Gloeckle, B. Y. Idrissi, B. Rozière, D. Lopez-Paz, and G. SynnaeveBetter & faster large language models via multi-token prediction.In Proceedings of the 41st International Conference on Machine Learning,Cited by: [§1](#S1.p1.1),[§1](#S1.p2.1),[§5](#S5.SS0.SSS0.Px2.p1.1).
+* Grivas et al. (2026)A. Grivas, L. Loconte, E. van Krieken, P. Nawrot, Y. Zhao, E. Wielewski, P. Minervini, E. Ponti, and A. VergariFast and expressive multi-byte prediction with probabilistic circuits.In Proceedings of the 43rd International Conference on Machine Learning,Cited by: [§1](#S1.p4.1),[§5](#S5.SS0.SSS0.Px3.p1.1).
+* Holtzman et al. (2020)A. Holtzman, J. Buys, L. Du, M. Forbes, and Y. ChoiThe curious case of neural text degeneration.In International Conference on Learning Representations,Cited by: [§1](#S1.p2.1).
+* Lambert et al. (2024)N. Lambert, J. Morrison, V. Pyatkin, S. Huang, H. Ivison, F. Brahman, L. J. V. Miranda, A. Liu, N. Dziri, S. Lyu, Y. Gu, S. Malik, V. Graf, J. D. Hwang, J. Yang, R. L. Bras, O. Tafjord, C. Wilhelm, L. Soldaini, N. A. Smith, Y. Wang, H. Hajishirzi, L. Zettlemoyer, N. Tandon, S. Swayamdipta, and I. BeltagyTülu 3: pushing frontiers in open language model post-training.arXiv preprint arXiv:2411.15124.Cited by: [§4](#S4.SS0.SSS0.Px2.p1.1).
+* Leviathan et al. (2023)Y. Leviathan, M. Kalman, and Y. MatiasFast inference from transformers via speculative decoding.In Proceedings of the 40th International Conference on Machine Learning,Cited by: [§1](#S1.p1.1),[§5](#S5.SS0.SSS0.Px1.p1.1).
+* Li et al. (2016)J. Li, M. Galley, C. Brockett, J. Gao, and B. DolanA diversity-promoting objective function for neural conversation models.In Proceedings of NAACL-HLT,pp. 110–119.External Links: [Document](https://dx.doi.org/10.18653/v1/N16-1014)Cited by: [§1](#S1.p2.1).
+* Li et al. (2026)S. Li, C. Wang, Y. Zhu, Y. Wang, F. Yin, S. Shi, Y. Chen, X. Dong, Q. Chen, J. Pan, et al.SpecForge: a flexible and efficient open-source training framework for speculative decoding.arXiv preprint arXiv:2603.18567.Cited by: [§4](#S4.SS0.SSS0.Px2.p1.1).
+* Li et al. (2025)S. Li, Y. Zhu, C. Wang, F. Yin, S. Shi, Y. Wang, Y. Zhang, Y. Huang, H. Zheng, and Y. ZhangSpecForge: train speculative decoding models effortlessly.GitHub.Note: https://github.com/sgl-project/specforgeCited by: [§4](#S4.SS0.SSS0.Px2.p1.1).
+* Li et al. (2024)Y. Li, F. Wei, C. Zhang, and H. ZhangEAGLE: speculative sampling requires rethinking feature uncertainty.arXiv preprint arXiv:2401.15077.Cited by: [§1](#S1.p4.1),[§5](#S5.SS0.SSS0.Px2.p1.1).
+* Liu et al. (2025)Z. Liu, C. Chen, W. Li, et al.Understanding R1-zero-like training: a critical perspective.arXiv preprint arXiv:2503.20783.Cited by: [§1](#S1.p2.1).
+* Paech (2025)S. J. PaechEQ-Bench Creative Writing Benchmark v3.GitHub.Note: https://github.com/EQ-bench/creative-writing-benchCited by: [§C.1](#A3.SS1.p1.1).
+* Qwen Team (2025)Qwen TeamQwen3 technical report.arXiv preprint arXiv:2505.09388.Cited by: [§4](#S4.SS0.SSS0.Px1.p1.1).
+* Shao et al. (2024)Z. Shao, P. Wang, Q. Zhu, et al.DeepSeekMath: pushing the limits of mathematical reasoning in open language models.arXiv preprint arXiv:2402.03300.Cited by: [§1](#S1.p2.1).
+* Wiher et al. (2022)G. Wiher, C. Meister, and R. CotterellOn decoding strategies for neural text generators.Transactions of the Association for Computational Linguistics10, pp. 997–1012.External Links: [Document](https://dx.doi.org/10.1162/tacl%5Fa%5F00502)Cited by: [§1](#S1.p2.1).
+* Wu et al. (2026)T. Wu, Y. Yao, Z. Qi, H. Zheng, Z. Wang, H. Ma, L. Liao, H. Lakkaraju, J. Li, and Y. DuD-PACE: dynamic position-aware cross-entropy for parallel speculative drafting.arXiv preprint arXiv:2605.18810.Cited by: [§5](#S5.SS0.SSS0.Px2.p1.1).
+* Yu et al. (2025)Q. Yu, Z. Zhang, R. Zhu, et al.DAPO: an open-source LLM reinforcement learning system at scale.arXiv preprint arXiv:2503.14476.Cited by: [§1](#S1.p2.1).
+* Zheng et al. (2023)L. Zheng, W. Chiang, Y. Sheng, S. Zhuang, Z. Wu, Y. Zhuang, Z. Lin, Z. Li, D. Li, E. P. Xing, H. Zhang, J. E. Gonzalez, and I. StoicaJudging LLM-as-a-judge with MT-Bench and chatbot arena.arXiv preprint arXiv:2306.05685.Cited by: [§4](#S4.SS0.SSS0.Px3.p1.1).
+
+Appendix A Supplementary Material
+----------
+
+This supplement provides the technical and experimental details supporting
+the main paper. Section [B](#A2) provides DBLast overall design and specifies the proposal
+used by the reported greedy-branch decoder and its exact verification.
+Section [C](#A3) documents the early-determinism
+diagnosis. Section [D](#A4) investigates the latency overhead of adding dependency to the drafter, Section [E](#A5) gives the full training configuration, and finally
+Section [F](#A6)covers qualitative behavior of DBLast.
+
+Appendix B DBLast Drafting and Verification
+----------
+
+Figure [3](#A2.F3) illustrates the overall implementation of low-rank mixture dependency modeling in DBLast. Inputs are target prefix hidden states, anchor and masked tokens. The DFlash backbone computes the shared block hidden states; the category-prior head defines the category distribution; and the hidden expander computes all category-specific hidden states in parallel. The category distribution and the branch token distributions define the dependent draft proposal.
+
+The latent-mixture proposal is
+
+|q(x1:b∣y)=∑z=1Kq(z∣y)∏i=1bqi(xi∣y,z).q(x\_{1:b}\\mid y)=\\sum\_{z=1}^{K}q(z\\mid y)\\prod\_{i=1}^{b}q\_{i}(x\_{i}\\mid y,z).|(17)|
+|----------------------------------------------------------------------------------------------------------------------------|----|
+
+which is differentiable and used in our training to comupute the draft probabilty of a sampled (sub-)block.
+
+### B.1 Greedy-Branch Proposal ###
+
+The reported experiments sample a category and decode its branch greedily.
+Let x^i,z​(y)=arg⁡maxv​qi​(v∣y,z)\\widehat{x}\_{i,z}(y)=\\arg\\max\_{v}q\_{i}(v\\mid y,z). For ZT\>0Z\_{T}\>0, defineπz(ZT)​(y)=softmax⁡(ℓ⁡(y)/ZT)z\\pi\_{z}^{(Z\_{T})}(y)=\\operatorname{softmax}(\\ell(y)/Z\_{T})\_{z}. The inference
+proposal is therefore the finite mixture of deterministic blocks
+
+|qgreedy(x1:b∣y)=∑z=1Kπz(ZT)(y)∏i=1b𝟏{xi=x^i,z(y)}.q\_{\\mathrm{greedy}}(x\_{1:b}\\mid y)=\\sum\_{z=1}^{K}\\pi\_{z}^{(Z\_{T})}(y)\\prod\_{i=1}^{b}\\mathbf{1}\\{x\_{i}=\\widehat{x}\_{i,z}(y)\\}.|(18)|
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+For ZT=0Z\_{T}=0, the highest-prior category is selected. Algorithm [1](#alg1) summarizes drafting and verification at inference.
+
+Figure 3: DBLast architecture.
+
+### B.2 Prefix-Marginalized Conditional ###
+
+For draft prefix x\<ix\_{\<i}, let𝒞i​(x\<i)={z:x^\<i,z​(y)=x\<i}\\mathcal{C}\_{i}(x\_{\<i})=\\{z:\\widehat{x}\_{\<i,z}(y)=x\_{\<i}\\} be the set of
+consistent branches. Their normalized posterior weights are
+
+|π\~i,z=πz(ZT)(y)𝟏{z∈𝒞i}∑z′∈𝒞iπz′(ZT)​(y).\\widetilde{\\pi}\_{i,z}=\\frac{\\pi\_{z}^{(Z\_{T})}(y)\\mathbf{1}\\{z\\in\\mathcal{C}\_{i}\\}}{\\sum\_{z^{\\prime}\\in\\mathcal{C}\_{i}}\\pi\_{z^{\\prime}}^{(Z\_{T})}(y)}.|(19)|
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+The conditional proposal used by verification is
+
+|qgreedy(v∣y,x\<i)=∑z∈𝒞iπ\~i,z𝟏{v=x^i,z(y)}.q\_{\\mathrm{greedy}}(v\\mid y,x\_{\<i})=\\sum\_{z\\in\\mathcal{C}\_{i}}\\widetilde{\\pi}\_{i,z}\\mathbf{1}\\{v=\\widehat{x}\_{i,z}(y)\\}.|(20)|
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+This sparse distribution has support on at most KK tokens and naturally
+handles branches that share an initial prefix. Every reported experiment uses Equation [20](#A2.E20), rather than the soft token conditionals in Equation [17](#A2.E17), for acceptance and residual sampling.
+
+### B.3 Distributional Correctness ###
+
+At position ii, the drafted token is accepted with probability
+
+|αi=min⁡{1,p⁡(xi∣y,x\<i)qgreedy​(xi∣y,x\<i)}.\\alpha\_{i}=\\min\\left\\{1,\\frac{p(x\_{i}\\mid y,x\_{\<i})}{q\_{\\mathrm{greedy}}(x\_{i}\\mid y,x\_{\<i})}\\right\\}.|(21)|
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+After a rejection, the replacement is drawn from the normalized positive
+residual [p(⋅∣y,x\<i)−qgreedy(⋅∣y,x\<i)]+[p(\\cdot\\mid y,x\_{\<i})-q\_{\\mathrm{greedy}}(\\cdot\\mid y,x\_{\<i})]\_{+}. The mass emitted through
+acceptance is min⁡{p⁡(v),qgreedy​(v)}\\min\\{p(v),q\_{\\mathrm{greedy}}(v)\\}, and the residual supplies
+exactly the remaining target mass. Applying this argument after each accepted
+prefix preserves the target distribution for the complete output sequence.
+
+Algorithm 1 Greedy-Branch Dependent Speculative Verification
+
+1: Given prefix yy, compute category logits and all KK greedy branches.
+
+2: Sample z∼π(ZT)​(y)z\\sim\\pi^{(Z\_{T})}(y) and selectx1:b=x^1:b,z(y)x\_{1:b}=\\widehat{x}\_{1:b,z}(y).
+
+3: Run the target on the draft to obtainpi(⋅)=p(⋅∣y,x\<i)p\_{i}(\\cdot)=p(\\cdot\\mid y,x\_{\<i}).
+
+4:fori=1,…,bi=1,\\ldots,bdo
+
+5:
+
+ Compute
+
+qgreedy(⋅∣y,x\<i)q\_{\\mathrm{greedy}}(\\cdot\\mid y,x\_{\<i})
+
+ using
+Equation 
+
+[20](#A2.E20)
+
+.
+
+6: Accept xix\_{i} with probabilitymin⁡{1,pi​(xi)/qgreedy​(xi∣y,x\<i)}\\min\\{1,p\_{i}(x\_{i})/q\_{\\mathrm{greedy}}(x\_{i}\\mid y,x\_{\<i})\\}.
+
+7:ifxix\_{i} is rejected then
+
+8: Sample from normalized[pi(⋅)−qgreedy(⋅∣y,x\<i)]+[p\_{i}(\\cdot)-q\_{\\mathrm{greedy}}(\\cdot\\mid y,x\_{\<i})]\_{+} and stop.
+
+9:endif
+
+10:endfor
+
+11: If all tokens are accepted, sample the usual target bonus token.
+
+Appendix C Target-Block Early Determinism
+----------
+
+For prefix yy and block length bb, we define target-block early determinism as
+
+|𝒟b(y)=𝔼x1:b∼ptarget(⋅∣y)[1b∑j=1b∏i=1jptarget(xi∣y,x\<i)].\\mathcal{D}\_{b}(y)=\\mathbb{E}\_{x\_{1:b}\\sim p\_{\\mathrm{target}}(\\cdot\\mid y)}\\left[\\frac{1}{b}\\sum\_{j=1}^{b}\\prod\_{i=1}^{j}p\_{\\mathrm{target}}(x\_{i}\\mid y,x\_{\<i})\\right].|(22)|
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+For fixed jj,
+
+|𝔼X1:j∼ptarget[ptarget(X1:j∣y)]=∑u∈𝒱jptarget(u∣y)2.\\mathbb{E}\_{X\_{1:j}\\sim p\_{\\mathrm{target}}}[p\_{\\mathrm{target}}(X\_{1:j}\\mid y)]=\\sum\_{u\\in\\mathcal{V}^{j}}p\_{\\mathrm{target}}(u\\mid y)^{2}.|(23)|
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+Thus, 𝒟b​(y)\\mathcal{D}\_{b}(y) averages the collision probabilities of the first1,…,b1,\\ldots,b target-prefix distributions. It is large when probability mass
+is concentrated on a few continuations and small when many branches are
+plausible.
+
+Using MM independently sampled blocks, we estimate it as
+
+|𝒟^b​(y)=1M​b​∑m=1M∑j=1b∏i=1jptarget​(xi(m)∣y,x\<i(m)).\\widehat{\\mathcal{D}}\_{b}(y)=\\frac{1}{Mb}\\sum\_{m=1}^{M}\\sum\_{j=1}^{b}\\prod\_{i=1}^{j}p\_{\\mathrm{target}}(x\_{i}^{(m)}\\mid y,x\_{\<i}^{(m)}).|(24)|
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----|
+
+### C.1 Creative-Writing Diagnostic ###
+
+The diagnostic uses Qwen3-8B and compares an independent K=1K=1 DFlash
+drafter trained with NLL against a dependent K=4K=4 drafter trained with AL.
+Creative-writing prompts are taken from the EQ-Bench Creative Writing
+Benchmark v3 
+> ([19](#bib.bib25))
+
+, specifically thecreative\_writing\_prompts\_v3.json prompt file with 330 unique prompts.
+We train drafter variants using target responses with sampling parameters of temperature 1.01.0, top-pp0.950.95, and top-kk2020. One hundred training responses are generated per prompt, and the drafters are fine-tuned on the resulting dataset for 150K steps.
+
+To analyze the trained drafters, we uniformly sampled 30k truncations from a set of target generated responses with same prompts in training. We then measured the expected acceptance length for one block drafting and verification at each truncation. Figure 1 in the main paper shows data corresponding to early-determinism-estimator in Equation [24](#A3.E24), with b=15b=15, M=20M=20, and target sampling parameters
+temperature 1.01.0, top-pp0.950.95, and top-kk2020.
+Table [5](#A3.T5) reports the number of evaluated samples in each target-block early-determinism bin. The significant mass of samples with the lowest determinism (first bin ) and the gain reported in Figure 1 of the paper confirm the importance of dependency modeling and acceptance-oriented training in tasks such as creative writing.
+
+Table 5: Creative-writing sample counts in the target-block
+early-determinism bins used for Figure 1 of the main paper. All methods are
+evaluated on the same sampled truncation points, so the bin counts are shared
+across methods.
+
+Appendix D Latency Overhead
+----------
+
+Accepted draft length isolates proposal quality, but DBLast additionally
+computes category-conditioned branches and the prefix-marginalized mixture
+used during verification. To quantify the practical cost of these operations,
+we measure the wall-clock latency of one complete speculative iteration—one
+drafting step followed by one target-verification step—using Qwen3-4B target model on a consumer level GPU. Each
+reported value is averaged over all speculative iterations executed while
+generating 1,000 responses, with each response capped at 256 new tokens at batch size of 1. All
+methods use the same prompts, target model, decoding configuration, and
+implementation. Calculated overhead is relative to independent DFlash without category expander head.
+
+Table 6: Average wall-clock latency per speculative iteration for Qwen3-4B.Table 7: Average wall-clock latency per speculative iteration for Qwen3-8B.Table 8: Training configuration.
+
+As shown in Table [6](#A4.T6), the main K=4K=4 DBLast
+configuration increases per-iteration latency from 65.3 ms to 66.2 ms, an
+overhead of 0.9 ms (1.4%). The overhead remains modest as the number of
+categories grows, reaching 3.4% at K=8K=8. Thus, in this setting, the
+additional category expander and mixture calculations have a small effect on the combined drafting-and-verification cost.
+
+Appendix E Training Configuration
+----------
+
+The target models are Qwen3-4B and Qwen3-8B. Drafters are initialized from
+the official DFlash checkpoints with five full-attention layers. Unless
+otherwise stated, the entire drafter is fine-tuned for one epoch on target generated responses
+from the Tulu3 SFT mixture. Training responses use temperature 0.70.7, top-pp0.80.8, and top-kk2020. Table [8](#A4.T8) provides the full training configuration.
+
+Appendix F Qualitative Examples
+----------
+
+Table [9](#A6.T9) illustrates the proposal distributions
+at the first draft step for a creative-writing prompt. The target samples
+exhibit several plausible opening modes: some begin with the morning light or
+air, while others begin with the sun over the streets or the Colosseum. The
+independent DFlash drafter can expose only one block for this context.
+
+In contrast, DBLast assigns non-negligible prior mass to all four
+categories (0.200.20–0.310.31) and exposes distinct and coherent block-level alternatives in
+the same parallel drafting pass.
+
+Table 9: Example from the first draft step of a creative-writing run. The target row shows the first ten target-sampled continuations. Non-greedy target sampling admits multiple plausible continuations for the prompt, while independent block drafting exposes a single candidate. The dependent drafter exposes multiple latent-category candidates and learned prior probabilities.
+
+</body>
+(Response complete. 307248 bytes total. Content-type: text/html; charset=utf-8. Fetched in 344ms.)

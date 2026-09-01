@@ -1,0 +1,63 @@
+[953515] downkernel-baseline@127.0.0.1
+  moe_down8_fma_dev_q8_rows_g (4096, 1, 1)x(32, 1, 1), Context 1, Stream 7, Device 0, CC 12.0
+    Warning: Data collection happened without fixed GPU frequencies. Profiling results may be inconsistent.
+    Section: Command line profiler metrics
+    ------------------------------------------------------------------------ ----------- ------------
+    Metric Name                                                              Metric Unit Metric Value
+    ------------------------------------------------------------------------ ----------- ------------
+    dram__bytes.sum.per_second                                                   Gbyte/s       688.54
+    gpu__dram_throughput.avg.pct_of_peak_sustained_elapsed                             %        43.19
+    gpu__time_duration.avg                                                            us        32.42
+    sm__warps_active.avg.pct_of_peak_sustained_active                                  %        44.82
+    smsp__average_warps_issue_stalled_long_scoreboard_per_issue_active.ratio        inst        18.99
+    smsp__average_warps_issue_stalled_not_selected_per_issue_active.ratio           inst         0.59
+    ------------------------------------------------------------------------ ----------- ------------
+
+    Section: Launch Statistics
+    -------------------------------- --------------- ---------------
+    Metric Name                          Metric Unit    Metric Value
+    -------------------------------- --------------- ---------------
+    Block Size                                                    32
+    Cluster Scheduling Policy                           PolicySpread
+    Cluster Size                                                   0
+    Function Cache Configuration                     CachePreferNone
+    Grid Size                                                   4096
+    Preferred Cluster Size                                         0
+    Registers Per Thread             register/thread              44
+    Shared Memory Configuration Size           Kbyte           32.77
+    Driver Shared Memory Per Block       Kbyte/block            1.02
+    Dynamic Shared Memory Per Block       byte/block               0
+    Static Shared Memory Per Block        byte/block               0
+    # SMs                                         SM             188
+    Stack Size                                                  1024
+    Threads                                   thread          131072
+    # TPCs                                                        94
+    Enabled TPC IDs                                              all
+    Uses Green Context                                             0
+    Waves Per SM                                                0.91
+    -------------------------------- --------------- ---------------
+
+    Section: Occupancy
+    ------------------------------- ----------- ------------
+    Metric Name                     Metric Unit Metric Value
+    ------------------------------- ----------- ------------
+    Max Active Clusters                 cluster            0
+    Max Cluster Size                      block            8
+    Overall GPU Occupancy                     %            0
+    Cluster Occupancy                         %            0
+    Block Limit Barriers                  block           24
+    Block Limit SM                        block           24
+    Block Limit Registers                 block           40
+    Block Limit Shared Mem                block           32
+    Block Limit Warps                     block           48
+    Theoretical Active Warps per SM        warp           24
+    Theoretical Occupancy                     %           50
+    Achieved Occupancy                        %        44.82
+    Achieved Active Warps Per SM           warp        21.51
+    ------------------------------- ----------- ------------
+
+    OPT   Est. Local Speedup: 50%                                                                                       
+          The 6.00 theoretical warps per scheduler this kernel can issue according to its occupancy are below the       
+          hardware maximum of 12. This kernel's theoretical occupancy (50.0%) is limited by the number of blocks that   
+          can fit on the SM.                                                                                            
+

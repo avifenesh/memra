@@ -1,0 +1,42 @@
+[server] starting; models config = [("smoke", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy disabled by MEMRA_SPEC_GATE=0: always-spec
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "smoke" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] smoke: regime draft attached (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "smoke": 33 layers, eos=248046
+[worker] smoke: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] smoke: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "smoke": plain 16704 B/token, spec 18560 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["smoke"]
+[server] listening on http://127.0.0.1:8177
+[meter] admit id=cmpl-e08cfd9acbe9e41fe121aafdc446263a tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=104 path=spec = 18560 B/token x ctx + 0MB fixed = 2MB
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=48 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="smoke" 103MB (observed 105MB at ctx 104 path=spec)
+[spec-acc] ctx=48 burst=23/33 cum=23/33=0.697
+[spec-acc] ctx=83 burst=10/18 cum=33/51=0.647
+[meter] admit id=cmpl-cb01b400c4e67000db10b9e646cd520e tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=150 path=spec = 18560 B/token x ctx + 103MB fixed = 106MB
+[worker] spec-affinity: declined (no room (session ctx 104 < need 206); 1 parked, 94 prompt tokens; model smoke)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=94 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=94 burst=24/30 cum=24/30=0.800
+[spec-acc] ctx=129 burst=8/15 cum=32/45=0.711
+[meter] admit id=cmpl-60516467b94d26a803027ae4584bce2e tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=200 path=spec = 18560 B/token x ctx + 103MB fixed = 107MB
+[worker] spec-affinity: declined (no room (session ctx 104 < need 256); 2 parked, 144 prompt tokens; model smoke)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=144 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=144 burst=24/30 cum=24/30=0.800
+[spec-acc] ctx=179 burst=8/15 cum=32/45=0.711
+[meter] admit id=cmpl-cdf5a406d7498bd6382c2dcdef38d9f6 tenant=default lane=interactive model="smoke"
+[admission] request cost: model="smoke" ctx=251 path=spec = 18560 B/token x ctx + 103MB fixed = 108MB
+[worker] spec-affinity: declined (no room (session ctx 150 < need 307); 2 parked, 195 prompt tokens; model smoke)
+[spec-k] model="smoke" tenant="" K=3 source=cold-short prompt=195 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=195 burst=23/30 cum=23/30=0.767
+[spec-acc] ctx=229 burst=12/12 cum=35/42=0.833
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

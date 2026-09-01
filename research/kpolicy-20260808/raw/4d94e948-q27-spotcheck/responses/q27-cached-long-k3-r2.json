@@ -1,0 +1,29 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "</think>\n\nThe most critical remaining regression test is a **concurrent registration/unregistration stress test** that simulates the exact race condition: multiple worker threads simultaneously calling `register()`, `select()`, and `unregister()` on the same selector instance while file descriptors are being accepted and closed. This test should verify that `get_key()` never raises a `KeyError` for a valid, currently registered FD, and that `select()` correctly filters out keys that were unregistered between the syscall returning and the result iteration, ensuring thread-safety of the `_fd_to_key` mapping and the `select()` result processing loop. It directly"
+    }
+  ],
+  "created": 1786211252,
+  "id": "cmpl-0a130455a0272d00fbde34e6d90d4fe7",
+  "model": "q27",
+  "object": "text_completion",
+  "system_fingerprint": "memra-47da3098d8aa",
+  "usage": {
+    "completion_tokens": 128,
+    "elapsed_s": 1.080253725,
+    "prompt_tokens": 5494,
+    "prompt_tokens_details": {
+      "cached_tokens": 5475
+    },
+    "spec": {
+      "acceptance_rate": 0.4506172839506173,
+      "accepted": 73,
+      "drafted": 162,
+      "rounds": 54
+    },
+    "total_tokens": 5622
+  }
+}

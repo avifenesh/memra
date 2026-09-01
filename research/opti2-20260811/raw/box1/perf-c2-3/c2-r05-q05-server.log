@@ -1,0 +1,1306 @@
+[server] starting; models config = [("step37", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[worker] OPTIPIPE increment-2 diagnostic controller armed q_threshold=0.500
+[spec-k] operator pin K=1: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "step37" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step37: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step37": 45 layers, eos=128007
+[worker] step37: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step37: decode chunk cap 8
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "step37": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step37"]
+[server] listening on http://127.0.0.1:8159
+[meter] admit id=chatcmpl-3aad1ec4dd71609cfad56b23b2f24a14 tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=308 path=spec = 85376 B/token x ctx + 0MB fixed = 26MB
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.284 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.192 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[spec-stats] rounds=8 full_accept=8 len_hist=[0, 8] per_slot=[8/8=1.000] total=8/8=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=8/8 cum=8/8=1.000
+[meter] admit id=chatcmpl-cb11884ffb5dec492bbc7d36c9614c11 tenant=default lane=interactive model="step37"
+[worker] spec-affinity: declined (empty suffix; 1 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.211 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.245 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[spec-stats] rounds=8 full_accept=8 len_hist=[0, 8] per_slot=[8/8=1.000] total=8/8=1.000 tok_per_round=2.000
+[spec-acc] ctx=228 burst=8/8 cum=8/8=1.000
+[meter] admit id=chatcmpl-6943b018459a698f6d79930f2c620afb tenant=default lane=interactive model="step37"
+[meter] admit id=chatcmpl-63ec1cfc3856fd86e34b0c058c41d761 tenant=default lane=interactive model="step37"
+[admission] request cost: model="step37" ctx=420 path=spec = 85376 B/token x ctx + 0MB fixed = 36MB
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.211 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.203 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[opti-controller] issue generation=2 q=0.518739 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=2 hit=true q=0.518739 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.188 reconcile=false breaker=false
+[opti-controller] reject q=0.005154 threshold=0.500
+[opti-controller] shadow q=0.005154 admitted=false v_n=false expected_d2=87066 n_acc=0 bonus=54186
+[opti-controller] reject q=0.060792 threshold=0.500
+[opti-controller] shadow q=0.060792 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=17808
+[opti-controller] reject q=0.080911 threshold=0.500
+[opti-controller] shadow q=0.080911 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=18180
+[opti-controller] issue generation=3 q=0.793211 threshold=0.500 verify=[16, 37157]
+[opti-controller] resolve generation=3 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.195 reconcile=false breaker=false
+[opti-controller] reject q=0.457298 threshold=0.500
+[opti-controller] shadow q=0.457298 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=5978
+[opti-controller] issue generation=4 q=0.700454 threshold=0.500 verify=[28, 223]
+[opti-controller] resolve generation=4 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.150 reconcile=false breaker=false
+[opti-controller] reject q=0.061207 threshold=0.500
+[opti-controller] shadow q=0.061207 admitted=false v_n=false expected_d2=19 n_acc=0 bonus=455
+[opti-controller] reject q=0.031203 threshold=0.500
+[opti-controller] shadow q=0.031203 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=50991
+[opti-controller] reject q=0.208226 threshold=0.500
+[opti-controller] shadow q=0.208226 admitted=false v_n=true expected_d2=344 n_acc=1 bonus=344
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=228 burst=14/18 cum=14/18=0.778
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.336 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.214 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[opti-controller] issue generation=2 q=0.518739 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=2 hit=true q=0.518739 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.226 reconcile=false breaker=false
+[opti-controller] reject q=0.005154 threshold=0.500
+[opti-controller] shadow q=0.005154 admitted=false v_n=false expected_d2=87066 n_acc=0 bonus=54186
+[opti-controller] reject q=0.060792 threshold=0.500
+[opti-controller] shadow q=0.060792 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=17808
+[opti-controller] reject q=0.080911 threshold=0.500
+[opti-controller] shadow q=0.080911 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=18180
+[opti-controller] issue generation=3 q=0.793211 threshold=0.500 verify=[16, 37157]
+[opti-controller] resolve generation=3 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.150 reconcile=false breaker=false
+[opti-controller] reject q=0.457298 threshold=0.500
+[opti-controller] shadow q=0.457298 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=5978
+[opti-controller] issue generation=4 q=0.700454 threshold=0.500 verify=[28, 223]
+[opti-controller] resolve generation=4 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.118 reconcile=false breaker=false
+[opti-controller] reject q=0.061207 threshold=0.500
+[opti-controller] shadow q=0.061207 admitted=false v_n=false expected_d2=19 n_acc=0 bonus=455
+[opti-controller] reject q=0.031203 threshold=0.500
+[opti-controller] shadow q=0.031203 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=50991
+[opti-controller] reject q=0.208226 threshold=0.500
+[opti-controller] shadow q=0.208226 admitted=false v_n=true expected_d2=344 n_acc=1 bonus=344
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=228 burst=14/18 cum=14/18=0.778
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.226387 threshold=0.500
+[opti-controller] shadow q=0.226387 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=4197
+[opti-controller] reject q=0.247795 threshold=0.500
+[opti-controller] shadow q=0.247795 admitted=false v_n=false expected_d2=294 n_acc=0 bonus=24921
+[opti-controller] issue generation=0 q=0.722893 threshold=0.500 verify=[710, 7723]
+[opti-controller] resolve generation=0 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.283 reconcile=false breaker=false
+[opti-controller] reject q=0.036249 threshold=0.500
+[opti-controller] shadow q=0.036249 admitted=false v_n=false expected_d2=65 n_acc=0 bonus=54186
+[opti-controller] issue generation=1 q=0.743226 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=1 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.158 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.747594 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=2 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.238 reconcile=false breaker=false
+[opti-controller] reject q=0.003583 threshold=0.500
+[opti-controller] shadow q=0.003583 admitted=false v_n=false expected_d2=412 n_acc=1 bonus=19873
+[opti-controller] reject q=0.267901 threshold=0.500
+[opti-controller] shadow q=0.267901 admitted=false v_n=false expected_d2=62027 n_acc=1 bonus=25240
+[opti-controller] reject q=0.458176 threshold=0.500
+[opti-controller] shadow q=0.458176 admitted=false v_n=true expected_d2=62027 n_acc=1 bonus=62027
+[opti-controller] reject q=0.068114 threshold=0.500
+[opti-controller] shadow q=0.068114 admitted=false v_n=false expected_d2=716 n_acc=1 bonus=52636
+[opti-controller] issue generation=3 q=0.691451 threshold=0.500 verify=[305, 716]
+[opti-controller] resolve generation=3 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.241 reconcile=false breaker=false
+[opti-controller] reject q=0.004994 threshold=0.500
+[opti-controller] shadow q=0.004994 admitted=false v_n=false expected_d2=86220 n_acc=0 bonus=29553
+[opti-controller] reject q=0.096150 threshold=0.500
+[opti-controller] shadow q=0.096150 admitted=false v_n=false expected_d2=4472 n_acc=1 bonus=12582
+[opti-controller] reject q=0.258727 threshold=0.500
+[opti-controller] shadow q=0.258727 admitted=false v_n=true expected_d2=2195 n_acc=1 bonus=2195
+[opti-controller] reject q=0.492167 threshold=0.500
+[opti-controller] shadow q=0.492167 admitted=false v_n=false expected_d2=37157 n_acc=1 bonus=8279
+[opti-controller] issue generation=4 q=0.857581 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=4 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.283 reconcile=false breaker=false
+[opti-controller] reject q=0.032618 threshold=0.500
+[opti-controller] shadow q=0.032618 admitted=false v_n=false expected_d2=1257 n_acc=0 bonus=2899
+[opti-controller] reject q=0.041683 threshold=0.500
+[opti-controller] shadow q=0.041683 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=18180
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=261 burst=13/20 cum=27/38=0.711
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.226387 threshold=0.500
+[opti-controller] shadow q=0.226387 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=4197
+[opti-controller] reject q=0.247795 threshold=0.500
+[opti-controller] shadow q=0.247795 admitted=false v_n=false expected_d2=294 n_acc=0 bonus=24921
+[opti-controller] issue generation=0 q=0.722893 threshold=0.500 verify=[710, 7723]
+[opti-controller] resolve generation=0 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.222 reconcile=false breaker=false
+[opti-controller] reject q=0.036249 threshold=0.500
+[opti-controller] shadow q=0.036249 admitted=false v_n=false expected_d2=65 n_acc=0 bonus=54186
+[opti-controller] issue generation=1 q=0.743226 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=1 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.205 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.747594 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=2 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.259 reconcile=false breaker=false
+[opti-controller] reject q=0.003583 threshold=0.500
+[opti-controller] shadow q=0.003583 admitted=false v_n=false expected_d2=412 n_acc=1 bonus=19873
+[opti-controller] reject q=0.267901 threshold=0.500
+[opti-controller] shadow q=0.267901 admitted=false v_n=false expected_d2=62027 n_acc=1 bonus=25240
+[opti-controller] reject q=0.458176 threshold=0.500
+[opti-controller] shadow q=0.458176 admitted=false v_n=true expected_d2=62027 n_acc=1 bonus=62027
+[opti-controller] reject q=0.068114 threshold=0.500
+[opti-controller] shadow q=0.068114 admitted=false v_n=false expected_d2=716 n_acc=1 bonus=52636
+[opti-controller] issue generation=3 q=0.691451 threshold=0.500 verify=[305, 716]
+[opti-controller] resolve generation=3 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.249 reconcile=false breaker=false
+[opti-controller] reject q=0.004994 threshold=0.500
+[opti-controller] shadow q=0.004994 admitted=false v_n=false expected_d2=86220 n_acc=0 bonus=29553
+[opti-controller] reject q=0.096150 threshold=0.500
+[opti-controller] shadow q=0.096150 admitted=false v_n=false expected_d2=4472 n_acc=1 bonus=12582
+[opti-controller] reject q=0.258727 threshold=0.500
+[opti-controller] shadow q=0.258727 admitted=false v_n=true expected_d2=2195 n_acc=1 bonus=2195
+[opti-controller] reject q=0.492167 threshold=0.500
+[opti-controller] shadow q=0.492167 admitted=false v_n=false expected_d2=37157 n_acc=1 bonus=8279
+[opti-controller] issue generation=4 q=0.857581 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=4 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.167 reconcile=false breaker=false
+[opti-controller] reject q=0.032618 threshold=0.500
+[opti-controller] shadow q=0.032618 admitted=false v_n=false expected_d2=1257 n_acc=0 bonus=2899
+[opti-controller] reject q=0.041683 threshold=0.500
+[opti-controller] shadow q=0.041683 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=18180
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=261 burst=13/20 cum=27/38=0.711
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.050459 threshold=0.500
+[opti-controller] shadow q=0.050459 admitted=false v_n=false expected_d2=362 n_acc=1 bonus=21136
+[opti-controller] reject q=0.070769 threshold=0.500
+[opti-controller] shadow q=0.070769 admitted=false v_n=false expected_d2=4511 n_acc=1 bonus=5784
+[opti-controller] reject q=0.031470 threshold=0.500
+[opti-controller] shadow q=0.031470 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=4197
+[opti-controller] reject q=0.494768 threshold=0.500
+[opti-controller] shadow q=0.494768 admitted=false v_n=true expected_d2=14 n_acc=1 bonus=14
+[opti-controller] reject q=0.325061 threshold=0.500
+[opti-controller] shadow q=0.325061 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=7823
+[opti-controller] reject q=0.231958 threshold=0.500
+[opti-controller] shadow q=0.231958 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=51274
+[opti-controller] issue generation=0 q=0.632949 threshold=0.500 verify=[305, 270]
+[opti-controller] resolve generation=0 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.279 reconcile=true breaker=false
+[opti-controller] reject q=0.093579 threshold=0.500
+[opti-controller] shadow q=0.093579 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=50027
+[opti-controller] reject q=0.108149 threshold=0.500
+[opti-controller] shadow q=0.108149 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=5604
+[opti-controller] reject q=0.163887 threshold=0.500
+[opti-controller] shadow q=0.163887 admitted=false v_n=false expected_d2=2645 n_acc=1 bonus=2192
+[opti-controller] reject q=0.357812 threshold=0.500
+[opti-controller] shadow q=0.357812 admitted=false v_n=false expected_d2=9802 n_acc=0 bonus=15417
+[opti-controller] reject q=0.056557 threshold=0.500
+[opti-controller] shadow q=0.056557 admitted=false v_n=false expected_d2=1660 n_acc=1 bonus=270
+[opti-controller] reject q=0.078642 threshold=0.500
+[opti-controller] shadow q=0.078642 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=107787
+[opti-controller] issue generation=1 q=0.658849 threshold=0.500 verify=[37157, 14]
+[opti-controller] resolve generation=1 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.239 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.988212 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=2 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.309 reconcile=false breaker=false
+[opti-controller] reject q=0.046142 threshold=0.500
+[opti-controller] shadow q=0.046142 admitted=false v_n=false expected_d2=2038 n_acc=1 bonus=17808
+[opti-controller] reject q=0.145143 threshold=0.500
+[opti-controller] shadow q=0.145143 admitted=false v_n=false expected_d2=260 n_acc=1 bonus=7491
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=294 burst=14/19 cum=41/57=0.719
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.050459 threshold=0.500
+[opti-controller] shadow q=0.050459 admitted=false v_n=false expected_d2=362 n_acc=1 bonus=21136
+[opti-controller] reject q=0.070769 threshold=0.500
+[opti-controller] shadow q=0.070769 admitted=false v_n=false expected_d2=4511 n_acc=1 bonus=5784
+[opti-controller] reject q=0.031470 threshold=0.500
+[opti-controller] shadow q=0.031470 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=4197
+[opti-controller] reject q=0.494768 threshold=0.500
+[opti-controller] shadow q=0.494768 admitted=false v_n=true expected_d2=14 n_acc=1 bonus=14
+[opti-controller] reject q=0.325061 threshold=0.500
+[opti-controller] shadow q=0.325061 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=7823
+[opti-controller] reject q=0.231958 threshold=0.500
+[opti-controller] shadow q=0.231958 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=51274
+[opti-controller] issue generation=0 q=0.632949 threshold=0.500 verify=[305, 270]
+[opti-controller] resolve generation=0 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.319 reconcile=true breaker=false
+[opti-controller] reject q=0.093579 threshold=0.500
+[opti-controller] shadow q=0.093579 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=50027
+[opti-controller] reject q=0.108149 threshold=0.500
+[opti-controller] shadow q=0.108149 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=5604
+[opti-controller] reject q=0.163887 threshold=0.500
+[opti-controller] shadow q=0.163887 admitted=false v_n=false expected_d2=2645 n_acc=1 bonus=2192
+[opti-controller] reject q=0.357812 threshold=0.500
+[opti-controller] shadow q=0.357812 admitted=false v_n=false expected_d2=9802 n_acc=0 bonus=15417
+[opti-controller] reject q=0.056557 threshold=0.500
+[opti-controller] shadow q=0.056557 admitted=false v_n=false expected_d2=1660 n_acc=1 bonus=270
+[opti-controller] reject q=0.078642 threshold=0.500
+[opti-controller] shadow q=0.078642 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=107787
+[opti-controller] issue generation=1 q=0.658849 threshold=0.500 verify=[37157, 14]
+[opti-controller] resolve generation=1 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.275 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.988212 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=2 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.333 reconcile=false breaker=false
+[opti-controller] reject q=0.046142 threshold=0.500
+[opti-controller] shadow q=0.046142 admitted=false v_n=false expected_d2=2038 n_acc=1 bonus=17808
+[opti-controller] reject q=0.145143 threshold=0.500
+[opti-controller] shadow q=0.145143 admitted=false v_n=false expected_d2=260 n_acc=1 bonus=7491
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=294 burst=14/19 cum=41/57=0.719
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.204358 threshold=0.500
+[opti-controller] shadow q=0.204358 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=8581
+[opti-controller] reject q=0.345839 threshold=0.500
+[opti-controller] shadow q=0.345839 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=55530
+[opti-controller] reject q=0.316285 threshold=0.500
+[opti-controller] shadow q=0.316285 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=7110
+[opti-controller] reject q=0.235233 threshold=0.500
+[opti-controller] shadow q=0.235233 admitted=false v_n=true expected_d2=418 n_acc=1 bonus=418
+[opti-controller] reject q=0.038492 threshold=0.500
+[opti-controller] shadow q=0.038492 admitted=false v_n=false expected_d2=6690 n_acc=1 bonus=5768
+[opti-controller] reject q=0.017648 threshold=0.500
+[opti-controller] shadow q=0.017648 admitted=false v_n=false expected_d2=95885 n_acc=0 bonus=6490
+[opti-controller] reject q=0.339251 threshold=0.500
+[opti-controller] shadow q=0.339251 admitted=false v_n=true expected_d2=469 n_acc=1 bonus=469
+[opti-controller] reject q=0.018204 threshold=0.500
+[opti-controller] shadow q=0.018204 admitted=false v_n=false expected_d2=72490 n_acc=1 bonus=95885
+[opti-controller] reject q=0.225026 threshold=0.500
+[opti-controller] shadow q=0.225026 admitted=false v_n=false expected_d2=2192 n_acc=0 bonus=93415
+[opti-controller] reject q=0.180486 threshold=0.500
+[opti-controller] shadow q=0.180486 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=9764
+[opti-controller] issue generation=0 q=0.529418 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=0 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.170 reconcile=false breaker=false
+[opti-controller] reject q=0.027990 threshold=0.500
+[opti-controller] shadow q=0.027990 admitted=false v_n=false expected_d2=10175 n_acc=0 bonus=3510
+[opti-controller] reject q=0.199826 threshold=0.500
+[opti-controller] shadow q=0.199826 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=16
+[opti-controller] issue generation=1 q=0.843326 threshold=0.500 verify=[14, 362]
+[opti-controller] resolve generation=1 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.169 reconcile=false breaker=false
+[opti-controller] reject q=0.018401 threshold=0.500
+[opti-controller] shadow q=0.018401 admitted=false v_n=false expected_d2=778 n_acc=0 bonus=1635
+[opti-controller] reject q=0.361199 threshold=0.500
+[opti-controller] shadow q=0.361199 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=1948
+[opti-controller] reject q=0.049804 threshold=0.500
+[opti-controller] shadow q=0.049804 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=2038
+[spec-stats] rounds=18 full_accept=12 len_hist=[0, 18] per_slot=[12/18=0.667] total=12/18=0.667 tok_per_round=1.667
+[spec-acc] ctx=327 burst=12/18 cum=53/75=0.707
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[meter] admit id=chatcmpl-f7f3bef908eafb70ce392711e6614ce7 tenant=default lane=interactive model="step37"
+[opti-controller] reject q=0.204358 threshold=0.500
+[opti-controller] shadow q=0.204358 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=8581
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=327 burst=1/1 cum=42/58=0.724
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.261 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.151 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[opti-controller] issue generation=2 q=0.518739 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=2 hit=true q=0.518739 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.186 reconcile=false breaker=false
+[opti-controller] reject q=0.005154 threshold=0.500
+[opti-controller] shadow q=0.005154 admitted=false v_n=false expected_d2=87066 n_acc=0 bonus=54186
+[opti-controller] reject q=0.060792 threshold=0.500
+[opti-controller] shadow q=0.060792 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=17808
+[opti-controller] reject q=0.080911 threshold=0.500
+[opti-controller] shadow q=0.080911 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=18180
+[opti-controller] issue generation=3 q=0.793211 threshold=0.500 verify=[16, 37157]
+[opti-controller] resolve generation=3 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.214 reconcile=false breaker=false
+[opti-controller] reject q=0.457298 threshold=0.500
+[opti-controller] shadow q=0.457298 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=5978
+[opti-controller] issue generation=4 q=0.700454 threshold=0.500 verify=[28, 223]
+[opti-controller] resolve generation=4 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.142 reconcile=false breaker=false
+[opti-controller] reject q=0.061207 threshold=0.500
+[opti-controller] shadow q=0.061207 admitted=false v_n=false expected_d2=19 n_acc=0 bonus=455
+[opti-controller] reject q=0.031203 threshold=0.500
+[opti-controller] shadow q=0.031203 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=50991
+[opti-controller] reject q=0.208226 threshold=0.500
+[opti-controller] shadow q=0.208226 admitted=false v_n=true expected_d2=344 n_acc=1 bonus=344
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=228 burst=14/18 cum=14/18=0.778
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.345839 threshold=0.500
+[opti-controller] shadow q=0.345839 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=55530
+[opti-controller] reject q=0.316285 threshold=0.500
+[opti-controller] shadow q=0.316285 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=7110
+[opti-controller] reject q=0.235233 threshold=0.500
+[opti-controller] shadow q=0.235233 admitted=false v_n=true expected_d2=418 n_acc=1 bonus=418
+[opti-controller] reject q=0.038492 threshold=0.500
+[opti-controller] shadow q=0.038492 admitted=false v_n=false expected_d2=6690 n_acc=1 bonus=5768
+[opti-controller] reject q=0.017648 threshold=0.500
+[opti-controller] shadow q=0.017648 admitted=false v_n=false expected_d2=95885 n_acc=0 bonus=6490
+[opti-controller] reject q=0.339251 threshold=0.500
+[opti-controller] shadow q=0.339251 admitted=false v_n=true expected_d2=469 n_acc=1 bonus=469
+[opti-controller] reject q=0.018204 threshold=0.500
+[opti-controller] shadow q=0.018204 admitted=false v_n=false expected_d2=72490 n_acc=1 bonus=95885
+[opti-controller] reject q=0.225026 threshold=0.500
+[opti-controller] shadow q=0.225026 admitted=false v_n=false expected_d2=2192 n_acc=0 bonus=93415
+[opti-controller] reject q=0.180486 threshold=0.500
+[opti-controller] shadow q=0.180486 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=9764
+[opti-controller] issue generation=0 q=0.529418 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=0 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.230 reconcile=false breaker=false
+[opti-controller] reject q=0.027990 threshold=0.500
+[opti-controller] shadow q=0.027990 admitted=false v_n=false expected_d2=10175 n_acc=0 bonus=3510
+[opti-controller] reject q=0.199826 threshold=0.500
+[opti-controller] shadow q=0.199826 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=16
+[opti-controller] issue generation=1 q=0.843326 threshold=0.500 verify=[14, 362]
+[opti-controller] resolve generation=1 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.169 reconcile=false breaker=false
+[opti-controller] reject q=0.018401 threshold=0.500
+[opti-controller] shadow q=0.018401 admitted=false v_n=false expected_d2=778 n_acc=0 bonus=1635
+[opti-controller] reject q=0.361199 threshold=0.500
+[opti-controller] shadow q=0.361199 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=1948
+[opti-controller] reject q=0.049804 threshold=0.500
+[opti-controller] shadow q=0.049804 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=2038
+[spec-stats] rounds=17 full_accept=11 len_hist=[0, 17] per_slot=[11/17=0.647] total=11/17=0.647 tok_per_round=1.647
+[spec-acc] ctx=329 burst=11/17 cum=53/75=0.707
+[meter] admit id=chatcmpl-36a5b4d6da659c88642fa458b9953bad tenant=default lane=interactive model="step37"
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.266 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.264 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[opti-controller] issue generation=2 q=0.518739 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=2 hit=true q=0.518739 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.231 reconcile=false breaker=false
+[opti-controller] reject q=0.005154 threshold=0.500
+[opti-controller] shadow q=0.005154 admitted=false v_n=false expected_d2=87066 n_acc=0 bonus=54186
+[opti-controller] reject q=0.060792 threshold=0.500
+[opti-controller] shadow q=0.060792 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=17808
+[opti-controller] reject q=0.080911 threshold=0.500
+[opti-controller] shadow q=0.080911 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=18180
+[opti-controller] issue generation=3 q=0.793211 threshold=0.500 verify=[16, 37157]
+[opti-controller] resolve generation=3 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.186 reconcile=false breaker=false
+[opti-controller] reject q=0.457298 threshold=0.500
+[opti-controller] shadow q=0.457298 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=5978
+[opti-controller] issue generation=4 q=0.700454 threshold=0.500 verify=[28, 223]
+[opti-controller] resolve generation=4 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.225 reconcile=false breaker=false
+[opti-controller] reject q=0.061207 threshold=0.500
+[opti-controller] shadow q=0.061207 admitted=false v_n=false expected_d2=19 n_acc=0 bonus=455
+[opti-controller] reject q=0.031203 threshold=0.500
+[opti-controller] shadow q=0.031203 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=50991
+[opti-controller] reject q=0.208226 threshold=0.500
+[opti-controller] shadow q=0.208226 admitted=false v_n=true expected_d2=344 n_acc=1 bonus=344
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=228 burst=14/18 cum=14/18=0.778
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.226387 threshold=0.500
+[opti-controller] shadow q=0.226387 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=4197
+[opti-controller] reject q=0.247795 threshold=0.500
+[opti-controller] shadow q=0.247795 admitted=false v_n=false expected_d2=294 n_acc=0 bonus=24921
+[opti-controller] issue generation=0 q=0.722893 threshold=0.500 verify=[710, 7723]
+[opti-controller] resolve generation=0 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.246 reconcile=false breaker=false
+[opti-controller] reject q=0.036249 threshold=0.500
+[opti-controller] shadow q=0.036249 admitted=false v_n=false expected_d2=65 n_acc=0 bonus=54186
+[opti-controller] issue generation=1 q=0.743226 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=1 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.197 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.747594 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=2 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.239 reconcile=false breaker=false
+[opti-controller] reject q=0.003583 threshold=0.500
+[opti-controller] shadow q=0.003583 admitted=false v_n=false expected_d2=412 n_acc=1 bonus=19873
+[opti-controller] reject q=0.267901 threshold=0.500
+[opti-controller] shadow q=0.267901 admitted=false v_n=false expected_d2=62027 n_acc=1 bonus=25240
+[opti-controller] reject q=0.458176 threshold=0.500
+[opti-controller] shadow q=0.458176 admitted=false v_n=true expected_d2=62027 n_acc=1 bonus=62027
+[opti-controller] reject q=0.068114 threshold=0.500
+[opti-controller] shadow q=0.068114 admitted=false v_n=false expected_d2=716 n_acc=1 bonus=52636
+[opti-controller] issue generation=3 q=0.691451 threshold=0.500 verify=[305, 716]
+[opti-controller] resolve generation=3 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.177 reconcile=false breaker=false
+[opti-controller] reject q=0.004994 threshold=0.500
+[opti-controller] shadow q=0.004994 admitted=false v_n=false expected_d2=86220 n_acc=0 bonus=29553
+[opti-controller] reject q=0.096150 threshold=0.500
+[opti-controller] shadow q=0.096150 admitted=false v_n=false expected_d2=4472 n_acc=1 bonus=12582
+[opti-controller] reject q=0.258727 threshold=0.500
+[opti-controller] shadow q=0.258727 admitted=false v_n=true expected_d2=2195 n_acc=1 bonus=2195
+[opti-controller] reject q=0.492167 threshold=0.500
+[opti-controller] shadow q=0.492167 admitted=false v_n=false expected_d2=37157 n_acc=1 bonus=8279
+[opti-controller] issue generation=4 q=0.857581 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=4 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.263 reconcile=false breaker=false
+[opti-controller] reject q=0.032618 threshold=0.500
+[opti-controller] shadow q=0.032618 admitted=false v_n=false expected_d2=1257 n_acc=0 bonus=2899
+[opti-controller] reject q=0.041683 threshold=0.500
+[opti-controller] shadow q=0.041683 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=18180
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=261 burst=13/20 cum=27/38=0.711
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.050459 threshold=0.500
+[opti-controller] shadow q=0.050459 admitted=false v_n=false expected_d2=362 n_acc=1 bonus=21136
+[opti-controller] reject q=0.070769 threshold=0.500
+[opti-controller] shadow q=0.070769 admitted=false v_n=false expected_d2=4511 n_acc=1 bonus=5784
+[opti-controller] reject q=0.031470 threshold=0.500
+[opti-controller] shadow q=0.031470 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=4197
+[opti-controller] reject q=0.494768 threshold=0.500
+[opti-controller] shadow q=0.494768 admitted=false v_n=true expected_d2=14 n_acc=1 bonus=14
+[opti-controller] reject q=0.325061 threshold=0.500
+[opti-controller] shadow q=0.325061 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=7823
+[opti-controller] reject q=0.231958 threshold=0.500
+[opti-controller] shadow q=0.231958 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=51274
+[opti-controller] issue generation=0 q=0.632949 threshold=0.500 verify=[305, 270]
+[opti-controller] resolve generation=0 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.293 reconcile=true breaker=false
+[opti-controller] reject q=0.093579 threshold=0.500
+[opti-controller] shadow q=0.093579 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=50027
+[opti-controller] reject q=0.108149 threshold=0.500
+[opti-controller] shadow q=0.108149 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=5604
+[opti-controller] reject q=0.163887 threshold=0.500
+[opti-controller] shadow q=0.163887 admitted=false v_n=false expected_d2=2645 n_acc=1 bonus=2192
+[opti-controller] reject q=0.357812 threshold=0.500
+[opti-controller] shadow q=0.357812 admitted=false v_n=false expected_d2=9802 n_acc=0 bonus=15417
+[opti-controller] reject q=0.056557 threshold=0.500
+[opti-controller] shadow q=0.056557 admitted=false v_n=false expected_d2=1660 n_acc=1 bonus=270
+[opti-controller] reject q=0.078642 threshold=0.500
+[opti-controller] shadow q=0.078642 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=107787
+[opti-controller] issue generation=1 q=0.658849 threshold=0.500 verify=[37157, 14]
+[opti-controller] resolve generation=1 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.248 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.988212 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=2 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.283 reconcile=false breaker=false
+[opti-controller] reject q=0.046142 threshold=0.500
+[opti-controller] shadow q=0.046142 admitted=false v_n=false expected_d2=2038 n_acc=1 bonus=17808
+[opti-controller] reject q=0.145143 threshold=0.500
+[opti-controller] shadow q=0.145143 admitted=false v_n=false expected_d2=260 n_acc=1 bonus=7491
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=294 burst=14/19 cum=41/57=0.719
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.226387 threshold=0.500
+[opti-controller] shadow q=0.226387 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=4197
+[opti-controller] reject q=0.247795 threshold=0.500
+[opti-controller] shadow q=0.247795 admitted=false v_n=false expected_d2=294 n_acc=0 bonus=24921
+[opti-controller] issue generation=0 q=0.722893 threshold=0.500 verify=[710, 7723]
+[opti-controller] resolve generation=0 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.260 reconcile=false breaker=false
+[opti-controller] reject q=0.036249 threshold=0.500
+[opti-controller] shadow q=0.036249 admitted=false v_n=false expected_d2=65 n_acc=0 bonus=54186
+[opti-controller] issue generation=1 q=0.743226 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=1 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.257 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.747594 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=2 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.245 reconcile=false breaker=false
+[opti-controller] reject q=0.003583 threshold=0.500
+[opti-controller] shadow q=0.003583 admitted=false v_n=false expected_d2=412 n_acc=1 bonus=19873
+[opti-controller] reject q=0.267901 threshold=0.500
+[opti-controller] shadow q=0.267901 admitted=false v_n=false expected_d2=62027 n_acc=1 bonus=25240
+[opti-controller] reject q=0.458176 threshold=0.500
+[opti-controller] shadow q=0.458176 admitted=false v_n=true expected_d2=62027 n_acc=1 bonus=62027
+[opti-controller] reject q=0.068114 threshold=0.500
+[opti-controller] shadow q=0.068114 admitted=false v_n=false expected_d2=716 n_acc=1 bonus=52636
+[opti-controller] issue generation=3 q=0.691451 threshold=0.500 verify=[305, 716]
+[opti-controller] resolve generation=3 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.257 reconcile=false breaker=false
+[opti-controller] reject q=0.004994 threshold=0.500
+[opti-controller] shadow q=0.004994 admitted=false v_n=false expected_d2=86220 n_acc=0 bonus=29553
+[opti-controller] reject q=0.096150 threshold=0.500
+[opti-controller] shadow q=0.096150 admitted=false v_n=false expected_d2=4472 n_acc=1 bonus=12582
+[opti-controller] reject q=0.258727 threshold=0.500
+[opti-controller] shadow q=0.258727 admitted=false v_n=true expected_d2=2195 n_acc=1 bonus=2195
+[opti-controller] reject q=0.492167 threshold=0.500
+[opti-controller] shadow q=0.492167 admitted=false v_n=false expected_d2=37157 n_acc=1 bonus=8279
+[opti-controller] issue generation=4 q=0.857581 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=4 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.220 reconcile=false breaker=false
+[opti-controller] reject q=0.032618 threshold=0.500
+[opti-controller] shadow q=0.032618 admitted=false v_n=false expected_d2=1257 n_acc=0 bonus=2899
+[opti-controller] reject q=0.041683 threshold=0.500
+[opti-controller] shadow q=0.041683 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=18180
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=261 burst=13/20 cum=27/38=0.711
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.204358 threshold=0.500
+[opti-controller] shadow q=0.204358 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=8581
+[opti-controller] reject q=0.345839 threshold=0.500
+[opti-controller] shadow q=0.345839 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=55530
+[opti-controller] reject q=0.316285 threshold=0.500
+[opti-controller] shadow q=0.316285 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=7110
+[opti-controller] reject q=0.235233 threshold=0.500
+[opti-controller] shadow q=0.235233 admitted=false v_n=true expected_d2=418 n_acc=1 bonus=418
+[opti-controller] reject q=0.038492 threshold=0.500
+[opti-controller] shadow q=0.038492 admitted=false v_n=false expected_d2=6690 n_acc=1 bonus=5768
+[opti-controller] reject q=0.017648 threshold=0.500
+[opti-controller] shadow q=0.017648 admitted=false v_n=false expected_d2=95885 n_acc=0 bonus=6490
+[opti-controller] reject q=0.339251 threshold=0.500
+[opti-controller] shadow q=0.339251 admitted=false v_n=true expected_d2=469 n_acc=1 bonus=469
+[opti-controller] reject q=0.018204 threshold=0.500
+[opti-controller] shadow q=0.018204 admitted=false v_n=false expected_d2=72490 n_acc=1 bonus=95885
+[opti-controller] reject q=0.225026 threshold=0.500
+[opti-controller] shadow q=0.225026 admitted=false v_n=false expected_d2=2192 n_acc=0 bonus=93415
+[opti-controller] reject q=0.180486 threshold=0.500
+[opti-controller] shadow q=0.180486 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=9764
+[opti-controller] issue generation=0 q=0.529418 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=0 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.332 reconcile=false breaker=false
+[opti-controller] reject q=0.027990 threshold=0.500
+[opti-controller] shadow q=0.027990 admitted=false v_n=false expected_d2=10175 n_acc=0 bonus=3510
+[opti-controller] reject q=0.199826 threshold=0.500
+[opti-controller] shadow q=0.199826 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=16
+[opti-controller] issue generation=1 q=0.843326 threshold=0.500 verify=[14, 362]
+[opti-controller] resolve generation=1 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.195 reconcile=false breaker=false
+[opti-controller] reject q=0.018401 threshold=0.500
+[opti-controller] shadow q=0.018401 admitted=false v_n=false expected_d2=778 n_acc=0 bonus=1635
+[opti-controller] reject q=0.361199 threshold=0.500
+[opti-controller] shadow q=0.361199 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=1948
+[opti-controller] reject q=0.049804 threshold=0.500
+[opti-controller] shadow q=0.049804 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=2038
+[spec-stats] rounds=18 full_accept=12 len_hist=[0, 18] per_slot=[12/18=0.667] total=12/18=0.667 tok_per_round=1.667
+[spec-acc] ctx=327 burst=12/18 cum=53/75=0.707
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[meter] admit id=chatcmpl-dbd37b8b3a524a86fe572a962b5667d6 tenant=default lane=interactive model="step37"
+[opti-controller] reject q=0.050459 threshold=0.500
+[opti-controller] shadow q=0.050459 admitted=false v_n=false expected_d2=362 n_acc=1 bonus=21136
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=294 burst=1/1 cum=28/39=0.718
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.271 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.191 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[opti-controller] issue generation=2 q=0.518739 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=2 hit=true q=0.518739 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.232 reconcile=false breaker=false
+[opti-controller] reject q=0.005154 threshold=0.500
+[opti-controller] shadow q=0.005154 admitted=false v_n=false expected_d2=87066 n_acc=0 bonus=54186
+[opti-controller] reject q=0.060792 threshold=0.500
+[opti-controller] shadow q=0.060792 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=17808
+[opti-controller] reject q=0.080911 threshold=0.500
+[opti-controller] shadow q=0.080911 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=18180
+[opti-controller] issue generation=3 q=0.793211 threshold=0.500 verify=[16, 37157]
+[opti-controller] resolve generation=3 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.248 reconcile=false breaker=false
+[opti-controller] reject q=0.457298 threshold=0.500
+[opti-controller] shadow q=0.457298 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=5978
+[opti-controller] issue generation=4 q=0.700454 threshold=0.500 verify=[28, 223]
+[opti-controller] resolve generation=4 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.083 reconcile=false breaker=false
+[opti-controller] reject q=0.061207 threshold=0.500
+[opti-controller] shadow q=0.061207 admitted=false v_n=false expected_d2=19 n_acc=0 bonus=455
+[opti-controller] reject q=0.031203 threshold=0.500
+[opti-controller] shadow q=0.031203 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=50991
+[opti-controller] reject q=0.208226 threshold=0.500
+[opti-controller] shadow q=0.208226 admitted=false v_n=true expected_d2=344 n_acc=1 bonus=344
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=228 burst=14/18 cum=14/18=0.778
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.070769 threshold=0.500
+[opti-controller] shadow q=0.070769 admitted=false v_n=false expected_d2=4511 n_acc=1 bonus=5784
+[opti-controller] reject q=0.031470 threshold=0.500
+[opti-controller] shadow q=0.031470 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=4197
+[opti-controller] reject q=0.494768 threshold=0.500
+[opti-controller] shadow q=0.494768 admitted=false v_n=true expected_d2=14 n_acc=1 bonus=14
+[opti-controller] reject q=0.325061 threshold=0.500
+[opti-controller] shadow q=0.325061 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=7823
+[opti-controller] reject q=0.231958 threshold=0.500
+[opti-controller] shadow q=0.231958 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=51274
+[opti-controller] issue generation=0 q=0.632949 threshold=0.500 verify=[305, 270]
+[opti-controller] resolve generation=0 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.207 reconcile=true breaker=false
+[opti-controller] reject q=0.093579 threshold=0.500
+[opti-controller] shadow q=0.093579 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=50027
+[opti-controller] reject q=0.108149 threshold=0.500
+[opti-controller] shadow q=0.108149 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=5604
+[opti-controller] reject q=0.163887 threshold=0.500
+[opti-controller] shadow q=0.163887 admitted=false v_n=false expected_d2=2645 n_acc=1 bonus=2192
+[opti-controller] reject q=0.357812 threshold=0.500
+[opti-controller] shadow q=0.357812 admitted=false v_n=false expected_d2=9802 n_acc=0 bonus=15417
+[opti-controller] reject q=0.056557 threshold=0.500
+[opti-controller] shadow q=0.056557 admitted=false v_n=false expected_d2=1660 n_acc=1 bonus=270
+[opti-controller] reject q=0.078642 threshold=0.500
+[opti-controller] shadow q=0.078642 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=107787
+[opti-controller] issue generation=1 q=0.658849 threshold=0.500 verify=[37157, 14]
+[opti-controller] resolve generation=1 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.271 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.988212 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=2 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.251 reconcile=false breaker=false
+[opti-controller] reject q=0.046142 threshold=0.500
+[opti-controller] shadow q=0.046142 admitted=false v_n=false expected_d2=2038 n_acc=1 bonus=17808
+[opti-controller] reject q=0.145143 threshold=0.500
+[opti-controller] shadow q=0.145143 admitted=false v_n=false expected_d2=260 n_acc=1 bonus=7491
+[opti-controller] reject q=0.128827 threshold=0.500
+[opti-controller] shadow q=0.128827 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=295
+[opti-controller] reject q=0.226586 threshold=0.500
+[opti-controller] shadow q=0.226586 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=36136
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=296 burst=14/19 cum=42/58=0.724
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.345839 threshold=0.500
+[opti-controller] shadow q=0.345839 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=55530
+[opti-controller] reject q=0.316285 threshold=0.500
+[opti-controller] shadow q=0.316285 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=7110
+[opti-controller] reject q=0.235233 threshold=0.500
+[opti-controller] shadow q=0.235233 admitted=false v_n=true expected_d2=418 n_acc=1 bonus=418
+[opti-controller] reject q=0.038492 threshold=0.500
+[opti-controller] shadow q=0.038492 admitted=false v_n=false expected_d2=6690 n_acc=1 bonus=5768
+[opti-controller] reject q=0.017648 threshold=0.500
+[opti-controller] shadow q=0.017648 admitted=false v_n=false expected_d2=95885 n_acc=0 bonus=6490
+[opti-controller] reject q=0.339251 threshold=0.500
+[opti-controller] shadow q=0.339251 admitted=false v_n=true expected_d2=469 n_acc=1 bonus=469
+[opti-controller] reject q=0.018204 threshold=0.500
+[opti-controller] shadow q=0.018204 admitted=false v_n=false expected_d2=72490 n_acc=1 bonus=95885
+[opti-controller] reject q=0.225026 threshold=0.500
+[opti-controller] shadow q=0.225026 admitted=false v_n=false expected_d2=2192 n_acc=0 bonus=93415
+[opti-controller] reject q=0.180486 threshold=0.500
+[opti-controller] shadow q=0.180486 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=9764
+[opti-controller] issue generation=0 q=0.529418 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=0 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.338 reconcile=false breaker=false
+[opti-controller] reject q=0.027990 threshold=0.500
+[opti-controller] shadow q=0.027990 admitted=false v_n=false expected_d2=10175 n_acc=0 bonus=3510
+[opti-controller] reject q=0.199826 threshold=0.500
+[opti-controller] shadow q=0.199826 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=16
+[opti-controller] issue generation=1 q=0.843326 threshold=0.500 verify=[14, 362]
+[opti-controller] resolve generation=1 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.183 reconcile=false breaker=false
+[opti-controller] reject q=0.018401 threshold=0.500
+[opti-controller] shadow q=0.018401 admitted=false v_n=false expected_d2=778 n_acc=0 bonus=1635
+[opti-controller] reject q=0.361199 threshold=0.500
+[opti-controller] shadow q=0.361199 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=1948
+[opti-controller] reject q=0.049804 threshold=0.500
+[opti-controller] shadow q=0.049804 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=2038
+[spec-stats] rounds=17 full_accept=11 len_hist=[0, 17] per_slot=[11/17=0.647] total=11/17=0.647 tok_per_round=1.647
+[spec-acc] ctx=329 burst=11/17 cum=53/75=0.707
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[meter] admit id=chatcmpl-a63d706e822c51cdde1d1c3df4e73549 tenant=default lane=interactive model="step37"
+[opti-controller] reject q=0.226387 threshold=0.500
+[opti-controller] shadow q=0.226387 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=4197
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=15/19=0.789
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.332 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.256 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[opti-controller] issue generation=2 q=0.518739 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=2 hit=true q=0.518739 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.281 reconcile=false breaker=false
+[opti-controller] reject q=0.005154 threshold=0.500
+[opti-controller] shadow q=0.005154 admitted=false v_n=false expected_d2=87066 n_acc=0 bonus=54186
+[opti-controller] reject q=0.060792 threshold=0.500
+[opti-controller] shadow q=0.060792 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=17808
+[opti-controller] reject q=0.080911 threshold=0.500
+[opti-controller] shadow q=0.080911 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=18180
+[opti-controller] issue generation=3 q=0.793211 threshold=0.500 verify=[16, 37157]
+[opti-controller] resolve generation=3 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.134 reconcile=false breaker=false
+[opti-controller] reject q=0.457298 threshold=0.500
+[opti-controller] shadow q=0.457298 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=5978
+[opti-controller] issue generation=4 q=0.700454 threshold=0.500 verify=[28, 223]
+[opti-controller] resolve generation=4 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.079 reconcile=false breaker=false
+[opti-controller] reject q=0.061207 threshold=0.500
+[opti-controller] shadow q=0.061207 admitted=false v_n=false expected_d2=19 n_acc=0 bonus=455
+[opti-controller] reject q=0.031203 threshold=0.500
+[opti-controller] shadow q=0.031203 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=50991
+[opti-controller] reject q=0.208226 threshold=0.500
+[opti-controller] shadow q=0.208226 admitted=false v_n=true expected_d2=344 n_acc=1 bonus=344
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=228 burst=14/18 cum=14/18=0.778
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.247795 threshold=0.500
+[opti-controller] shadow q=0.247795 admitted=false v_n=false expected_d2=294 n_acc=0 bonus=24921
+[opti-controller] issue generation=0 q=0.722893 threshold=0.500 verify=[710, 7723]
+[opti-controller] resolve generation=0 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.245 reconcile=false breaker=false
+[opti-controller] reject q=0.036249 threshold=0.500
+[opti-controller] shadow q=0.036249 admitted=false v_n=false expected_d2=65 n_acc=0 bonus=54186
+[opti-controller] issue generation=1 q=0.743226 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=1 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.216 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.747594 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=2 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.222 reconcile=false breaker=false
+[opti-controller] reject q=0.003583 threshold=0.500
+[opti-controller] shadow q=0.003583 admitted=false v_n=false expected_d2=412 n_acc=1 bonus=19873
+[opti-controller] reject q=0.267901 threshold=0.500
+[opti-controller] shadow q=0.267901 admitted=false v_n=false expected_d2=62027 n_acc=1 bonus=25240
+[opti-controller] reject q=0.458176 threshold=0.500
+[opti-controller] shadow q=0.458176 admitted=false v_n=true expected_d2=62027 n_acc=1 bonus=62027
+[opti-controller] reject q=0.068114 threshold=0.500
+[opti-controller] shadow q=0.068114 admitted=false v_n=false expected_d2=716 n_acc=1 bonus=52636
+[opti-controller] issue generation=3 q=0.691451 threshold=0.500 verify=[305, 716]
+[opti-controller] resolve generation=3 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.265 reconcile=false breaker=false
+[opti-controller] reject q=0.004994 threshold=0.500
+[opti-controller] shadow q=0.004994 admitted=false v_n=false expected_d2=86220 n_acc=0 bonus=29553
+[opti-controller] reject q=0.096150 threshold=0.500
+[opti-controller] shadow q=0.096150 admitted=false v_n=false expected_d2=4472 n_acc=1 bonus=12582
+[opti-controller] reject q=0.258727 threshold=0.500
+[opti-controller] shadow q=0.258727 admitted=false v_n=true expected_d2=2195 n_acc=1 bonus=2195
+[opti-controller] reject q=0.492167 threshold=0.500
+[opti-controller] shadow q=0.492167 admitted=false v_n=false expected_d2=37157 n_acc=1 bonus=8279
+[opti-controller] issue generation=4 q=0.857581 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=4 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.211 reconcile=false breaker=false
+[opti-controller] reject q=0.032618 threshold=0.500
+[opti-controller] shadow q=0.032618 admitted=false v_n=false expected_d2=1257 n_acc=0 bonus=2899
+[opti-controller] reject q=0.041683 threshold=0.500
+[opti-controller] shadow q=0.041683 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=18180
+[opti-controller] reject q=0.142360 threshold=0.500
+[opti-controller] shadow q=0.142360 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=21323
+[opti-controller] reject q=0.187672 threshold=0.500
+[opti-controller] shadow q=0.187672 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=1902
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=263 burst=13/20 cum=28/39=0.718
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.070769 threshold=0.500
+[opti-controller] shadow q=0.070769 admitted=false v_n=false expected_d2=4511 n_acc=1 bonus=5784
+[opti-controller] reject q=0.031470 threshold=0.500
+[opti-controller] shadow q=0.031470 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=4197
+[opti-controller] reject q=0.494768 threshold=0.500
+[opti-controller] shadow q=0.494768 admitted=false v_n=true expected_d2=14 n_acc=1 bonus=14
+[opti-controller] reject q=0.325061 threshold=0.500
+[opti-controller] shadow q=0.325061 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=7823
+[opti-controller] reject q=0.231958 threshold=0.500
+[opti-controller] shadow q=0.231958 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=51274
+[opti-controller] issue generation=0 q=0.632949 threshold=0.500 verify=[305, 270]
+[opti-controller] resolve generation=0 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.283 reconcile=true breaker=false
+[opti-controller] reject q=0.093579 threshold=0.500
+[opti-controller] shadow q=0.093579 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=50027
+[opti-controller] reject q=0.108149 threshold=0.500
+[opti-controller] shadow q=0.108149 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=5604
+[opti-controller] reject q=0.163887 threshold=0.500
+[opti-controller] shadow q=0.163887 admitted=false v_n=false expected_d2=2645 n_acc=1 bonus=2192
+[opti-controller] reject q=0.357812 threshold=0.500
+[opti-controller] shadow q=0.357812 admitted=false v_n=false expected_d2=9802 n_acc=0 bonus=15417
+[opti-controller] reject q=0.056557 threshold=0.500
+[opti-controller] shadow q=0.056557 admitted=false v_n=false expected_d2=1660 n_acc=1 bonus=270
+[opti-controller] reject q=0.078642 threshold=0.500
+[opti-controller] shadow q=0.078642 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=107787
+[opti-controller] issue generation=1 q=0.658849 threshold=0.500 verify=[37157, 14]
+[opti-controller] resolve generation=1 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.227 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.988212 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=2 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.312 reconcile=false breaker=false
+[opti-controller] reject q=0.046142 threshold=0.500
+[opti-controller] shadow q=0.046142 admitted=false v_n=false expected_d2=2038 n_acc=1 bonus=17808
+[opti-controller] reject q=0.145143 threshold=0.500
+[opti-controller] shadow q=0.145143 admitted=false v_n=false expected_d2=260 n_acc=1 bonus=7491
+[opti-controller] reject q=0.128827 threshold=0.500
+[opti-controller] shadow q=0.128827 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=295
+[opti-controller] reject q=0.226586 threshold=0.500
+[opti-controller] shadow q=0.226586 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=36136
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=296 burst=14/19 cum=42/58=0.724
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.226387 threshold=0.500
+[opti-controller] shadow q=0.226387 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=4197
+[opti-controller] reject q=0.247795 threshold=0.500
+[opti-controller] shadow q=0.247795 admitted=false v_n=false expected_d2=294 n_acc=0 bonus=24921
+[opti-controller] issue generation=0 q=0.722893 threshold=0.500 verify=[710, 7723]
+[opti-controller] resolve generation=0 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.181 reconcile=false breaker=false
+[opti-controller] reject q=0.036249 threshold=0.500
+[opti-controller] shadow q=0.036249 admitted=false v_n=false expected_d2=65 n_acc=0 bonus=54186
+[opti-controller] issue generation=1 q=0.743226 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=1 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.175 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.747594 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=2 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.242 reconcile=false breaker=false
+[opti-controller] reject q=0.003583 threshold=0.500
+[opti-controller] shadow q=0.003583 admitted=false v_n=false expected_d2=412 n_acc=1 bonus=19873
+[opti-controller] reject q=0.267901 threshold=0.500
+[opti-controller] shadow q=0.267901 admitted=false v_n=false expected_d2=62027 n_acc=1 bonus=25240
+[opti-controller] reject q=0.458176 threshold=0.500
+[opti-controller] shadow q=0.458176 admitted=false v_n=true expected_d2=62027 n_acc=1 bonus=62027
+[opti-controller] reject q=0.068114 threshold=0.500
+[opti-controller] shadow q=0.068114 admitted=false v_n=false expected_d2=716 n_acc=1 bonus=52636
+[opti-controller] issue generation=3 q=0.691451 threshold=0.500 verify=[305, 716]
+[opti-controller] resolve generation=3 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.238 reconcile=false breaker=false
+[opti-controller] reject q=0.004994 threshold=0.500
+[opti-controller] shadow q=0.004994 admitted=false v_n=false expected_d2=86220 n_acc=0 bonus=29553
+[opti-controller] reject q=0.096150 threshold=0.500
+[opti-controller] shadow q=0.096150 admitted=false v_n=false expected_d2=4472 n_acc=1 bonus=12582
+[opti-controller] reject q=0.258727 threshold=0.500
+[opti-controller] shadow q=0.258727 admitted=false v_n=true expected_d2=2195 n_acc=1 bonus=2195
+[opti-controller] reject q=0.492167 threshold=0.500
+[opti-controller] shadow q=0.492167 admitted=false v_n=false expected_d2=37157 n_acc=1 bonus=8279
+[opti-controller] issue generation=4 q=0.857581 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=4 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.198 reconcile=false breaker=false
+[opti-controller] reject q=0.032618 threshold=0.500
+[opti-controller] shadow q=0.032618 admitted=false v_n=false expected_d2=1257 n_acc=0 bonus=2899
+[opti-controller] reject q=0.041683 threshold=0.500
+[opti-controller] shadow q=0.041683 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=18180
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=261 burst=13/20 cum=27/38=0.711
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.345839 threshold=0.500
+[opti-controller] shadow q=0.345839 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=55530
+[opti-controller] reject q=0.316285 threshold=0.500
+[opti-controller] shadow q=0.316285 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=7110
+[opti-controller] reject q=0.235233 threshold=0.500
+[opti-controller] shadow q=0.235233 admitted=false v_n=true expected_d2=418 n_acc=1 bonus=418
+[opti-controller] reject q=0.038492 threshold=0.500
+[opti-controller] shadow q=0.038492 admitted=false v_n=false expected_d2=6690 n_acc=1 bonus=5768
+[opti-controller] reject q=0.017648 threshold=0.500
+[opti-controller] shadow q=0.017648 admitted=false v_n=false expected_d2=95885 n_acc=0 bonus=6490
+[opti-controller] reject q=0.339251 threshold=0.500
+[opti-controller] shadow q=0.339251 admitted=false v_n=true expected_d2=469 n_acc=1 bonus=469
+[opti-controller] reject q=0.018204 threshold=0.500
+[opti-controller] shadow q=0.018204 admitted=false v_n=false expected_d2=72490 n_acc=1 bonus=95885
+[opti-controller] reject q=0.225026 threshold=0.500
+[opti-controller] shadow q=0.225026 admitted=false v_n=false expected_d2=2192 n_acc=0 bonus=93415
+[opti-controller] reject q=0.180486 threshold=0.500
+[opti-controller] shadow q=0.180486 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=9764
+[opti-controller] issue generation=0 q=0.529418 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=0 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.269 reconcile=false breaker=false
+[opti-controller] reject q=0.027990 threshold=0.500
+[opti-controller] shadow q=0.027990 admitted=false v_n=false expected_d2=10175 n_acc=0 bonus=3510
+[opti-controller] reject q=0.199826 threshold=0.500
+[opti-controller] shadow q=0.199826 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=16
+[opti-controller] issue generation=1 q=0.843326 threshold=0.500 verify=[14, 362]
+[opti-controller] resolve generation=1 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.177 reconcile=false breaker=false
+[opti-controller] reject q=0.018401 threshold=0.500
+[opti-controller] shadow q=0.018401 admitted=false v_n=false expected_d2=778 n_acc=0 bonus=1635
+[opti-controller] reject q=0.361199 threshold=0.500
+[opti-controller] shadow q=0.361199 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=1948
+[opti-controller] reject q=0.049804 threshold=0.500
+[opti-controller] shadow q=0.049804 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=2038
+[spec-stats] rounds=17 full_accept=11 len_hist=[0, 17] per_slot=[11/17=0.647] total=11/17=0.647 tok_per_round=1.647
+[spec-acc] ctx=329 burst=11/17 cum=53/75=0.707
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[meter] admit id=chatcmpl-12e528a52d7a7f970ce00aa7847146bc tenant=default lane=interactive model="step37"
+[opti-controller] reject q=0.050459 threshold=0.500
+[opti-controller] shadow q=0.050459 admitted=false v_n=false expected_d2=362 n_acc=1 bonus=21136
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=294 burst=1/1 cum=28/39=0.718
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.248 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.284 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[opti-controller] issue generation=2 q=0.518739 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=2 hit=true q=0.518739 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.287 reconcile=false breaker=false
+[opti-controller] reject q=0.005154 threshold=0.500
+[opti-controller] shadow q=0.005154 admitted=false v_n=false expected_d2=87066 n_acc=0 bonus=54186
+[opti-controller] reject q=0.060792 threshold=0.500
+[opti-controller] shadow q=0.060792 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=17808
+[opti-controller] reject q=0.080911 threshold=0.500
+[opti-controller] shadow q=0.080911 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=18180
+[opti-controller] issue generation=3 q=0.793211 threshold=0.500 verify=[16, 37157]
+[opti-controller] resolve generation=3 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.186 reconcile=false breaker=false
+[opti-controller] reject q=0.457298 threshold=0.500
+[opti-controller] shadow q=0.457298 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=5978
+[opti-controller] issue generation=4 q=0.700454 threshold=0.500 verify=[28, 223]
+[opti-controller] resolve generation=4 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.164 reconcile=false breaker=false
+[opti-controller] reject q=0.061207 threshold=0.500
+[opti-controller] shadow q=0.061207 admitted=false v_n=false expected_d2=19 n_acc=0 bonus=455
+[opti-controller] reject q=0.031203 threshold=0.500
+[opti-controller] shadow q=0.031203 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=50991
+[opti-controller] reject q=0.208226 threshold=0.500
+[opti-controller] shadow q=0.208226 admitted=false v_n=true expected_d2=344 n_acc=1 bonus=344
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=228 burst=14/18 cum=14/18=0.778
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.070769 threshold=0.500
+[opti-controller] shadow q=0.070769 admitted=false v_n=false expected_d2=4511 n_acc=1 bonus=5784
+[opti-controller] reject q=0.031470 threshold=0.500
+[opti-controller] shadow q=0.031470 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=4197
+[opti-controller] reject q=0.494768 threshold=0.500
+[opti-controller] shadow q=0.494768 admitted=false v_n=true expected_d2=14 n_acc=1 bonus=14
+[opti-controller] reject q=0.325061 threshold=0.500
+[opti-controller] shadow q=0.325061 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=7823
+[opti-controller] reject q=0.231958 threshold=0.500
+[opti-controller] shadow q=0.231958 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=51274
+[opti-controller] issue generation=0 q=0.632949 threshold=0.500 verify=[305, 270]
+[opti-controller] resolve generation=0 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.195 reconcile=true breaker=false
+[opti-controller] reject q=0.093579 threshold=0.500
+[opti-controller] shadow q=0.093579 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=50027
+[opti-controller] reject q=0.108149 threshold=0.500
+[opti-controller] shadow q=0.108149 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=5604
+[opti-controller] reject q=0.163887 threshold=0.500
+[opti-controller] shadow q=0.163887 admitted=false v_n=false expected_d2=2645 n_acc=1 bonus=2192
+[opti-controller] reject q=0.357812 threshold=0.500
+[opti-controller] shadow q=0.357812 admitted=false v_n=false expected_d2=9802 n_acc=0 bonus=15417
+[opti-controller] reject q=0.056557 threshold=0.500
+[opti-controller] shadow q=0.056557 admitted=false v_n=false expected_d2=1660 n_acc=1 bonus=270
+[opti-controller] reject q=0.078642 threshold=0.500
+[opti-controller] shadow q=0.078642 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=107787
+[opti-controller] issue generation=1 q=0.658849 threshold=0.500 verify=[37157, 14]
+[opti-controller] resolve generation=1 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.223 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.988212 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=2 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.343 reconcile=false breaker=false
+[opti-controller] reject q=0.046142 threshold=0.500
+[opti-controller] shadow q=0.046142 admitted=false v_n=false expected_d2=2038 n_acc=1 bonus=17808
+[opti-controller] reject q=0.145143 threshold=0.500
+[opti-controller] shadow q=0.145143 admitted=false v_n=false expected_d2=260 n_acc=1 bonus=7491
+[opti-controller] reject q=0.128827 threshold=0.500
+[opti-controller] shadow q=0.128827 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=295
+[opti-controller] reject q=0.226586 threshold=0.500
+[opti-controller] shadow q=0.226586 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=36136
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=296 burst=14/19 cum=42/58=0.724
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.345839 threshold=0.500
+[opti-controller] shadow q=0.345839 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=55530
+[opti-controller] reject q=0.316285 threshold=0.500
+[opti-controller] shadow q=0.316285 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=7110
+[opti-controller] reject q=0.235233 threshold=0.500
+[opti-controller] shadow q=0.235233 admitted=false v_n=true expected_d2=418 n_acc=1 bonus=418
+[opti-controller] reject q=0.038492 threshold=0.500
+[opti-controller] shadow q=0.038492 admitted=false v_n=false expected_d2=6690 n_acc=1 bonus=5768
+[opti-controller] reject q=0.017648 threshold=0.500
+[opti-controller] shadow q=0.017648 admitted=false v_n=false expected_d2=95885 n_acc=0 bonus=6490
+[opti-controller] reject q=0.339251 threshold=0.500
+[opti-controller] shadow q=0.339251 admitted=false v_n=true expected_d2=469 n_acc=1 bonus=469
+[opti-controller] reject q=0.018204 threshold=0.500
+[opti-controller] shadow q=0.018204 admitted=false v_n=false expected_d2=72490 n_acc=1 bonus=95885
+[opti-controller] reject q=0.225026 threshold=0.500
+[opti-controller] shadow q=0.225026 admitted=false v_n=false expected_d2=2192 n_acc=0 bonus=93415
+[opti-controller] reject q=0.180486 threshold=0.500
+[opti-controller] shadow q=0.180486 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=9764
+[opti-controller] issue generation=0 q=0.529418 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=0 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.258 reconcile=false breaker=false
+[opti-controller] reject q=0.027990 threshold=0.500
+[opti-controller] shadow q=0.027990 admitted=false v_n=false expected_d2=10175 n_acc=0 bonus=3510
+[opti-controller] reject q=0.199826 threshold=0.500
+[opti-controller] shadow q=0.199826 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=16
+[opti-controller] issue generation=1 q=0.843326 threshold=0.500 verify=[14, 362]
+[opti-controller] resolve generation=1 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.201 reconcile=false breaker=false
+[opti-controller] reject q=0.018401 threshold=0.500
+[opti-controller] shadow q=0.018401 admitted=false v_n=false expected_d2=778 n_acc=0 bonus=1635
+[opti-controller] reject q=0.361199 threshold=0.500
+[opti-controller] shadow q=0.361199 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=1948
+[opti-controller] reject q=0.049804 threshold=0.500
+[opti-controller] shadow q=0.049804 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=2038
+[spec-stats] rounds=17 full_accept=11 len_hist=[0, 17] per_slot=[11/17=0.647] total=11/17=0.647 tok_per_round=1.647
+[spec-acc] ctx=329 burst=11/17 cum=53/75=0.707
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[meter] admit id=chatcmpl-0603ddda75337d19770ed413a69a8d1d tenant=default lane=interactive model="step37"
+[opti-controller] reject q=0.226387 threshold=0.500
+[opti-controller] shadow q=0.226387 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=4197
+[spec-stats] rounds=1 full_accept=1 len_hist=[0, 1] per_slot=[1/1=1.000] total=1/1=1.000 tok_per_round=2.000
+[spec-acc] ctx=261 burst=1/1 cum=15/19=0.789
+[worker] spec-affinity: declined (empty suffix; 2 parked, 228 prompt tokens; model step37)
+[spec-k] model="step37" tenant="" K=1 source=operator-pin prompt=228 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-prime] affinity split=222 tail=6
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.390381 threshold=0.500
+[opti-controller] shadow q=0.390381 admitted=false v_n=false expected_d2=678 n_acc=1 bonus=734
+[opti-controller] issue generation=0 q=0.923254 threshold=0.500 verify=[566, 16]
+[opti-controller] resolve generation=0 hit=true q=0.923254 expected_pending=566 n_acc=1 bonus=566 resolution_ms=12.267 reconcile=false breaker=false
+[opti-controller] reject q=0.020820 threshold=0.500
+[opti-controller] shadow q=0.020820 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=5978
+[opti-controller] reject q=0.436376 threshold=0.500
+[opti-controller] shadow q=0.436376 admitted=false v_n=true expected_d2=270 n_acc=1 bonus=270
+[opti-controller] issue generation=1 q=0.508330 threshold=0.500 verify=[1715, 51015]
+[opti-controller] resolve generation=1 hit=true q=0.508330 expected_pending=1715 n_acc=1 bonus=1715 resolution_ms=12.185 reconcile=false breaker=false
+[opti-controller] reject q=0.026898 threshold=0.500
+[opti-controller] shadow q=0.026898 admitted=false v_n=false expected_d2=1895 n_acc=1 bonus=13672
+[opti-controller] issue generation=2 q=0.518739 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=2 hit=true q=0.518739 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.267 reconcile=false breaker=false
+[opti-controller] reject q=0.005154 threshold=0.500
+[opti-controller] shadow q=0.005154 admitted=false v_n=false expected_d2=87066 n_acc=0 bonus=54186
+[opti-controller] reject q=0.060792 threshold=0.500
+[opti-controller] shadow q=0.060792 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=17808
+[opti-controller] reject q=0.080911 threshold=0.500
+[opti-controller] shadow q=0.080911 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=18180
+[opti-controller] issue generation=3 q=0.793211 threshold=0.500 verify=[16, 37157]
+[opti-controller] resolve generation=3 hit=true q=0.793211 expected_pending=16 n_acc=1 bonus=16 resolution_ms=12.176 reconcile=false breaker=false
+[opti-controller] reject q=0.457298 threshold=0.500
+[opti-controller] shadow q=0.457298 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=5978
+[opti-controller] issue generation=4 q=0.700454 threshold=0.500 verify=[28, 223]
+[opti-controller] resolve generation=4 hit=true q=0.700454 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.120 reconcile=false breaker=false
+[opti-controller] reject q=0.061207 threshold=0.500
+[opti-controller] shadow q=0.061207 admitted=false v_n=false expected_d2=19 n_acc=0 bonus=455
+[opti-controller] reject q=0.031203 threshold=0.500
+[opti-controller] shadow q=0.031203 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=50991
+[opti-controller] reject q=0.208226 threshold=0.500
+[opti-controller] shadow q=0.208226 admitted=false v_n=true expected_d2=344 n_acc=1 bonus=344
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=228 burst=14/18 cum=14/18=0.778
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.247795 threshold=0.500
+[opti-controller] shadow q=0.247795 admitted=false v_n=false expected_d2=294 n_acc=0 bonus=24921
+[opti-controller] issue generation=0 q=0.722893 threshold=0.500 verify=[710, 7723]
+[opti-controller] resolve generation=0 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.212 reconcile=false breaker=false
+[opti-controller] reject q=0.036249 threshold=0.500
+[opti-controller] shadow q=0.036249 admitted=false v_n=false expected_d2=65 n_acc=0 bonus=54186
+[opti-controller] issue generation=1 q=0.743226 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=1 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.224 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.747594 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=2 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.256 reconcile=false breaker=false
+[opti-controller] reject q=0.003583 threshold=0.500
+[opti-controller] shadow q=0.003583 admitted=false v_n=false expected_d2=412 n_acc=1 bonus=19873
+[opti-controller] reject q=0.267901 threshold=0.500
+[opti-controller] shadow q=0.267901 admitted=false v_n=false expected_d2=62027 n_acc=1 bonus=25240
+[opti-controller] reject q=0.458176 threshold=0.500
+[opti-controller] shadow q=0.458176 admitted=false v_n=true expected_d2=62027 n_acc=1 bonus=62027
+[opti-controller] reject q=0.068114 threshold=0.500
+[opti-controller] shadow q=0.068114 admitted=false v_n=false expected_d2=716 n_acc=1 bonus=52636
+[opti-controller] issue generation=3 q=0.691451 threshold=0.500 verify=[305, 716]
+[opti-controller] resolve generation=3 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.317 reconcile=false breaker=false
+[opti-controller] reject q=0.004994 threshold=0.500
+[opti-controller] shadow q=0.004994 admitted=false v_n=false expected_d2=86220 n_acc=0 bonus=29553
+[opti-controller] reject q=0.096150 threshold=0.500
+[opti-controller] shadow q=0.096150 admitted=false v_n=false expected_d2=4472 n_acc=1 bonus=12582
+[opti-controller] reject q=0.258727 threshold=0.500
+[opti-controller] shadow q=0.258727 admitted=false v_n=true expected_d2=2195 n_acc=1 bonus=2195
+[opti-controller] reject q=0.492167 threshold=0.500
+[opti-controller] shadow q=0.492167 admitted=false v_n=false expected_d2=37157 n_acc=1 bonus=8279
+[opti-controller] issue generation=4 q=0.857581 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=4 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.245 reconcile=false breaker=false
+[opti-controller] reject q=0.032618 threshold=0.500
+[opti-controller] shadow q=0.032618 admitted=false v_n=false expected_d2=1257 n_acc=0 bonus=2899
+[opti-controller] reject q=0.041683 threshold=0.500
+[opti-controller] shadow q=0.041683 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=18180
+[opti-controller] reject q=0.142360 threshold=0.500
+[opti-controller] shadow q=0.142360 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=21323
+[opti-controller] reject q=0.187672 threshold=0.500
+[opti-controller] shadow q=0.187672 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=1902
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=263 burst=13/20 cum=28/39=0.718
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.070769 threshold=0.500
+[opti-controller] shadow q=0.070769 admitted=false v_n=false expected_d2=4511 n_acc=1 bonus=5784
+[opti-controller] reject q=0.031470 threshold=0.500
+[opti-controller] shadow q=0.031470 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=4197
+[opti-controller] reject q=0.494768 threshold=0.500
+[opti-controller] shadow q=0.494768 admitted=false v_n=true expected_d2=14 n_acc=1 bonus=14
+[opti-controller] reject q=0.325061 threshold=0.500
+[opti-controller] shadow q=0.325061 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=7823
+[opti-controller] reject q=0.231958 threshold=0.500
+[opti-controller] shadow q=0.231958 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=51274
+[opti-controller] issue generation=0 q=0.632949 threshold=0.500 verify=[305, 270]
+[opti-controller] resolve generation=0 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.243 reconcile=true breaker=false
+[opti-controller] reject q=0.093579 threshold=0.500
+[opti-controller] shadow q=0.093579 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=50027
+[opti-controller] reject q=0.108149 threshold=0.500
+[opti-controller] shadow q=0.108149 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=5604
+[opti-controller] reject q=0.163887 threshold=0.500
+[opti-controller] shadow q=0.163887 admitted=false v_n=false expected_d2=2645 n_acc=1 bonus=2192
+[opti-controller] reject q=0.357812 threshold=0.500
+[opti-controller] shadow q=0.357812 admitted=false v_n=false expected_d2=9802 n_acc=0 bonus=15417
+[opti-controller] reject q=0.056557 threshold=0.500
+[opti-controller] shadow q=0.056557 admitted=false v_n=false expected_d2=1660 n_acc=1 bonus=270
+[opti-controller] reject q=0.078642 threshold=0.500
+[opti-controller] shadow q=0.078642 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=107787
+[opti-controller] issue generation=1 q=0.658849 threshold=0.500 verify=[37157, 14]
+[opti-controller] resolve generation=1 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.223 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.988212 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=2 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.309 reconcile=false breaker=false
+[opti-controller] reject q=0.046142 threshold=0.500
+[opti-controller] shadow q=0.046142 admitted=false v_n=false expected_d2=2038 n_acc=1 bonus=17808
+[opti-controller] reject q=0.145143 threshold=0.500
+[opti-controller] shadow q=0.145143 admitted=false v_n=false expected_d2=260 n_acc=1 bonus=7491
+[opti-controller] reject q=0.128827 threshold=0.500
+[opti-controller] shadow q=0.128827 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=295
+[opti-controller] reject q=0.226586 threshold=0.500
+[opti-controller] shadow q=0.226586 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=36136
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=296 burst=14/19 cum=42/58=0.724
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.226387 threshold=0.500
+[opti-controller] shadow q=0.226387 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=4197
+[opti-controller] reject q=0.247795 threshold=0.500
+[opti-controller] shadow q=0.247795 admitted=false v_n=false expected_d2=294 n_acc=0 bonus=24921
+[opti-controller] issue generation=0 q=0.722893 threshold=0.500 verify=[710, 7723]
+[opti-controller] resolve generation=0 hit=true q=0.722893 expected_pending=710 n_acc=1 bonus=710 resolution_ms=12.243 reconcile=false breaker=false
+[opti-controller] reject q=0.036249 threshold=0.500
+[opti-controller] shadow q=0.036249 admitted=false v_n=false expected_d2=65 n_acc=0 bonus=54186
+[opti-controller] issue generation=1 q=0.743226 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=1 hit=false q=0.743226 expected_pending=306 n_acc=0 bonus=14914 resolution_ms=12.178 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.747594 threshold=0.500 verify=[306, 14]
+[opti-controller] resolve generation=2 hit=true q=0.747594 expected_pending=306 n_acc=1 bonus=306 resolution_ms=12.236 reconcile=false breaker=false
+[opti-controller] reject q=0.003583 threshold=0.500
+[opti-controller] shadow q=0.003583 admitted=false v_n=false expected_d2=412 n_acc=1 bonus=19873
+[opti-controller] reject q=0.267901 threshold=0.500
+[opti-controller] shadow q=0.267901 admitted=false v_n=false expected_d2=62027 n_acc=1 bonus=25240
+[opti-controller] reject q=0.458176 threshold=0.500
+[opti-controller] shadow q=0.458176 admitted=false v_n=true expected_d2=62027 n_acc=1 bonus=62027
+[opti-controller] reject q=0.068114 threshold=0.500
+[opti-controller] shadow q=0.068114 admitted=false v_n=false expected_d2=716 n_acc=1 bonus=52636
+[opti-controller] issue generation=3 q=0.691451 threshold=0.500 verify=[305, 716]
+[opti-controller] resolve generation=3 hit=true q=0.691451 expected_pending=305 n_acc=1 bonus=305 resolution_ms=12.239 reconcile=false breaker=false
+[opti-controller] reject q=0.004994 threshold=0.500
+[opti-controller] shadow q=0.004994 admitted=false v_n=false expected_d2=86220 n_acc=0 bonus=29553
+[opti-controller] reject q=0.096150 threshold=0.500
+[opti-controller] shadow q=0.096150 admitted=false v_n=false expected_d2=4472 n_acc=1 bonus=12582
+[opti-controller] reject q=0.258727 threshold=0.500
+[opti-controller] shadow q=0.258727 admitted=false v_n=true expected_d2=2195 n_acc=1 bonus=2195
+[opti-controller] reject q=0.492167 threshold=0.500
+[opti-controller] shadow q=0.492167 admitted=false v_n=false expected_d2=37157 n_acc=1 bonus=8279
+[opti-controller] issue generation=4 q=0.857581 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=4 hit=true q=0.857581 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.157 reconcile=false breaker=false
+[opti-controller] reject q=0.032618 threshold=0.500
+[opti-controller] shadow q=0.032618 admitted=false v_n=false expected_d2=1257 n_acc=0 bonus=2899
+[opti-controller] reject q=0.041683 threshold=0.500
+[opti-controller] shadow q=0.041683 admitted=false v_n=false expected_d2=344 n_acc=0 bonus=18180
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=261 burst=13/20 cum=27/38=0.711
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.345839 threshold=0.500
+[opti-controller] shadow q=0.345839 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=55530
+[opti-controller] reject q=0.316285 threshold=0.500
+[opti-controller] shadow q=0.316285 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=7110
+[opti-controller] reject q=0.235233 threshold=0.500
+[opti-controller] shadow q=0.235233 admitted=false v_n=true expected_d2=418 n_acc=1 bonus=418
+[opti-controller] reject q=0.038492 threshold=0.500
+[opti-controller] shadow q=0.038492 admitted=false v_n=false expected_d2=6690 n_acc=1 bonus=5768
+[opti-controller] reject q=0.017648 threshold=0.500
+[opti-controller] shadow q=0.017648 admitted=false v_n=false expected_d2=95885 n_acc=0 bonus=6490
+[opti-controller] reject q=0.339251 threshold=0.500
+[opti-controller] shadow q=0.339251 admitted=false v_n=true expected_d2=469 n_acc=1 bonus=469
+[opti-controller] reject q=0.018204 threshold=0.500
+[opti-controller] shadow q=0.018204 admitted=false v_n=false expected_d2=72490 n_acc=1 bonus=95885
+[opti-controller] reject q=0.225026 threshold=0.500
+[opti-controller] shadow q=0.225026 admitted=false v_n=false expected_d2=2192 n_acc=0 bonus=93415
+[opti-controller] reject q=0.180486 threshold=0.500
+[opti-controller] shadow q=0.180486 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=9764
+[opti-controller] issue generation=0 q=0.529418 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=0 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.263 reconcile=false breaker=false
+[opti-controller] reject q=0.027990 threshold=0.500
+[opti-controller] shadow q=0.027990 admitted=false v_n=false expected_d2=10175 n_acc=0 bonus=3510
+[opti-controller] reject q=0.199826 threshold=0.500
+[opti-controller] shadow q=0.199826 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=16
+[opti-controller] issue generation=1 q=0.843326 threshold=0.500 verify=[14, 362]
+[opti-controller] resolve generation=1 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.233 reconcile=false breaker=false
+[opti-controller] reject q=0.018401 threshold=0.500
+[opti-controller] shadow q=0.018401 admitted=false v_n=false expected_d2=778 n_acc=0 bonus=1635
+[opti-controller] reject q=0.361199 threshold=0.500
+[opti-controller] shadow q=0.361199 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=1948
+[opti-controller] reject q=0.049804 threshold=0.500
+[opti-controller] shadow q=0.049804 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=2038
+[spec-stats] rounds=17 full_accept=11 len_hist=[0, 17] per_slot=[11/17=0.647] total=11/17=0.647 tok_per_round=1.647
+[spec-acc] ctx=329 burst=11/17 cum=53/75=0.707
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.050459 threshold=0.500
+[opti-controller] shadow q=0.050459 admitted=false v_n=false expected_d2=362 n_acc=1 bonus=21136
+[opti-controller] reject q=0.070769 threshold=0.500
+[opti-controller] shadow q=0.070769 admitted=false v_n=false expected_d2=4511 n_acc=1 bonus=5784
+[opti-controller] reject q=0.031470 threshold=0.500
+[opti-controller] shadow q=0.031470 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=4197
+[opti-controller] reject q=0.494768 threshold=0.500
+[opti-controller] shadow q=0.494768 admitted=false v_n=true expected_d2=14 n_acc=1 bonus=14
+[opti-controller] reject q=0.325061 threshold=0.500
+[opti-controller] shadow q=0.325061 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=7823
+[opti-controller] reject q=0.231958 threshold=0.500
+[opti-controller] shadow q=0.231958 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=51274
+[opti-controller] issue generation=0 q=0.632949 threshold=0.500 verify=[305, 270]
+[opti-controller] resolve generation=0 hit=false q=0.632949 expected_pending=305 n_acc=1 bonus=469 resolution_ms=12.288 reconcile=true breaker=false
+[opti-controller] reject q=0.093579 threshold=0.500
+[opti-controller] shadow q=0.093579 admitted=false v_n=false expected_d2=367 n_acc=0 bonus=50027
+[opti-controller] reject q=0.108149 threshold=0.500
+[opti-controller] shadow q=0.108149 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=5604
+[opti-controller] reject q=0.163887 threshold=0.500
+[opti-controller] shadow q=0.163887 admitted=false v_n=false expected_d2=2645 n_acc=1 bonus=2192
+[opti-controller] reject q=0.357812 threshold=0.500
+[opti-controller] shadow q=0.357812 admitted=false v_n=false expected_d2=9802 n_acc=0 bonus=15417
+[opti-controller] reject q=0.056557 threshold=0.500
+[opti-controller] shadow q=0.056557 admitted=false v_n=false expected_d2=1660 n_acc=1 bonus=270
+[opti-controller] reject q=0.078642 threshold=0.500
+[opti-controller] shadow q=0.078642 admitted=false v_n=false expected_d2=223 n_acc=1 bonus=107787
+[opti-controller] issue generation=1 q=0.658849 threshold=0.500 verify=[37157, 14]
+[opti-controller] resolve generation=1 hit=false q=0.658849 expected_pending=37157 n_acc=1 bonus=19350 resolution_ms=12.297 reconcile=true breaker=false
+[opti-controller] issue generation=2 q=0.988212 threshold=0.500 verify=[28, 455]
+[opti-controller] resolve generation=2 hit=true q=0.988212 expected_pending=28 n_acc=1 bonus=28 resolution_ms=12.226 reconcile=false breaker=false
+[opti-controller] reject q=0.046142 threshold=0.500
+[opti-controller] shadow q=0.046142 admitted=false v_n=false expected_d2=2038 n_acc=1 bonus=17808
+[opti-controller] reject q=0.145143 threshold=0.500
+[opti-controller] shadow q=0.145143 admitted=false v_n=false expected_d2=260 n_acc=1 bonus=7491
+[spec-stats] rounds=19 full_accept=14 len_hist=[0, 19] per_slot=[14/19=0.737] total=14/19=0.737 tok_per_round=1.737
+[spec-acc] ctx=294 burst=14/19 cum=41/57=0.719
+[opti-fork] armed mode=Controller snapshots=2 seeds=2 split=22 payload_dev0=65812 payload_dev1=0 q_threshold=0.500
+[opti-controller] reject q=0.204358 threshold=0.500
+[opti-controller] shadow q=0.204358 admitted=false v_n=false expected_d2=1202 n_acc=1 bonus=8581
+[opti-controller] reject q=0.345839 threshold=0.500
+[opti-controller] shadow q=0.345839 admitted=false v_n=false expected_d2=14 n_acc=0 bonus=55530
+[opti-controller] reject q=0.316285 threshold=0.500
+[opti-controller] shadow q=0.316285 admitted=false v_n=false expected_d2=2501 n_acc=1 bonus=7110
+[opti-controller] reject q=0.235233 threshold=0.500
+[opti-controller] shadow q=0.235233 admitted=false v_n=true expected_d2=418 n_acc=1 bonus=418
+[opti-controller] reject q=0.038492 threshold=0.500
+[opti-controller] shadow q=0.038492 admitted=false v_n=false expected_d2=6690 n_acc=1 bonus=5768
+[opti-controller] reject q=0.017648 threshold=0.500
+[opti-controller] shadow q=0.017648 admitted=false v_n=false expected_d2=95885 n_acc=0 bonus=6490
+[opti-controller] reject q=0.339251 threshold=0.500
+[opti-controller] shadow q=0.339251 admitted=false v_n=true expected_d2=469 n_acc=1 bonus=469
+[opti-controller] reject q=0.018204 threshold=0.500
+[opti-controller] shadow q=0.018204 admitted=false v_n=false expected_d2=72490 n_acc=1 bonus=95885
+[opti-controller] reject q=0.225026 threshold=0.500
+[opti-controller] shadow q=0.225026 admitted=false v_n=false expected_d2=2192 n_acc=0 bonus=93415
+[opti-controller] reject q=0.180486 threshold=0.500
+[opti-controller] shadow q=0.180486 admitted=false v_n=false expected_d2=260 n_acc=0 bonus=9764
+[opti-controller] issue generation=0 q=0.529418 threshold=0.500 verify=[270, 1257]
+[opti-controller] resolve generation=0 hit=true q=0.529418 expected_pending=270 n_acc=1 bonus=270 resolution_ms=12.264 reconcile=false breaker=false
+[opti-controller] reject q=0.027990 threshold=0.500
+[opti-controller] shadow q=0.027990 admitted=false v_n=false expected_d2=10175 n_acc=0 bonus=3510
+[opti-controller] reject q=0.199826 threshold=0.500
+[opti-controller] shadow q=0.199826 admitted=false v_n=false expected_d2=14 n_acc=1 bonus=16
+[opti-controller] issue generation=1 q=0.843326 threshold=0.500 verify=[14, 362]
+[opti-controller] resolve generation=1 hit=true q=0.843326 expected_pending=14 n_acc=1 bonus=14 resolution_ms=12.222 reconcile=false breaker=false
+[opti-controller] reject q=0.018401 threshold=0.500
+[opti-controller] shadow q=0.018401 admitted=false v_n=false expected_d2=778 n_acc=0 bonus=1635
+[opti-controller] reject q=0.361199 threshold=0.500
+[opti-controller] shadow q=0.361199 admitted=false v_n=false expected_d2=270 n_acc=1 bonus=1948
+[opti-controller] reject q=0.049804 threshold=0.500
+[opti-controller] shadow q=0.049804 admitted=false v_n=false expected_d2=11055 n_acc=1 bonus=2038
+[spec-stats] rounds=18 full_accept=12 len_hist=[0, 18] per_slot=[12/18=0.667] total=12/18=0.667 tok_per_round=1.667
+[spec-acc] ctx=327 burst=12/18 cum=53/75=0.707
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

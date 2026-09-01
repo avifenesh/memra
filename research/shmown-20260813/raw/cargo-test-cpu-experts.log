@@ -1,0 +1,12 @@
+warning: memra-engine@0.82.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.82.0 (/home/avifenesh/projects/wt-cx-shmown/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.97s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-b0eb82cfafb8f0e1)
+
+running 4 tests
+test cpu_experts::tests::accepts_supported_native_qtypes_without_translation ... ok
+test cpu_experts::tests::dropped_ticket_joins_outstanding_worker ... ok
+test cpu_experts::tests::validates_thread_count ... ok
+test cpu_experts::tests::rejects_missing_symbols_and_wrong_abi ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 81 filtered out; finished in 0.00s

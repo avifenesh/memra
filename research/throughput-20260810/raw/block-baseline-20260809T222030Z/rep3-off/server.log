@@ -1,0 +1,444 @@
+[server] starting; models config = [("step", "/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf", Some("/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "step" <- /home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.72GB (expert budget 94.80GB) -> RESIDENT
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[worker] step: regime draft attached (/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf)
+[worker]   loaded "step": 45 layers, eos=128007
+[worker] step: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true gemma_think=false ctx=262144 tok="deepseek-v3" instruct=Some("chatml") chat_defaults=Some(0.5)/Some(0.9)
+[worker] step: decode chunk cap 8
+[admission] "step": plain 83520 B/token, spec 85376 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["step"]
+[server] listening on http://127.0.0.1:18331
+[meter] admit id=cmpl-7e64c956d257faaf1ffaa7aa294f6c5c tenant=default lane=interactive model="step"
+[admission] request cost: model="step" ctx=208 path=plain = 83520 B/token x ctx + 0MB fixed = 17MB
+[spec-k] model="step" tenant="cx-throughput-warmup-0" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=cmpl-24469fe4e2f652c5880010dce212e510 tenant=default lane=interactive model="step"
+[admission] request cost: model="step" ctx=448 path=plain = 83520 B/token x ctx + 0MB fixed = 37MB
+[meter] admit id=cmpl-85adc715926a15b7487831452c2c5c15 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-c1e5cb96b9614ae1094004e562b35c78 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-00d57471bca4c4cf891d0a59bab1de87 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6f0b04655349255023062655473af910 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-aadf4533fadd65223a27b03ab0f8cca4 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-dab0d75a56559267046611601af936f3 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-db18555ed5d32edbf22de124886cea7c tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c8-7" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c8-3" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c8-5" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c8-6" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c8-1" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c8-0" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c8-4" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c8-2" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[step35-batch] first B>1 batched step35 walk: B=8 layers=[0,22)
+[meter] admit id=cmpl-bb35a371e09436e2280bf3a1110334d6 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6bdeb6ad35f6631237dfd684ace765b1 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-5156d384b4a55261b0d093aeb36b7ab2 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-bea60b284d528e729d840f90b0f789d6 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-cb2d02ca9673c90359479758dd66bee8 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-f222de6b1ec9ecf35bd8af033a12819d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-2fa2f6cbf3d7dda62a7ecd39400bfc99 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-d8338bc4769d095fb70116e79979db19 tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c16-6" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=cmpl-872404204eb032d40f4653a4baaa94d9 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3094672aa280dcf62d02888b683cbfd1 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-5fbd44e7fcd70d100b323ec48822332b tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-32e36c07c782d20f261c8cc73696e2a3 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-48c126de2a655253622a52d6ae7dcd66 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-21fafd488327cdada2584325fec61166 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-f3a1f02f3fae03520ee59e434e039e77 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-37c8e6c9166fcb3c255d5da9b662d5f9 tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c16-5" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-0" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-8" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-11" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-10" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-9" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-13" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-3" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-15" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-7" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-2" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-1" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-14" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-4" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c16-12" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[meter] admit id=cmpl-cd918e87ec046a2c3240e4d85d4b7717 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-faa0f8453c4ed90f27232a6b456cf615 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-75de34fb18b246ecc9ffc52e2b5816eb tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c24-11" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=cmpl-6091bdca259126bfdb0421448dff4bc0 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3a4c19edf4aa7388123bb148d342edcd tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-616b3de738d109db5abd93e6de376083 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-927b9aeddc33bac9484bfecfb2604f32 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-8b362a03e7504bec91139078e610d5cc tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-83d183bc9fbe78c59a63b9aea7703ef1 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-8627f987b528a9635d2752a032cc9ecd tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-dba01fc031f395e7d66a914d5a3b13b4 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b30ce43d6172abd034f6fbb7b89c4318 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-c0338e3c4812ff4b4036394de0d64c9f tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-64ed23c65990a2064c4904bc4f9d6b42 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-5ca528b0fcb7a1276f64fbffc26d56f1 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-39d0a42fc92511edfde20d9c58994c89 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-43fc89d24cd21d9d6050b0ed74df21f6 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-7234a958bea184736cc76ac47d2fb448 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b233ec16377d723c6fd46b9803a3f851 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-fe6ec4f491f6a04be34101aebc23bb5c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-d66d349a24316eb0030498f40e2d158f tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-c500af42194326063f0246bb2051593a tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-03d94525fa3e9d4e5cd0a92ff8d06fd0 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6d8dd82bdaaa46956fa74050e78ed582 tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c24-22" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-9" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-23" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-17" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-3" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-5" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-18" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-19" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-7" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-14" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-8" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-15" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-2" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-0" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-16" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-20" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=17 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-13" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=18 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-10" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=19 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-12" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=20 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-1" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=21 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-21" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=22 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-4" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=23 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c24-6" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=24 placement=pp2-cross-device
+[meter] admit id=cmpl-0ce8e0ed096223dc69f15a9ea64dfa46 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-103e1b072da56efd6c9e7e36ef8ec5e0 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b7ac08ef2c769e789850df6037b96ab3 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-bcd9acdc4e3d55bea1ae59bfd134a0b1 tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c32-2" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=cmpl-0b4028102ce119eec1d1d64a7d150a8d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-a1be03fb1fbea3e164c14f93838a6cd5 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-9e89ae8f7cffb0a6d00caa676934a51b tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-16e682a75c08ff37c96a2c4ca850c42c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6a2a0c8b9ef1cc449485ae88262513ef tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6caccac0665ffb2e0115be7b84f83cc8 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-952c1dce2c94e9c84818519dc3c08f71 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3903f5c450756f5b75e3c581e7aee05a tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b49015bb5c7386d2e8b506e8ac570121 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-f12bf4ad49fe8ed813300bcfe4e850b7 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-573ff17b4ad566110ee91e91801be448 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-88f88e32f590d60bc5b484cdd8e3b1c3 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-bff2bf7d11090da5243faaafd26f91c6 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-8b47a49ccb7bfc52864db1e2acf21d7d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-821cd1f472706452cb13b0246d721302 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-dfcbdff49daede7e0bfa6006f66bfd12 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-293ee76bd2c54b206aafe32232368ca1 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-5b08816b1f46ba845f4694c9d8ef17dc tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b6526034226f4f0d839152bbe49be66c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-f2134a2586f33c2b535c4ec24c36af1e tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b136083a8785de7ca44eca4437d8e902 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b2eb6ae75887c74ab7766880e1c78c2e tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-64c8686a050034bf64f0030818eb55ff tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-77aa9c070f773bb70e6a18416d354404 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-e4ac466cfd33de22a940f324b00996ee tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-93e5b0c6b6fd00cc789db0cec493b262 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-d2ee28e745755267b81ed52a0cef62f9 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-7d2af052baf145106d33bf0618c17e5a tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c32-29" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-20" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-26" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-25" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-13" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-9" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-17" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-12" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-31" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-5" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-30" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-6" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-3" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-16" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-21" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-22" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=17 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-19" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=18 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-24" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=19 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-27" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=20 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-15" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=21 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-18" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=22 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-4" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=23 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-7" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=24 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-11" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=25 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-8" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=26 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-14" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=27 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-28" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=28 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-0" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=29 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-10" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=30 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-23" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=31 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c32-1" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=32 placement=pp2-cross-device
+[meter] admit id=cmpl-cbf30d035ebe55116893da1d82bb285f tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-35c4ac078311d67302b662d4ed9c564b tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-644e5d5fcd95cad521b912bac28fe9db tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-ae16d18f33f06af894030bd466a2e809 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-9f9304c4268ded486ceb96ab1b47d79f tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c48-45" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=cmpl-fb821627f589075a10c50b73b14a4004 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-f1d347d402f1ee9397129a8a49724b3c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-4fd1a838f1cd4135eaa908c0a0eaac75 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-46021c249add2f159f8cc6fc1286f5d2 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-9c2828dd727f108ccbcbc922cc3b2dbf tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-cec7a418b71247c2b5162c9931c1ece6 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-89e2a6dfe7afb691252647e2b35d1254 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-dc18a90a0630890621ebaeb1cfd0b71c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-c82c093386ea1401563a6ee5f42bfbdd tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-c34873859324818210cf8f61ddfcdba9 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-4351e351e04ea24542cd70c5eb8a1c25 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-21a0394f015b74fd6603503dea3b3f5b tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6b513b8fb1be443c12e28a82e0f63439 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-94fdac8621dc7cfbba2d94118f2b06ec tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-31fa3f5a3fb4ef5ee0b2b472c1eb819d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3c2b18e227db011ea6afab98a71c3383 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-d3b77802e4c75ce13acfe8d4fb5b51be tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b82eabb58409b15e62c9e148bcb562b3 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-99cbbba0ae31f454d096a5b2217720a1 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-72785ee1666df434674763152910ca05 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-0988cfa1695d766194f13c357a862b7e tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6cf2509fae26662de29634b99b0efd4e tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-ac6f5d285ce4c40f6d2a6746fd755283 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-99e5a157a517a2e6d5d18b008ac887e7 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-5d0f4d89e8e9d39cdaa4feff353f5477 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-325b16594052dc06405755dd0973eec2 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-2e95e6e32298254efb89a2d25c858573 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-1e0aa12db7e09469b57b97a06a45d776 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-9422b31d500e4894c11bdec51dc5e2ba tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-c431355a498a21910d62e548a4abcfff tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b13839bfdb631dda07c734cac6c0fffc tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-5b6ab2cfab8ed71af9dc9efa0e2231e6 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-72e8095e2732a14bd37eead465a9ea89 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-4073d6641ae94205e6b7f7e0431a5e8a tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-c841f277aba104a537bc6c3134e5e098 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-84d5d1181a3992a3c7213c464ae7ffaf tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-bfad0244d12427590fa1412bae715180 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3620aded85b5211084d1796b7c54a5e2 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-93e1b6bd0877e092cbd8c3dafa8117c9 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-0246dd86500ecefe4a2a0201a2793ecd tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-0ec2d042161bef61bec275048205db13 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-37ff707b2dc838e80d32dc172f3ac506 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-d8583f4f7ab0584422b1083e65fad7a0 tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c48-42" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-11" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-19" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-39" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-9" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-26" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-30" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-28" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-32" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-46" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-21" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-16" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-35" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-40" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-37" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-8" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=17 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-20" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=18 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-33" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=19 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-38" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=20 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-2" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=21 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-5" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=22 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-1" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=23 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-22" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=24 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-6" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=25 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-0" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=26 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-12" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=27 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-31" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=28 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-24" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=29 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-41" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=30 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-23" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=31 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-17" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=32 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-29" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=33 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-34" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=34 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-47" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=35 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-3" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=36 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-15" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=37 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-10" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=38 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-25" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=39 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-44" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=40 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-18" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=41 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-13" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=42 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-14" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=43 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-36" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=44 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-7" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=45 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-43" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=46 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-27" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=47 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c48-4" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=48 placement=pp2-cross-device
+[meter] admit id=cmpl-aaaf9d49ea2291f9bc620be798c30d25 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-cb350f72bda71ccacf781e8202685a2c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-d8c0f49e1d20f690d362d44893818721 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-bde0ac49b3828c4b49a71ae866bd034d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-570206a32c0ebb48ce93469a985aa783 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-c15d2fb412d479bd0882fb1c2df0bd9c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-60de6a6ac8665420fdda352b0b64a4cc tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c64-53" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=cmpl-64d20264671561d31b0d550853fd69b9 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-772301794d296f39cfa6367cdcde8ef5 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3e459ace684477182f41873b06cebebf tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6486642723096233d2dc41bea4d1041c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-7679b206d21d2149669245755e55ac20 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-e6a64a52a8d0675d1772067e16b7f779 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-ec0ebde27981534b0e2933f9bfbef454 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-4e5ba12cafa7d57ce8fa3114430e3291 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6493b764cf633351b5f705ad36ba5a26 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-fd37c1778494021553b9efb68f1534de tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-bb365bd4d1141acbfaec0eb909eb71ae tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-7ad6dd1ba07ca9fa47f6675eb3756fdb tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-e13407ef3daad955a7f6f817589f9230 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-2c9fd73959a132029d059b1e4ae7e66d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-194e25eeda1951e3bcda721112fcb22d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-51c4a0c55bb7c27581fc22ec3c4cfb5f tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-94267be3e475ba0fcbba3a1a595787f7 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-48251793c32a1a54fe52e9250b5646c7 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-2e5e5deaafdaff084b308053720a8108 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-9bd09b44416013470ca1df64b64ce916 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-12da1c92fc74617956348d8eb91112f5 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3f1bb20bdb00a45df6a20c30106bdf06 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-5c44b61c406b5b64def3f41ef6e9b629 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-bb590d2a99fd6dd3df54a315bb1906f7 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-4b596fd86f8efb482cf174b1bf678666 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-be8c7bb0b7fe9c1a5ffff4d08421a924 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-a76bb6fbbe4e9bd7bcce146d706b916b tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-438de3a65b9ca88a65c5b8afdcf78478 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-7a7fb8b01d4bb74aaf544c62d5f9d370 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-7ff0757ac17c9241531eb1e69ba050f7 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-586d8977a2de7fabd2844b932b95bb9e tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-c83a3e56ee3c3885dc34f68e76ea183a tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-69340fb75ad0731d6261916d2753a66d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3c7d0e4da1abbc1b91e446dca043ae68 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-224369fc16a65c125eb2fc578aeaff76 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-a900a439952e4bbd70be9946de315e89 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-f44c174fa172356845977c401701db70 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-1e6279212658a12b3536c499d83ae48d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-8ada1a509787af6e3f11a7f09338cdb9 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-9e2820e1d5a9e54ee2cc4f0902e9db4c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-16170bcde65e2a3a8b0016c09a4f89b6 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-1dee8f29fe3882f5d52a8657646dd33f tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-e9d29bb45a2371e3a23f6c917bd39256 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-a7c00ff23d0b4dda8434143aed0456ef tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-e294c362dc325ffe38990ae5c9e21166 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-cafb963321d0f25b6cb921bc2850fb16 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-cfff3ea2272b818dcc5a0e12a65eef6d tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-b0744d66cc00fb620576cfee8a146247 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-3c2501c0b72b69ad9bf23c32552e2a71 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-0a02a5c38d426550d5dbfa197077c4e8 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-1f949dc22a2a11f4b9ee19cd5dfe9d62 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-60f0596cf90d1ea28e035daf0154d692 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-ec41795a991ed6e7c620c05711b7ad31 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-745021a99408630aa079de3e40f1bf2f tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-1573f35d823ab17bf94d7ef04ce74373 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-cc5bc384343ed1c2e8ab125cec338dae tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-62797dfc0c7724487a325400c4b136aa tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-decode-c64-51" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-31" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-22" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-48" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-12" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-26" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-50" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-7" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-30" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-37" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-40" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-41" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-2" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-59" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-9" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-3" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=17 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-15" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=18 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-27" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=19 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-38" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=20 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-49" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=21 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-8" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=22 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-16" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=23 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-29" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=24 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-35" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=25 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-45" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=26 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-63" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=27 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-54" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=28 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-11" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=29 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-24" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=30 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-25" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=31 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-33" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=32 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-55" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=33 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-52" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=34 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-6" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=35 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-17" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=36 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-18" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=37 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-19" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=38 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-42" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=39 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-43" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=40 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-5" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=41 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-0" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=42 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-61" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=43 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-10" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=44 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-13" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=45 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-20" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=46 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-57" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=47 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-58" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=48 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-60" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=49 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-1" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=50 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-36" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=51 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-39" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=52 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-47" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=53 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-4" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=54 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-14" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=55 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-44" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=56 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-62" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=57 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-23" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=58 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-46" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=59 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-28" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=60 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-21" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=61 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-56" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=62 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-34" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=63 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-decode-c64-32" K=0 source=pp2-placement prompt=128 cached=0 lcp=0 active=64 placement=pp2-cross-device
+[meter] admit id=cmpl-c06834483605d3dc28772a73bbf99d0b tenant=default lane=interactive model="step"
+[admission] request cost: model="step" ctx=2320 path=plain = 83520 B/token x ctx + 0MB fixed = 194MB
+[meter] admit id=cmpl-1d559d8fe4b827e7cffb6806465f5a2b tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-bb264284b017faa23630c98c80d516f3 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-ab61f16c61f39eac8e9f4ba3b1b3d648 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-6dc35680fe95bd9d836e5546e3bdc313 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-006daa3dd8dfec2ae065b4ea5192f328 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-92d7cf4c188e4f299da09486fdfd452c tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-1cd561ba301bf6d256fb94a16d36c506 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-2bb1ecd2b244bca59298891134b8fa4a tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-9cfedd886e2c38922d22ab6e440922ed tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-9a78f3301a66b942accbe92b6b5a5ff0 tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-2" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=1 placement=pp2-cross-device
+[meter] admit id=cmpl-d951358542e3ab1662c7c27942e4ed81 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-07e78824d4136491d8fc3df754d05d87 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-75448f565c43a62f2e0dd11b96bc1f69 tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-0720c8f06b190b34a06f9052516b93cf tenant=default lane=interactive model="step"
+[meter] admit id=cmpl-51efffb079a3f7f3c02c717df47258ba tenant=default lane=interactive model="step"
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-14" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=2 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-3" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=3 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-5" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=4 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-15" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=5 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-8" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=6 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-1" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=7 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-9" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=8 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-11" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=9 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-12" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=10 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-4" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=11 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-0" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=12 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-13" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=13 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-7" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=14 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-10" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=15 placement=pp2-cross-device
+[spec-k] model="step" tenant="cx-throughput-mixed-c16-6" K=0 source=pp2-placement prompt=2000 cached=0 lcp=0 active=16 placement=pp2-cross-device
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

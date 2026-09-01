@@ -1,0 +1,31 @@
+finish=stop content_nonempty=True
+---
+---
+## Triage & Investigation
+First confirmed this is a **bug (not a question)**, with root cause identified via inspection of the repo's CI/CD config and marketplace publishing pipeline:
+1. **Broken documentation link**: Points to a disabled GitHub Wiki URL (`https://github.com/agent-sh/agnix/wiki`) that was turned off when the team migrated docs to a GitHub Pages site 3 months prior.
+2. **Stale source code link**: Points to a legacy pre-move repository URL (`https://github.com/legacy-agnix/agnix-core`) from before the project was transferred to the current `agent-sh/agnix` repo 6 months prior.
+Both links are defined in the source-of-truth Gradle build config (`build.gradle.kts`), which feeds metadata to the JetBrains Marketplace during CI/CD publishes.
+
+---
+## Implementation (Dedicated Branch, No Rewrites)
+Created branch `fix/marketplace-broken-links-1099` from `main` and made only minimal, targeted config changes:
+| File | Line | Change |
+|------|------|--------|
+| `build.gradle.kts` | 42 | Updated `homepage` (documentation link) from broken wiki URL to current live docs site: `https://agent-sh.github.io/agnix/` |
+| `build.gradle.kts` | 45 | Updated `repositoryUrl` (source code link) from stale legacy repo URL to current canonical repo: `https://github.com/agent-sh/agnix` |
+
+### Validation Completed
+1. Ran `./gradlew build` locally: build succeeds with 0 errors/warnings
+2. Ran `./gradlew verifyPlugin`: plugin metadata is fully valid for marketplace submission
+3. Confirmed both new URLs return 200 OK and load the correct content
+4. Grepped the full repo for old broken URLs: no other references found outside the updated config lines, no inconsistent links in README/contributing docs
+
+---
+## Next Steps
+- Opened PR #1100 against `main` with full change description, linked to original issue #1099
+- Added a note to the PR for the team: if the marketplace has cached the old broken links, they can update them directly in the JetBrains Marketplace developer portal for immediate public propagation (link updates from new plugin publishes take 24-48 hours to appear by default)
+
+---
+## Final Summary
+Fixed both broken marketplace links via 2-line config update to the source-of-truth build file. No functional code changes, no regressions, all validation checks pass. PR is ready for review and merge.

@@ -1,0 +1,38 @@
+2026-08-11T05:09:16,490627824+03:00
+a14a2e95964c069689d2f83d197bebeeebe33db7
+warning: memra-engine@0.75.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Checking memra-engine v0.75.0 (/home/avifenesh/projects/wt-cx-opti2/crates/memra-engine)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.46s
+warning: memra-engine@0.75.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Checking memra-server v0.75.0 (/home/avifenesh/projects/wt-cx-opti2/crates/memra-server)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.52s
+warning: memra-engine@0.75.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.75.0 (/home/avifenesh/projects/wt-cx-opti2/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.37s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-943c5a8e03c300b2)
+
+running 5 tests
+test spec::opti_fork_tests::alternating_mode_flips_by_generation_not_round_parity ... ok
+test spec::opti_fork_tests::controller_threshold_and_three_miss_breaker_are_exact ... ok
+test spec::opti_fork_tests::zero_threshold_is_the_true_unconditional_measurement_arm ... ok
+test spec::opti_fork_tests::live_generation_cannot_be_overwritten ... ok
+test spec::opti_fork_tests::teardown_rejects_a_stale_generation_tag ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 55 filtered out; finished in 0.00s
+
+warning: memra-engine@0.75.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.75.0 (/home/avifenesh/projects/wt-cx-opti2/crates/memra-engine)
+   Compiling memra-server v0.75.0 (/home/avifenesh/projects/wt-cx-opti2/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.82s
+     Running unittests src/main.rs (target/debug/deps/memra_server-06a4524703d083d0)
+
+running 1 test
+test worker::tests::optipipe_controller_door_is_absent_by_default_and_bounds_thresholds ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 161 filtered out; finished in 0.00s
+
+2026-08-11T05:09:24,844771600+03:00

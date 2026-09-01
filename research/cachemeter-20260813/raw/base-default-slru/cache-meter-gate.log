@@ -1,0 +1,24 @@
+  FAIL: A fanout cached_tokens == [0] + [256]x4 — got [0, 0, 0, 0, 0]
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  FAIL: cached_tokens_in == 1024 — got 0
+  FAIL: computed_tokens_in == prompt - cached — got 1632
+  FAIL: cache_hit_token_ratio matches arithmetic — got 0.0
+  FAIL: prefix_cache_hits == N-1 — got 0
+  FAIL: prefix_cache_misses == 2 (one A leader + cross-salt B) — got 6
+  FAIL: prefix_cache_inserts == 2 (shared A prefix + B seed) — got 0
+  FAIL: prefix_cache_hit_tokens == 1024 — got 0
+  ok: lcp_histogram: 6 probes total
+  FAIL: lcp_histogram: 2 cold probes in bucket [0] — got [6]
+  FAIL: lcp_histogram: 4 probes in K's bucket (edge 256) — got 0
+  FAIL: tick-seg [64,512) window carries the shared-prefix probes — got 0
+  FAIL: tenants[meter-A] split exact — got {'prompt_tokens_in': 1360, 'cached_tokens_in': 0, 'cache_hit_token_ratio': 0.0}
+  ok: tenants[meter-B] split exact (0 cached)
+  FAIL: economics revenue_multiplier == 2.6842 (factor 1.0) — got 1.0
+cache-meter-gate: 13 failed

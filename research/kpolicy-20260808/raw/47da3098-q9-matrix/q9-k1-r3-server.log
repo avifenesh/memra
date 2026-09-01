@@ -1,0 +1,58 @@
+[server] starting; models config = [("q9", "/scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=1: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q9" <- /scratch-models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q9: regime draft attached (/scratch-models/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q9": 33 layers, eos=248046
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml")
+[worker] q9: decode chunk cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:8143
+[meter] admit id=cmpl-afc031af93c238912e52b51987e224fc tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-q9-cold-short-k1-r93" K=1 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-stats] rounds=8 full_accept=7 len_hist=[0, 8] per_slot=[7/8=0.875] total=7/8=0.875 tok_per_round=1.875
+[spec-acc] ctx=28 burst=7/8 cum=7/8=0.875
+[meter] admit id=cmpl-1fa848b5ecbedfa00448375719f0a157 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-q9-cold-long-k1-r3" K=1 source=operator-pin prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q9": 201MB (admission gate = 2x)
+[spec-stats] rounds=17 full_accept=14 len_hist=[0, 17] per_slot=[14/17=0.824] total=14/17=0.824 tok_per_round=1.824
+[spec-acc] ctx=5411 burst=14/17 cum=14/17=0.824
+[spec-stats] rounds=18 full_accept=15 len_hist=[0, 18] per_slot=[15/18=0.833] total=15/18=0.833 tok_per_round=1.833
+[spec-acc] ctx=5443 burst=15/18 cum=29/35=0.829
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=5476 burst=13/20 cum=42/55=0.764
+[spec-stats] rounds=16 full_accept=14 len_hist=[0, 16] per_slot=[14/16=0.875] total=14/16=0.875 tok_per_round=1.875
+[spec-acc] ctx=5509 burst=14/16 cum=56/71=0.789
+[meter] admit id=cmpl-4062bdd896befc7b830761ac6ecfe852 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-q9-cached-long-k1-r3" K=1 source=operator-pin prompt=5411 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-stats] rounds=17 full_accept=14 len_hist=[0, 17] per_slot=[14/17=0.824] total=14/17=0.824 tok_per_round=1.824
+[spec-acc] ctx=5411 burst=14/17 cum=14/17=0.824
+[spec-stats] rounds=18 full_accept=15 len_hist=[0, 18] per_slot=[15/18=0.833] total=15/18=0.833 tok_per_round=1.833
+[spec-acc] ctx=5443 burst=15/18 cum=29/35=0.829
+[meter] admit id=cmpl-4027f96d42259b36d1deed114621921e tenant=default lane=interactive model="q9"
+[worker] spec-reuse: 5476 committed tokens resumed (model q9)
+[spec-k] model="q9" tenant="kpolicy-q9-cached-long-k1-r3" K=1 source=operator-pin prompt=5495 cached=5476 lcp=0 active=1 placement=single-or-non-pp2
+[spec-stats] rounds=18 full_accept=14 len_hist=[0, 18] per_slot=[14/18=0.778] total=14/18=0.778 tok_per_round=1.778
+[spec-acc] ctx=19 burst=14/18 cum=14/18=0.778
+[spec-stats] rounds=20 full_accept=13 len_hist=[0, 20] per_slot=[13/20=0.650] total=13/20=0.650 tok_per_round=1.650
+[spec-acc] ctx=52 burst=13/20 cum=27/38=0.711
+[spec-stats] rounds=20 full_accept=12 len_hist=[0, 20] per_slot=[12/20=0.600] total=12/20=0.600 tok_per_round=1.600
+[spec-acc] ctx=85 burst=12/20 cum=39/58=0.672
+[spec-stats] rounds=21 full_accept=9 len_hist=[0, 21] per_slot=[9/21=0.429] total=9/21=0.429 tok_per_round=1.429
+[spec-acc] ctx=117 burst=9/21 cum=48/79=0.608
+[meter] admit id=cmpl-5a408a7022a8c18aa5881bb9579311eb tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="kpolicy-q9-cold-short-k1-r3" K=1 source=operator-pin prompt=28 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-stats] rounds=17 full_accept=15 len_hist=[0, 17] per_slot=[15/17=0.882] total=15/17=0.882 tok_per_round=1.882
+[spec-acc] ctx=28 burst=15/17 cum=15/17=0.882
+[spec-stats] rounds=17 full_accept=15 len_hist=[0, 17] per_slot=[15/17=0.882] total=15/17=0.882 tok_per_round=1.882
+[spec-acc] ctx=61 burst=15/17 cum=30/34=0.882
+[spec-stats] rounds=18 full_accept=15 len_hist=[0, 18] per_slot=[15/18=0.833] total=15/18=0.833 tok_per_round=1.833
+[spec-acc] ctx=93 burst=15/18 cum=45/52=0.865
+[spec-stats] rounds=16 full_accept=14 len_hist=[0, 16] per_slot=[14/16=0.875] total=14/16=0.875 tok_per_round=1.875
+[spec-acc] ctx=126 burst=14/16 cum=59/68=0.868
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

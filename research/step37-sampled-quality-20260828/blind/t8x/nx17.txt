@@ -1,0 +1,58 @@
+ANON=nx17 TURN=8 CHARS=4490 FINISH=length REPEAT60=1
+======================================================================
+<think>
+Got it, let's tackle this. First, the user has a GitHub task related to JetBrains Marketplace, documentation links returning 404, stale repository URLs, and issues #1099. Let's break down the problem first.
+
+First, the core issues mentioned:
+1. JetBrains Marketplace listing has documentation links that return 404
+2. Source code links point to stale repository URLs
+3. Reference to GitHub issue #1099 in the agent-sh/agnix repo
+4. Need to investigate, handle triage, answer the question, implement on the correct branch, fix code if needed, summarize changes.
+
+First, let's start with the investigation phase, since we need to do read-only first? Wait no, the user said "take care of this GitHub task", so first let's outline the step-by-step process, then the fixes.
+
+First, step 1: Investigate the root causes.
+First, check the JetBrains Marketplace listing for the plugin (assuming it's the agnix agent plugin for JetBrains IDEs). The 404s are likely because:
+- The documentation was moved from the old repo to a new location, but the Marketplace listing wasn't updated.
+- The source code URL in the Marketplace listing points to an old, archived, or renamed repository, hence stale.
+- Issue #1099 in agent-sh/agnix is probably the tracking issue for this exact problem: broken links in the Marketplace listing.
+
+Next, step 2: Triage the issue.
+First, confirm the current state:
+- Check the existing Marketplace listing: what are the current URLs for documentation and source code?
+- Check the agent-sh/agnix repo's issue #1099: what's the discussion there? Are there already proposed fixes?
+- Check if there's a new canonical location for documentation (e.g., a docs site, new repo, or wiki) and source code (e.g., a new GitHub repo, or a different branch).
+
+Then, step 3: Implement fixes on the correct branch.
+First, the correct branch is likely the `main` or `release` branch of the plugin repo, but first we need to update the Marketplace metadata. Wait, JetBrains Marketplace listings are usually updated via a `marketplace` configuration file in the repo, or via the JetBrains Marketplace UI, but the source of truth is usually in the repo.
+
+Wait, the fixes needed are:
+1. Update the documentation link in the Marketplace listing to the current, working URL (e.g., if docs moved to https://agent-sh.github.io/agnix-docs/, update that instead of the old 404 link).
+2. Update the source code link to the current, active repository URL (e.g., if the repo was moved from `agent-sh/agnix` to `agent-sh/agnix-agent`, update that link).
+3. If the issue #1099 has any additional context (like a need to add a redirect, or update README links), fix those too.
+
+Then, step 4: Validate the fixes.
+- After updating the links, verify that the documentation link returns 200 OK, no 404.
+- Verify that the source code link points to the correct, active repo, not a stale/archived one.
+- Check that the Marketplace listing preview shows the updated links correctly.
+- Run any existing tests for the plugin to make sure the changes didn't break anything (if there are tests in the repo).
+
+Then, step 5: Summarize the changes.
+- List what was fixed: updated documentation URL from [old 404 URL] to [new working URL], updated source code URL from [old stale URL] to [new active repo URL].
+- Reference the issue #1099 that was resolved.
+- Note any validation steps performed.
+
+Wait, but also, the user mentioned "handle it answer triage if it is a question, implement on a branch if code is needed, fix digest". So also, if there's a digest (like a changelog, or release notes), update that to mention the fix for broken Marketplace links.
+
+Also, let's make sure to address the specific points:
+- The 404 documentation links: fix by updating to the current docs location.
+- Stale repository URLs: fix by updating to the current active repo.
+- Issue #1099: close it with a reference to the fix commit/PR.
+
+Wait, but also, let's make sure we're not making assumptions. Let's structure the response properly, first the investigation findings, then the triage, then the implemented fixes, then validation, then summary.
+
+Also, the user said "take care of this GitHub task", so we need to present the complete workflow and the actual fixes applied.
+
+Wait, let's also check if there are any other related issues: for example, if the README in the repo also has stale links, fix those too, as they might be pulled into the Marketplace listing.
+
+Also, for the JetBrains Marketplace specifically: the

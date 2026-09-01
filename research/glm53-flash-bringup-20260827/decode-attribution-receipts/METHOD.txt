@@ -1,0 +1,38 @@
+GLM-5.3-Flash BASE decode attribution — method (lane/glm53-flash-bringup, 2026-08-28)
+
+Box: rented cloud bench box, 2x RTX PRO 6000 Blackwell Server 96 GB (only card 0 serves), 499 GB RAM.
+Artifact: ~/models/glm53-nvfp4 (190.7 GB NVFP4). Binary: the lane branch build at 11:23 UTC.
+All timing on the box (rig law: the 5090 is correctness-only).
+
+INSTRUMENT
+  probe.py   one request. REAL prompts only, from ops/bench/endpoint-bench-20260818/prompts.json
+             (darklanes; real agent transcripts). reasoning_effort PINNED = "low"
+             (TRAP:reasoning-effort-unpinned-decode-cell — this model thinks by default and the
+             bring-up receipts left it unpinned). Streaming; tok/s from the server's own
+             completion_tokens / elapsed_s. sha256_16 of the full emitted text = the identity oracle.
+  steady.py  primes the prompt once (the server then restores the prefix: TTFT 0.018 s), then runs
+             4 identical reps. Each rep's MoE-cache delta comes from the MEMRA_SPILL_STATS=1
+             "[moe-cache] snapshot" line, so staged_bytes / misses / accesses are PER DECODE TOKEN
+             with prefill excluded.
+  sea.py     the bring-up receipts' own short synthetic prompt, for continuity only.
+  cell2.sh   warm server restart with one arm's env (never drops caches — that costs 22 min).
+  arm4.sh    one cell = restart + 5 pool warmups + p5 greedy/sampled + p7 greedy + 2 sea rows.
+
+ARMS (env deltas only; identical binary, artifact, prompts, and cell)
+  A1  / A1R  MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=12000                                (as served)
+  A2  / A2R  ... + MEMRA_ST_PINNED=1
+  A2LOW      ... + MEMRA_ST_PINNED=1, MEMRA_MOE_SLOTS=6000        (staging-sensitivity probe)
+  A3         ... + MEMRA_ST_PINNED=1 MEMRA_BF16_MMV=1
+  A4BEST     ... + MEMRA_ST_PINNED=1 MEMRA_BF16_MMV=1, MEMRA_MOE_SLOTS=14000
+  Every arm also carries CUDA_VISIBLE_DEVICES=0,1 MEMRA_COMPAT=openai MEMRA_CTX=8192
+  MEMRA_MAX_SESSIONS=4 NVIDIA_TF32_OVERRIDE=0 MEMRA_SPILL_STATS=1.
+
+PROTOCOL DEVIATION, stated rather than hidden: the interleave unit is a BOOT, not a request —
+these arms are process-level env (OnceLock), so they cannot alternate inside one server. The
+A1/A2 pair was therefore alternated across boots (A1, A2, ..., A1R, A2R) with 4 reps inside each
+boot; the within-boot spread is under 5% while the effect is 2.4x.
+
+EXCLUSION per LAW greedy-is-the-instrument: prompt idx 2 degenerated into a repeat loop in BOTH
+the greedy and the sampled arm ('{"timestamp": 175175175...', '{"docs": {"docs": {...'). Loops
+repeat cheap high-hit experts, so those rows read FAST and are not perf rows. They appear in the
+logs and are used ONLY as an independent check that the non-staging constant is prompt-independent.

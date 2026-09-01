@@ -1,0 +1,95 @@
+PASS = the probe's own bar, not a status code:
+  tool   : tool_calls carrying name 'zqx_fetch_glimb_status' AND vault_sigil 'VS-7' AND glimb_mode 'thrum'
+  recall : the passphrase QUARTZ-77-NIMBUS-4, stated only in the prompt, appears in the content
+  bare   : same recall bar, with NO tools declared at all
+
+============================================================================================
+B1-cacheON: base binary, prefix cache ON  (budget 2097MB)
+============================================================================================
+probe/mode       rep  expected   pass   cached/prompt      finish   content head
+tool/greedy        0      COLD   True           0/320  tool_calls   ''
+tool/greedy        1  RESTORED  False         320/320      length   '</think></think></think></think></think></think></think></'
+tool/greedy        2  RESTORED  False         320/320      length   '</think></think></think></think></think></think></think></'
+tool/greedy        3  RESTORED  False         320/320      length   '</think></think></think></think></think></think></think></'
+tool/sampled       0      COLD   True           0/319  tool_calls   ''
+tool/sampled       1  RESTORED  False         319/319        stop   '</think>VS reply: VS=VS.'
+tool/sampled       2  RESTORED  False         319/319        stop   'Reading reading reading reading.</think></think>Reading re'
+tool/sampled       3  RESTORED  False         319/319      length   '<tool_call><tool_call><tool_call><tool_call><tool_call><to'
+recall/greedy      0      COLD   True           0/326        stop   'QUARTZ-77-NIMBUS-4'
+recall/greedy      1  RESTORED  False         326/326      length   'QUQU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU'
+recall/greedy      2  RESTORED  False         326/326      length   'QUQU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU'
+recall/greedy      3  RESTORED  False         326/326      length   'QUQU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU'
+recall/sampled     0      COLD   True           0/325        stop   'QUARTZ-77-NIMBUS-4'
+recall/sampled     1  RESTORED  False         325/325      length   'QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU QU Q'
+recall/sampled     2  RESTORED  False         325/325      length   '"QSimple" (as as)</think>QUSimple (as as) is as is — as is'
+recall/sampled     3  RESTORED  False         325/325      length   ''
+bare/greedy        0      COLD   True            0/97        stop   'QUARTZ-77-NIMBUS-4'
+bare/greedy        1  RESTORED  False           97/97        stop   "I can't repeat that. If you have a question, I'm happy to "
+bare/greedy        2  RESTORED  False           97/97        stop   "I can't repeat that. If you have a question, I'm happy to "
+bare/greedy        3  RESTORED  False           97/97        stop   "I can't repeat that. If you have a question, I'm happy to "
+bare/sampled       0      COLD  False            0/96        stop   "I don't have a maintenance code for this shift to repeat b"
+bare/sampled       1  RESTORED  False           96/96        stop   'Cell says cell says cell says cell says.'
+bare/sampled       2  RESTORED  False           96/96      length   ''
+bare/sampled       3  RESTORED  False           96/96        stop   'QU0\nOne\nOne\nOne'
+  tallies: bare COLD 1/2 | bare RESTORED 0/6 | recall COLD 2/2 | recall RESTORED 0/6 | tool COLD 2/2 | tool RESTORED 0/6
+
+============================================================================================
+B2-cacheOFF: base binary, prefix cache OFF (MEMRA_PREFIX_CACHE_MB=0)
+============================================================================================
+probe/mode       rep  expected   pass   cached/prompt      finish   content head
+tool/greedy        0      COLD   True           0/320  tool_calls   ''
+tool/greedy        1  RESTORED   True           0/320  tool_calls   ''
+tool/greedy        2  RESTORED   True           0/320  tool_calls   ''
+tool/greedy        3  RESTORED   True           0/320  tool_calls   ''
+tool/sampled       0      COLD   True           0/319  tool_calls   ''
+tool/sampled       1  RESTORED   True           0/319  tool_calls   ''
+tool/sampled       2  RESTORED   True           0/319  tool_calls   ''
+tool/sampled       3  RESTORED   True           0/319  tool_calls   ''
+recall/greedy      0      COLD   True           0/326        stop   'QUARTZ-77-NIMBUS-4'
+recall/greedy      1  RESTORED   True           0/326        stop   'QUARTZ-77-NIMBUS-4'
+recall/greedy      2  RESTORED   True           0/326        stop   'QUARTZ-77-NIMBUS-4'
+recall/greedy      3  RESTORED   True           0/326        stop   'QUARTZ-77-NIMBUS-4'
+recall/sampled     0      COLD   True           0/325        stop   'QUARTZ-77-NIMBUS-4'
+recall/sampled     1  RESTORED   True           0/325        stop   'QUARTZ-77-NIMBUS-4'
+recall/sampled     2  RESTORED   True           0/325        stop   'QUARTZ-77-NIMBUS-4'
+recall/sampled     3  RESTORED   True           0/325        stop   'QUARTZ-77-NIMBUS-4'
+bare/greedy        0      COLD   True            0/97        stop   'QUARTZ-77-NIMBUS-4'
+bare/greedy        1  RESTORED   True            0/97        stop   'QUARTZ-77-NIMBUS-4'
+bare/greedy        2  RESTORED   True            0/97        stop   'QUARTZ-77-NIMBUS-4'
+bare/greedy        3  RESTORED   True            0/97        stop   'QUARTZ-77-NIMBUS-4'
+bare/sampled       0      COLD   True            0/96        stop   'QUARTZ-77-NIMBUS-4'
+bare/sampled       1  RESTORED   True            0/96        stop   'QUARTZ-77-NIMBUS-4'
+bare/sampled       2  RESTORED   True            0/96        stop   'QUARTZ-77-NIMBUS-4'
+bare/sampled       3  RESTORED   True            0/96        stop   'The maintenance code is QUARTZ-77-NIMBUS-4.'
+  tallies: bare COLD 2/2 | bare RESTORED 6/6 | recall COLD 2/2 | recall RESTORED 6/6 | tool COLD 2/2 | tool RESTORED 6/6
+
+============================================================================================
+B5-patched-v3: patched binary, prefix cache ON (guard refuses the capture)
+============================================================================================
+probe/mode       rep  expected   pass   cached/prompt      finish   content head
+tool/greedy        0      COLD   True           0/320  tool_calls   ''
+tool/greedy        1  RESTORED   True           0/320  tool_calls   ''
+tool/greedy        2  RESTORED   True           0/320  tool_calls   ''
+tool/greedy        3  RESTORED   True           0/320  tool_calls   ''
+tool/sampled       0      COLD   True           0/319  tool_calls   ''
+tool/sampled       1  RESTORED   True           0/319  tool_calls   ''
+tool/sampled       2  RESTORED   True           0/319  tool_calls   ''
+tool/sampled       3  RESTORED   True           0/319  tool_calls   ''
+recall/greedy      0      COLD   True           0/326        stop   'QUARTZ-77-NIMBUS-4'
+recall/greedy      1  RESTORED   True           0/326        stop   'QUARTZ-77-NIMBUS-4'
+recall/greedy      2  RESTORED   True           0/326        stop   'QUARTZ-77-NIMBUS-4'
+recall/greedy      3  RESTORED   True           0/326        stop   'QUARTZ-77-NIMBUS-4'
+recall/sampled     0      COLD   True           0/325        stop   'QUARTZ-77-NIMBUS-4'
+recall/sampled     1  RESTORED   True           0/325        stop   'QUARTZ-77-NIMBUS-4'
+recall/sampled     2  RESTORED   True           0/325        stop   'QUARTZ-77-NIMBUS-4'
+recall/sampled     3  RESTORED   True           0/325        stop   'QUARTZ-77-NIMBUS-4'
+bare/greedy        0      COLD   True            0/97        stop   'QUARTZ-77-NIMBUS-4'
+bare/greedy        1  RESTORED   True            0/97        stop   'QUARTZ-77-NIMBUS-4'
+bare/greedy        2  RESTORED   True            0/97        stop   'QUARTZ-77-NIMBUS-4'
+bare/greedy        3  RESTORED   True            0/97        stop   'QUARTZ-77-NIMBUS-4'
+bare/sampled       0      COLD   True            0/96        stop   'QUARTZ-77-NIMBUS-4'
+bare/sampled       1  RESTORED   True            0/96        stop   'QUARTZ-77-NIMBUS-4'
+bare/sampled       2  RESTORED   True            0/96        stop   'QUARTZ-77-NIMBUS-4'
+bare/sampled       3  RESTORED   True            0/96        stop   'QUARTZ-77-NIMBUS-4'
+  tallies: bare COLD 2/2 | bare RESTORED 6/6 | recall COLD 2/2 | recall RESTORED 6/6 | tool COLD 2/2 | tool RESTORED 6/6
+

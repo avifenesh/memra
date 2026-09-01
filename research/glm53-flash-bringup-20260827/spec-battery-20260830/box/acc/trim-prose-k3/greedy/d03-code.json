@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what's happening here. The user is showing me what appears to be a crash report / incident summary \u2014 likely written by an AI agent (this reads like a Claude Code or similar agent's output, or the user pasting a report from an assistant session) about a gateway process crash. The user says \"you crashed\" \u2014 so they're addressing me (or the assistant persona) as the one who crashed, and this is the post-mortem.\n\nWait, let me re-read. The message is structured as:\n\n\"you crashed\" \u2014 then \"Root cause\", \"What I did\", \"Status\", \"Useful",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what's happening here. The user is showing me what appears to be a crash report / incident summary \u2014 likely written by an AI agent (this reads like a Claude Code or similar agent's output, or the user pasting a report from an assistant session) about a gateway process crash. The user says \"you crashed\" \u2014 so they're addressing me (or the assistant persona) as the one who crashed, and this is the post-mortem.\n\nWait, let me re-read. The message is structured as:\n\n\"you crashed\" \u2014 then \"Root cause\", \"What I did\", \"Status\", \"Useful"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 453,
+  "completion_tokens": 128,
+  "total_tokens": 581,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 6.378807866,
+  "spec": {
+   "rounds": 54,
+   "drafted": 162,
+   "accepted": 73,
+   "acceptance_rate": 0.4506172839506173
+  }
+ },
+ "id": "chatcmpl-3195cba9087e54f5b3ff6be830d29442",
+ "created": 1788082832,
+ "system_fingerprint": "REDACTED"
+}

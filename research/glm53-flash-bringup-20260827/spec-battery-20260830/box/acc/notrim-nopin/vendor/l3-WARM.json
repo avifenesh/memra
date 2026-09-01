@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what's being asked. The user has pasted grep output from what appears to be a personal wiki/knowledge base, with some files about a project called `hqmtp-project`, `draft-head-training-data`, `no-unapproved-external-posts.md`, and references to wiki links like [[knowledge-distillation]], [[bw24]], [[fr-spec]], [[hqmtp]].\n\nThe grep output masks the search term \u2014 it shows `il` where the search term was. So the actual search term is something that got replaced by \"il\" in the display... wait, actually re-reading: \"grep output masks",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what's being asked. The user has pasted grep output from what appears to be a personal wiki/knowledge base, with some files about a project called `hqmtp-project`, `draft-head-training-data`, `no-unapproved-external-posts.md`, and references to wiki links like [[knowledge-distillation]], [[bw24]], [[fr-spec]], [[hqmtp]].\n\nThe grep output masks the search term \u2014 it shows `il` where the search term was. So the actual search term is something that got replaced by \"il\" in the display... wait, actually re-reading: \"grep output masks"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 427,
+  "completion_tokens": 128,
+  "total_tokens": 555,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 7.296169669,
+  "spec": {
+   "rounds": 59,
+   "drafted": 177,
+   "accepted": 68,
+   "acceptance_rate": 0.384180790960452
+  }
+ },
+ "id": "chatcmpl-c317c3402b101f716207f92533d83435",
+ "created": 1788081691,
+ "system_fingerprint": "REDACTED"
+}

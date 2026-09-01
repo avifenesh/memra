@@ -1,0 +1,57 @@
+warning: function `expected_census` is never used
+   --> crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:288:15
+    |
+288 | pub(crate) fn expected_census(config: &ModelConfig) -> BTreeMap<String, TensorSpec> {
+    |               ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:7243:9
+     |
+7243 |     let mut run = |label: &str, steps: Vec<Vec<u32>>| -> Res<usize> {
+     |         ----^^^
+     |         |
+     |         help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `indexer_mask_rows` is never used
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:3726:4
+     |
+3726 | fn indexer_mask_rows(
+     |    ^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `qsa_indexer_mask` is never used
+     --> crates/memra-engine/src/qwen4exp_gpu.rs:16582:8
+      |
+15974 | impl Qwen4ExpGpu {
+      | ---------------- method in this implementation
+...
+16582 |     fn qsa_indexer_mask(
+      |        ^^^^^^^^^^^^^^^^
+
+
+running 517 tests
+....................................................................................... 87/517
+.....................................User defined signal 1
+.................................................. 174/517
+....................................................................................... 261/517
+....................................................................................... 348/517
+....................................................................................... 435/517
+..................................................................................
+test result: ok. 517 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.99s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit=0

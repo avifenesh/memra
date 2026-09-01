@@ -1,0 +1,171 @@
+diff --git a/crates/memra-engine/cu/flash_attn.cu b/crates/memra-engine/cu/flash_attn.cu
+index 8bccfd7..39c7904 100644
+--- a/crates/memra-engine/cu/flash_attn.cu
++++ b/crates/memra-engine/cu/flash_attn.cu
+@@ -4677,9 +4677,10 @@ extern "C" __global__ void __launch_bounds__(N_WARPS*WARP_SZ, 2) fa_prefill_qw_w
+-//  KERNEL 1b-qwdb : fa_prefill_qw_db  (cp.async double-buffered twin)   //
+-//  fa_prefill_qw with the K/V workspace staging DOUBLE-BUFFERED via     //
+-//  cp.async: tile n+1's L2->smem copy is issued before tile n's compute //
+-//  so the staging latency hides behind the MMA pipe (ncu on the single- //
+-//  buffer twin: mem 66% / compute 15% / DRAM 0.6% — staging-stalled).   //
+-//  Costs a second sK+sV pair (+32KB smem -> 1 CTA/SM vs 2); the A/B     //
+-//  measurement arbitrates the default. EXACT: staging is a pure byte    //
+-//  copy and the compute code is byte-identical to fa_prefill_qw ->      //
+-//  bit-identical O (kernel_check pins db-vs-inline bitdiff=0).          //
++//  KERNEL 1b-qwdb : fa_prefill_qw_db  (K/V + P software pipeline)       //
++//  K/V workspace staging is DOUBLE-BUFFERED via cp.async. Two 2-warp    //
++//  cohorts consume the ring one tile apart: while the lead cohort runs  //
++//  QK/softmax for tile n+1, the lag cohort runs PV for tile n. P is also //
++//  double-buffered so those phases never alias. This is the sm_120a      //
++//  mma.sync analogue of FA3 Algorithm 2's scheduling overlap; it does   //
++//  NOT claim WGMMA commit/wait semantics. Each warp's tile traversal,    //
++//  online-softmax recurrence, and MMA accumulation order are unchanged. //
++//  Costs a second sK+sV pair (+32KB) and a second sP (+4KB), retaining   //
++//  the existing one-CTA/SM occupancy class.                             //
+@@ -4693,0 +4695,6 @@ static __device__ __forceinline__ void cp_async_wait_0() { asm volatile("cp.asyn
++static __device__ __forceinline__ void fa_bar_sync(int id, int count) {
++    asm volatile("bar.sync %0, %1;\n" :: "r"(id), "r"(count) : "memory");
++}
++static __device__ __forceinline__ int fa_shared_atomic_load(volatile int* p) {
++    return atomicAdd((int*)p, 0);
++}
+@@ -4701 +4708,2 @@ static __device__ __forceinline__ void stage_kv_tile_async(
+-        int k0, int nk, int kv_dim_k, int kv_dim_v, size_t kv_off, int bt)
++        int k0, int nk, int kv_dim_k, int kv_dim_v, size_t kv_off,
++        int load_tid, int load_threads)
+@@ -4705 +4713 @@ static __device__ __forceinline__ void stage_kv_tile_async(
+-    for (int i = bt; i < BK*(HEAD_DIM/8); i += N_WARPS*WARP_SZ) {
++    for (int i = load_tid; i < BK*(HEAD_DIM/8); i += load_threads) {
+@@ -4737,2 +4745,2 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-    // smem: DOUBLE K/V tile buffers + sP + sM/sL (no sS — register softmax needs no
+-    // score staging; sLw is the only cross-warp slot).
++    // smem: DOUBLE K/V tile buffers + DOUBLE P + sL + six generation/control words.
++    // Scores remain register-resident; sLw is the only output-side cross-lane slot.
+@@ -4744,3 +4752,5 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-    __nv_bfloat16* sP  = sV1 + BK*HEAD_DIM;                      // BLOCK_Q*BK
+-    float* sL = (float*)(sP + BLOCK_Q*BK);                        // BLOCK_Q f32
+-    __nv_bfloat16* sPw = sP + warp*M_ROWS*BK;
++    __nv_bfloat16* sP  = sV1 + BK*HEAD_DIM;                      // 2*BLOCK_Q*BK
++    float* sL = (float*)(sP + 2*BLOCK_Q*BK);                     // BLOCK_Q f32
++    volatile int* stage_gen = (volatile int*)(sL + BLOCK_Q);     // two parity slots
++    volatile int* lead_gen  = stage_gen + 2;                    // lead P-ready generation
++    volatile int* done_mask = lead_gen + 2;                     // cohort-consumed bits
+@@ -4755,0 +4766 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
++        if (warp == 0 && lane < 6) ((volatile int*)stage_gen)[lane] = 0;
+@@ -4757 +4768 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-        __syncthreads();   // all warps done with sK0∪sK1 before prefetch overwrites
++        __syncthreads();   // publishes controls; Q no longer needs sK0 union sK1
+@@ -4786 +4797,3 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-        if (nt > t_start)
++        // Prologue both ring stages. The lag cohort subsequently refills a freed parity with
++        // tile n+2 while the lead cohort computes tile n+1.
++        if (nt > t_start) {
+@@ -4789 +4802,15 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-                                    kv_dim_k, kv_dim_v, kv_off, bt);
++                                    kv_dim_k, kv_dim_v, kv_off, bt, N_WARPS*WARP_SZ);
++            if (t_start + 1 < nt) {
++                const int t1 = t_start + 1;
++                stage_kv_tile_async<HD>((t1 & 1) ? sK1 : sK0, (t1 & 1) ? sV1 : sV0,
++                                        Kw, Vw, t1 * BK, min(BK, T_kv - t1 * BK),
++                                        kv_dim_k, kv_dim_v, kv_off, bt, N_WARPS*WARP_SZ);
++            }
++            cp_async_wait_0();
++            __syncthreads();
++            if (warp == 0 && lane == 0) {
++                ((int*)stage_gen)[t_start & 1] = t_start + 1;
++                if (t_start + 1 < nt) ((int*)stage_gen)[(t_start + 1) & 1] = t_start + 2;
++            }
++            __syncthreads();
++        }
+@@ -4793,0 +4821 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
++            const int parity = ti & 1;
+@@ -4796,6 +4824,7 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-            // prefetch tile ti+1 into the OTHER buffer (its compute finished last iter)
+-            if (ti + 1 < nt) {
+-                const int k1 = (ti + 1) * BK;
+-                stage_kv_tile_async<HD>((ti & 1) ? sK0 : sK1, (ti & 1) ? sV0 : sV1,
+-                                    Kw, Vw, k1, min(BK, T_kv - k1), kv_dim_k, kv_dim_v, kv_off, bt);
+-                cp_async_wait_1();   // tile ti's group done; ti+1 may still be in flight
++
++            // Cohort 0 (warps 0--1) leads by one tile. Cohort 1 waits until cohort 0 has
++            // published its P stage for this tile, then overlaps QK/softmax with cohort 0's PV.
++            if (warp < 2) {
++                if (warp == 0 && lane == 0)
++                    while (fa_shared_atomic_load(stage_gen + parity) < ti + 1) { }
++                fa_bar_sync(1, 2*WARP_SZ);
+@@ -4803 +4832,3 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-                cp_async_wait_0();
++                if (warp == 2 && lane == 0)
++                    while (fa_shared_atomic_load(lead_gen + parity) < ti + 1) { }
++                fa_bar_sync(2, 2*WARP_SZ);
+@@ -4805 +4835,0 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-            __syncthreads();
+@@ -4873 +4903,2 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-            // ---- write P to sPw (MANDATORY for PV's A-operand ldmatrix layout) ----
++            // ---- write P to the parity stage (MANDATORY for PV's A-operand layout) ----
++            __nv_bfloat16* sPw = sP + parity*BLOCK_Q*BK + warp*M_ROWS*BK;
+@@ -4882,0 +4914,10 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
++            // Both lead warps have published P before the lag cohort enters this tile. Rows and
++            // P slabs are warp-private; this signal changes timing only, never data ownership.
++            if (warp < 2) {
++                fa_bar_sync(1, 2*WARP_SZ);
++                if (warp == 0 && lane == 0) {
++                    __threadfence_block();
++                    atomicExch((int*)(lead_gen + parity), ti + 1);
++                }
++            }
++
+@@ -4908 +4949,36 @@ static __device__ __forceinline__ void fa_prefill_qw_db_body(
+-            __syncthreads();   // compute on this buffer done before it is re-prefetched
++            // Publish completion of this parity. Once both cohorts have consumed it, the lag
++            // cohort refills it with tile n+2 while the lead cohort works from the other parity.
++            if (warp < 2) {
++                fa_bar_sync(1, 2*WARP_SZ);
++                if (warp == 0 && lane == 0) {
++                    __threadfence_block();
++                    atomicOr((int*)(done_mask + parity), 1);
++                }
++            } else {
++                fa_bar_sync(2, 2*WARP_SZ);
++                if (warp == 2 && lane == 0) {
++                    __threadfence_block();
++                    atomicOr((int*)(done_mask + parity), 2);
++                }
++
++                if (ti + 2 < nt) {
++                    if (warp == 2 && lane == 0) {
++                        while (fa_shared_atomic_load(done_mask + parity) != 3) { }
++                        atomicExch((int*)(done_mask + parity), 0);
++                    }
++                    fa_bar_sync(2, 2*WARP_SZ);
++
++                    const int t2 = ti + 2;
++                    const int load_tid = (warp - 2)*WARP_SZ + lane;
++                    stage_kv_tile_async<HD>((t2 & 1) ? sK1 : sK0, (t2 & 1) ? sV1 : sV0,
++                                            Kw, Vw, t2 * BK, min(BK, T_kv - t2 * BK),
++                                            kv_dim_k, kv_dim_v, kv_off,
++                                            load_tid, 2*WARP_SZ);
++                    cp_async_wait_0();
++                    fa_bar_sync(2, 2*WARP_SZ);
++                    if (warp == 2 && lane == 0) {
++                        __threadfence_block();
++                        atomicExch((int*)(stage_gen + parity), t2 + 1);
++                    }
++                }
++            }
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index 5cd0b1a..6bdea41 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -9645 +9645,2 @@ impl Engine {
+-        // second K/V tile pair, 1 CTA/SM): overlaps tile n+1's L2->smem copy with tile n's MMA.
++        // second K/V tile pair and +4KB for the second P stage, 1 CTA/SM). Two warp cohorts run
++        // one tile apart so lead-QK/softmax overlaps lag-PV while the lag cohort refills K/V.
+@@ -9655,2 +9656,2 @@ impl Engine {
+-                // 4x KV tile buffers (bf16) + sP (bf16) + sL (f32)
+-                (2 * (4 * BK * head_dim + BLOCK_Q * BK) + 4 * BLOCK_Q) as u32
++                // 4x KV tile buffers + 2x P (bf16), sL (f32), six control words
++                (2 * (4 * BK * head_dim + 2 * BLOCK_Q * BK) + 4 * BLOCK_Q + 6 * 4) as u32
+@@ -9741 +9742 @@ impl Engine {
+-                (2 * (4 * BK * head_dim + BLOCK_Q * BK) + 4 * BLOCK_Q) as u32
++                (2 * (4 * BK * head_dim + 2 * BLOCK_Q * BK) + 4 * BLOCK_Q + 6 * 4) as u32

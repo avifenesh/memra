@@ -1,0 +1,134 @@
+++ seq 1 240
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ sleep 15
++ for _ in $(seq 1 240)
++ grep -q TRACKA2-DONE /home/ubuntu/trackA2.log
++ break
++ source /home/ubuntu/.cargo/env
+++ case ":${PATH}:" in
+++ export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+++ PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ export PATH=/usr/local/cuda-13.2/bin:/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ PATH=/usr/local/cuda-13.2/bin:/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:/usr/local/cuda-13.2/include:/usr/local/cuda-12.9/bin:/usr/local/cuda-12.9/include:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
++ export CUDA_VISIBLE_DEVICES=1 MEMRA_CUDA_ARCH=120a CARGO_BUILD_JOBS=40
++ CUDA_VISIBLE_DEVICES=1
++ MEMRA_CUDA_ARCH=120a
++ CARGO_BUILD_JOBS=40
++ QT=/home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
++ DX=/home/ubuntu/models/dspark/arm-a-cum1000
++ EV=/home/ubuntu/evidence/dspark-e2e
++ cd /home/ubuntu/memra-dspark
++ git fetch ../dspark-v0920.bundle lane/dspark-q38-recover
+From ../dspark-v0920.bundle
+ * branch                lane/dspark-q38-recover -> FETCH_HEAD
++ git reset --hard FETCH_HEAD
+HEAD is now at f8300340c fix(dspark): budget check before the boundary-round draft push — spec emitted max_new+1 tokens whenever the final round accepted (invisible at placeholder acceptance, surfaced by cum1000; shared prefix stayed byte-identical)
++ git log --oneline -1
+f8300340c fix(dspark): budget check before the boundary-round draft push — spec emitted max_new+1 tokens whenever the final round accepted (invisible at placeholder acceptance, surfaced by cum1000; shared prefix stayed byte-identical)
++ cargo build --release --bin memra-server --bin dspark_q38_gate
++ tail -1
+    Finished `release` profile [optimized] target(s) in 33.40s
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-fixed-rep1.log
+== dspark_q38_gate: ALL EXACT | mean plain 62.6 tok/s | mean spec 62.5 tok/s | 1536 tokens ==
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-fixed-rep2.log
+== dspark_q38_gate: ALL EXACT | mean plain 62.8 tok/s | mean spec 62.7 tok/s | 1536 tokens ==
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-fixed-rep3.log
+== dspark_q38_gate: ALL EXACT | mean plain 62.9 tok/s | mean spec 62.7 tok/s | 1536 tokens ==
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-fixed-rep4.log
+== dspark_q38_gate: ALL EXACT | mean plain 62.8 tok/s | mean spec 62.7 tok/s | 1536 tokens ==
++ for rep in 1 2 3 4 5
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 128
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-own-fixed-rep5.log
+== dspark_q38_gate: ALL EXACT | mean plain 62.8 tok/s | mean spec 62.7 tok/s | 1536 tokens ==
++ MEMRA_SPEC_STATS=1
++ MEMRA_PROMPT_DIR=/home/ubuntu/dspark-prompts-math
++ MEMRA_CHAT=1
++ target/release/dspark_q38_gate /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 256
++ tail -1 /home/ubuntu/evidence/dspark-e2e/e2e-math.log
+== dspark_q38_gate: ALL EXACT | mean plain 68.2 tok/s | mean spec 75.7 tok/s | 927 tokens ==
++ MEMRA_GPU_LOCK=/tmp/memra-box2-gpu1.lock
++ bash tools/dspark-serve-smoke.sh /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /home/ubuntu/models/dspark/arm-a-cum1000 target/release/memra-server /home/ubuntu/evidence/dspark-serve-smoke
++ tail -3 /home/ubuntu/evidence/dspark-serve-smoke.log
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "gate" <- /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
++ echo TRACKA3-DONE
+TRACKA3-DONE

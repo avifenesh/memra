@@ -1,0 +1,21 @@
+block=build start=2026-08-11T02:36:08Z out=/workspace/cx-vast27b/raw/build-20260811T023608Z
+source_commit=c58ebd6257334c7b2628ec7367efd4713e8126c1
+## HEAD (no branch)
+gate=cargo-build start=2026-08-11T02:36:09Z
+   Compiling libc v0.2.186
+   Compiling cudarc v0.19.8
+   Compiling cfg-if v1.0.4
+   Compiling memra-engine v0.76.0 (/workspace/cx-vast27b/memra/crates/memra-engine)
+   Compiling memra-sampling v0.76.0 (/workspace/cx-vast27b/memra/crates/memra-sampling)
+   Compiling memra-validate v0.76.0 (/workspace/cx-vast27b/memra/crates/memra-validate)
+   Compiling libloading v0.9.0
+   Compiling memmap2 v0.9.11
+   Compiling memra-gguf v0.76.0 (/workspace/cx-vast27b/memra/crates/memra-gguf)
+   Compiling memra-tokenizer v0.76.0 (/workspace/cx-vast27b/memra/crates/memra-tokenizer)
+   Compiling memra-kv v0.76.0 (/workspace/cx-vast27b/memra/crates/memra-kv)
+   Compiling memra-runtime v0.76.0 (/workspace/cx-vast27b/memra/crates/memra-runtime)
+warning: memra-engine@0.76.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc (newest of 2; also saw 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.76.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 33s
+gate=cargo-build end=2026-08-11T02:38:42Z rc=0
+block=build out=/workspace/cx-vast27b/raw/build-20260811T023608Z exit=0 restore_exit=0 done=2026-08-11T02:38:43Z

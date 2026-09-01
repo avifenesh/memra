@@ -1,0 +1,14 @@
+n=1 per arm
+prompt_tokens=9216
+prime_chunk=4096 ring_rows=4639
+trunk_wrap_guarantee=sequential teacher-forced cache crosses physical row 4639
+teacher_forced_step15_full_logits=PASS
+forced_output_tokens=PASS
+teacher_forced_summary=PASS
+0fdc84a9e5b71d13ee574a7fd5a863d3e69d9f12dfb062790314b1144635c912  /home/ubuntu/ringval/receipts/logits-20260810T065008Z/logits-off-step15.f32
+0fdc84a9e5b71d13ee574a7fd5a863d3e69d9f12dfb062790314b1144635c912  /home/ubuntu/ringval/receipts/logits-20260810T065008Z/logits-on-step15.f32
+ 515584 /home/ubuntu/ringval/receipts/logits-20260810T065008Z/logits-off-step15.f32
+ 515584 /home/ubuntu/ringval/receipts/logits-20260810T065008Z/logits-on-step15.f32
+1031168 total
+teacher-forced EXACTNESS: disagreements=12/16 (75.00%) first_at=0  mean_nll=5.572676  total_nll=89.1628
+teacher-forced EXACTNESS: disagreements=12/16 (75.00%) first_at=0  mean_nll=5.572676  total_nll=89.1628

@@ -1,0 +1,251 @@
+tokens=[1, 2, 3]
+plan=ModelPlan {
+    arch: Hy3,
+    hidden_size: 8,
+    vocab_size: 32,
+    context_length: 32,
+    embedding_scale: 1.0,
+    vision: None,
+    multimodal: None,
+    layers: [
+        LayerPlan {
+            index: 0,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            attention: Full(
+                FullAttentionPlan {
+                    query_heads: 2,
+                    kv_heads: 1,
+                    key_head_dim: 4,
+                    value_head_dim: 4,
+                    rope: RopePlan {
+                        dimensions: 4,
+                        base: 11158840.0,
+                        factors: None,
+                    },
+                    qk_norm: Required,
+                    output_gate: None,
+                    scale: InverseSqrtKeyDim,
+                    value_projection: Separate,
+                    value_norm: None,
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            mlp: Dense(
+                DenseMlpPlan {
+                    intermediate_size: 16,
+                    activation: Silu,
+                },
+            ),
+            residual: Serial,
+            state: KvCache {
+                key_width: 4,
+                value_width: 4,
+            },
+        },
+        LayerPlan {
+            index: 1,
+            pre_attention_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            attention: Full(
+                FullAttentionPlan {
+                    query_heads: 2,
+                    kv_heads: 1,
+                    key_head_dim: 4,
+                    value_head_dim: 4,
+                    rope: RopePlan {
+                        dimensions: 4,
+                        base: 11158840.0,
+                        factors: None,
+                    },
+                    qk_norm: Required,
+                    output_gate: None,
+                    scale: InverseSqrtKeyDim,
+                    value_projection: Separate,
+                    value_norm: None,
+                },
+            ),
+            pre_mlp_norm: NormPlan {
+                kind: Rms,
+                epsilon: 1e-5,
+                weight_transform: Identity,
+            },
+            mlp: Moe(
+                MoeMlpPlan {
+                    expert_count: 4,
+                    experts_per_token: 2,
+                    expert_intermediate_size: 8,
+                    router: Sigmoid {
+                        normalize_selected: true,
+                        scaling_factor: 2.826,
+                        selection_bias: true,
+                    },
+                    shared: Some(
+                        SharedMlpPlan {
+                            intermediate_size: 8,
+                            gated: false,
+                        },
+                    ),
+                    activation: Silu,
+                },
+            ),
+            residual: Serial,
+            state: KvCache {
+                key_width: 4,
+                value_width: 4,
+            },
+        },
+    ],
+    output_norm: NormPlan {
+        kind: Rms,
+        epsilon: 1e-5,
+        weight_transform: Identity,
+    },
+    logits: [],
+    mtp_blocks: [
+        MtpBlockPlan {
+            depth: 0,
+            layer: LayerPlan {
+                index: 2,
+                pre_attention_norm: NormPlan {
+                    kind: Rms,
+                    epsilon: 1e-5,
+                    weight_transform: Identity,
+                },
+                attention: Full(
+                    FullAttentionPlan {
+                        query_heads: 2,
+                        kv_heads: 1,
+                        key_head_dim: 4,
+                        value_head_dim: 4,
+                        rope: RopePlan {
+                            dimensions: 4,
+                            base: 11158840.0,
+                            factors: None,
+                        },
+                        qk_norm: Required,
+                        output_gate: None,
+                        scale: InverseSqrtKeyDim,
+                        value_projection: Separate,
+                        value_norm: None,
+                    },
+                ),
+                pre_mlp_norm: NormPlan {
+                    kind: Rms,
+                    epsilon: 1e-5,
+                    weight_transform: Identity,
+                },
+                mlp: Moe(
+                    MoeMlpPlan {
+                        expert_count: 4,
+                        experts_per_token: 2,
+                        expert_intermediate_size: 8,
+                        router: Sigmoid {
+                            normalize_selected: true,
+                            scaling_factor: 2.826,
+                            selection_bias: true,
+                        },
+                        shared: Some(
+                            SharedMlpPlan {
+                                intermediate_size: 8,
+                                gated: false,
+                            },
+                        ),
+                        activation: Silu,
+                    },
+                ),
+                residual: Serial,
+                state: KvCache {
+                    key_width: 4,
+                    value_width: 4,
+                },
+            },
+            input: MtpInputPlan {
+                embedding_norm: NormPlan {
+                    kind: Rms,
+                    epsilon: 1e-5,
+                    weight_transform: Identity,
+                },
+                hidden_norm: NormPlan {
+                    kind: Rms,
+                    epsilon: 1e-5,
+                    weight_transform: Identity,
+                },
+                fusion: ConcatenateProjection,
+            },
+            output: MtpOutputPlan {
+                norm: PreferPrivateThenModel,
+                projection: PreferPrivateThenModel,
+            },
+        },
+    ],
+    drafter: None,
+    draft_source: Embedded,
+    sampling_defaults: Some(
+        SamplingDefaultsPlan {
+            temperature: 0.9,
+            top_p: 1.0,
+        },
+    ),
+    partition_boundaries: [
+        1,
+    ],
+}
+tensor=TokenEmbedding	shape=[32, 8]	sha256=e1bddfd7bbd79b7449a9eca3b80fc41d344bd4bc3d851e2969c40057c3e62ada
+tensor=OutputNorm	shape=[8]	sha256=4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886
+tensor=Layer { index: 0, tensor: PreAttentionNorm }	shape=[8]	sha256=4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886
+tensor=Layer { index: 0, tensor: Query }	shape=[8, 8]	sha256=16150744faa57075cbeb8cc5a7864bdadb212c1ede5938c3397cac1355fadbf5
+tensor=Layer { index: 0, tensor: Key }	shape=[4, 8]	sha256=ba6c88da29fcb69d7179f3bdc082593cc6180d12b9be92c5444f000661d76e8b
+tensor=Layer { index: 0, tensor: Value }	shape=[4, 8]	sha256=f4b06a31db8dce9fc5dd24f476501f1a0a90754d42ac7e2760a73a6d0e2ec704
+tensor=Layer { index: 0, tensor: AttentionOutput }	shape=[8, 8]	sha256=ca661db25c51801fe642774bd127a002868a858711ec1a7ab650ded0c5ff3e4b
+tensor=Layer { index: 0, tensor: QueryNorm }	shape=[4]	sha256=f6bb1294da2f78cd935b01c7656280df5eaa0439e9d97bc03775825a41a508e4
+tensor=Layer { index: 0, tensor: KeyNorm }	shape=[4]	sha256=f6bb1294da2f78cd935b01c7656280df5eaa0439e9d97bc03775825a41a508e4
+tensor=Layer { index: 0, tensor: PreMlpNorm }	shape=[8]	sha256=4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886
+tensor=Layer { index: 0, tensor: MlpGate }	shape=[16, 8]	sha256=bdad1f229397c8cb311ad58619a732813079c1dd7593de6357c39e7256869818
+tensor=Layer { index: 0, tensor: MlpUp }	shape=[16, 8]	sha256=fdcc12e6aca46b72af15ed51e82d13816fd740a39a9157959c3db0d80341bc65
+tensor=Layer { index: 0, tensor: MlpDown }	shape=[8, 16]	sha256=a142583d740dc1b8a3b05beaadf88c78d37a700e2bf10102c41efaaa61ecde97
+tensor=Layer { index: 1, tensor: PreAttentionNorm }	shape=[8]	sha256=4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886
+tensor=Layer { index: 1, tensor: Query }	shape=[8, 8]	sha256=0c0d0af817da4e13aff795e9129b5e4a330b5abb0f4d524b8818808a49568d78
+tensor=Layer { index: 1, tensor: Key }	shape=[4, 8]	sha256=9b8dd405fead490931e0395d3045e7a7a0c396bf21d4a7ac688fd4de7b8ec5fa
+tensor=Layer { index: 1, tensor: Value }	shape=[4, 8]	sha256=1e3aa6dc3795eaf8f917b78da2f82a2ae9fb760c0cf2b005e4551d6bd692a232
+tensor=Layer { index: 1, tensor: AttentionOutput }	shape=[8, 8]	sha256=354fac56ec82b2a7248e1eba5379fba4cf07c64392ee4b906f607f45c2139248
+tensor=Layer { index: 1, tensor: QueryNorm }	shape=[4]	sha256=f6bb1294da2f78cd935b01c7656280df5eaa0439e9d97bc03775825a41a508e4
+tensor=Layer { index: 1, tensor: KeyNorm }	shape=[4]	sha256=f6bb1294da2f78cd935b01c7656280df5eaa0439e9d97bc03775825a41a508e4
+tensor=Layer { index: 1, tensor: PreMlpNorm }	shape=[8]	sha256=4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886
+tensor=Layer { index: 1, tensor: MoeRouter }	shape=[4, 8]	sha256=94d4fcb6715624aa0e6aa384dfb72a3b5b60480d0a722273a7ebf8935e78cf0e
+tensor=Layer { index: 1, tensor: MoeRouterBias }	shape=[4]	sha256=1c397813412473525ae80b56956efea71fc11b46dd1bc3ab9c441613ff4d19af
+tensor=Layer { index: 1, tensor: MoeExpertGateBank }	shape=[4, 8, 8]	sha256=5c24b27b77337c176782c6479004ba77784034efef18acd46344faafdbf40a23
+tensor=Layer { index: 1, tensor: MoeExpertUpBank }	shape=[4, 8, 8]	sha256=74b18fa4f1271f3cfe87a7aa9719f604b8272667a11d42feb1daeaacf862a96d
+tensor=Layer { index: 1, tensor: MoeExpertDownBank }	shape=[4, 8, 8]	sha256=5c97c43bd43e82aa648a8ca7a9c630b20ec2c65ad82b3c0b473addeaf1b70e71
+tensor=Layer { index: 1, tensor: SharedMlpGate }	shape=[8, 8]	sha256=0d1727dc59fea3755d7ce440f8998435e0dbeec70a0f88d3eca757595a4f4cb9
+tensor=Layer { index: 1, tensor: SharedMlpUp }	shape=[8, 8]	sha256=384d9ce1767af3c4847072e294cc94d0d730a7df52cfaa03433ddffa897ff44e
+tensor=Layer { index: 1, tensor: SharedMlpDown }	shape=[8, 8]	sha256=ed97d05aa9e005f54effd0a016adee1fc34e3ce9e2586d2518e057b0294d7f8c
+tensor=Layer { index: 2, tensor: PreAttentionNorm }	shape=[8]	sha256=4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886
+tensor=Layer { index: 2, tensor: Query }	shape=[8, 8]	sha256=db4f2d166642818dd05eecbe922a44ee0656e847586c3a39f664654dc050a8a8
+tensor=Layer { index: 2, tensor: Key }	shape=[4, 8]	sha256=d01c902773d7d5088056269191a3321a362a9666fd5267bc273d9c6680dacfe9
+tensor=Layer { index: 2, tensor: Value }	shape=[4, 8]	sha256=02bde05cd479040e13f3b0e0bbb6ee9f939dcfa4cd01cd52de482e64274eb4c3
+tensor=Layer { index: 2, tensor: AttentionOutput }	shape=[8, 8]	sha256=72c62b9110294e4509f6421f88446f22a263fd6fe0d7fb59ad0c2169fcde0799
+tensor=Layer { index: 2, tensor: QueryNorm }	shape=[4]	sha256=f6bb1294da2f78cd935b01c7656280df5eaa0439e9d97bc03775825a41a508e4
+tensor=Layer { index: 2, tensor: KeyNorm }	shape=[4]	sha256=f6bb1294da2f78cd935b01c7656280df5eaa0439e9d97bc03775825a41a508e4
+tensor=Layer { index: 2, tensor: PreMlpNorm }	shape=[8]	sha256=4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886
+tensor=Layer { index: 2, tensor: MoeRouter }	shape=[4, 8]	sha256=f936a0dfaa074222bbe0802a5af9f6cbebd4e53b304ce8341dc5520bfcf7383d
+tensor=Layer { index: 2, tensor: MoeRouterBias }	shape=[4]	sha256=c510d24cc0d6a00b966d372e66c17bdf073ff4d3e997384dc7e3265cf810dedd
+tensor=Layer { index: 2, tensor: MoeExpertGateBank }	shape=[4, 8, 8]	sha256=d333454786ac751e69eaa24b2e34e66f7975d21add9004302d74fe407534e7c9
+tensor=Layer { index: 2, tensor: MoeExpertUpBank }	shape=[4, 8, 8]	sha256=4e1bd249338756c03e29ca1f014ef4f65c10770104b35276fb7ad8eb581edbd2
+tensor=Layer { index: 2, tensor: MoeExpertDownBank }	shape=[4, 8, 8]	sha256=d62ead0bb1e4cc219954f3d195756e112d9a91265ac030e959c20d63f0f3eadb
+tensor=Layer { index: 2, tensor: SharedMlpGate }	shape=[8, 8]	sha256=5c56cb4fa0346d99097f04bb2d5bf832a8d44ecfab37d8b862c1c4b18053b1bc
+tensor=Layer { index: 2, tensor: SharedMlpUp }	shape=[8, 8]	sha256=6ac8373bdd71c19a23b73c46e8c353f16a47fee729bd183b3db456c9cc40d074
+tensor=Layer { index: 2, tensor: SharedMlpDown }	shape=[8, 8]	sha256=472ad33d37f6a888e8ce9bcb1dd06c730f6dbc76786245384610af5d44404f4c
+tensor=Mtp { depth: 0, tensor: EmbeddingNorm }	shape=[8]	sha256=4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886
+tensor=Mtp { depth: 0, tensor: HiddenNorm }	shape=[8]	sha256=4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886
+tensor=Mtp { depth: 0, tensor: FusionProjection }	shape=[8, 16]	sha256=c85941714027693edadea0725e087179025db8b12a0f9b3980fc776b19e33f5a

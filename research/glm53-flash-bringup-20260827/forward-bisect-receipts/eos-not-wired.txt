@@ -1,0 +1,32 @@
+NEXT DEFECT, made visible only by the fixed forward: the engine honours ONE of this model's
+THREE declared eos ids, so generation never stops.
+
+`~/models/glm53-nvfp4/generation_config.json`:
+  "eos_token_id": [154820, 154827, 154829]      # <|endoftext|>, <|user|>, <|observation|>
+memra-server boot log (`~/cell-FIXED.log`):
+  [worker]   loaded "zai/glm-5.3-flash": 46 layers, eos=154820
+
+GREEDY control (temperature 0, max_tokens 48), the decisive probe — the model answers, then
+emits <|user|> (154827, a declared eos), and the server keeps going:
+
+  prompt   "Name the capital of France. One word."
+  finish   length
+  reasoning 'The capital of France is Paris.<|user|>\n<|im_start|>user\nName the capital of
+             France. One word.<|im_end|>\n<|im_start|>assistant\nThe capital of France is
+             Paris.<|user|>\n'
+
+Everything before the FIRST <|user|> is correct. Everything after it is post-stop text.
+
+This is NOT a template defect, checked rather than assumed: `chat_template.jinja` contains zero
+`<|im_start|>`/`<|im_end|>` occurrences and renders turns with `<|user|>`/`<|assistant|>`. The
+ChatML markers appear only AFTER the ignored stop token, so they are the model drifting past an
+unhonored stop, not a prompt rendered in the wrong dialect.
+
+A second greedy control on the same server, same settings, shows the forward itself is healthy:
+
+  prompt   "Say hi."
+  reasoning "The user wants me to say hi. This is a simple greeting request. I should respond in
+             a friendly, natural way. Since there are no specific instructions about format or
+             tone, I'll keep it simple and warm. A brief, friendly"   (clean to the 48-token cap)
+
+BEFORE the name-map fix, the same greedy prompt produced: "  * 1. 1. 1. 2. 2. 2. 2. "

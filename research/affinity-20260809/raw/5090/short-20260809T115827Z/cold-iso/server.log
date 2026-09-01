@@ -1,0 +1,50 @@
+[server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", Some("/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=0: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[mtp-draft] external draft head: blk.32, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] q9: regime draft attached (/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "q9": 33 layers, eos=248046
+[worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q9: decode chunk cap 16 (exact-16 tier)
+[server] worker ready; serving models: ["q9"]
+[server] listening on http://127.0.0.1:18244
+[meter] admit id=cmpl-e3cf90a2e3cd56afefc384c87a71254d tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=748 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-95033921b06d205ea718b650bb666d79 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=824 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[worker] observed session VRAM cost for "q9": 34MB (admission gate = 2x)
+[meter] admit id=cmpl-ff238acd0f6402bd14f7a4bd3dc84f61 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=901 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-b0bfbf6b1615b883248fcb1304fd23f0 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=980 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e691aee79b8f656cb332c8b133b8c0cb tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1057 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-75acb322467e084867b9f0a21cb8e481 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1130 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d40078056d8b39d4125e148fdeadb830 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1204 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-98986e5ca3ee3a9d0dffd5b5f3d6fe22 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1286 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-dda3d381d8ae5e5b31058cd7165e96c9 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1363 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-d6e02f0531411077edeb58076477ce1f tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1441 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9db0af5851e8c3a33a4e5ce5864fbea6 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1517 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-16ff3c68cb761339f60a0ecc5210d7d8 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1593 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9de26a536909ded77898e5686c2b8e20 tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-20336a5384bc6a2b659d0398c32db1ca tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-fbc1671a80413c90e616f8c50b9c76d6 tenant=default lane=interactive model="q9"
+[meter] admit id=cmpl-1b1e385908824ea550064d3ae2fb5416 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1666 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1664 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1665 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1666 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[meter] admit id=cmpl-a4bf527b5537b5b78ce9028170814db4 tenant=default lane=interactive model="q9"
+[spec-k] model="q9" tenant="cachespec-20260809" K=0 source=operator-pin prompt=1670 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

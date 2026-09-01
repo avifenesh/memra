@@ -1,0 +1,36 @@
+{
+ "name": "p04-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 520,
+   "completion_tokens": 91,
+   "total_tokens": 611,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 16.740124799,
+   "spec": {
+    "rounds": 37,
+    "drafted": 111,
+    "accepted": 53,
+    "acceptance_rate": 0.4774774774774775
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "stop",
+    "message": {
+     "content": "I'll start by inspecting the current state of the files and rendering the PDFs to PNG to see the layout defects.</think>I'll start by exploring the environment and understanding the current state.<tool_call>Bash transported\"command\": \"pwd && ls -la work/ outputs/ 2>/dev/null | head -40\"</arg_value></tool_call><tool_call>Bash: \"command\": \"cd work && head -100 fill_tax_forms.py\"</arg_value></tool_call>",
+     "reasoning": ""
+    }
+   }
+  ]
+ }
+}

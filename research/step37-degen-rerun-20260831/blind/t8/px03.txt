@@ -1,0 +1,34 @@
+finish=length content_nonempty=False
+---
+Got it, let's tackle this GitHub bug task step by step. First, let's start by understanding the issue: the JetBrains Marketplace listing for Agnix has two broken links: documentation 404, and source code pointing to a stale repo URL.
+
+First, I need to outline the steps I'd take, since I can't directly access the GitHub repo, but I can provide the full actionable plan, code changes if needed, and summary.
+
+First, step 1: Triage the issue. First, confirm it's a bug, not a question. The issue is clearly a bug: broken links in the marketplace listing. No code changes needed for the marketplace listing itself? Wait, wait—JetBrains Marketplace listings for plugins are usually configured in the plugin's build configuration (like in Gradle for Kotlin/JetBrains plugins) or in the marketplace listing metadata, right? Wait, no—wait, for JetBrains plugins, the marketplace listing is often populated from the plugin's repository metadata, or from the `plugin.xml` or build.gradle.kts, or from the GitHub repository's README if it's synced? Wait no, actually, the JetBrains Marketplace listing has editable fields: documentation URL, source code URL, etc. But if the plugin is published via Gradle using the `gradle-intellij-plugin`, those URLs are often pulled from the repository's GitHub metadata, or set explicitly in the build script.
+
+Wait first, let's confirm the root cause first. The two issues:
+1. Documentation link returns 404: likely the documentation URL in the marketplace listing is pointing to an old path, e.g., old docs site, old GitHub Pages URL, or a moved repo docs folder.
+2. Source Code link references stale repository URL: likely the repo was moved from a old org/user to the current `agent-sh/agnix` repo, but the marketplace listing still has the old URL.
+
+First, step 1: Investigate the current state. First, check the Agnix GitHub repo (https://github.com/agent-sh/agnix) to find:
+a. The correct documentation URL: likely https://agent-sh.github.io/agnix/ if they use GitHub Pages, or the docs folder in the repo, or a dedicated docs site.
+b. The correct source code URL: which is https://github.com/agent-sh/agnix, the current repo.
+
+Then, check where the marketplace listing URLs are configured. For JetBrains plugins built with the Gradle IntelliJ Plugin, the URLs are set in the `build.gradle.kts` (or `build.gradle`) under the `intellij` block, or in the `plugin.xml`? Wait no, the marketplace listing metadata is either:
+- Set explicitly in the JetBrains Marketplace dashboard for the plugin, or
+- Pulled from the plugin's build configuration if published via Gradle, specifically the `homepage` (documentation) and `vcs` (source code) URLs in the build script.
+
+Wait also, check if the plugin's `plugin.xml` has `<idea-version>` and other metadata, but the marketplace links are usually either in the build config or the marketplace dashboard.
+
+Next, step 2: Implement the fix. Since this is a configuration fix, not a code change, but if the URLs are set in the build config, we need to update them there, then republish the plugin? Wait no—wait, the JetBrains Marketplace listing has editable fields that don't require republishing the plugin, right? Wait let me confirm: yes, the JetBrains Marketplace allows plugin owners to edit the listing (description, links, screenshots) without releasing a new plugin version. But if the URLs are pulled from the GitHub repo's metadata (like the `homepage` and `repository` fields in the GitHub repo's settings), then updating those would sync to the marketplace.
+
+Wait but let's structure the steps properly:
+
+### Step 1: Triage & Investigation
+First, confirm the issue is valid:
+1. Reproduce the broken links:
+   - Current broken documentation link: likely points to an old URL (e.g., `https://old-org.github.io/agnix-docs/` or `https://github.com/old-org/agnix/wiki`) which returns 404.
+   - Current broken source code link: points to a stale repo (e.g., `https://github.com/old-org/agnix` or `https://bitbucket.org/old-org/agnix`) which is no longer active.
+2. Confirm correct URLs from the current Agnix repo (https://github.com/agent-sh/agnix):
+   - Correct source code URL: `https://github.com/agent-sh/agnix`
+   - Correct documentation URL: Check the repo's README, GitHub Pages (https://agent-sh.github.io/agnix/), or docs folder (https://github.com/agent-sh

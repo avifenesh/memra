@@ -1,0 +1,6 @@
+# qwen4exp_real_gate	label=C1b-kvhoist	binary_sha256=e9e8a67d94f5324a22596cda3e9a8a06653fd03fac09c79a62063873cf23c2b6	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# ladder	rungs=[32768]	chunk=2048	decode=36	kv_dev1=false	spec=None	ids=1150000	cap=33076
+# vram	pre-ladder	0, 0 MiB, 97887 MiB | 1, 90562 MiB, 97887 MiB
+rung	prefill_seg_s	prefill_cum_s	chunks	decode_warm_mean_ms	decode_median_ms	decode_p90_ms	tok_per_s	timing_rounds	looped	host_rss_mib	vram	continuation_ids

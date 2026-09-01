@@ -1,0 +1,196 @@
+005e03b81cec38b7da6399833d609ee89a2587f2
+45273cf6c806cdb1ad249df3e3b4d4dd34be47e74ae342608f60ede39febd088  /tmp/dspark2-deepspec.IDSMeG/deepspec/modeling/dspark/common.py
+2e91efcaff780eec0748ef3f6f0a31374f119f609c664cc79289fdd922335328  /tmp/dspark2-deepspec.IDSMeG/deepspec/modeling/dspark/loss.py
+6659bcdc12d923d4fc16cc2280c03078c2110a4792305e1f3f42b5468f75ef46  /tmp/dspark2-deepspec.IDSMeG/deepspec/modeling/dspark/markov_head.py
+9ad90bcb926b32b5144e8a27816ef18b51e9e5ee083108c5fbd8f63bc92b3953  /tmp/dspark2-deepspec.IDSMeG/deepspec/modeling/dspark/qwen3/modeling.py
+{
+  "hidden_size": 4096,
+  "intermediate_size": 12288,
+  "num_attention_heads": 16,
+  "num_key_value_heads": 4,
+  "head_dim": 256,
+  "rms_norm_eps": 0.000001,
+  "rope_parameters": {
+    "mrope_interleaved": true,
+    "mrope_section": [
+      11,
+      11,
+      10
+    ],
+    "rope_type": "default",
+    "rope_theta": 10000000,
+    "partial_rotary_factor": 0.25
+  },
+  "vocab_size": 248320,
+  "attention_bias": false
+}
+{
+  "mask_token": null,
+  "tail_added": [
+    {
+      "id": 248044,
+      "content": "<|endoftext|>",
+      "special": true
+    },
+    {
+      "id": 248045,
+      "content": "<|im_start|>",
+      "special": true
+    },
+    {
+      "id": 248046,
+      "content": "<|im_end|>",
+      "special": true
+    },
+    {
+      "id": 248047,
+      "content": "<|object_ref_start|>",
+      "special": true
+    },
+    {
+      "id": 248048,
+      "content": "<|object_ref_end|>",
+      "special": true
+    },
+    {
+      "id": 248049,
+      "content": "<|box_start|>",
+      "special": true
+    },
+    {
+      "id": 248050,
+      "content": "<|box_end|>",
+      "special": true
+    },
+    {
+      "id": 248051,
+      "content": "<|quad_start|>",
+      "special": true
+    },
+    {
+      "id": 248052,
+      "content": "<|quad_end|>",
+      "special": true
+    },
+    {
+      "id": 248053,
+      "content": "<|vision_start|>",
+      "special": true
+    },
+    {
+      "id": 248054,
+      "content": "<|vision_end|>",
+      "special": true
+    },
+    {
+      "id": 248055,
+      "content": "<|vision_pad|>",
+      "special": true
+    },
+    {
+      "id": 248056,
+      "content": "<|image_pad|>",
+      "special": true
+    },
+    {
+      "id": 248057,
+      "content": "<|video_pad|>",
+      "special": true
+    },
+    {
+      "id": 248058,
+      "content": "<tool_call>",
+      "special": false
+    },
+    {
+      "id": 248059,
+      "content": "</tool_call>",
+      "special": false
+    },
+    {
+      "id": 248060,
+      "content": "<|fim_prefix|>",
+      "special": false
+    },
+    {
+      "id": 248061,
+      "content": "<|fim_middle|>",
+      "special": false
+    },
+    {
+      "id": 248062,
+      "content": "<|fim_suffix|>",
+      "special": false
+    },
+    {
+      "id": 248063,
+      "content": "<|fim_pad|>",
+      "special": false
+    },
+    {
+      "id": 248064,
+      "content": "<|repo_name|>",
+      "special": false
+    },
+    {
+      "id": 248065,
+      "content": "<|file_sep|>",
+      "special": false
+    },
+    {
+      "id": 248066,
+      "content": "<tool_response>",
+      "special": false
+    },
+    {
+      "id": 248067,
+      "content": "</tool_response>",
+      "special": false
+    },
+    {
+      "id": 248068,
+      "content": "<think>",
+      "special": false
+    },
+    {
+      "id": 248069,
+      "content": "</think>",
+      "special": false
+    },
+    {
+      "id": 248070,
+      "content": "<|audio_start|>",
+      "special": true
+    },
+    {
+      "id": 248071,
+      "content": "<|audio_end|>",
+      "special": true
+    },
+    {
+      "id": 248072,
+      "content": "<tts_pad>",
+      "special": true
+    },
+    {
+      "id": 248073,
+      "content": "<tts_text_bos>",
+      "special": true
+    },
+    {
+      "id": 248074,
+      "content": "<tts_text_eod>",
+      "special": true
+    },
+    {
+      "id": 248075,
+      "content": "<tts_text_bos_single>",
+      "special": true
+    },
+    {
+      "id": 248076,
+      "content": "<|audio_pad|>",
+      "special": true
+    }
+  ]
+}

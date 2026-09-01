@@ -1,0 +1,84 @@
+{
+  "arms": {
+    "spec-off": {
+      "N": 5,
+      "agg_tok_s_by_rep": [
+        132.36871877469278,
+        132.56846886291075,
+        132.57668190202384,
+        132.68925233804433,
+        132.7340473277739
+      ],
+      "agg_tok_s_max": 132.7340473277739,
+      "agg_tok_s_median": 132.57668190202384,
+      "agg_tok_s_min": 132.36871877469278
+    },
+    "spec-on": {
+      "N": 5,
+      "agg_tok_s_by_rep": [
+        69.04104595910297,
+        69.03458541657618,
+        69.0540302152436,
+        69.07995483145196,
+        69.05845856297324
+      ],
+      "agg_tok_s_max": 69.07995483145196,
+      "agg_tok_s_median": 69.0540302152436,
+      "agg_tok_s_min": 69.03458541657618
+    }
+  },
+  "protocol": "N=5 per arm, alternating pair order, c=8, 32x128-token measured requests per cell, one GPU-lock hold",
+  "rig": "box1, 2x RTX PRO 6000 Blackwell Server Edition",
+  "schema": "memra.specpp2fix.timing.v1",
+  "source_commit": "0abdf957ee15b64271e9cb49b1830408ba7f4f3d",
+  "spec_acceptance": {
+    "accepted": 9000,
+    "by_rep": [
+      {
+        "accepted": 1800,
+        "drafted": 2280,
+        "label": "r1-spec-on",
+        "rate": 0.7894736842105263
+      },
+      {
+        "accepted": 1800,
+        "drafted": 2280,
+        "label": "r2-spec-on",
+        "rate": 0.7894736842105263
+      },
+      {
+        "accepted": 1800,
+        "drafted": 2280,
+        "label": "r3-spec-on",
+        "rate": 0.7894736842105263
+      },
+      {
+        "accepted": 1800,
+        "drafted": 2280,
+        "label": "r4-spec-on",
+        "rate": 0.7894736842105263
+      },
+      {
+        "accepted": 1800,
+        "drafted": 2280,
+        "label": "r5-spec-on",
+        "rate": 0.7894736842105263
+      }
+    ],
+    "drafted": 11400,
+    "k": 1,
+    "rate": 0.7894736842105263
+  },
+  "spec_on_over_off": 0.5208610535770957,
+  "spec_on_percent_change": -47.91389464229043,
+  "thermal_regime": {
+    "artificial_cooldown": false,
+    "sample_interval_ms": 250,
+    "samples": 6728,
+    "sm_clock_mhz_max": 2422.0,
+    "sm_clock_mhz_min": 180.0,
+    "temperature_c_max": 51.0,
+    "temperature_c_min": 28.0
+  },
+  "verdict": "PASS"
+}

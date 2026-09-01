@@ -1,0 +1,94 @@
+Got it. Let's break this into clear steps. Here's the goal restated:
+
+## The Pipeline (Overview)
+
+1. **Hourly Researcher** (existing) — now: first reads the current topic paper (`.md`), reasons about it, then researches *deeper* on the topic (≥3 new sources), updates the paper.
+2. **Paper lifecycle** — each topic paper lives **12 hours** (two per day, one for the day cycle, one for the night cycle).
+3. **Research Summary Agent** (twice daily) — wakes up, reads the paper deeply, **validates claims online**, writes a research summary, sends it to you, then **deletes the paper**.
+4. **Topic Seeding Agent** (daily, 23:00) — picks a **random topic from your interests list**, digs in, finds a subtopic worth researching, and **creates the new paper** (topic + opener) that the hourly researcher will then deepen for the next 12 hours.
+5. **MCP**: add `open-websearch` as the shared search tool for all agents.
+
+---
+
+## Step 1 — MCP config (shared by all agents)
+
+```json
+{
+  "mcpServers": {
+    "web-search": {
+      "command": "npx",
+      "args": ["open-websearch@latest"],
+      "env": {
+        "MODE": "stdio",
+        "DEFAULT_SEARCH_ENGINE": "duckduckgo",
+        "ALLOWED_SEARCH_ENGINES": "duckduckgo,bing,exa"
+      }
+    }
+  }
+}
+```
+
+Add this to every agent's MCP config (or a shared config they all load).
+
+---
+
+## Step 2 — Directory contract
+
+```
+/research/
+  topics.json           # your list of interests (topic seed agent reads this)
+  current_paper.md      # the active topic paper (one at a time)
+  summaries/            # finished research summaries sent to you
+```
+
+---
+
+## Step 3 — Hourly Researcher (updated prompt)
+
+New behavior on each wake:
+
+```text
+SYSTEM PROMPT — Hourly Deep Researcher
+
+Tools available: web-search (MCP).
+
+1. READ /research/current_paper.md. If it does not exist, do nothing and exit.
+2. REASON: identify 2-3 angles of the topic that are under-researched
+   (missing mechanisms, counterarguments, recent developments, data gaps).
+3. RESEARCH: use web-search to find AT LEAST 3 NEW sources that address
+   those angles. Do not re-add sources already cited in the paper.
+4. UPDATE /research/current_paper.md:
+   - append a "## Deepening — <date> <hour>" section per finding
+   - include: claim, source (title + URL), how it changes/confirms the picture
+   - keep the paper coherent: fix contradictions with earlier sections.
+5. Do NOT delete the paper. Do NOT send messages to the user.
+```
+
+Schedule: stays hourly (`0 * * * *` or your scheduler equivalent).
+
+---
+
+## Step 4 — Research Summary Agent (2× daily: 10:00 & 22:00)
+
+```text
+SYSTEM PROMPT — Research Summary Agent
+
+Tools available: web-search (MCP).
+
+1. READ /research/current_paper.md fully. If missing, exit silently.
+2. Extract the 5-10 main CLAIMS from the paper.
+3. VALIDATE: for each claim, run a web-search to verify it. Mark each
+   claim: CONFIRMED / PARTIALLY CONFIRMED / CONTRADICTED / UNVERIFIABLE,
+   with the validating source URL.
+4. WRITE a research summary (/research/summaries/<date>-<slot>.md):
+   - Topic
+   - Key findings (plain language, for the user)
+   - Claim validation table
+   - Open questions worth exploring next
+5. SEND the summary to the user (via your notification channel).
+6. DELETE /research/current_paper.md after successful send.
+```
+
+Schedule:
+- Morning: `0 10 * * *`
+-

@@ -1,0 +1,14 @@
+{
+  "request_id": "cmpl-52bcbf545534e1d4872f57560dc7e89b",
+  "finish_reason": "length",
+  "usage": {
+    "prompt_tokens": 1032,
+    "completion_tokens": 256,
+    "total_tokens": 1288,
+    "prompt_tokens_details": {
+      "cached_tokens": 743
+    },
+    "elapsed_s": 1.944092639
+  },
+  "text": "The user wants me to add a sticky request inspector that explains TTFT (Time To First Token) separately from decode time. This is a new feature to add to the existing dashboard.\n\nI need to:\n1. Create a sticky inspector panel that shows detailed information about the currently selected request\n2. Make sure TTFT and decode time are clearly separated\n3. Keep all the existing functionality intact\n4. Ensure it works well on mobile as well\n\nLet me create a complete HTML document with this new feature.\n</think>\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\" />\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n  <title>Inference Service Dashboard</title>\n  <style>\n    :root {\n      --bg-primary: #0f172a;\n      --bg-secondary: #1e293b;\n      --bg-tertiary: #334155;\n      --text-primary: #f1f5f9;\n      --text-secondary: #94a3b8;\n      --accent-blue"
+}

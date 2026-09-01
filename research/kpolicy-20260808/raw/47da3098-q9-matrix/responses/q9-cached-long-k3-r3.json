@@ -1,0 +1,29 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "The most important remaining regression test is to verify that the `select()` method correctly handles the case where a file descriptor is removed from the selector's internal tracking sets (`_readers` or `_writers`) but remains in the `_fd_to_key` dictionary. This test should simulate a scenario where a connection is accepted, the file descriptor is registered, and then immediately unregistered (or closed) before the `select()` loop runs, ensuring that the selector does not attempt to access a key that has been logically removed from its active monitoring sets. This test will confirm that the fix for the `KeyError` in `get_key()` is robust and that"
+    }
+  ],
+  "created": 1786210871,
+  "id": "cmpl-a47d7fcce8820b854c12ccda0228a65e",
+  "model": "q9",
+  "object": "text_completion",
+  "system_fingerprint": "memra-47da3098d8aa",
+  "usage": {
+    "completion_tokens": 131,
+    "elapsed_s": 0.455419708,
+    "prompt_tokens": 5497,
+    "prompt_tokens_details": {
+      "cached_tokens": 5478
+    },
+    "spec": {
+      "acceptance_rate": 0.45454545454545453,
+      "accepted": 75,
+      "drafted": 165,
+      "rounds": 55
+    },
+    "total_tokens": 5628
+  }
+}

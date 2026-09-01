@@ -1,0 +1,186 @@
+[card3-probe] model=/root/models/glm53-nvfp4 prompts=/root/card3-lane/prompts-decode out=/root/card3-lane/out/acc-notrim ks=[1, 2, 3, 4, 5, 6, 7] max_new=128 plain=true MEMRA_GLM5_MTP=Some("1") MEMRA_GLM5_SPEC=Some("1") MEMRA_FRSPEC_TRIM=None MEMRA_MOE_SLOTS=Some("12000")
+[card3-probe] GPU: NVIDIA RTX PRO 6000 Blackwell Server Edition
+[loader-law] WARNING: output.weight loads as 2D Float ne=[4096, 154880] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_b.weight loads as 2D Float ne=[4096, 64] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[8192, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_q_b.weight loads as 2D Float ne=[1536, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk3-gate: 1296 MiB in 0.2s (6005 MiB/s)
+[st-spill] free_pinnable_ram=573265 MiB
+[slab-populate] blk3-up: 1296 MiB in 0.2s (6058 MiB/s)
+[slab-populate] blk3-down: 1296 MiB in 0.2s (6080 MiB/s)
+[slab-populate] blk4-gate: 1296 MiB in 0.2s (6176 MiB/s)
+[slab-populate] blk4-up: 1296 MiB in 0.2s (6236 MiB/s)
+[slab-populate] blk4-down: 1296 MiB in 0.2s (6236 MiB/s)
+[slab-populate] blk5-gate: 1296 MiB in 0.2s (6263 MiB/s)
+[slab-populate] blk5-up: 1296 MiB in 0.2s (6341 MiB/s)
+[slab-populate] blk5-down: 1296 MiB in 0.2s (6058 MiB/s)
+[slab-populate] blk6-gate: 1296 MiB in 0.2s (6329 MiB/s)
+[slab-populate] blk6-up: 1296 MiB in 0.2s (6030 MiB/s)
+[slab-populate] blk6-down: 1296 MiB in 0.2s (6119 MiB/s)
+[slab-populate] blk7-gate: 1296 MiB in 0.2s (6044 MiB/s)
+[slab-populate] blk7-up: 1296 MiB in 0.2s (6038 MiB/s)
+[slab-populate] blk7-down: 1296 MiB in 0.2s (6112 MiB/s)
+[slab-populate] blk8-gate: 1296 MiB in 0.2s (5900 MiB/s)
+[slab-populate] blk8-up: 1296 MiB in 0.2s (6026 MiB/s)
+[slab-populate] blk8-down: 1296 MiB in 0.2s (6091 MiB/s)
+[slab-populate] blk9-gate: 1296 MiB in 0.2s (5984 MiB/s)
+[slab-populate] blk9-up: 1296 MiB in 0.2s (6143 MiB/s)
+[slab-populate] blk9-down: 1296 MiB in 0.2s (6154 MiB/s)
+[slab-populate] blk10-gate: 1296 MiB in 0.2s (6150 MiB/s)
+[slab-populate] blk10-up: 1296 MiB in 0.2s (6154 MiB/s)
+[slab-populate] blk10-down: 1296 MiB in 0.2s (6220 MiB/s)
+[slab-populate] blk11-gate: 1296 MiB in 0.2s (6000 MiB/s)
+[slab-populate] blk11-up: 1296 MiB in 0.2s (6140 MiB/s)
+[slab-populate] blk11-down: 1296 MiB in 0.2s (6094 MiB/s)
+[slab-populate] blk12-gate: 1296 MiB in 0.2s (6144 MiB/s)
+[slab-populate] blk12-up: 1296 MiB in 0.2s (6017 MiB/s)
+[slab-populate] blk12-down: 1296 MiB in 0.2s (6143 MiB/s)
+[slab-populate] blk13-gate: 1296 MiB in 0.2s (6138 MiB/s)
+[slab-populate] blk13-up: 1296 MiB in 0.2s (6140 MiB/s)
+[slab-populate] blk13-down: 1296 MiB in 0.2s (6138 MiB/s)
+[slab-populate] blk14-gate: 1296 MiB in 0.2s (6095 MiB/s)
+[slab-populate] blk14-up: 1296 MiB in 0.2s (6163 MiB/s)
+[slab-populate] blk14-down: 1296 MiB in 0.2s (6133 MiB/s)
+[slab-populate] blk15-gate: 1296 MiB in 0.2s (6074 MiB/s)
+[slab-populate] blk15-up: 1296 MiB in 0.2s (6135 MiB/s)
+[slab-populate] blk15-down: 1296 MiB in 0.2s (6071 MiB/s)
+[slab-populate] blk16-gate: 1296 MiB in 0.2s (6106 MiB/s)
+[slab-populate] blk16-up: 1296 MiB in 0.2s (5991 MiB/s)
+[slab-populate] blk16-down: 1296 MiB in 0.2s (6108 MiB/s)
+[slab-populate] blk17-gate: 1296 MiB in 0.2s (6140 MiB/s)
+[slab-populate] blk17-up: 1296 MiB in 0.2s (6130 MiB/s)
+[slab-populate] blk17-down: 1296 MiB in 0.2s (6240 MiB/s)
+[slab-populate] blk18-gate: 1296 MiB in 0.2s (6107 MiB/s)
+[slab-populate] blk18-up: 1296 MiB in 0.2s (6140 MiB/s)
+[slab-populate] blk18-down: 1296 MiB in 0.2s (6134 MiB/s)
+[slab-populate] blk19-gate: 1296 MiB in 0.2s (6016 MiB/s)
+[slab-populate] blk19-up: 1296 MiB in 0.2s (6149 MiB/s)
+[slab-populate] blk19-down: 1296 MiB in 0.2s (6160 MiB/s)
+[slab-populate] blk20-gate: 1296 MiB in 0.2s (6141 MiB/s)
+[slab-populate] blk20-up: 1296 MiB in 0.2s (6106 MiB/s)
+[slab-populate] blk20-down: 1296 MiB in 0.2s (6099 MiB/s)
+[slab-populate] blk21-gate: 1296 MiB in 0.2s (6093 MiB/s)
+[slab-populate] blk21-up: 1296 MiB in 0.2s (6074 MiB/s)
+[slab-populate] blk21-down: 1296 MiB in 0.2s (7036 MiB/s)
+[slab-populate] blk22-gate: 1296 MiB in 0.2s (6390 MiB/s)
+[slab-populate] blk22-up: 1296 MiB in 0.2s (6072 MiB/s)
+[slab-populate] blk22-down: 1296 MiB in 0.2s (6085 MiB/s)
+[slab-populate] blk23-gate: 1296 MiB in 0.2s (6061 MiB/s)
+[slab-populate] blk23-up: 1296 MiB in 0.2s (6067 MiB/s)
+[slab-populate] blk23-down: 1296 MiB in 0.2s (6129 MiB/s)
+[slab-populate] blk24-gate: 1296 MiB in 0.2s (6131 MiB/s)
+[slab-populate] blk24-up: 1296 MiB in 0.2s (6142 MiB/s)
+[slab-populate] blk24-down: 1296 MiB in 0.2s (6135 MiB/s)
+[slab-populate] blk25-gate: 1296 MiB in 0.2s (6130 MiB/s)
+[slab-populate] blk25-up: 1296 MiB in 0.2s (6133 MiB/s)
+[slab-populate] blk25-down: 1296 MiB in 0.2s (6140 MiB/s)
+[slab-populate] blk26-gate: 1296 MiB in 0.2s (6133 MiB/s)
+[slab-populate] blk26-up: 1296 MiB in 0.2s (6149 MiB/s)
+[slab-populate] blk26-down: 1296 MiB in 0.2s (6142 MiB/s)
+[slab-populate] blk27-gate: 1296 MiB in 0.2s (5985 MiB/s)
+[slab-populate] blk27-up: 1296 MiB in 0.2s (6142 MiB/s)
+[slab-populate] blk27-down: 1296 MiB in 0.2s (6108 MiB/s)
+[slab-populate] blk28-gate: 1296 MiB in 0.2s (6183 MiB/s)
+[slab-populate] blk28-up: 1296 MiB in 0.2s (6213 MiB/s)
+[slab-populate] blk28-down: 1296 MiB in 0.2s (6157 MiB/s)
+[slab-populate] blk29-gate: 1296 MiB in 0.2s (6208 MiB/s)
+[slab-populate] blk29-up: 1296 MiB in 0.2s (6137 MiB/s)
+[slab-populate] blk29-down: 1296 MiB in 0.2s (6163 MiB/s)
+[slab-populate] blk30-gate: 1296 MiB in 0.2s (6150 MiB/s)
+[slab-populate] blk30-up: 1296 MiB in 0.2s (7855 MiB/s)
+[slab-populate] blk30-down: 1296 MiB in 0.2s (7759 MiB/s)
+[slab-populate] blk31-gate: 1296 MiB in 0.2s (7733 MiB/s)
+[slab-populate] blk31-up: 1296 MiB in 0.2s (7779 MiB/s)
+[slab-populate] blk31-down: 1296 MiB in 0.2s (7870 MiB/s)
+[slab-populate] blk32-gate: 1296 MiB in 0.2s (7722 MiB/s)
+[slab-populate] blk32-up: 1296 MiB in 0.2s (7770 MiB/s)
+[slab-populate] blk32-down: 1296 MiB in 0.2s (7769 MiB/s)
+[slab-populate] blk33-gate: 1296 MiB in 0.2s (7823 MiB/s)
+[slab-populate] blk33-up: 1296 MiB in 0.2s (7752 MiB/s)
+[slab-populate] blk33-down: 1296 MiB in 0.2s (7768 MiB/s)
+[slab-populate] blk34-gate: 1296 MiB in 0.2s (7729 MiB/s)
+[slab-populate] blk34-up: 1296 MiB in 0.2s (7763 MiB/s)
+[slab-populate] blk34-down: 1296 MiB in 0.2s (7856 MiB/s)
+[slab-populate] blk35-gate: 1296 MiB in 0.2s (7718 MiB/s)
+[slab-populate] blk35-up: 1296 MiB in 0.2s (7754 MiB/s)
+[slab-populate] blk35-down: 1296 MiB in 0.2s (7754 MiB/s)
+[slab-populate] blk36-gate: 1296 MiB in 0.2s (7756 MiB/s)
+[slab-populate] blk36-up: 1296 MiB in 0.2s (7776 MiB/s)
+[slab-populate] blk36-down: 1296 MiB in 0.2s (7863 MiB/s)
+[slab-populate] blk37-gate: 1296 MiB in 0.2s (7839 MiB/s)
+[slab-populate] blk37-up: 1296 MiB in 0.2s (7765 MiB/s)
+[slab-populate] blk37-down: 1296 MiB in 0.2s (7781 MiB/s)
+[slab-populate] blk38-gate: 1296 MiB in 0.2s (7749 MiB/s)
+[slab-populate] blk38-up: 1296 MiB in 0.1s (8983 MiB/s)
+[slab-populate] blk38-down: 1296 MiB in 0.1s (9110 MiB/s)
+[slab-populate] blk39-gate: 1296 MiB in 0.1s (8956 MiB/s)
+[slab-populate] blk39-up: 1296 MiB in 0.1s (9109 MiB/s)
+[slab-populate] blk39-down: 1296 MiB in 0.1s (8975 MiB/s)
+[slab-populate] blk40-gate: 1296 MiB in 0.1s (8980 MiB/s)
+[slab-populate] blk40-up: 1296 MiB in 0.1s (9126 MiB/s)
+[slab-populate] blk40-down: 1296 MiB in 0.1s (8981 MiB/s)
+[slab-populate] blk41-gate: 1296 MiB in 0.1s (8944 MiB/s)
+[slab-populate] blk41-up: 1296 MiB in 0.1s (9096 MiB/s)
+[slab-populate] blk41-down: 1296 MiB in 0.1s (8952 MiB/s)
+[slab-populate] blk42-gate: 1296 MiB in 0.2s (6199 MiB/s)
+[slab-populate] blk42-up: 1296 MiB in 0.1s (8946 MiB/s)
+[slab-populate] blk42-down: 1296 MiB in 0.1s (9098 MiB/s)
+[slab-populate] blk43-gate: 1296 MiB in 0.1s (8842 MiB/s)
+[slab-populate] blk43-up: 1296 MiB in 0.1s (8882 MiB/s)
+[slab-populate] blk43-down: 1296 MiB in 0.1s (9173 MiB/s)
+[slab-populate] blk44-gate: 1296 MiB in 0.1s (9269 MiB/s)
+[slab-populate] blk44-up: 1296 MiB in 0.1s (9235 MiB/s)
+[slab-populate] blk44-down: 1296 MiB in 0.1s (9049 MiB/s)
+[mtp-glm5] MEMRA_GLM5_MTP=1: loading the glm5_next NextN block
+[loader-law] WARNING: blk.*.nextn.eh_proj.weight loads as 2D Float ne=[8192, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk45-gate: 1296 MiB in 0.3s (3746 MiB/s)
+[slab-populate] blk45-up: 1296 MiB in 0.4s (3614 MiB/s)
+[slab-populate] blk45-down: 1296 MiB in 0.4s (3635 MiB/s)
+[card3-probe] loaded: n_layer=46 n_embd=4096 n_vocab=154880 mtp_loaded=true
+[card3-probe] vram post-load: free=71.29 GiB / total=94.97 GiB
+[card3-probe] prompt p00-code: 987 chars -> 239 tokens
+[moe-grouped-prefill] flag=on t=239 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[card3-probe] p00-code plain tape: 128 tokens
+[card3-probe] p00-code K=1: rounds=68 drafted=68 accepted=60 tape_identical=yes acc/cycle=0.882 tok/cycle=1.882
+[card3-probe] p00-code K=2: rounds=54 drafted=108 accepted=74 tape_identical=yes acc/cycle=1.370 tok/cycle=2.370
+[card3-probe] p00-code K=3: rounds=50 drafted=150 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[card3-probe] p00-code K=4: rounds=50 drafted=200 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[card3-probe] p00-code K=5: rounds=50 drafted=250 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[card3-probe] p00-code K=6: rounds=50 drafted=300 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[card3-probe] p00-code K=7: rounds=50 drafted=350 accepted=78 tape_identical=yes acc/cycle=1.560 tok/cycle=2.560
+[card3-probe] prompt p01-code: 1135 chars -> 289 tokens
+[card3-probe] p01-code plain tape: 128 tokens
+[card3-probe] p01-code K=1: rounds=74 drafted=74 accepted=53 tape_identical=yes acc/cycle=0.716 tok/cycle=1.716
+[card3-probe] p01-code K=2: rounds=66 drafted=132 accepted=63 tape_identical=yes acc/cycle=0.955 tok/cycle=1.955
+[card3-probe] p01-code K=3: rounds=59 drafted=177 accepted=68 tape_identical=yes acc/cycle=1.153 tok/cycle=2.153
+[card3-probe] p01-code K=4: rounds=60 drafted=240 accepted=67 tape_identical=yes acc/cycle=1.117 tok/cycle=2.117
+[card3-probe] p01-code K=5: rounds=60 drafted=300 accepted=67 tape_identical=yes acc/cycle=1.117 tok/cycle=2.117
+[card3-probe] p01-code K=6: rounds=60 drafted=360 accepted=67 tape_identical=yes acc/cycle=1.117 tok/cycle=2.117
+[card3-probe] HOLD: /root/TIMING-IN-FLIGHT present, pausing between runs
+[card3-probe] HOLD released, resuming
+[card3-probe] p01-code K=7: rounds=60 drafted=420 accepted=67 tape_identical=yes acc/cycle=1.117 tok/cycle=2.117
+[card3-probe] prompt p02-code: 2049 chars -> 563 tokens
+[card3-probe] p02-code plain tape: 128 tokens
+[card3-probe] p02-code K=1: rounds=69 drafted=69 accepted=58 tape_identical=yes acc/cycle=0.841 tok/cycle=1.841
+[card3-probe] p02-code K=2: rounds=54 drafted=108 accepted=73 tape_identical=yes acc/cycle=1.352 tok/cycle=2.352
+[card3-probe] p02-code K=3: rounds=50 drafted=150 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[card3-probe] p02-code K=4: rounds=50 drafted=200 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[card3-probe] p02-code K=5: rounds=50 drafted=250 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[card3-probe] p02-code K=6: rounds=50 drafted=300 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[card3-probe] HOLD: /root/TIMING-IN-FLIGHT present, pausing between runs
+[card3-probe] HOLD released, resuming
+[card3-probe] p02-code K=7: rounds=50 drafted=350 accepted=77 tape_identical=yes acc/cycle=1.540 tok/cycle=2.540
+[card3-probe] prompt p03-code: 1634 chars -> 453 tokens
+[card3-probe] p03-code plain tape: 128 tokens
+[card3-probe] p03-code K=1: rounds=73 drafted=73 accepted=55 tape_identical=yes acc/cycle=0.753 tok/cycle=1.753
+[card3-probe] p03-code K=2: rounds=57 drafted=114 accepted=70 tape_identical=yes acc/cycle=1.228 tok/cycle=2.228

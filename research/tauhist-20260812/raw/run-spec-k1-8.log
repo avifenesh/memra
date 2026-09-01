@@ -1,0 +1,48 @@
+command: env -u MEMRA_SPEC_K -u MEMRA_PROMPT_DIR -u MEMRA_SPEC_TEMP -u MEMRA_SEED -u MEMRA_MTP_DRAFT CUDA_VISIBLE_DEVICES=0 MEMRA_NGEN=128 MEMRA_PROMPT_FILE=research/e2e/prompts/p1-code-short.txt MEMRA_CHAT=1 MEMRA_SPEC_STATS=1 target/release/run-spec /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+2026-08-12T03:04:57Z
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, 68, 11.70 W, 0 %, 1554 MiB, 24463 MiB
+2751402, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1392 MiB
+loaded qwen35 (33 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   127 tok in 0.973s = 130.54 tok/s (gen-only; this run's prime 0.035s)
+  tokens: [40, 1144, 310, 1791, 264, 90651, 52589, 1103, 7873, 303, 12654, 440, 25, 198, 16, 13, 16598, 5488, 198, 17, 13, 10118, 5488, 198, 18, 13, 23515, 5488, 198, 19, 13, 8363, 913, 29642, 198, 20, 13, 64605, 4479, 18034, 271, 9764, 728, 1683, 883, 279, 5759, 25, 198, 12, 357, 5829, 523, 310, 3875, 1754, 2315, 198, 12, 357, 53019, 391, 32794, 523, 440, 5245, 364, 5479, 11, 3572, 11, 321, 9637, 198, 12, 353, 1220, 1048, 2830, 1010, 12755, 5245, 1040, 615, 11, 2984, 11, 4831, 13, 364, 76591, 198, 12, 14235, 310, 3579, 6607, 4886, 318, 3092, 1103, 11, 31918, 494, 1901, 5350, 589, 11, 4831, 5946, 271, 9764, 728, 3165, 411, 440, 5976, 913, 29642, 1608, 18904, 4536, 13, 198, 248069, 271, 71093, 12305]
+[spec-stats] rounds=67 full_accept=61 len_hist=[0, 67] per_slot=[61/67=0.910] total=61/67=0.910 tok_per_round=1.910
+
+[generate_spec K=1] 128 tok in 0.709s = 179.18 tok/s (1.37x vs generate; this run's prime 0.042s)
+  acceptance: 61/67 = 91.0%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=51 full_accept=32 len_hist=[0, 0, 51] per_slot=[45/51=0.882 32/51=0.627] total=77/102=0.755 tok_per_round=2.510
+
+[generate_spec K=2] 128 tok in 0.668s = 190.16 tok/s (1.46x vs generate; this run's prime 0.040s)
+  acceptance: 77/102 = 75.5%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=45 full_accept=21 len_hist=[0, 0, 0, 45] per_slot=[37/45=0.822 26/45=0.578 21/45=0.467] total=84/135=0.622 tok_per_round=2.867
+
+[generate_spec K=3] 128 tok in 0.701s = 181.20 tok/s (1.39x vs generate; this run's prime 0.040s)
+  acceptance: 84/135 = 62.2%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=38 full_accept=11 len_hist=[0, 0, 0, 0, 38] per_slot=[34/38=0.895 25/38=0.658 21/38=0.553 11/38=0.289] total=91/152=0.599 tok_per_round=3.395
+
+[generate_spec K=4] 128 tok in 0.715s = 177.65 tok/s (1.36x vs generate; this run's prime 0.043s)
+  acceptance: 91/152 = 59.9%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=37 full_accept=4 len_hist=[0, 0, 0, 0, 0, 37] per_slot=[34/37=0.919 24/37=0.649 19/37=0.514 11/37=0.297 4/37=0.108] total=92/185=0.497 tok_per_round=3.486
+
+[generate_spec K=5] 128 tok in 0.806s = 157.53 tok/s (1.21x vs generate; this run's prime 0.042s)
+  acceptance: 92/185 = 49.7%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=37 full_accept=2 len_hist=[0, 0, 0, 0, 0, 0, 37] per_slot=[34/37=0.919 24/37=0.649 18/37=0.486 10/37=0.270 4/37=0.108 2/37=0.054] total=92/222=0.414 tok_per_round=3.486
+
+[generate_spec K=6] 128 tok in 0.912s = 139.30 tok/s (1.07x vs generate; this run's prime 0.042s)
+  acceptance: 92/222 = 41.4%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=35 full_accept=2 len_hist=[0, 0, 0, 0, 0, 0, 0, 35] per_slot=[32/35=0.914 23/35=0.657 19/35=0.543 11/35=0.314 5/35=0.143 2/35=0.057 2/35=0.057] total=94/245=0.384 tok_per_round=3.686
+
+[generate_spec K=7] 128 tok in 0.974s = 130.34 tok/s (1.00x vs generate; this run's prime 0.042s)
+  acceptance: 94/245 = 38.4%   self-consistency: PASS (identical to plain target)
+[spec-stats] rounds=35 full_accept=1 len_hist=[0, 0, 0, 0, 0, 0, 0, 0, 35] per_slot=[32/35=0.914 23/35=0.657 19/35=0.543 11/35=0.314 4/35=0.114 2/35=0.057 2/35=0.057 1/35=0.029] total=94/280=0.336 tok_per_round=3.686
+
+[generate_spec K=8] 128 tok in 1.174s = 108.16 tok/s (0.83x vs generate; this run's prime 0.042s)
+  acceptance: 94/280 = 33.6%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+2026-08-12T03:05:08Z
+0, NVIDIA GeForce RTX 5090 Laptop GPU, GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d, 595.84, 82, 156.64 W, 100 %, 1554 MiB, 24463 MiB
+2751402, /home/avifenesh/projects/colbert-2/.venv/bin/python, 1392 MiB
+run-spec rc=0

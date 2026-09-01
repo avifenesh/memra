@@ -1,0 +1,23 @@
+[
+    {
+        "RuleId": "<security-group-rule-id>",
+        "FromPort": 80,
+        "ToPort": 80,
+        "Cidr": "0.0.0.0/0",
+        "Description": "memra-cx-servetest-http-acme"
+    },
+    {
+        "RuleId": "<security-group-rule-id>",
+        "FromPort": 22,
+        "ToPort": 22,
+        "Cidr": "<operator-ip>/32",
+        "Description": "memra-cx-servetest-vast-47529373"
+    },
+    {
+        "RuleId": "<security-group-rule-id>",
+        "FromPort": 443,
+        "ToPort": 443,
+        "Cidr": "0.0.0.0/0",
+        "Description": "memra-cx-servetest-https"
+    }
+]

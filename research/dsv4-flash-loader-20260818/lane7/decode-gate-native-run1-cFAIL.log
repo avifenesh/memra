@@ -1,0 +1,93 @@
+dsv4-gpu-decode-gate | model /home/ubuntu/models/dsv4-flash-nvfp4 | variant clamp-only | n_new 260 (s_max 292) | max_seq 388 | devices [0, 1]
+checkpoints: 52 lengths; top-512 saturation (s >= 2052) NOT reachable at this length (say so, per the lane brief)
+[load] expert arm: Native
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=39s
+[load] layer 15 -> dev0 done t=52s
+[load] layer 19 -> dev0 done t=65s
+[load] layer 23 -> dev1 done t=78s
+[load] layer 27 -> dev1 done t=91s
+[load] layer 31 -> dev1 done t=104s
+[load] layer 35 -> dev1 done t=117s
+[load] layer 39 -> dev1 done t=130s
+[load] layer 42 -> dev1 done t=140s
+loaded: split at layer 22, t=144s
+[vram post-load] dev0 used 82.21/94.97 GiB (free 12.77) | dev1 used 82.14/94.97 GiB (free 12.83)
+[vram post-alloc] dev0 used 82.24/94.97 GiB (free 12.74) | dev1 used 82.17/94.97 GiB (free 12.80)
+[cache] allocated bytes per device: [14373888, 14441984] | design formula: [14373888, 14441984] | MATCH
+[vram post-prefill] dev0 used 82.24/94.97 GiB (free 12.74) | dev1 used 82.17/94.97 GiB (free 12.80)
+[run 0] prefill s=32 done t=0.7s
+[run 0] step 0: s=33 tok 2581 (103.2 ms/step) t=0.8s
+[run 0] step 200: s=233 tok 1749 (90.4 ms/step) t=18.8s
+[run 0] step 259: s=292 tok 979 (92.4 ms/step) t=24.2s
+[run 0] 260 steps in 24.2s (informational, single-run, not a perf claim); logits stream sha256 ee737e83d8f2f19907787cd11748990f85f36960b07af926678e163d75f071cc
+[vram post-run0] dev0 used 82.24/94.97 GiB (free 12.74) | dev1 used 82.17/94.97 GiB (free 12.80)
+banked /home/ubuntu/dsv4-lane7-out/decode/decode_seq_for_verify.json (CPU verifier input)
+[run 1] step 0: s=33 tok 2581 (87.8 ms/step) t=0.7s
+[run 1] step 200: s=233 tok 1749 (90.6 ms/step) t=18.8s
+[run 1] step 259: s=292 tok 979 (92.7 ms/step) t=24.2s
+[run 1] 260 steps in 24.2s (informational, single-run, not a perf claim); logits stream sha256 ee737e83d8f2f19907787cd11748990f85f36960b07af926678e163d75f071cc
+[vram post-run1] dev0 used 82.24/94.97 GiB (free 12.74) | dev1 used 82.17/94.97 GiB (free 12.80)
+GATE (d) determinism: tokens IDENTICAL | logits streams BYTE-IDENTICAL (sha ee737e83d8f2f19907787cd11748990f85f36960b07af926678e163d75f071cc)
+GATE (b) RAW greedy identity vs lane-4 banked: 47/160 agree (positions after a first divergence are trajectory-shifted, not errors); first divergence: step 47 (decode 5715 vs lane4 2143)
+GATE (a1) decode vs re-prefill (pair bounds: thr = 2·C·√(2 ln n)·absmax_ref, bands = 2·3·√2·C·|boundary|; class C = 5.8073e-1 [NATIVE expert arm]):
+| s | max-abs | thr | m-floor | argmax d/r | in-band | top5 ovl/viol | top20 ovl/viol | verdict |
+| 33 | 3.046e0 | 2.234e2 | - | 1970/1970 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 34 | 2.307e0 | 2.388e2 | 0.00e0 | 304/304 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 35 | 2.531e0 | 2.397e2 | 0.00e0 | 12827/12827 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 36 | 1.934e0 | 2.192e2 | 0.00e0 | 396/396 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 37 | 2.374e0 | 2.237e2 | 0.00e0 | 3517/3517 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 38 | 1.687e0 | 2.564e2 | 0.00e0 | 9884/9884 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 39 | 1.314e0 | 2.364e2 | 0.00e0 | 93/93 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 40 | 2.061e0 | 2.325e2 | 0.00e0 | 20/20 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 41 | 1.178e0 | 2.698e2 | 1.86e0 | 2913/2913 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 42 | 1.150e0 | 2.497e2 | 0.00e0 | 344/344 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 43 | 1.143e0 | 2.475e2 | 0.00e0 | 54195/54195 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 44 | 3.097e0 | 2.064e2 | 0.00e0 | 16/16 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 45 | 2.308e0 | 2.242e2 | 3.42e0 | 1350/1350 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 46 | 1.386e0 | 2.336e2 | 0.00e0 | 5922/5922 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 47 | 1.153e0 | 2.272e2 | 0.00e0 | 696/696 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 48 | 1.421e0 | 2.244e2 | 0.00e0 | 566/566 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 49 | 1.439e0 | 2.279e2 | 9.60e-1 | 513/513 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 50 | 1.215e0 | 2.184e2 | 0.00e0 | 53060/53060 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 51 | 1.335e0 | 2.099e2 | 0.00e0 | 339/339 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 52 | 1.797e0 | 2.406e2 | 0.00e0 | 666/666 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 53 | 1.304e0 | 2.443e2 | 0.00e0 | 9832/9832 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 54 | 1.456e0 | 2.239e2 | 0.00e0 | 223/223 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 55 | 1.656e0 | 2.225e2 | 0.00e0 | 19/19 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 56 | 1.445e0 | 2.448e2 | 0.00e0 | 28/28 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 57 | 1.975e0 | 2.447e2 | 0.00e0 | 45773/45773 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 58 | 1.366e0 | 2.277e2 | 0.00e0 | 270/270 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 59 | 1.425e0 | 2.426e2 | 0.00e0 | 12236/12236 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 60 | 1.223e0 | 2.321e2 | 0.00e0 | 9709/9709 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 61 | 1.247e0 | 2.616e2 | 1.52e0 | 2143/2143 | same | 5/5 v0 | 18/20 v0 | PASS |
+| 62 | 1.068e0 | 2.658e2 | 0.00e0 | 18444/18444 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 63 | 1.195e0 | 2.234e2 | 0.00e0 | 14/14 | same | 4/5 v0 | 20/20 v0 | PASS |
+| 64 | 1.369e0 | 2.349e2 | 0.00e0 | 362/362 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 65 | 1.847e0 | 2.329e2 | 1.37e0 | 270/270 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 66 | 1.629e0 | 2.665e2 | 0.00e0 | 26271/26271 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 67 | 1.065e0 | 2.961e2 | 0.00e0 | 294/294 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 68 | 1.950e0 | 2.549e2 | 0.00e0 | 53060/53060 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 69 | 1.629e0 | 2.486e2 | 0.00e0 | 14/14 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 70 | 1.416e0 | 2.609e2 | 0.00e0 | 396/396 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 71 | 1.566e0 | 2.674e2 | 0.00e0 | 3517/3517 | same | 4/5 v0 | 19/20 v0 | PASS |
+| 72 | 1.604e0 | 2.541e2 | 0.00e0 | 9884/9884 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 126 | 1.293e0 | 2.652e2 | - | 344/344 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 127 | 1.136e0 | 2.461e2 | 0.00e0 | 295/295 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 128 | 1.053e0 | 2.556e2 | 0.00e0 | 27296/27296 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 129 | 2.016e0 | 2.721e2 | 1.61e0 | 1179/1179 | same | 4/5 v0 | 18/20 v0 | PASS |
+| 130 | 1.328e0 | 2.146e2 | 0.00e0 | 754/754 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 131 | 1.674e0 | 2.497e2 | 0.00e0 | 305/305 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 132 | 1.093e0 | 2.537e2 | 0.00e0 | 1512/1512 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 160 | 1.657e0 | 2.503e2 | - | 874/874 | same | 5/5 v0 | 20/20 v0 | PASS |
+| 192 | 1.984e0 | 2.398e2 | - | 20/20 | same | 5/5 v0 | 17/20 v0 | PASS |
+| 255 | 1.354e0 | 2.218e2 | - | 50921/50921 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 256 | 6.811e-1 | 2.303e2 | 0.00e0 | 14/14 | same | 5/5 v0 | 19/20 v0 | PASS |
+| 257 | 1.383e0 | 2.103e2 | 1.36e0 | 855/855 | same | 4/5 v0 | 20/20 v0 | PASS |
+checkpoint rows banked: decode_ckpt_logits.bin sha256 180ff0a189974c2a6f3a83c2a694c1e53e44009f687b50c0b891f3ac9362d453 | reprefill_ckpt_logits.bin sha256 21613cef4952b704ef55e6b351c816d50f85267867d6abafda396c465fe51bd7
+step-equivalence summary: 0/52 checkpoints bit-exact; worst max-abs 3.097e0 at s=44
+GATE (c) long-probe: 0 checkpoints at s >= 1024 (need >= 6)
+GATE (e) cache-alloc vs design math: measured [14373888, 14441984] vs formula [14373888, 14441984] -> MATCH
+informational (single-run, NOT perf claims): decode 91 ms/step at s in [190,210] (n=21), NaN ms/step at s in [1014,1034] (n=0) | lane-4 re-prefill was ~1100 ms/step at s in [190,210]
+DSV4 GPU DECODE GATE: FAIL (a1 true | b-raw 47/160 [verdict via oracle-check] | c false | d true | e true) | total 275s

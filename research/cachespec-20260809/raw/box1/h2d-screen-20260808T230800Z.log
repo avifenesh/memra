@@ -1,0 +1,60 @@
+HOST_TIER_SCREEN_BEGIN 2026-08-08T23:10:13Z
+host=<private-host-redacted> tool=/usr/local/cuda-12.9/extras/demo_suite/bandwidthTest
+sizes=536870912..1073741824 step=536870912 memory=pinned
+CAUTION: bandwidthTest is a transfer screening tool, not an end-to-end cache restore benchmark.
+MemTotal:       523986812 kB
+MemAvailable:   414019212 kB
+SwapTotal:             0 kB
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, P0, 180 MHz, 49.06 W, 0 MiB, 97252 MiB
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, P0, 180 MHz, 48.48 W, 0 MiB, 97252 MiB
+DEVICE=0 DIRECTION=H2D
+[CUDA Bandwidth Test] - Starting...
+Running on...
+
+ Device 0: NVIDIA RTX PRO 6000 Blackwell Server Edition
+ Range Mode
+
+bandwidthTest-H2D-Pinned, Bandwidth = 54237.4 MB/s, Time = 0.00944 s, Size = 536870912 bytes, NumDevsUsed = 1
+bandwidthTest-H2D-Pinned, Bandwidth = 54279.5 MB/s, Time = 0.01887 s, Size = 1073741824 bytes, NumDevsUsed = 1
+Result = PASS
+
+NOTE: The CUDA Samples are not meant for performance measurements. Results may vary when GPU Boost is enabled.
+DEVICE=0 DIRECTION=D2H
+[CUDA Bandwidth Test] - Starting...
+Running on...
+
+ Device 0: NVIDIA RTX PRO 6000 Blackwell Server Edition
+ Range Mode
+
+bandwidthTest-D2H-Pinned, Bandwidth = 55861.7 MB/s, Time = 0.00917 s, Size = 536870912 bytes, NumDevsUsed = 1
+bandwidthTest-D2H-Pinned, Bandwidth = 55848.5 MB/s, Time = 0.01834 s, Size = 1073741824 bytes, NumDevsUsed = 1
+Result = PASS
+
+NOTE: The CUDA Samples are not meant for performance measurements. Results may vary when GPU Boost is enabled.
+DEVICE=1 DIRECTION=H2D
+[CUDA Bandwidth Test] - Starting...
+Running on...
+
+ Device 1: NVIDIA RTX PRO 6000 Blackwell Server Edition
+ Range Mode
+
+bandwidthTest-H2D-Pinned, Bandwidth = 54260.6 MB/s, Time = 0.00944 s, Size = 536870912 bytes, NumDevsUsed = 1
+bandwidthTest-H2D-Pinned, Bandwidth = 54311.8 MB/s, Time = 0.01885 s, Size = 1073741824 bytes, NumDevsUsed = 1
+Result = PASS
+
+NOTE: The CUDA Samples are not meant for performance measurements. Results may vary when GPU Boost is enabled.
+DEVICE=1 DIRECTION=D2H
+[CUDA Bandwidth Test] - Starting...
+Running on...
+
+ Device 1: NVIDIA RTX PRO 6000 Blackwell Server Edition
+ Range Mode
+
+bandwidthTest-D2H-Pinned, Bandwidth = 55849.8 MB/s, Time = 0.00917 s, Size = 536870912 bytes, NumDevsUsed = 1
+bandwidthTest-D2H-Pinned, Bandwidth = 55852.2 MB/s, Time = 0.01833 s, Size = 1073741824 bytes, NumDevsUsed = 1
+Result = PASS
+
+NOTE: The CUDA Samples are not meant for performance measurements. Results may vary when GPU Boost is enabled.
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, P0, 285 MHz, 49.45 W, 0 MiB, 97252 MiB
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, P0, 2317 MHz, 91.73 W, 0 MiB, 97252 MiB
+HOST_TIER_SCREEN_DONE 2026-08-08T23:10:20Z

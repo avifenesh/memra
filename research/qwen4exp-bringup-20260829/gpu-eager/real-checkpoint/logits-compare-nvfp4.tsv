@@ -1,0 +1,14 @@
+# qwen4exp_real_gate	label=nvfp4	binary_sha256=950052cf339019f3c6180a031a7056ea2fba54b59076f442431bc836640d89a8	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# reference=/home/ubuntu/realgate/out/probe-logits-bf16.bin	candidate=/home/ubuntu/realgate/out/probe-logits-nvfp4.bin	rows=10	vocab=248320
+row	top1_ref	top1_ours	top1_match	top20_overlap	kl_ref_ours	max_abs
+0	20438	20438	true	19/20	0.00291	3.634e-1
+1	4087	4087	true	19/20	0.01923	1.164e0
+2	37550	37550	true	18/20	0.00102	1.129e0
+3	33075	33075	true	18/20	0.00474	1.099e0
+4	888	888	true	20/20	0.00121	1.887e0
+5	279	279	true	16/20	0.00083	1.475e0
+6	15217	15217	true	15/20	0.00220	3.156e0
+7	5388	5388	true	17/20	0.00086	2.101e0
+8	13	13	true	18/20	0.04691	1.845e0
+9	271	271	true	13/20	0.29345	6.144e0

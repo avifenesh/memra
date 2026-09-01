@@ -1,0 +1,36 @@
+{
+ "name": "p10-agent-a",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 4626,
+   "completion_tokens": 128,
+   "total_tokens": 4754,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 78.306315306,
+   "spec": {
+    "rounds": 58,
+    "drafted": 174,
+    "accepted": 70,
+    "acceptance_rate": 0.40229885057471265
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "Let me analyze the request. The user is asking me to \"Summarize the state of the work above in one short paragraph.\"\n\nLooking at the conversation, there's a task to ingest raw source files into a wiki. The assistant (in the transcript shown) has:\n1. Started by listing the wiki structure \u2014 found raw/, tools/, wiki/, CLAUDE.md, index.md, log.md; wiki/sources/ has 282 files.\n2. Read the first raw source: raw/learning/agent-knowledge/muon-optimizer-vs-adamw.md \u2014 a deep technical note comparing Muon and AdamW ("
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,964 @@
+diff --git a/crates/memra-engine/src/bin/pp_transport_smoke.rs b/crates/memra-engine/src/bin/pp_transport_smoke.rs
+index 7d4d91b6..7176c74c 100644
+--- a/crates/memra-engine/src/bin/pp_transport_smoke.rs
++++ b/crates/memra-engine/src/bin/pp_transport_smoke.rs
+@@ -135,7 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+                 let _s1 = rt.enter(1);
+                 let _work = rt.rx(0, slot, 1)?;
+             }
+-            if memra_engine::pp::service_runtime_peer_probe(&e)? {
++            if memra_engine::pp::service_runtime_peer_probe(&e, true)?.ran() {
+                 serviced += 1;
+                 println!("runtime probe serviced after boundary copy {}", copy_index + 1);
+             }
+diff --git a/crates/memra-engine/src/pp.rs b/crates/memra-engine/src/pp.rs
+index 8ed13509..76d8a29e 100644
+--- a/crates/memra-engine/src/pp.rs
++++ b/crates/memra-engine/src/pp.rs
+@@ -631,7 +631,8 @@ pub fn pp_host_bounce_on() -> bool {
+ /// True when host bounce is the live transport for a sharded cross-device placement.
+ /// Callers use this to close paths that still peer-read non-boundary state.
+ pub fn pp_host_bounce_active() -> bool {
+-    pp_host_bounce_on() && pp_sharded_cross_device()
++    (pp_host_bounce_on() || PEER_RUNTIME_HOST_BOUNCE.load(Ordering::Acquire))
++        && pp_sharded_cross_device()
+ }
+ 
+ /// M2 increment 2 rollback seam: MEMRA_PP_SHARD=0 = the M1 bring-up placement (all
+@@ -745,6 +746,8 @@ pub const PEER_RUNTIME_PROBE_INTERVAL_COPIES: u64 = 8 * 1024;
+ /// One complete runtime width rotation. The maximum-chunk rung runs once per cycle.
+ pub const PEER_RUNTIME_PROBE_CYCLE_COPIES: u64 =
+     PEER_RUNTIME_PROBE_INTERVAL_COPIES * PEER_PROBE_TOKEN_WIDTHS.len() as u64;
++/// Maximum measured owner-thread wall cost that may remain on an interactive scheduler boundary.
++const PEER_RUNTIME_PROBE_BUDGET_NS: u64 = 5_000_000;
+ 
+ pub const PEER_PROBE_REQUIRED_REFUSAL: &str =
+     "PP bring-up refused: MEMRA_PEER_PROBE=0 cannot authorize native peer transport for a \
+@@ -775,8 +778,20 @@ static PEER_PROBE_BYPASSED: AtomicU64 = AtomicU64::new(0);
+ static PEER_BOUNDARY_COPIES: AtomicU64 = AtomicU64::new(0);
+ static PEER_RUNTIME_PROBES: AtomicU64 = AtomicU64::new(0);
+ static PEER_RUNTIME_PROBE_FAILURES: AtomicU64 = AtomicU64::new(0);
+-static PEER_RUNTIME_LAST_PROBE_COPY: AtomicU64 = AtomicU64::new(0);
+ static PEER_RUNTIME_PROBE_FAILED: AtomicBool = AtomicBool::new(false);
++static PEER_RUNTIME_HOST_BOUNCE: AtomicBool = AtomicBool::new(false);
++static PEER_RUNTIME_NEXT_PROBE_COPY: [AtomicU64; PEER_PROBE_TOKEN_WIDTHS.len()] = [
++    AtomicU64::new(PEER_RUNTIME_PROBE_INTERVAL_COPIES),
++    AtomicU64::new(2 * PEER_RUNTIME_PROBE_INTERVAL_COPIES),
++    AtomicU64::new(3 * PEER_RUNTIME_PROBE_INTERVAL_COPIES),
++    AtomicU64::new(4 * PEER_RUNTIME_PROBE_INTERVAL_COPIES),
++];
++static PEER_RUNTIME_PROBE_MAX_COST_NS: [AtomicU64; PEER_PROBE_TOKEN_WIDTHS.len()] = [
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++    AtomicU64::new(0),
++];
+ 
+ #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+ pub struct PeerProbeMetrics {
+@@ -784,6 +799,7 @@ pub struct PeerProbeMetrics {
+     pub boundary_copies: u64,
+     pub runtime_probes: u64,
+     pub runtime_failures: u64,
++    pub degraded_to_host_bounce: bool,
+ }
+ 
+ pub fn peer_probe_metrics() -> PeerProbeMetrics {
+@@ -792,18 +808,89 @@ pub fn peer_probe_metrics() -> PeerProbeMetrics {
+         boundary_copies: PEER_BOUNDARY_COPIES.load(Ordering::Relaxed),
+         runtime_probes: PEER_RUNTIME_PROBES.load(Ordering::Relaxed),
+         runtime_failures: PEER_RUNTIME_PROBE_FAILURES.load(Ordering::Relaxed),
++        degraded_to_host_bounce: PEER_RUNTIME_HOST_BOUNCE.load(Ordering::Acquire),
++    }
++}
++
++/// Measurement-only hook for research/probehitch-20260812. This patch is never committed:
++/// it places only the maximum rung due immediately before a queued request is handled, so the
++/// receipt can compare the old inline decision with the new busy-boundary decision on real PP-2.
++pub fn arm_probehitch_receipt() {
++    let copies = PEER_RUNTIME_PROBE_CYCLE_COPIES;
++    PEER_BOUNDARY_COPIES.store(copies, Ordering::Relaxed);
++    PEER_RUNTIME_PROBES.store(0, Ordering::Relaxed);
++    for (width_index, deadline) in PEER_RUNTIME_NEXT_PROBE_COPY.iter().enumerate() {
++        let due = if width_index + 1 == PEER_PROBE_TOKEN_WIDTHS.len() {
++            copies
++        } else {
++            copies + (width_index as u64 + 1) * PEER_RUNTIME_PROBE_INTERVAL_COPIES
++        };
++        deadline.store(due, Ordering::Relaxed);
++        PEER_RUNTIME_PROBE_MAX_COST_NS[width_index].store(0, Ordering::Relaxed);
++    }
++    eprintln!("[probehitch-receipt] armed max rung at boundary_copies={copies}");
++}
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum RuntimePeerProbeStatus {
++    NotRun,
++    Passed,
++    DegradedToHostBounce,
++}
++
++impl RuntimePeerProbeStatus {
++    pub fn ran(self) -> bool {
++        self != Self::NotRun
++    }
++}
++
++fn runtime_peer_probe_idle_only(width_index: usize, measured_cost_ns: u64) -> bool {
++    width_index + 1 == PEER_PROBE_TOKEN_WIDTHS.len()
++        || measured_cost_ns > PEER_RUNTIME_PROBE_BUDGET_NS
++}
++
++/// Pick the oldest runnable per-width deadline. Idle-only overdue work is skipped rather than
++/// blocking later cheap deadlines, so the small integrity ladder keeps its copy-count cadence.
++fn runtime_peer_probe_candidate(
++    copies: u64,
++    next_probe_copy: [u64; PEER_PROBE_TOKEN_WIDTHS.len()],
++    measured_cost_ns: [u64; PEER_PROBE_TOKEN_WIDTHS.len()],
++    scheduler_idle: bool,
++) -> Option<(usize, usize)> {
++    let mut selected: Option<(usize, u64)> = None;
++    for width_index in 0..PEER_PROBE_TOKEN_WIDTHS.len() {
++        let due = next_probe_copy[width_index];
++        if copies < due
++            || (!scheduler_idle
++                && runtime_peer_probe_idle_only(width_index, measured_cost_ns[width_index]))
++        {
++            continue;
++        }
++        if selected.is_none_or(|(_, selected_due)| due < selected_due) {
++            selected = Some((width_index, due));
++        }
+     }
++    selected.map(|(width_index, _)| (width_index, PEER_PROBE_TOKEN_WIDTHS[width_index]))
+ }
+ 
+-fn runtime_peer_probe_due(copies: u64, last_probe_copy: u64) -> bool {
+-    copies.saturating_sub(last_probe_copy) >= PEER_RUNTIME_PROBE_INTERVAL_COPIES
++/// Advance a late per-width deadline to the first future cycle. Missed idle opportunities
++/// collapse into one probe instead of producing an owner-thread catch-up burst.
++fn runtime_peer_probe_next_copy(due: u64, copies: u64) -> u64 {
++    let cycles = copies.saturating_sub(due) / PEER_RUNTIME_PROBE_CYCLE_COPIES + 1;
++    due.saturating_add(PEER_RUNTIME_PROBE_CYCLE_COPIES.saturating_mul(cycles))
+ }
+ 
+-/// Select one boot-probe width per zero-based runtime probe attempt. The maximum-chunk rung is
+-/// last, so it runs once every four cadence ticks rather than on every runtime re-probe.
+-fn runtime_peer_probe_width(probe_index: u64) -> (usize, usize) {
+-    let width_index = (probe_index % PEER_PROBE_TOKEN_WIDTHS.len() as u64) as usize;
+-    (width_index, PEER_PROBE_TOKEN_WIDTHS[width_index])
++/// Fail closed before arming the fallback, then publish host bounce only after its staging check
++/// succeeds. The two atomics are parameters so unit tests never mutate process-global state.
++fn latch_runtime_host_bounce<E>(
++    native_failed: &AtomicBool,
++    degraded_to_host_bounce: &AtomicBool,
++    arm_and_validate: impl FnOnce() -> Result<(), E>,
++) -> Result<(), E> {
++    native_failed.store(true, Ordering::Release);
++    arm_and_validate()?;
++    degraded_to_host_bounce.store(true, Ordering::Release);
++    Ok(())
+ }
+ 
+ fn peer_probe_on() -> bool {
+@@ -1142,7 +1229,8 @@ pub struct PpNRt {
+     boundaries: Vec<BoundaryRt>,
+     /// true iff ANY boundary crosses devices.
+     cross_any: bool,
+-    /// Captured once at runtime construction; default false preserves the peer transport.
++    /// Startup selection captured at runtime construction. A runtime probe failure may promote
++    /// the process-wide one-way host-bounce latch without mutating this value.
+     host_bounce: bool,
+     /// Boot-time peer validation is default-on; `MEMRA_PEER_PROBE=0` is diagnostics-only.
+     peer_probe: bool,
+@@ -1524,6 +1612,10 @@ impl PpNRt {
+         self.cross_any
+     }
+ 
++    fn host_bounce_active(&self) -> bool {
++        self.host_bounce || PEER_RUNTIME_HOST_BOUNCE.load(Ordering::Acquire)
++    }
++
+     fn context_for_dev<'a>(
+         &'a self,
+         e: &'a Engine,
+@@ -1981,7 +2073,7 @@ impl PpNRt {
+             .checked_mul(std::mem::size_of::<f32>())
+             .ok_or_else(|| format!("PP boundary-slot byte count overflows for n_embd={n_embd}"))?;
+         let result = self.peer_probe_geometry.get_or_init(|| {
+-            let probe = if self.host_bounce {
++            let probe = if self.host_bounce_active() {
+                 self.run_host_bounce_production_probe(e, n_embd)
+             } else {
+                 self.run_production_peer_probe(&self.peer_capable, false, n_embd)
+@@ -2006,25 +2098,12 @@ impl PpNRt {
+         Ok(())
+     }
+ 
+-    /// Finish boot-time transport setup from the authoritative model width. This runs the
+-    /// production `BoundarySlot` ladder at 1/8/16/`PRIME_CHUNK_MAX_TOKENS` `[n_embd] f32` rows
+-    /// once, then allocates host-bounce slots when selected. The loader calls it before uploading
+-    /// the first model weight; `new_cache` repeats the call as an idempotent guard before the first
+-    /// forward.
+-    pub fn init_boundary_transport(
++    fn init_host_bounce_staging(
+         &self,
+         e: &Engine,
+         n_embd: usize,
+     ) -> Result<(), Box<dyn std::error::Error>> {
+-        if PEER_RUNTIME_PROBE_FAILED.load(Ordering::Acquire) {
+-            return Err(
+-                "PP runtime peer byte-integrity probe previously failed; refusing native P2P \
+-                 reuse in this process (restart with MEMRA_PP_HOST_BOUNCE=1)"
+-                    .into(),
+-            );
+-        }
+-        self.init_peer_probe_geometry(e, n_embd)?;
+-        if !self.host_bounce || !self.cross_any {
++        if !self.cross_any {
+             return Ok(());
+         }
+         e.ctx().bind_to_thread()?;
+@@ -2055,15 +2134,123 @@ impl PpNRt {
+         Ok(())
+     }
+ 
+-    /// Run a due low-frequency peer re-probe at a scheduler boundary on the CUDA owner thread.
+-    /// The server calls this between ticks, after the preceding tick's result publication. The
+-    /// probe synchronizes the stage streams it exercises; no background thread touches CUDA.
++    /// Exercise the newly armed staging through the real D2H/event/H2D boundary path before the
++    /// live transport latch can observe it. One row per cross boundary is enough to validate the
++    /// pinned capacity, event ordering, contexts, and byte continuity without touching peer DMA.
++    fn validate_host_bounce_staging(
++        &self,
++        e: &Engine,
++        n_embd: usize,
++    ) -> Result<(), Box<dyn std::error::Error>> {
++        let bytes = n_embd
++            .checked_mul(std::mem::size_of::<f32>())
++            .ok_or_else(|| {
++                format!("host-bounce validation byte count overflows for n_embd={n_embd}")
++            })?;
++        for boundary_idx in 0..self.stages.len() - 1 {
++            if !self.boundaries[boundary_idx].cross {
++                continue;
++            }
++            let src_stage = boundary_idx;
++            let dst_stage = boundary_idx + 1;
++            let probe_boundary = self.new_peer_probe_boundary(src_stage, dst_stage)?;
++            let path = BoundaryPath {
++                boundary: boundary_idx,
++                src_stage,
++                dst_stage,
++                transport: BoundaryTransport::HostBounce,
++            };
++            let expected = peer_probe_pattern(
++                bytes,
++                boundary_idx,
++                self.stages[src_stage].dev,
++                self.stages[dst_stage].dev,
++            );
++            let readback = self.production_probe_readback(
++                path,
++                &probe_boundary,
++                &expected,
++                n_embd,
++                0,
++            );
++            let clear = self.clear_peer_probe_boundary(
++                &probe_boundary,
++                src_stage,
++                dst_stage,
++            );
++            let readback = readback?;
++            clear?;
++            let mismatches = peer_probe_mismatch_count(&expected, &readback);
++            if mismatches > 0 {
++                return Err(format!(
++                    "runtime host-bounce staging validation FAILED: boundary={boundary_idx} \
++                     bytes={bytes} mismatches={mismatches}"
++                )
++                .into());
++            }
++        }
++        e.ctx().bind_to_thread()?;
++        eprintln!(
++            "[pp] runtime host-bounce staging validation PASS: row_bytes={bytes} \
++             cross_boundaries={}",
++            self.boundaries.iter().filter(|boundary| boundary.cross).count(),
++        );
++        Ok(())
++    }
++
++    fn arm_runtime_host_bounce(
++        &self,
++        e: &Engine,
++        row_bytes: usize,
++    ) -> Result<(), Box<dyn std::error::Error>> {
++        if row_bytes == 0 || row_bytes % std::mem::size_of::<f32>() != 0 {
++            return Err(format!(
++                "runtime host-bounce cannot recover n_embd from row_bytes={row_bytes}"
++            )
++            .into());
++        }
++        let n_embd = row_bytes / std::mem::size_of::<f32>();
++        self.init_host_bounce_staging(e, n_embd)?;
++        self.validate_host_bounce_staging(e, n_embd)
++    }
++
++    /// Finish boot-time transport setup from the authoritative model width. This runs the
++    /// production `BoundarySlot` ladder at 1/8/16/`PRIME_CHUNK_MAX_TOKENS` `[n_embd] f32` rows
++    /// once, then allocates host-bounce slots when selected. The loader calls it before uploading
++    /// the first model weight; `new_cache` repeats the call as an idempotent guard before the first
++    /// forward.
++    pub fn init_boundary_transport(
++        &self,
++        e: &Engine,
++        n_embd: usize,
++    ) -> Result<(), Box<dyn std::error::Error>> {
++        if PEER_RUNTIME_PROBE_FAILED.load(Ordering::Acquire)
++            && !PEER_RUNTIME_HOST_BOUNCE.load(Ordering::Acquire)
++        {
++            return Err(
++                "PP runtime peer byte-integrity probe previously failed; refusing native P2P \
++                 reuse because runtime host-bounce staging could not be armed"
++                    .into(),
++            );
++        }
++        self.init_peer_probe_geometry(e, n_embd)?;
++        if !self.host_bounce_active() || !self.cross_any {
++            return Ok(());
++        }
++        self.init_host_bounce_staging(e, n_embd)
++    }
++
++    /// Run one due peer re-probe at a scheduler boundary on the CUDA owner thread. Each width has
++    /// an independent copy-count deadline: an idle-only rung can remain pending while later cheap
++    /// rungs keep running. The probe synchronizes the stage streams it exercises; no background
++    /// thread touches CUDA.
+     fn service_runtime_peer_probe(
+         &self,
+         e: &Engine,
+-    ) -> Result<bool, Box<dyn std::error::Error>> {
+-        if !self.peer_probe || !self.cross_any || self.host_bounce {
+-            return Ok(false);
++        scheduler_idle: bool,
++    ) -> Result<RuntimePeerProbeStatus, Box<dyn std::error::Error>> {
++        if !self.peer_probe || !self.cross_any || self.host_bounce_active() {
++            return Ok(RuntimePeerProbeStatus::NotRun);
+         }
+         if PEER_RUNTIME_PROBE_FAILED.load(Ordering::Acquire) {
+             return Err(
+@@ -2073,27 +2260,39 @@ impl PpNRt {
+         }
+         let row_bytes = match self.peer_probe_geometry.get() {
+             Some(Ok(bytes)) => *bytes,
+-            _ => return Ok(false),
++            _ => return Ok(RuntimePeerProbeStatus::NotRun),
+         };
+ 
+         let copies = PEER_BOUNDARY_COPIES.load(Ordering::Relaxed);
+-        loop {
+-            let last = PEER_RUNTIME_LAST_PROBE_COPY.load(Ordering::Relaxed);
+-            if !runtime_peer_probe_due(copies, last) {
+-                return Ok(false);
+-            }
+-            if PEER_RUNTIME_LAST_PROBE_COPY
+-                .compare_exchange(last, copies, Ordering::AcqRel, Ordering::Relaxed)
++        let (width_index, tokens) = loop {
++            let next_probe_copy = std::array::from_fn(|width_index| {
++                PEER_RUNTIME_NEXT_PROBE_COPY[width_index].load(Ordering::Relaxed)
++            });
++            let measured_cost_ns = std::array::from_fn(|width_index| {
++                PEER_RUNTIME_PROBE_MAX_COST_NS[width_index].load(Ordering::Relaxed)
++            });
++            let Some(candidate) = runtime_peer_probe_candidate(
++                copies,
++                next_probe_copy,
++                measured_cost_ns,
++                scheduler_idle,
++            ) else {
++                return Ok(RuntimePeerProbeStatus::NotRun);
++            };
++            let due = next_probe_copy[candidate.0];
++            let next = runtime_peer_probe_next_copy(due, copies);
++            if PEER_RUNTIME_NEXT_PROBE_COPY[candidate.0]
++                .compare_exchange(due, next, Ordering::AcqRel, Ordering::Relaxed)
+                 .is_ok()
+             {
+-                break;
++                break candidate;
+             }
+-        }
+-
++        };
+         let probe_index = PEER_RUNTIME_PROBES.fetch_add(1, Ordering::Relaxed);
+-        let (width_index, tokens) = runtime_peer_probe_width(probe_index);
+         let probe_bytes = row_bytes.checked_mul(tokens);
+-        let label = format!("runtime-idle-{tokens}tok");
++        let scheduler_class = if scheduler_idle { "idle" } else { "busy" };
++        let label = format!("runtime-{scheduler_class}-{tokens}tok");
++        let started = std::time::Instant::now();
+         let probe = match probe_bytes {
+             Some(bytes) => run_peer_probe_pass(
+                 &self.stages,
+@@ -2109,6 +2308,9 @@ impl PpNRt {
+             .into()),
+         };
+         let restore = e.ctx().bind_to_thread();
++        let elapsed_ns = started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
++        let previous_max = PEER_RUNTIME_PROBE_MAX_COST_NS[width_index]
++            .fetch_max(elapsed_ns, Ordering::Relaxed);
+         let verdict = match (probe, restore) {
+             (Ok(()), Ok(())) => Ok(()),
+             (Err(err), _) => Err(err.to_string()),
+@@ -2116,27 +2318,57 @@ impl PpNRt {
+         };
+         if let Err(err) = verdict {
+             PEER_RUNTIME_PROBE_FAILURES.fetch_add(1, Ordering::Relaxed);
+-            PEER_RUNTIME_PROBE_FAILED.store(true, Ordering::Release);
+-            let message = format!(
+-                "PP runtime peer byte-integrity re-probe FAILED after \
+-                 boundary_copies={copies} rung={}/{} tokens={tokens}: {err}; refusing further \
+-                 native P2P (restart with MEMRA_PP_HOST_BOUNCE=1; MEMRA_PEER_PROBE=0 cannot \
+-                 bypass this failure)",
++            let arm = latch_runtime_host_bounce(
++                &PEER_RUNTIME_PROBE_FAILED,
++                &PEER_RUNTIME_HOST_BOUNCE,
++                || {
++                    self.arm_runtime_host_bounce(e, row_bytes)
++                        .map_err(|arm_err| arm_err.to_string())
++                },
++            );
++            if let Err(arm_err) = arm {
++                let message = format!(
++                    "PP runtime peer byte-integrity re-probe FAILED after \
++                     boundary_copies={copies} rung={}/{} tokens={tokens}: {err}; native P2P is \
++                     latched off and host-bounce staging could not be armed: {arm_err}",
++                    width_index + 1,
++                    PEER_PROBE_TOKEN_WIDTHS.len(),
++                );
++                eprintln!("[pp] SECURITY RED: {message}; worker must stop");
++                return Err(message.into());
++            }
++            eprintln!(
++                "[pp] SECURITY RED: PP runtime peer byte-integrity re-probe FAILED after \
++                 boundary_copies={copies} rung={}/{} tokens={tokens}: {err}; native P2P is \
++                 latched off and the live transport DEGRADED to validated host bounce for the \
++                 remainder of this process",
+                 width_index + 1,
+                 PEER_PROBE_TOKEN_WIDTHS.len(),
+             );
+-            eprintln!("[pp] SECURITY RED: {message}");
+-            return Err(message.into());
++            return Ok(RuntimePeerProbeStatus::DegradedToHostBounce);
++        }
++        if width_index + 1 != PEER_PROBE_TOKEN_WIDTHS.len()
++            && previous_max <= PEER_RUNTIME_PROBE_BUDGET_NS
++            && elapsed_ns > PEER_RUNTIME_PROBE_BUDGET_NS
++        {
++            eprintln!(
++                "[pp] runtime peer re-probe rung exceeded the {:.3}ms owner-thread budget: \
++                 tokens={tokens} measured_ms={:.3}; future runs are idle-only",
++                PEER_RUNTIME_PROBE_BUDGET_NS as f64 / 1e6,
++                elapsed_ns as f64 / 1e6,
++            );
+         }
+         eprintln!(
+             "[pp] runtime peer byte-integrity re-probe PASS: \
+              boundary_copies={copies} interval_copies={PEER_RUNTIME_PROBE_INTERVAL_COPIES} \
+-             rung={}/{} tokens={tokens} bytes={} probe_index={probe_index}",
++             rung={}/{} tokens={tokens} bytes={} probe_index={probe_index} elapsed_ms={:.3} \
++             scheduler_idle={scheduler_idle}",
+             width_index + 1,
+             PEER_PROBE_TOKEN_WIDTHS.len(),
+             probe_bytes.unwrap(),
++            elapsed_ns as f64 / 1e6,
+         );
+-        Ok(true)
++        Ok(RuntimePeerProbeStatus::Passed)
+     }
+ 
+     fn bounce_rt(&self) -> Result<&HostBounceRt, Box<dyn std::error::Error>> {
+@@ -2232,7 +2464,7 @@ impl PpNRt {
+             boundary: b,
+             src_stage: b,
+             dst_stage: b + 1,
+-            transport: boundary_transport(bd.cross, self.host_bounce),
++            transport: boundary_transport(bd.cross, self.host_bounce_active()),
+         };
+         let copied_slot = self.tx_slot_path(path, bd, x, n, slot_idx)?;
+         if path.transport == BoundaryTransport::Peer {
+@@ -2326,7 +2558,7 @@ impl PpNRt {
+             boundary: b,
+             src_stage: b,
+             dst_stage: b + 1,
+-            transport: boundary_transport(bd.cross, self.host_bounce),
++            transport: boundary_transport(bd.cross, self.host_bounce_active()),
+         };
+         self.rx_slot_path(path, bd, slot_idx, n)
+     }
+@@ -2456,12 +2688,15 @@ impl PpNRt {
+ 
+ /// Service a due runtime peer probe without constructing a PP runtime on door-shut placements.
+ /// Must be called by the CUDA owner thread at a scheduling boundary.
+-pub fn service_runtime_peer_probe(e: &Engine) -> Result<bool, Box<dyn std::error::Error>> {
+-    let Some(rt) = RTN.get() else { return Ok(false) };
++pub fn service_runtime_peer_probe(
++    e: &Engine,
++    scheduler_idle: bool,
++) -> Result<RuntimePeerProbeStatus, Box<dyn std::error::Error>> {
++    let Some(rt) = RTN.get() else { return Ok(RuntimePeerProbeStatus::NotRun) };
+     let rt = rt
+         .as_ref()
+         .map_err(|err| -> Box<dyn std::error::Error> { err.clone().into() })?;
+-    rt.service_runtime_peer_probe(e)
++    rt.service_runtime_peer_probe(e, scheduler_idle)
+ }
+ 
+ /// M2 increment 3: a step's logits, still device-resident on the LAST stage. `wait()`
+@@ -2717,13 +2952,16 @@ mod host_bounce_tests {
+     use super::{
+         boundary_transport, dual_pp_eligibility, dual_pp_timing_dropped,
+         dual_pp_timing_snapshot, dual_pp_wave_mid, host_bounce_capacity,
++        latch_runtime_host_bounce,
+         peer_probe_bytes_to_f32, peer_probe_decision, peer_probe_f32_to_bytes,
+         peer_probe_mismatch_count, peer_probe_pattern, peer_probe_startup_policy,
+-        record_dual_pp_stage_result, runtime_peer_probe_due, runtime_peer_probe_width,
++        record_dual_pp_stage_result, runtime_peer_probe_candidate,
++        runtime_peer_probe_next_copy,
+         BoundaryTransport, PeerProbeDecision, PeerProbeStartupPolicy,
+         DUAL_PP_HOST_BOUNCE_REFUSAL, DUAL_PP_SINGLE_SLOT_REFUSAL, PEER_PROBE_FIXED_BYTES,
+         PEER_PROBE_REQUIRED_REFUSAL, PEER_PROBE_TOKEN_WIDTHS,
+-        PEER_RUNTIME_PROBE_CYCLE_COPIES, PEER_RUNTIME_PROBE_INTERVAL_COPIES,
++        PEER_RUNTIME_PROBE_BUDGET_NS, PEER_RUNTIME_PROBE_CYCLE_COPIES,
++        PEER_RUNTIME_PROBE_INTERVAL_COPIES,
+     };
+ 
+     // ---- 2026-08-11 default-flip safety regression (owner-ordered) ----------------------
+@@ -2867,31 +3105,81 @@ mod host_bounce_tests {
+     }
+ 
+     #[test]
+-    fn runtime_reprobe_becomes_due_only_at_each_copy_interval() {
++    fn runtime_reprobe_keeps_cheap_deadlines_live_while_expensive_work_waits_for_idle() {
+         let every = PEER_RUNTIME_PROBE_INTERVAL_COPIES;
+         assert_eq!(PEER_RUNTIME_PROBE_CYCLE_COPIES, 4 * every);
+-        assert!(!runtime_peer_probe_due(every - 1, 0));
+-        assert!(runtime_peer_probe_due(every, 0));
+-        assert!(!runtime_peer_probe_due(2 * every - 1, every));
+-        assert!(runtime_peer_probe_due(2 * every, every));
+-        assert!(!runtime_peer_probe_due(every - 1, every));
++        let mut next = [every, 2 * every, 3 * every, 4 * every];
++        let measured_ns = [1_000_000, 2_000_000, 3_000_000, 0];
++
++        assert_eq!(
++            runtime_peer_probe_candidate(every - 1, next, measured_ns, false),
++            None,
++        );
++        assert_eq!(
++            runtime_peer_probe_candidate(every, next, measured_ns, false),
++            Some((0, 1)),
++        );
++
++        // Pretend the three cheap deadlines completed. The maximum rung is due but must not run
++        // on the interactive boundary.
++        next[..3].copy_from_slice(&[5 * every, 6 * every, 7 * every]);
++        assert_eq!(
++            runtime_peer_probe_candidate(4 * every, next, measured_ns, false),
++            None,
++        );
++        // Once the next cheap deadline arrives, it remains runnable even though the older max
++        // deadline is still pending.
++        assert_eq!(
++            runtime_peer_probe_candidate(5 * every, next, measured_ns, false),
++            Some((0, 1)),
++        );
++        // An idle boundary drains the oldest pending rung first.
++        assert_eq!(
++            runtime_peer_probe_candidate(5 * every, next, measured_ns, true),
++            Some((3, crate::cache::PRIME_CHUNK_MAX_TOKENS)),
++        );
++    }
++
++    #[test]
++    fn runtime_reprobe_moves_any_measured_over_budget_rung_to_idle_only() {
++        let every = PEER_RUNTIME_PROBE_INTERVAL_COPIES;
++        let next = [u64::MAX, every, u64::MAX, u64::MAX];
++        let mut measured_ns = [0; PEER_PROBE_TOKEN_WIDTHS.len()];
++        measured_ns[1] = PEER_RUNTIME_PROBE_BUDGET_NS + 1;
++        assert_eq!(runtime_peer_probe_candidate(every, next, measured_ns, false), None);
++        assert_eq!(
++            runtime_peer_probe_candidate(every, next, measured_ns, true),
++            Some((1, 8)),
++        );
++    }
++
++    #[test]
++    fn late_runtime_reprobe_advances_once_instead_of_bursting_catchup() {
++        let every = PEER_RUNTIME_PROBE_INTERVAL_COPIES;
++        let due = every;
++        assert_eq!(runtime_peer_probe_next_copy(due, due), due + 4 * every);
++        assert_eq!(runtime_peer_probe_next_copy(due, 20 * every), 21 * every);
+     }
+ 
+     #[test]
+-    fn runtime_reprobe_rotates_every_boot_width_in_deterministic_order() {
+-        let cycle_len = PEER_PROBE_TOKEN_WIDTHS.len();
+-        let got: Vec<(usize, usize)> = (0..2 * cycle_len)
+-            .map(|probe_index| runtime_peer_probe_width(probe_index as u64))
+-            .collect();
+-        let expected: Vec<(usize, usize)> = PEER_PROBE_TOKEN_WIDTHS
+-            .into_iter()
+-            .enumerate()
+-            .chain(PEER_PROBE_TOKEN_WIDTHS.into_iter().enumerate())
+-            .collect();
+-
+-        assert_eq!(got, expected);
+-        assert_eq!(got[cycle_len - 1].1, crate::cache::PRIME_CHUNK_MAX_TOKENS);
+-        assert_eq!(got[2 * cycle_len - 1].1, crate::cache::PRIME_CHUNK_MAX_TOKENS);
++    fn runtime_probe_failure_latches_native_before_publishing_validated_bounce() {
++        use std::sync::atomic::{AtomicBool, Ordering};
++
++        let failed = AtomicBool::new(false);
++        let degraded = AtomicBool::new(false);
++        let armed = latch_runtime_host_bounce(&failed, &degraded, || Ok::<_, String>(()));
++        assert!(armed.is_ok());
++        assert!(failed.load(Ordering::Acquire));
++        assert!(degraded.load(Ordering::Acquire));
++
++        let failed = AtomicBool::new(false);
++        let degraded = AtomicBool::new(false);
++        let refused = latch_runtime_host_bounce(&failed, &degraded, || {
++            Err::<(), _>("injected staging mismatch".to_string())
++        });
++        assert_eq!(refused, Err("injected staging mismatch".to_string()));
++        assert!(failed.load(Ordering::Acquire));
++        assert!(!degraded.load(Ordering::Acquire));
+     }
+ 
+     #[test]
+diff --git a/crates/memra-server/src/main.rs b/crates/memra-server/src/main.rs
+index e058f1db..534f5746 100644
+--- a/crates/memra-server/src/main.rs
++++ b/crates/memra-server/src/main.rs
+@@ -2057,6 +2057,7 @@ fn insert_peer_probe_metrics(
+     body["peer_probe_boundary_copies"] = json!(snapshot.boundary_copies);
+     body["peer_probe_runtime_reprobes"] = json!(snapshot.runtime_probes);
+     body["peer_probe_runtime_failures"] = json!(snapshot.runtime_failures);
++    body["peer_probe_degraded_to_host_bounce"] = json!(snapshot.degraded_to_host_bounce);
+ }
+ 
+ /// Flat serving counters + engine-truth step latency percentiles.
+@@ -5051,6 +5052,7 @@ mod tests {
+             "peer_probe_boundary_copies",
+             "peer_probe_runtime_reprobes",
+             "peer_probe_runtime_failures",
++            "peer_probe_degraded_to_host_bounce",
+         ] {
+             assert!(
+                 body.get(operator_only).is_none(),
+@@ -5131,6 +5133,7 @@ mod tests {
+             boundary_copies: 8_192,
+             runtime_probes: 1,
+             runtime_failures: 0,
++            degraded_to_host_bounce: true,
+         };
+         for scope in [
+             MetricsScope::CompletionDomain,
+@@ -5147,6 +5150,7 @@ mod tests {
+         assert_eq!(body["peer_probe_boundary_copies"], 8_192);
+         assert_eq!(body["peer_probe_runtime_reprobes"], 1);
+         assert_eq!(body["peer_probe_runtime_failures"], 0);
++        assert_eq!(body["peer_probe_degraded_to_host_bounce"], true);
+     }
+ 
+     #[tokio::test]
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index f4d40dab..e8f1e8d1 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -1561,19 +1561,19 @@ fn meter_cached_credit(ns_tokens: &mut HashMap<String, [u64; 2]>, cache_ns: &str
+ /// MEMRA_PREFIX_CACHE_MB (default 256): resident byte budget for the prefix cache. 0 = off.
+ fn prefix_cache_budget_bytes() -> usize {
+     static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+-    *B.get_or_init(|| {
+-        let configured = std::env::var("MEMRA_PREFIX_CACHE_MB").ok()
++    let configured = *B.get_or_init(|| {
++        std::env::var("MEMRA_PREFIX_CACHE_MB").ok()
+             .and_then(|v| v.parse::<usize>().ok()).unwrap_or(256)
+-            .saturating_mul(1024 * 1024);
+-        if configured > 0 && memra_engine::pp::pp_host_bounce_active() {
+-            // Prefix snapshots/restores copy every stage-owned KV plane through the primary
+-            // Engine. That is a peer memcpy, not the explicit activation boundary `PpNRt`
+-            // bounces, so fail closed instead of caching corrupt bytes.
+-            0
+-        } else {
+-            configured
+-        }
+-    })
++            .saturating_mul(1024 * 1024)
++    });
++    if configured > 0 && memra_engine::pp::pp_host_bounce_active() {
++        // This check remains live rather than being captured in the OnceLock: a runtime peer
++        // failure can promote host bounce after startup. Prefix snapshots/restores copy every
++        // stage-owned KV plane through the primary Engine, outside the bounced boundary path.
++        0
++    } else {
++        configured
++    }
+ }
+ 
+ /// In-batch cold-prefix fanout. `=0` is the rollback/measurement seam.
+@@ -2672,6 +2672,9 @@ fn prefix_restore(
+ /// Snapshot + insert the session's CURRENT primed state (fed tokens, boundary logits).
+ /// No-op when the session cannot serve an empty-suffix resume (no host logits yet).
+ fn prefix_insert_from_session(engine: &Engine, px: &mut PrefixCache, s: &Session, why: &str) {
++    if memra_engine::pp::pp_host_bounce_active() {
++        return;
++    }
+     let Some(cache) = s.cache.as_ref() else { return };
+     if s.last_logits.is_empty() {
+         return;
+@@ -2696,6 +2699,11 @@ fn prefix_insert_from_session(engine: &Engine, px: &mut PrefixCache, s: &Session
+ /// the capture is dropped, the session serves normally, and the NEXT turn re-primes in full —
+ /// today's behavior. It must never fail the prime that is running.
+ fn maybe_plain_checkpoint(engine: &Engine, s: &mut Session) {
++    if memra_engine::pp::pp_host_bounce_active() {
++        s.ckpt_at = None;
++        s.ckpt_snap = None;
++        return;
++    }
+     let Some(at) = s.ckpt_at else { return };
+     if s.fed.len() != at {
+         return;
+@@ -2938,6 +2946,64 @@ fn optipipe_controller_threshold(raw: Option<&str>) -> Result<Option<f32>, Strin
+     Ok(Some(threshold))
+ }
+ 
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum RuntimePeerProbeWorkerAction {
++    Continue,
++    DegradedToHostBounce,
++}
++
++/// Keep the worker's failure boundary explicit: a validated engine failover continues the same
++/// scheduler loop; only inability to arm host bounce is returned to the existing panic/respawn
++/// ladder. Split from the CUDA call so the worker-level continuity contract is GPU-free testable.
++fn runtime_peer_probe_worker_action(
++    result: Result<memra_engine::pp::RuntimePeerProbeStatus, String>,
++) -> Result<RuntimePeerProbeWorkerAction, String> {
++    match result? {
++        memra_engine::pp::RuntimePeerProbeStatus::DegradedToHostBounce => {
++            Ok(RuntimePeerProbeWorkerAction::DegradedToHostBounce)
++        }
++        memra_engine::pp::RuntimePeerProbeStatus::NotRun
++        | memra_engine::pp::RuntimePeerProbeStatus::Passed => {
++            Ok(RuntimePeerProbeWorkerAction::Continue)
++        }
++    }
++}
++
++fn service_runtime_peer_probe_for_worker(
++    engine: &Engine,
++    scheduler_idle: bool,
++    active: &mut [Session],
++    px: &mut PrefixCache,
++) -> Result<bool, String> {
++    // Host bounce cannot continue an already-live spec session because its device-resident
++    // token/position inputs still peer-read. Defer integrity work until those bounded sessions
++    // retire; new admissions become plain immediately once a failover is published.
++    if active.iter().any(|session| session.spec.is_some()) {
++        return Ok(false);
++    }
++    let status = memra_engine::pp::service_runtime_peer_probe(engine, scheduler_idle)
++        .map_err(|err| err.to_string())?;
++    let ran = status.ran();
++    if runtime_peer_probe_worker_action(Ok(status))?
++        == RuntimePeerProbeWorkerAction::DegradedToHostBounce
++    {
++        let evicted = px.evict_all();
++        for session in active {
++            session.snapshot_at = None;
++            session.prefix_miss_lcp = None;
++            session.seed_prefix = false;
++            session.ckpt_at = None;
++            session.ckpt_snap = None;
++        }
++        eprintln!(
++            "[pp] SECURITY RED: worker continuing on validated host bounce; disabled new spec, \
++             dual-active decode, prefix snapshots, and affinity checkpoints; evicted \
++             {evicted} unpinned prefix-cache entries"
++        );
++    }
++    Ok(ran)
++}
++
+ /// The worker entry point. Runs on its OWN std::thread. Builds the Engine + loads every model on
+ /// THIS thread (CUDA-context affinity), then runs the scheduler loop until the command channel
+ /// closes. `models` = (name, gguf_path) pairs. Sends `ready_tx` once load completes (or the error).
+@@ -3290,13 +3356,20 @@ pub fn run(
+     // this counts LOAD CROSSINGS, not ticks (a per-tick demotion count would mean the band is
+     // too narrow or the handoff is failing and re-firing).
+     let mut n_demoted = 0u64;
++    let probehitch_receipt_mode = std::env::var("MEMRA_PROBEHITCH_RECEIPT").ok();
++    let probehitch_receipt_gate = std::env::var("MEMRA_PROBEHITCH_GATE").ok();
++    let mut probehitch_receipt_done = false;
+ 
+     loop {
+-        // Runtime peer validation runs only here, on the CUDA owner thread, between scheduler
+-        // ticks. A due probe drains the stage streams it exercises before checking deterministic
+-        // bytes. Any failure is process-fatal after the normal worker panic/respawn ladder: the
+-        // engine latches the failure, so a respawn cannot resume native P2P in this process.
+-        if let Err(err) = memra_engine::pp::service_runtime_peer_probe(&engine) {
++        // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
++        // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
++        // validated host bounce; only inability to arm that staging reaches the panic ladder.
++        if let Err(err) = service_runtime_peer_probe_for_worker(
++            &engine,
++            false,
++            &mut active,
++            &mut px,
++        ) {
+             panic!("runtime peer-probe safety failure: {err}");
+         }
+         resolve_constraint_compiles(
+@@ -3311,17 +3384,66 @@ pub fn run(
+         //    arrivals, compile completion, expiry, and the heartbeat all stay responsive.
+         if active.is_empty() && queue.is_empty() {
+             if pending_constraints.is_empty() {
+-                // IDLE PHASE (G5): about to block indefinitely in recv() with zero work. An idle
+-                // worker legitimately stamps no heartbeat for hours, so the phase — not the beat
+-                // age — is what /health reads here. Stamped on BOTH sides of the block so the
+-                // beat is already fresh the instant work arrives (see health.rs).
+-                health.set_phase(crate::health::PHASE_IDLE);
+-                match rx.recv() {
++                // Do not let an already-arrived request sit behind an idle-only probe. Once the
++                // channel is observed empty, one pending expensive rung may run before the worker
++                // enters its ordinary indefinite idle block.
++                match rx.try_recv() {
+                     Ok(cmd) => {
+                         health.set_phase(crate::health::PHASE_BUSY);
+                         handle_cmd(cmd, &loaded, &order, &mut queue);
+                     }
+-                    Err(_) => break, // all senders dropped -> shutdown
++                    Err(std::sync::mpsc::TryRecvError::Empty) => {
++                        if let Err(err) = service_runtime_peer_probe_for_worker(
++                            &engine,
++                            true,
++                            &mut active,
++                            &mut px,
++                        ) {
++                            panic!("runtime peer-probe safety failure: {err}");
++                        }
++                        // IDLE PHASE (G5): about to block indefinitely in recv() with zero work.
++                        // An idle worker legitimately stamps no heartbeat for hours, so the phase
++                        // — not the beat age — is what /health reads here. Stamped on BOTH sides
++                        // of the block so the beat is already fresh when work arrives.
++                        health.set_phase(crate::health::PHASE_IDLE);
++                        match rx.recv() {
++                            Ok(cmd) => {
++                                health.set_phase(crate::health::PHASE_BUSY);
++                                if !probehitch_receipt_done
++                                    && probehitch_receipt_mode.as_deref().is_some_and(|mode| {
++                                        mode == "before" || mode == "after"
++                                    })
++                                    && probehitch_receipt_gate.as_deref().is_some_and(|gate| {
++                                        std::path::Path::new(gate).exists()
++                                    })
++                                {
++                                    let mode = probehitch_receipt_mode.as_deref().unwrap();
++                                    memra_engine::pp::arm_probehitch_receipt();
++                                    let scheduler_idle = mode == "before";
++                                    let started = Instant::now();
++                                    match service_runtime_peer_probe_for_worker(
++                                        &engine,
++                                        scheduler_idle,
++                                        &mut active,
++                                        &mut px,
++                                    ) {
++                                        Ok(ran) => eprintln!(
++                                            "[probehitch-receipt] mode={mode} ran={ran} \
++                                             scheduler_idle={scheduler_idle} elapsed_ms={:.3}",
++                                            started.elapsed().as_secs_f64() * 1e3,
++                                        ),
++                                        Err(err) => panic!(
++                                            "probehitch receipt peer-probe failure: {err}"
++                                        ),
++                                    }
++                                    probehitch_receipt_done = true;
++                                }
++                                handle_cmd(cmd, &loaded, &order, &mut queue);
++                            }
++                            Err(_) => break, // all senders dropped -> shutdown
++                        }
++                    }
++                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+                 }
+             } else {
+                 health.beat_busy();
+@@ -5693,6 +5815,7 @@ fn admit(
+     // GGUF session bursts at n>=600). Dir checkpoints are spec-eligible again; the
+     // serve-st gate pins default-serve text == the run-gen CLI tokenwise oracle.
+     let serve_spec = !confidence_trace_enabled()
++        && !memra_engine::pp::pp_host_bounce_active()
+         && std::env::var("MEMRA_SERVE_SPEC").map(|v| v != "0").unwrap_or(true);
+     let mut sampler = Sampler::new(req.sampler_cfg);
+     // GREEDY + penalties keeps the legacy tokenwise path (gap-scan F3 plumbing): the greedy
+@@ -6533,7 +6656,8 @@ fn prefix_fanout_eligible(
+     s: &Session,
+     eager_only: &std::collections::HashSet<String>,
+ ) -> bool {
+-    s.spec.is_none()
++    !memra_engine::pp::pp_host_bounce_active()
++        && s.spec.is_none()
+         && s.graph.is_none()
+         && !s.prefill_done
+         && s.lane == crate::lanes::Lane::Interactive
+@@ -8010,6 +8134,7 @@ mod tests {
+         SPEC_K_LONG_CACHE_MIN, SPEC_K_LONG_PROMPT_MIN,
+     };
+     use super::{resolve_decode_chunk_policy, schedule_decode_chunk, DecodeChunkPolicy};
++    use super::{runtime_peer_probe_worker_action, RuntimePeerProbeWorkerAction};
+     use super::{optipipe_controller_threshold, worker_device};
+     use crate::lanes::{Lane, StepStats};
+ 
+@@ -8027,6 +8152,23 @@ mod tests {
+         vec![b'a' + id as u8]
+     }
+ 
++    #[test]
++    fn runtime_reprobe_mismatch_degrades_without_panicking_or_breaking_output_continuity() {
++        let mut output = vec![101u32, 102];
++        let action = runtime_peer_probe_worker_action(Ok(
++            memra_engine::pp::RuntimePeerProbeStatus::DegradedToHostBounce,
++        ));
++        assert_eq!(action, Ok(RuntimePeerProbeWorkerAction::DegradedToHostBounce));
++
++        // The worker keeps the admitted request alive and its next ordinary plain tick appends the
++        // same token it would have produced before the injected mismatch.
++        output.push(103);
++        assert_eq!(output, vec![101, 102, 103]);
++
++        let fatal = runtime_peer_probe_worker_action(Err("injected bounce arm failure".into()));
++        assert_eq!(fatal, Err("injected bounce arm failure".into()));
++    }
++
+     #[test]
+     fn spec_telemetry_window_aggregates_and_evicts_by_age() {
+         let start = std::time::Instant::now();
+diff --git a/docs/FLAGS.md b/docs/FLAGS.md
+index fc00eb0d..c9f56efa 100644
+--- a/docs/FLAGS.md
++++ b/docs/FLAGS.md
+@@ -411,8 +411,8 @@ These exist because correctness discipline needs a same-binary oracle. Each is a
+ | `MEMRA_MOE_MMA_T=<n>` | MMA t-floor override (bisect seam; <16 puts spec verify on MMA) | verify must stay dp4a (dispatch-parity law) — measurement only |
+ | `MEMRA_PP_STAGES=<N>` / `MEMRA_PP_SPLITS=<c1,..,cN-1>` (`MEMRA_PP_SPLIT=<layer>` = the N=2 spelling) | pipeline-parallel N-stage runtime (M2 generalization of the M1 seam): decode_step runs the trunk as N stage subgraphs, EACH ON ITS OWN CUDA STREAM, handing the [n_embd] f32 residual through persistent double-buffered boundary slots at every cut (transport per boundary: dtod same-device / cudaMemcpyPeerAsync cross-device, evented TX/RX). Cuts default to the even split. Generic eager arm at any N; gemma4 eager at N=2. **Path coverage as of 2026-08-06** (this list used to say "batch/dc/graph/spec warn-once", which was wrong twice over — see the correction in `pp.rs`'s header): eager **and** batched (`MEMRA_BATCH_PP`) **and** spec verify (`MEMRA_SPEC_PP`) each take their own stage split; `decode_step_dc` and the graph capture that wraps it still run UNSPLIT, and they do NOT warn — `warn_unwired_once` has exactly two call sites and both are gemma4-specific. What protects dc/graph instead is failing closed: under an open door with a sharded cross-device placement they refuse via `pp::refuse_unsplit_if_remote` rather than silently peer-reading the remote stage's weights. Deferred-readback API (`decode_step_h_ppn_deferred` -> `PendingLogits`) keeps 2+ tokens in flight — scheduling only, math event-ordered per token | M1 (2026-08-01): BIT-IDENTICAL via pp2-gate, both models, every knob (`research/m1-pp2-20260801/`, `research/m1-inc2-20260801/`). M2 (2026-08-02, 8xH100): ppn-gate BIT-IDENTICAL at N=2/4/8 — SERIAL arm everywhere (the validated mode). PIPELINED (deferred) arm: same-device QUARANTINED (repro'd 35% co-located-stream race; the API refuses 2+ stage streams on one device, `MEMRA_PP_FORCE_SAME_DEV_PIPELINED=1` = soak override only) and cross-device ~1/70 flake (battery-5 dev01) — race root cause OPEN, deferred stays an experimental door until a x100+ clean soak; 1.87-1.88x decode at N=2/4 sharded is the prize (`research/m2-pp8-20260802/RESULTS.md`). Default OFF, zero behavior change unset |
+ | `MEMRA_PP_DEVICES=<d0>,..,<dN-1>` | ppN stage->device placement: stage s runs on device ds — the serving worker's primary Engine follows dN-1 (the HEAD stage's device: the sharded loader homes the lm head there and the spec round's draft chain + verify-logit consumers run on the primary, so any other pick peer-reads the head every draft token — the v0.72 112.5->17.5 spec+PP-2 regression; gate/bench binaries follow d0 by design), remote stages get their own Engine/context, KV for each layer range allocates on its stage's HBM (`Cache::new_ppn`), cross boundaries use cudaMemcpyPeerAsync on the publishing stream (M0: 2.8x NCCL at PP activation sizes; cuDeviceCanAccessPeer-guarded, peer-inaccessible = loud FAIL; peer + default-mempool access granted over every device pair in use). Ordinals are in CUDA_VISIBLE_DEVICES' process-local namespace; unset still defaults the worker to logical device 0. M2 increment 2: the LOADER uploads each stage's layer range (weights + decode mirrors) through that stage's engine — weights live where they run | default unset = all stages on the primary device. Cross-device gates on the 8x box: `MEMRA_PP_DEVICES=0,..,N-1 ppn-gate <model> <N>` |
+-| `MEMRA_PP_HOST_BOUNCE=1` | Broken-peer fallback for sharded cross-device PP: replace each cross-stage `cudaMemcpyPeerAsync` activation handoff with source-stream D2H into a geometry-sized page-locked host slot, an event, then destination-stream H2D. Two slots per boundary are allocated once from `PRIME_CHUNK_MAX_TOKENS * n_embd * sizeof(f32)` (64 MiB each for Step-3.7's `n_embd=4096`); decode and batch move only their exact payload prefix. Serving-time peer/pool grants are bypassed. When capability exists, boot diagnostics temporarily enable peer access and production-pool access to quote corrupt bytes, then revoke pool access and disable every probe-enabled peer pair before the host-staged path proceeds; teardown failure refuses startup. Fail-closed safety doors reject `MEMRA_PP_SHARD=0`, unsplit remote-weight walks, and stream-mode spec's shared token/position UVA reads; serving also disables spec admission plus cross-device prefix/affinity snapshots. | Default OFF: healthy PIX/NVLink hosts retain the existing peer path byte-for-byte. Opt in only after a peer-copy byte-integrity failure; `research/hostbounce-20260810/`. |
+-| `MEMRA_PEER_PROBE=0` | Diagnostics-only escape hatch for PP-N's default-on byte-integrity gate. Normally every cross-device PP boundary is tested in both directions: a deterministic legacy-allocation 16 KiB `cudaMemcpyPeerAsync` preflight immediately after peer enable, then real stream-ordered `BoundarySlot` TX/RX copies at 1, 8, 16, and `PRIME_CHUNK_MAX_TOKENS` (4096) `[n_embd] f32` rows after pool grants and before weight upload. The final boot rung is one maximum production prime handoff (64 MiB at Step-3.7's `n_embd=4096`). Destination bytes are read back and compared exhaustively; logs include the largest clean payload. Native serving then re-runs a deterministic bidirectional integrity check on the CUDA owner thread at the first scheduler boundary after every 8,192 native boundary TX copies, ROTATING through the boot width ladder (16 KiB fixed rung plus the 1/8/16-token and maximum production prime rungs) so size-dependent regressions cannot hide behind a small-payload probe (sec9, research/sec9-20260812/ — rotation order pinned by tests, per-rung cost receipts). A runtime mismatch or probe error is SECURITY RED, latches native P2P off for the process, and fails the worker loudly; restart with `MEMRA_PP_HOST_BOUNCE=1`. `MEMRA_PEER_PROBE=0` now REFUSES a sharded cross-device native placement when `MEMRA_PP_HOST_BOUNCE!=1`; with explicit host bounce it logs SECURITY RED and increments operator metric `peer_probe_bypassed`. Probe-off remains harmless for single-device or non-sharded diagnostic placements. Operator metrics also expose native boundary-copy, runtime-reprobe, and runtime-failure counters. | Default unset/on. Never disable in serving; use only to isolate probe-specific bring-up failures, with `MEMRA_PP_HOST_BOUNCE=1` on sharded cross-device placement. Design and vendor basis: `research/cx-peerprobe-20260811/DESIGN.md`; large-rung extension: `research/dualpp2-20260811/PROGRESS.md`; runtime hardening: `research/sec8-20260812/`. |
++| `MEMRA_PP_HOST_BOUNCE=1` | Broken-peer fallback for sharded cross-device PP: replace each cross-stage `cudaMemcpyPeerAsync` activation handoff with source-stream D2H into a geometry-sized page-locked host slot, an event, then destination-stream H2D. Two slots per boundary are allocated once from `PRIME_CHUNK_MAX_TOKENS * n_embd * sizeof(f32)` (64 MiB each for Step-3.7's `n_embd=4096`); decode and batch move only their exact payload prefix. Serving-time peer/pool grants are bypassed. When capability exists, boot diagnostics temporarily enable peer access and production-pool access to quote corrupt bytes, then revoke pool access and disable every probe-enabled peer pair before the host-staged path proceeds; teardown failure refuses startup. The same transport is now the automatic one-way runtime fallback after a native re-probe failure: the owner thread allocates the pinned slots, validates a real D2H/event/H2D row copy at every cross boundary, then atomically publishes host bounce before the next scheduler tick. Fail-closed safety doors reject `MEMRA_PP_SHARD=0`, unsplit remote-weight walks, and stream-mode spec's shared token/position UVA reads; serving also disables spec admission plus cross-device prefix/affinity snapshots. | Default OFF at startup: healthy PIX/NVLink hosts retain the existing peer path byte-for-byte. A runtime safety failure may promote it without restart; native P2P stays latched off for the process. Explicit startup opt-in remains available for a known-bad peer host; `research/hostbounce-20260810/`, runtime promotion `research/probehitch-20260812/`. |
++| `MEMRA_PEER_PROBE=0` | Diagnostics-only escape hatch for PP-N's default-on byte-integrity gate. Normally every cross-device PP boundary is tested in both directions: a deterministic legacy-allocation 16 KiB `cudaMemcpyPeerAsync` preflight immediately after peer enable, then real stream-ordered `BoundarySlot` TX/RX copies at 1, 8, 16, and `PRIME_CHUNK_MAX_TOKENS` (4096) `[n_embd] f32` rows after pool grants and before weight upload. The final boot rung is one maximum production prime handoff (64 MiB at Step-3.7's `n_embd=4096`). Destination bytes are read back and compared exhaustively; logs include the largest clean payload. Native serving gives each runtime width its own staggered copy-count deadline (one width due per 8,192 native boundary TX copies, each width recurring every 32,768), so an overdue idle-only rung cannot block later cheap integrity checks. The maximum-production rung is idle-only before its first measurement; any other rung whose complete owner-thread pass exceeds the fixed 5 ms budget becomes idle-only on later cycles. Idle-only work runs only with no admitted, queued, or constraint-compilation work, after an empty command-channel check; late deadlines collapse rather than burst-catch up. All re-probes defer while a live stream-mode spec session cannot safely change transport; new admissions run plain after degradation. A runtime mismatch or probe error is SECURITY RED and one-way latches native P2P off. The worker continues on host bounce only after pinned staging passes its real copy/readback validation; it panics only if that staging cannot be armed or validated. `MEMRA_PEER_PROBE=0` REFUSES a sharded cross-device native placement when `MEMRA_PP_HOST_BOUNCE!=1`; with explicit host bounce it logs SECURITY RED and increments operator metric `peer_probe_bypassed`. Probe-off remains harmless for single-device or non-sharded diagnostic placements. Operator metrics expose native boundary copies, completed runtime probes, failures, and `peer_probe_degraded_to_host_bounce`. | Default unset/on. Never disable in serving; use only to isolate probe-specific bring-up failures, with `MEMRA_PP_HOST_BOUNCE=1` on sharded cross-device placement. Design and vendor basis: `research/cx-peerprobe-20260811/DESIGN.md`; large-rung extension and costs: `research/sec9-20260812/`; runtime scheduling/failover: `research/probehitch-20260812/`. |
+ | `MEMRA_PP_SHARD=0` | rollback to the M1 bring-up weight placement: everything uploads through the primary engine; remote stages peer-read weights over NVLink/PCIe | rollback seam only; sharded placement is the default whenever `MEMRA_PP_DEVICES` is set (gated bit-identical both ways at N=2/4/8) |
+ | `MEMRA_PP_OVERLAP` | ppN double-buffered boundary slot ALTERNATION: TX(t+1)'s write-after-read guard waits only the previous use of ITS slot, so the deferred loop issues token t+1 stage 0 while token t's later stages run. Scheduling structure only — every token's math is event-ordered. Unset FOLLOWS the dual-PP mode since the 2026-08-11 default flip: unset resolves ON under the naked default (Auto), OFF under `MEMRA_DUAL_PP=0` (so one flag restores the exact pre-flip serial path) and OFF under the explicit `MEMRA_DUAL_PP=1` request (so the binding single-slot refusal stays reachable). Explicit `1`/`0` always wins. | default follows dual-PP mode (ON naked); gated bit-identical (ppn-gate arm 2, decode-batch-gate dual matrix, box1 re-gate soak) |
+ | `MEMRA_DUAL_PP` | **default ON (Auto) since 2026-08-11 (owner flip)** — dual-active plain-decode for PP-2. Three states: unset = Auto (dual runs exactly where the box1 re-gate validated it — PP-2 fence, double-slot boundary, peer transport, B>=2 — and silently degrades to the serial PP-N walker everywhere else, incl. naked PP-3 and `MEMRA_PP_HOST_BOUNCE=1`); `0` = serial rollback seam (also resolves unset overlap OFF, restoring the exact pre-flip naked path); `1` = the explicit pre-flip request, which ROUTES every B>=2 PP-2 call into the dual body so an ineligible placement refuses loudly with the binding quoted reason (single-slot, host-bounce) before any token or cache advance. The worker treats the model's exact batch cap as a per-wave cap and schedules up to two caps in one tick with a balanced midpoint (A=`ceil(c/2)`, B=`floor(c/2)`); c=1 remains the honest serial path. The dual body prepares both slots up front and calls only the always-alternating `prepare_overlap_slots` / `tx_pipelined` primitives. `/metrics.dual_pp` (operator-only): completed slot pairs, per-slot uses, rejected same-slot collisions, timing, topology. `MEMRA_DUAL_PP_TIMING=1` adds CUDA-event spans (never fails decode; excluded from scored runs). | FLIPPED to default after the box1 PRO-pair re-gate (research/dualpp2-20260811/RESULTS-regate.md): bit-identity B=1..5, servestress no-thrash (admission delta serial==dual 0/0/0), 10-boot soak 929/929 golden per arm + 0 slot collisions across 9123 pairs; perf floor receipts research/dualpp1-20260811/RESULTS.md (c8 +20.753% min, rising to c10 +30.5%). Safety regressions: pp.rs flip_* tests, worker.rs flip_naked_default test, kernel-check `dual-pp-default-flip` manifest cell. |

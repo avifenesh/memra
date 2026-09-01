@@ -1,0 +1,24 @@
+01:51:14 === VG-MTP SQUEEZE RUN m1 (bin=lane) ===
+01:51:22 pre-ballast holding: free=33328MB
+01:51:22 boot bin=/home/ubuntu/guard-bins/memra-server-lane-d6701001e md5=5966cee7fc8bf780f48e3cff75fbb8dd extra='MEMRA_ADMIT_RESERVE_MB=16 MEMRA_GRAPH_CENSUS=1' log=serve-vgmtp-m1.log
+01:51:32 HEALTH=200 pid=907964
+01:51:34 phase1 clean: suspended=0 vg_pool_engaged=1 vg_captures=3 spec_acc=6 free=15059MB
+01:51:42 birth-race storm wave 1: free=14089MB; 6 concurrent streamed penalized-greedy max_tokens=125000 requests
+01:51:57 decode-phase chase ballast joins: free=5057MB (hold 1GB, +1GB/2s, retrying)
+01:52:17 birth-race storm wave 2
+01:52:17 suspended line observed (1162MB(nvidia-smi)@t=22s loops=3)
+01:52:32 loop generations issued: 3 ; server alive: yes
+01:55:15 dmesg[vgmtp-m1]: 0
+0 fault line(s)
+--- receipts vgmtp-m1
+vg_pool_engaged: 1
+vg_captures: 40
+suspended_total: 79
+[spec] graph replay suspended: driver free below the 256MB launch floor (eager arms serve; cuGraphLaunch segfaults into an exhausted card)
+[spec] graph replay suspended: driver free below the 256MB launch floor (eager arms serve; cuGraphLaunch segfaults into an exhausted card)
+[spec] graph replay suspended: driver free below the 256MB launch floor (eager arms serve; cuGraphLaunch segfaults into an exhausted card)
+oom_lines: 6
+illegal=0 sentinel87=0 panic=0
+01:55:15 VERDICT m1: suspended=79 fired_at=1162MB(nvidia-smi)@t=22s vg_captures=3 loop_ok=3/4 recovery=OK:408 alive=yes dmesg_faults=0
+0
+01:55:15 RUN m1: FAIL

@@ -1,0 +1,19 @@
+glm5-hyper-ppn-gate config: stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,1,0 splits=default(even) shard=per-stage
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev1 stage3=dev0 (HOST-STAGED pinned D2H -> H2D per cross boundary; MEMRA_PP_HOST_BOUNCE=1; peer-pool grants bypassed; diagnostic peer access is removed before host-staged serving; weight home: per-stage (sharded loader))
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB-legacy-preflight bytes=16384 copies=4 skipped=0 mismatches=0 elapsed_ms=1.282
+[pp] peer byte-integrity probe teardown: disabled 2 diagnostic pair(s); host-bounce serving has no probe-enabled peer access
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=2 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe direction: boundary=2 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=16 skipped=0 mismatches=0 largest_clean_payload_bytes=2097152 elapsed_ms=28.629
+[pp] peer byte-integrity probe teardown: disabled 2 diagnostic pair(s); host-bounce serving has no probe-enabled peer access
+[pp] host-bounce staging ready: n_embd=128 max_tokens=4096 slot_bytes=2097152 slots_per_cross_boundary=2
+[moe] resident-experts decision (PP dev1): experts 0.00GB + trunk 0.00GB vs free 101.22GB (expert budget 99.22GB) -> RESIDENT
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 101.22GB (expert budget 99.22GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+stage fence: [0, 1, 2, 3, 4] over 4 layers
+state placement: Recurrent(KDA) layers on stages [0, 2], LatentKvCache(MLA+kpool) layers on stages [1, 3]
+[phase] reference A: door OFF, step-by-step decode over the whole sequence
+Error: "mla kernel `split_latent` failed: rc 10700 (cudaError)"
+exit=1

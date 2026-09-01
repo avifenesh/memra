@@ -1,0 +1,54 @@
+Box state left behind by lane/glm53-box, 2026-08-28 ~14:35 UTC.
+SUPERSEDES decode-attribution-receipts/BOX-STATE.txt. Read this one.
+
+RUNNING: memra-server on card 0, the LANE-HEAD binary, started by
+lane-rebaseline-20260828/serve.sh with tag FINAL.
+
+  binary   ~/memra-lanehead/target/release/memra-server
+           sha256 263963b6f0b11834384e474d1649690e0bd84900d8e9879296ac873e47c393a7
+           built 13:32 UTC from a DETACHED worktree at lane head 0b46351fdd
+  log      ~/lane-rebaseline-20260828/serve-FINAL.log
+  env      MEMRA_DSA_INDEX_RING=0 MEMRA_ST_PINNED=1 MEMRA_MOE_RESIDENT=0
+           MEMRA_MOE_SLOTS=12000 MEMRA_SPILL_STATS=1 CUDA_VISIBLE_DEVICES=0,1
+           MEMRA_COMPAT=openai MEMRA_MODELS="zai/glm-5.3-flash=$HOME/models/glm53-nvfp4"
+           MEMRA_ADDR=127.0.0.1:18400 MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4
+           NVIDIA_TF32_OVERRIDE=0
+
+  ONE DELIBERATE DEPARTURE from the brief's env, and it is the important line here:
+  MEMRA_DSA_INDEX_RING=0. The flag's DEFAULT (on) makes every prompt above ~5.1k tokens
+  fail with `indexer tail ring lapped`, INSIDE the configured MEMRA_CTX=8192. Measured
+  three ways in FINDINGS.txt section 5: ring ON serves at most 4630 prompt tokens, ring OFF
+  on the SAME binary serves 7300, the pre-ring binary serves 7312. `0` is the flag's own
+  documented rollback seam and is byte-for-byte the pre-ring allocation, so this costs
+  nothing at MEMRA_CTX=8192 (the ring's VRAM saving only exists at very long contexts).
+  Leaving the broken default running would have handed the next lane a trap.
+
+  Boot line confirms the dialect is live: glm5=true instruct=Some("glm") tok="glm4"
+  effort_levels=true tools=true ctx=1048576 chat_defaults=None/None.
+  VRAM settles ~80 GB on card 0 under load. Card 1 idle at 3 MiB (see FINDINGS.txt sec 6).
+  MEMRA_BF16_MMV is NOT enabled: numeric-class door, owner's call, unchanged.
+
+THE OLD BINARY IS PRESERVED, deliberately, in three places, because it is the A-side of
+every comparison in this lane and must stay re-measurable:
+  ~/memra/target/release/memra-server            sha256 5c1f94ab4c11a67e...  (in place)
+  ~/lane-rebaseline-20260828/memra-server.OLD-5c1f94ab   (a copy, 64 MB)
+  ~/memra itself is UNTOUCHED: never checked out, never reset, never stashed. It holds two
+  other lanes' uncommitted edits (12 modified files) AND is the old binary's source of
+  truth. Only `git fetch` was run in it.
+
+~/memra-lanehead IS A DELIBERATE HANDOFF, NOT ABANDONED SCRATCH. It is a detached
+worktree of ~/memra at 0b46351fdd with its own 5.7 GB target/ dir, and it is what is
+serving right now, so it must not be removed while the server is up. The next lane either
+keeps serving from it, or stops the server first and then removes it with
+`git -C ~/memra worktree remove ~/memra-lanehead`. Rebuilding it from scratch costs a full
+CUDA compile; seeding target/ from ~/memra/target first cuts that to a few minutes.
+
+HARNESS AND RECEIPTS on the box: ~/lane-rebaseline-20260828/ holds every script and every
+raw receipt, all banked into this directory (minus the 64 MB binary copy and the bulky
+.sse streams). The parent lane's harness at ~/probe.py ~/steady.py ~/sea.py ~/prompts.json
+is untouched and was reused for the p5 cell. ~/cell2.sh was NOT used: it calls
+`pkill -x memra-server`, which this lane may not do; serve.sh is the PID-verified
+replacement and is the one to use from now on.
+
+NO leftover bench processes, no orphaned server, no VRAM held by a dead pid. Nothing was
+deleted from the box.

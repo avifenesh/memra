@@ -1,0 +1,52 @@
++ date -u
+Wed Aug 19 01:21:15 UTC 2026
++ cd /opt/scratch/nvme/b/memra
++ export MEMRA_PREFIX_CACHE_MB=16384
++ MEMRA_PREFIX_CACHE_MB=16384
++ export CUDA_VISIBLE_DEVICES=1
++ CUDA_VISIBLE_DEVICES=1
++ export MEMRA_GPU_LOCK=/tmp/memra-b.lock
++ MEMRA_GPU_LOCK=/tmp/memra-b.lock
++ rm -rf /opt/scratch/nvme/receipts/b/qwen-mixed-v2
++ MEMRA_GATE_PORT=18098
++ tools/spec-cache-mixed-gate.sh /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/scratch/nvme/receipts/b/qwen-mixed-v2
+== mixed arm: production config (spec on) ==
+[mixed-on] window 30.1s batch agg 127.8 tok/s (64 batch rows)
+== mixed arm: spec-off reference ==
+[mixed-off] window 34.6s batch agg 125.0 tok/s (72 batch rows)
+  ok: every repeat row took the cache
+  ok: >= 2 spec-engaged cache-hit rows under load (got 2, 4 gate-demoted)
+  ok: spec-engaged hit rows byte-identical to spec-off replay
+  ok: batch tier >= 0.9x spec-off (1.02x)
+SPEC-CACHE MIXED GATE: ALL GREEN
++ echo QWEN_MIXED_V2_RC=0
+QWEN_MIXED_V2_RC=0
++ rm -rf /opt/scratch/nvme/receipts/b/qwen-sold-shape
++ tools/spec-cache-gate.sh /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/scratch/nvme/receipts/b/qwen-sold-shape
+== pass 1 arm off ==
+{"arm": "off", "pass": 1, "ok": 16, "req_s": 1.468, "hit_rate": 0.987, "anchor": "07785b718976217b7acc2ec744649d59313fc87bb994e28697b254573e076b4e", "wall_s": 10.9}
+== pass 1 arm on-gate ==
+{"arm": "on-gate", "pass": 1, "ok": 16, "req_s": 2.418, "hit_rate": 0.987, "anchor": "1e9aa0cd71206d770f19784ca474579100df9af2bdc2514c6c7c21994e955506", "wall_s": 6.62}
+== pass 1 arm on-pin ==
+{"arm": "on-pin", "pass": 1, "ok": 16, "req_s": 0.736, "hit_rate": 0.987, "anchor": "1e9aa0cd71206d770f19784ca474579100df9af2bdc2514c6c7c21994e955506", "wall_s": 21.75}
+== pass 2 arm off ==
+{"arm": "off", "pass": 2, "ok": 16, "req_s": 1.451, "hit_rate": 0.987, "anchor": "07785b718976217b7acc2ec744649d59313fc87bb994e28697b254573e076b4e", "wall_s": 11.02}
+== pass 2 arm on-gate ==
+{"arm": "on-gate", "pass": 2, "ok": 16, "req_s": 1.441, "hit_rate": 0.987, "anchor": "1e9aa0cd71206d770f19784ca474579100df9af2bdc2514c6c7c21994e955506", "wall_s": 11.11}
+== pass 2 arm on-pin ==
+{"arm": "on-pin", "pass": 2, "ok": 16, "req_s": 1.367, "hit_rate": 0.987, "anchor": "1e9aa0cd71206d770f19784ca474579100df9af2bdc2514c6c7c21994e955506", "wall_s": 11.7}
+== pass 3 arm off ==
+{"arm": "off", "pass": 3, "ok": 16, "req_s": 1.499, "hit_rate": 0.987, "anchor": "07785b718976217b7acc2ec744649d59313fc87bb994e28697b254573e076b4e", "wall_s": 10.68}
+== pass 3 arm on-gate ==
+{"arm": "on-gate", "pass": 3, "ok": 16, "req_s": 1.453, "hit_rate": 0.987, "anchor": "1e9aa0cd71206d770f19784ca474579100df9af2bdc2514c6c7c21994e955506", "wall_s": 11.01}
+== pass 3 arm on-pin ==
+{"arm": "on-pin", "pass": 3, "ok": 16, "req_s": 0.859, "hit_rate": 0.987, "anchor": "1e9aa0cd71206d770f19784ca474579100df9af2bdc2514c6c7c21994e955506", "wall_s": 18.63}
+on-gate: req/s 1.453 (off 1.468), hit 0.987
+on-pin: req/s 0.859 (off 1.468), hit 0.987
+SPEC-CACHE GATE: FAIL — exactness anchor diverged: 2 distinct
++ echo QWEN_SOLD_SHAPE_RC=1
+QWEN_SOLD_SHAPE_RC=1
++ date -u
+Wed Aug 19 01:27:01 UTC 2026
++ echo B_GATE3_DONE
+B_GATE3_DONE

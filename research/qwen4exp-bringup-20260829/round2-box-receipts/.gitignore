@@ -1,0 +1,24 @@
+# derived corpus: 4.9 MB, exactly reproducible from yarn/make-ladder-ids.py at the
+# corpus_commit quoted in every ladder receipt. Never a banked receipt.
+ladder-ids.txt
+
+# Per-agent gate BINARIES. The keeper mirrors the box's ~/realgate tree into this directory,
+# and once the parallel lanes started pinning their own binary (`qwen4exp_real_gate.agentA`
+# and friends, so a shared ./target cannot swap the executable under an in-flight battery)
+# the mirror started depositing a 47 MB compiled binary INSIDE the public engine repo.
+#
+# It got committed on 2026-08-31 and the pre-push public-boundary check caught it: sev3
+# `provider_name_aws` at line 255188 of the binary — a compiled executable carries the
+# provider strings of the machine it was built for, so a build artifact is a boundary leak
+# with no way to review it. It was stripped from the two unpushed commits before they left
+# the rig (working copies untouched).
+#
+# Two things this row is worth stating for:
+#  - A build artifact is never a receipt. The receipt is the binary's md5 plus the commit it
+#    was built from, which is what the cert lines already carry.
+#  - `git commit` commits the whole INDEX, not the paths you just added. Three agents share
+#    this checkout, so a file another lane staged rides out on the next lane's commit no
+#    matter how carefully that lane staged its own paths. Use `git commit -- <paths>` (or
+#    check `git diff --cached --name-only` first) in a shared checkout.
+bin/qwen4exp_real_gate.agent*
+bin/qwen4exp_gpu_gate.agent*

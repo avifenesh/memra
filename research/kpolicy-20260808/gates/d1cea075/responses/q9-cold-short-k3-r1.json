@@ -1,0 +1,29 @@
+{
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "text": "\"\"\"\n\nfrom typing import List, Optional, Any\n\n\nclass Node:\n    def __init__(self, data: Any):\n        self.data = data\n        self.prev: Optional['Node'] = None\n        self.next: Optional['Node'] = None\n\n\nclass DoublyLinkedList:\n    def __init__(self):\n        self.head: Optional[Node] = None\n        self.tail: Optional[Node] = None\n        self.size: int = 0\n\n    def insert(self, data: Any, pos: int) -> None:\n        \"\"\"\n        Insert a new node with the given data at the"
+    }
+  ],
+  "created": 1786212750,
+  "id": "cmpl-f14336cd31ddafa2e91bd632858b8cf0",
+  "model": "q9",
+  "object": "text_completion",
+  "system_fingerprint": "memra-b6b1dbff90b8",
+  "usage": {
+    "completion_tokens": 131,
+    "elapsed_s": 0.681132023,
+    "prompt_tokens": 28,
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    },
+    "spec": {
+      "acceptance_rate": 0.7235772357723578,
+      "accepted": 89,
+      "drafted": 123,
+      "rounds": 41
+    },
+    "total_tokens": 159
+  }
+}

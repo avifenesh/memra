@@ -1,0 +1,148 @@
+source=3df615197f3eec59b9b881ef69b6c00480dc458b
+ts=2026-08-11T03:22:33Z
+-- worker scheduler contract --
+  3030	            }
+  3031	        }
+  3032	        queue = requeue;
+  3033	
+  3034	        // 3. The tick. Three phases (MEMRA_SERVE_BATCH=0 restores legacy round-robin):
+  3035	        //    (a) spec sessions burst solo (spec x batch composition is a later step);
+  3036	        //    (b) prefilling sessions prime at the full tick chunk (PREFILL_TICK_T);
+  3037	        //    (c) decoding sessions advance through BATCHED steps: sample+emit host-side, then
+  3038	        //        decode_step_batch over survivors in chunks of <= 8.
+  3039	        let batching = serve_batching();
+  3040	        let mut finished: Vec<usize> = Vec::new();
+  3041	        // STEP-OOM PARK (lane/admit-oom): requests parked out of a step-time CUDA OOM this
+  3042	        // tick. Drained onto the FRONT of the admission queue after the retire sweep — the
+-- worker pair admission matrix --
+  6108	fn spec_pipe_pairable(
+  6109	    engine: &Engine,
+  6110	    loaded: &HashMap<String, LoadedModel>,
+  6111	    a: &Session,
+  6112	    b: &Session,
+  6113	) -> bool {
+  6114	    if std::env::var("MEMRA_SPEC_PIPE").as_deref() != Ok("1")
+  6115	        || a.model != b.model
+  6116	        || a.spec_k == 0
+  6117	        || a.spec_k != b.spec_k
+  6118	        || a.spec.is_none()
+  6119	        || b.spec.is_none()
+  6120	        || !a.prefill_done
+  6121	        || !b.prefill_done
+  6122	        || !a.prefill_queue.is_empty()
+  6123	        || !b.prefill_queue.is_empty()
+  6124	        || a.generated.is_empty()
+  6125	        || b.generated.is_empty()
+  6126	        || !a.sampler.is_greedy()
+  6127	        || !b.sampler.is_greedy()
+  6128	        || a.constraint.is_some()
+  6129	        || b.constraint.is_some()
+  6130	        || a.generated.len() >= a.budget
+  6131	        || b.generated.len() >= b.budget
+  6132	    {
+  6133	        return false;
+  6134	    }
+  6135	    for sess in [a.spec.as_ref().unwrap(), b.spec.as_ref().unwrap()] {
+  6136	        if sess.committed_len() == 0 || (sess.next_pred.is_none() && !sess.has_pending()) {
+  6137	            return false;
+  6138	        }
+  6139	    }
+  6140	    loaded[&a.model].model.spec_pipe_available(engine)
+  6141	}
+-- engine pair API contract --
+  4668	    /// Reduced-matrix admission for increment 1. This deliberately does not change the PP-2
+  4669	    /// serving policy: the worker calls it only after `MEMRA_SPEC_PIPE=1` and an explicit spec
+  4670	    /// session already exist.
+  4671	    pub fn spec_pipe_available(&self, e: &Engine) -> bool {
+  4672	        if std::env::var("MEMRA_SPEC_PIPE").as_deref() != Ok("1")
+  4673	            || !spec_devacc()
+  4674	            || std::env::var("MEMRA_SPEC_REPLAY").is_ok()
+  4675	            || spec_stream()
+  4676	            || std::env::var("MEMRA_SPEC_ADAPT").as_deref() == Ok("1")
+  4677	            || std::env::var("MEMRA_SPEC_PMIN0").as_deref() == Ok("1")
+  4678	            || std::env::var("MEMRA_SPEC_PP_ANATOMY").as_deref() == Ok("1")
+  4679	            || std::env::var("MEMRA_SPEC_PMIN")
+  4680	                .ok()
+  4681	                .and_then(|v| v.parse::<f32>().ok())
+  4682	                .unwrap_or(0.0) > 0.0
+  4683	            || self.is_gemma4_e4b()
+  4684	            || self.cfg.gemma4.is_some()
+  4685	            || self.mtp.is_none()
+  4686	        {
+  4687	            return false;
+  4688	        }
+  4689	        let Some(cuts) = crate::pp::pp_cuts(self.layers.len()) else {
+  4690	            return false;
+  4691	        };
+  4692	        if cuts.len() != 3 || crate::pp::pp2_streams_off() || !crate::pp::spec_pp_on() {
+  4693	            return false;
+  4694	        }
+  4695	        crate::pp::PpNRt::get(e)
+  4696	            .map(|rt| rt.n_stages() == 2 && rt.cross_device())
+  4697	            .unwrap_or(false)
+  4698	    }
+  4699	
+  4700	    /// Two warm greedy continuation bursts over one PP-2 interval coordinator. The two existing
+  4701	    /// `generate_spec_inner2` call stacks own all per-session round locals; only phase issue order
+  4702	    /// changes. No callback is accepted in increment 1 — the worker publishes each completed burst.
+  4703	    #[allow(clippy::too_many_arguments)]
+  4704	    pub fn generate_spec_session_pair(
+  4705	        &self,
+  4706	        e: &Engine,
+  4707	        sess_a: &mut SpecSession,
+  4708	        max_new_a: usize,
+  4709	        k_a: usize,
+  4710	        sess_b: &mut SpecSession,
+  4711	        max_new_b: usize,
+  4712	        k_b: usize,
+  4713	    ) -> Result<
+  4714	        ((Vec<u32>, usize, usize), (Vec<u32>, usize, usize)),
+  4715	        Box<dyn std::error::Error>,
+  4716	    > {
+  4717	        if !self.spec_pipe_available(e) {
+  4718	            return Err("two-session speculative pipeline is outside its reduced matrix".into());
+  4719	        }
+  4720	        if max_new_a == 0 || max_new_b == 0 || k_a == 0 || k_b == 0 {
+  4721	            return Err("two-session speculative pipeline requires non-empty positive-K bursts".into());
+  4722	        }
+  4723	        for sess in [&*sess_a, &*sess_b] {
+  4724	            if sess.committed.is_empty()
+  4725	                || sess.last_h.is_none()
+  4726	                || (sess.next_pred.is_none() && sess.pending_tok.is_none())
+  4727	            {
+  4728	                return Err("two-session speculative pipeline requires warm continuations".into());
+  4729	            }
+-- available MoESD binaries --
+-- design-lane standalone requirement --
+23-**Configuration**: PP-2 serve shape (MEMRA_PP_STAGES=2, MEMRA_PP_DEVICES=0,1, MEMRA_CTX=262144, MEMRA_MOE_GROUPED=1, MEMRA_PREFILL_TICK=2048)
+24-
+25-**Matrix dimensions**:
+26:- B in {1, 2, 4, 8, 16, 24, 32} — batch sizes from solo to high-concurrency serving
+27:- gamma in {1, 2, 3, 4, 6, 8} — verify column counts (gamma=1 is plain decode baseline)
+28-
+29-**Per cell, N=5 interleaved repetitions** (mirroring research/newboxgates-20260811/RESULTS.md protocol):
+30-1. Wall ms/step — median end-to-end latency across N=5
+--
+50-
+51-## (c) Harness shape
+52-
+53:**Standalone bin** (like research/optipipe-20260810 pattern, NOT run-spec extension).
+54-
+55-**Why standalone**: This measures T_T(B,gamma) as a serving-load simulation, not a correctness gate. run-spec is a self-consistency oracle; extending it would conflate measurement with gating. serve-layer measurement would require server changes and N=5 interleaving discipline across real traffic.
+56-
+--
+91-
+92-3. **No runs without flock**: Every invocation must hold `/tmp/memra-gpu.lock` exclusively. Thermal/clock drift from concurrent compute invalidates comparisons (per evidence discipline in CLAUDE.md).
+93-
+94:4. **No live serving traffic**: Standalone bin only. Do not instrument the production server or run this during soak.
+95-
+96-5. **No expert-routing changes**: Measure the EXISTING router's selections. Do not mask, prune, or override expert IDs. The union size is an OBSERVATION, not a knob.
+97-
+--
+193-
+194-Where acceptance[pos] comes from the K-sweep table, with tail positions beyond K=3 assumed at 0.048 (the measured K=3 pos-2 value, pessimistic floor).
+195-
+196:**Target efficiency** (MoESD paper metric):
+197-- target_eff(B, gamma) = T_T(B,1) / T_T(B,gamma)
+198-- If target_eff > 1.5, then gamma columns cost < 67% of gamma serial steps → amortization is real
+199-

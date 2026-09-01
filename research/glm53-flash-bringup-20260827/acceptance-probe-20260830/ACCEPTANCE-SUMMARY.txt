@@ -1,0 +1,43 @@
+=== ENGINE LADDER (greedy accept rule; K=1..7; 10 decode prompts; ALL tapes byte-identical to plain) ===
+ K mean acc/cycle mean tok/cycle  mean acc rate
+ 1          0.788          1.788          0.788
+ 2          1.228          2.228          0.614
+ 3          1.387          2.387          0.462
+ 4          1.402          2.402          0.351
+ 5          1.413          2.413          0.283
+ 6          1.413          2.413          0.235
+ 7          1.413          2.413          0.202
+
+=== SERVED PATH (12 comparable prompts: 10 decode + agent a/b; p12 excluded: 90s TTFT ceiling) ===
+            cell                      arm   n mean acc/cycle mean tok/cycle
+       notrim-k3                   greedy  12          1.413          2.413
+       notrim-k3   sampled-vendor-default  12          1.410          2.410
+       notrim-k5                   greedy  12          1.438          2.438
+       notrim-k5   sampled-vendor-default  12          1.307          2.307
+         trim-k3                   greedy  12          1.398          2.398
+         trim-k3   sampled-vendor-default  12          1.317          2.317
+  trim-nopin(k3)                   greedy  12          1.398          2.398
+  trim-nopin(k3)   sampled-vendor-default  12          1.328          2.328
+         trim-k5                   greedy  12          1.423          2.423
+         trim-k5   sampled-vendor-default  12          1.382          2.382
+
+=== ENGINE LADDER, TRIM-SXC (greedy; 10 decode prompts; all tapes byte-identical) ===
+ K mean acc/cycle mean tok/cycle
+ 1          0.784          1.784
+ 2          1.216          2.216
+ 3          1.370          2.370
+ 4          1.390          2.390
+ 5          1.395          2.395
+ 6          1.395          2.395
+ 7          1.395          2.395
+
+engine trim-vs-notrim: 54/70 rows identical; 16 rows shift <=2 accepted (p04/p06 -2,
+p07K4 +1); all trim tapes byte-identical to plain; loop-law 0 flags across the lane
+(engine no-trim, engine trim, 130 served files) — aggregates carry no exclusions.
+Trim ladder cost on greedy: -1.2% mean acc/cycle at the plateau (1.395 vs 1.413).
+
+=== ENGINE LADDER, AGENT POOL (p10-p12: 14.5k/20k/23.2k-char real agent contexts; greedy) ===
+All 42 rows (no-trim + trim) tape byte-identical to plain; loop-law 0 flags.
+p12-agent-c (the 90s-TTFT-capped prompt on the served path) measured here:
+K=3 1.667 acc/cycle, K=7 1.702 acc/cycle — the pool's highest acceptance.
+Trim-vs-notrim on the agent pool: 19/21 rows identical (p11 K=1/K=2 shift -2/-1 accepted).

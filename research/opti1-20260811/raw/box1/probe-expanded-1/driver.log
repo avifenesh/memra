@@ -1,0 +1,26 @@
+2026-08-10T23:56:54Z
+source=fd62fda1
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 26, P8
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 0 MiB, 97887 MiB, 27, P8
+   Compiling memra-engine v0.75.0 (/home/ubuntu/memra-opti1/crates/memra-engine)
+   Compiling memra-sampling v0.75.0 (/home/ubuntu/memra-opti1/crates/memra-sampling)
+   Compiling memra-validate v0.75.0 (/home/ubuntu/memra-opti1/crates/memra-validate)
+   Compiling memra-gguf v0.75.0 (/home/ubuntu/memra-opti1/crates/memra-gguf)
+   Compiling memra-kv v0.75.0 (/home/ubuntu/memra-opti1/crates/memra-kv)
+   Compiling memra-tokenizer v0.75.0 (/home/ubuntu/memra-opti1/crates/memra-tokenizer)
+   Compiling memra-runtime v0.75.0 (/home/ubuntu/memra-opti1/crates/memra-runtime)
+warning: memra-engine@0.75.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
+warning: memra-engine@0.75.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 3m 37s
+RECURRENT RESTORE PRIMITIVE: PASS elements=262144 hit-skip=count/bonus-miss-restore
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[mtp-draft] loading external MTP draft: /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+[opti-fork] armed mode=Abort snapshots=2 seeds=2 split=22
+ABORT DRAIN: PASS error="optipipe forced abort with generation 0 stage0 in flight" stats=OptiForkGateStats { attempts: 1, hits: 0, misses: 0, abort_drains: 1, refusals: 0 }
+[opti-fork] armed mode=Hit snapshots=2 seeds=2 split=22
+Error: "optipipe state mismatch: layer 0 device KV len [128] != [128]"

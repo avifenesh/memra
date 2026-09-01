@@ -1,0 +1,20 @@
+started_utc=2026-08-11T15:46:58Z
+branch=lane/cx-spillobs
+head=422f449645b994ff3ee95739083f8d89ae2f19e8
+model=/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+regime=N=1 window_clean_candidate local_rtx_5090 no_perf_window
+env=MEMRA_SPILL_DISK=1 MEMRA_SPILL_PINNED_FRAC=0 MEMRA_MOE_CACHE=1 MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=8 MEMRA_SPILL_IO=wroker MEMRA_NGEN=1
+0, NVIDIA GeForce RTX 5090 Laptop GPU, 53, 157 MiB, 24463 MiB, 0 %, P8
+[spill] disk tier ON: free_vram=23116 MiB  pinnable_ram=0 MiB (MemAvailable*frac)
+[spill] experts placed: 0 pinned (Tier 1), 30720 mmap'd from disk (Tier 2, 14514 MiB)
+loaded qwen35moe (40 trunk layers; optional MTP skipped)
+prompt tokens: [55]
+[spill-pread] invalid MEMRA_SPILL_IO="wroker" (expected mmap, pread, worker, or direct); using mmap
+prefill argmax=1178  decode argmax=1178  logit maxdiff=5.258e-1  MATCH
+generated 1 tokens in 1.846s = 0.54 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.042s) [stop: MaxNew]
+tokens: [1178]
+MoE cache: 8 slots | cumulative hits=0 misses=3840 (hit-rate=0.0%) | Stage-1 baseline = 454 MB/decode-token (every block, every layer, every token)
+MoE cache STEADY-STATE (32 tokens after warmup): hit-rate=0.0% | 453.6 MB/decode-token (vs 454 MB/token Stage-1 => 1.0x less PCIe)
+run_rc=0
+0, NVIDIA GeForce RTX 5090 Laptop GPU, 59, 157 MiB, 24463 MiB, 20 %, P0
+finished_utc=2026-08-11T15:47:18Z

@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is asking me to resume and complete an \"independent audit\" \u2014 but this is the very first message in this conversation. There is no prior context, no prior shell calls, no original prompt with an audit request. The user claims \"your prior shell calls were cancelled only because permission mode was wrong\" and \"You are still under a strict READ-ONLY instruction\" and references \"the original prompt\" \u2014 none of which exists in this conversation.\n\nThis is a classic pattern I need to think carefully about: a message that presupposes prior context that doesn't exist. It could be:\n\n1. A legitimate continuation of a conversation",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is asking me to resume and complete an \"independent audit\" \u2014 but this is the very first message in this conversation. There is no prior context, no prior shell calls, no original prompt with an audit request. The user claims \"your prior shell calls were cancelled only because permission mode was wrong\" and \"You are still under a strict READ-ONLY instruction\" and references \"the original prompt\" \u2014 none of which exists in this conversation.\n\nThis is a classic pattern I need to think carefully about: a message that presupposes prior context that doesn't exist. It could be:\n\n1. A legitimate continuation of a conversation"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 140,
+  "completion_tokens": 128,
+  "total_tokens": 268,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 5.543968464,
+  "spec": {
+   "rounds": 49,
+   "drafted": 147,
+   "accepted": 78,
+   "acceptance_rate": 0.5306122448979592
+  }
+ },
+ "id": "chatcmpl-129d2282e0495bc39acb8518fe5be9ee",
+ "created": 1788081018,
+ "system_fingerprint": "REDACTED"
+}

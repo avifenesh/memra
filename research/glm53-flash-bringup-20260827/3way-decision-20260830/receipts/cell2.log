@@ -1,0 +1,99 @@
+######## C2 BOOT plain ########
+[3w] no pidfile, nothing to stop
+[3w] launched pid=51760 boot=c2-plain nonce=c3215765-1b94-4445-8c0c-47860b931f3d
+[3w] READY after 32s
+[3w] GATES GREEN boot=c2-plain
+[sample] ok=True wall=2.5s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[cell greedy k=None] d00-code wall=7.6s spec=None err=None
+[cell greedy k=None] d02-code wall=7.9s spec=None err=None
+[cell greedy k=None] d04-code wall=7.1s spec=None err=None
+[cell greedy k=None] d05-code wall=7.5s spec=None err=None
+[cell greedy k=None] d06-prose wall=7.4s spec=None err=None
+[cell greedy k=None] d09-prose wall=7.4s spec=None err=None
+[cell greedy k=None] l3-WARM wall=7.8s spec=None err=None
+[cell greedy k=None] l3-A4630 wall=10.7s spec=None err=None
+[cell] done rows=8 errors=0
+C2_plain_EXIT=0
+######## C2 BOOT dfl-k1 ########
+[3w] SIGTERM pid=51760 exe=/root/memra/target/release/memra-server
+[3w] stopped
+[3w] launched pid=52053 boot=c2-dfl-k1 nonce=dd15634f-9af9-484d-9786-d9e185cad531
+[3w] READY after 40s
+[3w] GATES GREEN boot=c2-dfl-k1
+[sample] ok=True wall=2.9s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[cell greedy k=None] d00-code wall=8.7s spec={'rounds': 138, 'drafted': 138, 'accepted': 117, 'acceptance_rate': 0.8478260869565217} err=None
+[cell greedy k=None] d02-code wall=9.5s spec={'rounds': 144, 'drafted': 144, 'accepted': 112, 'acceptance_rate': 0.7777777777777778} err=None
+[cell greedy k=None] d04-code wall=8.1s spec={'rounds': 122, 'drafted': 122, 'accepted': 109, 'acceptance_rate': 0.8934426229508197} err=None
+[cell greedy k=None] d05-code wall=8.5s spec={'rounds': 136, 'drafted': 136, 'accepted': 119, 'acceptance_rate': 0.875} err=None
+[cell greedy k=None] d06-prose wall=8.3s spec={'rounds': 134, 'drafted': 134, 'accepted': 121, 'acceptance_rate': 0.9029850746268657} err=None
+[cell greedy k=None] d09-prose wall=8.6s spec={'rounds': 139, 'drafted': 139, 'accepted': 116, 'acceptance_rate': 0.8345323741007195} err=None
+[cell greedy k=None] l3-WARM wall=8.5s spec={'rounds': 130, 'drafted': 130, 'accepted': 126, 'acceptance_rate': 0.9692307692307692} err=None
+[cell greedy k=None] l3-A4630 wall=12.9s spec={'rounds': 141, 'drafted': 141, 'accepted': 115, 'acceptance_rate': 0.8156028368794326} err=None
+[cell] done rows=8 errors=0
+C2_dfl-k1_EXIT=0
+=== IDENTITY dfl-k1 vs plain ===
+[compare] /root/out-3way/c2/plain vs /root/out-3way/c2/dfl-k1: shared=8 identical=8 diverged=0
+engagement: glm5spec=10 acc=66
+K receipt:
+[glm5-spec] route=spec K=1 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+[moe-grouped-prefill] execute layer=3 tokens=239 n_active=276 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+acc tail:
+[glm5-acc] ctx=4821 burst=16/16 cum=100/126=0.794
+[glm5-acc] ctx=4853 burst=15/15 cum=115/141=0.816
+######## C2 BOOT dfl-k3 ########
+[3w] SIGTERM pid=52053 exe=/root/memra/target/release/memra-server
+[3w] stopped
+[3w] launched pid=52558 boot=c2-dfl-k3 nonce=21b066c0-0c80-4088-903e-61bdce3ec586
+[3w] READY after 40s
+[3w] GATES GREEN boot=c2-dfl-k3
+[sample] ok=True wall=3.3s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[cell greedy k=None] d00-code wall=10.1s spec={'rounds': 91, 'drafted': 273, 'accepted': 164, 'acceptance_rate': 0.6007326007326007} err=None
+[cell greedy k=None] d02-code wall=11.5s spec={'rounds': 99, 'drafted': 297, 'accepted': 159, 'acceptance_rate': 0.5353535353535354} err=None
+[cell greedy k=None] d04-code wall=8.6s spec={'rounds': 74, 'drafted': 222, 'accepted': 158, 'acceptance_rate': 0.7117117117117117} err=None
+[cell greedy k=None] d05-code wall=9.5s spec={'rounds': 86, 'drafted': 258, 'accepted': 170, 'acceptance_rate': 0.6589147286821705} err=None
+[cell greedy k=None] d06-prose wall=8.8s spec={'rounds': 81, 'drafted': 243, 'accepted': 176, 'acceptance_rate': 0.7242798353909465} err=None
+[cell greedy k=None] d09-prose wall=9.8s spec={'rounds': 90, 'drafted': 270, 'accepted': 168, 'acceptance_rate': 0.6222222222222222} err=None
+[cell greedy k=None] l3-WARM wall=8.3s spec={'rounds': 72, 'drafted': 216, 'accepted': 184, 'acceptance_rate': 0.8518518518518519} err=None
+[cell greedy k=None] l3-A4630 wall=14.6s spec={'rounds': 93, 'drafted': 279, 'accepted': 164, 'acceptance_rate': 0.5878136200716846} err=None
+[cell] done rows=8 errors=0
+C2_dfl-k3_EXIT=0
+=== IDENTITY dfl-k3 vs plain ===
+[compare] /root/out-3way/c2/plain vs /root/out-3way/c2/dfl-k3: shared=8 identical=8 diverged=0
+engagement: glm5spec=10 acc=65
+K receipt:
+[glm5-spec] route=spec K=3 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+[moe-grouped-prefill] execute layer=3 tokens=239 n_active=276 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+acc tail:
+[glm5-acc] ctx=4828 burst=24/24 cum=147/258=0.570
+[glm5-acc] ctx=4860 burst=17/21 cum=164/279=0.588
+######## C2 BOOT dfl-k5 ########
+[3w] SIGTERM pid=52558 exe=/root/memra/target/release/memra-server
+[3w] stopped
+[3w] launched pid=52904 boot=c2-dfl-k5 nonce=f78080ca-cff6-4569-b823-cd4ce98b0550
+[3w] READY after 40s
+[3w] GATES GREEN boot=c2-dfl-k5
+[sample] ok=True wall=4.2s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[cell greedy k=None] d00-code wall=12.7s spec={'rounds': 81, 'drafted': 405, 'accepted': 174, 'acceptance_rate': 0.42962962962962964} err=None
+[cell greedy k=None] d02-code wall=13.6s spec={'rounds': 83, 'drafted': 415, 'accepted': 173, 'acceptance_rate': 0.41686746987951806} err=None
+[cell greedy k=None] d04-code wall=10.4s spec={'rounds': 63, 'drafted': 315, 'accepted': 169, 'acceptance_rate': 0.5365079365079365} err=None
+[cell greedy k=None] d05-code wall=11.5s spec={'rounds': 74, 'drafted': 370, 'accepted': 181, 'acceptance_rate': 0.4891891891891892} err=None
+[cell greedy k=None] d06-prose wall=10.5s spec={'rounds': 68, 'drafted': 340, 'accepted': 189, 'acceptance_rate': 0.5558823529411765} err=None
+[cell greedy k=None] d09-prose wall=11.7s spec={'rounds': 76, 'drafted': 380, 'accepted': 183, 'acceptance_rate': 0.48157894736842105} err=None
+[cell greedy k=None] l3-WARM wall=8.9s spec={'rounds': 54, 'drafted': 270, 'accepted': 201, 'acceptance_rate': 0.7444444444444445} err=None
+[cell greedy k=None] l3-A4630 wall=17.4s spec={'rounds': 80, 'drafted': 400, 'accepted': 179, 'acceptance_rate': 0.4475} err=None
+[cell] done rows=8 errors=0
+C2_dfl-k5_EXIT=0
+=== IDENTITY dfl-k5 vs plain ===
+[compare] /root/out-3way/c2/plain vs /root/out-3way/c2/dfl-k5: shared=8 identical=8 diverged=0
+engagement: glm5spec=10 acc=65
+K receipt:
+[glm5-spec] route=spec K=5 model="zai/glm-5.3-flash" tenant="" prompt=239 wave=1 sampled=0 penalized=0 cold=1
+[moe-grouped-prefill] execute layer=3 tokens=239 n_active=276 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+acc tail:
+[glm5-acc] ctx=4830 burst=28/30 cum=163/370=0.441
+[glm5-acc] ctx=4864 burst=16/30 cum=179/400=0.448
+[3w] SIGTERM pid=52904 exe=/root/memra/target/release/memra-server
+[3w] stopped
+=== LOOP-LAW SCREEN (all c2 tapes) ===
+[loop-law] screened=32 flagged=0
+C2_ALL_DONE rc=0

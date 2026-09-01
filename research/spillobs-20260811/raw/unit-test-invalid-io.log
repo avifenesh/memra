@@ -1,0 +1,9 @@
+warning: memra-engine@0.77.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.77.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-48b148447a57e937)
+
+running 1 test
+test spill_pread::tests::invalid_spill_io_is_counted_and_uses_mmap ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 63 filtered out; finished in 0.05s

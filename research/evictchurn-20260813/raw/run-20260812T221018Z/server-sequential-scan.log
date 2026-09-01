@@ -1,0 +1,169 @@
+[server] starting; models config = [("q36-35b", "/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q36-35b" <- /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.21GB (expert budget 19.61GB) -> RESIDENT
+[worker]   loaded "q36-35b": 41 layers, eos=248046
+[worker] q36-35b: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q36-35b: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 820MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "q36-35b": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q36-35b"]
+[server] listening on http://127.0.0.1:18514
+[meter] admit id=cmpl-30923c5abe4a99f95192580e57fe58e8 tenant=default lane=interactive model="q36-35b"
+[admission] request cost: model="q36-35b" ctx=336 path=plain = 10208 B/token x ctx + 0MB fixed = 3MB
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q36-35b" 129MB (observed 132MB at ctx 280 path=plain)
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 68.3MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-f85c2c2b892e82204acf0bd800f3ab3b tenant=default lane=interactive model="q36-35b"
+[admission] request cost: model="q36-35b" ctx=336 path=plain = 10208 B/token x ctx + 129MB fixed = 132MB
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 136.6MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-15fc816293e469857e4805995a4b4a95 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 204.9MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-7e95019f1c8144fe34ab5c2ea2ff1efa tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 273.3MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[meter] admit id=cmpl-7f55427dfafc5c2d43019421dfb492ae tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 341.6MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-b4cb468cd5e1a79241cd51447f02cc4a tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 409.9MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-d9651d55294c329b0e3f78e0ebb7de5b tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 478.2MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-dbe60f6bb2c20b6974f2cc1ccdc89d2b tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 546.5MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[meter] admit id=cmpl-61c13a6724af0489f4d9953f74337c3e tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 614.8MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-fdce6e54dca8adf8aafca444d653a6c5 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 683.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-29b1e200c26367a053da6190f2255c40 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 751.4MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-d8dd616634ad8e4d0a59dd2f65968836 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 819.8MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[meter] admit id=cmpl-994843da9a0ed391b4425783aca21e97 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-4de92c5876e887d3e3b69530def5c542 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-3581b4e52a586959e1269dd114fa45c8 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-d9e4494f2909a27a970ef3da09e3f9c8 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t3")
+[meter] admit id=cmpl-e2bf878274922a17b3f038059c8591a8 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-f3c3803daa5671be3f974323597d3333 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-00f844b100a8ad81ee58f9877de9e90c tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-9b232a1039bf27a8eb3d2cbdc7d35840 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t3")
+[meter] admit id=cmpl-df750451401b88b69e918034e3bc380d tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-98a114ae4a702116f6233ee1d8458235 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-2ea105f86b88f04a568d7cb8954de976 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-5ab7a7cd1e5c914eebff4dccba5dae4a tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t3")
+[meter] admit id=cmpl-787e48796436c30c7b56ef3549955eef tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-d789d5ba97276f525b43e2a491c232db tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-52b7ef5b10ae6b3ce3de6469dccba367 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-96b21bfb1446acfbd9ccf903c838de3c tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t3")
+[meter] admit id=cmpl-274b7a823df8fd1ede898c3e35ca08d3 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-2c89aa3af59e26bd8633aebb0c4952e6 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-148551090ba8f9f0dfa0f68bfb079ba0 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-77d270587e3374ec2817a0c977d222c4 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t3")
+[meter] admit id=cmpl-2cef0c3deecd9faaf9d693addbaa2c21 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-c6c400f0579aa2988145bad57fba6846 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-584d756d6803a152e2bb9fa1e5adc58f tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-949be2ce74d5ae67977d395a14d27e56 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t3")
+[meter] admit id=cmpl-7ea6cf92975d6f3aca19f73099916572 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t0" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t0")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t0")
+[meter] admit id=cmpl-b15e4f1ebb6e480a0e522c25eec66e52 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t1" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t1")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t1")
+[meter] admit id=cmpl-a1af895b10060664cdcf1a9f2e144cd9 tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t2" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t2")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t2")
+[meter] admit id=cmpl-584ee0ce01eb09d0a16063d65c83c3ea tenant=default lane=interactive model="q36-35b"
+[spec-k] model="q36-35b" tenant="evictchurn-sequential-scan-t3" K=0 source=eligibility-fallback prompt=264 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 264 tokens, 68.3MB (resident 888.1MB / 820MB, model q36-35b, ns "evictchurn-sequential-scan-t3")
+[prefix-cache] evict (LRU): 264 tokens, 68.3MB (model q36-35b, ns "evictchurn-sequential-scan-t3")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

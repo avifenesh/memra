@@ -1,0 +1,18 @@
+2026-08-13T02:08:22Z
+owned_runner_pid=1274298
+    PID    PPID     SID    PGID STAT     ELAPSED COMMAND
+gpu_state
+0, GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 725 MiB, P0, 34, 0 %
+1, GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 0 MiB, P8, 27, 0 %
+compute_apps
+GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 1278413, target/release/kernel-check, 716
+memra_servers
+target_ports
+global_lock
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    1276128 F.... bash
+                     ubuntu    1278232 F.... bash
+                     ubuntu    1278412 F.... timeout
+                     ubuntu    1278413 F.... kernel-check
+                     ubuntu    1278798 F.... sleep
+gpu1_lock

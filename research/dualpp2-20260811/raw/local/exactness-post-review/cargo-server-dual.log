@@ -1,0 +1,21 @@
+   Compiling cudarc v0.19.8
+   Compiling memra-engine v0.77.0 (/home/avifenesh/projects/wt-cx-dualpp2/crates/memra-engine)
+   Compiling memra-runtime v0.77.0 (/home/avifenesh/projects/wt-cx-dualpp2/crates/memra-runtime)
+   Compiling memra-kv v0.77.0 (/home/avifenesh/projects/wt-cx-dualpp2/crates/memra-kv)
+warning: memra-engine@0.77.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc (newest of 3; also saw 12.8 @ /usr/local/cuda-12.8/bin/nvcc, 12.4 @ /usr/bin/nvcc)
+warning: memra-engine@0.77.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.77.0 (/home/avifenesh/projects/wt-cx-dualpp2/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 09s
+     Running unittests src/main.rs (target/debug/deps/memra_server-82ac615fd504334f)
+
+running 7 tests
+test tests::populated_dual_pp_metrics_are_operator_only ... ok
+test worker::tests::dual_pp_admission_aggregates_two_stages_on_one_device ... ok
+test worker::tests::dual_pp_admission_arithmetic_saturates_and_serial_is_unchanged ... ok
+test worker::tests::dual_pp_admission_checks_both_devices_and_both_receiver_slots ... ok
+test worker::tests::dual_pp_scheduler_balances_every_live_width_within_two_wave_caps ... ok
+test worker::tests::dual_pp_scheduler_keeps_priority_order_across_odd_wave_boundary ... ok
+test worker::tests::dual_pp_scheduler_resolves_host_bounce_to_serial_before_dispatch ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 183 filtered out; finished in 0.00s
+

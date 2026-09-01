@@ -1,0 +1,36 @@
+running 18 tests
+test swa_ring_tests::ring_matches_flat_bytes_before_wrap ... ok
+test tp_transaction_tests::cache_reports_a_materialized_distributed_swa_ring ... ok
+test swa_ring_tests::rewind_declines_once_the_required_window_was_lapped ... ok
+test tp_transaction_tests::index_ring_sizing_is_pure_and_carries_no_per_call_t ... ok
+test swa_ring_tests::wrap_rebases_the_exact_aligned_prime_view ... ok
+test tp_transaction_tests::grow_preserves_generation_and_publishes_only_the_checkpoint_prefix ... ok
+test tp_transaction_tests::index_ring_take_drains_instead_of_bounding_the_call ... ok
+test tp_transaction_tests::grow_refuses_active_source_and_invalid_target_state_or_layout ... ok
+test swa_ring_tests::allocation_rows_cover_window_max_prime_and_alignment_slack ... ok
+test tp_transaction_tests::rollback_restores_the_committed_boundary ... ok
+test tp_transaction_tests::step_tp8_rank_allocation_matches_the_official_kv_geometry ... ok
+test tp_transaction_tests::swa_transaction_rebase_preserves_the_rollback_window ... ok
+test tp_transaction_tests::the_derived_ring_serves_a_monolithic_prime_of_the_whole_configured_context ... ok
+test tp_transaction_tests::tp_rank_allocation_refuses_non_divisible_and_non_block_aligned_shards ... ok
+test tp_transaction_tests::rewind_resets_visibility_and_invalidates_an_active_transaction ... ok
+test tp_transaction_tests::partial_commit_publishes_only_the_accepted_prefix ... ok
+test tp_transaction_tests::rejects_nested_stale_and_out_of_range_actions ... ok
+test tp_transaction_tests::swa_grow_normalizes_only_the_live_prefix_and_preserves_generation ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_kv
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+running 1 test
+MEMRA_CTX=8192: ring 5120 rows (effective 5120), monolithic prime of 8192 tokens admitted in 2 drain step(s); plane 5 MiB/layer vs flat 8 MiB/layer
+MEMRA_CTX=262144: ring 5120 rows (effective 5120), monolithic prime of 262144 tokens admitted in 52 drain step(s); plane 5 MiB/layer vs flat 256 MiB/layer
+MEMRA_CTX=1048576: ring 5120 rows (effective 5120), monolithic prime of 1048576 tokens admitted in 205 drain step(s); plane 5 MiB/layer vs flat 1024 MiB/layer
+test tp_transaction_tests::the_derived_ring_serves_a_monolithic_prime_of_the_whole_configured_context ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+

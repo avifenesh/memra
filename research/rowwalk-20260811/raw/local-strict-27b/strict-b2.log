@@ -1,0 +1,7 @@
+loaded qwen35 (64 layers); steps=24 batch=2
+gate1 seed 0: agreement all 24 steps
+gate1 (B=1 bit-identity vs decode_step_h, 24 steps, 1 seed(s)): PASS
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; live default = ON)
+gate2 (B=2 vs isolated decode_step_h, 24 steps): PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=2 vs isolated + lean-logits identity): PASS
+ALL GREEN: decode_step_batch exactness battery

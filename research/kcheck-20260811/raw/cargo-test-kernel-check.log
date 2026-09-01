@@ -1,0 +1,12 @@
+warning: memra-engine@0.76.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.76.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running unittests src/bin/kernel_check.rs (target/release/deps/kernel_check-b77bc4978336f38a)
+
+running 4 tests
+test tests::derives_cell_names_only_from_verdict_lines ... ok
+test tests::skipped_and_absent_required_cells_are_missing ... ok
+test tests::parses_manifest_comments_and_rejects_multiple_names_per_line ... ok
+test tests::parses_repeatable_required_cells_and_model ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

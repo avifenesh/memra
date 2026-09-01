@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "retrieved_at_utc": "2026-08-14T09:34:41Z",
+  "policy": "Official public primary sources only. Dynamic issue/PR state was fetched live; source files are pinned by release commit and Git blob SHA.",
+  "repository": {
+    "name": "flashinfer-ai/flashinfer",
+    "url": "https://github.com/flashinfer-ai/flashinfer",
+    "main_head_at_retrieval": "555492e2bc6e6dabdba1b46eeceb6d52be479cf1",
+    "main_head_time": "2026-08-14T07:42:02Z",
+    "latest_release_at_retrieval": "v0.6.17"
+  },
+  "records": [
+    {
+      "id": "issue-3398",
+      "kind": "github_issue",
+      "url": "https://github.com/flashinfer-ai/flashinfer/issues/3398",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/issues/3398",
+      "state_at_retrieval": "closed",
+      "created_at": "2026-05-24T19:36:41Z",
+      "closed_at": "2026-06-03T05:45:47Z",
+      "used_for": ["original report", "superseded setup disclosure", "issue lifecycle"]
+    },
+    {
+      "id": "issue-3398-corrected-sm120f",
+      "kind": "github_issue_comment",
+      "url": "https://github.com/flashinfer-ai/flashinfer/issues/3398#issuecomment-4529895838",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/issues/comments/4529895838",
+      "created_at": "2026-05-24T20:36:13Z",
+      "used_for": ["corrected compute_120f end-to-end shape table"]
+    },
+    {
+      "id": "issue-3398-maintainer-localization",
+      "kind": "github_issue_comment",
+      "url": "https://github.com/flashinfer-ai/flashinfer/issues/3398#issuecomment-4604922605",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/issues/comments/4604922605",
+      "created_at": "2026-06-02T17:09:37Z",
+      "author_association": "COLLABORATOR",
+      "used_for": ["quantizer root-cause statement", "GEMM-backend exoneration"]
+    },
+    {
+      "id": "issue-3398-maintainer-no-gemm-repro",
+      "kind": "github_issue_comment",
+      "url": "https://github.com/flashinfer-ai/flashinfer/issues/3398#issuecomment-4605295557",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/issues/comments/4605295557",
+      "created_at": "2026-06-02T17:38:32Z",
+      "author_association": "COLLABORATOR",
+      "used_for": ["exact quantize/dequantize shape matrix", "magnitude-error evidence", "cosine-only test gap"]
+    },
+    {
+      "id": "pr-3497",
+      "kind": "github_pull_request",
+      "url": "https://github.com/flashinfer-ai/flashinfer/pull/3497",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/pulls/3497",
+      "state_at_retrieval": "merged",
+      "merged_at": "2026-06-03T05:45:45Z",
+      "merge_commit": "d8cb7553f5da653e3cbe9efe0d9d0db8d81c4070",
+      "head_commit": "b227563f60cf30b166604c35562751d497385d34",
+      "used_for": ["root cause", "fix", "regression test"]
+    },
+    {
+      "id": "issue-3013",
+      "kind": "github_issue",
+      "url": "https://github.com/flashinfer-ai/flashinfer/issues/3013",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/issues/3013",
+      "state_at_retrieval": "closed",
+      "created_at": "2026-04-08T04:48:15Z",
+      "closed_at": "2026-05-12T23:48:09Z",
+      "used_for": ["historical SM120/SM121 optimization tracker only"]
+    },
+    {
+      "id": "release-v0.6.13",
+      "kind": "github_release",
+      "url": "https://github.com/flashinfer-ai/flashinfer/releases/tag/v0.6.13",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/releases/tags/v0.6.13",
+      "published_at": "2026-06-24T22:36:15Z",
+      "tag_commit": "57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac",
+      "used_for": ["first stable release listing PR #3497"]
+    },
+    {
+      "id": "release-v0.6.17",
+      "kind": "github_release",
+      "url": "https://github.com/flashinfer-ai/flashinfer/releases/tag/v0.6.17",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/releases/tags/v0.6.17",
+      "published_at": "2026-08-11T05:09:14Z",
+      "tag_commit": "a0a6b019b9b27d49d209f85d028a1ae5a9b347d7",
+      "contains_pr_3497_merge": true,
+      "ancestry_check": {
+        "base": "d8cb7553f5da653e3cbe9efe0d9d0db8d81c4070",
+        "status": "ahead",
+        "ahead_by": 336,
+        "behind_by": 0
+      },
+      "used_for": ["current released source posture", "later SM12x FP4 changes"]
+    },
+    {
+      "id": "pr-3932",
+      "kind": "github_pull_request",
+      "url": "https://github.com/flashinfer-ai/flashinfer/pull/3932",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/pulls/3932",
+      "state_at_retrieval": "merged",
+      "merged_at": "2026-07-31T00:34:03Z",
+      "merge_commit": "39f2ce47663243e25b311a7e64681d742905f974",
+      "used_for": ["later, separate b12x FP4 numerical changes in v0.6.17"]
+    },
+    {
+      "id": "pr-4253",
+      "kind": "github_pull_request",
+      "url": "https://github.com/flashinfer-ai/flashinfer/pull/4253",
+      "api_url": "https://api.github.com/repos/flashinfer-ai/flashinfer/pulls/4253",
+      "state_at_retrieval": "merged",
+      "merged_at": "2026-07-31T00:13:01Z",
+      "merge_commit": "71e1745c1c9a06b3a858fbe65dd3fa92cbeb1498",
+      "used_for": ["v0.6.17 SM120 dense mm_fp4 source refresh"]
+    },
+    {
+      "id": "v0.6.12-python-quantizer",
+      "kind": "immutable_source_blob",
+      "url": "https://github.com/flashinfer-ai/flashinfer/blob/d768c14e7cf5dd5df45a8a1de78ae815879f108a/flashinfer/quantization/fp4_quantization.py",
+      "raw_url": "https://raw.githubusercontent.com/flashinfer-ai/flashinfer/d768c14e7cf5dd5df45a8a1de78ae815879f108a/flashinfer/quantization/fp4_quantization.py",
+      "release": "v0.6.12",
+      "release_commit": "d768c14e7cf5dd5df45a8a1de78ae815879f108a",
+      "git_blob_sha1": "905355a316b53093e9a4eca0cb45671822bf70fb",
+      "used_for": ["pre-fix wrapper lacks FP32 normalization"]
+    },
+    {
+      "id": "v0.6.12-native-quantizer",
+      "kind": "immutable_source_blob",
+      "url": "https://github.com/flashinfer-ai/flashinfer/blob/d768c14e7cf5dd5df45a8a1de78ae815879f108a/csrc/nv_internal/tensorrt_llm/thop/fp4Quantize.cpp",
+      "raw_url": "https://raw.githubusercontent.com/flashinfer-ai/flashinfer/d768c14e7cf5dd5df45a8a1de78ae815879f108a/csrc/nv_internal/tensorrt_llm/thop/fp4Quantize.cpp",
+      "release": "v0.6.12",
+      "release_commit": "d768c14e7cf5dd5df45a8a1de78ae815879f108a",
+      "git_blob_sha1": "e007dceba5453947fed2fa351a549d610de17e04",
+      "used_for": ["commented-out dtype guard", "float pointer cast"]
+    },
+    {
+      "id": "v0.6.13-python-quantizer",
+      "kind": "immutable_source_blob",
+      "url": "https://github.com/flashinfer-ai/flashinfer/blob/57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac/flashinfer/quantization/fp4_quantization.py",
+      "raw_url": "https://raw.githubusercontent.com/flashinfer-ai/flashinfer/57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac/flashinfer/quantization/fp4_quantization.py",
+      "release": "v0.6.13",
+      "release_commit": "57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac",
+      "git_blob_sha1": "15380a75474ffe8c9b202a9a345ff08df2918799",
+      "used_for": ["post-fix FP32 normalization"]
+    },
+    {
+      "id": "v0.6.13-native-quantizer",
+      "kind": "immutable_source_blob",
+      "url": "https://github.com/flashinfer-ai/flashinfer/blob/57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac/csrc/nv_internal/tensorrt_llm/thop/fp4Quantize.cpp",
+      "raw_url": "https://raw.githubusercontent.com/flashinfer-ai/flashinfer/57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac/csrc/nv_internal/tensorrt_llm/thop/fp4Quantize.cpp",
+      "release": "v0.6.13",
+      "release_commit": "57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac",
+      "git_blob_sha1": "965020716cbce44403d3f94f28cd2b178abe026d",
+      "used_for": ["restored FP32 dtype guard"]
+    },
+    {
+      "id": "v0.6.13-regression-test",
+      "kind": "immutable_source_blob",
+      "url": "https://github.com/flashinfer-ai/flashinfer/blob/57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac/tests/utils/test_fp4_quantize.py",
+      "raw_url": "https://raw.githubusercontent.com/flashinfer-ai/flashinfer/57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac/tests/utils/test_fp4_quantize.py",
+      "release": "v0.6.13",
+      "release_commit": "57ba7eeb7ea3003a2d6ad5d9a057c4f952709bac",
+      "git_blob_sha1": "0d41a3863f24d4508b209a66aadddae358ead9dc",
+      "used_for": ["merged M/dtype regression matrix", "magnitude assertion"]
+    },
+    {
+      "id": "v0.6.17-python-quantizer",
+      "kind": "immutable_source_blob",
+      "url": "https://github.com/flashinfer-ai/flashinfer/blob/a0a6b019b9b27d49d209f85d028a1ae5a9b347d7/flashinfer/quantization/fp4_quantization.py",
+      "raw_url": "https://raw.githubusercontent.com/flashinfer-ai/flashinfer/a0a6b019b9b27d49d209f85d028a1ae5a9b347d7/flashinfer/quantization/fp4_quantization.py",
+      "release": "v0.6.17",
+      "release_commit": "a0a6b019b9b27d49d209f85d028a1ae5a9b347d7",
+      "git_blob_sha1": "c56117347c12be1445f0c910f33a8a5a71646ca5",
+      "used_for": ["current released wrapper retains FP32 normalization"]
+    }
+  ]
+}

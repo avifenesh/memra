@@ -1,0 +1,33 @@
+2026-08-11T04:59:51+00:00
+<private-host-redacted>
+uid=1000(ubuntu) gid=1000(ubuntu) groups=1000(ubuntu),4(adm),24(cdrom),27(sudo),30(dip),105(lxd),987(docker)
+Python 3.12.3
+Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+PRETTY_NAME="Ubuntu 24.04.4 LTS"
+NAME="Ubuntu"
+VERSION_ID="24.04"
+VERSION="24.04.4 LTS (Noble Numbat)"
+VERSION_CODENAME=noble
+ID=ubuntu
+ID_LIKE=debian
+HOME_URL="https://www.ubuntu.com/"
+SUPPORT_URL="https://help.ubuntu.com/"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+UBUNTU_CODENAME=noble
+LOGO=ubuntu-logo
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/root       193G  165G   29G  86% /
+               total        used        free      shared  buff/cache   available
+Mem:            61Gi       2.2Gi       475Mi       3.0Mi        59Gi        59Gi
+Swap:             0B          0B          0B
+NVIDIA L40S, GPU-773190f1-0aaf-7d3d-a94c-ae5af816e5dc, 8.9, 46068 MiB, 0 MiB, 0 %, 595.71.05
+    716 root      405416 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
+    882 root      405415 /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal
+  42111 ubuntu         0 bash -c  set -eu date --iso-8601=seconds hostname id python3 --version uname -a cat /etc/os-release df -h / free -h nvidia-smi --query-gpu=name,uuid,compute_cap,memory.total,memory.used,utilization.gpu,driver_version --format=csv,noheader nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader || true ps -eo pid,user,etimes,cmd --sort=-etimes | grep -E "[p]ython|[t]rain" || true command -v nvcc || true nvcc --version 2>/dev/null || true 
+/usr/local/cuda-13.2/bin/nvcc
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0

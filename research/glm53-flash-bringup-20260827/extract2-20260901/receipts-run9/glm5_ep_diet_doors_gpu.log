@@ -1,0 +1,90 @@
+warning: function `expected_census` is never used
+   --> crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:288:15
+    |
+288 | pub(crate) fn expected_census(config: &ModelConfig) -> BTreeMap<String, TensorSpec> {
+    |               ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning
+warning: memra-engine@0.122.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.122.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:7243:9
+     |
+7243 |     let mut run = |label: &str, steps: Vec<Vec<u32>>| -> Res<usize> {
+     |         ----^^^
+     |         |
+     |         help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `indexer_mask_rows` is never used
+    --> crates/memra-engine/src/qwen4exp_gpu.rs:3726:4
+     |
+3726 | fn indexer_mask_rows(
+     |    ^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `qsa_indexer_mask` is never used
+     --> crates/memra-engine/src/qwen4exp_gpu.rs:16582:8
+      |
+15974 | impl Qwen4ExpGpu {
+      | ---------------- method in this implementation
+...
+16582 |     fn qsa_indexer_mask(
+      |        ^^^^^^^^^^^^^^^^
+
+warning: `memra-engine` (lib) generated 3 warnings (run `cargo fix --lib -p memra-engine` to apply 1 suggestion)
+   Compiling memra-engine v0.122.0 (/home/avifenesh/projects/wt-glm5-extract2/crates/memra-engine)
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/bin/qwen4exp_real_gate.rs:2396:17
+     |
+2396 |             let mut record = |regime: &str,
+     |                 ----^^^^^^
+     |                 |
+     |                 help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-engine` (bin "qwen4exp_real_gate") generated 1 warning (run `cargo fix --bin "qwen4exp_real_gate" -p memra-engine` to apply 1 suggestion)
+warning: variable does not need to be mutable
+   --> crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs:529:9
+    |
+529 |     let mut record = |phase: &str,
+    |         ----^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs:691:9
+    |
+691 |     let mut check_config =
+    |         ----^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> crates/memra-engine/src/bin/qwen4exp_gpu_gate.rs:1708:13
+     |
+1708 |         let mut fold = |s: RowStats, ok: &mut bool, worst: &mut (f32, f32)| {
+     |             ----^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: `memra-engine` (bin "qwen4exp_gpu_gate") generated 3 warnings (run `cargo fix --bin "qwen4exp_gpu_gate" -p memra-engine` to apply 3 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.56s
+     Running tests/glm5_ep_diet_doors_gpu.rs (target/debug/deps/glm5_ep_diet_doors_gpu-46c9c95d9e92a1f9)
+
+running 3 tests
+test gpu_diet_compact_scatter_matches_the_host_fma_chain_bitwise ... ok
+test gpu_grouped_prime_split_matches_plain_rows_bitwise_and_combine_in_band ... [moe-sk-form] dev=0 qt=7 sms=82 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=128 out_f=192 n_active=8 max_m=4
+ok
+test gpu_htod_f32_into_at_lands_at_offset_and_fails_closed ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+exit=0

@@ -1,0 +1,38 @@
+2026-08-11T05:23:31+03:00
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 23983 MiB):
+  Device 0: NVIDIA GeForce RTX 5090 Laptop GPU, compute capability 12.0, VMM: yes, VRAM: 23983 MiB
+llama_print_build_info: build = 9836 (85c69c8b0)
+llama_print_build_info: built with GNU 14.3.0 for Linux x86_64
+llama_quantize: quantizing '/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/dspark0-20260811/converter-q6-full.f16.gguf' to '/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/dspark0-20260811/converter-q6-full.gguf' as Q8_0
+llama_model_loader: loaded meta data with 14 key-value pairs and 17 tensors from /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/dspark0-20260811/converter-q6-full.f16.gguf (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = qwen35
+llama_model_loader: - kv   1:                         qwen35.block_count u32              = 1
+llama_model_loader: - kv   2:                qwen35.nextn_predict_layers u32              = 1
+llama_model_loader: - kv   3:                    qwen35.embedding_length u32              = 4096
+llama_model_loader: - kv   4:                qwen35.attention.head_count u32              = 16
+llama_model_loader: - kv   5:             qwen35.attention.head_count_kv u32              = 4
+llama_model_loader: - kv   6:                qwen35.attention.key_length u32              = 256
+llama_model_loader: - kv   7:              qwen35.attention.value_length u32              = 256
+llama_model_loader: - kv   8:                 qwen35.feed_forward_length u32              = 12288
+llama_model_loader: - kv   9:                          qwen35.vocab_size u32              = 248320
+llama_model_loader: - kv  10:                      qwen35.context_length u32              = 262144
+llama_model_loader: - kv  11:    qwen35.attention.layer_norm_rms_epsilon f32              = 0.000001
+llama_model_loader: - kv  12:                      qwen35.rope.freq_base f32              = 10000000.000000
+llama_model_loader: - kv  13:                qwen35.rope.dimension_count u32              = 64
+llama_model_loader: - type  f32:    7 tensors
+llama_model_loader: - type  f16:    1 tensors
+llama_model_loader: - type q8_0:    8 tensors
+llama_model_loader: - type  i32:    1 tensors
+llama_model_quantize: failed to quantize: key not found in model: qwen35.rope.dimension_sections
+llama_quantize: failed to quantize model from '/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/dspark0-20260811/converter-q6-full.f16.gguf'
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-cx-dspark0/research/dspark0-20260811/match-output-q6.py", line 76, in <module>
+    main()
+  File "/home/avifenesh/projects/wt-cx-dspark0/research/dspark0-20260811/match-output-q6.py", line 58, in main
+    subprocess.run(
+  File "/home/avifenesh/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '[PosixPath('/data/projects/llama.cpp/build/bin/llama-quantize'), '--allow-requantize', '--output-tensor-type', 'q6_k', PosixPath('/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/dspark0-20260811/converter-q6-full.f16.gguf'), PosixPath('/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/dspark0-20260811/converter-q6-full.gguf'), 'Q8_0']' returned non-zero exit status 1.
+stat: cannot stat '/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/dspark0-20260811/converter-q6-full.gguf': No such file or directory (os error 2)
+2026-08-11T05:23:33+03:00

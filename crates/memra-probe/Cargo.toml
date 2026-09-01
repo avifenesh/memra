@@ -1,0 +1,9 @@
+[package]
+name = "memra-probe"
+version = "0.0.0"
+# Phase-0 dev spike (hardcoded sm_120a fatbin path); not part of the published surface.
+publish = false
+edition = "2024"
+
+[dependencies]
+cudarc = { version = "0.19", default-features = false, features = ["cuda-13010", "dynamic-loading", "driver", "cublaslt", "nvrtc"] }

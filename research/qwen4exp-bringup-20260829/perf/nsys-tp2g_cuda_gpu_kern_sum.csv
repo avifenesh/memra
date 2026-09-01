@@ -1,0 +1,22 @@
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+42.9,14757667,1580,9340.3,7008.0,2336,26048,6840.4,qmatvec_bf16w_f32
+17.8,6133346,240,25555.6,25952.0,21888,28416,1800.9,sdpa_naive_mask_f32
+15.8,5442483,700,7775.0,5888.0,5184,20352,4635.7,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+5.3,1834208,260,7054.6,7072.0,6656,7712,216.9,hc_norm_planes_f32
+5.2,1799657,720,2499.5,1952.0,1568,4511,988.2,rms_norm_f32_v2
+2.1,736448,260,2832.5,2816.0,2592,3104,95.0,hc_inject_partials_bf16w_f32
+1.7,584641,480,1218.0,1216.0,896,1664,246.6,rope_neox_f32
+1.5,511008,260,1965.4,1984.0,1792,2176,72.7,hc_mix_epilogue_f32
+1.1,383520,240,1598.0,1600.0,1472,1888,59.9,q_gate_split_f32
+1.0,342976,320,1071.8,1088.0,832,1280,97.2,mul_f32
+0.9,297376,100,2973.8,2976.0,2752,3296,125.4,dwconv_causal_f32
+0.8,275648,260,1060.2,1088.0,864,1280,93.0,hc_lowrank_reduce_f32
+0.8,265824,260,1022.4,1024.0,896,1184,53.9,hc_inject_reduce_f32
+0.8,261312,240,1088.8,1088.0,1024,1280,42.7,sigmoid_f32
+0.7,254304,260,978.1,976.0,928,1056,41.4,q4e_push_f32
+0.5,183200,80,2290.0,2240.0,2112,2656,156.8,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, float, float, float, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)8, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<const float>, cublasGemvTensorStridedBatched<float>, float>>(T13)"
+0.3,98784,20,4939.2,4944.0,4800,5184,95.3,gdn_scan_step_f32
+0.2,84704,80,1058.8,1072.0,992,1120,47.0,add_scaled_rows_f32
+0.2,73120,80,914.0,896.0,768,1216,89.3,axpy_f32
+0.1,32960,20,1648.0,1664.0,1568,1792,51.4,rms_sigmul_f32
+0.1,22912,20,1145.6,1152.0,1088,1216,54.5,gdn_glog_f32

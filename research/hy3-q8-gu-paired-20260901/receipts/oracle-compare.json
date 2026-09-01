@@ -1,0 +1,23 @@
+{
+  "comparisons": [
+    {
+      "argmax": 5,
+      "argmax_match": true,
+      "candidate": "paired.tsv",
+      "cosine": 0.9995610803787713,
+      "engine": "memra-native-serving-numeric",
+      "max_abs": 0.3080940246582031,
+      "max_abs_index": 2108,
+      "max_rel": 4799.03591160221,
+      "mean_abs": 0.04479497978912658,
+      "numeric_class": "serving-weight-and-cache-formats",
+      "reference_argmax": 5,
+      "rmse": 0.056544022894217325,
+      "top20_overlap": 19
+    }
+  ],
+  "format": "memra-checkpoint-oracle-comparison-v1",
+  "reference": "exact.tsv",
+  "reference_engine": "memra-native-serving-numeric",
+  "reference_numeric_class": "serving-weight-and-cache-formats"
+}

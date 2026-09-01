@@ -1,0 +1,67 @@
+dsv4-gpu-gate | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | fixtures /home/ubuntu/dsv4-oracle0731/fixtures-mint/dsv4_0731_fixtures_artifactvariant.json | variant clamp-only (ClampOnly) | devices [0, 1]
+fixture integrity: 14 arrays, payload sha256 all match
+[load] expert arm: Native | decode path: Legacy | dots arm: f64
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=38s
+[load] layer 15 -> dev0 done t=51s
+[load] layer 19 -> dev0 done t=64s
+[load] layer 23 -> dev1 done t=77s
+[load] layer 27 -> dev1 done t=90s
+[load] layer 31 -> dev1 done t=103s
+[load] layer 35 -> dev1 done t=116s
+[load] layer 39 -> dev1 done t=129s
+[load] layer 42 -> dev1 done t=139s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path not wired (separate lane); trunk-only
+loaded: split at layer 22 (stage0 22 layers, stage1 21 layers), t=139s
+[vram post-load] dev0: used 82.24 GiB / 94.97 GiB (free 12.74), loader-resident 81.51 GiB
+[vram post-load] dev1: used 78.64 GiB / 94.97 GiB (free 16.33), loader-resident 77.94 GiB
+  (MXFP4 mtp.* samples skipped: no NextN block resident — DSpark drafter lane owns that gate)
+
+== expert-dequant sub-gate (GPU kernels vs lane-1 host decoders) ==
+  [PASS] expert-dequant layers.0.ffn.experts.0.w1 [2048x4096]: 0 mismatches (bit-exact required)
+  [PASS] expert-dequant layers.2.ffn.experts.100.w3 [2048x4096]: 0 mismatches (bit-exact required)
+  [PASS] expert-dequant layers.20.ffn.experts.7.w1 [2048x4096]: 0 mismatches (bit-exact required)
+  [PASS] expert-dequant layers.22.ffn.experts.31.w2 [4096x2048]: 0 mismatches (bit-exact required)
+  [PASS] expert-dequant layers.42.ffn.experts.255.w2 [4096x2048]: 0 mismatches (bit-exact required)
+32-token forward done t=140s
+[vram post-warmup] dev0: used 82.24 GiB / 94.97 GiB (free 12.74), loader-resident 81.51 GiB
+[vram post-warmup] dev1: used 78.67 GiB / 94.97 GiB (free 16.30), loader-resident 77.94 GiB
+  [PASS] embed_out [1, 32, 4096]: max-abs 0.000e0 max-rel 0.000e0 thr 0.000e0 over 0
+  [PASS] layer0_out [1, 32, 4, 4096]: max-abs 5.045e-1 max-rel 3.979e2 thr 1.263e1 over 0
+  [PASS] layer0_attn_out [1, 32, 4096]: max-abs 1.992e-2 max-rel 8.036e2 thr 1.732e-1 over 0
+  [PASS] layer2_out [1, 32, 4, 4096]: max-abs 4.947e-1 max-rel 1.294e3 thr 4.431e1 over 0
+  [PASS] layer2_attn_out [1, 32, 4096]: max-abs 9.328e-2 max-rel 3.577e3 thr 3.485e0 over 0
+  [PASS] layer2_compressor_kv [1, 8, 512]: max-abs 4.880e-2 max-rel 1.511e2 thr 2.089e0 over 0
+  [PASS] layer2_indexer_kv [1, 8, 128]: max-abs 1.000e0 max-rel 5.000e5 thr 1.865e0 over 0
+  [PASS] layer2_index_score [1, 32, 8]: max-abs 1.830e-1 max-rel 9.933e-2 thr 1.531e0 over 0
+  [PASS] layer3_out [1, 32, 4, 4096]: max-abs 4.905e-1 max-rel 4.987e3 thr 5.145e1 over 0
+  [PASS] layer3_attn_out [1, 32, 4096]: max-abs 1.453e-1 max-rel 1.314e3 thr 1.298e1 over 0
+  [PASS] final_logits_last [129280]: max-abs 3.120e0 max-rel 2.520e4 thr 1.250e2 over 0 | top1 2581==2581 | top5 set MISMATCH | top20 overlap 19/20 | 20/21 gap ref 0.0476 gpu 0.2520 | boundary band ±54.736: 2 set-diff id(s), 0 out-of-band
+160-token partial forward done t=140s
+  [PASS] c160_layer3_out_last [1, 4, 4096]: max-abs 1.335e-2 max-rel 1.876e2 thr 4.935e-1 over 0
+  [PASS] c160_layer3_attn_out_last [1, 4096]: max-abs 3.597e-2 max-rel 2.323e1 thr 5.857e0 over 0
+  [PASS] c160_layer3_compressor_kv [1, 1, 512]: max-abs 9.318e-3 max-rel 1.501e0 thr 1.543e0 over 0
+[vram post-gate] dev0: used 82.33 GiB / 94.97 GiB (free 12.64), loader-resident 81.51 GiB
+[vram post-gate] dev1: used 78.67 GiB / 94.97 GiB (free 16.30), loader-resident 77.94 GiB
+
+== GPU gate table (variant clamp-only, NATIVE expert arm: C = sqrt(d_b*u_b^2 + d_q*u_q^2), u_q = 2^-4 class) ==
+| array | shape | max-abs | max-rel | threshold | verdict |
+|---|---|---|---|---|---|
+| embed_out | [1, 32, 4096] | 0.000e0 | 0.000e0 | 0.000e0 | PASS |
+| layer0_out | [1, 32, 4, 4096] | 5.045e-1 | 3.979e2 | 1.263e1 | PASS |
+| layer0_attn_out | [1, 32, 4096] | 1.992e-2 | 8.036e2 | 1.732e-1 | PASS |
+| layer2_out | [1, 32, 4, 4096] | 4.947e-1 | 1.294e3 | 4.431e1 | PASS |
+| layer2_attn_out | [1, 32, 4096] | 9.328e-2 | 3.577e3 | 3.485e0 | PASS |
+| layer2_compressor_kv | [1, 8, 512] | 4.880e-2 | 1.511e2 | 2.089e0 | PASS |
+| layer2_indexer_kv | [1, 8, 128] | 1.000e0 | 5.000e5 | 1.865e0 | PASS |
+| layer2_index_score | [1, 32, 8] | 1.830e-1 | 9.933e-2 | 1.531e0 | PASS |
+| layer3_out | [1, 32, 4, 4096] | 4.905e-1 | 4.987e3 | 5.145e1 | PASS |
+| layer3_attn_out | [1, 32, 4096] | 1.453e-1 | 1.314e3 | 1.298e1 | PASS |
+| final_logits_last | [129280] | 3.120e0 | 2.520e4 | 1.250e2 | PASS (top1 2581==2581 | top5 set MISMATCH | top20 overlap 19/20 | 20/21 gap ref 0.0476 gpu 0.2520 | boundary band ±54.736: 2 set-diff id(s), 0 out-of-band) |
+| c160_layer3_out_last | [1, 4, 4096] | 1.335e-2 | 1.876e2 | 4.935e-1 | PASS |
+| c160_layer3_attn_out_last | [1, 4096] | 3.597e-2 | 2.323e1 | 5.857e0 | PASS |
+| c160_layer3_compressor_kv | [1, 1, 512] | 9.318e-3 | 1.501e0 | 1.543e0 | PASS |
+
+elapsed: 140.2s (informational, single-run, not a perf claim)
+GPU OUTPUT-SAMPLE GATE [clamp-only]: PASS (14 arrays compared, 0 skipped, 0 failures)

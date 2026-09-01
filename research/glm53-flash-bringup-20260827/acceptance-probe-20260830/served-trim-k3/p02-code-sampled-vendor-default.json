@@ -1,0 +1,36 @@
+{
+ "name": "p02-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 563,
+   "completion_tokens": 128,
+   "total_tokens": 691,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 20.643600591,
+   "spec": {
+    "rounds": 51,
+    "drafted": 153,
+    "accepted": 76,
+    "acceptance_rate": 0.49673202614379086
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "<tool_call>Bash.explain<tool_call>Bash<arg_key>command</arg_key><arg_value>ls -la /home/avifenesh/projects/bw24</arg_value></tool_call>",
+     "reasoning": "Let me start by understanding the repository structure and what this \"memra engine\" is. I need to:\n1. Look at the main repo\n2. Look at the worktrees\n3. Check git status/diff/log\n4. Read source code\n5. Find security, performance, docs misalignment issues, and new ideas\n6. NOT repeat anything from the prior report (only one seed entry exists, so almost anything novel is fine)\n\nLet me begin by exploring the repo."
+    }
+   }
+  ]
+ }
+}

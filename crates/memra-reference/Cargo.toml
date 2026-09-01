@@ -1,0 +1,13 @@
+[package]
+name = "memra-reference"
+description = "Portable unfused ModelPlan reference executor for memra correctness gates"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+edition = "2024"
+
+[dependencies]
+memra-gguf = { workspace = true }

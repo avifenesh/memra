@@ -1,0 +1,36 @@
+{
+ "name": "p02-code",
+ "arm": "sampled-vendor-default",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": []
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 563,
+   "completion_tokens": 128,
+   "total_tokens": 691,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 28.375479857,
+   "spec": {
+    "rounds": 55,
+    "drafted": 275,
+    "accepted": 73,
+    "acceptance_rate": 0.26545454545454544
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "I'll start by exploring the repository structure and understanding the codebase.<tool_call>Bash executing: Explore repo structure<tool_call>Bash command:",
+     "reasoning": "Let me start by exploring the repository structure and understanding what this \"memra engine\" project is about. I need to:\n\n1. Check the main repo and all worktrees\n2. Look at git status/diff/log\n3. Read source code\n4. Look for security, performance, docs misalignments, and new ideas\n5. Not repeat prior findings (only one seed entry in prior report, so almost anything novel is fine)\n\nLet me begin with exploring the repo structure."
+    }
+   }
+  ]
+ }
+}

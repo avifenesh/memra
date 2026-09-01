@@ -1,0 +1,94 @@
+=== it3 plain A/B x5 start Wed Aug 19 09:32:15 UTC 2026 ===
+0, 180 MHz, 26
+1, 180 MHz, 27
+--- run 1 arm A (f64) 09:32:15 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f64
+decoded 1024 steps in 41.1s | stream sha256 12ec1d210e1431b61de38495d6498c1724ee3dafdbe0cf0ac13a1b5c21eb0870
+[window] s≈200: median 38.7 ms/step (min 38.6 / max 39.6, n=21) = 25.9 tok/s
+[window] s≈512: median 39.2 ms/step (min 39.2 / max 42.0, n=21) = 25.5 tok/s
+[window] s≈1024: median 40.7 ms/step (min 40.6 / max 43.6, n=21) = 24.6 tok/s
+0, 2317 MHz, 34
+1, 2317 MHz, 37
+--- run 1 arm B (default) 09:35:34 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+decoded 1024 steps in 26.7s | stream sha256 811fc1c721505993d0bc435a104bcbf4fed8de2c4c1c4efe160d8019fb7027d7
+[window] s≈200: median 24.7 ms/step (min 24.7 / max 25.7, n=21) = 40.4 tok/s
+[window] s≈512: median 25.3 ms/step (min 25.2 / max 28.1, n=21) = 39.6 tok/s
+[window] s≈1024: median 25.8 ms/step (min 25.7 / max 28.7, n=21) = 38.7 tok/s
+0, 2317 MHz, 34
+1, 2317 MHz, 37
+--- run 2 arm A (f64) 09:38:38 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f64
+decoded 1024 steps in 41.1s | stream sha256 12ec1d210e1431b61de38495d6498c1724ee3dafdbe0cf0ac13a1b5c21eb0870
+[window] s≈200: median 38.6 ms/step (min 38.5 / max 39.5, n=21) = 25.9 tok/s
+[window] s≈512: median 39.2 ms/step (min 39.1 / max 42.1, n=21) = 25.5 tok/s
+[window] s≈1024: median 40.7 ms/step (min 40.6 / max 43.5, n=21) = 24.6 tok/s
+0, 2310 MHz, 35
+1, 2317 MHz, 37
+--- run 2 arm B (default) 09:41:51 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+decoded 1024 steps in 26.7s | stream sha256 811fc1c721505993d0bc435a104bcbf4fed8de2c4c1c4efe160d8019fb7027d7
+[window] s≈200: median 24.9 ms/step (min 24.8 / max 25.8, n=21) = 40.2 tok/s
+[window] s≈512: median 25.2 ms/step (min 25.2 / max 28.0, n=21) = 39.6 tok/s
+[window] s≈1024: median 25.8 ms/step (min 25.8 / max 28.7, n=21) = 38.7 tok/s
+0, 2310 MHz, 35
+1, 2317 MHz, 37
+--- run 3 arm A (f64) 09:44:49 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f64
+decoded 1024 steps in 41.1s | stream sha256 12ec1d210e1431b61de38495d6498c1724ee3dafdbe0cf0ac13a1b5c21eb0870
+[window] s≈200: median 38.6 ms/step (min 38.5 / max 39.6, n=21) = 25.9 tok/s
+[window] s≈512: median 39.2 ms/step (min 39.2 / max 42.1, n=21) = 25.5 tok/s
+[window] s≈1024: median 40.7 ms/step (min 40.6 / max 43.5, n=21) = 24.6 tok/s
+0, 2310 MHz, 35
+1, 2317 MHz, 37
+--- run 3 arm B (default) 09:47:56 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+decoded 1024 steps in 26.6s | stream sha256 811fc1c721505993d0bc435a104bcbf4fed8de2c4c1c4efe160d8019fb7027d7
+[window] s≈200: median 24.7 ms/step (min 24.7 / max 25.6, n=21) = 40.4 tok/s
+[window] s≈512: median 25.2 ms/step (min 25.2 / max 28.1, n=21) = 39.7 tok/s
+[window] s≈1024: median 25.8 ms/step (min 25.7 / max 28.6, n=21) = 38.8 tok/s
+0, 2310 MHz, 35
+1, 2317 MHz, 37
+--- run 4 arm A (f64) 09:50:47 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f64
+decoded 1024 steps in 41.1s | stream sha256 12ec1d210e1431b61de38495d6498c1724ee3dafdbe0cf0ac13a1b5c21eb0870
+[window] s≈200: median 38.6 ms/step (min 38.5 / max 39.5, n=21) = 25.9 tok/s
+[window] s≈512: median 39.2 ms/step (min 39.1 / max 42.1, n=21) = 25.5 tok/s
+[window] s≈1024: median 40.7 ms/step (min 40.6 / max 43.5, n=21) = 24.6 tok/s
+0, 2317 MHz, 35
+1, 2317 MHz, 37
+--- run 4 arm B (default) 09:53:52 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+decoded 1024 steps in 26.6s | stream sha256 811fc1c721505993d0bc435a104bcbf4fed8de2c4c1c4efe160d8019fb7027d7
+[window] s≈200: median 24.7 ms/step (min 24.7 / max 25.7, n=21) = 40.4 tok/s
+[window] s≈512: median 25.2 ms/step (min 25.2 / max 28.0, n=21) = 39.7 tok/s
+[window] s≈1024: median 25.8 ms/step (min 25.7 / max 28.6, n=21) = 38.8 tok/s
+0, 2310 MHz, 35
+1, 2317 MHz, 37
+--- run 5 arm A (f64) 09:56:44 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f64
+decoded 1024 steps in 41.1s | stream sha256 12ec1d210e1431b61de38495d6498c1724ee3dafdbe0cf0ac13a1b5c21eb0870
+[window] s≈200: median 38.6 ms/step (min 38.5 / max 39.6, n=21) = 25.9 tok/s
+[window] s≈512: median 39.2 ms/step (min 39.2 / max 42.1, n=21) = 25.5 tok/s
+[window] s≈1024: median 40.7 ms/step (min 40.6 / max 43.5, n=21) = 24.6 tok/s
+0, 2310 MHz, 34
+1, 2317 MHz, 37
+--- run 5 arm B (default) 09:59:52 ---
+exit=0
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+decoded 1024 steps in 26.6s | stream sha256 811fc1c721505993d0bc435a104bcbf4fed8de2c4c1c4efe160d8019fb7027d7
+[window] s≈200: median 24.7 ms/step (min 24.7 / max 25.6, n=21) = 40.5 tok/s
+[window] s≈512: median 25.2 ms/step (min 25.1 / max 28.1, n=21) = 39.7 tok/s
+[window] s≈1024: median 25.8 ms/step (min 25.7 / max 28.6, n=21) = 38.8 tok/s
+0, 2310 MHz, 35
+1, 2317 MHz, 37
+=== it3 plain A/B x5 done Wed Aug 19 10:02:43 UTC 2026 ===

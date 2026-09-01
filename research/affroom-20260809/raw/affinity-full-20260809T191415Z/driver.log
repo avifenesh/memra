@@ -1,0 +1,476 @@
+=== plain-affinity 5090 gate ts=20260809T191415Z commit=5914cb0f31791e659d4e07399f560d0791bcda3f host=avifenesh
+model=/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+shape: seq=12 c=4 max_tokens=256 ctx=8192 spec_k=0 (plain policy)
+=== arm=record-on affinity=1 mode=record 2026-08-09T19:14:25Z
+record-on (affinity=1) ready pid=1965668 2026-08-09T19:14:52Z
+=== arm=record-on rc=0 2026-08-09T19:15:24Z
+=== arm=on-1 affinity=1 mode=replay 2026-08-09T19:15:24Z
+on-1 (affinity=1) ready pid=1970100 2026-08-09T19:15:51Z
+=== arm=on-1 rc=0 2026-08-09T19:16:23Z
+=== arm=off-1 affinity=0 mode=replay 2026-08-09T19:16:23Z
+off-1 (affinity=0) ready pid=1972000 2026-08-09T19:16:50Z
+=== arm=off-1 rc=0 2026-08-09T19:17:24Z
+=== arm=on-2 affinity=1 mode=replay 2026-08-09T19:17:24Z
+on-2 (affinity=1) ready pid=1974427 2026-08-09T19:17:51Z
+=== arm=on-2 rc=0 2026-08-09T19:18:23Z
+=== arm=off-2 affinity=0 mode=replay 2026-08-09T19:18:23Z
+off-2 (affinity=0) ready pid=1976357 2026-08-09T19:18:50Z
+=== arm=off-2 rc=0 2026-08-09T19:19:24Z
+=== arm=on-3 affinity=1 mode=replay 2026-08-09T19:19:24Z
+on-3 (affinity=1) ready pid=1978325 2026-08-09T19:19:51Z
+=== arm=on-3 rc=0 2026-08-09T19:20:23Z
+=== arm=off-3 affinity=0 mode=replay 2026-08-09T19:20:23Z
+off-3 (affinity=0) ready pid=1981897 2026-08-09T19:20:50Z
+=== arm=off-3 rc=0 2026-08-09T19:21:23Z
+=== compare (N=3) 2026-08-09T19:21:23Z
+--- run 1
+{
+  "requests_compared": 17,
+  "determinism_ok": true,
+  "determinism_arms": 1,
+  "no_new_divergence_ok": true,
+  "shallow_bugs": [],
+  "deep_divergences": 0,
+  "deep_divergence_detail": [],
+  "short_window_checked": 0,
+  "short_window_exact_ok": true,
+  "budget_ok": true,
+  "max_tokens": 256,
+  "plain_affinity_rewinds": 11,
+  "slope_on_ms_per_uncached_tok": 0.0014,
+  "slope_off_ms_per_uncached_tok": 0.2239,
+  "slope_on_r2": 0.00012,
+  "slope_off_r2": 0.98617,
+  "shallow_chars_floor": 32,
+  "learning_turns": 2,
+  "ttft_by_turn": {
+    "on": [
+      {
+        "turn": 0,
+        "ttft_s": 0.233153,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.123145,
+        "cached": 743
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.095851,
+        "cached": 1027
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.094615,
+        "cached": 1204
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.095264,
+        "cached": 1363
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.095928,
+        "cached": 1547
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.10553,
+        "cached": 1710
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.099835,
+        "cached": 1854
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.098847,
+        "cached": 2029
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.096386,
+        "cached": 2246
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.100212,
+        "cached": 2396
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.099523,
+        "cached": 2609
+      }
+    ],
+    "off": [
+      {
+        "turn": 0,
+        "ttft_s": 0.200809,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.246131,
+        "cached": 0
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.108371,
+        "cached": 746
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.127191,
+        "cached": 746
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.179176,
+        "cached": 746
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.216587,
+        "cached": 746
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.26258,
+        "cached": 746
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.304105,
+        "cached": 746
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.328719,
+        "cached": 746
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.348362,
+        "cached": 746
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.403291,
+        "cached": 746
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.484047,
+        "cached": 746
+      }
+    ]
+  },
+  "failures": []
+}
+
+GATE GREEN: resume deterministic, no new divergence class vs cold, within budget, slope collapses with rewinds > 0
+--- run 2
+{
+  "requests_compared": 17,
+  "determinism_ok": true,
+  "determinism_arms": 1,
+  "no_new_divergence_ok": true,
+  "shallow_bugs": [],
+  "deep_divergences": 0,
+  "deep_divergence_detail": [],
+  "short_window_checked": 0,
+  "short_window_exact_ok": true,
+  "budget_ok": true,
+  "max_tokens": 256,
+  "plain_affinity_rewinds": 11,
+  "slope_on_ms_per_uncached_tok": 0.073,
+  "slope_off_ms_per_uncached_tok": 0.2235,
+  "slope_on_r2": 0.63766,
+  "slope_off_r2": 0.98625,
+  "shallow_chars_floor": 32,
+  "learning_turns": 2,
+  "ttft_by_turn": {
+    "on": [
+      {
+        "turn": 0,
+        "ttft_s": 0.231537,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.123643,
+        "cached": 743
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.096419,
+        "cached": 1027
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.094824,
+        "cached": 1204
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.095255,
+        "cached": 1363
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.096473,
+        "cached": 1547
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.094955,
+        "cached": 1710
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.097385,
+        "cached": 1854
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.099241,
+        "cached": 2029
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.097034,
+        "cached": 2246
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.102156,
+        "cached": 2396
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.099259,
+        "cached": 2609
+      }
+    ],
+    "off": [
+      {
+        "turn": 0,
+        "ttft_s": 0.2016,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.246206,
+        "cached": 0
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.108684,
+        "cached": 746
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.127125,
+        "cached": 746
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.179208,
+        "cached": 746
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.21644,
+        "cached": 746
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.261624,
+        "cached": 746
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.302931,
+        "cached": 746
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.328349,
+        "cached": 746
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.347863,
+        "cached": 746
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.402581,
+        "cached": 746
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.483867,
+        "cached": 746
+      }
+    ]
+  },
+  "failures": []
+}
+
+GATE GREEN: resume deterministic, no new divergence class vs cold, within budget, slope collapses with rewinds > 0
+--- run 3
+{
+  "requests_compared": 17,
+  "determinism_ok": true,
+  "determinism_arms": 1,
+  "no_new_divergence_ok": true,
+  "shallow_bugs": [],
+  "deep_divergences": 0,
+  "deep_divergence_detail": [],
+  "short_window_checked": 0,
+  "short_window_exact_ok": true,
+  "budget_ok": true,
+  "max_tokens": 256,
+  "plain_affinity_rewinds": 11,
+  "slope_on_ms_per_uncached_tok": 0.069,
+  "slope_off_ms_per_uncached_tok": 0.2242,
+  "slope_on_r2": 0.79138,
+  "slope_off_r2": 0.98729,
+  "shallow_chars_floor": 32,
+  "learning_turns": 2,
+  "ttft_by_turn": {
+    "on": [
+      {
+        "turn": 0,
+        "ttft_s": 0.24086,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.122766,
+        "cached": 743
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.096189,
+        "cached": 1027
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.094489,
+        "cached": 1204
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.095895,
+        "cached": 1363
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.095578,
+        "cached": 1547
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.094643,
+        "cached": 1710
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.097257,
+        "cached": 1854
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.099263,
+        "cached": 2029
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.096432,
+        "cached": 2246
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.100208,
+        "cached": 2396
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.098858,
+        "cached": 2609
+      }
+    ],
+    "off": [
+      {
+        "turn": 0,
+        "ttft_s": 0.200808,
+        "cached": 0
+      },
+      {
+        "turn": 1,
+        "ttft_s": 0.246693,
+        "cached": 0
+      },
+      {
+        "turn": 2,
+        "ttft_s": 0.109359,
+        "cached": 746
+      },
+      {
+        "turn": 3,
+        "ttft_s": 0.127451,
+        "cached": 746
+      },
+      {
+        "turn": 4,
+        "ttft_s": 0.17928,
+        "cached": 746
+      },
+      {
+        "turn": 5,
+        "ttft_s": 0.216207,
+        "cached": 746
+      },
+      {
+        "turn": 6,
+        "ttft_s": 0.261732,
+        "cached": 746
+      },
+      {
+        "turn": 7,
+        "ttft_s": 0.303301,
+        "cached": 746
+      },
+      {
+        "turn": 8,
+        "ttft_s": 0.328938,
+        "cached": 746
+      },
+      {
+        "turn": 9,
+        "ttft_s": 0.348906,
+        "cached": 746
+      },
+      {
+        "turn": 10,
+        "ttft_s": 0.405653,
+        "cached": 746
+      },
+      {
+        "turn": 11,
+        "ttft_s": 0.483798,
+        "cached": 746
+      }
+    ]
+  },
+  "failures": []
+}
+
+GATE GREEN: resume deterministic, no new divergence class vs cold, within budget, slope collapses with rewinds > 0
+=== gate rc=0 2026-08-09T19:21:23Z

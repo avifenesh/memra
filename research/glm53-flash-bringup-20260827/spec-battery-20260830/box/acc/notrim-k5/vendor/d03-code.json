@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what's happening here. The user is showing me what appears to be a crash report / incident summary that was written \u2014 likely by an AI assistant (Claude Code, or similar agent) \u2014 about a gateway process crash. They're pasting it to me and saying \"you crashed\" \u2014 so they're showing me a report about a crash that happened, and my role here is unclear. Let me re-read.\n\n\"you crashed Root cause .venv was deleted while the gateway process (started May 10) was still running...\"\n\nSo the user pasted an incident report. The framing \"you crashed\" suggests they",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what's happening here. The user is showing me what appears to be a crash report / incident summary that was written \u2014 likely by an AI assistant (Claude Code, or similar agent) \u2014 about a gateway process crash. They're pasting it to me and saying \"you crashed\" \u2014 so they're showing me a report about a crash that happened, and my role here is unclear. Let me re-read.\n\n\"you crashed Root cause .venv was deleted while the gateway process (started May 10) was still running...\"\n\nSo the user pasted an incident report. The framing \"you crashed\" suggests they"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 453,
+  "completion_tokens": 128,
+  "total_tokens": 581,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 9.392108574,
+  "spec": {
+   "rounds": 53,
+   "drafted": 265,
+   "accepted": 77,
+   "acceptance_rate": 0.29056603773584905
+  }
+ },
+ "id": "chatcmpl-bc85eaaee97e47e73306acdc735c8ef5",
+ "created": 1788081321,
+ "system_fingerprint": "REDACTED"
+}

@@ -1,0 +1,79 @@
+diff --git a/crates/memra-server/src/main.rs b/crates/memra-server/src/main.rs
+index 22e976d49..345f2f16b 100644
+--- a/crates/memra-server/src/main.rs
++++ b/crates/memra-server/src/main.rs
+@@ -2134,6 +2134,8 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
+         body["prefix_cache_misses"] = json!(m.prefix_misses);
+         body["prefix_cache_inserts"] = json!(m.prefix_inserts);
+         body["prefix_cache_evictions"] = json!(m.prefix_evictions);
++        body["prefix_cache_skips_budget"] = json!(m.prefix_skips_budget);
++        body["prefix_cache_skips_pinned"] = json!(m.prefix_skips_pinned);
+         body["prefix_cache_hit_tokens"] = json!(m.prefix_hit_tokens);
+         // One sample per prefix-cache probe: served length on a hit, best LCP on a miss.
+         // `edges` are lower bounds; the last bucket is unbounded.
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 3401648c9..8d3735168 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -398,6 +398,8 @@ pub struct Metrics {
+     pub prefix_misses: u64,
+     pub prefix_inserts: u64,
+     pub prefix_evictions: u64,
++    pub prefix_skips_budget: u64,
++    pub prefix_skips_pinned: u64,
+     pub prefix_hit_tokens: u64,
+     /// Serving-hardening counters and gauges (lane/cx-cachespec, 2026-08-09). These make
+     /// cache/admission latency attributable from `/metrics` instead of requiring a server-log
+@@ -2239,6 +2241,8 @@ struct PrefixCache {
+     misses: u64,
+     inserts: u64,
+     evictions: u64,
++    skips_budget: u64,
++    skips_pinned: u64,
+     hit_tokens: u64,
+     /// LCP histogram (lane/cache-metering): one sample per probe — the served entry's
+     /// token length on a hit, `best_lcp` on a miss (both already computed; no new scan).
+@@ -2335,6 +2339,20 @@ impl PrefixCache {
+         self.lcp_hist[Self::lcp_bucket(n)] += 1;
+     }
+ 
++    fn record_budget_skip(&mut self, pinned: bool) {
++        if pinned {
++            self.skips_pinned += 1;
++            return;
++        }
++        let first_budget_skip = self.skips_budget == 0;
++        self.skips_budget += 1;
++        if first_budget_skip {
++            eprintln!("[prefix-cache] WARNING: first prefix insert is larger than the entire byte \
++                       budget; this shape cannot produce cross-request hits. Subsequent refusals \
++                       remain visible in prefix_cache_skips_budget");
++        }
++    }
++
+     /// Admission observed a miss before a same-window sibling produced the shared prefix.
+     /// Rewrite that provisional probe into the final served-path hit so cache-meter receipts
+     /// count requests, tokens, and LCP depth exactly once.
+@@ -2539,11 +2557,13 @@ impl PrefixCache {
+             };
+         }
+         if e.bytes > budget {
++            self.record_budget_skip(false);
+             eprintln!("[prefix-cache] skip {why} insert: entry {:.1}MB > budget {:.0}MB",
+                       e.bytes as f64 / 1e6, budget as f64 / 1e6);
+             return None;
+         }
+         if initial_pins > 0 && e.bytes > budget.saturating_sub(self.pinned_bytes()) {
++            self.record_budget_skip(true);
+             eprintln!("[prefix-cache] skip pinned {why} insert: entry {:.1}MB cannot fit \
+                        beside {:.1}MB already pinned (budget {:.0}MB)",
+                       e.bytes as f64 / 1e6, self.pinned_bytes() as f64 / 1e6,
+@@ -5382,6 +5402,8 @@ pub fn run(
+             m.prefix_misses = px.misses;
+             m.prefix_inserts = px.inserts;
+             m.prefix_evictions = px.evictions;
++            m.prefix_skips_budget = px.skips_budget;
++            m.prefix_skips_pinned = px.skips_pinned;
+             m.prefix_hit_tokens = px.hit_tokens;
+             m.admission_session_defers = n_session_defers;
+             m.admission_vram_defers = n_vram_defers;

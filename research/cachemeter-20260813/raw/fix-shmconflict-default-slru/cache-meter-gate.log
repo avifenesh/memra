@@ -1,0 +1,24 @@
+  ok: A fanout cached_tokens == [0] + [256]x4
+  ok: A-req1 prompt_tokens == 272
+  ok: A-req2 prompt_tokens == 272
+  ok: A-req3 prompt_tokens == 272
+  ok: A-req4 prompt_tokens == 272
+  ok: A-req5 prompt_tokens == 272
+  ok: B-req1 cached_tokens == 0 (cross-salt blindness)
+  ok: B-req1 prompt_tokens == 272
+  ok: prompt_tokens_in == 1632
+  ok: cached_tokens_in == 1024
+  ok: computed_tokens_in == prompt - cached
+  ok: cache_hit_token_ratio matches arithmetic
+  ok: prefix_cache_hits == N-1
+  ok: prefix_cache_misses == 2 (one A leader + cross-salt B)
+  ok: prefix_cache_inserts == 2 (shared A prefix + B seed)
+  ok: prefix_cache_hit_tokens == 1024
+  ok: lcp_histogram: 6 probes total
+  ok: lcp_histogram: 2 cold probes in bucket [0]
+  ok: lcp_histogram: 4 probes in K's bucket (edge 256)
+  ok: tick-seg [64,512) window carries the shared-prefix probes
+  ok: tenants[meter-A] split exact
+  ok: tenants[meter-B] split exact (0 cached)
+  ok: economics revenue_multiplier == 2.6842 (factor 1.0)
+cache-meter-gate: 0 failed

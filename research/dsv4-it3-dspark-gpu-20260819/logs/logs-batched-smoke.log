@@ -1,0 +1,9 @@
+dsv4-dspark-gate | model /home/ubuntu/models/dsv4-flash-0731-nvfp4 | mode batched | fixtures fixtures/dsv4_dspark_fixtures_ref.json | first_pos 32 last_pos 190 | torch accept_mean 3.7862
+npz integrity: 51 arrays sha-verified
+model loaded t=57s
+*** SMOKE RUN (n_new truncated to 24) — not a gate verdict ***
+sequential twin done: 23 positions digested (232 classes each) t=352s
+
+RING-HAZARD GATE (§3.1, batched verify + rollback/commit) [PASS]: 24/160 tokens == banked REF trajectory | LITERAL IDENTITY, zero corrections | state classes BIT-equal to the sequential twin at 7/7 round boundaries with 0 class fails | rounds 7 | accepted drafts 16 (mean 2.667/verify round) | determinism sha256 c71f57908d489b419f683dc981845394209af1497c21e875b2226a8331c8c6be
+elapsed 560s
+EXIT=0

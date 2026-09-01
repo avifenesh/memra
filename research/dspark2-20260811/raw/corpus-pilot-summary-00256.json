@@ -1,0 +1,90 @@
+{
+  "anchor_sampling": {
+    "actual_records": 1012,
+    "deficient_records": 12,
+    "max_per_pair": 4,
+    "maximum_records": 1024,
+    "min_per_pair": 0,
+    "pairs_below_requested": 3,
+    "requested_per_pair": 4
+  },
+  "assignment_cells": {
+    "chat/nothink/train": 32,
+    "chat/think/train": 32,
+    "code/nothink/heldout": 1,
+    "code/nothink/train": 37,
+    "code/think/heldout": 4,
+    "code/think/train": 22,
+    "if/nothink/heldout": 1,
+    "if/nothink/train": 28,
+    "if/think/heldout": 5,
+    "if/think/train": 30,
+    "math/nothink/heldout": 2,
+    "math/nothink/train": 38,
+    "math/think/heldout": 2,
+    "math/think/train": 22
+  },
+  "categories": {
+    "chat": 64,
+    "code": 64,
+    "if": 64,
+    "math": 64
+  },
+  "chunks": 4,
+  "end": 256,
+  "format": "memra-dspark-corpus-summary-v2",
+  "label": "pilot",
+  "manifest_fingerprint": "2e6b40d75a7aec95fe0118319d6f4e7d521023142a155e08c9264dc0b0e41456",
+  "manifests": [
+    {
+      "chunk": "pilot-00000-00064",
+      "sha256": "1b589df5717a718613487d0b86239bf43c4b319985e5e92a71384ac8d944c0eb"
+    },
+    {
+      "chunk": "pilot-00064-00128",
+      "sha256": "b29097411b1e859ac4809508766f137efeecb686b944815316a5ab2364e09465"
+    },
+    {
+      "chunk": "pilot-00128-00192",
+      "sha256": "94a307096fedee84a545728c3f3fae9dce30144349cc2231f727a9a8bf9abc70"
+    },
+    {
+      "chunk": "pilot-00192-00256",
+      "sha256": "b51ef7a7644a0f3d916214f5410d6a7ddaaf1c6a18331c0d6e25cc6befdb0e9d"
+    }
+  ],
+  "modes": {
+    "nothink": 139,
+    "think": 117
+  },
+  "pairs": 256,
+  "prompt_tokens": {
+    "max": 2953,
+    "min": 19,
+    "p50": 72,
+    "p95": 492,
+    "total": 37662
+  },
+  "records": 1012,
+  "response_tokens": {
+    "max": 512,
+    "max_new_512_count": 199,
+    "min": 2,
+    "p50": 512,
+    "p95": 512,
+    "total": 117322
+  },
+  "skipped_short_pairs": 3,
+  "splits": {
+    "heldout": 15,
+    "train": 241
+  },
+  "start": 0,
+  "validation": {
+    "max_logit_probability_ratio_error": 9.598196157867278e-07,
+    "max_probability_mass_error": 3.298590511846555e-08,
+    "sampled_token_top64_rate": 0.999802371541502,
+    "tail_mass_max": 0.10399816930294037,
+    "tail_mass_mean": 0.00015234606270355107
+  }
+}

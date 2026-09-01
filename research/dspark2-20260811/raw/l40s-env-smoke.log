@@ -1,0 +1,26 @@
+{
+  "attention_backend": "sdpa",
+  "cuda_available": true,
+  "cuda_runtime": "12.8",
+  "device_capability": [
+    8,
+    9
+  ],
+  "device_name": "NVIDIA L40S",
+  "flash_attn": null,
+  "flash_attn_import_error": "ModuleNotFoundError: No module named 'flash_attn'",
+  "matmul_bf16_ms": 127.18316802056506,
+  "matmul_checksum": -36779.23046875,
+  "packages": {
+    "accelerate": "1.14.0",
+    "bitsandbytes": "0.50.0",
+    "datasets": "4.3.0",
+    "numpy": "2.4.6",
+    "safetensors": "0.8.0",
+    "scikit-learn": "1.7.2",
+    "torch": "2.11.0+cu128",
+    "transformers": "5.5.0"
+  },
+  "sdpa_checksum": -409.86328125,
+  "torch": "2.11.0+cu128"
+}

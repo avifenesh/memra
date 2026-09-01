@@ -1,0 +1,44 @@
+########## 10-b3-default.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 24 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 11-b8-wide.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 64 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=8 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 12-b2-longer.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 48 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=2 P=12(staggered +bi) N=24 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 13-b3-ppn2.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 24 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+exit=0
+########## 14-b3-ppn2-streams0.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 24 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=2 streams=OFF(same-stream seam) shard=per-stage)
+exit=0
+########## 15-b3-ppn4.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 24 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=4 streams=per-stage shard=per-stage)
+exit=0
+########## 16-b8-ppn2.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 64 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=8 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+exit=0
+########## 17-b12.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 96 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=12 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 18-b15-cap.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 120 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=15 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+exit=0
+########## 19-b15-ppn2.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 120 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=15 P=5(staggered +bi) N=8 stages=2 streams=per-stage shard=per-stage)
+exit=0
+########## compose-b3-doors-DH.log ##########
+exit=0  gate-PASS-lines=3
+glm5-hyper-batch gate PASS [devsample-greedy]: 24 comparisons BIT-IDENTICAL vs the isolated serial hc walk (n_vocab=32; B=3 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage)
+exit=0

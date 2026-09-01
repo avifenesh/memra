@@ -1,0 +1,354 @@
+{
+  "anchor": {
+    "delta_pct": -0.8374336429090801,
+    "flip_battery_c8_tok_s": 158.065,
+    "measured_c8_tok_s": 156.74131051233576
+  },
+  "exactness": {
+    "dual_metrics_ok": true,
+    "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de",
+    "failed_width": null,
+    "metrics_ok": true,
+    "passed_widths": [
+      12,
+      16,
+      20,
+      24
+    ],
+    "requested_widths": [
+      12,
+      16,
+      20,
+      24
+    ],
+    "server_log_clean": true,
+    "verdict": "PASS"
+  },
+  "knee": {
+    "first_non_rising_width": 20,
+    "first_ttft_over_15s_width": null,
+    "rule": "first width where median aggregate tok/s does not rise or median window p99 TTFT exceeds 15s",
+    "width": 20
+  },
+  "metric": "aggregate completion tokens / barrier-release-to-final-drain wall second",
+  "protocol": "N=3 interleaved widths; fresh naked server per point; same-width discarded warmup; 128 tokens/request; one lock hold",
+  "receipt": {
+    "completion_tokens": 34560,
+    "request_errors": 0,
+    "requests": 270,
+    "scored_points": 18
+  },
+  "revenue_optimum": {
+    "aggregate_tok_s": 171.419137670356,
+    "rule": "highest median aggregate tok/s among widths with median window p99 TTFT <= 15s",
+    "tokens_per_day": 14810613.494718758,
+    "width": 16
+  },
+  "rig": "box1, 2x RTX PRO 6000 Blackwell Server Edition",
+  "schema": "memra.cx-loaddepth.v1",
+  "source_commit": "0edc57b9c98720067686cbd60905073d545154b8",
+  "thermal_regime": {
+    "all_gpus": {
+      "memory_used_mib_max": 56691.0,
+      "memory_used_mib_min": 0.0,
+      "power_w_max": 336.91,
+      "power_w_min": 30.07,
+      "sm_clock_mhz_max": 2422.0,
+      "sm_clock_mhz_min": 180.0,
+      "temperature_c_max": 50.0,
+      "temperature_c_min": 27.0
+    },
+    "artificial_cooldown": false,
+    "gpus": {
+      "0": {
+        "memory_used_mib_max": 46577.0,
+        "memory_used_mib_min": 0.0,
+        "power_w_max": 309.16,
+        "power_w_min": 30.07,
+        "sm_clock_mhz_max": 2422.0,
+        "sm_clock_mhz_min": 180.0,
+        "temperature_c_max": 48.0,
+        "temperature_c_min": 27.0
+      },
+      "1": {
+        "memory_used_mib_max": 56691.0,
+        "memory_used_mib_min": 0.0,
+        "power_w_max": 336.91,
+        "power_w_min": 30.51,
+        "sm_clock_mhz_max": 2422.0,
+        "sm_clock_mhz_min": 180.0,
+        "temperature_c_max": 50.0,
+        "temperature_c_min": 27.0
+      }
+    },
+    "intervals": 4898,
+    "rows": 9796,
+    "sample_interval_ms": 250
+  },
+  "widths": {
+    "c10": {
+      "N": 3,
+      "admission_counters_total": {
+        "admission_session_defers": 0,
+        "admission_vram_defers": 0,
+        "admitted": 30,
+        "completed": 30,
+        "step_oom_parks": 0,
+        "tokens_out": 3840
+      },
+      "aggregate_tok_s": [
+        162.59297229954208,
+        162.18009317121107,
+        162.6653170507541
+      ],
+      "aggregate_tok_s_max": 162.6653170507541,
+      "aggregate_tok_s_median": 162.59297229954208,
+      "aggregate_tok_s_min": 162.18009317121107,
+      "peak_active_sessions_sampled": 10,
+      "peak_queued_requests_sampled": 0,
+      "replicate_positions": [
+        2,
+        5,
+        6
+      ],
+      "step_p99_ms": [
+        76.73526763916016,
+        76.82177734375,
+        77.12714385986328
+      ],
+      "step_p99_ms_median": 76.82177734375,
+      "ttft_p50_s": [
+        0.519769955513766,
+        0.519739146984648,
+        0.3513612045207992
+      ],
+      "ttft_p50_s_median": 0.519739146984648,
+      "ttft_p99_s": [
+        0.7319760639802553,
+        0.7319910069927573,
+        0.6464479520218447
+      ],
+      "ttft_p99_s_median": 0.7319760639802553
+    },
+    "c12": {
+      "N": 3,
+      "admission_counters_total": {
+        "admission_session_defers": 0,
+        "admission_vram_defers": 0,
+        "admitted": 36,
+        "completed": 36,
+        "step_oom_parks": 0,
+        "tokens_out": 4608
+      },
+      "aggregate_tok_s": [
+        166.44552352478556,
+        166.55734100116192,
+        167.90030539819978
+      ],
+      "aggregate_tok_s_max": 167.90030539819978,
+      "aggregate_tok_s_median": 166.55734100116192,
+      "aggregate_tok_s_min": 166.44552352478556,
+      "peak_active_sessions_sampled": 12,
+      "peak_queued_requests_sampled": 0,
+      "replicate_positions": [
+        3,
+        4,
+        1
+      ],
+      "step_p99_ms": [
+        90.69458770751953,
+        90.6478042602539,
+        90.36518859863281
+      ],
+      "step_p99_ms_median": 90.6478042602539,
+      "ttft_p50_s": [
+        0.5195031909970567,
+        0.47484345600241795,
+        0.5408585315162782
+      ],
+      "ttft_p50_s_median": 0.5195031909970567,
+      "ttft_p99_s": [
+        0.8227262619766407,
+        0.8198203180218115,
+        0.7327255830168724
+      ],
+      "ttft_p99_s_median": 0.8198203180218115
+    },
+    "c16": {
+      "N": 3,
+      "admission_counters_total": {
+        "admission_session_defers": 0,
+        "admission_vram_defers": 0,
+        "admitted": 48,
+        "completed": 48,
+        "step_oom_parks": 0,
+        "tokens_out": 6144
+      },
+      "aggregate_tok_s": [
+        170.90011685327153,
+        171.419137670356,
+        172.48801887213688
+      ],
+      "aggregate_tok_s_max": 172.48801887213688,
+      "aggregate_tok_s_median": 171.419137670356,
+      "aggregate_tok_s_min": 170.90011685327153,
+      "peak_active_sessions_sampled": 16,
+      "peak_queued_requests_sampled": 0,
+      "replicate_positions": [
+        4,
+        3,
+        2
+      ],
+      "step_p99_ms": [
+        117.99651336669922,
+        118.23258972167969,
+        117.99114227294922
+      ],
+      "step_p99_ms_median": 117.99651336669922,
+      "ttft_p50_s": [
+        0.5678319454891607,
+        1.0779482194921002,
+        0.6092423764930572
+      ],
+      "ttft_p50_s_median": 0.6092423764930572,
+      "ttft_p99_s": [
+        1.0897246929816902,
+        1.0790132860420272,
+        1.008548577025067
+      ],
+      "ttft_p99_s_median": 1.0790132860420272
+    },
+    "c20": {
+      "N": 3,
+      "admission_counters_total": {
+        "admission_session_defers": 0,
+        "admission_vram_defers": 0,
+        "admitted": 60,
+        "completed": 60,
+        "step_oom_parks": 0,
+        "tokens_out": 7680
+      },
+      "aggregate_tok_s": [
+        165.16838927046388,
+        164.4264672207108,
+        164.9114775014185
+      ],
+      "aggregate_tok_s_max": 165.16838927046388,
+      "aggregate_tok_s_median": 164.9114775014185,
+      "aggregate_tok_s_min": 164.4264672207108,
+      "peak_active_sessions_sampled": 20,
+      "peak_queued_requests_sampled": 0,
+      "replicate_positions": [
+        5,
+        2,
+        3
+      ],
+      "step_p99_ms": [
+        153.00308227539062,
+        152.47085571289062,
+        152.69227600097656
+      ],
+      "step_p99_ms_median": 152.69227600097656,
+      "ttft_p50_s": [
+        0.9381713434704579,
+        1.333452283492079,
+        0.6537949124758597
+      ],
+      "ttft_p50_s_median": 0.9381713434704579,
+      "ttft_p99_s": [
+        1.2684128119726665,
+        1.3353322610491887,
+        1.2757745000417344
+      ],
+      "ttft_p99_s_median": 1.2757745000417344
+    },
+    "c24": {
+      "N": 3,
+      "admission_counters_total": {
+        "admission_session_defers": 0,
+        "admission_vram_defers": 0,
+        "admitted": 72,
+        "completed": 72,
+        "step_oom_parks": 0,
+        "tokens_out": 9216
+      },
+      "aggregate_tok_s": [
+        169.51392045634634,
+        169.00472779538953,
+        167.48772748115695
+      ],
+      "aggregate_tok_s_max": 169.51392045634634,
+      "aggregate_tok_s_median": 169.00472779538953,
+      "aggregate_tok_s_min": 167.48772748115695,
+      "peak_active_sessions_sampled": 24,
+      "peak_queued_requests_sampled": 0,
+      "replicate_positions": [
+        6,
+        1,
+        4
+      ],
+      "step_p99_ms": [
+        180.23731994628906,
+        180.54843139648438,
+        181.14816284179688
+      ],
+      "step_p99_ms_median": 180.54843139648438,
+      "ttft_p50_s": [
+        1.423151016002521,
+        1.5212722044961993,
+        1.524738381500356
+      ],
+      "ttft_p50_s_median": 1.5212722044961993,
+      "ttft_p99_s": [
+        1.424612105009146,
+        1.5227860860177316,
+        1.5263541910098866
+      ],
+      "ttft_p99_s_median": 1.5227860860177316
+    },
+    "c8": {
+      "N": 3,
+      "admission_counters_total": {
+        "admission_session_defers": 0,
+        "admission_vram_defers": 0,
+        "admitted": 24,
+        "completed": 24,
+        "step_oom_parks": 0,
+        "tokens_out": 3072
+      },
+      "aggregate_tok_s": [
+        156.74131051233576,
+        156.37187304419632,
+        157.5540572091272
+      ],
+      "aggregate_tok_s_max": 157.5540572091272,
+      "aggregate_tok_s_median": 156.74131051233576,
+      "aggregate_tok_s_min": 156.37187304419632,
+      "peak_active_sessions_sampled": 8,
+      "peak_queued_requests_sampled": 0,
+      "replicate_positions": [
+        1,
+        6,
+        5
+      ],
+      "step_p99_ms": [
+        62.78750991821289,
+        62.6790657043457,
+        62.95340347290039
+      ],
+      "step_p99_ms_median": 62.78750991821289,
+      "ttft_p50_s": [
+        0.475058944983175,
+        0.47696911299135536,
+        0.35121725950739346
+      ],
+      "ttft_p50_s_median": 0.475058944983175,
+      "ttft_p99_s": [
+        0.6790910409763455,
+        0.6808255580253899,
+        0.5549499980406836
+      ],
+      "ttft_p99_s_median": 0.6790910409763455
+    }
+  }
+}

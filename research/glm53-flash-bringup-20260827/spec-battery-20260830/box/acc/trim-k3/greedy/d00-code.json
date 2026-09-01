@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumably another language \u2014 probably Python or TypeScript/Node, something quick)\n- It should call a model (LLM) to do the \"arrangements\" \u2014 i.e., the LLM does the parsing/organizing\n- The user writes minimal few sentences (a brain dump)\n- The agent captures it, puts it in place, tracks the relevant JSONL from whatever tool they were using, and compacts it\n- The agent asks if they want to elaborate on some question it found helpful to",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumably another language \u2014 probably Python or TypeScript/Node, something quick)\n- It should call a model (LLM) to do the \"arrangements\" \u2014 i.e., the LLM does the parsing/organizing\n- The user writes minimal few sentences (a brain dump)\n- The agent captures it, puts it in place, tracks the relevant JSONL from whatever tool they were using, and compacts it\n- The agent asks if they want to elaborate on some question it found helpful to"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 239,
+  "completion_tokens": 128,
+  "total_tokens": 367,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 5.469152938,
+  "spec": {
+   "rounds": 49,
+   "drafted": 147,
+   "accepted": 78,
+   "acceptance_rate": 0.5306122448979592
+  }
+ },
+ "id": "chatcmpl-305737dc404796b4e6fd7bdfb8bacf95",
+ "created": 1788082009,
+ "system_fingerprint": "REDACTED"
+}

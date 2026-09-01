@@ -1,0 +1,277 @@
+[server] starting; models config = [("zai/glm-5.3-flash", "/root/models/glm53-nvfp4", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=1, MEMRA_FAST=true)
+[spec-gate] policy placement=pp2-cross-device LOW=0 HIGH=1 source=placement-default spec-admission=off
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "zai/glm-5.3-flash" <- /root/models/glm53-nvfp4
+[pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=1.710
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe direction: boundary=0 dev1->dev0 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
+[pp] production-slot peer probe PASS: widths_tokens=[1, 8, 16, 4096] copies=8 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864 elapsed_ms=894.435
+[loader-law] WARNING: output.weight loads as 2D Float ne=[4096, 154880] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[4096, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 8192] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_b.weight loads as 2D Float ne=[4096, 64] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[8192, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_q_b.weight loads as 2D Float ne=[1536, 4096] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.attn_k.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.proj.weight loads as 2D Float ne=[4096, 32] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.indexer.kpool_gate.weight loads as 2D Float ne=[4096, 128] (src BF16) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[slab-populate] blk3-gate: 1296 MiB in 0.2s (5210 MiB/s)
+[slab-populate] blk3-up: 1296 MiB in 0.2s (5205 MiB/s)
+[slab-populate] blk3-down: 1296 MiB in 0.2s (5248 MiB/s)
+[moe] resident-experts decision (PP dev0): experts 97.84GB + trunk 0.00GB vs free 99.24GB (expert budget 92.00GB) -> SLRU cache
+[slab-populate] blk4-gate: 1296 MiB in 0.2s (5264 MiB/s)
+[slab-populate] blk4-up: 1296 MiB in 0.3s (4995 MiB/s)
+[slab-populate] blk4-down: 1296 MiB in 0.3s (5085 MiB/s)
+[slab-populate] blk5-gate: 1296 MiB in 0.2s (5352 MiB/s)
+[slab-populate] blk5-up: 1296 MiB in 0.2s (5375 MiB/s)
+[slab-populate] blk5-down: 1296 MiB in 0.2s (5369 MiB/s)
+[slab-populate] blk6-gate: 1296 MiB in 0.2s (5236 MiB/s)
+[slab-populate] blk6-up: 1296 MiB in 0.2s (5395 MiB/s)
+[slab-populate] blk6-down: 1296 MiB in 0.2s (5375 MiB/s)
+[slab-populate] blk7-gate: 1296 MiB in 0.2s (5384 MiB/s)
+[slab-populate] blk7-up: 1296 MiB in 0.2s (5259 MiB/s)
+[slab-populate] blk7-down: 1296 MiB in 0.3s (4409 MiB/s)
+[slab-populate] blk8-gate: 1296 MiB in 0.2s (5392 MiB/s)
+[slab-populate] blk8-up: 1296 MiB in 0.2s (5373 MiB/s)
+[slab-populate] blk8-down: 1296 MiB in 0.3s (5142 MiB/s)
+[slab-populate] blk9-gate: 1296 MiB in 0.3s (4976 MiB/s)
+[slab-populate] blk9-up: 1296 MiB in 0.3s (4967 MiB/s)
+[slab-populate] blk9-down: 1296 MiB in 0.3s (4958 MiB/s)
+[slab-populate] blk10-gate: 1296 MiB in 0.3s (5034 MiB/s)
+[slab-populate] blk10-up: 1296 MiB in 0.3s (5032 MiB/s)
+[slab-populate] blk10-down: 1296 MiB in 0.3s (4987 MiB/s)
+[slab-populate] blk11-gate: 1296 MiB in 0.3s (5028 MiB/s)
+[slab-populate] blk11-up: 1296 MiB in 0.3s (5023 MiB/s)
+[slab-populate] blk11-down: 1296 MiB in 0.3s (5042 MiB/s)
+[slab-populate] blk12-gate: 1296 MiB in 0.3s (4975 MiB/s)
+[slab-populate] blk12-up: 1296 MiB in 0.3s (4965 MiB/s)
+[slab-populate] blk12-down: 1296 MiB in 0.3s (4949 MiB/s)
+[slab-populate] blk13-gate: 1296 MiB in 0.2s (5490 MiB/s)
+[slab-populate] blk13-up: 1296 MiB in 0.2s (5481 MiB/s)
+[slab-populate] blk13-down: 1296 MiB in 0.2s (5442 MiB/s)
+[slab-populate] blk14-gate: 1296 MiB in 0.2s (5481 MiB/s)
+[slab-populate] blk14-up: 1296 MiB in 0.2s (5487 MiB/s)
+[slab-populate] blk14-down: 1296 MiB in 0.2s (5318 MiB/s)
+[slab-populate] blk15-gate: 1296 MiB in 0.2s (5492 MiB/s)
+[slab-populate] blk15-up: 1296 MiB in 0.2s (5483 MiB/s)
+[slab-populate] blk15-down: 1296 MiB in 0.2s (5484 MiB/s)
+[slab-populate] blk16-gate: 1296 MiB in 0.2s (5477 MiB/s)
+[slab-populate] blk16-up: 1296 MiB in 0.2s (5476 MiB/s)
+[slab-populate] blk16-down: 1296 MiB in 0.2s (5484 MiB/s)
+[slab-populate] blk17-gate: 1296 MiB in 0.2s (5485 MiB/s)
+[slab-populate] blk17-up: 1296 MiB in 0.2s (5482 MiB/s)
+[slab-populate] blk17-down: 1296 MiB in 0.2s (5488 MiB/s)
+[slab-populate] blk18-gate: 1296 MiB in 0.2s (5482 MiB/s)
+[slab-populate] blk18-up: 1296 MiB in 0.2s (5485 MiB/s)
+[slab-populate] blk18-down: 1296 MiB in 0.2s (5484 MiB/s)
+[slab-populate] blk19-gate: 1296 MiB in 0.2s (5509 MiB/s)
+[slab-populate] blk19-up: 1296 MiB in 0.2s (5474 MiB/s)
+[slab-populate] blk19-down: 1296 MiB in 0.2s (5480 MiB/s)
+[slab-populate] blk20-gate: 1296 MiB in 0.2s (5495 MiB/s)
+[slab-populate] blk20-up: 1296 MiB in 0.2s (5446 MiB/s)
+[slab-populate] blk20-down: 1296 MiB in 0.2s (5378 MiB/s)
+[slab-populate] blk21-gate: 1296 MiB in 0.2s (5486 MiB/s)
+[slab-populate] blk21-up: 1296 MiB in 0.2s (5481 MiB/s)
+[slab-populate] blk21-down: 1296 MiB in 0.2s (5474 MiB/s)
+[slab-populate] blk22-gate: 1296 MiB in 0.2s (5492 MiB/s)
+[slab-populate] blk22-up: 1296 MiB in 0.2s (5485 MiB/s)
+[slab-populate] blk22-down: 1296 MiB in 0.2s (5282 MiB/s)
+[slab-populate] blk23-gate: 1296 MiB in 0.2s (5504 MiB/s)
+[slab-populate] blk23-up: 1296 MiB in 0.2s (5459 MiB/s)
+[slab-populate] blk23-down: 1296 MiB in 0.2s (5432 MiB/s)
+[slab-populate] blk24-gate: 1296 MiB in 0.2s (5436 MiB/s)
+[slab-populate] blk24-up: 1296 MiB in 0.2s (5423 MiB/s)
+[slab-populate] blk24-down: 1296 MiB in 0.2s (5443 MiB/s)
+[moe] resident-experts decision (PP dev1): experts 89.69GB + trunk 0.00GB vs free 98.16GB (expert budget 92.00GB) -> RESIDENT
+[slab-populate] blk25-gate: 1296 MiB in 0.2s (5455 MiB/s)
+[slab-populate] blk25-up: 1296 MiB in 0.2s (5422 MiB/s)
+[slab-populate] blk25-down: 1296 MiB in 0.2s (5438 MiB/s)
+[slab-populate] blk26-gate: 1296 MiB in 0.2s (5751 MiB/s)
+[slab-populate] blk26-up: 1296 MiB in 0.2s (5506 MiB/s)
+[slab-populate] blk26-down: 1296 MiB in 0.2s (5687 MiB/s)
+[slab-populate] blk27-gate: 1296 MiB in 0.2s (5782 MiB/s)
+[slab-populate] blk27-up: 1296 MiB in 0.2s (5778 MiB/s)
+[slab-populate] blk27-down: 1296 MiB in 0.2s (5785 MiB/s)
+[slab-populate] blk28-gate: 1296 MiB in 0.2s (5872 MiB/s)
+[slab-populate] blk28-up: 1296 MiB in 0.2s (5966 MiB/s)
+[slab-populate] blk28-down: 1296 MiB in 0.2s (5893 MiB/s)
+[slab-populate] blk29-gate: 1296 MiB in 0.2s (5873 MiB/s)
+[slab-populate] blk29-up: 1296 MiB in 0.2s (5863 MiB/s)
+[slab-populate] blk29-down: 1296 MiB in 0.2s (5865 MiB/s)
+[slab-populate] blk30-gate: 1296 MiB in 0.2s (5884 MiB/s)
+[slab-populate] blk30-up: 1296 MiB in 0.2s (7677 MiB/s)
+[slab-populate] blk30-down: 1296 MiB in 0.2s (7680 MiB/s)
+[slab-populate] blk31-gate: 1296 MiB in 0.2s (7691 MiB/s)
+[slab-populate] blk31-up: 1296 MiB in 0.2s (7696 MiB/s)
+[slab-populate] blk31-down: 1296 MiB in 0.2s (7702 MiB/s)
+[slab-populate] blk32-gate: 1296 MiB in 0.2s (7695 MiB/s)
+[slab-populate] blk32-up: 1296 MiB in 0.2s (7685 MiB/s)
+[slab-populate] blk32-down: 1296 MiB in 0.2s (7682 MiB/s)
+[slab-populate] blk33-gate: 1296 MiB in 0.2s (7689 MiB/s)
+[slab-populate] blk33-up: 1296 MiB in 0.2s (7693 MiB/s)
+[slab-populate] blk33-down: 1296 MiB in 0.2s (7701 MiB/s)
+[slab-populate] blk34-gate: 1296 MiB in 0.2s (7373 MiB/s)
+[slab-populate] blk34-up: 1296 MiB in 0.2s (7369 MiB/s)
+[slab-populate] blk34-down: 1296 MiB in 0.2s (7351 MiB/s)
+[slab-populate] blk35-gate: 1296 MiB in 0.2s (7351 MiB/s)
+[slab-populate] blk35-up: 1296 MiB in 0.2s (7346 MiB/s)
+[slab-populate] blk35-down: 1296 MiB in 0.2s (7350 MiB/s)
+[slab-populate] blk36-gate: 1296 MiB in 0.2s (7368 MiB/s)
+[slab-populate] blk36-up: 1296 MiB in 0.2s (7368 MiB/s)
+[slab-populate] blk36-down: 1296 MiB in 0.2s (7369 MiB/s)
+[slab-populate] blk37-gate: 1296 MiB in 0.2s (7355 MiB/s)
+[slab-populate] blk37-up: 1296 MiB in 0.2s (7356 MiB/s)
+[slab-populate] blk37-down: 1296 MiB in 0.2s (7358 MiB/s)
+[slab-populate] blk38-gate: 1296 MiB in 0.2s (7356 MiB/s)
+[slab-populate] blk38-up: 1296 MiB in 0.1s (8864 MiB/s)
+[slab-populate] blk38-down: 1296 MiB in 0.1s (8901 MiB/s)
+[slab-populate] blk39-gate: 1296 MiB in 0.1s (8836 MiB/s)
+[slab-populate] blk39-up: 1296 MiB in 0.1s (8863 MiB/s)
+[slab-populate] blk39-down: 1296 MiB in 0.1s (8866 MiB/s)
+[slab-populate] blk40-gate: 1296 MiB in 0.1s (8843 MiB/s)
+[slab-populate] blk40-up: 1296 MiB in 0.1s (8852 MiB/s)
+[slab-populate] blk40-down: 1296 MiB in 0.1s (8870 MiB/s)
+[slab-populate] blk41-gate: 1296 MiB in 0.1s (8875 MiB/s)
+[slab-populate] blk41-up: 1296 MiB in 0.1s (8870 MiB/s)
+[slab-populate] blk41-down: 1296 MiB in 0.1s (8840 MiB/s)
+[slab-populate] blk42-gate: 1296 MiB in 0.1s (9164 MiB/s)
+[slab-populate] blk42-up: 1296 MiB in 0.1s (9208 MiB/s)
+[slab-populate] blk42-down: 1296 MiB in 0.1s (9221 MiB/s)
+[slab-populate] blk43-gate: 1296 MiB in 0.1s (9189 MiB/s)
+[slab-populate] blk43-up: 1296 MiB in 0.1s (9237 MiB/s)
+[slab-populate] blk43-down: 1296 MiB in 0.1s (9162 MiB/s)
+[slab-populate] blk44-gate: 1296 MiB in 0.1s (8956 MiB/s)
+[slab-populate] blk44-up: 1296 MiB in 0.1s (8974 MiB/s)
+[slab-populate] blk44-down: 1296 MiB in 0.1s (8977 MiB/s)
+[worker]   loaded "zai/glm-5.3-flash": 46 layers, eos=154820, stop=[154820, 154827, 154829]
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 2 (dual PP, default-off arm)
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[prefix-cache] on: budget 2097MB (2097152000 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "zai/glm-5.3-flash": plain 0 B/token, spec 0 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["zai/glm-5.3-flash"]
+[server] listening on http://127.0.0.1:18400
+[meter] admit id=cmpl-4f56610910bde6d82b9f7b17a72d298d tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=308 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[admission] dual PP per-stage plan: stage0 session 0MB + reserve 0MB; stage1 session 0MB + reserve 0MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 0MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 0MB + boundary 0.000MB; dev1 session 0MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 0MB + boundary 0.033MB]
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 144MB (observed 144MB at ctx 252 path=plain)
+[kda-chunked] flag=off t=180 min_t=256 c=64 (announce printed in both arms; engagement is the per-call execute line)
+[moe-grouped-prefill] flag=on t=180 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)
+[moe-sk-form] dev=1 qt=7 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=4096 out_f=2048 n_active=178 max_m=85
+[moe-grouped-prefill] execute layer=24 tokens=180 n_active=178 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=25 tokens=180 n_active=186 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=26 tokens=180 n_active=188 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=27 tokens=180 n_active=200 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=28 tokens=180 n_active=200 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=29 tokens=180 n_active=193 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=30 tokens=180 n_active=207 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=31 tokens=180 n_active=203 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=32 tokens=180 n_active=215 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=33 tokens=180 n_active=203 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=34 tokens=180 n_active=194 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=35 tokens=180 n_active=187 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=36 tokens=180 n_active=198 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=37 tokens=180 n_active=191 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=38 tokens=180 n_active=181 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=39 tokens=180 n_active=183 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=40 tokens=180 n_active=186 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=41 tokens=180 n_active=179 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=42 tokens=180 n_active=168 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=43 tokens=180 n_active=154 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[moe-grouped-prefill] execute layer=44 tokens=180 n_active=162 provenance=resident-slab router=sigmoid-host-oracle epilogue=pre-clamped macro_fold=gate-up-rows+down-weight performance_claim=false (logged once per layer)
+[prefix-cache] snapshot failed (latent (MLA/DSA) KV planes are not carried by prefix entries); prefix not cached
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=cmpl-8e506d73cad832442c416105da18356d tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=308 path=plain = 0 B/token x ctx + 144MB fixed = 144MB
+[admission] dual PP per-stage plan: stage0 session 144MB + reserve 144MB; stage1 session 144MB + reserve 144MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 144MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 144MB + boundary 0.000MB; dev1 session 144MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 144MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 180 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] snapshot failed (latent (MLA/DSA) KV planes are not carried by prefix entries); prefix not cached
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=cmpl-3638a516af966b8cf8dec4759f1ab026 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 180 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] snapshot failed (latent (MLA/DSA) KV planes are not carried by prefix entries); prefix not cached
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=cmpl-f10d1a85263ea7fece700daa547aac42 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 180 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] snapshot failed (latent (MLA/DSA) KV planes are not carried by prefix entries); prefix not cached
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=cmpl-2f25613963b69c5f2f2c2814178f79e1 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=397 path=plain = 0 B/token x ctx + 144MB fixed = 144MB
+[admission] dual PP per-stage plan: stage0 session 144MB + reserve 144MB; stage1 session 144MB + reserve 144MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 144MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 144MB + boundary 0.000MB; dev1 session 144MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 144MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 269 prompt tokens; model zai/glm-5.3-flash)
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 145MB (observed 145MB at ctx 341 path=plain)
+[prefix-cache] snapshot failed (latent (MLA/DSA) KV planes are not carried by prefix entries); prefix not cached
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=cmpl-ab0e8c39559580479d50c44184e8f6fb tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=397 path=plain = 0 B/token x ctx + 145MB fixed = 145MB
+[admission] dual PP per-stage plan: stage0 session 145MB + reserve 145MB; stage1 session 145MB + reserve 145MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 145MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 145MB + boundary 0.000MB; dev1 session 145MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 145MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 269 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] snapshot failed (latent (MLA/DSA) KV planes are not carried by prefix entries); prefix not cached
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=cmpl-ebc9efa3391813a3119e4b45b0bcf31c tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 269 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] snapshot failed (latent (MLA/DSA) KV planes are not carried by prefix entries); prefix not cached
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=cmpl-44bcaf29ae5c21f6027e472f0545edda tenant=default lane=interactive model="zai/glm-5.3-flash"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 269 prompt tokens; model zai/glm-5.3-flash)
+[prefix-cache] snapshot failed (latent (MLA/DSA) KV planes are not carried by prefix entries); prefix not cached
+[moe-fused-epi] snapshot dispatches=0
+[meter] admit id=chatcmpl-65b1aec62c176d75dbcdc85552bbf4df tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=2097 path=plain = 0 B/token x ctx + 145MB fixed = 145MB
+[admission] dual PP per-stage plan: stage0 session 145MB + reserve 145MB; stage1 session 145MB + reserve 145MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 145MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 145MB + boundary 0.000MB; dev1 session 145MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 145MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 1521 prompt tokens; model zai/glm-5.3-flash)
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 177MB (observed 177MB at ctx 2041 path=plain)
+[meter] admit id=chatcmpl-eade8f6ba1eb2d86ab6b26de2ed55a76 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-c076c98229e45b77a5a64539263e8bfe tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-b82a2791ebf55d4f7b36a41363ea6daf tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-635a8d345cf0b54154d74b8aac5570c0 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[prefix-cache] snapshot failed (latent (MLA/DSA) KV planes are not carried by prefix entries); prefix not cached
+[abort] client disconnected: model "zai/glm-5.3-flash", prompt 1521 (0 cached), 1 generated — billed to abort point, 365.79s
+[moe-fused-epi] snapshot dispatches=0
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[admission] request cost: model="zai/glm-5.3-flash" ctx=3926 path=plain = 0 B/token x ctx + 177MB fixed = 177MB
+[admission] dual PP per-stage plan: stage0 session 177MB + reserve 177MB; stage1 session 177MB + reserve 177MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 177MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 177MB + boundary 0.000MB; dev1 session 177MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 177MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 3350 prompt tokens; model zai/glm-5.3-flash)
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 210MB (observed 210MB at ctx 3870 path=plain)
+[meter] admit id=chatcmpl-6f3f616b338272342df5b82a2a95b454 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-de5c6c8bdfd92c32911e48546f6defb0 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-0f17a289bb281fe3c42043e24071921c tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-e9c11ec289a6f8d757626e4c31ae2a93 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-017e1a5279468fe23eaf267f89fb2148 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-2c138f939da10e622bf2c9938d8780f6 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-ef9896c356a59eb3fdce02311dd5cb4d tenant=default lane=interactive model="zai/glm-5.3-flash"
+[meter] admit id=chatcmpl-ded431ec09651101ffeec31186e188dd tenant=default lane=interactive model="zai/glm-5.3-flash"
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[moe-fused-epi] snapshot dispatches=0
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[abort] client disconnected while queued (model "zai/glm-5.3-flash"); dropped
+[admission] request cost: model="zai/glm-5.3-flash" ctx=8167 path=plain = 0 B/token x ctx + 210MB fixed = 210MB
+[admission] dual PP per-stage plan: stage0 session 210MB + reserve 210MB; stage1 session 210MB + reserve 210MB + two boundary slots 0.033MB
+[admission] parallel device plan: [dev0 session 210MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 210MB + boundary 0.000MB; dev1 session 210MB + tp-kv 0MB + pending-tp-kv 0MB + reserve 210MB + boundary 0.033MB]
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 8039 prompt tokens; model zai/glm-5.3-flash)
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 270MB (observed 270MB at ctx 8111 path=plain)
+[meter] admit id=chatcmpl-bec5ee5ee101ed4bd001b7ae02180c64 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting

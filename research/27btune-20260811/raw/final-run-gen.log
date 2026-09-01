@@ -1,0 +1,19 @@
+loaded qwen35 (64 trunk layers; optional MTP skipped)
+chat-templated prompt:
+<|im_start|>user
+Write a Python function that implements a doubly-linked list with insert, delete, and reverse operations. Include full type hints and docstrings.<|im_end|>
+<|im_start|>assistant
+<think>
+
+prompt text: "Write a Python function that implements a doubly-linked list with insert, delete, and reverse operations. Include full type hints and docstrings.\n"
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+prefill argmax=8160  decode argmax=8160  logit maxdiff=1.021e0  MATCH
+batched-prime argmax=8160  tokenwise argmax=8160  logit maxdiff=7.617e-1  MATCH
+prefill 37 tok in 0.1001s = 369.7 tok/s (pp37)
+generated 32 tokens in 0.676s = 47.34 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.100s) [stop: MaxNew]
+tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264]
+OUTPUT TEXT: "Here's a thinking process that leads to the suggested Python implementation of a doubly-linked list:\n\n1.  **Understand the Goal:** The user wants a"
+--- generated text ---
+Here's a thinking process that leads to the suggested Python implementation of a doubly-linked list:
+
+1.  **Understand the Goal:** The user wants a

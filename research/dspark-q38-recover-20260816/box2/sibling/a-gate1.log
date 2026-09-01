@@ -1,0 +1,50 @@
++ date -u
+Wed Aug 19 01:02:17 UTC 2026
++ cd /opt/scratch/nvme/a
++ mkdir -p oracle-cum1000 /opt/scratch/nvme/receipts/a
++ echo '=STAGE oracle='
+=STAGE oracle=
++ ./venv/bin/python memra/tools/dspark_q38_oracle.py /opt/scratch/nvme/a/arm-a-cum1000 /opt/scratch/nvme/a/oracle-cum1000/oracle.npz /opt/scratch/nvme/a/SpecForge
+/opt/scratch/nvme/a/SpecForge/specforge/modeling/draft/llama3_eagle.py:33: UserWarning: flash_attn is not found, falling back to flex_attention. Please install flash_attn if you want to use the flash attention backend.
+  warnings.warn(
+census OK: 62 tensors, zero missing / zero unexpected
+oracle dumped 14 arrays -> /opt/scratch/nvme/a/oracle-cum1000/oracle.npz (+flat twins in /opt/scratch/nvme/a/oracle-cum1000)
+  taps: (8, 25600)
+  noise: (7, 5120)
+  base_logits: (6, 248320)
+  anchor: (1,)
+  ctx_features: (8, 5120)
+  layer0_out: (7, 5120)
+  layer1_out: (7, 5120)
+  layer2_out: (7, 5120)
+  layer3_out: (7, 5120)
+  layer4_out: (7, 5120)
+  final: (7, 5120)
+  markov_tokens: (6,)
+  markov_logits: (6, 248320)
+  confidence: (6,)
++ echo '=STAGE parity='
+=STAGE parity=
++ CUDA_VISIBLE_DEVICES=0
++ MEMRA_DFLASH_PREC=bf16
++ memra/target/release/dspark_q38_parity /opt/scratch/nvme/a/arm-a-cum1000 /opt/scratch/nvme/a/oracle-cum1000
+loaded dspark draft: 5 layers, hidden 5120, block 7, taps [4, 16, 28, 40, 52], markov true, confidence true
+ctx_features: maxdiff 9.992e-4 (idx 23379: got 0.6622818 want 0.66328096), rel-to-max 2.234e-4 -> PASS
+final: maxdiff 9.394e-3 (idx 28555: got 0.15190686 want 0.14251268), rel-to-max 1.750e-3 -> PASS
+markov tokens: got [61718, 92576, 4095, 28223, 314, 279] want [61718, 92576, 4095, 28223, 314, 279] -> PASS (EXACT)
+markov logits: maxdiff 9.537e-7 (idx 1578: got 6.0245295 want 6.0245304), rel-to-max 1.110e-7 -> PASS
+confidence: maxdiff 2.146e-6 (idx 1: got -1.824884 want -1.8248819), rel-to-max 8.366e-7 -> PASS
+== dspark_q38_parity: ALL PASS ==
++ echo '=STAGE e2e-fixed='
+=STAGE e2e-fixed=
++ CUDA_VISIBLE_DEVICES=0
++ MEMRA_SPEC_STATS=1
++ memra/target/release/dspark_q38_gate /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf /opt/scratch/nvme/a/arm-a-cum1000 96
+target loaded (65 layers); dspark draft: block 7, taps [4, 16, 28, 40, 52], markov true, yarn true
+
+thread 'main' (20757) panicked at crates/memra-engine/src/hybrid_forward.rs:785:9:
+prime_cache needs T >= 16 (caller gates)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
++ echo E2E_FIXED_FAIL
+E2E_FIXED_FAIL
++ exit 1

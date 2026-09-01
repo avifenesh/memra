@@ -1,0 +1,30 @@
++ target/release/dsv4-gpu-gate /home/ubuntu/models/dsv4-flash-0731-nvfp4 /home/ubuntu/dsv4-oracle0731/fixtures-mint/dsv4_0731_fixtures_ref.json 0,1
++ echo 'gpu-gate-0731-ref-native exit 0'
++ target/release/dsv4-gpu-gate /home/ubuntu/models/dsv4-flash-0731-nvfp4 /home/ubuntu/dsv4-oracle0731/fixtures-mint/dsv4_0731_fixtures_artifactvariant.json 0,1
++ echo 'gpu-gate-0731-clamp-native exit 0'
++ target/release/dsv4-gpu-gate /home/ubuntu/models/dsv4-flash-nvfp4 /home/ubuntu/dsv4-lane2-fixtures/dsv4_fixtures_artifactvariant.json 0,1
++ echo 'gpu-gate-preview-witness exit 0'
++ export MEMRA_DSV4_DECODE_PATH=device
++ MEMRA_DSV4_DECODE_PATH=device
++ target/release/dsv4-gpu-tf-gate /home/ubuntu/models/dsv4-flash-0731-nvfp4 /home/ubuntu/dsv4-oracle0731/greedy/cpu_greedy_ref.tf.json /home/ubuntu/dsv4-0731-regate-out/tf-f64 0,1
++ echo 'tf-gate-0731-f64 exit 0'
++ MEMRA_DSV4_DOTS_ARM=f32
++ target/release/dsv4-gpu-tf-gate /home/ubuntu/models/dsv4-flash-0731-nvfp4 /home/ubuntu/dsv4-oracle0731/greedy/cpu_greedy_ref.tf.json /home/ubuntu/dsv4-0731-regate-out/tf-f32 0,1
++ echo 'tf-gate-0731-f32 exit 0'
++ target/release/dsv4-gpu-decode-gate /home/ubuntu/models/dsv4-flash-0731-nvfp4 /home/ubuntu/dsv4-oracle0731/fixtures-mint/dsv4_0731_fixtures_ref.json /home/ubuntu/dsv4-oracle0731/greedy/cpu_greedy_ref.json /home/ubuntu/dsv4-0731-regate-out/dec-f64 260 0,1
++ echo 'decode-gate-0731-f64 exit 0'
++ MEMRA_DSV4_DOTS_ARM=f32
++ target/release/dsv4-gpu-decode-gate /home/ubuntu/models/dsv4-flash-0731-nvfp4 /home/ubuntu/dsv4-oracle0731/fixtures-mint/dsv4_0731_fixtures_ref.json /home/ubuntu/dsv4-oracle0731/greedy/cpu_greedy_ref.json /home/ubuntu/dsv4-0731-regate-out/dec-f32 260 0,1
++ echo 'decode-gate-0731-f32 exit 0'
++ target/release/dsv4-greedy-verify /home/ubuntu/models/dsv4-flash-0731-nvfp4 /home/ubuntu/dsv4-0731-regate-out/dec-f64/decode_seq_for_verify.json /home/ubuntu/dsv4-0731-regate-out/dec-f64/cpu-verify
++ echo 'cpu-verify-dec-f64 exit 0'
++ target/release/dsv4-greedy-verify /home/ubuntu/models/dsv4-flash-0731-nvfp4 /home/ubuntu/dsv4-0731-regate-out/dec-f32/decode_seq_for_verify.json /home/ubuntu/dsv4-0731-regate-out/dec-f32/cpu-verify
++ echo 'cpu-verify-dec-f32 exit 0'
++ echo TASK_A_DONE
++ target/release/dsv4-decode-bench /home/ubuntu/models/dsv4-flash-nvfp4 /home/ubuntu/dsv4-lane2-fixtures/dsv4_fixtures_artifactvariant.json /home/ubuntu/dsv4-0731-regate-out/bench-preview-f64-1024.json 1024 0,1
++ echo 'bench-preview-f64 exit 0'
++ MEMRA_DSV4_DOTS_ARM=f32
++ target/release/dsv4-decode-bench /home/ubuntu/models/dsv4-flash-nvfp4 /home/ubuntu/dsv4-lane2-fixtures/dsv4_fixtures_artifactvariant.json /home/ubuntu/dsv4-0731-regate-out/bench-preview-f32-1024.json 1024 0,1
++ echo 'bench-preview-f32 exit 0'
++ grep -h logits_sha256 /home/ubuntu/dsv4-0731-regate-out/bench-preview-f64-1024.json /home/ubuntu/dsv4-0731-regate-out/bench-preview-f32-1024.json
++ echo TASK_A_ALL_DONE

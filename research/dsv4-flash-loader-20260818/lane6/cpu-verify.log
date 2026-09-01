@@ -1,0 +1,19 @@
+dsv4-greedy-verify | model /home/ubuntu/models/dsv4-flash-nvfp4 | variant clamp-only | prompt 32 + gpu tokens 2176 = 2208
+layer 3 done t=113s
+layer 7 done t=253s
+layer 11 done t=402s
+layer 15 done t=571s
+layer 19 done t=712s
+layer 23 done t=843s
+layer 27 done t=990s
+layer 31 done t=1131s
+layer 35 done t=1265s
+layer 39 done t=1406s
+layer 42 done t=1505s
+head: decoding + 2176 position logits (t=1506s)
+logits done t=1542s
+FIRST DIVERGENCE at position 46 (gpu step 15): cpu argmax 696 (logit 40.5635) vs gpu token 11443 (cpu logit 40.3528), cpu top1-vs-gpu-token gap 0.2106
+  cpu top-5 at divergence: [(696, 40.56346), (11443, 40.35284), (12827, 38.586792), (1347, 38.4227), (12803, 35.132732)]
+  banked /home/ubuntu/dsv4-decode-out/full/cpu-verify/cpu_logits_div_pos46.bin
+
+CPU TEACHER-FORCING VERIFY [clamp-only]: 2164/2176 positions agree | first divergence: position 46 (gpu step 15) | elapsed 1570s

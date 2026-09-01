@@ -1,0 +1,11 @@
+lock_acquired=2026-08-11T04:53:31Z host=<private-host-redacted> mode=golden stamp=20260811T045400Z
+source=fc3a00c939f5deabad2266fbf41609160863ef6f
+## lane/cx-rowwalk
+artifact=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296 mtime=2026-08-06 12:39:44.670328147 +0000
+artifact=/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416 mtime=2026-08-06 12:37:13.136888212 +0000
+binary=/home/ubuntu/memra-cx-rowwalk/target/release/memra-server sha256=59037f8b46e723b7e4509ddd1c2d3496ba0385b6fdcb75b6036b2fbee09cb964
+binary=/home/ubuntu/darktrain2/golden-response.bin sha256=21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de
+qos_sha256=6c9e7386e3304deb6b625db1e7bd5089b3f0cf4844c198b17d7173e5c0082e9d
+{"actual_start_offsets_ms": [0.027], "errors": [], "exactness": "match", "expected_sha256": "21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de", "golden_divergences": 0, "golden_matches": 1, "hash_counts": {"21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de": 1}, "label": "rowwalk-golden", "latency_p50_s": 1.314827, "latency_p99_s": 1.314827, "n_error": 0, "n_ok": 1, "requests": 1, "scheduled_delays_ms": [0.0], "ttft_p50_s": 0.56699, "ttft_p99_s": 0.56699, "wall_s": 1.314905}
+golden_receipt=PASS
+lock_released=2026-08-11T04:54:11Z result=PASS

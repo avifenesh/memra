@@ -1,0 +1,329 @@
+GLM-5.3-Flash: re-baseline at lane head, first quality measurement, surface battery
+lane/glm53-box, 2026-08-28, bench box. Method + stated deviations: METHOD.txt.
+
+================================================================================
+1. RE-BASELINE: the greedy sha moved, and it is the TEMPLATE. Not a regression.
+================================================================================
+
+The claim that the running binary predated the two commits is VERIFIED, not assumed:
+`git diff 626b827954` (f7ec's parent) over every file f7ec4f557b touches is EMPTY; the
+same diff against f7ec4f557b is 574 lines; the binary's strings carry ZERO occurrences
+of MEMRA_DSA_INDEX_RING / gMASK / arg_key / observation. Neither sha existed as a git
+object on the box before this lane fetched them. Receipt 00.
+
+                        prompt_tokens   greedy sha           p5 tok/s (median of 4)
+  OLD boot 1 (13:23)        203         fd006d0d50eb59b5     20.34-20.41
+  NEW boot 1 (13:43)        192         4ec98d8aeb7a30e6     20.327
+  OLD boot 2 (13:46)        203         fd006d0d50eb59b5     20.340
+  NEW boot 2 (13:51)        192         4ec98d8aeb7a30e6     20.358
+
+(a) THE FORWARD IS UNTOUCHED. A /v1/completions raw-prompt probe bypasses chat
+templating entirely, so it exercises tokenizer + forward + greedy + KV and nothing
+else. All four shas are BYTE-IDENTICAL across the two binaries, cold and restored:
+
+  raw probe        OLD                 NEW
+  p5 cold          5113588f11c49d5e    5113588f11c49d5e
+  p5 restored      d2f40996290fe905    d2f40996290fe905
+  p7 cold          d78355d162c3609c    d78355d162c3609c
+  p7 restored      ef197d4dd6c6cb6a    ef197d4dd6c6cb6a
+
+f7ec4f557b is numerically inert at this context, as its own receipts claim. Rcpt 01, 07.
+
+(b) THE PROMPT BYTES ARE WHAT CHANGED, QUANTITATIVELY. Rendered offline against the
+checkpoint's OWN chat_template.jinja under the transformers jinja env (renderdiff.py,
+receipt 11):
+  - native render of p5 = 192 tokens  -> exactly the NEW binary's measured prompt_tokens
+  - ChatML frame <|im_start|>user\n...<|im_end|>\n<|im_start|>assistant\n<think>\n
+                              = 203 tokens  -> exactly the OLD binary's
+  - <|im_start|> and <|im_end|> are NOT in this checkpoint's vocabulary at all and each
+    shreds into 6 ORDINARY TEXT TOKENS, which is why the structurally simpler ChatML
+    frame was the LONGER one.
+
+Eleven different prompt tokens produce a different greedy tape. ATTRIBUTED TO THE
+TEMPLATE. The boot line says the same in one field: OLD prints no glm5 cap at all and
+instruct=None; NEW prints glm5=true instruct=Some("glm").
+
+PERFORMANCE: UNCHANGED. 20.34 (OLD median across boots) vs 20.34 (NEW), 0.09% against a
+within-boot spread of ~3.5%. Carried by an A,B,A,B boot interleave; the deviation from
+x5 is stated in METHOD.txt. No delta is claimed.
+
+================================================================================
+2. QUALITY: the FIRST measurement of this model on its correct prompt
+================================================================================
+
+Every earlier surface answered on a ChatML render that is off-distribution for this
+checkpoint. Vendor-default sampled (NO temperature, NO top_p, NO seed), reasoning_effort
+PINNED low, 1024-token budget, the 10 real agent prompts. Receipt 15.
+
+                                                  OLD render     NEW render
+  prompts producing ZERO answer text in 1024 tok    6 / 10         0 / 10
+  median thinking tokens                            1020           70
+  finish_reason stop (vs truncated length)          3 / 10         9 / 10
+
+The old render burned the whole budget thinking and never answered on 6 of 10 prompts,
+because reasoning_effort was accepted and ignored so every request ran at the template
+default Max. It also produced visible off-distribution corruption: p9's old-render output
+contains  Escalation01394.png1429x398 581 KB \n\n <ask{CJK}executed01395> <tool_use>
+which is what a checkpoint does when handed a frame its vocabulary does not contain.
+
+reasoning_effort NOW GENUINELY CHANGES THE OUTPUT, proved with a greedy byte oracle
+rather than a parameter echo (followup.py Q2, receipt 10). Same prompt, temperature 0:
+
+  effort     reasoning chars   output sha
+  omitted    859               b1ac34989bc5b0d7
+  low          0               cb7e22c9675f3ecb
+  medium       0               cb7e22c9675f3ecb
+  high        37               89a77f8fef0f4574
+  max        859               b1ac34989bc5b0d7
+
+Three distinct programs across five settings. THIS MATCHES THE VENDOR CARD EXACTLY
+("accepts three levels: low, high, max ... defaults to max if not passed"): omitted is
+byte-identical to max, and medium clamps DOWN to Low, the deliberate documented
+divergence from the vendor's fall-through, taken so that "reason less" is not answered
+with the deepest setting. NOTE prompt_tokens is 22 for EVERY level (Low/High/Max are one
+token each), so a token count can never discriminate effort; only the output oracle can.
+The battery's own 07b case asserted on token counts and is an invalid test, superseded.
+
+PROMPT IDX 2: STILL DEGENERATES. Reported SEPARATELY and EXCLUDED from every aggregate
+above, per LAW:greedy-is-the-instrument (degeneration is an artifact, never a finding,
+never a perf row). Re-checked sampled on the native render, 4 sequential reps (rcpt 16):
+
+  rep  cold/restored          finish  loop score        outcome
+  1    cold (ttft 7.97 s)     stop    0.0               clean: valid {"findings":[],...}
+  2    restored (ttft 0.019)  length  0.528             degenerate: </think> repeated
+  3    restored               stop    0.605 (reasoning) reasoning loop; fabricated report
+  4    restored               length  0.552             degenerate: </think> repeated
+
+Better than the old render (it does now produce the requested JSON when clean) but NOT
+fixed. Excluded from the 10-prompt aggregates above.
+
+--- The vendor-default sampling gap (report-only, owner's call) ---
+
+crates/memra-gguf/src/model_packs/glm5_next/mod.rs:138 declares `sampling_defaults: None`,
+receipted live on every boot line as chat_defaults=None/None. The artifact's own
+generation_config.json declares temperature 1.0, top_p 0.95. So an omitting client is
+served temperature 1.0 (the compat last resort, which coincidentally matches) and TOP_P
+1.0 -- an unfiltered 154,880-way tail -- not the checkpoint's 0.95. The one-line fix
+mirrors what step35/mod.rs:32 already does.
+
+Stated precisely, because it is easy to overclaim: the vendor card's own benchmark
+footnotes use top_p 1.0 for the agentic/coding suites (NL2Repo, DeepSWE, Terminal-Bench)
+and 0.95 for HLE-with-tools and BabyVision. So this is a divergence from the checkpoint's
+DECLARED DEFAULT, not from every vendor recommendation. AND IT IS NOT THE CAUSE OF THE
+TOOL-CALL LOSS IN SECTION 3: tested directly, 8 reps at top_p 0.95 called the tool
+exactly as often as 8 reps at the bare default -- zero times, because both arms were
+prefix restores.
+
+Second vendor-guidance gap: the card says "In the chat template ... clear_thinking
+defaults to false. For chat scenarios, explicitly pass clear_thinking=true." memra never
+passes it (it appears only in a doc comment in memra-tokenizer/src/chat.rs), so
+prior-turn reasoning is replayed into context on every multi-turn request. Report-only.
+
+================================================================================
+3. A PREFIX-CACHE RESTORE COSTS THIS MODEL ITS TOOL CALL
+================================================================================
+
+The most serious finding in the lane, and it is clean. Same prompt, same tools, same
+server; the only variable is whether a unique nonce forces a cold prefill. Arms
+INTERLEAVED rep by rep, run in both regimes (coldrestore.py, receipt 12):
+
+  arm        greedy               sampled              cached_tokens
+  COLD       6/6 called the tool  6/6 called the tool  0 / ~208
+  RESTORED   0/6                  0/6                  183 / 183 (full hit, every rep)
+
+The restored requests do not fail, they FABRICATE. Greedy restored returns the
+byte-stable "It's currently 18 C in Paris." every single time; sampled restored returns
+11 C, 22 C, "clear", "cloudy", "16 C with light rain", and leaks stray </think> markers
+into content. A declared tool is silently not called and an invented answer is served.
+
+This reproduces across the whole lane once you look for it: cold 04a called the tool,
+restored 05 did not; cold 06a and 07a called it; cold Q1a greedy called it, restored Q1b
+greedy did not. 5/5 cold, 0/18 restored, before the dedicated cell was written.
+
+IT IS PRE-EXISTING, NOT INTRODUCED BY THESE TWO COMMITS. The old binary shows the same
+shape (receipt 02: fed the native fixture-21 bytes, the cold request emitted a perfect
+<tool_call>get_weather<arg_key>city... and the restored one emitted garbage);
+BOX-STATE.txt already documents cold-vs-restore byte divergence; and every
+restored-to-restored sha is identical across the two binaries. What is NEW is that it now
+has a MEASURED BEHAVIOURAL PRICE on the sold agent shape, because a repeated prompt is
+exactly what a cache hit is.
+
+Mechanistic pointer, not a diagnosis: this model carries fp32 KDA recurrent state per
+layer, and MEMRA_PREFIX_CACHE_MB's contract retains trunk K/V. MEMRA_PREFIX_PARTIAL_RESTORE's
+FLAGS row already records the general shape of this class -- "restored rows are the
+complete *cache* state but not the complete *decode program*" -- for a transformer. These
+are WHOLE-ENTRY hits, which that row treats as the safe case, so either the whole-entry
+guarantee does not hold for a KDA hybrid or the think-tail boundary is not restored with
+it. Engine lane, not this one.
+
+--- WHAT IS NOT ESTABLISHED, stated because the experiment failed to hold ---
+
+I tried to extend the same separation to TEXT DEGENERATION RATE (degenrate.py, receipt 17)
+and IT DID NOT CONFIRM: COLD 3/12 degenerate, RESTORED 5/12. No clean separation. The cell
+is confounded and the confound is receipted: the server's derived prefix-cache budget is
+EXACTLY TWO ENTRIES --
+  [prefix-cache] on: budget 305MB (305266688 B, derived: 2 x 152633344 B max entry
+  for model "zai/glm-5.3-flash" at MEMRA_CTX=8192 ...)
+-- and every entry costs the full max-entry 152.6 MB regardless of prompt length, so the
+interleaved cold arm evicted the restored arm's entry before most of its turns.
+cached_tokens is 0 on most rows the cell LABELS restored, which is the tell. The
+tool-call cell above does not share this defect: cached_tokens is 183/183 on all twelve
+of its restored reps.
+
+Degeneration at vendor-default sampling therefore stands as an OPEN, UNQUANTIFIED item,
+at roughly 25-40% of requests across both arms on these prompts. Separate from section 3.
+
+Operationally worth noting on its own: a two-entry prefix cache will thrash under any
+real concurrent traffic on this model.
+
+RETENTION, stated so nobody assumes more evidence exists than does. The raw SSE streams
+behind the tool-call cell were NOT banked (they are bulky and were deleted from the box in
+close-out). What survives is: coldrestore-out/coldrestore.json with per-rep tool_called,
+cached_tokens, finish_reason, output shas and content heads; the printed transcript in
+receipt 12; the server's own [prefix-cache] hit lines in serve-NEW2.log; and coldrestore.py
+itself, which re-runs against the box that is still serving. Structured summaries plus
+logs, streams not retained, re-runnable.
+
+================================================================================
+4. STANDARD-SURFACE POST-DEPLOY BATTERY, on the fixed binary
+================================================================================
+
+battery.py, receipt 09, raw pairs in battery-out/. Boot receipt first:
+
+  [worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false
+    chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false
+    glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+
+glm5=true on the DEPLOYED build. Every tool cycle executed a REAL local function returning
+21 C / sunny / 11 kph -- values appearing in no prompt -- keyed on the id and arguments the
+SERVER returned, so a final answer containing them can only have come from the executed tool.
+
+  PASS  /v1/models identity, zai/glm-5.3-flash
+  PASS  capabilities.structured_output: false while the server 400s response_format (honest)
+  PASS  capabilities.tools: true, context_length: 1048576
+  PASS  /v1/chat/completions non-streaming, plain
+  PASS  /v1/chat/completions streaming, plain (6 chunks, finish stop)
+  PASS  /v1/chat/completions REAL tool cycle, non-streaming -- finish_reason tool_calls,
+        {"city":"Paris"}, final "It's currently 21 C and sunny in Paris, with light winds
+        around 11 km/h."
+  PASS  /v1/chat/completions REAL tool cycle, STREAMING -- greedy stream assembles
+        get_weather + {"city":"Paris"} from deltas, finish tool_calls
+  PASS  /v1/messages (Anthropic) REAL tool cycle -- stop_reason tool_use, blocks
+        [thinking, tool_use], final "It's currently 21 C and sunny in Paris...", end_turn
+  PASS  /v1/responses tool call -- one function_call item, correct call_id
+  PASS  reasoning_effort genuinely changes output (greedy ladder, section 2)
+  PASS  named 400 response_format -- "response_format requires disabling the model's think
+        tail, but this chat template has no enable_thinking switch"
+  PASS  named 400 reasoning_effort: none
+  PASS  named 400 reasoning_effort: turbo
+  PASS  unknown model refused
+  PASS  concurrency, 5 in flight at MEMRA_MAX_SESSIONS=4 -- 5x 200, the 5th queued, 7.44 s
+  PASS  bare request is genuinely SAMPLED, not silently greedy -- two identical bare
+        requests differ (b60d07fb.. vs 95bf7430..) while two temperature:0 requests
+        reproduce (bf940369.. twice). NOTE: no spec-engagement receipt is possible for this
+        model (eager-only, no drafter armed), so this divergence pair is what meets the
+        never-serve-greedy law's intent.
+  FAIL  oversize prompt gets a NAMED admission refusal -- see section 5
+
+Two battery rows reported FAIL that are MY ASSERTION BUGS, not server defects. THE BANKED
+battery.py IS THE SCRIPT THAT RAN, BUGS INCLUDED, and this paragraph is the errata; it was
+deliberately not edited after the run so it still reproduces the banked output byte for
+byte. The bugs: case 01 reads structured_output/tools at the TOP LEVEL when the server
+nests them under `capabilities` (the banked response shows structured_output: false and
+tools: true, both correct, so both rows are really PASS); case 05's streaming tool test ran
+vendor-default SAMPLED, drew a hallucinated answer rather than a tool call, and was re-run
+GREEDY as followup Q1a where it passes. Case 07b asserted on prompt token counts, which
+section 2 shows can never discriminate effort. REAL surface defects found: ONE (admission),
+plus the context regression below.
+
+CASE 07b CLOSED CLEAN, and it is worth saying because the raw counter looked alarming.
+07b showed a no-effort /v1/responses request full-hitting (cached_tokens 176 of 176) an
+entry seeded by an effort-LOW request. A whole-entry full hit means byte-identical prompt,
+which would have meant an omitting client gets Max on /v1/chat/completions and Low on
+/v1/responses: a standard-surface-law violation. Settled with the same greedy byte oracle
+used in section 2, run against /v1/responses (respladder.py, receipt 19):
+
+  effort     /v1/responses sha     /v1/chat/completions sha (section 2)
+  omitted    b1ac34989bc5b0d7      b1ac34989bc5b0d7
+  low        cb7e22c9675f3ecb      cb7e22c9675f3ecb
+  high       89a77f8fef0f4574      89a77f8fef0f4574
+  max        b1ac34989bc5b0d7      b1ac34989bc5b0d7
+
+The two surfaces render BYTE-IDENTICALLY at every level, omitted == max on both. NO
+inconsistency, and nothing is owed. The lesson is about the instrument, not the server: a
+cached_tokens counter read against a two-entry cache under churn is not a rendering
+discriminator, and it was superseded here by the oracle rather than argued away.
+
+================================================================================
+5. REGRESSION: MEMRA_DSA_INDEX_RING default ON caps usable context at ~5.1k tokens
+================================================================================
+
+f7ec4f557b ships MEMRA_DSA_INDEX_RING DEFAULT ON. On this model it makes prompts above
+roughly 5.1k tokens FAIL -- INSIDE the configured MEMRA_CTX=8192, and three orders of
+magnitude inside the context_length: 1048576 the same server advertises on /v1/models.
+
+Three arms, same artifact, same prompts, ONE ENV FLAG APART (ctxprobe.py, receipts 13, 14):
+
+  prompt tokens   ring ON (default)   ring OFF (=0, SAME binary)   OLD binary (no ring)
+  940..3700       200                 200                          200
+  4630            200                 200                          200
+  5550            500                 200                          200
+  6470            500                 200                          200
+  7300            500                 200                          200
+  LARGEST SERVED  4630                7300                         7312
+
+  prefill error: layer 3: DSA k-pool selection failed:
+  indexer tail ring lapped: 5120 rows cannot cover pools from row 0 ...
+
+The guard is doing its job: it fails loudly and by name, exactly as the commit's FLAGS row
+promises. THE SIZING is what is wrong. The row states the ring is derived as
+`prime_chunk_bound + 1024 = 5120` rows, because the design assumes t, the per-call token
+count, is bounded by PRIME_CHUNK_MAX_TOKENS = 4096. THAT BOUND DOES NOT HOLD FOR THIS
+MODEL: ROADMAP.txt records that glm5_next has NO BATCHED PRIME and PRIMES MONOLITHICALLY,
+so t is the whole prompt and the guard `pools_ready*pool + ring >= slot + t` fails for any
+prompt past the ring length. The ring was sized against a chunking bound that the one
+architecture it exists for does not use.
+
+Rollback is the documented seam and it works: MEMRA_DSA_INDEX_RING=0 restores full-window
+service on the same binary, byte-for-byte the pre-ring allocation.
+
+This does not disturb section 1: the p5 cell is a 192-token prompt, far under the ring,
+which is why its tape is byte-identical and why the regression was invisible to a decode cell.
+
+--- ALSO OPEN: nothing enforces the admission limit before prefill ---
+
+At MEMRA_CTX=8192 an oversize prompt is not refused; it reaches prefill and returns an
+engine error, in three different classes depending on size (receipt 10):
+
+  ~13k tokens    500  indexer tail ring lapped
+  ~50k tokens    503  DriverError(CUDA_ERROR_OUT_OF_MEMORY)
+  ~100k+ tokens  500  DriverError(CUDA_ERROR_INVALID_VALUE, "invalid argument")
+
+The server SURVIVES all of them (class=Overloaded, no panic, no VRAM leak; it kept serving
+the rest of the battery), so this is not fleet-fatal. But a context/admission limit that is
+only enforced by the allocator running out is not a limit, and CUDA_ERROR_INVALID_VALUE
+reaching a customer as a 500 is not a named refusal.
+
+================================================================================
+6. CLOSE-OUT
+================================================================================
+
+CARD 1 WAS IDLE AT 3 MiB FOR THIS WHOLE LANE, and here is why nothing goal-linked could
+fill it. Single-card expert residency is arithmetically impossible (171.2 GB of routed
+experts vs a 96 GB card), so the only use for card 1 is the 2-card PP split -- and
+ROADMAP.txt shows that is blocked behind an explicit refusal at hybrid_forward.rs:1382
+needing two new walks, which is ANOTHER LANE'S OWNED WORK. The other candidate load, a
+transformers reference oracle, does not fit either (306 GB FP8). Running an unrelated model
+there would have been utilization, not progress, and would have perturbed the very host-RAM
+and page-cache path (MEMRA_ST_PINNED=1 slab staging) that every decode row here depends on.
+
+WHAT IS OWED TO OTHER LANES
+  1. MEMRA_DSA_INDEX_RING sizing vs the monolithic prime (sec 5) -- engine lane.
+     LAUNCH BLOCKER for any context claim above ~5k on this model.
+  2. Prefix-restore drops tool calls (sec 3) -- engine lane; blocks the standard-surface
+     law on the sold repeat-prompt shape.
+  3. Admission is not enforced before prefill (sec 5) -- serve lane.
+  4. glm5_next pack declares no sampling_defaults (sec 2) -- one line, owner's call.
+  5. clear_thinking=true is never passed for chat (sec 2) -- owner's call.
+  6. Degeneration rate at vendor-default sampling is unquantified (sec 3), and the prefix
+     cache is two entries wide.

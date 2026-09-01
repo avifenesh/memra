@@ -1,0 +1,12 @@
+glm5-hyper-ppn-gate config: stages=4 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage
+[moe] resident-experts decision (PP dev0): experts 0.00GB + trunk 0.00GB vs free 24.35GB (expert budget 22.35GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+stage fence: [0, 1, 2, 3, 4] over 4 layers
+state placement: Recurrent(KDA) layers on stages [0, 2], LatentKvCache(MLA+kpool) layers on stages [1, 3]
+[decode-serial] greedy tape MATCH: 14 tokens, fnv1a=0xa7972b1e01ff1f76
+[prime-twin] greedy tape MATCH: 8 tokens, fnv1a=0x50ad4c8f01bf7247
+glm5-hyper-ppn-gate NOTE: pipelined arm skipped — `decode_step_h_ppn_deferred` calls refuse_hyper(), so deferred readback is not wired for the mHC residual. This gate covers the serial split walk only; do not cite it for the pipelined arm.
+glm5-hyper-ppn gate PASS [decode-serial]: 14 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prime-twin]: 9 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prefill-twin]: 2 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=OFF(same-stream seam) overlap=1(double-buffered) devices=default(primary) splits=default(even) shard=per-stage)
+exit=0

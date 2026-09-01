@@ -1,0 +1,30 @@
+# qwen4exp_real_gate	label=smoke2-kvdev1	binary_sha256=34f6e8ea13c8a1c17c4a99c7173961860f759f43ffed1e752f2621f61b84b357	ckpt=/home/ubuntu/data/q48fn-nvfp4-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# ladder	rungs=[4096, 32768]	chunk=8192	decode=30	kv_dev1=true	spec=None	ids=1150000	cap=32896
+# vram	pre-ladder	0, 89971 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+rung	prefill_seg_s	prefill_cum_s	chunks	decode_warm_mean_ms	decode_median_ms	decode_p90_ms	tok_per_s	timing_rounds	looped	host_rss_mib	vram	continuation_ids
+# prefill-profile	rung=4096	first_chunk_t=4096
+# prefill-profile	qsa.sdpa	501436.6ms	97.2%	calls=12
+# prefill-profile	moe.sel_grouped	5219.0ms	1.0%	calls=48
+# prefill-profile	hyper.read	2801.2ms	0.5%	calls=96
+# prefill-profile	gdn.proj	1997.9ms	0.4%	calls=36
+# prefill-profile	gdn.conv_scan	1827.4ms	0.4%	calls=36
+# prefill-profile	gdn.norm_gate_out	757.9ms	0.1%	calls=36
+# prefill-profile	moe.shared	527.6ms	0.1%	calls=48
+# prefill-profile	qsa.proj	527.2ms	0.1%	calls=12
+# prefill-profile	qsa.gate_wo	253.7ms	0.0%	calls=12
+# prefill-profile	qsa.idx_host	230.4ms	0.0%	calls=12
+4096	519.1	519.1	1	462.6	446.5	539.7	2.16	rounds=5x10 medians=[487.9, 446.5, 463.9, 444.1, 470.9] spread=9.44% (escalated x5)	false	167888	0, 92573 MiB, 97887 MiB | 1, 2163 MiB, 97887 MiB	10713,83,90,2738,54084,30,26,198,262,333,198,262,3165,49639,2031,1209,2551,11,1857,4185,5189,12164,2072,30,26,198,262,3165,49639,7,198,285,594,403,4193,5275,437,70,942,3778,3842,198,285,3443,52954,13183,6406,75303,82,89710,11
+# profile	rung=4096	steps=2
+# profile	qsa.sdpa	430.5ms	95.1%	calls=24
+# profile	qsa.idx_host	4.3ms	0.9%	calls=24
+# profile	hyper.read	3.4ms	0.8%	calls=192
+# profile	moe.sel_grouped	2.9ms	0.6%	calls=96
+# profile	gdn.proj	2.6ms	0.6%	calls=72
+# profile	gdn.norm_gate_out	1.4ms	0.3%	calls=72
+# profile	moe.shared	1.2ms	0.3%	calls=96
+# profile	hyper.write	1.0ms	0.2%	calls=192
+# profile	qsa.proj	0.9ms	0.2%	calls=24
+# profile	moe.router	0.9ms	0.2%	calls=96
+# profile	gdn.conv_scan	0.9ms	0.2%	calls=72
+# profile	lm_head	0.8ms	0.2%	calls=2

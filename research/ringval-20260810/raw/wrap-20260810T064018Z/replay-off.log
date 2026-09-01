@@ -1,0 +1,16 @@
+[pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
+[moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.88GB (expert budget 94.96GB) -> RESIDENT
+[moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.76GB (expert budget 94.84GB) -> RESIDENT
+[mtp-draft] loading external MTP draft: /home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf
+[mtp-draft] step35 MTP geometry blk.45: n_head=96 n_head_kv=8 n_rot=128 rope_base=10000 swa=true window=512
+[mtp-draft] external draft head: blk.45, source=nextn.shared_head_head.weight, head_vocab=128896 (full)
+[fa] v4 decode family disabled: gqa 12 > fa_v4_smem capacity 8 (v3 lane serves)
+corpus: 78867 chars -> 9216 tokens | K=4 stride=256 chunk=4096 full_prec=false
+[replay-nll] tokens=9215 nll/token=0.78327 ppl=2.1886
+replay: 35 eval positions in 62.5s (147.5 corpus tok/s incl. chains)
+    ctx-bucket       n  slot0  slot1  slot2  slot3   chain
+         0-512       1  1.000  0.000  0.000  0.000   0.250
+      512-2048       6  0.667  1.000  0.167  0.167   0.417
+     2048-8192      24  0.875  0.708  0.167  0.125   0.438
+    8192-16384       4  1.000  0.500  0.000  0.000   0.375
+wrote 35 rows -> /home/ubuntu/ringval/receipts/wrap-20260810T064018Z/replay-off.jsonl

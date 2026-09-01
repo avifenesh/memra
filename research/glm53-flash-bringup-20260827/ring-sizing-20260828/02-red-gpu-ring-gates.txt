@@ -1,0 +1,38 @@
+running 12 tests
+test gpu_a_missing_indexer_tensor_refuses_the_load_by_name ... ok
+test gpu_kpool_attention_matches_the_reference_and_differs_from_dense ... ok
+test gpu_kpool_mutations_change_the_selection_and_the_output ... ok
+test gpu_kpool_prime_then_decode_matches_the_reference ... ok
+test gpu_kpool_radix_selection_is_byte_identical_to_the_reference_kernel ... ok
+test gpu_kpool_resident_pool_keys_match_a_full_rebuild ... ok
+test gpu_kpool_scoring_is_byte_identical_to_the_reference_kernel ... ok
+test gpu_kpool_selection_matches_the_reference ... ok
+test gpu_kpool_tail_ring_mutations_change_the_pool_keys ... ok
+test gpu_kpool_tail_ring_serves_a_whole_monolithic_prime ... FAILED
+test gpu_kpool_tail_ring_wraps_and_matches_the_flat_plane ... FAILED
+test gpu_kpool_ties_break_on_the_lowest_pool_index ... ok
+
+failures:
+
+---- gpu_kpool_tail_ring_serves_a_whole_monolithic_prime stdout ----
+
+thread 'gpu_kpool_tail_ring_serves_a_whole_monolithic_prime' (3157410) panicked at crates/memra-engine/tests/glm5_kpool_indexer_gpu.rs:903:33:
+chunk at slot 0 (t=64, ring 16): indexer tail ring lapped: 16 rows cannot hold the 0 rows still owed to unbuilt pools at row 0 (pools_ready 0, pool 4, slot 0, t 64). The pool-key plane was reset or the cache rewound without clamping index_pools_ready, so rows this call must read were already overwritten. Raise MEMRA_DSA_INDEX_RING, or set MEMRA_DSA_INDEX_RING=0 for the flat plane
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- gpu_kpool_tail_ring_wraps_and_matches_the_flat_plane stdout ----
+ring 16 physical rows (effective 16, 64 tokens in chunks of 7): the plane is overwritten 4 times; 12 pools collapse from rows that were later reused
+ring 18 physical rows (effective 16, 64 tokens in chunks of 7): the plane is overwritten 4 times; 12 pools collapse from rows that were later reused
+ring 16 vs flat 64: 0/64 queries differ (4x less state, same selection)
+
+thread 'gpu_kpool_tail_ring_wraps_and_matches_the_flat_plane' (3157411) panicked at crates/memra-engine/tests/glm5_kpool_indexer_gpu.rs:903:33:
+chunk at slot 7 (t=7, ring 8): indexer tail ring lapped: 8 rows cannot hold the 3 rows still owed to unbuilt pools at row 7 (pools_ready 1, pool 4, slot 7, t 7). The pool-key plane was reset or the cache rewound without clamping index_pools_ready, so rows this call must read were already overwritten. Raise MEMRA_DSA_INDEX_RING, or set MEMRA_DSA_INDEX_RING=0 for the flat plane
+
+
+failures:
+    gpu_kpool_tail_ring_serves_a_whole_monolithic_prime
+    gpu_kpool_tail_ring_wraps_and_matches_the_flat_plane
+
+test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.99s
+
+error: test failed, to rerun pass `-p memra-engine --test glm5_kpool_indexer_gpu`

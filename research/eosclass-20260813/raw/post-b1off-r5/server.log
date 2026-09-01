@@ -1,0 +1,110 @@
+[server] starting; models config = [("q27-eosclass", "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "q27-eosclass" <- /data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[worker]   loaded "q27-eosclass": 65 layers, eos=248046
+[worker] q27-eosclass: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] q27-eosclass: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 4295MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "q27-eosclass": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["q27-eosclass"]
+[server] listening on http://127.0.0.1:18427
+[meter] admit id=cmpl-692cf803660c87e46f71c2d625b43a25 tenant=default lane=interactive model="q27-eosclass"
+[admission] request cost: model="q27-eosclass" ctx=4984 path=plain = 31552 B/token x ctx + 0MB fixed = 157MB
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-hot-87" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="q27-eosclass" 308MB (observed 463MB at ctx 4928 path=plain)
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 301.2MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-hot-87")
+[meter] admit id=cmpl-9e79ca5bb299a8132c0ea3ef3cd144da tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-a6f93f2214dfaa835085fa908440fdcc tenant=default lane=interactive model="q27-eosclass"
+[admission] request cost: model="q27-eosclass" ctx=4984 path=plain = 31552 B/token x ctx + 308MB fixed = 465MB
+[meter] admit id=cmpl-a21cf2297586119432fdd03cca69155e tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-6dbb2fb3f3763a8a16cf30ba839f6c2b tenant=default lane=interactive model="q27-eosclass"
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r1-p2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r1-p0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27-eosclass)
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-hot-87" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r1-p1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=3 tokens=3072 carried=0 partial=3 in 3294.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3382.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3453.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3523.7ms
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 2690.3ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 602.4MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r1-p2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 903.6MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r1-p0")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1204.9MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r1-p1")
+[meter] admit id=cmpl-51f1c0130c793a198134101f29debd11 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-37c1e00bc442fd33e9c18cb54f03c5c2 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-ac11bc925544d98241d41290cbc317c5 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-ad2e69963e551e39bbf466c68674df43 tenant=default lane=interactive model="q27-eosclass"
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27-eosclass)
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-hot-87" K=0 source=eligibility-fallback prompt=4860 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r2-p0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r2-p1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r2-p2" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=3 tokens=3072 carried=0 partial=3 in 3275.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3365.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3434.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3554.9ms
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 2721.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1506.1MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r2-p0")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 1807.3MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r2-p1")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2108.5MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r2-p2")
+[meter] admit id=cmpl-4aaf94e0dcf5fce381349c1e7d14ab30 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-79bcfe2e0284082c11ee610554e96be3 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-90d8587139157ed2749b092a71182527 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-cfc1c3841e0bc18c0a2174207cd1ed2d tenant=default lane=interactive model="q27-eosclass"
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r3-p1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r3-p2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27-eosclass)
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-hot-87" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r3-p0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=2 tokens=2048 carried=0 partial=2 in 2190.5ms
+[prime-batch] B=3 tokens=3072 carried=2 partial=3 in 3341.6ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3412.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3481.0ms
+[prime-batch] B=3 tokens=2552 carried=3 partial=1 in 2966.5ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2409.7MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r3-p1")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 2710.9MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r3-p2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3012.2MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r3-p0")
+[meter] admit id=cmpl-187b2c2cdee587e6a7ed4861d0ea35bd tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-785536c3d13a6671b49e8cb5e196ca43 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-1022e694b50d5c8a09b259ce0d938611 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-a450c562cfb20e7b68b9078fba177d3e tenant=default lane=interactive model="q27-eosclass"
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r4-p2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r4-p0" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r4-p1" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27-eosclass)
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-hot-87" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prime-batch] B=3 tokens=3072 carried=0 partial=3 in 3276.8ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3367.4ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3435.2ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3503.6ms
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 2681.7ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3313.4MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r4-p2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3614.6MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r4-p0")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 3915.8MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r4-p1")
+[meter] admit id=cmpl-126c1a40693b5ed3d74d4c560104dbd2 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-dabf91c8cb9da085781a4d7ff8f8be33 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-fb5d74f8aafca2d5fee2947a12ca4b55 tenant=default lane=interactive model="q27-eosclass"
+[meter] admit id=cmpl-77d94b23a6dd44fa01b7546b3e56457f tenant=default lane=interactive model="q27-eosclass"
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r5-p2" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r5-p1" K=0 source=eligibility-fallback prompt=4860 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4860 prompt tokens from cache (model q27-eosclass)
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-hot-87" K=0 source=concurrency prompt=4860 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[spec-k] model="q27-eosclass" tenant="cx-eosclass-post-b1off-r5-cold-r5-p0" K=0 source=concurrency prompt=4860 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[prime-batch] B=3 tokens=3072 carried=0 partial=3 in 3277.3ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3367.9ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3436.0ms
+[prime-batch] B=3 tokens=3072 carried=3 partial=3 in 3504.2ms
+[prime-batch] B=3 tokens=2292 carried=3 partial=0 in 2680.1ms
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4217.0MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r5-p2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r5-p1")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r1-p2")
+[prefix-cache] insert (seed): 4860 tokens, 301.2MB (resident 4518.2MB / 4295MB, model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r5-p0")
+[prefix-cache] evict (LRU): 4860 tokens, 301.2MB (model q27-eosclass, ns "cx-eosclass-post-b1off-r5-cold-r1-p0")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

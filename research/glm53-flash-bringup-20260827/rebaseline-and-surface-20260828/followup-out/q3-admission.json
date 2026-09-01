@@ -1,0 +1,27 @@
+{
+ "1200": {
+  "status": 500,
+  "prompt_tokens": null,
+  "error": "prefill error: layer 3: DSA k-pool selection failed: indexer tail ring lapped: 5120 rows cannot cover pools from row 0 through 12013 (slot 0, t 12013, pool 4). Lower MEMRA_PRIME_CHUNK, raise MEMRA_DSA"
+ },
+ "2400": {
+  "status": 500,
+  "prompt_tokens": null,
+  "error": "prefill error: layer 3: DSA k-pool selection failed: indexer tail ring lapped: 5120 rows cannot cover pools from row 0 through 24013 (slot 0, t 24013, pool 4). Lower MEMRA_PRIME_CHUNK, raise MEMRA_DSA"
+ },
+ "4800": {
+  "status": 503,
+  "prompt_tokens": null,
+  "error": "prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, \"out of memory\")"
+ },
+ "9600": {
+  "status": 500,
+  "prompt_tokens": null,
+  "error": "prefill error: DriverError(CUDA_ERROR_INVALID_VALUE, \"invalid argument\")"
+ },
+ "19200": {
+  "status": 500,
+  "prompt_tokens": null,
+  "error": "prefill error: DriverError(CUDA_ERROR_INVALID_VALUE, \"invalid argument\")"
+ }
+}

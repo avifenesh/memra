@@ -1,0 +1,12 @@
+# qwen4exp_real_gate	label=r2abseam-graph-131072	binary_sha256=5f5f708eb0ed27829f35174a062e7234a4ebc8b11a3ad24690ff0642c40d1b3c	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=false	spec_opts=SpecOpts { dynk: None, adapt_k_lo: None, pmin: 0.0, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
+# ladder	rungs=[131072]	chunk=2048	decode=36	kv_dev1=false	spec=None	ids=1150000	cap=131676
+# vram	pre-ladder	0, 89971 MiB, 97887 MiB | 1, 88627 MiB, 97887 MiB
+rung	prefill_seg_s	prefill_cum_s	chunks	decode_warm_mean_ms	decode_median_ms	decode_p90_ms	tok_per_s	timing_rounds	looped	host_rss_mib	vram	continuation_ids
+131072	688.3	688.3	64	32.9	32.2	32.4	30.42	rounds=5x12 medians=[32.4, 32.2, 32.1, 32.2, 32.2] spread=0.82% (escalated x5)	false	167795	0, 94013 MiB, 97887 MiB | 1, 95059 MiB, 97887 MiB	262,333,198,262,7379,1250,4568,8,198,92,271,8556,3165,7073,18,17,82,5406,25,594,1757,11,2663,25,43112,84,18,17,2387,1411,5536,66514,8003,89649,1407,476,815,476,1401,2372,313,198,262,1042,5041,999,283,1407,476,3720,476,1643,476,3081,5406,11504,26,198,262,364,869
+# ladder-jitter	rung=131072	arm=rung-default	n=58 mean=32.88 med=32.21 sd=4.948 cv=15.05% p99=70.21 max=70.21 outliers_1.5x=1
+# ladder-ab	rung=131072	seam=graph	arm=off	median_ms=32.29	tok_per_s=30.97	reps=7	medians=[32.29, 32.27, 32.32, 32.26, 32.28, 32.53, 32.96]	spread=2.14%	n=224 mean=32.42 med=32.37 sd=0.269 cv=0.83% p99=33.20 max=33.24 outliers_1.5x=0
+# ladder-ab	rung=131072	seam=graph	arm=on	median_ms=32.22	tok_per_s=31.04	reps=7	medians=[32.21, 32.21, 32.18, 32.22, 32.42, 32.45, 32.87]	spread=2.11%	n=224 mean=32.38 med=32.33 sd=0.263 cv=0.81% p99=33.05 max=33.18 outliers_1.5x=0
+# ladder-ab-verdict	rung=131072	seam=graph	off_ms=32.29	on_ms=32.22	speedup=1.0022x	delta_pct=0.22%	reps_per_arm=7 (escalated)	host_probe=false	vol_cs=309	nonvol_cs=51	threads=4	launch_cpu_migrations=0	launch_cpus_seen=0
+# ladder-ab-restore	seam=graph	arm=on

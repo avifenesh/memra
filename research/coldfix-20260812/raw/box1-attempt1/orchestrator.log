@@ -1,0 +1,30 @@
+REQUAL2_START ts=2026-08-12T18:04:17Z pid=1071396 source=065a705d63461b2e3a7d945f824024fe0c482886
+d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
+91eac7250e0d268ac6be8cfd1ee64e346d405dc412824dab45f224e9563e1e5b  /opt/scratch/nvme/cx-requal2/harness/sellgate_replay.py
+85597a0a28ed874f440b4a966c0b43fd3e31b94fe868266de9e299decc208c34  /opt/scratch/nvme/cx-requal2/harness/workload.lock.json
+LOCK_QUEUE_CHECK ts=2026-08-12T18:05:06Z
+REQUAL2_LOCK_ACQUIRED ts=2026-08-12T18:05:06Z pid=1071396
+RUN_START label=kernel ts=2026-08-12T18:05:06Z
+RUN_DONE label=kernel rc=0 ts=2026-08-12T18:07:26Z
+RUN_START label=run-gen-q27 ts=2026-08-12T18:07:26Z
+RUN_DONE label=run-gen-q27 rc=0 ts=2026-08-12T18:07:41Z
+RUN_START label=run-gen-q35 ts=2026-08-12T18:07:41Z
+RUN_DONE label=run-gen-q35 rc=0 ts=2026-08-12T18:07:51Z
+RUN_START label=run-spec-q27 ts=2026-08-12T18:07:51Z
+RUN_DONE label=run-spec-q27 rc=0 ts=2026-08-12T18:08:02Z
+RUN_START label=run-spec-q35 ts=2026-08-12T18:08:02Z
+RUN_DONE label=run-spec-q35 rc=0 ts=2026-08-12T18:08:11Z
+MODEL_REP_START target=q27 rep=1 ts=2026-08-12T18:08:11Z
+RUN_START label=prefix-q27 ts=2026-08-12T18:08:18Z
+RUN_DONE label=prefix-q27 rc=0 ts=2026-08-12T18:08:37Z
+RUN_START label=replay-q27-r1 ts=2026-08-12T18:08:37Z
+RUN_DONE label=replay-q27-r1 rc=0 ts=2026-08-12T18:15:02Z
+MODEL_REP_COMPLETE target=q27 rep=1 verdict=PASS ts=2026-08-12T18:15:04Z
+MODEL_REP_START target=q35 rep=1 ts=2026-08-12T18:15:04Z
+RUN_START label=prefix-q35 ts=2026-08-12T18:15:11Z
+RUN_DONE label=prefix-q35 rc=0 ts=2026-08-12T18:15:17Z
+RUN_START label=replay-q35-r1 ts=2026-08-12T18:15:17Z
+RUN_DONE label=replay-q35-r1 rc=0 ts=2026-08-12T18:18:36Z

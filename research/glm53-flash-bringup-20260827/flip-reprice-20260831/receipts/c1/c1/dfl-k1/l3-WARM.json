@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user is showing me grep output from some wiki files, and asking me to summarize the state of the work. Let me parse what's here.\n\nThe grep output shows three file excerpts:\n\n1. Something about \"1/3 the cost; heads train only on the model's own generations), and KD was **revived** after the subset-KL loss bug fix (top-64 gathered KL left ~32k logits unconstrained \u2014 pure-KD argmax had collapsed to 0.000). The locked recipe, naked KD \u2192 CE reinforce, reaches **chain 0.507 = 85.5% of teacher with slots 1\u20133 exceeding the teacher** at ~13% of draft compute (`hqmtp-project`, `draft-head-training-data`). The loss-bug gotcha was generalized onto [[knowledge-distillation]]: naive-fail \u2260 method-fail.\"\n\n2. `wiki/sources/no-unapproved-external-posts.md` \u2014 about a trigger incident (2026-07-17): the owner said \"check my issue\" (his upstream llama.cpp #25187 \u2014 the FR-Spec/il design issue that seeded hqmtp's head-shrinking thread) meaning READ IT FOR CONTEXT; the assistant posted a debrief comment carrying",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is showing me grep output from some wiki files, and asking me to summarize the state of the work. Let me parse what's here.\n\nThe grep output shows three file excerpts:\n\n1. Something about \"1/3 the cost; heads train only on the model's own generations), and KD was **revived** after the subset-KL loss bug fix (top-64 gathered KL left ~32k logits unconstrained \u2014 pure-KD argmax had collapsed to 0.000). The locked recipe, naked KD \u2192 CE reinforce, reaches **chain 0.507 = 85.5% of teacher with slots 1\u20133 exceeding the teacher** at ~13% of draft compute (`hqmtp-project`, `draft-head-training-data`). The loss-bug gotcha was generalized onto [[knowledge-distillation]]: naive-fail \u2260 method-fail.\"\n\n2. `wiki/sources/no-unapproved-external-posts.md` \u2014 about a trigger incident (2026-07-17): the owner said \"check my issue\" (his upstream llama.cpp #25187 \u2014 the FR-Spec/il design issue that seeded hqmtp's head-shrinking thread) meaning READ IT FOR CONTEXT; the assistant posted a debrief comment carrying"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 427,
+  "completion_tokens": 256,
+  "total_tokens": 683,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 7.212492762,
+  "spec": {
+   "rounds": 130,
+   "drafted": 130,
+   "accepted": 126,
+   "acceptance_rate": 0.9692307692307692
+  }
+ },
+ "id": "<redacted>",
+ "created": 1788127215,
+ "system_fingerprint": "<redacted: build fingerprint>"
+}

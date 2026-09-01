@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "The user has asked me to summarize what \"this code\" does and list its main risks \u2014 but they haven't actually provided any code. There's no code snippet in the conversation, no attachment mentioned, nothing.\n\nThis is a case where the human's message references something that isn't present. The right thing to do is to point out that no code was included and ask them to share it. I shouldn't hallucinate or make up an analysis of imaginary code.\n\nI should keep this brief and helpful. I can also mention what would be helpful for them to include (e.g., the code itself, maybe context like language, framework, what it's supposed to do) so I can give a better analysis. But I shouldn't over-ask; just the code is the main thing.\n\nFormat: Short response, no need for headers or lists. Just a friendly note that the code didn't come through and an invitation to paste it. Maybe a",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user has asked me to summarize what \"this code\" does and list its main risks \u2014 but they haven't actually provided any code. There's no code snippet in the conversation, no attachment mentioned, nothing.\n\nThis is a case where the human's message references something that isn't present. The right thing to do is to point out that no code was included and ask them to share it. I shouldn't hallucinate or make up an analysis of imaginary code.\n\nI should keep this brief and helpful. I can also mention what would be helpful for them to include (e.g., the code itself, maybe context like language, framework, what it's supposed to do) so I can give a better analysis. But I shouldn't over-ask; just the code is the main thing.\n\nFormat: Short response, no need for headers or lists. Just a friendly note that the code didn't come through and an invitation to paste it. Maybe a"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 25,
+  "completion_tokens": 192,
+  "total_tokens": 217,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 3.976093269,
+  "spec": {
+   "rounds": 69,
+   "drafted": 153,
+   "accepted": 122,
+   "acceptance_rate": 0.7973856209150327
+  }
+ },
+ "id": "<redacted>",
+ "created": 1788151023,
+ "system_fingerprint": "<redacted: build fingerprint>"
+}

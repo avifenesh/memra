@@ -1,0 +1,35 @@
+=== arm=setup-verify start=2026-08-31T11:18:43Z ===
+=== cmd: ls -la ~/realgate ~/realgate/dump | head -30; nvidia-smi --query-gpu=index,memory.used --format=csv,noheader ===
+/home/ubuntu/realgate:
+total 4948
+drwxrwxr-x  6 ubuntu ubuntu    4096 Aug 31 11:18 .
+drwxr-x--- 16 ubuntu ubuntu    4096 Aug 31 11:07 ..
+drwxrwxr-x  2 ubuntu ubuntu    4096 Aug 31 11:16 bin
+drwxrwxr-x  2 ubuntu ubuntu    4096 Aug 31 11:18 dump
+lrwxrwxrwx  1 ubuntu ubuntu      43 Aug 31 11:16 expand-goldens.py -> /home/ubuntu/realgate/bin/expand-goldens.py
+drwxrwxr-x  2 ubuntu ubuntu    4096 Aug 31 11:16 kvq2
+-rw-rw-r--  1 ubuntu ubuntu 5040592 Aug 31 11:18 ladder-ids.txt
+lrwxrwxrwx  1 ubuntu ubuntu      44 Aug 31 11:16 make-ladder-ids.py -> /home/ubuntu/realgate/bin/make-ladder-ids.py
+drwxrwxr-x  2 ubuntu ubuntu    4096 Aug 31 11:18 shapes
+
+/home/ubuntu/realgate/dump:
+total 58040
+drwxrwxr-x 2 ubuntu ubuntu     4096 Aug 31 11:18 .
+drwxrwxr-x 6 ubuntu ubuntu     4096 Aug 31 11:18 ..
+-rw-rw-r-- 1 ubuntu ubuntu   102400 Aug 31 11:18 exit_mixer.bin
+-rw-rw-r-- 1 ubuntu ubuntu 29711961 Aug 31 11:16 hidden-goldens.pt
+-rw-rw-r-- 1 ubuntu ubuntu       48 Aug 31 11:16 input-ids.txt
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer0.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer1.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer10.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer11.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer12.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer13.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer14.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer15.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer16.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer17.bin
+-rw-rw-r-- 1 ubuntu ubuntu   409600 Aug 31 11:18 layer18.bin
+0, 0 MiB
+1, 0 MiB
+=== arm=setup-verify rc=0 end=2026-08-31T11:18:44Z ===

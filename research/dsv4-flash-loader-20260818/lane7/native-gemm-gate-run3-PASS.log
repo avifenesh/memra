@@ -1,0 +1,44 @@
+dsv4-native-gemm-gate | model /home/ubuntu/models/dsv4-flash-nvfp4 | fixtures /home/ubuntu/dsv4-lane2-fixtures/dsv4_fixtures_artifactvariant.json | variant clamp-only | devices [0, 1]
+[load] expert arm: Native
+[load] layer 3 -> dev0 done t=13s
+[load] layer 7 -> dev0 done t=26s
+[load] layer 11 -> dev0 done t=39s
+[load] layer 15 -> dev0 done t=52s
+[load] layer 19 -> dev0 done t=65s
+[load] layer 23 -> dev1 done t=77s
+[load] layer 27 -> dev1 done t=90s
+[load] layer 31 -> dev1 done t=103s
+[load] layer 35 -> dev1 done t=116s
+[load] layer 39 -> dev1 done t=129s
+[load] layer 42 -> dev1 done t=139s
+captured moe_x at layers [0, 2, 20, 22, 42, 43] (t=144s)
+
+| tensor | m x n x k | mirror | f64 max-err / bound | rung shift meas (pred med ratio) |
+|---|---|---|---|---|
+| layers.0.experts.0.w1 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 2.19e-5 PASS | 4.059e-2 (med ratio 0.50) |
+| layers.0.experts.0.w3 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 2.18e-5 PASS | 4.568e-2 (med ratio 0.49) |
+| layers.0.experts.0.w2 | 8x4096x2048 | BIT-EXACT | 4.47e-8 / 4.54e-6 PASS | 2.052e-2 (med ratio 0.50) |
+| layers.2.experts.100.w1 | 8x2048x4096 | BIT-EXACT | 8.94e-8 / 2.95e-5 PASS | 5.215e-2 (med ratio 0.50) |
+| layers.2.experts.100.w3 | 8x2048x4096 | BIT-EXACT | 1.19e-7 / 2.92e-5 PASS | 5.671e-2 (med ratio 0.49) |
+| layers.2.experts.100.w2 | 8x4096x2048 | BIT-EXACT | 4.47e-8 / 3.92e-6 PASS | 2.314e-2 (med ratio 0.51) |
+| layers.20.experts.7.w1 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 5.22e-5 PASS | 9.461e-2 (med ratio 0.48) |
+| layers.20.experts.7.w3 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 3.83e-5 PASS | 9.234e-2 (med ratio 0.48) |
+| layers.20.experts.7.w2 | 8x4096x2048 | BIT-EXACT | 1.19e-7 / 1.12e-5 PASS | 5.407e-2 (med ratio 0.47) |
+| layers.22.experts.31.w1 | 8x2048x4096 | BIT-EXACT | 2.68e-7 / 4.37e-5 PASS | 7.213e-2 (med ratio 0.50) |
+| layers.22.experts.31.w3 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 4.38e-5 PASS | 8.494e-2 (med ratio 0.50) |
+| layers.22.experts.31.w2 | 8x4096x2048 | BIT-EXACT | 5.96e-8 / 8.02e-6 PASS | 2.939e-2 (med ratio 0.48) |
+| layers.42.experts.255.w1 | 8x2048x4096 | BIT-EXACT | 1.79e-7 / 5.18e-5 PASS | 1.171e-1 (med ratio 0.49) |
+| layers.42.experts.255.w3 | 8x2048x4096 | BIT-EXACT | 2.98e-7 / 6.22e-5 PASS | 1.111e-1 (med ratio 0.50) |
+| layers.42.experts.255.w2 | 8x4096x2048 | BIT-EXACT | 2.38e-7 / 1.66e-5 PASS | 9.554e-2 (med ratio 0.51) |
+| mtp.0.experts.7.w1 | 8x2048x4096 | BIT-EXACT | 2.98e-7 / 1.08e-4 PASS | 1.047e-1 (med ratio 0.50) |
+| mtp.0.experts.7.w3 | 8x2048x4096 | BIT-EXACT | 2.98e-7 / 9.59e-5 PASS | 1.246e-1 (med ratio 0.49) |
+| mtp.0.experts.7.w2 | 8x4096x2048 | BIT-EXACT | 1.19e-7 / 2.47e-5 PASS | 9.037e-2 (med ratio 0.51) |
+| mtp.0.experts.200.w1 | 8x2048x4096 | BIT-EXACT | 4.77e-7 / 2.22e-4 PASS | 1.246e-1 (med ratio 0.48) |
+| mtp.0.experts.200.w3 | 8x2048x4096 | BIT-EXACT | 3.58e-7 / 1.47e-4 PASS | 1.187e-1 (med ratio 0.49) |
+| mtp.0.experts.200.w2 | 8x4096x2048 | BIT-EXACT | 1.43e-6 / 1.49e-4 PASS | 7.463e-1 (med ratio 0.50) |
+
+== swiglu_limit saturation cell (clamp fused with the quantized path) ==
+  [PASS] layers.20.experts.7 x50-row: gate-clamp sat 643/2048, up-clamp sat 1662/2048 (both must be >0); w1/w3 BIT-EXACT | h max-diff 1.907e-6 vs thr 2.000e-4 | w2 BIT-EXACT
+  [PASS] mtp.0.experts.7 x50-row: gate-clamp sat 587/2048, up-clamp sat 1700/2048 (both must be >0); w1/w3 BIT-EXACT | h max-diff 7.153e-7 vs thr 2.000e-4 | w2 BIT-EXACT
+
+DSV4 NATIVE GEMM GATE: PASS (3 projections x 7 samples + 2 saturation cells, 0 failures, 176s)

@@ -1,0 +1,57 @@
+{
+  "categories": {
+    "chat": 32,
+    "code": 32,
+    "if": 32,
+    "math": 32
+  },
+  "chunks": 2,
+  "end": 128,
+  "format": "memra-dspark-corpus-summary-v1",
+  "label": "smoke",
+  "manifest_fingerprint": "8420cf979836617b1f3d6acfe31780da42ce5ba59ad3246a4a954696c8e32f59",
+  "manifests": [
+    {
+      "chunk": "smoke-00000-00064",
+      "sha256": "bd2135c3b83d21f97f12b8fedc4a8e847b47eb336bed05133080170f2c510f1b"
+    },
+    {
+      "chunk": "smoke-00064-00128",
+      "sha256": "eeb9cc87d03d9a6fa0af9bc1aae9986078994d08ba73baf83d271e9135d6f0ec"
+    }
+  ],
+  "modes": {
+    "nothink": 64,
+    "think": 64
+  },
+  "pairs": 128,
+  "prompt_tokens": {
+    "max": 2953,
+    "min": 22,
+    "p50": 83,
+    "p95": 538,
+    "total": 19438
+  },
+  "records": 512,
+  "response_tokens": {
+    "max": 512,
+    "max_new_512_count": 100,
+    "min": 39,
+    "p50": 512,
+    "p95": 512,
+    "total": 59392
+  },
+  "skipped_short_pairs": 0,
+  "splits": {
+    "heldout": 7,
+    "train": 121
+  },
+  "start": 0,
+  "validation": {
+    "max_logit_probability_ratio_error": 8.444720762668112e-07,
+    "max_probability_mass_error": 3.398456094316771e-08,
+    "sampled_token_top64_rate": 1.0,
+    "tail_mass_max": 0.04156617075204849,
+    "tail_mass_mean": 9.80473130743499e-05
+  }
+}

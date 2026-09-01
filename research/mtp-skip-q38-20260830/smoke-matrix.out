@@ -1,0 +1,26 @@
+===== smoke run A (skip=0) =====
+r2 IDENTICAL (f5feea34a51a16da)
+r3 IDENTICAL (0308118696d78674)
+dspark-serve-smoke: ALL GREEN
+===== smoke run B (skip=1) =====
+r2 IDENTICAL (f5feea34a51a16da)
+r3 IDENTICAL (0308118696d78674)
+dspark-serve-smoke: ALL GREEN
+===== smoke run C (skip=0) =====
+r2 IDENTICAL (f5feea34a51a16da)
+r3 IDENTICAL (0308118696d78674)
+dspark-serve-smoke: ALL GREEN
+===== cross-run byte identity (greedy rows) =====
+on-r1 IDENTICAL across A/B/C (3accd7199d0f58c1)
+off-r1 IDENTICAL across A/B/C (3accd7199d0f58c1)
+on-r2 IDENTICAL across A/B/C (f5feea34a51a16da)
+off-r2 IDENTICAL across A/B/C (f5feea34a51a16da)
+on-r3 IDENTICAL across A/B/C (0308118696d78674)
+off-r3 IDENTICAL across A/B/C (0308118696d78674)
+===== boot receipt parity =====
+A-vs-C (flag unset, branch vs pre-change): boot receipts byte-identical
+dspark trim parity: 'TRIMMED to 32768 rows' in both arms
+skip receipt (arm B): [mtp-skip] MEMRA_MTP_SKIP=1: skipping 1 embedded MTP/NextN block(s) blk.64..=blk.64 (~227 MiB of weights not loaded); MTP spec decode is unavailable for this model (dspark/DFlash2 drafting keeps its trimmed head via the MEMRA_FRSPEC_TRIM stub)
+smoke-matrix: ALL GREEN
+
+[exited with code 0]

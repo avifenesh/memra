@@ -1,0 +1,145 @@
+name: boundary-refs
+
+# Re-scans every PUBLISHED ref — heads, tags AND GitHub's PR refs — under the CURRENT
+# public-boundary policy.
+#
+# Why this is separate from ci.yml: the pre-push hook only judges blob versions a push
+# introduces, and ci.yml only judges the checkout. Neither ever looks at a branch again, so
+# a rule added after a branch was pushed is retroactively blind — which is exactly how two
+# lanes pushed 2026-08-15 stayed unexamined by the account-identity rules that landed
+# 2026-08-16 until a review read them by hand. Rationale and rejected alternatives:
+# docs/decisions/PUBLIC-BOUNDARY-DETECTION.md.
+#
+# What it covers, and what it cannot:
+#   COVERS  every blob at the tip tree of every head, every tag and every reachable
+#           refs/pull/*/head, judged by the whole current rule set.
+#   CANNOT  (a) blobs that were added and later removed — history below the tips. The
+#               2026-08-19 audit's residential-IP finding and its two nsys profiles are in
+#               pushed history on 46 heads and 36-63 tags and no ref-tip scan sees them.
+#           (b) commit messages and author/committer identity fields. Two provider capacity-block
+#               ids and a box public IP live in commit messages on main and 37-47 tags.
+#           (c) anything already pushed. This job stops the NEXT leak and inventories the
+#               current one; it cannot un-disclose a byte, and GitHub keeps unreachable
+#               objects fetchable by SHA while 36 forks may hold their own copies.
+#
+# Deliberately NOT a merge gate. It reports a backlog on history, which the owner
+# remediates ref by ref; a permanently-red required check over that backlog is a gate
+# nobody reads. It runs on a schedule so a NEW leak on a pushed ref surfaces within a day,
+# and on demand right after a policy change.
+#
+# NOT SILENTLY SKIPPABLE, and every clause below is load-bearing rather than defensive:
+#   * no step-level `if:` and no `continue-on-error:` — every step is unconditional, and a red
+#     step fails the job. (The `if` blocks below are shell, inside a step, and every branch of
+#     each one either continues or exits non-zero.)
+#   * the ref inventory is checked against `git ls-remote`, so a fetch that quietly brought
+#     back one ref fails the job instead of scanning one ref and reporting green. The
+#     original version of this workflow fetched `--no-tags` against a glob that could not
+#     match a tag, which would have reported a clean tag namespace it never opened.
+#   * the scanner exits 1 when its glob matches no ref, and prints the blob count it read,
+#     so "clean" and "never looked" are different outputs.
+#   * the scanner reads no environment variables at all, so there is no MEMRA_SKIP_* shaped
+#     hole here. `--no-verify` and `core.hooksPath` bypass the LOCAL hook, which is the
+#     reason this server-side job has to exist.
+#
+# --summary-only because logs on a public repo are public: a per-path findings list is a map
+# to unremediated leaks. Counts per rule and per ref still fail the job and still say which
+# refs to go clean; a maintainer re-runs locally, without the flag, for paths.
+
+on:
+  schedule:
+    # 06:10 UTC daily — after the usual overnight lane pushes, before the working day.
+    # GitHub only schedules `on: schedule` from the DEFAULT BRANCH: this file living on a
+    # lane branch is a job that never runs, which is what happened to it for a day.
+    - cron: "10 6 * * *"
+  workflow_dispatch:
+    inputs:
+      ref_glob:
+        description: "Comma-separated ref globs to scan"
+        required: false
+        default: "refs/remotes/origin/**,refs/remotes/origin-pull/**,refs/tags/**"
+
+permissions:
+  contents: read
+
+jobs:
+  refs:
+    runs-on: ubuntu-24.04
+    # Measured 2026-08-19: 187 refs (68 heads, 119 tags), 45,237 candidate blob versions, ~25
+    # minutes wall on 4 nice'd cores of the dev rig. 45 was the heads-only budget and tags
+    # roughly tripled the tree count, so the ceiling moves rather than the job dying half-scanned
+    # — a timeout kill is a scan that proved nothing. The cost is dominated by one `git ls-tree
+    # -r` per ref plus one multi-tree `git grep`; the audit's object-DB sweep would be cheaper
+    # and cannot skip a commit, which is the next change here (see the decision record).
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole point is history the checkout does not carry.
+          fetch-depth: 0
+
+      - name: Fetch every published ref (heads, tags, PR refs)
+        # actions/checkout leaves only the checked-out ref's tracking ref behind even at
+        # fetch-depth 0, so a glob would match one ref and the scan would prove nothing.
+        #
+        # PR refs are GitHub-maintained and are NOT owner-writable, so they cannot be
+        # remediated by a push — but 20 of 25 carried a confirmed identifier at tip in the
+        # 2026-08-19 audit, so leaving them unscanned means believing a head deletion was
+        # sufficient. They are fetched in their own step because a repo with none must not
+        # fail the job; an unavailable namespace is reported, never assumed empty.
+        run: |
+          set -euo pipefail
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --prune origin '+refs/tags/*:refs/tags/*'
+          if git fetch --prune origin '+refs/pull/*/head:refs/remotes/origin-pull/*'; then
+            echo "pull-refs: fetched"
+          else
+            echo "pull-refs: UNAVAILABLE — refs/pull/* not fetchable for this repo/token."
+            echo "pull-refs: heads and tags are still in scope; PR refs are not."
+          fi
+
+      - name: Prove the scan covers every ref the remote has
+        # The invariant that makes this job decisive instead of merely scheduled. Comparing
+        # what we fetched against what the remote lists is a real check; a hardcoded minimum
+        # ref count is a number that rots. A namespace that came back short fails here rather
+        # than being silently absent from a green report.
+        run: |
+          set -euo pipefail
+          remote_heads=$(git ls-remote --heads origin | wc -l)
+          remote_tags=$(git ls-remote --tags origin | grep -cv '\^{}$' || true)
+          local_heads=$(git for-each-ref --format='%(refname)' 'refs/remotes/origin/**' | wc -l)
+          local_tags=$(git for-each-ref --format='%(refname)' 'refs/tags/**' | wc -l)
+          local_pull=$(git for-each-ref --format='%(refname)' 'refs/remotes/origin-pull/**' | wc -l)
+          echo "heads: $local_heads local / $remote_heads remote"
+          echo "tags:  $local_tags local / $remote_tags remote"
+          echo "pull:  $local_pull local"
+          # origin/HEAD is a symref actions/checkout may leave behind, so local may exceed
+          # remote by one. Short is the failure; long is bookkeeping.
+          if [ "$local_heads" -lt "$remote_heads" ]; then
+            echo "::error::fetched $local_heads heads but the remote lists $remote_heads."
+            exit 1
+          fi
+          if [ "$local_tags" -lt "$remote_tags" ]; then
+            echo "::error::fetched $local_tags tags but the remote lists $remote_tags."
+            exit 1
+          fi
+          if [ "$remote_heads" -eq 0 ]; then
+            echo "::error::the remote lists no heads at all — ls-remote did not work."
+            exit 1
+          fi
+
+      - name: Public-boundary ref scan
+        # Through env, not interpolated into the script: a dispatch input spliced into a run
+        # block is a shell-injection seam, and on a schedule run the input is empty anyway.
+        env:
+          REF_GLOB: ${{ inputs.ref_glob }}
+        run: |
+          set -euo pipefail
+          default='refs/remotes/origin/**,refs/remotes/origin-pull/**,refs/tags/**'
+          if ! python3 tools/check-public-boundary.py check \
+              --refs "${REF_GLOB:-$default}" --summary-only; then
+            echo "::error::public-boundary: new violations on published refs. Counts and the"
+            echo "::error::carrying refs are above; re-run locally without --summary-only for"
+            echo "::error::paths (a public log must not publish a map to unremediated leaks):"
+            echo "::error::  python3 tools/check-public-boundary.py check --refs --summary-only"
+            exit 1
+          fi

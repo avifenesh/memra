@@ -1,0 +1,53 @@
+{
+  "categories": {
+    "chat": 16,
+    "code": 16,
+    "if": 16,
+    "math": 16
+  },
+  "chunks": 1,
+  "end": 64,
+  "format": "memra-dspark-corpus-summary-v1",
+  "label": "smoke",
+  "manifest_fingerprint": "cfca755f9a7a6baad1f2b8f20ba37ee64077e414b2f3316d0d33958b4d390ac9",
+  "manifests": [
+    {
+      "chunk": "smoke-00000-00064",
+      "sha256": "bd2135c3b83d21f97f12b8fedc4a8e847b47eb336bed05133080170f2c510f1b"
+    }
+  ],
+  "modes": {
+    "nothink": 32,
+    "think": 32
+  },
+  "pairs": 64,
+  "prompt_tokens": {
+    "max": 2953,
+    "min": 28,
+    "p50": 62,
+    "p95": 538,
+    "total": 9747
+  },
+  "records": 256,
+  "response_tokens": {
+    "max": 512,
+    "max_new_512_count": 51,
+    "min": 53,
+    "p50": 512,
+    "p95": 512,
+    "total": 29427
+  },
+  "skipped_short_pairs": 0,
+  "splits": {
+    "heldout": 4,
+    "train": 60
+  },
+  "start": 0,
+  "validation": {
+    "max_logit_probability_ratio_error": 8.444720762668112e-07,
+    "max_probability_mass_error": 2.9658934419529714e-08,
+    "sampled_token_top64_rate": 1.0,
+    "tail_mass_max": 0.019891943782567978,
+    "tail_mass_mean": 7.99548005261986e-05
+  }
+}

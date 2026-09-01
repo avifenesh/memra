@@ -1,0 +1,13 @@
+
+NOTICE: Existing SQLite export found: /home/ubuntu/memra-cx-sigrouter/research/sigrouter-20260811/raw/box1-perf-arm-expf/nsys-default.sqlite
+        It is assumed file was previously exported from: /home/ubuntu/memra-cx-sigrouter/research/sigrouter-20260811/raw/box1-perf-arm-expf/nsys-default.nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [/home/ubuntu/memra-cx-sigrouter/research/sigrouter-20260811/raw/box1-perf-arm-expf/nsys-default.sqlite] with [/opt/nvidia/nsight-systems/2026.1.3/target-linux-x64/reports/cuda_gpu_mem_time_sum.py]... 
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+98.0,2684331546,48593,55241.1,1056.0,287,43543882,777984.9,[CUDA memcpy Host-to-Device]
+1.6,44542741,55036,809.3,736.0,320,3776,347.6,[CUDA memset]
+0.4,10103595,18785,537.9,416.0,384,11712,1086.8,[CUDA memcpy Device-to-Host]
+0.0,486252,551,882.5,896.0,704,1952,175.1,[CUDA memcpy Device-to-Device]
+0.0,236192,264,894.7,768.0,256,27136,2303.7,[CUDA memcpy Peer-to-Peer]
+

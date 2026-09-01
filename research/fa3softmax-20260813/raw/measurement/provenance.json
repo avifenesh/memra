@@ -1,0 +1,34 @@
+{
+  "actual_shape_text_identity": "PASS",
+  "completed_utc": "2026-08-12T23:17:37Z",
+  "lock": "/tmp/memra-5090.lock",
+  "models": {
+    "q27": {
+      "path": "/data/ai-ml/hf-models/qwen36-27b-nvfp4-mtp/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf",
+      "sha256": "d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517"
+    },
+    "q35": {
+      "path": "/data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+      "sha256": "df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf"
+    }
+  },
+  "prompt_ids_sha256_canonical_json": "eba9dff66d4ebf3f40d6db80298ab9c884fa1bb2e1a6d4ca2c7dadd4f21513fb",
+  "prompt_tokens": 4860,
+  "repetitions": 5,
+  "schema": "memra.fa3softmax.measurement-provenance.v1",
+  "servers": {
+    "baseline": {
+      "path": "/home/avifenesh/.cache/memra-targets/cx-fa3softmax-base-v0812/release/memra-server",
+      "sha256": "9b6ee7d863d82ce7ea1c18dec3cd0554cce283a6052c8b825de4ba077d3e6881"
+    },
+    "candidate": {
+      "path": "/home/avifenesh/.cache/memra-targets/cx-fa3softmax-candidate/release/memra-server",
+      "sha256": "ba3cad87d91a59ceb4ab2db5570b682a564ff5081e69fc6e247ec984c14c6728"
+    }
+  },
+  "started_utc": "2026-08-12T23:13:11Z",
+  "thermal_cap_mhz": [
+    210,
+    1200
+  ]
+}

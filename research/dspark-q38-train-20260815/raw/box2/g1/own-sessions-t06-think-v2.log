@@ -1,0 +1,31 @@
+extracted 2898 candidate turns
+bucket chat-short: 64 prompts
+bucket agentic-brief: 64 prompts
+Traceback (most recent call last):
+  File "/home/ubuntu/own_bench.py", line 143, in <module>
+    main()
+  File "/home/ubuntu/own_bench.py", line 120, in main
+    for res in ex.map(lambda p: run_one(args.base_url, p, args), picked):
+  File "/home/ubuntu/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/home/ubuntu/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/own_bench.py", line 120, in <lambda>
+    for res in ex.map(lambda p: run_one(args.base_url, p, args), picked):
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/own_bench.py", line 59, in run_one
+    tok = get_tokenizer(args.model_path)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/own_bench.py", line 51, in get_tokenizer
+    from transformers import AutoTokenizer
+ImportError: cannot import name 'AutoTokenizer' from 'transformers' (/scratch/venvs/eval/lib/python3.11/site-packages/transformers/__init__.py)

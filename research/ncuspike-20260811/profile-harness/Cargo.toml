@@ -1,0 +1,10 @@
+[package]
+name = "ncuspike-profile"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+memra-engine = { path = "../../memra-cx-ncuspike-src/crates/memra-engine" }
+memra-gguf = { path = "../../memra-cx-ncuspike-src/crates/memra-gguf" }
+cudarc = { version = "0.19", default-features = false, features = ["std", "cuda-13010", "dynamic-loading", "driver", "cublas", "cublaslt", "nvrtc"] }

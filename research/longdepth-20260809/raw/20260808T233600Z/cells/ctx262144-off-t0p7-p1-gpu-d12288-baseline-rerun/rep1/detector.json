@@ -1,0 +1,73 @@
+{
+  "cached_tokens": 0,
+  "code_start_char_offset": 0,
+  "completion_bytes": 20974,
+  "completion_sha256": "bb12e23b8d1c63e92627298b7cca9361557b77d405dbbd27743adbbfba3ec99d",
+  "corrupt": true,
+  "doctype_prefilled": true,
+  "first_corruption_cause": "first_non_latin",
+  "first_corruption_token_index_0based": 504,
+  "first_corruption_token_index_1based": 505,
+  "first_non_ascii": {
+    "byte_offset": 1377,
+    "char": "工",
+    "char_offset": 1377,
+    "codepoint": "U+5DE5",
+    "completion_token_index_0based": 504,
+    "completion_token_index_1based": 505,
+    "excerpt": "r nav a:focus{background:#334155;color:#f1f5f9;outline:2px solid #60a5fa}\\nmain{margin-left工作了 environment effectively. The operations team must monitor system health continuously. ",
+    "name": "CJK UNIFIED IDEOGRAPH-5DE5",
+    "token_byte_end": 1386,
+    "token_byte_start": 1377,
+    "token_hex": "e5b7a5e4bd9ce4ba86",
+    "token_id": 94712,
+    "token_text_debug": "\"工作了\""
+  },
+  "first_non_latin": {
+    "byte_offset": 1377,
+    "char": "工",
+    "char_offset": 1377,
+    "codepoint": "U+5DE5",
+    "completion_token_index_0based": 504,
+    "completion_token_index_1based": 505,
+    "excerpt": "r nav a:focus{background:#334155;color:#f1f5f9;outline:2px solid #60a5fa}\\nmain{margin-left工作了 environment effectively. The operations team must monitor system health continuously. ",
+    "name": "CJK UNIFIED IDEOGRAPH-5DE5",
+    "token_byte_end": 1386,
+    "token_byte_start": 1377,
+    "token_hex": "e5b7a5e4bd9ce4ba86",
+    "token_id": 94712,
+    "token_text_debug": "\"工作了\""
+  },
+  "javascript_parser": "tree-sitter-javascript",
+  "label": "ctx262144-off-t0p7-p1-gpu-d12288-baseline-rerun-r1",
+  "parse_failure": {
+    "byte_offset": 20973,
+    "char_offset": 20892,
+    "completion_token_index_0based": 7194,
+    "completion_token_index_1based": 7195,
+    "detail": "generation stopped with <style> open (opened at code char 155)",
+    "excerpt": "ent.tagName!=='INPUT'){e.preventDefault();searchInput.focus()}});\\n</script>\\n</body>\\n</html>",
+    "kind": "unclosed_tag_at_stop",
+    "token_byte_end": 20974,
+    "token_byte_start": 20973,
+    "token_hex": "3e",
+    "token_id": 32,
+    "token_text_debug": "\">\""
+  },
+  "prompt_tokens": 368,
+  "server_n_tokens": 7196,
+  "stop_reason": "Eos",
+  "terminal_unclosed_tags": [
+    "html",
+    "head",
+    "style"
+  ],
+  "think_end_char_offset": null,
+  "token_index_convention": "completion token index is 0-based; 1-based twin is included",
+  "token_stream": {
+    "decode_match": "MATCH",
+    "decoded_bytes": 20974,
+    "terminal_token_without_text": 128007,
+    "token_count": 7195
+  }
+}

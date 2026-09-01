@@ -1,0 +1,23 @@
+# qwen4exp_real_gate	label=dt4-defer-ladder	binary_sha256=2f64b2cdae19edf32c146f045262c057cb28ec3d876740320fc99be334fa8491	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# defer-ab k=5 draft_head_rows=248320 pmin=0.3 adapt=Some(1): host vs deferred round readback, interleaved, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len	chain_ms_per_round	verify_ms_per_round	guard_stops	zero_draft
+0	host	256	11.36	88.04	0.615	1.94	2.29	19.16	36	27
+0	defer	256	11.46	87.30	0.615	1.94	2.48	19.17	36	27
+0	defer-gsync	256	11.29	88.57	0.615	1.94	2.28	19.05	36	27
+1	host	256	11.34	88.19	0.615	1.94	2.29	19.13	36	27
+1	defer	256	11.41	87.66	0.615	1.94	2.48	19.07	36	27
+1	defer-gsync	256	11.30	88.46	0.615	1.94	2.28	19.07	36	27
+2	host	256	11.34	88.17	0.615	1.94	2.29	19.14	36	27
+2	defer	256	11.42	87.59	0.615	1.94	2.48	19.09	36	27
+2	defer-gsync	256	11.32	88.35	0.615	1.94	2.28	19.10	36	27
+3	host	256	11.34	88.18	0.615	1.94	2.29	19.14	36	27
+3	defer-gsync	256	11.37	87.96	0.615	1.94	2.28	19.20	36	27
+4	host	256	11.36	88.03	0.615	1.94	2.29	19.17	36	27
+4	defer-gsync	256	11.34	88.18	0.615	1.94	2.28	19.14	36	27
+# arm host	reps=5	median_ms=11.342	spread_abs_ms=0.021	spread_rel=0.1875%	mean_ms=11.348	tok_per_s=88.17
+# arm defer	reps=3	median_ms=11.416	spread_abs_ms=0.048	spread_rel=0.4174%	mean_ms=11.426	tok_per_s=87.59
+# arm defer-gsync	reps=5	median_ms=11.319	spread_abs_ms=0.078	spread_rel=0.6901%	mean_ms=11.325	tok_per_s=88.35
+# escalation	pair=host-vs-defer-gsync	rule=b	reps 3->5	spread_rel_host=0.1717%	spread_rel_arm=0.2564%	verdict_ms=0.037	pooled_spread_ms=0.024
+# speedup_defer_over_host	0.9935	(decision medians)
+# identity	PASS

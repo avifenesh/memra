@@ -1,0 +1,24 @@
+The function should return a class that can be instantiated and used to perform the operations.
+
+<think>
+
+</think>
+
+```python
+from typing import Optional, TypeVar, Generic, Iterator
+
+T = TypeVar('T')
+
+
+class _Node(Generic[T]):
+    """A node in a doubly-linked list."""
+    
+    def __init__(self, value: T) -> None:
+        self.value: T = value
+        self.prev: Optional['_Node[T]'] = None
+        self.next: Optional['_Node[T]'] = None
+
+
+class DoublyLinkedList(Generic[T]):
+    """
+    A

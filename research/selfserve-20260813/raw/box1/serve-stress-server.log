@@ -1,0 +1,165 @@
+[server] starting; models config = [("stress", "/opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf", Some("/opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "stress" <- /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] stress: regime draft attached (/opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf)
+[worker]   loaded "stress": 65 layers, eos=248046
+[worker] stress: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] stress: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 268MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens
+[admission] "stress": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["stress"]
+[server] listening on http://127.0.0.1:8179
+[meter] admit id=chatcmpl-e45e683de46763940080fc8959a558b5 tenant=default lane=interactive model="stress"
+[admission] request cost: model="stress" ctx=8192 path=spec = 33408 B/token x ctx + 0MB fixed = 274MB
+[spec-k] model="stress" tenant="" K=3 source=cold-short prompt=54 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="stress" 308MB (observed 582MB at ctx 8192 path=spec)
+[meter] admit id=chatcmpl-f2cdad9f13d58942311617a8f03be5dc tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-16f2c9bd2f044ab6fe677d511621a8fa tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-ac6e8f02dbdc98ac338f446b44b713c3 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-cdc4106f4c014bf7c2c78df62d4a4f33 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-ce2b46a182da5c6e0c32f96bdc6a26e8 tenant=default lane=interactive model="stress"
+[admission] request cost: model="stress" ctx=8192 path=spec = 33408 B/token x ctx + 308MB fixed = 582MB
+[spec-k] model="stress" tenant="" K=3 source=cold-short prompt=56 cached=0 lcp=0 active=2 placement=single-or-non-pp2
+[admission] request cost: model="stress" ctx=8192 path=plain = 31552 B/token x ctx + 308MB fixed = 566MB
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=3 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=4 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=52 cached=0 lcp=0 active=5 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=43 cached=0 lcp=0 active=6 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-343c2afd356c3add6256927484646a54 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-c685e9733c822ca3ad85649ed83e0696 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-a4b86a65bbae5f7b4a9c7be2d4819c94 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-4fca492be5929146745adfaec2ba674b tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-9335a0294fd9174a7c9c8725878cc71e tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-ce90dd3ff0a77d1cbeae7157461cc929 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-d5b3cc4f479342b57447ee988623932f tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-e4c9f26956b89294cd60f9defd25049c tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-3ed66b30f9c629aa31657321e7d8a558 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-1ac66368c81cc583483f97b435836312 tenant=default lane=interactive model="stress"
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=7 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=8 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=9 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=11 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=12 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=13 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=14 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=15 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=16 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-ea2fa61655d993b4e638103cf288df04 tenant=default lane=interactive model="stress"
+[spec-acc] ctx=56 burst=3/3 cum=3/3=1.000
+[meter] admit id=chatcmpl-355a906387e3cb4be9af7e716b6b1c39 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-2008a8747e62e875a3e52c587597c813 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-e9ffb33a236e3d5bf7ea688b1a80118c tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-876e7aae28ac7344d01b0ab0247b56f2 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-c27c31e2614440009b368cc4bdd970d4 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-256f9254ca41ba0accdf07590dd2b126 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-6343228945fa2321556a6e78c149409b tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-cda7e17b648f11c4bc8a03f594856346 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-488cafc31a7f97bf12a523a090c7ca75 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-a474ca77744a688dd13707d10d6a37ee tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-9ba907d82c3aa58178ac5ea2e5930f1f tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-12c969d0f04ac29c10b77f0e334c06a4 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-58b0d54d2f0799805ae618c80696ae8f tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-a50f5a9a042aa0d871257f37f402b501 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-9d99033329246461b754b74e4308ff95 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-7c0e2b1046cf7b0ee8f99a94ab297b45 tenant=default lane=interactive model="stress"
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=17 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=18 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=19 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=20 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=21 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=22 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=23 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=24 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=25 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=26 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-b89dee24b8b492112a10e8c7a8f1e62a tenant=default lane=interactive model="stress"
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=27 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=28 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=29 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=30 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=31 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=32 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=33 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-1bb8cde92a416150d776aeb09810bef9 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-de03b0784a086d6adb85c6058265c6e9 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-07895fbccf7998ea09e3711fca17152a tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-d729bb4e243b910f5d6d3132bd07559d tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-cb4b6c48db5753f53264847c3938e9e8 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-280a2bc862bc5c8bc10a6e984cd353bd tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-b97b99eff97d1bec6fd8001579185ab3 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-dee5606afb3fa939ee96126e43a66a87 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-43085eb16269f70ebcc345598e3a113e tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-0ae7eb057b1bc587de2c48e5ea1ecb67 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-acee8b913ab4d4dfcfba1f29c5538197 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-cbef8ddb3b3c76dd00165645a9eb51b2 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-82e8bf9db0435d5e9dbc7d61abe38c7a tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-f8f1a314dfe0438ecbc00eb839b7838d tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-6e3c5e5d26415745cee5094d374cf8f3 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-65ac8728ca4abc7ec53441613b6f36dc tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-20056306f1e80bdcee1a1869895d77ab tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-656d026b94d6d9b6def1adb4c490b311 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-de307b56441dd4276491381fefefc0ae tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-50100bd65d64c1e7a130a9fbca52e8fe tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-55977ec2446790781a89b0b5c6062de7 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-aacbf8cd90463ec7b87a3b377c9c340f tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-a3fc57a74fdc4d7b7f66cdd9f5689bd2 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-40768843544e68b9963c2ac9b2bd4993 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-94a6284cb2e5b6c398ea30931bee910d tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-b9527cca81e60e8db1a2cfd1c274dda3 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-eb440c776f007c883ae877c41e659676 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-9942f5ac5f2ce7cf5603c8081f26bc92 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-4629738a3359daec95093f3999de7325 tenant=default lane=interactive model="stress"
+[meter] admit id=chatcmpl-583b411bf0d3549efc66c8b89766533d tenant=default lane=interactive model="stress"
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=34 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=35 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=36 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=37 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=38 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=39 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=40 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=41 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=42 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=43 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=44 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=45 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=46 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=47 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=48 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=49 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=50 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=51 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=52 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=53 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=54 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=55 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=56 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=57 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=58 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=53 cached=0 lcp=0 active=59 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=44 cached=0 lcp=0 active=60 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=55 cached=0 lcp=0 active=61 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=57 cached=0 lcp=0 active=62 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=54 cached=0 lcp=0 active=63 placement=single-or-non-pp2
+[spec-k] model="stress" tenant="" K=0 source=concurrency prompt=56 cached=0 lcp=0 active=64 placement=single-or-non-pp2
+[spec-acc] ctx=62 burst=24/30 cum=27/33=0.818
+[spec-acc] ctx=59 burst=22/27 cum=22/27=0.815
+[spec-acc] ctx=97 burst=19/36 cum=46/69=0.667
+[spec-acc] ctx=91 burst=24/24 cum=46/51=0.902
+[spec-acc] ctx=129 burst=22/27 cum=68/96=0.708
+[spec-acc] ctx=124 burst=20/33 cum=66/84=0.786
+[spec-acc] ctx=161 burst=23/30 cum=91/126=0.722
+[spec-acc] ctx=156 burst=22/36 cum=88/120=0.733
+[spec-acc] ctx=195 burst=20/33 cum=111/159=0.698
+[spec-acc] ctx=191 burst=21/30 cum=109/150=0.727
+[spec-acc] ctx=227 burst=22/33 cum=133/192=0.693
+[spec-acc] ctx=223 burst=24/27 cum=133/177=0.751
+[spec-acc] ctx=261 burst=10/18 cum=143/210=0.681
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

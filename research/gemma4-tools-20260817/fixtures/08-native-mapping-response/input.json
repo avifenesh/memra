@@ -1,0 +1,66 @@
+{
+  "template": "official",
+  "request": {
+    "model": "g4",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Weather in Paris?"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "c1",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"location\": \"Paris\"}"
+            }
+          }
+        ],
+        "tool_responses": [
+          {
+            "name": "get_weather",
+            "response": {
+              "temp_c": 21.5,
+              "sky": "clear",
+              "Wind": {
+                "kph": 12,
+                "dir": "NW"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get current weather for a location",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "City name"
+              },
+              "unit": {
+                "type": "string",
+                "enum": [
+                  "celsius",
+                  "fahrenheit"
+                ]
+              }
+            },
+            "required": [
+              "location"
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

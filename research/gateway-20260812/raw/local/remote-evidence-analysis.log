@@ -1,0 +1,19 @@
+provenance commit=3ff7b536e634c20b59ad7eac37dd4b8caa704a40 model_sha256=d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517 binary_sha256=a845cf9b51def51e1ba8e75b1eaa06dfc1e0cdd572e05c7fbfd6d6ce44a6348a
+preflight verdict=PASS requests=56 status_200=48 expected_429=8 errors=0
+replica0 verdict=PASS elapsed_s=7203.699 requests=14723 status_200=14267 expected_429=456 cache_groups=1367 cache_hit_ratio=0.900000 tools=59 structured=59 ledger_rows=14723 ledger_errors=0
+replica0 cache_output_hash_counts={'200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7': 2734, '5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66': 8688, '9e3551d020a7f94379717a5b816e8a3a02d379b5b7bd873d0ae1cb9cd3b23755': 2248}
+replica0 overload_accepted_hash_counts={'5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66': 348, '9e3551d020a7f94379717a5b816e8a3a02d379b5b7bd873d0ae1cb9cd3b23755': 108}
+replica1 verdict=PASS elapsed_s=7203.033 requests=14725 status_200=14269 expected_429=456 cache_groups=1367 cache_hit_ratio=0.900000 tools=60 structured=60 ledger_rows=14725 ledger_errors=0
+replica1 cache_output_hash_counts={'200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7': 2734, '5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66': 8821, '9e3551d020a7f94379717a5b816e8a3a02d379b5b7bd873d0ae1cb9cd3b23755': 2115}
+replica1 overload_accepted_hash_counts={'5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66': 354, '9e3551d020a7f94379717a5b816e8a3a02d379b5b7bd873d0ae1cb9cd3b23755': 102}
+pair verdict=PASS elapsed_min_s=7203.033 requests=29448 status_200=28536 expected_429=912 errors=0 cache_scored=27340 cache_hits=24606 cache_misses=2734 hit_ratio=0.900000 tools=119 structured=119 overload_bursts=228 ledger_rows=29448
+pair cache_stream_modes={False: 13670, True: 13670}
+pair tool_stream_modes={False: 59, True: 60}
+pair structured_stream_modes={False: 59, True: 60}
+pair qualified_long_output_hash_counts={'200ec271e8c0eb57fb6b7d42d3ed53e4590c5e72f0303b5ef3c74d363eab88e7': 5468, '5790654979cb98bfacf6d3593b6a5d3def7a5f4bd2a1b8b65e4a6fabe1a72f66': 18211, '9e3551d020a7f94379717a5b816e8a3a02d379b5b7bd873d0ae1cb9cd3b23755': 4573}
+output_class_gate=PASS novel_long_output_hash_classes=0
+gpu0 thermal_samples=1442 temperature_c=26..62 power_w=30.12..496.18
+gpu1 thermal_samples=1442 temperature_c=27..63 power_w=29.68..512.62
+thermal regime=combined_N_2884 interval_5s temperature_c=26..63 power_w=29.68..512.62
+receipt_manifests=PASS setup=1 successful_runs=2 nested_offhost=4
+REMOTE_EVIDENCE_ANALYSIS_PASS

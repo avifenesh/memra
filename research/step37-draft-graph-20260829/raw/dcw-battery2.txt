@@ -1,0 +1,158 @@
+date=2026-08-28T23:52:54+00:00
+lane_branch_tip=
+server bin=/root/dcw-server md5=e42d389d01bac504833368925fbb64d9
+server strings dcw_flag=2 arm_dcw=1
+run-spec bin=/root/dcw-run-spec md5=637d3b51826bad537a63a65047b50643 dcw_flag=2
+=== GATE A2: run-spec greedy identity, MEMRA_MTP_HEADS=1 (curve-0400, NGEN=160) ===
+cell=sweep arm=off rc=0
+  [generate_spec K=1] 160 tok in 1.126s = 141.18 tok/s (1.30x vs generate; this run's prime 0.305s)
+    acceptance: 78/81 = 96.3%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=2] 160 tok in 1.185s = 134.16 tok/s (1.23x vs generate; this run's prime 0.306s)
+    acceptance: 89/144 = 61.8%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=3] 160 tok in 1.303s = 122.02 tok/s (1.12x vs generate; this run's prime 0.305s)
+    acceptance: 90/207 = 43.5%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=4] 160 tok in 1.491s = 106.63 tok/s (0.98x vs generate; this run's prime 0.302s)
+    acceptance: 90/276 = 32.6%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=5] 160 tok in 1.658s = 95.92 tok/s (0.88x vs generate; this run's prime 0.302s)
+    acceptance: 90/345 = 26.1%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=6] 160 tok in 1.832s = 86.79 tok/s (0.80x vs generate; this run's prime 0.301s)
+    acceptance: 90/414 = 21.7%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=7] 160 tok in 1.987s = 80.00 tok/s (0.74x vs generate; this run's prime 0.299s)
+    acceptance: 90/483 = 18.6%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=8] 160 tok in 2.254s = 70.54 tok/s (0.65x vs generate; this run's prime 0.300s)
+    acceptance: 90/552 = 16.3%   self-consistency: PASS (identical to plain target)
+  === SELF-CONSISTENCY PASS ===
+  geom_receipt: [mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot=128 rope_base=10000 clamp_shexp=None
+  capture_warn_count=8
+  first_warn: [spec] WARN: draft-graph capture failed (step35 has no captured draft chain (fa_decode_dc cannot express the MTP block's SWA view offset; MEMRA_STEP35_DRAFT_DCW
+  illegal=0 sentinel87=0
+cell=sweep arm=dcw-eager rc=0
+  [generate_spec K=1] 160 tok in 1.130s = 140.69 tok/s (1.30x vs generate; this run's prime 0.305s)
+    acceptance: 78/81 = 96.3%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=2] 160 tok in 1.192s = 133.43 tok/s (1.23x vs generate; this run's prime 0.305s)
+    acceptance: 89/144 = 61.8%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=3] 160 tok in 1.313s = 121.11 tok/s (1.12x vs generate; this run's prime 0.306s)
+    acceptance: 90/207 = 43.5%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=4] 160 tok in 1.501s = 105.92 tok/s (0.98x vs generate; this run's prime 0.303s)
+    acceptance: 90/276 = 32.6%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=5] 160 tok in 1.667s = 95.38 tok/s (0.88x vs generate; this run's prime 0.301s)
+    acceptance: 90/345 = 26.1%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=6] 160 tok in 1.840s = 86.41 tok/s (0.80x vs generate; this run's prime 0.303s)
+    acceptance: 90/414 = 21.7%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=7] 160 tok in 2.001s = 79.47 tok/s (0.73x vs generate; this run's prime 0.301s)
+    acceptance: 90/483 = 18.6%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=8] 160 tok in 2.263s = 70.26 tok/s (0.65x vs generate; this run's prime 0.300s)
+    acceptance: 90/552 = 16.3%   self-consistency: PASS (identical to plain target)
+  === SELF-CONSISTENCY PASS ===
+  geom_receipt: [mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot=128 rope_base=10000 clamp_shexp=None
+  capture_warn_count=0
+  first_warn: 
+  illegal=0 sentinel87=0
+cell=sweep arm=dcw-graph rc=0
+  [generate_spec K=1] 160 tok in 1.135s = 140.14 tok/s (1.30x vs generate; this run's prime 0.304s)
+    acceptance: 78/81 = 96.3%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=2] 160 tok in 1.188s = 133.84 tok/s (1.24x vs generate; this run's prime 0.305s)
+    acceptance: 89/144 = 61.8%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=3] 160 tok in 1.305s = 121.88 tok/s (1.13x vs generate; this run's prime 0.305s)
+    acceptance: 90/207 = 43.5%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=4] 160 tok in 1.489s = 106.79 tok/s (0.99x vs generate; this run's prime 0.301s)
+    acceptance: 90/276 = 32.6%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=5] 160 tok in 1.659s = 95.82 tok/s (0.89x vs generate; this run's prime 0.301s)
+    acceptance: 90/345 = 26.1%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=6] 160 tok in 1.831s = 86.84 tok/s (0.80x vs generate; this run's prime 0.303s)
+    acceptance: 90/414 = 21.7%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=7] 160 tok in 1.988s = 79.98 tok/s (0.74x vs generate; this run's prime 0.300s)
+    acceptance: 90/483 = 18.6%   self-consistency: PASS (identical to plain target)
+  [generate_spec K=8] 160 tok in 2.253s = 70.56 tok/s (0.65x vs generate; this run's prime 0.300s)
+    acceptance: 90/552 = 16.3%   self-consistency: PASS (identical to plain target)
+  === SELF-CONSISTENCY PASS ===
+  geom_receipt: [mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot=128 rope_base=10000 clamp_shexp=None
+  capture_warn_count=0
+  first_warn: 
+  illegal=0 sentinel87=0
+cell=policy arm=off rc=0
+  [generate_spec K=3] 160 tok in 1.173s = 135.57 tok/s (1.25x vs generate; this run's prime 0.305s)
+    acceptance: 77/85 = 90.6%   self-consistency: PASS (identical to plain target)
+  === SELF-CONSISTENCY PASS ===
+  geom_receipt: [mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot=128 rope_base=10000 clamp_shexp=None
+  capture_warn_count=1
+  first_warn: [spec] WARN: draft-graph capture failed (step35 has no captured draft chain (fa_decode_dc cannot express the MTP block's SWA view offset; MEMRA_STEP35_DRAFT_DCW
+  illegal=0 sentinel87=0
+cell=policy arm=dcw-eager rc=0
+  [generate_spec K=3] 160 tok in 1.172s = 135.70 tok/s (1.25x vs generate; this run's prime 0.305s)
+    acceptance: 77/85 = 90.6%   self-consistency: PASS (identical to plain target)
+  === SELF-CONSISTENCY PASS ===
+  geom_receipt: [mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot=128 rope_base=10000 clamp_shexp=None
+  capture_warn_count=0
+  first_warn: 
+  illegal=0 sentinel87=0
+cell=policy arm=dcw-graph rc=0
+  [generate_spec K=3] 160 tok in 1.171s = 135.83 tok/s (1.26x vs generate; this run's prime 0.306s)
+    acceptance: 77/85 = 90.6%   self-consistency: PASS (identical to plain target)
+  === SELF-CONSISTENCY PASS ===
+  geom_receipt: [mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot=128 rope_base=10000 clamp_shexp=None
+  capture_warn_count=0
+  first_warn: 
+  illegal=0 sentinel87=0
+=== CELL C2: vendor-default sampled, four arms, interleaved x5 ===
+rnd=1 arm=h3-off tok/s_med=142.66 rows=3 spec_usage=rounds=80,drafted=42,accepted=36 sha=fc112b8d41c48565 notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=1 arm=h3-on  tok/s_med=121.58 rows=3 spec_usage=rounds=72,drafted=58,accepted=46 sha=d4edface73c1143b notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=1 arm=h1-off tok/s_med=122.51 rows=3 spec_usage=rounds=75,drafted=52,accepted=42 sha=df30cc3ff7d0e377 notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=1 arm=h1-on  tok/s_med=128.02 rows=3 spec_usage=rounds=79,drafted=41,accepted=37 sha=22e575b5d6ff651c notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=2 arm=h3-off tok/s_med=133.92 rows=3 spec_usage=rounds=73,drafted=55,accepted=43 sha=4a459aed1a0671f6 notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=2 arm=h3-on  tok/s_med=136.67 rows=3 spec_usage=rounds=42,drafted=80,accepted=75 sha=4e4839343f4379af notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=2 arm=h1-off tok/s_med=133.77 rows=3 spec_usage=rounds=58,drafted=62,accepted=59 sha=2e94a88eb73e2805 notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=2 arm=h1-on  tok/s_med=128.37 rows=3 spec_usage=rounds=58,drafted=61,accepted=59 sha=4e4839343f4379af notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=3 arm=h3-off tok/s_med=144.75 rows=3 spec_usage=rounds=51,drafted=76,accepted=66 sha=d94d3aa20245f32e notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=3 arm=h3-on  tok/s_med=137.87 rows=3 spec_usage=rounds=43,drafted=83,accepted=74 sha=2e94a88eb73e2805 notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=3 arm=h1-off tok/s_med=131.11 rows=3 spec_usage=rounds=58,drafted=60,accepted=58 sha=f275b0caa1839fe3 notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=3 arm=h1-on  tok/s_med=125.93 rows=3 spec_usage=rounds=80,drafted=38,accepted=37 sha=9f40887903aca26c notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=4 arm=h3-off tok/s_med=123.50 rows=3 spec_usage=rounds=36,drafted=83,accepted=83 sha=90774e0be3ec30b8 notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=4 arm=h3-on  tok/s_med=129.08 rows=3 spec_usage=rounds=46,drafted=81,accepted=70 sha=0eaa2565edd5ccce notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=4 arm=h1-off tok/s_med=124.20 rows=3 spec_usage=rounds=69,drafted=52,accepted=47 sha=87fac7c7ff03f0cb notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=4 arm=h1-on  tok/s_med=130.00 rows=3 spec_usage=rounds=58,drafted=62,accepted=59 sha=4e4839343f4379af notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=5 arm=h3-off tok/s_med=149.19 rows=3 spec_usage=rounds=44,drafted=81,accepted=73 sha=6232cfb3854f0e00 notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=5 arm=h3-on  tok/s_med=147.56 rows=3 spec_usage=rounds=42,drafted=82,accepted=75 sha=4e4839343f4379af notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=5 arm=h1-off tok/s_med=126.78 rows=3 spec_usage=rounds=58,drafted=62,accepted=59 sha=4e4839343f4379af notes=none
+      geom=[mtp-geom] arm=eager block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_r
+      capture_warn=0 illegal=0 sentinel87=0
+rnd=5 arm=h1-on  tok/s_med=132.51 rows=3 spec_usage=rounds=58,drafted=62,accepted=59 sha=4e4839343f4379af notes=none
+      geom=[mtp-geom] arm=dcw block=45 swa=true window=512 n_head=96 n_head_kv=8 head_dim_k=128 n_rot
+      capture_warn=0 illegal=0 sentinel87=0
+DCW-BATTERY2-DONE

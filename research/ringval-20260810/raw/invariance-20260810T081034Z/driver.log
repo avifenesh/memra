@@ -1,0 +1,57 @@
+lock_acquired=2026-08-10T08:10:34Z host=<private-host-redacted> stamp=20260810T081034Z
+source_commit=019428e217e297cb5981d201a4a520aee69222a6
+concat_prime_probe_sha256=1780a91a898c5aaae1202ac9bea9160c5ce0385756cad599780191717fda5698
+target_link=/home/ubuntu/memra-cx-ringval-target-ringval
+prompt_sha256=40123314bb2df9832c173a932317b809a8138fc7f9c7d5cd01d4ea3222f30f24
+## lane/cx-ringval-box1
+gate=chunk-naked start=2026-08-10T08:10:34Z
+chunk-invariance-gate: label=step35-swa assert=invariant seam=MEMRA_STEP35_SWA_TKV legacy-seam=off got=invariant canary=0 chunks=4096,513,512,256,64 model=Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+        513 | EXACT |            -1 | 0.000e0 | - | identical
+        512 | EXACT |            -1 | 0.000e0 | - | identical
+        256 | EXACT |            -1 | 0.000e0 | - | identical
+         64 | EXACT |            -1 | 0.000e0 | - | identical
+    chunkinv verdict: CHUNK-INVARIANT — prefill logits bit-identical at every chunk size
+chunk-invariance-gate: PASS (raw log /home/ubuntu/ringval/receipts/invariance-20260810T081034Z/chunk-naked-raw.log)
+gate=chunk-naked done=2026-08-10T08:12:02Z
+gate=chunk-canary start=2026-08-10T08:12:02Z
+chunk-invariance-gate: label=step35-swa assert=invariant seam=MEMRA_STEP35_SWA_TKV legacy-seam=on got=variant canary=1 chunks=4096,513,512,256,64 model=Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+        513 | DIFFER |           513 | 1.115e0 | - | step 3
+        512 | DIFFER |           512 | 1.164e0 | - | step 6
+        256 | DIFFER |           512 | 1.164e0 | - | step 6
+         64 | DIFFER |           512 | 1.164e0 | - | step 6
+    chunkinv verdict: *** CHUNK-DEPENDENT: prefill logits move with MEMRA_PRIME_CHUNK ***
+chunk-invariance-gate: PASS (canary broke the assertion as required — gate has teeth; log /home/ubuntu/ringval/receipts/invariance-20260810T081034Z/chunk-canary-raw.log)
+gate=chunk-canary done=2026-08-10T08:13:29Z
+gate=tick-naked start=2026-08-10T08:13:29Z
+tick-invariance-gate: label=step35-tick assert=invariant seam=MEMRA_PRIME_CALLLOCAL legacy-seam=off got=invariant canary=0 budgets=0,1024,513,512,256,64 splits=64,256,512 model=Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+       1024 |     5 | EXACT |            -1 | 0.000e0 | - | identical
+        513 |    10 | EXACT |            -1 | 0.000e0 | - | identical
+        512 |    10 | EXACT |            -1 | 0.000e0 | - | identical
+        256 |    20 | EXACT |            -1 | 0.000e0 | - | identical
+         64 |    77 | EXACT |            -1 | 0.000e0 | - | identical
+       sp64 |     2 | EXACT |            -1 | 0.000e0 | - | identical
+      sp256 |     2 | EXACT |            -1 | 0.000e0 | - | identical
+      sp512 |     2 | EXACT |            -1 | 0.000e0 | - | identical
+    tickinv verdict: TICK-INVARIANT — prefill logits bit-identical at every per-tick prefill budget
+tick-invariance-gate: PASS (raw log /tmp/tickinv-gate-ePVJ5g.log)
+gate=tick-naked done=2026-08-10T08:15:50Z
+tick_raw_source=/tmp/tickinv-gate-ePVJ5g.log destination=/home/ubuntu/ringval/receipts/invariance-20260810T081034Z/tick-naked-raw.log
+gate=tick-canary start=2026-08-10T08:15:50Z
+tick-invariance-gate: label=step35-tick assert=invariant seam=MEMRA_PRIME_CALLLOCAL legacy-seam=on got=variant canary=1 budgets=0,1024,513,512,256,64 splits=64,256,512 model=Step-3.7-flash-IQ4_XS-00001-of-00003.gguf
+       1024 |     5 | DIFFER |           637 | 1.480e0 | - | step 3
+        513 |    10 | DIFFER |           513 | 1.633e0 | - | step 3
+        512 |    10 | DIFFER |           512 | 1.634e0 | - | identical
+        256 |    20 | DIFFER |           512 | 1.586e0 | - | step 22
+         64 |    77 | DIFFER |           512 | 1.586e0 | - | step 22
+       sp64 |     2 | DIFFER |          1073 | 1.255e0 | - | step 3
+      sp256 |     2 | DIFFER |           546 | 1.758e0 | - | step 22
+      sp512 |     2 | DIFFER |           512 | 1.162e0 | - | step 3
+    tickinv verdict: *** TICK-DEPENDENT: prefill logits move with the per-tick prefill budget (MEMRA_PREFILL_TICK / _JUDGE / _HARVEST) ***
+tick-invariance-gate: PASS (canary broke the assertion as required — gate has teeth; log /tmp/tickinv-gate-fccTMi.log)
+gate=tick-canary done=2026-08-10T08:18:09Z
+tick_raw_source=/tmp/tickinv-gate-fccTMi.log destination=/home/ubuntu/ringval/receipts/invariance-20260810T081034Z/tick-canary-raw.log
+chunk_naked=PASS
+chunk_canary_teeth=PASS
+tick_naked=PASS
+tick_canary_teeth=PASS
+lock_released=2026-08-10T08:18:09Z

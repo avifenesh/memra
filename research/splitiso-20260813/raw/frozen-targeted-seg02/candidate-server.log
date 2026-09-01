@@ -1,0 +1,189 @@
+[server] starting; models config = [("g12", "/opt/scratch/nvme/cx-lcprestore/models/gemma-4-12b-it-qat-q4_0.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "g12" <- /opt/scratch/nvme/cx-lcprestore/models/gemma-4-12b-it-qat-q4_0.gguf
+[gemma4] suppress_tokens: 2 ids masked at sampling
+[q4rp] split-plane IN-PLACE swap: 336 dense trunk tensors
+[worker]   loaded "g12": 48 layers, eos=1
+[worker] g12: template caps tools=false think=false think_switch=true chat_ok=true effort_levels=false gemma_think=true ctx=262144 tok="gemma4" instruct=None chat_defaults=None/None
+[worker] g12: decode wave cap 8; scheduler tick cap 8
+[worker] g12: EAGER-ONLY serving (gemma4 class — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[prefix-cache] on: budget 8590MB (MEMRA_PREFIX_CACHE_MB), min prefix 64 tokens, immediate partial restore=on (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[server] worker ready; serving models: ["g12"]
+[admission] "g12": plain 172032 B/token, spec 172032 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18832
+[meter] admit id=cmpl-1a82469b0e0112d20aa289ccff367229 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[admission] fixed residual high-water: model="g12" 0MB (observed 848MB at ctx 4928 path=plain)
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=4252fa123c2b17be6e722995b42f814679264491fc9799c34af51803754902fe boundary_logits_sha256=e4ba0a6a947f517ee7d52004bbf7ec804d45f0f42e7b55f8c220ad8af6c6976e
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 836.1MB / 8590MB, model g12, ns "cx-splitiso-map-1087-r1")
+[meter] admit id=cmpl-aa7e16485d9eb150e51f1c58ed20db73 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=source why=immediate-partial split=1087 entry_pos=4860 state_sha256=c266c1e767c6111a1a0e5fb0e99e9ded5c09f42a086082a2e391082ce83b46ef boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1087 cache_pos=1087 state_sha256=c266c1e767c6111a1a0e5fb0e99e9ded5c09f42a086082a2e391082ce83b46ef boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1087 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1087-r1") — priming suffix 3773 only
+[meter] admit id=cmpl-dec32fd577aab8d897def5e4fdc77988 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=5eb6b3505ebbf0559ed25ccbfd2100721eb2a727d233b8b3b97908137e835ad0 boundary_logits_sha256=9ac6c03289cca54e5e11cd3f94a120ec92192c7c8096d05086a5b7c1636aa6aa
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 1672.2MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1087-r1")
+[meter] admit id=cmpl-c91edf8117823722f99257f9c1f8be65 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1211 path=plain = 172032 B/token x ctx + 0MB fixed = 208MB
+[prefix-cache-split-state] role=snapshot why=seed split=1087 entry_pos=1087 state_sha256=46d4242207b92dc6fac1bf986901eeeeb85355e2281c539691b7fbfd20b6b4b5 boundary_logits_sha256=ca1498c4e6f20afb5dbf587c1fcf150e0b9fef32937ec5fb477daf4ae9a773f1
+[prefix-cache] insert (seed): 1087 tokens, 187.0MB (resident 1859.1MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1087-r1")
+[meter] admit id=cmpl-98608d0c12e9e19f8b38b12978e330de tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=c4f467f8d56da9b3f20e51c0d3d8c018c3c7111a7a39b34f1f92b04e05671b71 boundary_logits_sha256=358dd40264da923313e625883d57a023f5763c41863af79c385557a2d5dbf41d
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 2695.2MB / 8590MB, model g12, ns "cx-splitiso-map-1217-r1")
+[meter] admit id=cmpl-de1d72ca4f3314e9fd7391c2d23c3caa tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=source why=immediate-partial split=1217 entry_pos=4860 state_sha256=a638006b0bf55176f05a3c137bab6bed07f40daa2ea539efdc4c23c282a77440 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1217 cache_pos=1217 state_sha256=a638006b0bf55176f05a3c137bab6bed07f40daa2ea539efdc4c23c282a77440 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1217 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1217-r1") — priming suffix 3643 only
+[meter] admit id=cmpl-d1387fb70df4696e048a633cb9df76b4 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=c92ea628b65eaaaff393b754278445d64754a9649b70f9390c1a7f1e46abfc74 boundary_logits_sha256=9a37a73ae442bc41db1fcf458029cdcf421a49defa872ed75c6aac19c99b8bec
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 3531.3MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1217-r1")
+[meter] admit id=cmpl-e522bff842e0c657cb2d0dcece0eb293 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1341 path=plain = 172032 B/token x ctx + 0MB fixed = 231MB
+[prefix-cache-split-state] role=snapshot why=seed split=1217 entry_pos=1217 state_sha256=798c529f5ed4055f6682c0023460896a9698be8407e30e08accd36a23153bbb8 boundary_logits_sha256=4769b68ec7c6185c51f75d8c35878ccf18af0efed55a360effa999b6f159e8cc
+[prefix-cache] insert (seed): 1217 tokens, 209.4MB (resident 3740.7MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1217-r1")
+[meter] admit id=cmpl-569e24ce419f882c258b18997d96b648 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=ee94f17e1752e146cc65f1afde8c0ab6f562cd7f84be1e34dad498dff3fded82 boundary_logits_sha256=0586b60df9f156186d82a0383f93a313f7f68ae3497d68de3ba8e5e38536cb09
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 4576.7MB / 8590MB, model g12, ns "cx-splitiso-map-1279-r1")
+[meter] admit id=cmpl-d76a2681f692d4adf1d7d5a4166f28a3 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=source why=immediate-partial split=1279 entry_pos=4860 state_sha256=6dc0ea253f46ab92bebb9a3825fc25e3b4154ef7760cd9ce5f27448226d0b0df boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1279 cache_pos=1279 state_sha256=6dc0ea253f46ab92bebb9a3825fc25e3b4154ef7760cd9ce5f27448226d0b0df boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1279 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1279-r1") — priming suffix 3581 only
+[meter] admit id=cmpl-519cffb8de281d884bab1a68d43532e0 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=0723bb20b114ed4316783c02ee02ac264288c7b9b235d410436e6dc4a11d3f91 boundary_logits_sha256=d4aad50beea76c4f1562cb324cb1f569f05d93c85741defff91a85765e682914
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 5412.8MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1279-r1")
+[meter] admit id=cmpl-4a3135f9ab5e6af074eda5ef73b71fea tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1403 path=plain = 172032 B/token x ctx + 0MB fixed = 241MB
+[prefix-cache-split-state] role=snapshot why=seed split=1279 entry_pos=1279 state_sha256=d4afbd198f69d330e2eba48c416659b7be2dcf0da769a5837444e3026716bb05 boundary_logits_sha256=df440125d0396ce51aca75890d3864a0dc4817776eeb5d710966cc152bcc8d9c
+[prefix-cache] insert (seed): 1279 tokens, 220.0MB (resident 5632.8MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1279-r1")
+[meter] admit id=cmpl-c3a67dd618ad0b819549470edee891f0 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=736ef149d49901f925f68a3a53aaa8d0407a5b764620b9c9f0cf4261935982b9 boundary_logits_sha256=592c87a9f0f24d5df54f3f4d96e628cf3ca9109c6a6673a5d2df4315fb75922f
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 6468.9MB / 8590MB, model g12, ns "cx-splitiso-map-1281-r1")
+[meter] admit id=cmpl-57854471cc40f9f3f52868edc41c5238 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=source why=immediate-partial split=1281 entry_pos=4860 state_sha256=5cf8c414dcfa9d1a77f571df5918bab4e609526085bda66e638cc6d17cbe1666 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1281 cache_pos=1281 state_sha256=5cf8c414dcfa9d1a77f571df5918bab4e609526085bda66e638cc6d17cbe1666 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1281 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1281-r1") — priming suffix 3579 only
+[meter] admit id=cmpl-de03e241f1e336e7f1b69802af2ea962 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=71b88118ab3d3ca96708df7d6ac87dba1707a3095c581491f0ce9cf50b5728dd boundary_logits_sha256=03acfdbaf0122b61496d286326ac17f8cb1675d6810418ff24fe51fb3c6f4bf5
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 7305.0MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1281-r1")
+[meter] admit id=cmpl-ded50624aa2a0fc73581390fa102ec27 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1405 path=plain = 172032 B/token x ctx + 0MB fixed = 242MB
+[prefix-cache-split-state] role=snapshot why=seed split=1281 entry_pos=1281 state_sha256=c136df9d2c4dd09f12ceb17e0d8205991142b5d718da8aa7217255433d2f92df boundary_logits_sha256=db5455cf7b81e5fe8da226d664ae280c306ed99094dcde50423c1c0f54fac293
+[prefix-cache] insert (seed): 1281 tokens, 220.4MB (resident 7525.4MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1281-r1")
+[meter] admit id=cmpl-9961d83c5dc9a4303a7ba8f6bfe80b1f tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=df56bbffff8c6b3b803a3e572826b056da4ac4eb7c8639a16a0435ea010dbd8d boundary_logits_sha256=b41df65b6f9cedb2d5243142bafcac7c64ba52fb1f04018a99d3999b0bf198f9
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 8361.4MB / 8590MB, model g12, ns "cx-splitiso-map-1343-r1")
+[meter] admit id=cmpl-6b5002acdddce0050a37a9207f32e380 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=source why=immediate-partial split=1343 entry_pos=4860 state_sha256=29f9fc3af7eb7f067805c66e5dc26abd118210d3d875f7a7637e92cb317870d4 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1343 cache_pos=1343 state_sha256=29f9fc3af7eb7f067805c66e5dc26abd118210d3d875f7a7637e92cb317870d4 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1343 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1343-r1") — priming suffix 3517 only
+[meter] admit id=cmpl-854c2eb335a6c5796794ee20ccdf8734 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=119504284af38a5a2b05ee0630470b1c97a18f4bc6554d8e13fa1ac2e44a9b15 boundary_logits_sha256=a7e75c5f5ff56e6983b3448f28c4b2b855f0e823340a32d4fec40a810490c318
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 9197.5MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1343-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-map-1087-r1")
+[meter] admit id=cmpl-6fab3477061001244b18be749a08af5f tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1467 path=plain = 172032 B/token x ctx + 0MB fixed = 252MB
+[prefix-cache-split-state] role=snapshot why=seed split=1343 entry_pos=1343 state_sha256=34a2d5a6e81a062355451eaa96edf428ff7df35aef05e1e9a28f0f6e17e06e56 boundary_logits_sha256=4f3009a3a9105419adc615e3656c51204325d69af3e0891fb78df82ba4fec506
+[prefix-cache] insert (seed): 1343 tokens, 231.0MB (resident 8592.5MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1343-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-genuinely-cold-1087-r1")
+[meter] admit id=cmpl-e9b5e606c3ba3ed7d3cf7f2e82583942 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=cda82cb7b160695091c8eac822a7b36dd1f08cec3c88bd2a5952edd4f3e68afc boundary_logits_sha256=35ae262af5d08211258456f08c34550919b9057b573e77e522d3916f3d8f5d68
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 8592.5MB / 8590MB, model g12, ns "cx-splitiso-map-1345-r1")
+[prefix-cache] evict (LRU): 1087 tokens, 187.0MB (model g12, ns "cx-splitiso-boundary-cold-1087-r1")
+[meter] admit id=cmpl-fb9287b44958dbc52e69db8a43ba962b tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=source why=immediate-partial split=1345 entry_pos=4860 state_sha256=eff6ee6a2ed6e60385e00bc57a342dbe8c31c6a5afb78c1c113cb59f3ded9ffc boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1345 cache_pos=1345 state_sha256=eff6ee6a2ed6e60385e00bc57a342dbe8c31c6a5afb78c1c113cb59f3ded9ffc boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1345 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1345-r1") — priming suffix 3515 only
+[meter] admit id=cmpl-77f41788e2aa09d0bccc418e9dff12a2 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=aff2c77d307fdd4d4bd0f1113620d614902a3a8d978bb2a558d6e088305cbc7c boundary_logits_sha256=128d2e3dd7dc3bf42b6d1a82f286e8499c8a980285673281f0182828d97ef55f
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 9241.6MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1345-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-map-1217-r1")
+[meter] admit id=cmpl-8f9142d21d5d8a615e0c1cb4094c2926 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1469 path=plain = 172032 B/token x ctx + 0MB fixed = 253MB
+[prefix-cache-split-state] role=snapshot why=seed split=1345 entry_pos=1345 state_sha256=3729f60371c6fd7ed5df1b9f130844a0eeed9ef51a0fa488943bd6380c541642 boundary_logits_sha256=d50dd0bfe68909f07c2292207a92522479bb89eb41320698fa91c63314eb64ac
+[prefix-cache] insert (seed): 1345 tokens, 231.4MB (resident 8636.9MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1345-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-genuinely-cold-1217-r1")
+[meter] admit id=cmpl-41f70cc6d55570711b631004e793a262 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=d6561434da8abd356125ed5a470674e28d202d488bfa83411f6f7ee06e4f1a1f boundary_logits_sha256=2a59f494578abea1c32d98515fcb63fa035ca4832cce382421980d074cf0f35f
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 8636.9MB / 8590MB, model g12, ns "cx-splitiso-map-1407-r1")
+[prefix-cache] evict (LRU): 1217 tokens, 209.4MB (model g12, ns "cx-splitiso-boundary-cold-1217-r1")
+[meter] admit id=cmpl-f1a42cb33aac411f89d271400ca79c3a tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=source why=immediate-partial split=1407 entry_pos=4860 state_sha256=40be38d6558da6f2bf1b3982dad690473d85d018e8b75fb38dbf02188e8598d6 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1407 cache_pos=1407 state_sha256=40be38d6558da6f2bf1b3982dad690473d85d018e8b75fb38dbf02188e8598d6 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1407 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1407-r1") — priming suffix 3453 only
+[meter] admit id=cmpl-79afdd647b2a3eb054a4c7662ee0b397 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=56577c423efb1d9b5218b6984eb96d8bc9357b2ce10163eda33707ed443407e9 boundary_logits_sha256=d23353e8ff2a9ba41fcd7dd692179b192cce45ac148dcf55006052c1747b60bf
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 9263.6MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1407-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-map-1279-r1")
+[meter] admit id=cmpl-98f5ec7b61ef585de7b536bf85f64e17 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1531 path=plain = 172032 B/token x ctx + 0MB fixed = 263MB
+[prefix-cache-split-state] role=snapshot why=seed split=1407 entry_pos=1407 state_sha256=c8e5da3f0540c4a449743ff4e627b9fb1975abcc9f8cb68765c62053c5cc170d boundary_logits_sha256=1bdded914890d7908262dab47201f25ec6cbe765c7239eb6f72d94bb5d0da7c0
+[prefix-cache] insert (seed): 1407 tokens, 242.0MB (resident 8669.6MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1407-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-genuinely-cold-1279-r1")
+[meter] admit id=cmpl-a2dcfb96783ab8bc773f60fca6fc7eb8 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=bd121e7d4fa35be5b770cede7636fd5469a8629e1722abeb6fa08598eb782cef boundary_logits_sha256=bf488a4583d70bcabbe389ab07b784a7604734a8812af1a77fdf70bbdda8cc94
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 8669.6MB / 8590MB, model g12, ns "cx-splitiso-map-1409-r1")
+[prefix-cache] evict (LRU): 1279 tokens, 220.0MB (model g12, ns "cx-splitiso-boundary-cold-1279-r1")
+[meter] admit id=cmpl-f586dfa733267f85a39e5c3b544c3ac5 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=source why=immediate-partial split=1409 entry_pos=4860 state_sha256=ccd59d2bcce5c3dfeb39b7e138cba29e3589b23128d3d3548afd2a75d9efb8da boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1409 cache_pos=1409 state_sha256=ccd59d2bcce5c3dfeb39b7e138cba29e3589b23128d3d3548afd2a75d9efb8da boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1409 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1409-r1") — priming suffix 3451 only
+[meter] admit id=cmpl-197bd5d912cced0cd0c2a05d774a82af tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=9a83e2b105309fa228f9d17406083868f60e2329f69592224d3199f23b51040a boundary_logits_sha256=0c5f12fe0983fa0b4dab237e9ce84949b6c389166316b02a2c2e24487f5fe7cf
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 9285.6MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1409-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-map-1281-r1")
+[meter] admit id=cmpl-3d39ba8fb8369a7b1fc7a51f6add62cd tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1533 path=plain = 172032 B/token x ctx + 0MB fixed = 264MB
+[prefix-cache-split-state] role=snapshot why=seed split=1409 entry_pos=1409 state_sha256=73654b50c66c43c1f36fe168f183b1932883f254d6f65f1b64110ec2cc41139a boundary_logits_sha256=a955e297a487c07e269feda8802a15ca3c8199789e830f5d77a777a8ad4abe4f
+[prefix-cache] insert (seed): 1409 tokens, 242.4MB (resident 8691.9MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1409-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-genuinely-cold-1281-r1")
+[meter] admit id=cmpl-c8183ef89998bf0491457a7d800767b6 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=8118645841d0e5735c8254ceb0614be25a0f790128c235a529044eb8af344963 boundary_logits_sha256=42174efac44d44154011b8e15f63adfa55aeb75be0c9145e408a1a7ebe681012
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 8691.9MB / 8590MB, model g12, ns "cx-splitiso-map-1471-r1")
+[prefix-cache] evict (LRU): 1281 tokens, 220.4MB (model g12, ns "cx-splitiso-boundary-cold-1281-r1")
+[meter] admit id=cmpl-f53ef83aed60832da6807183bd55a115 tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=source why=immediate-partial split=1471 entry_pos=4860 state_sha256=05ffe02d73f864840e90cd4935a0cc7991beccb4d678bf440bbf26a2a2fa01d3 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1471 cache_pos=1471 state_sha256=05ffe02d73f864840e90cd4935a0cc7991beccb4d678bf440bbf26a2a2fa01d3 boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1471 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1471-r1") — priming suffix 3389 only
+[meter] admit id=cmpl-edbc7897a0484f395e4aefac3aec132e tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=4533aa7035a9a6d65079eef0e8625e38a0d253bae762e7e400c2c7f7f067be94 boundary_logits_sha256=dabfbe4c32ce433da6a2c489c662020d994acaec3e543e4a636d0812690df503
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 9307.6MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1471-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-map-1343-r1")
+[meter] admit id=cmpl-713ad18b4db21712c10a6426905aafd2 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1595 path=plain = 172032 B/token x ctx + 0MB fixed = 274MB
+[prefix-cache-split-state] role=snapshot why=seed split=1471 entry_pos=1471 state_sha256=83f4ba3ef8d62f10548581f4f6cd9feaf2357f3757d9c3d864e15ce8bd719ede boundary_logits_sha256=ac770a7c4d866f05a4758618fc11c0c940d71069fa95e337c62693c1f2d01d4f
+[prefix-cache] insert (seed): 1471 tokens, 253.1MB (resident 8724.6MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1471-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-genuinely-cold-1343-r1")
+[meter] admit id=cmpl-3644ecf8ff526ee1a510a572c715c372 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=4984 path=plain = 172032 B/token x ctx + 0MB fixed = 857MB
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=069aecd6b6190df901367ba4f4ffb0223303b4387ae68d9e56d78ae738311c5a boundary_logits_sha256=521fa941e0cb5e484f9baf41f2973aae109e10043e32f78e17c2b11f4d9532d5
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 8724.6MB / 8590MB, model g12, ns "cx-splitiso-map-1537-r1")
+[prefix-cache] evict (LRU): 1343 tokens, 231.0MB (model g12, ns "cx-splitiso-boundary-cold-1343-r1")
+[meter] admit id=cmpl-2c84d36e97b005f6ae080cbd31ad625b tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=source why=immediate-partial split=1537 entry_pos=4860 state_sha256=44f15dd3b8e8ce72c81e4b3591e732bf0a6a86f81cec6857f0a0ab2e6db53cea boundary_logits_sha256=n/a-not-consumed
+[prefix-cache-split-state] role=restored why=immediate-partial split=1537 cache_pos=1537 state_sha256=44f15dd3b8e8ce72c81e4b3591e732bf0a6a86f81cec6857f0a0ab2e6db53cea boundary_logits_sha256=n/a-not-consumed
+[prefix-cache] partial hit: 1537 of 4860 prompt tokens from source 4860 (model g12, ns "cx-splitiso-map-1537-r1") — priming suffix 3323 only
+[meter] admit id=cmpl-466cd544baae0480d4af540c14eab1df tenant=default lane=interactive model="g12"
+[prefix-cache-split-state] role=snapshot why=seed split=4860 entry_pos=4860 state_sha256=892dc78cdc22d7291c8db5554698d428338c4495b62a4c4cb8fb96e101a2ee71 boundary_logits_sha256=42733ef2f5f9a84124901cb95a5c23e0e828340f8a3a0e8f711c405a562be687
+[prefix-cache] insert (seed): 4860 tokens, 836.1MB (resident 9329.6MB / 8590MB, model g12, ns "cx-splitiso-genuinely-cold-1537-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-map-1345-r1")
+[meter] admit id=cmpl-813ee5afc57327db734f0b8c641009f2 tenant=default lane=interactive model="g12"
+[admission] request cost: model="g12" ctx=1661 path=plain = 172032 B/token x ctx + 0MB fixed = 286MB
+[prefix-cache-split-state] role=snapshot why=seed split=1537 entry_pos=1537 state_sha256=883a581f5ddec8f5d66331d55c688f55770181f1cbf5fd9477f5bff424ecfa55 boundary_logits_sha256=32f8c0f6c9773bfc9b49150d9422117748bed1a62a1721fa7a83909c31820ad5
+[prefix-cache] insert (seed): 1537 tokens, 264.4MB (resident 8758.0MB / 8590MB, model g12, ns "cx-splitiso-boundary-cold-1537-r1")
+[prefix-cache] evict (LRU): 4860 tokens, 836.1MB (model g12, ns "cx-splitiso-genuinely-cold-1345-r1")
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

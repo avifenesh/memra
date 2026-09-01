@@ -1,0 +1,48 @@
+{
+  "census": "research/modelplan-onboarding-hy3-20260830/bf16-inspect/tensor-census.tsv",
+  "census_sha256": "32617fa342c9044c0e576df80ebd18668b20bb989db1d4bdf1cfa975eb14b44f",
+  "format": "memra-hy3-modelopt-size-v1",
+  "mtp_layer": 80,
+  "profiles": [
+    {
+      "kept_tensors": 1058,
+      "predicted_payload_bytes": 180826481152,
+      "predicted_payload_gib": 168.40778398513794,
+      "profile": "experts",
+      "quantized_elements": 289910292480,
+      "quantized_tensors": 46080,
+      "reduction_fraction": 0.697398175316333,
+      "source_payload_bytes": 597572342272
+    },
+    {
+      "kept_tensors": 815,
+      "predicted_payload_bytes": 178420786636,
+      "predicted_payload_gib": 166.16730637475848,
+      "profile": "mlp",
+      "quantized_elements": 291583819776,
+      "quantized_tensors": 46323,
+      "reduction_fraction": 0.7014239548677317,
+      "source_payload_bytes": 597572342272
+    },
+    {
+      "kept_tensors": 734,
+      "predicted_payload_bytes": 174513792784,
+      "predicted_payload_gib": 162.528634801507,
+      "profile": "omlp",
+      "quantized_elements": 294301728768,
+      "quantized_tensors": 46404,
+      "reduction_fraction": 0.7079620651108286,
+      "source_payload_bytes": 597572342272
+    },
+    {
+      "kept_tensors": 490,
+      "predicted_payload_bytes": 169581816544,
+      "predicted_payload_gib": 157.93537399172783,
+      "profile": "full",
+      "quantized_elements": 297732669440,
+      "quantized_tensors": 46648,
+      "reduction_fraction": 0.7162154193762693,
+      "source_payload_bytes": 597572342272
+    }
+  ]
+}

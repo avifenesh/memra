@@ -1,0 +1,13 @@
+# qwen4exp_real_gate	label=adm-thinkon-a1p05	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.5 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# spec-gate k=5 tokens=64: plain greedy vs spec chains, byte identity
+prompt	first_divergence	accept_rate	mean_accept_len	hist	spec_ms_per_token	plain_ms_per_token	pass
+0	-1	0.820	2.91	6,6,2,3,3,2	10.10	15.03	true
+# round-cost	prompt=0	rounds=22	chain_ms=3.05	replay_ms=0.80	verify_ms=24.32	cross_ms=0.024	zero_draft=4	guard_stops=5
+1	-1	0.918	3.56	4,3,2,3,1,5	9.25	15.15	true
+# round-cost	prompt=1	rounds=18	chain_ms=3.94	replay_ms=0.91	verify_ms=26.52	cross_ms=0.026	zero_draft=3	guard_stops=7
+2	-1	0.852	3.05	4,4,5,3,2,3	10.28	15.20	true
+# round-cost	prompt=2	rounds=21	chain_ms=3.52	replay_ms=0.86	verify_ms=25.57	cross_ms=0.025	zero_draft=2	guard_stops=5
+3	-1	0.800	3.37	2,5,4,3,3,2	9.77	15.18	true
+# round-cost	prompt=3	rounds=19	chain_ms=3.87	replay_ms=0.88	verify_ms=26.62	cross_ms=0.024	zero_draft=1	guard_stops=3
+# verdict	policy=byte-identity	pass=true

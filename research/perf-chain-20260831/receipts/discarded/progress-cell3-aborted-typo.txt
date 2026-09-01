@@ -1,0 +1,33 @@
+2026-08-31T11:01:56Z RUN_START cell=cell3 boots=[1 2 3] arms=S04:/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31:era-nodoors S15:/home/ubuntu/perf-chain/bin/memra-server-305876ede4d9:era-nodoors S24:/home/ubuntu/perf-chain/bin/memra-server-abc4014151d1:era-nodoors S25:/home/ubuntu/perf-chain/bin/memra-server-41b0040e4101:era-nodoors S37:/home/ubuntu/perf-chain/bin/memra-server-b3a2d92ff7a9:era-nodoors S44:/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18:era-nodoors FNOFILT:/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18:fixed-nofiltered FNOCHAIN:/home/ubuntu/perf-chain/bin/memra-server-3999a92a6e18:fixed-nochaingraph
+11:01:56Z BOOT_START S041 bin=/home/ubuntu/perf-chain/bin/memra-server-3d52b8531a31 mode=era-nodoors
+SERVER_DIED during boot
+[bf16-mmv] RESIDENT blk.44.attn_q.weight ne=[4096, 8192] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.attn_output.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[step-tp-qkv] load layer=44 devices=[0, 1] projections=qkv qkv_tensor_parallel=true attention_local=true kv_local=true output_local=true transport=native-p2p native_p2p=true output=root-readback performance_claim=false
+[step-tp-attn-plan] load layer=44 devices=[0, 1] qkv_tensor_parallel=true attention_tensor_parallel=true kv_cache_distributed=true attention_scope=rank-local-global transport=native-p2p native_p2p=true replicated_decode_input_prepared=true performance_claim=false
+[step-tp-o] load layer=44 devices=[0, 1] projection=o o_tensor_parallel=true attention_local=true kv_local=true transport=native-p2p native_p2p=true reduction=global-tp8-block-order output=root-readback performance_claim=false
+[step-tp] layer=44 devices=[0, 1] experts=288 tp=2 artifact=nvfp4 expert_layout=tensor-parallel transport=native-p2p native_p2p=true performance_claim=false
+[step-tp-clamp] load layer=44 routed_clamp=7 formula=min-silu-times-clamped-up performance_claim=false
+[bf16-mmv] RESIDENT blk.44.ffn_gate_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.ffn_up_shexp.weight ne=[4096, 1280] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.44.ffn_down_shexp.weight ne=[1280, 4096] n=5242880 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.nextn.eh_proj.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.45.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv
+[mtp-head] blk.45.nextn.shared_head_head.weight: BF16 -> NVFP4 (283 MiB, was 1007 MiB)
+[bf16-mmv] RESIDENT blk.45.nextn.shared_head.weight ne=[4096, 128896] n=527958016 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.nextn.eh_proj.weight ne=[8192, 4096] n=33554432 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.attn_q.weight ne=[4096, 12288] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.attn_k.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.attn_v.weight ne=[4096, 1024] n=4194304 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.attn_output.weight ne=[12288, 4096] n=50331648 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.ffn_gate.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.ffn_up.weight ne=[4096, 11264] n=46137344 admit=bf16_mmv
+[bf16-mmv] RESIDENT blk.46.ffn_down.weight ne=[11264, 4096] n=46137344 admit=bf16_mmv

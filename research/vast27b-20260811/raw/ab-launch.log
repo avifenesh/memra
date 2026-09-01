@@ -1,0 +1,341 @@
+Welcome to vast.ai. If authentication fails, try again after a few seconds, and double check your ssh key.
+Have fun!
+block=ab start=2026-08-11T03:01:08Z out=/workspace/cx-vast27b/raw/ab-20260811T030108Z
+source_commit=c58ebd6257334c7b2628ec7367efd4713e8126c1
+## HEAD (no branch)
+model_sha256=d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517
+draft_sha256=b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581
+prompt_sha256=6e00d76296069277dc7717115f977aedcab502b610c95a042c63c30eefdb86b2
+artifact=/workspace/cx-vast27b/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf bytes=15705920064 mtime=2026-06-30 02:47:04.313106221 +0000
+artifact=/workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf bytes=1242867296 mtime=2026-07-18 02:51:51.000000000 +0000
+artifact=/workspace/cx-vast27b/memra/research/e2e/prompts/p1-code-short.txt bytes=146 mtime=2026-08-11 02:27:24.343849387 +0000
+soak_stopped=2026-08-11T03:01:36Z pids=13803
+contract=K3_NGEN64_CHAT1 order=A,B,B,A,A,B,B,A,A,B server=resident-idle soak=stopped
+gate=r01-A start=2026-08-11T03:01:36Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.792s = 79.56 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.384s = 164.03 tok/s (2.06x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r01-A end=2026-08-11T03:01:42Z rc=0
+gate=r01-B start=2026-08-11T03:01:42Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.792s = 79.55 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.389s = 161.84 tok/s (2.03x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r01-B end=2026-08-11T03:01:49Z rc=0
+gate=r02-B start=2026-08-11T03:01:49Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.796s = 79.13 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.385s = 163.84 tok/s (2.07x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r02-B end=2026-08-11T03:01:56Z rc=0
+gate=r02-A start=2026-08-11T03:01:56Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.792s = 79.53 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.384s = 163.88 tok/s (2.06x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r02-A end=2026-08-11T03:02:02Z rc=0
+gate=r03-A start=2026-08-11T03:02:02Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.795s = 79.23 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.384s = 163.90 tok/s (2.07x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r03-A end=2026-08-11T03:02:09Z rc=0
+gate=r03-B start=2026-08-11T03:02:09Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.792s = 79.52 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.384s = 163.95 tok/s (2.06x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r03-B end=2026-08-11T03:02:15Z rc=0
+gate=r04-B start=2026-08-11T03:02:15Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.797s = 79.07 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.384s = 164.06 tok/s (2.07x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r04-B end=2026-08-11T03:02:22Z rc=0
+gate=r04-A start=2026-08-11T03:02:22Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.793s = 79.49 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.385s = 163.81 tok/s (2.06x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r04-A end=2026-08-11T03:02:28Z rc=0
+gate=r05-A start=2026-08-11T03:02:28Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.795s = 79.22 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.389s = 161.84 tok/s (2.04x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r05-A end=2026-08-11T03:02:35Z rc=0
+gate=r05-B start=2026-08-11T03:02:35Z
+[mtp-draft] loading external MTP draft: /workspace/cx-vast27b/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+loaded qwen35 (65 layers, nextn=1)
+text prompt (146 chars, chat-templated) -> 37 tokens
+prompt tokens: [248045, 846, 198, 7734, 264, 12654, 709, 421, 5004, 264, 90651, 52589, 1103, 440, 5479, 11, 3572, 11, 321, 9637, 7289, 13, 28763, 2400, 913, 29642, 321, 4479, 18034, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+
+[generate]   63 tok in 0.793s = 79.48 tok/s (gen-only; this run's prime 0.063s)
+  tokens: [8160, 579, 264, 7047, 1817, 421, 11177, 310, 279, 11488, 12654, 7873, 314, 264, 90651, 52589, 1103, 25, 271, 16, 13, 220, 2972, 15771, 2598, 279, 38622, 64700, 561, 1156, 6587, 264, 12654, 709, 318, 269, 523, 11, 430, 264, 10278, 1103, 369, 264, 795, 5759, 8, 24141, 264, 90651, 52589, 1103, 13, 5141, 8242, 513, 25, 198, 262, 348, 256, 24093, 25, 16598]
+[spec-stats] rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000
+
+[generate_spec K=3] 64 tok in 0.388s = 162.48 tok/s (2.04x vs generate; this run's prime 0.063s)
+  acceptance: 42/63 = 66.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+gate=r05-B end=2026-08-11T03:02:41Z rc=0
+{
+  "all_self_consistent": true,
+  "contract": {
+    "A": "MEMRA_NVFP4_AUX_DUAL=0",
+    "B": "default-on",
+    "N_per_arm": 5,
+    "order": "A,B,B,A,A,B,B,A,A,B"
+  },
+  "distinct_acceptance": [
+    "42/63 = 66.7%   self-consistency: PASS (identical to plain target)"
+  ],
+  "distinct_spec_stats": [
+    "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000"
+  ],
+  "distinct_token_hashes": [
+    "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+  ],
+  "median_A_tok_s": 163.88,
+  "median_B_tok_s": 163.84,
+  "median_gain_pct": -0.024408103490358712,
+  "paired": [
+    {
+      "A": 164.03,
+      "B": 161.84,
+      "gain_pct": -1.3351216240931496,
+      "rep": 1
+    },
+    {
+      "A": 163.88,
+      "B": 163.84,
+      "gain_pct": -0.024408103490358712,
+      "rep": 2
+    },
+    {
+      "A": 163.9,
+      "B": 163.95,
+      "gain_pct": 0.03050640634532087,
+      "rep": 3
+    },
+    {
+      "A": 163.81,
+      "B": 164.06,
+      "gain_pct": 0.15261583541907875,
+      "rep": 4
+    },
+    {
+      "A": 161.84,
+      "B": 162.48,
+      "gain_pct": 0.3954522985664788,
+      "rep": 5
+    }
+  ],
+  "rows": [
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r01-A-base.log",
+      "rep": 1,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 164.03,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r01-B-auxdual.log",
+      "rep": 1,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 161.84,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r02-A-base.log",
+      "rep": 2,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.88,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r02-B-auxdual.log",
+      "rep": 2,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.84,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r03-A-base.log",
+      "rep": 3,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.9,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r03-B-auxdual.log",
+      "rep": 3,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.95,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r04-A-base.log",
+      "rep": 4,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 163.81,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r04-B-auxdual.log",
+      "rep": 4,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 164.06,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "A",
+      "label": "base",
+      "path": "r05-A-base.log",
+      "rep": 5,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 161.84,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    },
+    {
+      "acceptance": "42/63 = 66.7%   self-consistency: PASS (identical to plain target)",
+      "arm": "B",
+      "label": "auxdual",
+      "path": "r05-B-auxdual.log",
+      "rep": 5,
+      "self_consistency_pass": true,
+      "spec_stats": "rounds=21 full_accept=11 len_hist=[0, 0, 0, 21] per_slot=[19/21=0.905 12/21=0.571 11/21=0.524] total=42/63=0.667 tok_per_round=3.000",
+      "spec_tok_s": 162.48,
+      "tokens_sha256": "899099d0e6017b8715f9b015715994deba0f216304ebd34794a7f2c33fe78479"
+    }
+  ]
+}
+service_and_soak_verified=2026-08-11T03:02:44Z
+ab_result=PASS
+block=ab out=/workspace/cx-vast27b/raw/ab-20260811T030108Z exit=0 restore_exit=0 done=2026-08-11T03:02:44Z

@@ -1,0 +1,20 @@
+=== BASELINE 4d9cf5747 ===
+baseline_head=4d9cf5747ff0fa298d8fcec8bd208d32867ba88a feat(server): the authenticated key crosses the metering seam as a principal
+warning: `memra-engine` (lib) generated 12 warnings (run `cargo fix --lib -p memra-engine` to apply 6 suggestions)
+warning: `memra-server` (lib) generated 9 warnings (run `cargo fix --lib -p memra-server` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 4m 17s
+baseline_build_seconds=257
+0a850b582b6fd559c6d0e5518c4f17eb  /home/ubuntu/bankv2-lane/memra-server-baseline
+=== REMOVAL lane tip ===
+removal_head=03cec3f32fcda8ae2a98ba3f12d4e1ab0ad940ce step37: remove the MEMRA_NVFP4_BANK_V2 and MEMRA_SEL_DOWN8 doors - the v2 TP banks changed generated text and every path that needed them goes with them
+warning: `memra-engine` (lib) generated 12 warnings (run `cargo fix --lib -p memra-engine` to apply 6 suggestions)
+warning: `memra-server` (lib) generated 9 warnings (run `cargo fix --lib -p memra-server` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 3m 59s
+removal_build_seconds=240
+78b00e5fd8eeab6ed4315cec007ca2db  /home/ubuntu/bankv2-lane/memra-server-removal
+=== STRINGS MARKERS ===
+baseline old-refusal count: 2
+baseline new-refusal count: 0
+removal old-refusal count: 1
+removal new-refusal count: 1
+BUILD_BOTH_DONE

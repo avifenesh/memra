@@ -1,0 +1,5 @@
+status=protocol-failed
+failed_gate=kernel-check
+cause=MEMRA_KC_MODELS_DIR was set to the nested model-store parent, but kernel-check treats an explicit model directory as a flat authoritative basename root
+product_failure=false
+next_attempt=../battery-r2

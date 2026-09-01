@@ -1,0 +1,12 @@
+status	passed
+reference_engine	hf-transformers-fp32
+native_engine	memra-native-full-precision
+numeric_class	source-weights-float32-accumulation
+tokens	1,2,3,4
+vocab	151936
+max_abs	0.0058394223
+max_rel	121.77964
+reference_argmax	145578
+native_argmax	145578
+artifact_lock_sha256	93ec8fca3e5555a7f42f3cc7c24bdd918d082f45249ff0c771a94db9669d09fb
+native_runner_sha256	8e8b39de4ab18043b62c694889146779fc661f40c290047f88cc6b7f3ff0fb06

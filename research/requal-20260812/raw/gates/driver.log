@@ -1,0 +1,25 @@
+SELLGATE_GATES_START ts=2026-08-12T07:04:24Z out=/opt/scratch/nvme/cx-requal/raw/gates-20260812T070424Z
+source_commit=ac6ef049b8661008c0da91f4747f68f4dabdaa04
+d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
+LOCK_QUEUE_CHECK 2026-08-12T07:05:12Z
+                     USER        PID ACCESS COMMAND
+/tmp/memra-gpu.lock: ubuntu    965642 F.... bash
+                     ubuntu    965653 F.... bash
+                     ubuntu    965655 F.... tee
+SELLGATE_LOCK_INHERITED ts=2026-08-12T07:05:12Z pid=965653
+RUN_START label=kernel-gpu0 ts=2026-08-12T07:05:12Z
+RUN_DONE label=kernel-gpu0 rc=0 ts=2026-08-12T07:07:33Z
+RUN_START label=kernel-gpu1 ts=2026-08-12T07:07:33Z
+RUN_DONE label=kernel-gpu1 rc=0 ts=2026-08-12T07:09:53Z
+RUN_START label=run-gen-q27 ts=2026-08-12T07:09:53Z
+RUN_DONE label=run-gen-q27 rc=0 ts=2026-08-12T07:10:07Z
+RUN_START label=run-gen-q35 ts=2026-08-12T07:10:07Z
+RUN_DONE label=run-gen-q35 rc=0 ts=2026-08-12T07:10:18Z
+RUN_START label=run-spec-q27 ts=2026-08-12T07:10:18Z
+RUN_DONE label=run-spec-q27 rc=0 ts=2026-08-12T07:10:29Z
+RUN_START label=run-spec-q35 ts=2026-08-12T07:10:29Z
+RUN_DONE label=run-spec-q35 rc=0 ts=2026-08-12T07:10:38Z
+SELLGATE_GATES_PASS ts=2026-08-12T07:10:39Z out=/opt/scratch/nvme/cx-requal/raw/gates-20260812T070424Z

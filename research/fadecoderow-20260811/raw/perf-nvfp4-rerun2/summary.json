@@ -1,0 +1,194 @@
+{
+  "protocol": {
+    "arm_order": "alternating baseline/candidate by round",
+    "artificial_cooldown": false,
+    "batches": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "ctx": 512,
+    "discarded_inner_warmups": 1,
+    "gpu_lock": "/tmp/gpu5090.lock",
+    "ionice": "idle",
+    "memra_fast": 1,
+    "nice": 15,
+    "outer_reps": 5,
+    "steps_per_inner_rep": 128,
+    "timed_inner_reps": 1
+  },
+  "provenance": {
+    "binary_sha256": {
+      "baseline": "308e8194e5b15d8ea1dd025cb619a5eb28d436765c53d3edef2b8d3f83aaac36",
+      "candidate": "3db8c7e9bc9e8a9da745484358443dbf9bd88e1d73dc029a848854d00d6dde7a"
+    },
+    "sources": {
+      "baseline": "ba3e70c9af455320dc661ab023e5c653539bc447",
+      "candidate": "3845bda8358a6fe5883095250d3d8e6df84fda2a"
+    }
+  },
+  "rig": "NVIDIA GeForce RTX 5090 Laptop GPU",
+  "schema": "memra.fadecoderow.local-ab.v1",
+  "thermal": {
+    "power_w": [
+      9.23,
+      173.64
+    ],
+    "samples": 390,
+    "sm_clock_mhz": [
+      180.0,
+      2167.0
+    ],
+    "temperature_c": [
+      53.0,
+      88.0
+    ]
+  },
+  "widths": {
+    "1": {
+      "N": 5,
+      "baseline_median_tok_s": 132.9,
+      "baseline_spread_tok_s": [
+        132.7,
+        134.1
+      ],
+      "baseline_tok_s": [
+        134.1,
+        132.9,
+        132.7,
+        133.0,
+        132.9
+      ],
+      "candidate_median_tok_s": 133.0,
+      "candidate_spread_tok_s": [
+        132.9,
+        133.4
+      ],
+      "candidate_tok_s": [
+        133.4,
+        133.1,
+        132.9,
+        133.0,
+        132.9
+      ],
+      "delta_pct": 0.07524454477050302,
+      "paired_delta_pct": [
+        -0.5219985085756829,
+        0.15048908954100604,
+        0.15071590052750938,
+        0.0,
+        0.0
+      ],
+      "paired_wins": 2
+    },
+    "2": {
+      "N": 5,
+      "baseline_median_tok_s": 209.1,
+      "baseline_spread_tok_s": [
+        208.7,
+        210.8
+      ],
+      "baseline_tok_s": [
+        210.8,
+        209.1,
+        209.1,
+        209.2,
+        208.7
+      ],
+      "candidate_median_tok_s": 209.1,
+      "candidate_spread_tok_s": [
+        208.8,
+        210.2
+      ],
+      "candidate_tok_s": [
+        210.2,
+        209.2,
+        209.1,
+        209.1,
+        208.8
+      ],
+      "delta_pct": 0.0,
+      "paired_delta_pct": [
+        -0.2846299810246755,
+        0.04782400765184214,
+        0.0,
+        -0.047801147227533036,
+        0.04791566842359263
+      ],
+      "paired_wins": 2
+    },
+    "4": {
+      "N": 5,
+      "baseline_median_tok_s": 350.7,
+      "baseline_spread_tok_s": [
+        350.0,
+        354.1
+      ],
+      "baseline_tok_s": [
+        354.1,
+        351.1,
+        350.4,
+        350.7,
+        350.0
+      ],
+      "candidate_median_tok_s": 351.1,
+      "candidate_spread_tok_s": [
+        350.1,
+        352.9
+      ],
+      "candidate_tok_s": [
+        352.9,
+        351.4,
+        351.0,
+        351.1,
+        350.1
+      ],
+      "delta_pct": 0.11405759908755808,
+      "paired_delta_pct": [
+        -0.3388873199661191,
+        0.08544574195383792,
+        0.1712328767123461,
+        0.11405759908755808,
+        0.028571428571444457
+      ],
+      "paired_wins": 4
+    },
+    "8": {
+      "N": 5,
+      "baseline_median_tok_s": 457.8,
+      "baseline_spread_tok_s": [
+        456.6,
+        461.0
+      ],
+      "baseline_tok_s": [
+        461.0,
+        457.3,
+        457.8,
+        459.0,
+        456.6
+      ],
+      "candidate_median_tok_s": 458.4,
+      "candidate_spread_tok_s": [
+        456.7,
+        460.2
+      ],
+      "candidate_tok_s": [
+        460.2,
+        458.4,
+        456.7,
+        458.4,
+        457.4
+      ],
+      "delta_pct": 0.1310615989515096,
+      "paired_delta_pct": [
+        -0.17353579175705125,
+        0.2405423135797058,
+        -0.2402795980777639,
+        -0.13071895424836555,
+        0.1752080595707195
+      ],
+      "paired_wins": 2
+    }
+  }
+}

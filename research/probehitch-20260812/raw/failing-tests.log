@@ -1,0 +1,49 @@
+   Compiling libc v0.2.186
+   Compiling cudarc v0.19.8
+   Compiling cfg-if v1.0.4
+   Compiling memra-engine v0.79.0 (/home/avifenesh/projects/wt-cx-probehitch/crates/memra-engine)
+   Compiling memra-sampling v0.79.0 (/home/avifenesh/projects/wt-cx-probehitch/crates/memra-sampling)
+   Compiling memra-validate v0.79.0 (/home/avifenesh/projects/wt-cx-probehitch/crates/memra-validate)
+   Compiling libloading v0.9.0
+   Compiling memmap2 v0.9.11
+   Compiling memra-gguf v0.79.0 (/home/avifenesh/projects/wt-cx-probehitch/crates/memra-gguf)
+   Compiling memra-tokenizer v0.79.0 (/home/avifenesh/projects/wt-cx-probehitch/crates/memra-tokenizer)
+   Compiling memra-runtime v0.79.0 (/home/avifenesh/projects/wt-cx-probehitch/crates/memra-runtime)
+   Compiling memra-kv v0.79.0 (/home/avifenesh/projects/wt-cx-probehitch/crates/memra-kv)
+warning: memra-engine@0.79.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.79.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+error[E0432]: unresolved imports `super::latch_runtime_host_bounce`, `super::runtime_peer_probe_candidate`, `super::runtime_peer_probe_next_copy`, `super::PEER_RUNTIME_PROBE_BUDGET_NS`
+    --> crates/memra-engine/src/pp.rs:2720:9
+     |
+2720 |         latch_runtime_host_bounce,
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^ no `latch_runtime_host_bounce` in `pp`
+...
+2723 |         record_dual_pp_stage_result, runtime_peer_probe_candidate,
+     |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `runtime_peer_probe_candidate` in `pp`
+2724 |         runtime_peer_probe_next_copy,
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `runtime_peer_probe_next_copy` in `pp`
+...
+2728 |         PEER_RUNTIME_PROBE_BUDGET_NS, PEER_RUNTIME_PROBE_CYCLE_COPIES,
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `PEER_RUNTIME_PROBE_BUDGET_NS` in `pp`
+     |
+help: a similar name exists in the module
+     |
+2723 -         record_dual_pp_stage_result, runtime_peer_probe_candidate,
+2723 +         record_dual_pp_stage_result, runtime_peer_probe_width,
+     |
+help: a similar name exists in the module
+     |
+2724 -         runtime_peer_probe_next_copy,
+2724 +         runtime_peer_probe_width,
+     |
+help: a similar name exists in the module
+     |
+2728 -         PEER_RUNTIME_PROBE_BUDGET_NS, PEER_RUNTIME_PROBE_CYCLE_COPIES,
+2728 +         PEER_RUNTIME_PROBE_FAILURES, PEER_RUNTIME_PROBE_CYCLE_COPIES,
+     |
+
+For more information about this error, try `rustc --explain E0432`.
+warning: memra-engine@0.79.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.79.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+error: could not compile `memra-engine` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

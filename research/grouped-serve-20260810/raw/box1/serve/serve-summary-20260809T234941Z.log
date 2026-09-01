@@ -1,0 +1,183 @@
+=== grouped-serve serving 20260809T234941Z commit=0fc0677a35039d0842b4ce464138371cf4514576
+binary=/home/ubuntu/memra-cx-grouped/target/release/memra-server sha256=e7e6515e9f47030a7137ba9fdf7c40d43f0764d02699b38959f134ee0ace65b3
+model=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296
+draft=/home/ubuntu/step37/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf bytes=3707276416
+prompt=/home/ubuntu/memra-cx-grouped/research/step-sku-20260807/prompt-pp4096.txt bytes=25036 sha256=23c1d8384a16c7c0bcb7736b412d43e64c0b4d8e238703864e928565f824ae11
+config=PP-2 devices 0,1; MEMRA_CTX=262144; spec off; grouped explicit per arm
+ttft=N=5/arm, alternating, one warmup per boot, unique cold salts
+burst=grouped c=4, N=3 bursts, 4096 prompt ids/request
+lock acquired 2026-08-10T00:04:20Z
+snapshot 2026-08-10T00:04:20Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 210 MHz, 49.91 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 405 MHz, 49.47 W, 0 MiB, 0 %
+########## pair=1 arm=off grouped=0 ##########
+snapshot 2026-08-10T00:04:20Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 210 MHz, 49.91 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 405 MHz, 49.47 W, 0 MiB, 0 %
+grouped-serve-off-p1 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-off-p1-20260809T234941Z.log
+{"cache_salt": "grouped-serve-off-p1-4k-warmup-0-1786320292452287878", "client_ttft_ms": 11258.46989499405, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-3bfbc4d718760f25a312affc1ffbd0ea", "index": 0, "label": "grouped-serve-off-p1", "latency_ms": 11358.400518016424, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:05:03.810911+00:00"}
+{"cache_salt": "grouped-serve-off-p1-4k-measured-0-1786320303810980540", "client_ttft_ms": 10960.410864034202, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-d4bfd27e3e489ef793b0ade10a18faf1", "index": 0, "label": "grouped-serve-off-p1", "latency_ms": 11059.802634001244, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:05:14.870849+00:00"}
+{"summary": {"client_ttft_max_ms": 10960.410864034202, "client_ttft_min_ms": 10960.410864034202, "client_ttft_p50_ms": 10960.410864034202, "label": "grouped-serve-off-p1", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:05:19Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 345 MHz, 50.05 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 352 MHz, 49.71 W, 0 MiB, 0 %
+########## pair=1 arm=grouped grouped=1 ##########
+snapshot 2026-08-10T00:05:19Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 345 MHz, 50.05 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 352 MHz, 49.71 W, 0 MiB, 0 %
+grouped-serve-grouped-p1 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-grouped-p1-20260809T234941Z.log
+{"cache_salt": "grouped-serve-grouped-p1-4k-warmup-0-1786320351914374538", "client_ttft_ms": 7434.645285014994, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-5231bc5ae0fdeb42e7cdf78178350fc6", "index": 0, "label": "grouped-serve-grouped-p1", "latency_ms": 7534.3942799954675, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:05:59.448976+00:00"}
+{"cache_salt": "grouped-serve-grouped-p1-4k-measured-0-1786320359449056266", "client_ttft_ms": 7261.520869971719, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-e9a969b003adb11ff37d13ea5b05b249", "index": 0, "label": "grouped-serve-grouped-p1", "latency_ms": 7361.32321797777, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:06:06.810479+00:00"}
+{"summary": {"client_ttft_max_ms": 7261.520869971719, "client_ttft_min_ms": 7261.520869971719, "client_ttft_p50_ms": 7261.520869971719, "label": "grouped-serve-grouped-p1", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:06:11Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 585 MHz, 51.26 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 300 MHz, 49.47 W, 0 MiB, 0 %
+########## pair=2 arm=grouped grouped=1 ##########
+snapshot 2026-08-10T00:06:11Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 585 MHz, 51.26 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 300 MHz, 49.47 W, 0 MiB, 0 %
+grouped-serve-grouped-p2 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-grouped-p2-20260809T234941Z.log
+{"cache_salt": "grouped-serve-grouped-p2-4k-warmup-0-1786320403850675602", "client_ttft_ms": 7355.477913981304, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-f571c1b23e8e1ae47df509be9052b811", "index": 0, "label": "grouped-serve-grouped-p2", "latency_ms": 7455.627050017938, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:06:51.306531+00:00"}
+{"cache_salt": "grouped-serve-grouped-p2-4k-measured-0-1786320411306603864", "client_ttft_ms": 7259.061196993571, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-18b6e36fe46ab7b3eaff9053443788b4", "index": 0, "label": "grouped-serve-grouped-p2", "latency_ms": 7358.913328964263, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:06:58.665588+00:00"}
+{"summary": {"client_ttft_max_ms": 7259.061196993571, "client_ttft_min_ms": 7259.061196993571, "client_ttft_p50_ms": 7259.061196993571, "label": "grouped-serve-grouped-p2", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:07:03Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 720 MHz, 50.52 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 322 MHz, 49.46 W, 0 MiB, 0 %
+########## pair=2 arm=off grouped=0 ##########
+snapshot 2026-08-10T00:07:03Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 720 MHz, 50.52 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 322 MHz, 49.46 W, 0 MiB, 0 %
+grouped-serve-off-p2 ready after <=34s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-off-p2-20260809T234941Z.log
+{"cache_salt": "grouped-serve-off-p2-4k-warmup-0-1786320457692848941", "client_ttft_ms": 11274.14235897595, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-b48e14623bca32622795271bb4f80d7a", "index": 0, "label": "grouped-serve-off-p2", "latency_ms": 11373.9958970109, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:07:49.067050+00:00"}
+{"cache_salt": "grouped-serve-off-p2-4k-measured-0-1786320469067128853", "client_ttft_ms": 10987.969414971303, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-e3269cc1d1a3392b9e78d1490d3fe5d1", "index": 0, "label": "grouped-serve-off-p2", "latency_ms": 11088.045995973516, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:08:00.155253+00:00"}
+{"summary": {"client_ttft_max_ms": 10987.969414971303, "client_ttft_min_ms": 10987.969414971303, "client_ttft_p50_ms": 10987.969414971303, "label": "grouped-serve-off-p2", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:08:04Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 345 MHz, 50.08 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 330 MHz, 49.94 W, 0 MiB, 0 %
+########## pair=3 arm=off grouped=0 ##########
+snapshot 2026-08-10T00:08:05Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 345 MHz, 50.08 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 330 MHz, 49.94 W, 0 MiB, 0 %
+grouped-serve-off-p3 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-off-p3-20260809T234941Z.log
+{"cache_salt": "grouped-serve-off-p3-4k-warmup-0-1786320517199334225", "client_ttft_ms": 11243.062582972925, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-ea5578c3d4608058c6f2609770b6b336", "index": 0, "label": "grouped-serve-off-p3", "latency_ms": 11342.970168974716, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:08:48.542538+00:00"}
+{"cache_salt": "grouped-serve-off-p3-4k-measured-0-1786320528542619468", "client_ttft_ms": 10963.40006601531, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-e05daa22a56432b963a2a814f9d4315f", "index": 0, "label": "grouped-serve-off-p3", "latency_ms": 11062.80864001019, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:08:59.605518+00:00"}
+{"summary": {"client_ttft_max_ms": 10963.40006601531, "client_ttft_min_ms": 10963.40006601531, "client_ttft_p50_ms": 10963.40006601531, "label": "grouped-serve-off-p3", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:09:04Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 607 MHz, 51.13 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 307 MHz, 49.46 W, 0 MiB, 0 %
+########## pair=3 arm=grouped grouped=1 ##########
+snapshot 2026-08-10T00:09:04Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 607 MHz, 51.13 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 307 MHz, 49.46 W, 0 MiB, 0 %
+grouped-serve-grouped-p3 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-grouped-p3-20260809T234941Z.log
+{"cache_salt": "grouped-serve-grouped-p3-4k-warmup-0-1786320576636220596", "client_ttft_ms": 7350.815841986332, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-3bca9b2feefde433929575047f54c47a", "index": 0, "label": "grouped-serve-grouped-p3", "latency_ms": 7450.810043956153, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:09:44.087254+00:00"}
+{"cache_salt": "grouped-serve-grouped-p3-4k-measured-0-1786320584087343195", "client_ttft_ms": 7254.79555799393, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-15400a8a085c30339f0dffce0795a825", "index": 0, "label": "grouped-serve-grouped-p3", "latency_ms": 7354.806860967074, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:09:51.442237+00:00"}
+{"summary": {"client_ttft_max_ms": 7254.79555799393, "client_ttft_min_ms": 7254.79555799393, "client_ttft_p50_ms": 7254.79555799393, "label": "grouped-serve-grouped-p3", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:09:56Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 742 MHz, 51.79 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 330 MHz, 49.46 W, 0 MiB, 0 %
+########## pair=4 arm=grouped grouped=1 ##########
+snapshot 2026-08-10T00:09:56Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 742 MHz, 51.79 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 330 MHz, 49.46 W, 0 MiB, 0 %
+grouped-serve-grouped-p4 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-grouped-p4-20260809T234941Z.log
+{"cache_salt": "grouped-serve-grouped-p4-4k-warmup-0-1786320628466519961", "client_ttft_ms": 7404.786955041345, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-97c85a91766d1f8b20b43bc272bf0be5", "index": 0, "label": "grouped-serve-grouped-p4", "latency_ms": 7504.884938010946, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:10:35.971610+00:00"}
+{"cache_salt": "grouped-serve-grouped-p4-4k-measured-0-1786320635971693060", "client_ttft_ms": 7260.4500409797765, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-680bb90af21b905305ded0a6e157bf53", "index": 0, "label": "grouped-serve-grouped-p4", "latency_ms": 7360.485700017307, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:10:43.332260+00:00"}
+{"summary": {"client_ttft_max_ms": 7260.4500409797765, "client_ttft_min_ms": 7260.4500409797765, "client_ttft_p50_ms": 7260.4500409797765, "label": "grouped-serve-grouped-p4", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:10:48Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 330 MHz, 49.79 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 315 MHz, 49.46 W, 0 MiB, 0 %
+########## pair=4 arm=off grouped=0 ##########
+snapshot 2026-08-10T00:10:48Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 330 MHz, 49.79 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 315 MHz, 49.46 W, 0 MiB, 0 %
+grouped-serve-off-p4 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-off-p4-20260809T234941Z.log
+{"cache_salt": "grouped-serve-off-p4-4k-warmup-0-1786320680371664083", "client_ttft_ms": 11269.459642993752, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-b0987c157b8c2e6f373b33893b63ae69", "index": 0, "label": "grouped-serve-off-p4", "latency_ms": 11369.179842004087, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:11:31.741046+00:00"}
+{"cache_salt": "grouped-serve-off-p4-4k-measured-0-1786320691741149618", "client_ttft_ms": 10962.424719007686, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-bff21f419ae197dbd5ee7d51845b9a96", "index": 0, "label": "grouped-serve-off-p4", "latency_ms": 11062.341640994418, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:11:42.803585+00:00"}
+{"summary": {"client_ttft_max_ms": 10962.424719007686, "client_ttft_min_ms": 10962.424719007686, "client_ttft_p50_ms": 10962.424719007686, "label": "grouped-serve-off-p4", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:11:47Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 577 MHz, 50.52 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 300 MHz, 49.46 W, 0 MiB, 0 %
+########## pair=5 arm=off grouped=0 ##########
+snapshot 2026-08-10T00:11:47Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 577 MHz, 50.52 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 300 MHz, 49.46 W, 0 MiB, 0 %
+grouped-serve-off-p5 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-off-p5-20260809T234941Z.log
+{"cache_salt": "grouped-serve-off-p5-4k-warmup-0-1786320739854993592", "client_ttft_ms": 11259.19522496406, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-3fd3818a3f57b1047ed33b878dd6d24f", "index": 0, "label": "grouped-serve-off-p5", "latency_ms": 11359.10254198825, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:12:31.214314+00:00"}
+{"cache_salt": "grouped-serve-off-p5-4k-measured-0-1786320751214409070", "client_ttft_ms": 10972.76559798047, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-30ef737e9c13afe3befe371a90eb9611", "index": 0, "label": "grouped-serve-off-p5", "latency_ms": 11072.039081016555, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:12:42.286518+00:00"}
+{"summary": {"client_ttft_max_ms": 10972.76559798047, "client_ttft_min_ms": 10972.76559798047, "client_ttft_p50_ms": 10972.76559798047, "label": "grouped-serve-off-p5", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:12:47Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 330 MHz, 50.53 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 382 MHz, 49.95 W, 0 MiB, 0 %
+########## pair=5 arm=grouped grouped=1 ##########
+snapshot 2026-08-10T00:12:47Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 330 MHz, 50.53 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 382 MHz, 49.95 W, 0 MiB, 0 %
+grouped-serve-grouped-p5 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-grouped-p5-20260809T234941Z.log
+{"cache_salt": "grouped-serve-grouped-p5-4k-warmup-0-1786320799316580490", "client_ttft_ms": 7359.861559991259, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-152aaf49010bcf9c95e97e230758f99e", "index": 0, "label": "grouped-serve-grouped-p5", "latency_ms": 7459.613241022453, "measured": false, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:13:26.776406+00:00"}
+{"cache_salt": "grouped-serve-grouped-p5-4k-measured-0-1786320806776488647", "client_ttft_ms": 7279.05734203523, "completion_tokens": 8, "finish_reason": "length", "id": "chatcmpl-37a5abab02d25104ecdb1968edf99f78", "index": 0, "label": "grouped-serve-grouped-p5", "latency_ms": 7378.812787006609, "measured": true, "prompt_tokens": 4107, "shape": "4k", "ts": "2026-08-10T00:13:34.155371+00:00"}
+{"summary": {"client_ttft_max_ms": 7279.05734203523, "client_ttft_min_ms": 7279.05734203523, "client_ttft_p50_ms": 7279.05734203523, "label": "grouped-serve-grouped-p5", "n": 1, "prompt_tokens": [4107], "shape": "4k"}}
+snapshot 2026-08-10T00:13:38Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 345 MHz, 50.06 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 330 MHz, 49.46 W, 0 MiB, 0 %
+{"arm": "off", "n": 5, "samples_s": [10.960410864034202, 10.962424719007686, 10.96340006601531, 10.97276559798047, 10.987969414971303], "ttft_max_s": 10.987969414971303, "ttft_min_s": 10.960410864034202, "ttft_p50_s": 10.96340006601531}
+{"arm": "grouped", "n": 5, "samples_s": [7.25479555799393, 7.259061196993571, 7.2604500409797765, 7.261520869971719, 7.27905734203523], "ttft_max_s": 7.27905734203523, "ttft_min_s": 7.25479555799393, "ttft_p50_s": 7.2604500409797765}
+########## grouped c=4 burst N=3 ##########
+snapshot 2026-08-10T00:13:39Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 345 MHz, 50.06 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 330 MHz, 49.46 W, 0 MiB, 0 %
+grouped-serve-burst-c4 ready after <=32s log=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/server-burst-grouped-20260809T234941Z.log
+Traceback (most recent call last):
+  File "/home/ubuntu/memra-cx-grouped/research/concprefill-20260808/concurrent_prefill.py", line 299, in <module>
+    main()
+  File "/home/ubuntu/memra-cx-grouped/research/concprefill-20260808/concurrent_prefill.py", line 269, in main
+    rows, summary = burst(warm_args, warm_background, 1, 0, 1)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/memra-cx-grouped/research/concprefill-20260808/concurrent_prefill.py", line 216, in burst
+    rows = [future.result() for future in futures]
+            ^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/memra-cx-grouped/research/concprefill-20260808/concurrent_prefill.py", line 187, in one_prime
+    raise RuntimeError("prime request completed without visible output")
+RuntimeError: prime request completed without visible output
+snapshot 2026-08-10T00:14:22Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 330 MHz, 49.06 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 615 MHz, 49.36 W, 0 MiB, 0 %
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+2:[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+3:[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+server fault scan RED
+snapshot 2026-08-10T00:14:22Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 330 MHz, 49.06 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 615 MHz, 49.36 W, 0 MiB, 0 %
+lock released 2026-08-10T00:14:22Z
+=== grouped-serve serving rc=1
+ttft_client=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/ttft-client-20260809T234941Z.jsonl
+burst_client=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/serve/burst-c4-20260809T234941Z.jsonl
+=== done 2026-08-10T00:14:22Z

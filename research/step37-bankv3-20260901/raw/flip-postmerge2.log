@@ -1,0 +1,106 @@
+########## POST-MERGE GATE ARM QOFF mode=gflip-off ##########
+BOOT_OK pid=84416 arm=QOFF mode=gflip-off
+arm=QOFF
+mode=gflip-off
+boot_nonce=bv3-QOFF-1788220758-16494
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-c5c311998
+bin_md5=d0bc648a75909b757fed87fee6facb93
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=c5c31199819919890e32d893d7681ffccc2305fc
+git_log_1=c5c311998 Merge remote-tracking branch 'origin/main' into lane/step37-bankv3-20260901
+server_pid=84416
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-c5c311998
+environ_nonce=bv3-QOFF-1788220758-16494
+environ_mode=gflip-off
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-QOFF.txt (43 MEMRA_/BV3 vars)
+0, 74067 MiB, 600.00 W, 2317 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=gflip-off (MEMRA_NVFP4_BANK_SM=0 MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8=0 MEMRA_SERVE_SPEC=0 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+[short0] pt=25 ct=92 nonempty=True expect='391' found=True first32="Got it, let's calculate 17 times" sha=b15301b762b20108 => OK
+[short1] pt=25 ct=84 nonempty=True expect='899' found=True first32='We need to compute 31 * 29. That' sha=412b7f64c7ee7df8 => OK
+[short2] pt=25 ct=45 nonempty=True expect='12' found=True first32='We are asked: "What is 144/12? R' sha=01a8816119e973e1 => OK
+[short3] pt=21 ct=65 nonempty=True expect='Tokyo' found=True first32="Got it, let's see. The question " sha=199d3f0876571200 => OK
+[short4] pt=25 ct=96 nonempty=True expect='1024' found=True first32="Got it, let's see, 2^10 is 1024 " sha=e0b7c7206ca24b57 => OK
+[agentic8.json#0] pt=187 ct=256 nonempty=True ttft=0.2418 first32="Got it, let's digest this nightl" sha=f70918228164adab
+[agentic8.json#1] pt=142 ct=256 nonempty=True ttft=0.2577 first32="Got it, let's break down what th" sha=10615a2ac8d5b7fb
+[agentic8.json#2] pt=128 ct=256 nonempty=True ttft=0.2046 first32="Got it, let's tackle this. First" sha=fe5173e68e3e6ad5
+[agentic8.json#3] pt=355 ct=256 nonempty=True ttft=0.325 first32="Got it, let's tackle this forens" sha=0304d346e414d2bd
+[agentic8.json#4] pt=97 ct=256 nonempty=True ttft=0.2212 first32="Got it, let's break down what th" sha=43d37c9ebcb0b004
+[agentic8.json#5] pt=130 ct=256 nonempty=True ttft=0.2308 first32="Got it, let's start by parsing w" sha=d2b6310b28d6362c
+[agentic8.json#6] pt=88 ct=256 nonempty=True ttft=0.1832 first32="Got it, let's tackle this GitHub" sha=fbf28fd03e95aa83
+[agentic8.json#7] pt=93 ct=256 nonempty=True ttft=0.186 first32="Got it, let's break down what th" sha=f47a2cbb377dcf6b
+[prefill-ladder.json#0] pt=248 ct=96 nonempty=True ttft=0.2577 first32="Got it, let's start by respondin" sha=e8042ef091df6943
+[prefill-ladder.json#1] pt=613 ct=96 nonempty=True ttft=0.4087 first32="Got it, let's start by respondin" sha=12100dffb8dec0cf
+[prefill-ladder.json#2] pt=1480 ct=96 nonempty=True ttft=0.6706 first32="Got it, let's tackle this proper" sha=9b201aa4f7fb9a41
+[prefill-ladder.json#3] pt=3041 ct=96 nonempty=True ttft=1.1494 first32="Got it, let's tackle this step b" sha=9f528b61763a916b
+[prefill-ladder.json#4] pt=4555 ct=96 nonempty=True ttft=1.7404 first32="Got it, let's start by addressin" sha=d0075b9324ec212e
+TAPE arm=QOFF cells=18 tape_sha256=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68 content_ok=True
+GATE_EXIT_QOFF=0
+ENGAGEMENT VERIFIED arm=QOFF mode=gflip-off (4 required facts)
+STOPPED gpus drained (max 0 MiB)
+########## POST-MERGE GATE ARM QON mode=gflip-on ##########
+BOOT_OK pid=84830 arm=QON mode=gflip-on
+arm=QON
+mode=gflip-on
+boot_nonce=bv3-QON-1788221014-14310
+kernel_boot_id=505159e1-c22e-4b54-8934-d672056f5ff5
+bin=/home/ubuntu/bankv3/lane/bin/memra-server-c5c311998
+bin_md5=d0bc648a75909b757fed87fee6facb93
+bin_fingerprint=memra-<fingerprint-scrubbed>
+built_from=c5c31199819919890e32d893d7681ffccc2305fc
+git_log_1=c5c311998 Merge remote-tracking branch 'origin/main' into lane/step37-bankv3-20260901
+server_pid=84830
+exe=/home/ubuntu/bankv3/lane/bin/memra-server-c5c311998
+environ_nonce=bv3-QON-1788221014-14310
+environ_mode=gflip-on
+environ_census=/home/ubuntu/bankv3/lane/receipts/environ-QON.txt (41 MEMRA_/BV3 vars)
+0, 74067 MiB, 600.00 W, 2317 MHz
+1, 58291 MiB, 600.00 W, 2340 MHz
+ENV_VERIFIED mode=gflip-on (MEMRA_NVFP4_BANK_SM! MEMRA_NVFP4_SEL_GU! MEMRA_NVFP4_SEL_DOWN8! MEMRA_SERVE_SPEC=0 MEMRA_NVFP4_BANK_V2! MEMRA_SEL_DOWN8!)
+[short0] pt=25 ct=92 nonempty=True expect='391' found=True first32="Got it, let's calculate 17 times" sha=b15301b762b20108 => OK
+[short1] pt=25 ct=84 nonempty=True expect='899' found=True first32='We need to compute 31 * 29. That' sha=412b7f64c7ee7df8 => OK
+[short2] pt=25 ct=45 nonempty=True expect='12' found=True first32='We are asked: "What is 144/12? R' sha=01a8816119e973e1 => OK
+[short3] pt=21 ct=65 nonempty=True expect='Tokyo' found=True first32="Got it, let's see. The question " sha=199d3f0876571200 => OK
+[short4] pt=25 ct=96 nonempty=True expect='1024' found=True first32="Got it, let's see, 2^10 is 1024 " sha=e0b7c7206ca24b57 => OK
+[agentic8.json#0] pt=187 ct=256 nonempty=True ttft=0.2422 first32="Got it, let's digest this nightl" sha=f70918228164adab
+[agentic8.json#1] pt=142 ct=256 nonempty=True ttft=0.2582 first32="Got it, let's break down what th" sha=10615a2ac8d5b7fb
+[agentic8.json#2] pt=128 ct=256 nonempty=True ttft=0.2063 first32="Got it, let's tackle this. First" sha=fe5173e68e3e6ad5
+[agentic8.json#3] pt=355 ct=256 nonempty=True ttft=0.3264 first32="Got it, let's tackle this forens" sha=0304d346e414d2bd
+[agentic8.json#4] pt=97 ct=256 nonempty=True ttft=0.2223 first32="Got it, let's break down what th" sha=43d37c9ebcb0b004
+[agentic8.json#5] pt=130 ct=256 nonempty=True ttft=0.2327 first32="Got it, let's start by parsing w" sha=d2b6310b28d6362c
+[agentic8.json#6] pt=88 ct=256 nonempty=True ttft=0.1845 first32="Got it, let's tackle this GitHub" sha=fbf28fd03e95aa83
+[agentic8.json#7] pt=93 ct=256 nonempty=True ttft=0.1872 first32="Got it, let's break down what th" sha=f47a2cbb377dcf6b
+[prefill-ladder.json#0] pt=248 ct=96 nonempty=True ttft=0.2597 first32="Got it, let's start by respondin" sha=e8042ef091df6943
+[prefill-ladder.json#1] pt=613 ct=96 nonempty=True ttft=0.4092 first32="Got it, let's start by respondin" sha=12100dffb8dec0cf
+[prefill-ladder.json#2] pt=1480 ct=96 nonempty=True ttft=0.6768 first32="Got it, let's tackle this proper" sha=9b201aa4f7fb9a41
+[prefill-ladder.json#3] pt=3041 ct=96 nonempty=True ttft=1.1646 first32="Got it, let's tackle this step b" sha=9f528b61763a916b
+[prefill-ladder.json#4] pt=4555 ct=96 nonempty=True ttft=1.7651 first32="Got it, let's start by addressin" sha=d0075b9324ec212e
+TAPE arm=QON cells=18 tape_sha256=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68 content_ok=True
+GATE_EXIT_QON=0
+ENGAGEMENT VERIFIED arm=QON mode=gflip-on (4 required facts)
+STOPPED gpus drained (max 0 MiB)
+===== POST-MERGE COMPARISONS =====
+--- POFF vs QON: the flip still changes no byte on the MERGED tree ---
+arms: QOFF (md5 d0bc648a75909b757fed87fee6facb93) vs QON (md5 d0bc648a75909b757fed87fee6facb93)
+cells identical=18 differing=0
+tape A=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+tape B=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+BYTE GATE: PASS — 18 cells byte-identical, tapes equal=True
+CMP_EXIT=0
+--- FON (measured tree) vs PON (merged tree): did the MERGE move a byte? ---
+arms: FON (md5 e7242c8e4fd012dfb2d721242463d74a) vs QON (md5 d0bc648a75909b757fed87fee6facb93)
+cells identical=18 differing=0
+tape A=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+tape B=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+BYTE GATE: PASS — 18 cells byte-identical, tapes equal=True
+CMP_EXIT=0
+--- FOFF vs QOFF: same question on the rollback arm ---
+arms: FOFF (md5 e7242c8e4fd012dfb2d721242463d74a) vs QOFF (md5 d0bc648a75909b757fed87fee6facb93)
+cells identical=18 differing=0
+tape A=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+tape B=d6fe97d0a1928e1b6c9d43985557189d41a3f75533e3da91faaff473d7624e68
+BYTE GATE: PASS — 18 cells byte-identical, tapes equal=True
+CMP_EXIT=0
+===== POST-MERGE SPOT-CHECK: 2 interleaved boots, both shapes =====
+===== POST-MERGE DONE =====

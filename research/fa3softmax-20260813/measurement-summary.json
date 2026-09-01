@@ -1,0 +1,47 @@
+{
+  "schema": "memra.fa3softmax.measurement-summary.v1",
+  "verdict": "NO-GO",
+  "thermal_cap_mhz": [210, 1200],
+  "relative_only": true,
+  "prompt_tokens": 4860,
+  "repetitions_per_arm": 5,
+  "models": {
+    "q27": {
+      "baseline": {
+        "prime_ms": {"min": 5621.469, "median": 5622.928, "max": 5627.221},
+        "prefill_tok_s": {"min": 863.658989, "median": 864.318376, "max": 864.542702},
+        "cold_ttft_ms_client": {"min": 5629.248433, "median": 5630.393024, "max": 5644.522792}
+      },
+      "candidate": {
+        "prime_ms": {"min": 5673.743, "median": 5674.241, "max": 5674.600},
+        "prefill_tok_s": {"min": 856.448032, "median": 856.502218, "max": 856.577395},
+        "cold_ttft_ms_client": {"min": 5680.996744, "median": 5681.277961, "max": 5683.569271}
+      },
+      "paired_candidate_delta_median_percent": {
+        "prime_ms": 0.912567,
+        "prefill_tok_s": -0.904315,
+        "cold_ttft_ms_client": 0.898760
+      }
+    },
+    "q35": {
+      "baseline": {
+        "prime_ms": {"min": 1460.560, "median": 1460.635, "max": 1461.001},
+        "prefill_tok_s": {"min": 3326.486430, "median": 3327.319967, "max": 3327.490825},
+        "cold_ttft_ms_client": {"min": 1467.122650, "median": 1467.415612, "max": 1467.872117}
+      },
+      "candidate": {
+        "prime_ms": {"min": 1482.555, "median": 1483.520, "max": 1484.591},
+        "prefill_tok_s": {"min": 3273.628898, "median": 3275.992235, "max": 3278.124589},
+        "cold_ttft_ms_client": {"min": 1489.500325, "median": 1490.078566, "max": 1491.505772}
+      },
+      "paired_candidate_delta_median_percent": {
+        "prime_ms": 1.541340,
+        "prefill_tok_s": -1.517944,
+        "cold_ttft_ms_client": 1.543926
+      }
+    }
+  },
+  "actual_shape_text_identity": "PASS",
+  "active_clock_observed_mhz": [967, 1200],
+  "temperature_observed_c": [52, 63]
+}

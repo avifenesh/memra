@@ -1,0 +1,15 @@
+[package]
+name = "memra-sampling"
+description = "Host-side sampler chain (temperature/top-k/top-p/penalties, llama.cpp CPU sampler semantics) for the memra inference engine"
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+# Shared crates.io browse metadata; see the note in the workspace manifest.
+categories.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+edition = "2021"
+# Host-side sampler chain (llama.cpp CPU sampler semantics) — shared across engine lanes
+# (ARCHITECTURE-H100.md §5). Self-contained: no engine/CUDA dependencies.
+
+[dependencies]

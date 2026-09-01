@@ -1,0 +1,331 @@
+=== grouped-serve prefill 20260809T232706Z commit=0fc0677a35039d0842b4ce464138371cf4514576
+binary=1c0711d1c74c244962c4e507f137867f34a082084ab37f4aa3c9ccb87ac98d89
+model=/home/ubuntu/step37/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf bytes=46483327296
+protocol=N=5 interleaved, order alternated, one warmup per independent process
+prompt=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/prefill/prompt-pp512-20260809T232706Z.txt bytes=2800 sha256=f3a1cb67f9beb3fc398c0cde1f22e9459ef63cfc4595576c2981e38398f6af4b
+prompt=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/prefill/prompt-pp2048-20260809T232706Z.txt bytes=11200 sha256=14e61d63268d5ea3d62b4ac5db1b4a110e4f4743ba2efa1030ff79371b08f5a2
+prompt=/home/ubuntu/memra-cx-grouped/research/grouped-serve-20260810/raw/box1/prefill/prompt-pp4096-20260809T232706Z.txt bytes=25036 sha256=23c1d8384a16c7c0bcb7736b412d43e64c0b4d8e238703864e928565f824ae11
+lock acquired 2026-08-09T23:27:06Z
+snapshot 2026-08-09T23:27:06Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 29, 180 MHz, 30.59 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 29, 180 MHz, 30.44 W, 0 MiB, 0 %
+########## pp512 rep=1 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:27:06Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 29, 180 MHz, 30.59 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 29, 180 MHz, 30.44 W, 0 MiB, 0 %
+ppprime MEDIAN: 461 tok in 1.3765s = 334.9 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=1 arm=off exit=0
+snapshot 2026-08-09T23:27:45Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 32, 2415 MHz, 93.58 W, 0 MiB, 16 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 93.02 W, 0 MiB, 0 %
+########## pp512 rep=1 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:27:45Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 32, 2407 MHz, 96.78 W, 0 MiB, 75 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 94.89 W, 0 MiB, 98 %
+ppprime MEDIAN: 461 tok in 0.8954s = 514.8 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=1 arm=grouped exit=0
+snapshot 2026-08-09T23:28:23Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 32, 2415 MHz, 92.93 W, 0 MiB, 6 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 92.18 W, 0 MiB, 88 %
+########## pp512 rep=2 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:28:23Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 32, 2415 MHz, 96.51 W, 0 MiB, 85 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 94.27 W, 0 MiB, 88 %
+ppprime MEDIAN: 461 tok in 0.8996s = 512.4 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=2 arm=grouped exit=0
+snapshot 2026-08-09T23:29:01Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2415 MHz, 93.38 W, 0 MiB, 36 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 92.57 W, 0 MiB, 17 %
+########## pp512 rep=2 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:29:01Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2415 MHz, 96.43 W, 0 MiB, 36 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 94.29 W, 0 MiB, 93 %
+ppprime MEDIAN: 461 tok in 1.3774s = 334.7 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=2 arm=off exit=0
+snapshot 2026-08-09T23:29:40Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2415 MHz, 93.52 W, 0 MiB, 37 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 93.05 W, 0 MiB, 19 %
+########## pp512 rep=3 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:29:40Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2415 MHz, 96.55 W, 0 MiB, 53 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 94.44 W, 0 MiB, 91 %
+ppprime MEDIAN: 461 tok in 1.3757s = 335.1 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=3 arm=off exit=0
+snapshot 2026-08-09T23:30:19Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2415 MHz, 94.16 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 92.23 W, 0 MiB, 82 %
+########## pp512 rep=3 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:30:19Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2407 MHz, 97.01 W, 0 MiB, 90 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2325 MHz, 94.84 W, 0 MiB, 82 %
+ppprime MEDIAN: 461 tok in 0.8975s = 513.6 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=3 arm=grouped exit=0
+snapshot 2026-08-09T23:30:57Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2407 MHz, 93.13 W, 0 MiB, 31 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 92.86 W, 0 MiB, 15 %
+########## pp512 rep=4 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:30:57Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2407 MHz, 96.49 W, 0 MiB, 59 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 94.63 W, 0 MiB, 96 %
+ppprime MEDIAN: 461 tok in 0.8963s = 514.3 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=4 arm=grouped exit=0
+snapshot 2026-08-09T23:31:36Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2407 MHz, 92.39 W, 0 MiB, 47 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 92.04 W, 0 MiB, 29 %
+########## pp512 rep=4 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:31:36Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2407 MHz, 95.93 W, 0 MiB, 47 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 94.24 W, 0 MiB, 81 %
+ppprime MEDIAN: 461 tok in 1.3806s = 333.9 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=4 arm=off exit=0
+snapshot 2026-08-09T23:32:15Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2407 MHz, 93.39 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2325 MHz, 92.83 W, 0 MiB, 49 %
+########## pp512 rep=5 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:32:15Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2407 MHz, 96.84 W, 0 MiB, 67 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 95.00 W, 0 MiB, 61 %
+ppprime MEDIAN: 461 tok in 1.3758s = 335.1 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=5 arm=off exit=0
+snapshot 2026-08-09T23:32:54Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2415 MHz, 94.12 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2325 MHz, 93.46 W, 0 MiB, 81 %
+########## pp512 rep=5 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:32:54Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2407 MHz, 97.14 W, 0 MiB, 91 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2325 MHz, 94.85 W, 0 MiB, 81 %
+ppprime MEDIAN: 461 tok in 0.8981s = 513.3 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp512 rep=5 arm=grouped exit=0
+snapshot 2026-08-09T23:33:31Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2415 MHz, 94.19 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 34, 2325 MHz, 92.12 W, 0 MiB, 43 %
+########## pp2048 rep=1 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:33:31Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2415 MHz, 96.95 W, 0 MiB, 60 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 33, 2325 MHz, 94.52 W, 0 MiB, 67 %
+ppprime MEDIAN: 1833 tok in 4.4974s = 407.6 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=1 arm=off exit=0
+snapshot 2026-08-09T23:34:17Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2400 MHz, 95.31 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 93.42 W, 0 MiB, 63 %
+########## pp2048 rep=1 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:34:17Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2400 MHz, 98.17 W, 0 MiB, 81 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 96.03 W, 0 MiB, 48 %
+ppprime MEDIAN: 1833 tok in 2.8110s = 652.1 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=1 arm=grouped exit=0
+snapshot 2026-08-09T23:34:59Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2400 MHz, 94.30 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 94.17 W, 0 MiB, 54 %
+########## pp2048 rep=2 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:34:59Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2400 MHz, 97.49 W, 0 MiB, 71 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 95.93 W, 0 MiB, 57 %
+ppprime MEDIAN: 1833 tok in 2.8406s = 645.3 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=2 arm=grouped exit=0
+snapshot 2026-08-09T23:35:41Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2400 MHz, 95.36 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 93.68 W, 0 MiB, 45 %
+########## pp2048 rep=2 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:35:41Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2400 MHz, 97.90 W, 0 MiB, 63 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 96.18 W, 0 MiB, 66 %
+ppprime MEDIAN: 1833 tok in 4.4987s = 407.5 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=2 arm=off exit=0
+snapshot 2026-08-09T23:36:26Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2392 MHz, 94.43 W, 0 MiB, 47 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2317 MHz, 94.16 W, 0 MiB, 29 %
+########## pp2048 rep=3 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:36:27Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2392 MHz, 98.06 W, 0 MiB, 47 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2317 MHz, 96.33 W, 0 MiB, 81 %
+ppprime MEDIAN: 1833 tok in 4.4886s = 408.4 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=3 arm=off exit=0
+snapshot 2026-08-09T23:37:12Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2400 MHz, 95.39 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2317 MHz, 94.12 W, 0 MiB, 65 %
+########## pp2048 rep=3 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:37:12Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2400 MHz, 97.84 W, 0 MiB, 83 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2317 MHz, 96.35 W, 0 MiB, 45 %
+ppprime MEDIAN: 1833 tok in 2.8102s = 652.3 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=3 arm=grouped exit=0
+snapshot 2026-08-09T23:37:53Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2392 MHz, 94.30 W, 0 MiB, 14 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 93.90 W, 0 MiB, 0 %
+########## pp2048 rep=4 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:37:53Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2392 MHz, 97.51 W, 0 MiB, 77 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 95.85 W, 0 MiB, 96 %
+ppprime MEDIAN: 1833 tok in 2.8202s = 650.0 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=4 arm=grouped exit=0
+snapshot 2026-08-09T23:38:34Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2392 MHz, 94.25 W, 0 MiB, 14 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2317 MHz, 93.90 W, 0 MiB, 0 %
+########## pp2048 rep=4 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:38:34Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2392 MHz, 97.57 W, 0 MiB, 77 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 95.79 W, 0 MiB, 97 %
+ppprime MEDIAN: 1833 tok in 4.5000s = 407.3 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=4 arm=off exit=0
+snapshot 2026-08-09T23:39:19Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2392 MHz, 94.33 W, 0 MiB, 6 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 94.13 W, 0 MiB, 89 %
+########## pp2048 rep=5 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:39:19Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2392 MHz, 98.01 W, 0 MiB, 85 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 96.22 W, 0 MiB, 89 %
+ppprime MEDIAN: 1833 tok in 4.4985s = 407.5 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=5 arm=off exit=0
+snapshot 2026-08-09T23:40:04Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2400 MHz, 94.41 W, 0 MiB, 11 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 94.39 W, 0 MiB, 94 %
+########## pp2048 rep=5 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:40:05Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2400 MHz, 97.76 W, 0 MiB, 80 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 96.31 W, 0 MiB, 94 %
+ppprime MEDIAN: 1833 tok in 2.8129s = 651.7 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp2048 rep=5 arm=grouped exit=0
+snapshot 2026-08-09T23:40:46Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2392 MHz, 94.03 W, 0 MiB, 25 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2317 MHz, 93.54 W, 0 MiB, 8 %
+########## pp4096 rep=1 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:40:46Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 35, 2392 MHz, 97.76 W, 0 MiB, 66 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 36, 2317 MHz, 95.90 W, 0 MiB, 100 %
+ppprime MEDIAN: 4096 tok in 9.6529s = 424.3 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=1 arm=off exit=0
+snapshot 2026-08-09T23:41:42Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2400 MHz, 96.03 W, 0 MiB, 41 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 94.98 W, 0 MiB, 24 %
+########## pp4096 rep=1 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:41:42Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2400 MHz, 99.15 W, 0 MiB, 41 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 97.45 W, 0 MiB, 87 %
+ppprime MEDIAN: 4096 tok in 5.9134s = 692.7 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=1 arm=grouped exit=0
+snapshot 2026-08-09T23:42:30Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2400 MHz, 94.83 W, 0 MiB, 24 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2317 MHz, 94.83 W, 0 MiB, 7 %
+########## pp4096 rep=2 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:42:30Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2400 MHz, 98.91 W, 0 MiB, 67 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2317 MHz, 97.27 W, 0 MiB, 100 %
+ppprime MEDIAN: 4096 tok in 5.9265s = 691.1 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=2 arm=grouped exit=0
+snapshot 2026-08-09T23:43:18Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2392 MHz, 95.52 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2317 MHz, 95.64 W, 0 MiB, 59 %
+########## pp4096 rep=2 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:43:18Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2392 MHz, 98.77 W, 0 MiB, 76 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2317 MHz, 97.38 W, 0 MiB, 53 %
+ppprime MEDIAN: 4096 tok in 9.5995s = 426.7 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=2 arm=off exit=0
+snapshot 2026-08-09T23:44:13Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2400 MHz, 95.70 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 96.25 W, 0 MiB, 78 %
+########## pp4096 rep=3 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:44:13Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2400 MHz, 99.00 W, 0 MiB, 92 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 98.01 W, 0 MiB, 78 %
+ppprime MEDIAN: 4096 tok in 9.6123s = 426.1 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=3 arm=off exit=0
+snapshot 2026-08-09T23:45:09Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2400 MHz, 96.25 W, 0 MiB, 36 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 96.78 W, 0 MiB, 20 %
+########## pp4096 rep=3 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:45:09Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2400 MHz, 99.29 W, 0 MiB, 55 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 40, 2317 MHz, 98.14 W, 0 MiB, 91 %
+ppprime MEDIAN: 4096 tok in 5.9147s = 692.5 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=3 arm=grouped exit=0
+snapshot 2026-08-09T23:45:56Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2400 MHz, 96.19 W, 0 MiB, 20 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 95.09 W, 0 MiB, 3 %
+########## pp4096 rep=4 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:45:56Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2400 MHz, 99.28 W, 0 MiB, 72 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 97.74 W, 0 MiB, 100 %
+ppprime MEDIAN: 4096 tok in 5.9092s = 693.2 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=4 arm=grouped exit=0
+snapshot 2026-08-09T23:46:44Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2400 MHz, 95.78 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 95.89 W, 0 MiB, 79 %
+########## pp4096 rep=4 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:46:44Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2400 MHz, 99.08 W, 0 MiB, 92 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 97.60 W, 0 MiB, 79 %
+ppprime MEDIAN: 4096 tok in 9.5886s = 427.2 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=4 arm=off exit=0
+snapshot 2026-08-09T23:47:40Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2400 MHz, 96.66 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 40, 2317 MHz, 95.75 W, 0 MiB, 65 %
+########## pp4096 rep=5 arm=off grouped=0 ##########
+snapshot 2026-08-09T23:47:40Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2400 MHz, 99.71 W, 0 MiB, 81 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 40, 2317 MHz, 98.37 W, 0 MiB, 46 %
+ppprime MEDIAN: 4096 tok in 9.5965s = 426.8 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=5 arm=off exit=0
+snapshot 2026-08-09T23:48:35Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2400 MHz, 96.12 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 96.56 W, 0 MiB, 80 %
+########## pp4096 rep=5 arm=grouped grouped=1 ##########
+snapshot 2026-08-09T23:48:35Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2400 MHz, 99.26 W, 0 MiB, 92 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 39, 2317 MHz, 98.19 W, 0 MiB, 80 %
+ppprime MEDIAN: 4096 tok in 5.9113s = 692.9 tok/s (budget=0 chunk=4096(default) calllocal=0)
+pp4096 rep=5 arm=grouped exit=0
+snapshot 2026-08-09T23:49:23Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2400 MHz, 95.74 W, 0 MiB, 0 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2317 MHz, 95.97 W, 0 MiB, 80 %
+snapshot 2026-08-09T23:49:23Z
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, 37, 2392 MHz, 98.97 W, 0 MiB, 92 %
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, 38, 2317 MHz, 97.39 W, 0 MiB, 80 %
+lock released 2026-08-09T23:49:23Z
+=== samples ===
+shape	tokens	arm	rep	seconds	tok_s
+pp512	461	off	1	1.3765	334.907
+pp512	461	off	2	1.3774	334.689
+pp512	461	off	3	1.3757	335.102
+pp512	461	off	4	1.3806	333.913
+pp512	461	off	5	1.3758	335.078
+pp512	461	grouped	1	0.8954	514.854
+pp512	461	grouped	2	0.8996	512.450
+pp512	461	grouped	3	0.8975	513.649
+pp512	461	grouped	4	0.8963	514.337
+pp512	461	grouped	5	0.8981	513.306
+pp2048	1833	off	1	4.4974	407.569
+pp2048	1833	off	2	4.4987	407.451
+pp2048	1833	off	3	4.4886	408.368
+pp2048	1833	off	4	4.5000	407.333
+pp2048	1833	off	5	4.4985	407.469
+pp2048	1833	grouped	1	2.8110	652.081
+pp2048	1833	grouped	2	2.8406	645.286
+pp2048	1833	grouped	3	2.8102	652.267
+pp2048	1833	grouped	4	2.8202	649.954
+pp2048	1833	grouped	5	2.8129	651.641
+pp4096	4096	off	1	9.6529	424.328
+pp4096	4096	off	2	9.5995	426.689
+pp4096	4096	off	3	9.6123	426.121
+pp4096	4096	off	4	9.5886	427.174
+pp4096	4096	off	5	9.5965	426.822
+pp4096	4096	grouped	1	5.9134	692.664
+pp4096	4096	grouped	2	5.9265	691.133
+pp4096	4096	grouped	3	5.9147	692.512
+pp4096	4096	grouped	4	5.9092	693.156
+pp4096	4096	grouped	5	5.9113	692.910
+=== medians ===
+shape	tokens	arm	n	median_s	median_tok_s
+pp512	461	off	5	1.3765	334.9
+pp512	461	grouped	5	0.8975	513.6
+pp2048	1833	off	5	4.4985	407.5
+pp2048	1833	grouped	5	2.8129	651.6
+pp4096	4096	off	5	9.5995	426.7
+pp4096	4096	grouped	5	5.9134	692.7
+=== comparisons ===
+pp512 grouped=513.6 tok/s off=334.9 tok/s delta=+53.4%
+pp2048 grouped=651.6 tok/s off=407.5 tok/s delta=+59.9%
+pp4096 grouped=692.7 tok/s off=426.7 tok/s delta=+62.3%
+=== grouped-serve prefill rc=0
+=== done 2026-08-09T23:49:23Z

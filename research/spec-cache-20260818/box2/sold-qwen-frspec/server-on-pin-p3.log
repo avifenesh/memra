@@ -1,0 +1,128 @@
+[server] starting; models config = [("gate", "/home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", Some("/home/ubuntu/models/qwen/mtp-Qwen3.8-27B-NVFP4-frspec-mixed32768.gguf"))]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
+[worker] loading model "gate" <- /home/ubuntu/models/qwen/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[mtp-draft] external draft head: blk.64, source=output.weight, head_vocab=32768 (trimmed, d2t map)
+[worker] gate: regime draft attached (/home/ubuntu/models/qwen/mtp-Qwen3.8-27B-NVFP4-frspec-mixed32768.gguf)
+[worker]   loaded "gate": 65 layers, eos=248046
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[server] worker ready; serving models: ["gate"]
+[prefix-cache] on: budget 2260MB (2259943424 B, derived: 2 x 1129971712 B max entry for model "gate" at MEMRA_CTX=32768, requested 2259943424 B; boot driver free 86152642560 B, post-reserve clamp 84542029824 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 31552 B/token, spec 33408 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18086
+[meter] admit id=cmpl-98382e925955bd004b86958298b8df88 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=4984 path=spec = 33408 B/token x ctx + 0MB fixed = 167MB
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4860 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 473MB at ctx 4928 path=spec)
+[spec-acc] ctx=4860 burst=24/24 cum=24/24=1.000
+[prefix-cache] insert probation (spec-boundary): 4860 tokens, 310.3MB (resident 310.3MB / 2260MB, model gate, ns "gate-on-pin-p3")
+[spec-acc] ctx=4893 burst=21/21 cum=45/45=1.000
+[meter] admit id=cmpl-999717f562ec036beb9b7135cbdbff9f tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-bef26a4e5903f933418173a74e81f285 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-900bc17edc940d64c5a125af609a3dcd tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-e049a43f3dfa7afda4d48eb497b5549c tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-94821e2342768ccad359aaf5e40246f3 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-7e85b25bcbb1093cf892a1d783c6a680 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-a9395099b5760b759898b64baa0f5b17 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-dd9e4b82c7c634002e80456553517e75 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-59c6b60c5484aefc4a8675331dd22d56 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-0f050c3fa8a39792746762ff9a4e1685 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-e67542c63d3c34c6cefcfe9562bd679e tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-0beaa22a00b714a3f47c120844bf9503 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-7fe6620245555cb4d9df87bd0f7bc00c tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-4979099586e7f39e3356e5519e391b38 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-7ec0efc55f755836cd8669904645a507 tenant=default lane=interactive model="gate"
+[meter] admit id=cmpl-241efc33d16f11a490582b20b952bffa tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=5048 path=spec = 33408 B/token x ctx + 308MB fixed = 477MB
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 475MB at ctx 4992 path=spec)
+[admission] request cost: model="gate" ctx=5048 path=spec = 33408 B/token x ctx + 308MB fixed = 477MB
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=2 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=3 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=4 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=5 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=6 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=7 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=8 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=9 placement=single-or-non-pp2
+[spec-k] model="gate" tenant="gate-on-pin-p3-miss10" K=3 source=operator-pin prompt=4924 cached=0 lcp=0 active=10 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=11 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=12 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=13 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=14 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=15 placement=single-or-non-pp2
+[prefix-cache] hit: 4860 of 4924 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 4860 of 4924 prompt tokens + draft plane from cache [suffix fed] (model gate)
+[spec-k] model="gate" tenant="gate-on-pin-p3" K=3 source=operator-pin prompt=4924 cached=4860 lcp=4860 active=16 placement=single-or-non-pp2
+[spec-acc] ctx=0 burst=12/57 cum=12/57=0.211
+[spec-acc] ctx=0 burst=17/45 cum=17/45=0.378
+[spec-acc] ctx=0 burst=19/36 cum=19/36=0.528
+[spec-acc] ctx=0 burst=15/54 cum=15/54=0.278
+[spec-acc] ctx=0 burst=16/45 cum=16/45=0.356
+[spec-acc] ctx=0 burst=21/30 cum=21/30=0.700
+[spec-acc] ctx=0 burst=24/27 cum=24/27=0.889
+[spec-acc] ctx=0 burst=15/48 cum=15/48=0.312
+[spec-acc] ctx=0 burst=20/33 cum=20/33=0.606
+[spec-acc] ctx=4924 burst=14/51 cum=14/51=0.275
+[spec-acc] ctx=0 burst=21/30 cum=21/30=0.700
+[spec-acc] ctx=0 burst=18/45 cum=18/45=0.400
+[spec-acc] ctx=0 burst=17/42 cum=17/42=0.405
+[spec-acc] ctx=0 burst=15/57 cum=15/57=0.263
+[spec-acc] ctx=0 burst=20/39 cum=20/39=0.513
+[spec-acc] ctx=0 burst=18/39 cum=18/39=0.462
+[prefix-cache] insert probation (spec-boundary): 4924 tokens, 312.3MB (resident 622.5MB / 2260MB, model gate, ns "gate-on-pin-p3-miss10")
+[spec-acc] ctx=32 burst=18/33 cum=30/90=0.333
+[spec-acc] ctx=33 burst=18/27 cum=35/72=0.486
+[spec-acc] ctx=32 burst=21/21 cum=40/57=0.702
+[spec-acc] ctx=34 burst=15/33 cum=30/87=0.345
+[spec-acc] ctx=32 burst=19/30 cum=35/75=0.467
+[spec-acc] ctx=32 burst=21/21 cum=42/51=0.824
+[spec-acc] ctx=34 burst=21/21 cum=45/48=0.938
+[spec-acc] ctx=32 burst=17/33 cum=32/81=0.395
+[spec-acc] ctx=32 burst=21/24 cum=41/57=0.719
+[spec-acc] ctx=4956 burst=16/36 cum=30/87=0.345
+[spec-acc] ctx=32 burst=21/21 cum=42/51=0.824
+[spec-acc] ctx=34 burst=20/21 cum=38/66=0.576
+[spec-acc] ctx=32 burst=21/21 cum=38/63=0.603
+[spec-acc] ctx=35 burst=21/21 cum=36/78=0.462
+[spec-acc] ctx=34 burst=21/21 cum=41/60=0.683
+[spec-acc] ctx=32 burst=21/21 cum=39/60=0.650
+[meter] admit id=chatcmpl-a04874610ab61429111f2620a2cf81c0 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=127 path=spec = 33408 B/token x ctx + 308MB fixed = 312MB
+[spec-k] model="gate" tenant="anchor-on-pin-p3" K=3 source=operator-pin prompt=15 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[spec-acc] ctx=15 burst=21/30 cum=21/30=0.700
+[spec-acc] ctx=47 burst=11/18 cum=32/48=0.667
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

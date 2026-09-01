@@ -1,0 +1,19 @@
+DSPARK-SCALE-LAUNCH-BEGIN 2026-08-11T15:34:57+03:00
+ranks-32768.txt: OK
+summary.json: OK
+ranks-32768.txt: OK
+summary.json: OK
+Running as unit: memra-dspark2-pilot-scale.service; invocation ID: ad5459af01294b0e8e81d9dfc01c3246
+Running as unit: memra-dspark2-pilot-scale-checkpoint.service; invocation ID: 821508aa10d64052b113dccd07cc45b4
+Id=memra-dspark2-pilot-scale.service
+ActiveState=active
+SubState=running
+InvocationID=ad5459af01294b0e8e81d9dfc01c3246
+ExecStart={ path=/home/avifenesh/projects/wt-cx-dspark2/research/dspark2-20260811/run-corpus-range.sh ; argv[]=/home/avifenesh/projects/wt-cx-dspark2/research/dspark2-20260811/run-corpus-range.sh pilot 2000 30000 64 ; ignore_errors=no ; start_time=[Tue 2026-08-11 15:34:59 IDT] ; stop_time=[n/a] ; pid=1229582 ; code=(null) ; status=0/0 }
+
+Id=memra-dspark2-pilot-scale-checkpoint.service
+ActiveState=active
+SubState=running
+InvocationID=821508aa10d64052b113dccd07cc45b4
+ExecStart={ path=/home/avifenesh/projects/wt-cx-dspark2/research/dspark2-20260811/checkpoint-corpus-range.sh ; argv[]=/home/avifenesh/projects/wt-cx-dspark2/research/dspark2-20260811/checkpoint-corpus-range.sh pilot 2000 30000 64 ; ignore_errors=no ; start_time=[Tue 2026-08-11 15:34:59 IDT] ; stop_time=[n/a] ; pid=1229584 ; code=(null) ; status=0/0 }
+DSPARK-SCALE-LAUNCH-DONE 2026-08-11T15:34:59+03:00

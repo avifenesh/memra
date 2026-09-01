@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "finding": "flashinfer-ai/flashinfer#3398",
+  "captured_at_utc": "2026-08-14T09:34:41Z",
+  "common_shape": {
+    "a": "[M, 2048]",
+    "b": "[8192, 2048]",
+    "gemm_output": "[M, 8192]",
+    "k": 2048,
+    "n": 8192
+  },
+  "superseded_observation": {
+    "source": "https://github.com/flashinfer-ai/flashinfer/issues/3398",
+    "reported_zero_m": [256, 384, 512, 1024, 1280, 3072],
+    "reported_nonzero_m": [1536, 2048, 4096],
+    "excluded_from_gate": true,
+    "reason": "The reporter later disclosed that a local patch still forced compute_120 instead of compute_120f and replaced this table with a corrected run."
+  },
+  "tables": [
+    {
+      "id": "reporter-corrected-sm120f-end-to-end",
+      "source": "https://github.com/flashinfer-ai/flashinfer/issues/3398#issuecomment-4529895838",
+      "environment": {
+        "flashinfer": "0.6.12",
+        "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "compute_capability": "12.0",
+        "compile_target": "compute_120f",
+        "flashinfer_cuda_arch_list": "12.0f"
+      },
+      "operation": "Quantize A and B with nvfp4_quantize, then call mm_fp4.",
+      "global_scale_dtype": "Inherited from BF16 input",
+      "enable_pdl": "Both true and false produced the same pattern",
+      "rows": [
+        {"m": 1, "b12x": "nonzero", "cutlass": "nonzero"},
+        {"m": 8, "b12x": "nonzero", "cutlass": "nonzero"},
+        {"m": 32, "b12x": "all_zero", "cutlass": "all_zero"},
+        {"m": 128, "b12x": "all_zero", "cutlass": "all_zero"},
+        {"m": 256, "b12x": "all_zero", "cutlass": "all_zero"},
+        {"m": 512, "b12x": "all_zero", "cutlass": "all_zero"},
+        {"m": 1024, "b12x": "all_zero", "cutlass": "all_zero"},
+        {"m": 1536, "b12x": "all_zero", "cutlass": "all_zero"},
+        {"m": 2048, "b12x": "nonzero", "cutlass": "nonzero"},
+        {"m": 3072, "b12x": "nonzero", "cutlass": "nonzero"},
+        {"m": 4096, "b12x": "nonzero", "cutlass": "nonzero"}
+      ],
+      "interpretation": "End-to-end symptom only. This run does not isolate GEMM from quantization."
+    },
+    {
+      "id": "maintainer-quantizer-root-cause-no-gemm",
+      "source": "https://github.com/flashinfer-ai/flashinfer/issues/3398#issuecomment-4605295557",
+      "environment": {
+        "flashinfer": "0.6.12",
+        "torch": "2.11.0+cu130",
+        "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "compute_capability": "12.0"
+      },
+      "operation": "Quantize A, dequantize with e2m1_and_ufp8sf_scale_to_float, and compare with A. No GEMM.",
+      "global_scale_expression": "(448.0 * 6.0) / a.abs().max()",
+      "global_scale_dtype": "BF16 inherited from A",
+      "layouts": ["128x4", "linear"],
+      "layout_note": "The recorded values were identical for both layouts.",
+      "rows": [
+        {
+          "m": 256,
+          "cuda_both_layouts": {"classification": "magnitude_wrong", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.951, "median_abs_ratio": 0.049, "ratio_iqr": 0.009, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0},
+          "cute_dsl_both_layouts": {"classification": "reference_ok", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.095, "median_abs_ratio": 0.996, "ratio_iqr": 0.185, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0}
+        },
+        {
+          "m": 384,
+          "cuda_both_layouts": {"classification": "all_zero_scale", "upstream_printed_code": "ZERO", "cosine": 0.0, "relative_l2": 100.0, "median_abs_ratio": 0.0, "ratio_iqr": 0.0, "packed_zero_pct": 0.0, "scale_zero_pct": 100.0},
+          "cute_dsl_both_layouts": {"classification": "reference_ok", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.095, "median_abs_ratio": 0.997, "ratio_iqr": 0.184, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0}
+        },
+        {
+          "m": 512,
+          "cuda_both_layouts": {"classification": "all_zero_scale", "upstream_printed_code": "ZERO", "cosine": 0.0, "relative_l2": 100.0, "median_abs_ratio": 0.0, "ratio_iqr": 0.0, "packed_zero_pct": 0.0, "scale_zero_pct": 100.0},
+          "cute_dsl_both_layouts": {"classification": "reference_ok", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.095, "median_abs_ratio": 0.996, "ratio_iqr": 0.184, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0}
+        },
+        {
+          "m": 1024,
+          "cuda_both_layouts": {"classification": "all_zero_scale", "upstream_printed_code": "ZERO", "cosine": 0.0, "relative_l2": 100.0, "median_abs_ratio": 0.0, "ratio_iqr": 0.0, "packed_zero_pct": 0.0, "scale_zero_pct": 100.0},
+          "cute_dsl_both_layouts": {"classification": "reference_ok", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.095, "median_abs_ratio": 0.997, "ratio_iqr": 0.185, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0}
+        },
+        {
+          "m": 1280,
+          "cuda_both_layouts": {"classification": "magnitude_wrong", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.827, "median_abs_ratio": 0.174, "ratio_iqr": 0.032, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0},
+          "cute_dsl_both_layouts": {"classification": "reference_ok", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.095, "median_abs_ratio": 0.996, "ratio_iqr": 0.185, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0}
+        },
+        {
+          "m": 1536,
+          "cuda_both_layouts": {"classification": "magnitude_wrong", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.806, "median_abs_ratio": 0.194, "ratio_iqr": 0.036, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0},
+          "cute_dsl_both_layouts": {"classification": "reference_ok", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.095, "median_abs_ratio": 0.995, "ratio_iqr": 0.184, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0}
+        },
+        {
+          "m": 2048,
+          "cuda_both_layouts": {"classification": "magnitude_wrong", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.826, "median_abs_ratio": 0.174, "ratio_iqr": 0.032, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0},
+          "cute_dsl_both_layouts": {"classification": "reference_ok", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.095, "median_abs_ratio": 0.994, "ratio_iqr": 0.186, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0}
+        },
+        {
+          "m": 3072,
+          "cuda_both_layouts": {"classification": "magnitude_wrong", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.813, "median_abs_ratio": 0.187, "ratio_iqr": 0.034, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0},
+          "cute_dsl_both_layouts": {"classification": "reference_ok", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.095, "median_abs_ratio": 0.999, "ratio_iqr": 0.185, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0}
+        },
+        {
+          "m": 4096,
+          "cuda_both_layouts": {"classification": "magnitude_wrong", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.802, "median_abs_ratio": 0.198, "ratio_iqr": 0.036, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0},
+          "cute_dsl_both_layouts": {"classification": "reference_ok", "upstream_printed_code": "OK", "cosine": 0.9955, "relative_l2": 0.095, "median_abs_ratio": 0.996, "ratio_iqr": 0.183, "packed_zero_pct": 0.1, "scale_zero_pct": 0.0}
+        }
+      ],
+      "interpretation": "The CUDA quantizer's non-FP32 global scale handling is causal. GEMM is absent. Cosine-only classification misses severe magnitude error."
+    },
+    {
+      "id": "merged-upstream-regression-matrix",
+      "source": "https://github.com/flashinfer-ai/flashinfer/pull/3497",
+      "first_release": "v0.6.13",
+      "operation": "CUDA nvfp4_quantize followed by dequantization; no GEMM.",
+      "k": 2048,
+      "m_values": [128, 256, 384, 512, 1024, 1152, 2048],
+      "global_scale_dtypes": ["bfloat16", "float16", "float32"],
+      "layout": "128x4",
+      "shuffle": false,
+      "assertions": [
+        "At least one scale-factor byte is nonzero.",
+        "Median abs(dequant/input) over abs(input)>0.5 is greater than 0.5 and less than 2.0."
+      ],
+      "interpretation": "This is fix coverage, not a fresh target-rig result from this lane."
+    }
+  ],
+  "causal_scope": {
+    "root_cause": "FlashInfer v0.6.12 CUDA fp4 quantization read a non-FP32 global scale through a float pointer after a dtype guard had been disabled.",
+    "not_root_cause": "The b12x and cutlass GEMM backends in the public reproduction.",
+    "shape_warning": "Observed M sets are symptoms of dtype misinterpretation and input bytes, not a stable list of unsupported GEMM tiles."
+  }
+}

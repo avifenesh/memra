@@ -1,0 +1,38 @@
+{
+ "name": "p06-prose",
+ "arm": "greedy",
+ "status": 200,
+ "request_meta": {
+  "max_tokens": 128,
+  "sampling_params_on_wire": [
+   "temperature"
+  ]
+ },
+ "response": {
+  "streamed": true,
+  "usage": {
+   "prompt_tokens": 131,
+   "completion_tokens": 128,
+   "total_tokens": 259,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "elapsed_s": 15.311871329,
+   "spec": {
+    "rounds": 54,
+    "drafted": 162,
+    "accepted": 75,
+    "acceptance_rate": 0.46296296296296297
+   }
+  },
+  "choices": [
+   {
+    "finish_reason": "length",
+    "message": {
+     "content": "",
+     "reasoning": "Let me understand the situation. The user is asking me to continue from edits already made on some PDF work \u2014 rendering regenerated work PDFs at 200 DPI, visually inspecting VAT top, bank, and property bands and both Income Tax pages, correcting placement defects, copying verified PDFs to specific output paths, and writing a QA report.\n\nThe problem: I don't have any prior context. This appears to be a continuation of a session where edits were already made to some PDFs (a VAT form \"tiyuvta-vat-821\" and an Income Tax form \"tiyuvta-income-tax-5329"
+    }
+   }
+  ]
+ }
+}

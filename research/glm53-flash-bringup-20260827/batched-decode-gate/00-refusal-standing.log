@@ -1,0 +1,23 @@
+=== 00-refusal-standing: the ONLY uncommitted diff (reverted right after) ===
+diff --git a/crates/memra-engine/src/decode_batch.rs b/crates/memra-engine/src/decode_batch.rs
+index c28d36aaf8..564d9e69d9 100644
+--- a/crates/memra-engine/src/decode_batch.rs
++++ b/crates/memra-engine/src/decode_batch.rs
+@@ -973,6 +973,9 @@ impl HybridModel {
+                         .into(),
+                 );
+             }
++            // TEMPORARY 00-refusal-standing: reinstate the pre-lane refusal at this site
++            // so the gate banks what "the gate arrived before the code" looks like.
++            self.refuse_hyper("decode_step_batch")?;
+             return self.decode_step_batch_hyper(e, tokens, caches, samp, masks, lean);
+         }
+         // ---- PP DOOR: THE BATCHED STAGE SPLIT (pp2-batch 2026-08-06) ----------------------
+=== RUN: glm5-hyper-batch-gate 3 5 8 1 ===
+glm5-hyper-batch-gate config: B=3 P=5(staggered +bi) N=8 stages=1 streams=per-stage shard=per-stage
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.77GB (expert budget 22.77GB) -> RESIDENT
+hc topology: streams=4 collapse=Mean sinkhorn_iters=20
+[phase] reference: per-session serial decode (isolated tapes)
+[phase] arm 1: staggered batch — 3 concurrent sessions, 8 ticks
+Error: "decode_step_batch runs a serial residual, but this model's ModelPlan declares ResidualTopology::HyperConnections{ streams: 4, collapse: Mean }. Refusing: that path would compute a different model. Converted paths: forward, forward_last, prime_cache, decode_step, and the batched serving chain decode_step_batch / _sampled / _lean / _masked."
+exit=1

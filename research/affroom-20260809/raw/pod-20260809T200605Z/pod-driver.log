@@ -1,0 +1,139 @@
+lock_acquired=2026-08-09T20:12:18Z
+head=dbbb1a1262f958f07b28f4d8f2f527c357a979d6 runtime=aeda00415b5c1399579feec0bb878d0b4e1c5aed
+a28149b4c7840c1778ccf990899ad5fd61f90905cd0677940b29e3aa701a0428  target/release/memra-server
+artifact=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf size=46483327296 mtime=2026-08-08 19:30:47.922181218 +0000
+artifact=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00002-of-00003.gguf size=46999941600 mtime=2026-08-08 19:30:49.286186762 +0000
+artifact=/workspace/models/step-3.7-flash/IQ4_XS/Step-3.7-flash-IQ4_XS-00003-of-00003.gguf size=11510293728 mtime=2026-08-08 19:27:39.640415974 +0000
+artifact=/workspace/models/step-3.7-flash/Step3.7-flash-mtp-Q8_0.gguf size=3707276416 mtime=2026-08-08 19:16:58.725809391 +0000
+0, NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 97887, 2, 97257
+1, NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 97887, 2, 97257
+server_pid=3495 boot_start=2026-08-09T20:12:18Z port=8010
+server_ready=2026-08-09T20:13:18Z
+0, 97887, 46002, 51257
+1, 97887, 56340, 40919
+{"at": "2026-08-09T20:13:34.950723+00:00", "cache_hit_token_ratio_after": 0.0, "cached_tokens": 0, "completion_tokens": 1, "continuation_pool_hits_delta": 0, "cuda_driver_free_bytes_after": 40890990592, "finish_reason": "stop", "plain_affinity_rewinds_after": 0, "plain_affinity_rewinds_before": 0, "plain_affinity_rewinds_delta": 0, "prompt_chars": 52856, "prompt_sha256": "6bc04c3279aaae1a805018043e99352721f56e63bf63ed8537a4a1da717c5d3b", "prompt_tokens": 10153, "request_need": 42985, "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "turn": 1, "wall_s": 16.372773}
+{"at": "2026-08-09T20:13:35.211472+00:00", "cache_hit_token_ratio_after": 0.49877113645300825, "cached_tokens": 10147, "completion_tokens": 1, "continuation_pool_hits_delta": 1, "cuda_driver_free_bytes_after": 39079051264, "finish_reason": "stop", "plain_affinity_rewinds_after": 1, "plain_affinity_rewinds_before": 0, "plain_affinity_rewinds_delta": 1, "prompt_chars": 53090, "prompt_sha256": "9c67a6240128d9e72ad0e745594a21ff07e2634b3a2e74a763de45bd7c8ba165", "prompt_tokens": 10191, "request_need": 43023, "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "turn": 2, "wall_s": 0.259554}
+{"at": "2026-08-09T20:13:35.468938+00:00", "cache_hit_token_ratio_after": 0.6649659863945578, "cached_tokens": 10185, "completion_tokens": 1, "continuation_pool_hits_delta": 1, "cuda_driver_free_bytes_after": 39045496832, "finish_reason": "stop", "plain_affinity_rewinds_after": 2, "plain_affinity_rewinds_before": 1, "plain_affinity_rewinds_delta": 1, "prompt_chars": 53306, "prompt_sha256": "34ae95e018238a3ff8cf3312c47462abe2fbbe9e8d91fb64350b4773756a6daf", "prompt_tokens": 10232, "request_need": 43064, "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "turn": 3, "wall_s": 0.256334}
+{"at": "2026-08-09T20:13:46.470513+00:00", "cache_hit_token_ratio_after": 0.6454188315802813, "cached_tokens": 10226, "completion_tokens": 1, "continuation_pool_hits_delta": 1, "cuda_driver_free_bytes_after": 38642843648, "finish_reason": "stop", "plain_affinity_rewinds_after": 3, "plain_affinity_rewinds_before": 2, "plain_affinity_rewinds_delta": 1, "prompt_chars": 87050, "prompt_sha256": "409eb33924747abb1d74027cb83539dda965e8f55a8166606db3ceeebaf30539", "prompt_tokens": 16770, "request_need": 49602, "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "turn": 4, "wall_s": 11.000219}
+{
+  "base": "http://127.0.0.1:8010",
+  "context_cap": 262144,
+  "created_at": "2026-08-09T20:13:46.470960+00:00",
+  "empty_stop_control": "one generated token; request-owned max_tokens charge unchanged",
+  "failures": [
+    "first prompt 10153 not in owner-shape 12.0k..13.5k window",
+    "large-paste growth 6538 not in 7k..9k window",
+    "final prompt 16770 not in owner-shape 19.5k..22k window"
+  ],
+  "max_tokens": 32768,
+  "model": "step35",
+  "plain_affinity_rewinds_delta": 3,
+  "pp_devices": [
+    0,
+    1
+  ],
+  "pp_stages": 2,
+  "prompt_token_deltas": [
+    38,
+    41,
+    6538
+  ],
+  "rows": [
+    {
+      "at": "2026-08-09T20:13:34.950723+00:00",
+      "cache_hit_token_ratio_after": 0.0,
+      "cached_tokens": 0,
+      "completion_tokens": 1,
+      "continuation_pool_hits_delta": 0,
+      "cuda_driver_free_bytes_after": 40890990592,
+      "finish_reason": "stop",
+      "plain_affinity_rewinds_after": 0,
+      "plain_affinity_rewinds_before": 0,
+      "plain_affinity_rewinds_delta": 0,
+      "prompt_chars": 52856,
+      "prompt_sha256": "6bc04c3279aaae1a805018043e99352721f56e63bf63ed8537a4a1da717c5d3b",
+      "prompt_tokens": 10153,
+      "request_need": 42985,
+      "text": "",
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "turn": 1,
+      "wall_s": 16.372773
+    },
+    {
+      "at": "2026-08-09T20:13:35.211472+00:00",
+      "cache_hit_token_ratio_after": 0.49877113645300825,
+      "cached_tokens": 10147,
+      "completion_tokens": 1,
+      "continuation_pool_hits_delta": 1,
+      "cuda_driver_free_bytes_after": 39079051264,
+      "finish_reason": "stop",
+      "plain_affinity_rewinds_after": 1,
+      "plain_affinity_rewinds_before": 0,
+      "plain_affinity_rewinds_delta": 1,
+      "prompt_chars": 53090,
+      "prompt_sha256": "9c67a6240128d9e72ad0e745594a21ff07e2634b3a2e74a763de45bd7c8ba165",
+      "prompt_tokens": 10191,
+      "request_need": 43023,
+      "text": "",
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "turn": 2,
+      "wall_s": 0.259554
+    },
+    {
+      "at": "2026-08-09T20:13:35.468938+00:00",
+      "cache_hit_token_ratio_after": 0.6649659863945578,
+      "cached_tokens": 10185,
+      "completion_tokens": 1,
+      "continuation_pool_hits_delta": 1,
+      "cuda_driver_free_bytes_after": 39045496832,
+      "finish_reason": "stop",
+      "plain_affinity_rewinds_after": 2,
+      "plain_affinity_rewinds_before": 1,
+      "plain_affinity_rewinds_delta": 1,
+      "prompt_chars": 53306,
+      "prompt_sha256": "34ae95e018238a3ff8cf3312c47462abe2fbbe9e8d91fb64350b4773756a6daf",
+      "prompt_tokens": 10232,
+      "request_need": 43064,
+      "text": "",
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "turn": 3,
+      "wall_s": 0.256334
+    },
+    {
+      "at": "2026-08-09T20:13:46.470513+00:00",
+      "cache_hit_token_ratio_after": 0.6454188315802813,
+      "cached_tokens": 10226,
+      "completion_tokens": 1,
+      "continuation_pool_hits_delta": 1,
+      "cuda_driver_free_bytes_after": 38642843648,
+      "finish_reason": "stop",
+      "plain_affinity_rewinds_after": 3,
+      "plain_affinity_rewinds_before": 2,
+      "plain_affinity_rewinds_delta": 1,
+      "prompt_chars": 87050,
+      "prompt_sha256": "409eb33924747abb1d74027cb83539dda965e8f55a8166606db3ceeebaf30539",
+      "prompt_tokens": 16770,
+      "request_need": 49602,
+      "text": "",
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "turn": 4,
+      "wall_s": 11.000219
+    }
+  ],
+  "schema": 1,
+  "session_id": "affroom-owner-pi-shape",
+  "spec_k": 0,
+  "verdict": "FAIL",
+  "window_clean": true
+}
+affinity_receipts:
+[worker] plain-affinity: grew parked cache 42929 -> 43023 rows (request-owned need)
+[worker] plain-affinity: rewound to 10147 of 10191 prompt tokens (priming 44 suffix; model step35)
+[worker] plain-affinity: grew parked cache 43023 -> 43064 rows (request-owned need)
+[worker] plain-affinity: rewound to 10185 of 10232 prompt tokens (priming 47 suffix; model step35)
+[worker] plain-affinity: grew parked cache 43064 -> 49602 rows (request-owned need)
+[worker] plain-affinity: rewound to 10226 of 16770 prompt tokens (priming 6544 suffix; model step35)
+gate_rc=1
+server_stopped=2026-08-09T20:14:05Z
+0, 97887, 2, 97257
+1, 97887, 2, 97257

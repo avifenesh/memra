@@ -1,0 +1,30 @@
+
+NOTICE: Existing SQLite export found: /opt/scratch/nvme/ncuspike-20260811/nsys/decode.sqlite
+        It is assumed file was previously exported from: /opt/scratch/nvme/ncuspike-20260811/nsys/decode.nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [/opt/scratch/nvme/ncuspike-20260811/nsys/decode.sqlite] with [/opt/nvidia/nsight-systems/2026.1.3/target-linux-x64/reports/cuda_api_sum.py]... 
+
+ ** CUDA API Summary (cuda_api_sum):
+
+ Time (%)  Total Time (ns)  Num Calls  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)          Name        
+ --------  ---------------  ---------  ---------  ---------  --------  --------  -----------  --------------------
+     33.2         84501255      28576     2957.1     2914.0      2024     38059        727.4  cuLaunchKernel      
+     22.5         57341724         32  1791928.9  1780199.5   1683820   1905352      49858.3  cuMemcpyDtoHAsync_v2
+     16.6         42330828      15648     2705.2     2580.0      2155     16343        679.7  cuLaunchKernelEx    
+     10.7         27287645      52864      516.2      494.0       296     17968        274.1  cuMemAllocAsync     
+     10.0         25465513      52864      481.7      464.0       350     11459        208.2  cuMemFreeAsync      
+      5.0         12769921       4352     2934.3     2798.0      1771     15930        771.7  cuMemsetD8Async     
+      1.4          3495462       1696     2061.0     1881.5      1561     10925        558.7  cuMemcpyHtoDAsync_v2
+      0.1           373768         64     5840.1     5397.0      4646     14078       1726.7  cuMemcpyDtoDAsync_v2
+      0.1           347283        128     2713.1     2721.0       653      5234       1308.0  cuStreamWaitEvent   
+      0.1           188647         33     5716.6     5543.0      3577     13458       1480.7  cuStreamSynchronize 
+      0.1           153921         32     4810.0     4622.5      4228      6916        574.3  cuMemcpyPeerAsync   
+      0.0           115067         96     1198.6     1131.0       462      5423        727.3  cuEventRecord       
+      0.0            30535         32      954.2      945.5       782      1577        136.0  cuEventCreate       
+      0.0            19659        128      153.6      142.0       113       535         47.3  cuCtxSetCurrent     
+      0.0            17626         32      550.8      551.5       426       744         62.0  cuEventDestroy_v2   
+      0.0             6173          1     6173.0     6173.0      6173      6173          0.0  cuCtxSynchronize    
+      0.0             3822          1     3822.0     3822.0      3822      3822          0.0  cuProfilerStart     
+      0.0              291          1      291.0      291.0       291       291          0.0  cuProfilerStop      
+

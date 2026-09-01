@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "metric_definition": {
+    "tau": "accepted draft-prefix tokens / verification rounds; excludes the target bonus token",
+    "position_indexing": "zero-based within each draft chain",
+    "offered_denominator": "rounds that offered the position"
+  },
+  "source_commit": "85da378bcdcb80d951d38fb1f24cecdaa52cd168",
+  "artifact": {
+    "path": "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+    "sha256": "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de",
+    "loaded_arch": "qwen35",
+    "layers": 33,
+    "nextn_predict_layers": 1
+  },
+  "prompt": {
+    "path": "research/e2e/prompts/p1-code-short.txt",
+    "sha256": "6e00d76296069277dc7717115f977aedcab502b610c95a042c63c30eefdb86b2",
+    "chat_template": true,
+    "prompt_tokens": 37,
+    "generated_tokens_per_arm": 128
+  },
+  "rig": {
+    "gpu": "NVIDIA GeForce RTX 5090 Laptop GPU",
+    "gpu_uuid": "GPU-1a3cbffc-29df-926c-df5c-29b4c210ef5d",
+    "driver": "595.84",
+    "run_spec_sha256": "da005440c2faa8479246b0376acc07235cb47d3ff2e90c78df1ea84269e29707",
+    "foreign_context": "ColBERT index refresh, 1392 MiB, 0 percent GPU utilization at start",
+    "timing_is_scored": false
+  },
+  "arms": [
+    {
+      "k": 1,
+      "rounds": 67,
+      "drafted": 67,
+      "accepted": 61,
+      "tau": 0.910447761,
+      "full_accept_rounds": 61,
+      "offered_by_position": [67],
+      "accepted_by_position": [61],
+      "accept_rate_by_position": [0.910447761],
+      "self_consistency": "PASS"
+    },
+    {
+      "k": 2,
+      "rounds": 51,
+      "drafted": 102,
+      "accepted": 77,
+      "tau": 1.509803922,
+      "full_accept_rounds": 32,
+      "offered_by_position": [51, 51],
+      "accepted_by_position": [45, 32],
+      "accept_rate_by_position": [0.882352941, 0.62745098],
+      "self_consistency": "PASS"
+    },
+    {
+      "k": 3,
+      "rounds": 45,
+      "drafted": 135,
+      "accepted": 84,
+      "tau": 1.866666667,
+      "full_accept_rounds": 21,
+      "offered_by_position": [45, 45, 45],
+      "accepted_by_position": [37, 26, 21],
+      "accept_rate_by_position": [0.822222222, 0.577777778, 0.466666667],
+      "self_consistency": "PASS"
+    },
+    {
+      "k": 4,
+      "rounds": 38,
+      "drafted": 152,
+      "accepted": 91,
+      "tau": 2.394736842,
+      "full_accept_rounds": 11,
+      "offered_by_position": [38, 38, 38, 38],
+      "accepted_by_position": [34, 25, 21, 11],
+      "accept_rate_by_position": [0.894736842, 0.657894737, 0.552631579, 0.289473684],
+      "self_consistency": "PASS"
+    },
+    {
+      "k": 5,
+      "rounds": 37,
+      "drafted": 185,
+      "accepted": 92,
+      "tau": 2.486486486,
+      "full_accept_rounds": 4,
+      "offered_by_position": [37, 37, 37, 37, 37],
+      "accepted_by_position": [34, 24, 19, 11, 4],
+      "accept_rate_by_position": [0.918918919, 0.648648649, 0.513513514, 0.297297297, 0.108108108],
+      "self_consistency": "PASS"
+    },
+    {
+      "k": 6,
+      "rounds": 37,
+      "drafted": 222,
+      "accepted": 92,
+      "tau": 2.486486486,
+      "full_accept_rounds": 2,
+      "offered_by_position": [37, 37, 37, 37, 37, 37],
+      "accepted_by_position": [34, 24, 18, 10, 4, 2],
+      "accept_rate_by_position": [0.918918919, 0.648648649, 0.486486486, 0.27027027, 0.108108108, 0.054054054],
+      "self_consistency": "PASS"
+    },
+    {
+      "k": 7,
+      "rounds": 35,
+      "drafted": 245,
+      "accepted": 94,
+      "tau": 2.685714286,
+      "full_accept_rounds": 2,
+      "offered_by_position": [35, 35, 35, 35, 35, 35, 35],
+      "accepted_by_position": [32, 23, 19, 11, 5, 2, 2],
+      "accept_rate_by_position": [0.914285714, 0.657142857, 0.542857143, 0.314285714, 0.142857143, 0.057142857, 0.057142857],
+      "self_consistency": "PASS"
+    },
+    {
+      "k": 8,
+      "rounds": 35,
+      "drafted": 280,
+      "accepted": 94,
+      "tau": 2.685714286,
+      "full_accept_rounds": 1,
+      "offered_by_position": [35, 35, 35, 35, 35, 35, 35, 35],
+      "accepted_by_position": [32, 23, 19, 11, 4, 2, 2, 1],
+      "accept_rate_by_position": [0.914285714, 0.657142857, 0.542857143, 0.314285714, 0.114285714, 0.057142857, 0.057142857, 0.028571429],
+      "self_consistency": "PASS"
+    }
+  ],
+  "exactness": {
+    "run_spec_k1_through_k8": "PASS",
+    "run_spec_pass_count": 8,
+    "run_spec_exit_code": 0,
+    "run_gen_prefill_decode_argmax": "MATCH",
+    "run_gen_batched_prime_tokenwise_argmax": "MATCH",
+    "run_gen_exit_code": 0
+  }
+}

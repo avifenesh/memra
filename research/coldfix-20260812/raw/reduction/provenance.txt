@@ -1,0 +1,11 @@
+runtime_source=065a705d63461b2e3a7d945f824024fe0c482886
+analyzer_source=origin/main:d78884aa7c8e662f2c33a357125ac507b848d5bc:research/requal2-20260812/analyze.py
+analyzer_sha256=f4526bb7cb91f06b8d2f8e4d1c3e9ce4870dc5a1b7e4a0f9d4d7dd24b1ea15bc
+old_summary=research/requal-20260812/summary.json
+old_summary_sha256=e152c4250c90086dfe334883a03ebacaca0583fe6ecb1febf9e65e97c7e8a5e1
+frozen_reducer=research/sellgate-20260812/reduce.py
+frozen_reducer_sha256=eb231926686c3f97a69f8b023bff2f1ea19ed41b2e0b76b9ca5283aa69822d09
+raw_manifest_sha256=5804c57af75bd5b738a77a0ba175eb92f4e2684da1fe3b93f058b18ab2d8b727
+command=python3 raw/reduction/analyze.py --raw raw/box1-accept --old-summary raw/reduction/old-summary.json --frozen-reducer raw/reduction/frozen-reducer.py --out analysis.json
+analysis_sha256=092c8e42489009984c363afe992482f4ef59799797ada00ed4d11a0eea41c2e3
+result=overall_verdict:P0_REGRESSION,p0_regressions:1,q27:SELLABLE,q35:SELLABLE

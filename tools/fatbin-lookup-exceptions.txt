@@ -1,0 +1,107 @@
+# Declared arch-conditional kernel lookups, for tools/fatbin-lookup-census.py.
+#
+# FORMAT:  <arch> <kernel_symbol>   # why this arch legitimately lacks it, and what guards the
+#                                   # call site so Engine::func is never reached for it
+#
+# An entry here says: "this kernel is absent from this arch's fatbins ON PURPOSE, and the Rust
+# call site is guarded so the lookup never happens." It is NOT a way to silence a panic. If the
+# call site is not guarded, the fix is to guard it — not to add a line here.
+#
+# WHY EVERY LINE CARRIES ITS REASON. The census is NAME-LEVEL: it greps `.func("x")` out of the
+# Rust sources with no notion of reachability, so it reports lookups that are correctly
+# unreachable. That over-approximation is deliberate (no false negatives), and this file is where
+# the reachability argument gets written down. A bare symbol list would be worthless — it would
+# record that someone once decided something was fine, not why. That is exactly the class of thing
+# a 75-name grandfather list was deleted over on 2026-08-23: all 75 of its entries had gone dead
+# and nothing noticed, because no entry said what it was for.
+#
+# I got this wrong in the other direction first, which is why the reasons are this explicit. A
+# grep for `portable_mma_gated` inside src/hybrid_forward.rs finds nothing, and I reported that as
+# "the batched GDN path is unguarded" — a published claim that sm_89 assets could panic. The guard
+# is ONE CALL DEEP (`gdn_mma_enabled()`), and a name-level check is not a reachability check.
+#
+# THIS FILE HAS ITS OWN DRIFT CHECK. The census refuses when an entry rots in either direction:
+# the symbol is now PRESENT for that arch (grant dead), or the symbol is no longer looked up
+# anywhere (renamed/deleted, so the grant now covers whatever next takes the name).
+#
+# =============================================================================================
+# sm_89 (portable Ada) — the GDN varlen + mma chain.
+#
+# SHARED REASON for the 17 GDN entries below. cu/hybrid.cu:1575-2238 is
+# `#if !defined(MEMRA_PORTABLE_CUDA) || defined(MEMRA_HOPPER_MMA)` with no #else, so sm_89 does
+# not get these. Every one of them is unreachable on sm_89, traced call site by call site:
+#
+#   * the 14 `*_vl` kernels are launched only by the five `*_vl8` wrappers, and each wrapper has
+#     EXACTLY ONE caller — all inside the `use_vl` block at src/hybrid_forward.rs:4058-4099.
+#     `use_vl` (:3937) requires `e.gdn_mma_enabled(c)`, and gdn_mma_enabled (src/lib.rs:24097)
+#     begins with `!portable_mma_gated()`. On sm_89 `use_vl` is false and the function returns
+#     early to linear_attn_prime_core_pad_view, which uses the generic fallback. Verified by
+#     enumerating callers of all five wrappers: one each, no others.
+#   * gdn_chunk_state_mma / gdn_chunk_output_mma (src/lib.rs:24861, :24889) sit under `gdn_mma`
+#     (:24797), which is `!portable_mma_gated() && …`.
+#   * gdn_chunk_attn_f32 (src/lib.rs:23969) sits under `c <= 64 && !portable_mma_gated()` (:23967)
+#     — the guard the other two mirror, and the one docs/FLAGS.md describes when it says sm_89
+#     runs "tiled GDN on its generic fallback".
+89 gated_rmsnorm_f16out_vl   # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_chunk_attn_vl         # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_chunk_cumgate_vl      # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_chunk_output_mma_vl   # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_chunk_solve32_vl      # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_chunk_state_mma_vl    # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_gate_prep_vl          # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_l2_v2_vl              # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_l2_vl                 # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_mirror_vl             # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 qkv_to_gdn_repack_vl      # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 ssm_conv1d_gdn_state_vl   # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 ssm_conv1d_tm_state_vl    # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 ssm_conv_ring_update_vl   # vl8 chain, unreachable: use_vl -> gdn_mma_enabled -> !portable
+89 gdn_chunk_state_mma       # src/lib.rs:24861 under gdn_mma (:24797) = !portable_mma_gated()
+89 gdn_chunk_output_mma      # src/lib.rs:24889 under gdn_mma (:24797) = !portable_mma_gated()
+89 gdn_chunk_attn_f32        # src/lib.rs:23969 under `c <= 64 && !portable_mma_gated()` (:23967)
+
+# The two ENV-DOOR entries. These were the only genuinely reachable ones on sm_89, and only by
+# explicit operator action: `MEMRA_FA3=1` and `MEMRA_FP4=1` had force arms (`Ok("1") => true`)
+# that never consulted the arch, so a forced path reached a kernel the build omits. FIXED
+# 2026-08-23 — all three doors now call refuse_portable_force() and fail at the switch with a
+# named message instead of at the lookup with "kernel <name> not in any fatbin". They stay listed
+# because the lookups still exist in the source; the refusal is what makes them unreachable.
+89 f32_to_bf16_bulk         # cu/hybrid.cu:1623. Reached only via MEMRA_FA3=1, which now refuses
+89 qmatvec_gemm_nvfp4_fp4   # cu/qmatvec_gemm.cu:1234. Only via MEMRA_FP4, which now refuses
+89 qmatvec_gemm_q8_0_wgmma  # all call sites behind cfg!(memra_hopper_mma) — compiled out on 89
+
+# =============================================================================================
+# sm_90a (Hopper). Portable, but MEMRA_HOPPER_MMA re-enables the sm_80-class tensor-core paths,
+# so it keeps the whole GDN chain. Only the sm_120a-only MMA kinds are missing.
+90a qmatvec_gemm_nvfp4_fp4  # cu/qmatvec_gemm.cu:1234 mxf4 block-scale MMA is sm_120a-only; only
+                            # reachable via MEMRA_FP4, which now refuses on portable builds
+
+# =============================================================================================
+# sm_100a (datacenter Blackwell, B200). Compile-covered by a ci.yml matrix cell since
+# lane/glm5-b200-prep-20260901; NOT in release.yml (zero runtime receipts on the silicon — see
+# build.rs detect_arch). Only the sm_120a-only MMA-kind kernels are missing.
+100a qmatvec_gemm_nvfp4_fp4   # build.rs compiles cu/qmatvec_gemm.cu with -DMEMRA_DISABLE_NATIVE_FP4=1
+                              # on 100a (mxf4 block-scale MMA is sm_120a-only). TWO reachable-in-
+                              # principle call chains, both now guarded on the 120a PROPERTY:
+                              # the MEMRA_FP4 door asserts MEMRA_BUILT_CUDA_ARCH == 120a (lib.rs,
+                              # the nvfp4_native_prefill gate — refuses at the switch, by name),
+                              # and kernel_check's Stage-C FP4 arm keys `nvfp4_checks` on the same
+                              # property (kernel_check.rs — it records a SKIP cell on 100a; its
+                              # old !portable gate reached this lookup with no env force at all,
+                              # found by this row's first review).
+100a qmatvec_gemm_q8_0_wgmma  # wgmma is Hopper-only. All THREE call sites (src/mmq_ffi.rs,
+                              # src/lib.rs, and kernel_check's wgmma-mirror arm) are inside
+                              # `cfg!(memra_hopper_mma)` blocks, a COMPILE-TIME cfg that build.rs
+                              # sets only for 90a — false on 100a, so the branches are not in the
+                              # binary at all. Same strongest-kind guard as the sm_120a entry
+                              # below.
+
+# =============================================================================================
+# sm_120a (the serving arch). One entry, and it is the strongest kind of guard there is.
+120a qmatvec_gemm_q8_0_wgmma  # wgmma is Hopper-only. All THREE call sites (src/mmq_ffi.rs:1374,
+                              # src/lib.rs:16316, and kernel_check's wgmma-mirror arm) are inside
+                              # `cfg!(memra_hopper_mma)` blocks, a COMPILE-TIME cfg that is false
+                              # here, so the branch is not in
+                              # the binary at all and the lookup cannot execute. This is why the
+                              # census must never be landed without this line: it would red CI
+                              # on the arch we actually serve, on a false positive.

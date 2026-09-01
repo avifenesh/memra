@@ -1,0 +1,466 @@
+HEAD 6f0aca67c519c81ffb04e0ea05c4a533f30dc0c6
+=== E2: thinkon adapt1 + pmin0.3 ===
+# qwen4exp_real_gate	label=adm-thinkon-a1p03	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+# load	176.7s
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+# qwen4exp_real_gate	label=adm-thinkon-a1p03	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# spec-ab k=5: plain greedy decode vs spec_generate, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len
+0	plain	256	15.62	64.01	-	-
+0	spec	256	13.43	74.48	0.613	1.92
+# round-cost	rep=0	rounds=133	chain_ms=2.09	replay_ms=0.73	verify_ms=22.67	cross_ms=0.021	draft_prefill_ms=26.4	zero_draft=31	guard_stops=41	plain_steps=0	k_decays=[]
+1	plain	256	15.66	63.87	-	-
+1	spec	256	13.42	74.52	0.613	1.92
+# round-cost	rep=1	rounds=133	chain_ms=2.09	replay_ms=0.72	verify_ms=22.69	cross_ms=0.021	draft_prefill_ms=23.9	zero_draft=31	guard_stops=41	plain_steps=0	k_decays=[]
+2	plain	256	15.70	63.68	-	-
+2	spec	256	13.25	75.48	0.613	1.92
+# round-cost	rep=2	rounds=133	chain_ms=2.09	replay_ms=0.73	verify_ms=22.36	cross_ms=0.020	draft_prefill_ms=24.0	zero_draft=31	guard_stops=41	plain_steps=0	k_decays=[]
+3	plain	256	15.54	64.36	-	-
+3	spec	256	13.28	75.33	0.613	1.92
+# round-cost	rep=3	rounds=133	chain_ms=2.09	replay_ms=0.72	verify_ms=22.41	cross_ms=0.020	draft_prefill_ms=24.3	zero_draft=31	guard_stops=41	plain_steps=0	k_decays=[]
+4	plain	256	15.51	64.47	-	-
+4	spec	256	13.14	76.09	0.613	1.92
+# round-cost	rep=4	rounds=133	chain_ms=2.09	replay_ms=0.72	verify_ms=22.16	cross_ms=0.020	draft_prefill_ms=23.8	zero_draft=31	guard_stops=41	plain_steps=0	k_decays=[]
+# arm plain	mean_of_means_ms=15.61	min=15.51	max=15.70	tok_per_s=64.08
+# arm spec	mean_of_means_ms=13.30	min=13.14	max=13.43	tok_per_s=75.17
+# rep0_plain_vs_spec_first_divergence	-1
+# accept_hist_total	315,205,75,35,25,10
+# rep0_plain	1596,1144,4087,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,271,3850,1156,3105,914,3300,709,13,14235,4222,2466,364,1970,30,1921,6970,3481,13553,4087,30,14235,7936,1534,13,14235,6970,1528,1144,3889,709,13,1921,8106,628,3300,3683,13,14235,25705,25,5335,4667,5792,5829,709,310,3203,14,11093,45328,1412,50921,6681,11,321,1910,19260,4203,13,8439,874,1970,11,567,628,1910,4338,3300,709,11,694,1048,2873,4437,5215,13,14235,6970,6088,1412,35718,4667,50921,25,4667,3831,11,1067,553,20776,14,11093,25,2430,5787,11,460,1067,13,54184,25,874,4667,11,958,2454,4613,1380,2805,730,466,641,3282,11591,6947,13,78503,6681,25,413,4667,2512,440,1412,11,7602,14,6897,26,413,2512,440,819,321,869,11,8563,869,26,413,4667,2512,5081,2942,30,5829,25827,5802,2957,13,14235,20480,413,4667,2496,2512,30,7076,2496,88749,30,1921,3203,14,11093,628,914,20480,20078,7014,9345,13,14235,20480,63723,3659,30,1368,3889,709,6526,4667,13716,6799,440,1412,11,3203,709,1220,2430,13716,6799,30,32645,3203,709,4523,17030,10896,11,524,63723,2430,13,1368,19260,3481,63723,2430,30,21964,5792,709,2493,2430,13716,6799,466
+# rep0_spec	1596,1144,4087,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,271,3850,1156,3105,914,3300,709,13,14235,4222,2466,364,1970,30,1921,6970,3481,13553,4087,30,14235,7936,1534,13,14235,6970,1528,1144,3889,709,13,1921,8106,628,3300,3683,13,14235,25705,25,5335,4667,5792,5829,709,310,3203,14,11093,45328,1412,50921,6681,11,321,1910,19260,4203,13,8439,874,1970,11,567,628,1910,4338,3300,709,11,694,1048,2873,4437,5215,13,14235,6970,6088,1412,35718,4667,50921,25,4667,3831,11,1067,553,20776,14,11093,25,2430,5787,11,460,1067,13,54184,25,874,4667,11,958,2454,4613,1380,2805,730,466,641,3282,11591,6947,13,78503,6681,25,413,4667,2512,440,1412,11,7602,14,6897,26,413,2512,440,819,321,869,11,8563,869,26,413,4667,2512,5081,2942,30,5829,25827,5802,2957,13,14235,20480,413,4667,2496,2512,30,7076,2496,88749,30,1921,3203,14,11093,628,914,20480,20078,7014,9345,13,14235,20480,63723,3659,30,1368,3889,709,6526,4667,13716,6799,440,1412,11,3203,709,1220,2430,13716,6799,30,32645,3203,709,4523,17030,10896,11,524,63723,2430,13,1368,19260,3481,63723,2430,30,21964,5792,709,2493,2430,13716,6799,466
+
+# spec-ab receipt: /home/ubuntu/realgate/mtp10/adm/ab-spec-k5-adm-thinkon-a1p03.tsv
+# qwen4exp_real_gate	label=adm-thinkon-a1p03	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# load_seconds=176.7
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.29
+# vram	post-prefill	0, 90131 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.069e-2	1.069e-2	6.315e-4	5.039e-1
+layer4	10	10240	2.400e-2	2.400e-2	8.802e-4	5.000e-1
+layer5	10	10240	4.044e-2	2.199e-2	1.002e-3	3.047e0
+layer6	10	10240	3.950e-2	2.825e-2	1.187e-3	3.078e0
+layer7	10	10240	3.766e-2	3.047e-2	1.342e-3	3.047e0
+layer8	10	10240	3.723e-2	3.028e-2	1.464e-3	3.062e0
+layer9	10	10240	3.919e-2	3.018e-2	1.565e-3	3.062e0
+layer10	10	10240	3.944e-2	3.034e-2	1.643e-3	3.125e0
+layer11	10	10240	4.564e-2	3.057e-2	1.741e-3	3.016e0
+layer12	10	10240	3.579e-2	3.108e-2	1.835e-3	2.953e0
+layer13	10	10240	3.742e-2	3.152e-2	1.919e-3	2.984e0
+layer14	10	10240	3.983e-2	3.028e-2	2.022e-3	3.016e0
+layer15	10	10240	3.942e-2	3.175e-2	2.104e-3	2.953e0
+layer16	10	10240	3.426e-2	3.027e-2	2.300e-3	2.938e0
+layer17	10	10240	3.720e-2	3.012e-2	2.368e-3	2.969e0
+layer18	10	10240	3.641e-2	3.641e-2	2.649e-3	2.969e0
+layer19	10	10240	3.828e-2	3.828e-2	2.727e-3	3.000e0
+layer20	10	10240	3.628e-2	3.628e-2	2.774e-3	2.938e0
+layer21	10	10240	3.821e-2	3.821e-2	2.970e-3	2.969e0
+layer22	10	10240	3.808e-2	3.808e-2	3.195e-3	2.969e0
+layer23	10	10240	4.135e-2	4.135e-2	3.286e-3	2.969e0
+layer24	10	10240	4.415e-2	4.415e-2	3.629e-3	3.828e0
+layer25	10	10240	4.598e-2	4.598e-2	3.749e-3	3.859e0
+layer26	10	10240	4.796e-2	4.796e-2	4.048e-3	5.062e0
+layer27	10	10240	5.241e-2	5.241e-2	4.362e-3	4.750e0
+layer28	10	10240	6.440e-2	6.440e-2	4.784e-3	4.531e0
+layer29	10	10240	7.918e-2	7.918e-2	5.283e-3	4.469e0
+layer30	10	10240	8.751e-2	8.751e-2	5.835e-3	4.438e0
+layer31	10	10240	1.252e-1	1.252e-1	6.236e-3	4.281e0
+layer32	10	10240	1.439e-1	1.439e-1	6.911e-3	3.891e0
+layer33	10	10240	1.524e-1	1.524e-1	7.579e-3	3.844e0
+layer34	10	10240	1.494e-1	1.494e-1	8.300e-3	3.828e0
+layer35	10	10240	1.632e-1	1.632e-1	9.258e-3	3.859e0
+layer36	10	10240	3.300e-1	3.300e-1	1.263e-2	6.844e0
+layer37	10	10240	3.278e-1	3.278e-1	1.420e-2	7.094e0
+layer38	10	10240	3.274e-1	3.274e-1	1.643e-2	7.094e0
+layer39	10	10240	3.848e-1	3.778e-1	1.920e-2	7.188e0
+layer40	10	10240	4.305e-1	4.217e-1	2.234e-2	7.219e0
+layer41	10	10240	4.475e-1	4.108e-1	2.430e-2	7.125e0
+layer42	10	10240	4.586e-1	3.913e-1	2.669e-2	7.156e0
+layer43	10	10240	4.799e-1	4.158e-1	2.980e-2	7.188e0
+layer44	10	10240	6.259e-1	6.259e-1	3.642e-2	1.162e1
+layer45	10	10240	7.158e-1	7.060e-1	4.507e-2	1.169e1
+layer46	10	10240	8.605e-1	8.605e-1	5.328e-2	1.350e1
+layer47	10	10240	9.034e-1	9.034e-1	5.724e-2	2.575e1
+exit_mixer	10	2560	1.279e1	6.599e0	4.373e-1	1.880e2
+logits	10	248320	6.183e0	4.901e0	2.689e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.553e-1	3.553e-1	1.231e1	20438	20438	true
+1	1.170e0	1.057e0	1.431e1	4087	4087	true
+2	1.182e0	1.046e0	1.800e1	37550	37550	true
+3	1.315e0	1.012e0	1.638e1	33075	33075	true
+4	1.883e0	1.825e0	1.888e1	888	888	true
+5	1.522e0	1.332e0	1.862e1	279	279	true
+6	2.620e0	1.682e0	1.950e1	15217	15217	true
+7	1.841e0	1.686e0	1.888e1	5388	5388	true
+8	1.908e0	1.846e0	1.575e1	13	13	true
+9	6.183e0	4.901e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/home/ubuntu/realgate/mtp10/adm/probe-logits-adm-thinkon-a1p03.bin	rows=10	vocab=248320
+
+# hidden receipt: /home/ubuntu/realgate/mtp10/adm/hidden-gate-adm-thinkon-a1p03.tsv
+# greedy prompt 0: first_divergence=0 matched=0/83 prefill=1.04s mean_decode=15.5ms
+# greedy prompt 1: first_divergence=0 matched=0/91 prefill=1.10s mean_decode=15.5ms
+# greedy prompt 2: first_divergence=0 matched=0/104 prefill=1.21s mean_decode=15.5ms
+# greedy prompt 3: first_divergence=0 matched=0/105 prefill=1.20s mean_decode=15.5ms
+# greedy receipt: /home/ubuntu/realgate/mtp10/adm/greedy-gate-adm-thinkon-a1p03.tsv
+# spec-gate prompt 0: first_divergence=-1 accept_rate=0.786 mean_len=3.37 spec=9.9ms plain=15.1ms
+# spec-gate prompt 1: first_divergence=-1 accept_rate=0.750 mean_len=3.56 spec=10.1ms plain=15.1ms
+# spec-gate prompt 2: first_divergence=-1 accept_rate=0.787 mean_len=3.37 spec=10.2ms plain=15.2ms
+# spec-gate prompt 3: first_divergence=-1 accept_rate=0.759 mean_len=3.37 spec=10.0ms plain=15.2ms
+# spec-gate receipt: /home/ubuntu/realgate/mtp10/adm/spec-gate-k5-adm-thinkon-a1p03.tsv
+=== E2: thinkon adapt1 + pmin0.5 ===
+# qwen4exp_real_gate	label=adm-thinkon-a1p05	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.5 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+# load	177.0s
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+# qwen4exp_real_gate	label=adm-thinkon-a1p05	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.5 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# spec-ab k=5: plain greedy decode vs spec_generate, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len
+0	plain	256	15.65	63.91	-	-
+0	spec	256	14.17	70.58	0.683	1.60
+# round-cost	rep=0	rounds=160	chain_ms=1.51	replay_ms=0.67	verify_ms=20.23	cross_ms=0.020	draft_prefill_ms=26.0	zero_draft=72	guard_stops=87	plain_steps=0	k_decays=[]
+1	plain	256	15.67	63.80	-	-
+1	spec	256	14.20	70.43	0.683	1.60
+# round-cost	rep=1	rounds=160	chain_ms=1.51	replay_ms=0.67	verify_ms=20.29	cross_ms=0.021	draft_prefill_ms=24.2	zero_draft=72	guard_stops=87	plain_steps=0	k_decays=[]
+2	plain	256	15.66	63.85	-	-
+2	spec	256	13.96	71.65	0.683	1.60
+# round-cost	rep=2	rounds=160	chain_ms=1.51	replay_ms=0.67	verify_ms=19.91	cross_ms=0.020	draft_prefill_ms=24.2	zero_draft=72	guard_stops=87	plain_steps=0	k_decays=[]
+3	plain	256	15.58	64.20	-	-
+3	spec	256	13.93	71.78	0.683	1.60
+# round-cost	rep=3	rounds=160	chain_ms=1.52	replay_ms=0.66	verify_ms=19.88	cross_ms=0.020	draft_prefill_ms=23.6	zero_draft=72	guard_stops=87	plain_steps=0	k_decays=[]
+4	plain	256	15.49	64.58	-	-
+4	spec	256	13.89	72.00	0.683	1.60
+# round-cost	rep=4	rounds=160	chain_ms=1.51	replay_ms=0.66	verify_ms=19.81	cross_ms=0.020	draft_prefill_ms=23.6	zero_draft=72	guard_stops=87	plain_steps=0	k_decays=[]
+# arm plain	mean_of_means_ms=15.61	min=15.49	max=15.67	tok_per_s=64.07
+# arm spec	mean_of_means_ms=14.03	min=13.89	max=14.20	tok_per_s=71.28
+# rep0_plain_vs_spec_first_divergence	-1
+# accept_hist_total	505,205,40,20,20,10
+# rep0_plain	1596,1144,4087,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,271,3850,1156,3105,914,3300,709,13,14235,4222,2466,364,1970,30,1921,6970,3481,13553,4087,30,14235,7936,1534,13,14235,6970,1528,1144,3889,709,13,1921,8106,628,3300,3683,13,14235,25705,25,5335,4667,5792,5829,709,310,3203,14,11093,45328,1412,50921,6681,11,321,1910,19260,4203,13,8439,874,1970,11,567,628,1910,4338,3300,709,11,694,1048,2873,4437,5215,13,14235,6970,6088,1412,35718,4667,50921,25,4667,3831,11,1067,553,20776,14,11093,25,2430,5787,11,460,1067,13,54184,25,874,4667,11,958,2454,4613,1380,2805,730,466,641,3282,11591,6947,13,78503,6681,25,413,4667,2512,440,1412,11,7602,14,6897,26,413,2512,440,819,321,869,11,8563,869,26,413,4667,2512,5081,2942,30,5829,25827,5802,2957,13,14235,20480,413,4667,2496,2512,30,7076,2496,88749,30,1921,3203,14,11093,628,914,20480,20078,7014,9345,13,14235,20480,63723,3659,30,1368,3889,709,6526,4667,13716,6799,440,1412,11,3203,709,1220,2430,13716,6799,30,32645,3203,709,4523,17030,10896,11,524,63723,2430,13,1368,19260,3481,63723,2430,30,21964,5792,709,2493,2430,13716,6799,466
+# rep0_spec	1596,1144,4087,1156,25,328,11670,411,4667,5792,5829,709,310,3203,14,11093,11,45328,279,1412,50921,6681,11,321,1910,1092,4203,364,264,19260,421,1429,310,1440,264,4667,1149,271,3850,1156,3105,914,3300,709,13,14235,4222,2466,364,1970,30,1921,6970,3481,13553,4087,30,14235,7936,1534,13,14235,6970,1528,1144,3889,709,13,1921,8106,628,3300,3683,13,14235,25705,25,5335,4667,5792,5829,709,310,3203,14,11093,45328,1412,50921,6681,11,321,1910,19260,4203,13,8439,874,1970,11,567,628,1910,4338,3300,709,11,694,1048,2873,4437,5215,13,14235,6970,6088,1412,35718,4667,50921,25,4667,3831,11,1067,553,20776,14,11093,25,2430,5787,11,460,1067,13,54184,25,874,4667,11,958,2454,4613,1380,2805,730,466,641,3282,11591,6947,13,78503,6681,25,413,4667,2512,440,1412,11,7602,14,6897,26,413,2512,440,819,321,869,11,8563,869,26,413,4667,2512,5081,2942,30,5829,25827,5802,2957,13,14235,20480,413,4667,2496,2512,30,7076,2496,88749,30,1921,3203,14,11093,628,914,20480,20078,7014,9345,13,14235,20480,63723,3659,30,1368,3889,709,6526,4667,13716,6799,440,1412,11,3203,709,1220,2430,13716,6799,30,32645,3203,709,4523,17030,10896,11,524,63723,2430,13,1368,19260,3481,63723,2430,30,21964,5792,709,2493,2430,13716,6799,466
+
+# spec-ab receipt: /home/ubuntu/realgate/mtp10/adm/ab-spec-k5-adm-thinkon-a1p05.tsv
+# qwen4exp_real_gate	label=adm-thinkon-a1p05	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.5 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# load_seconds=177.0
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.28
+# vram	post-prefill	0, 90131 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.069e-2	1.069e-2	6.315e-4	5.039e-1
+layer4	10	10240	2.400e-2	2.400e-2	8.802e-4	5.000e-1
+layer5	10	10240	4.044e-2	2.199e-2	1.002e-3	3.047e0
+layer6	10	10240	3.950e-2	2.825e-2	1.187e-3	3.078e0
+layer7	10	10240	3.766e-2	3.047e-2	1.342e-3	3.047e0
+layer8	10	10240	3.723e-2	3.028e-2	1.464e-3	3.062e0
+layer9	10	10240	3.919e-2	3.018e-2	1.565e-3	3.062e0
+layer10	10	10240	3.944e-2	3.034e-2	1.643e-3	3.125e0
+layer11	10	10240	4.564e-2	3.057e-2	1.741e-3	3.016e0
+layer12	10	10240	3.579e-2	3.108e-2	1.835e-3	2.953e0
+layer13	10	10240	3.742e-2	3.152e-2	1.919e-3	2.984e0
+layer14	10	10240	3.983e-2	3.028e-2	2.022e-3	3.016e0
+layer15	10	10240	3.942e-2	3.175e-2	2.104e-3	2.953e0
+layer16	10	10240	3.426e-2	3.027e-2	2.300e-3	2.938e0
+layer17	10	10240	3.720e-2	3.012e-2	2.368e-3	2.969e0
+layer18	10	10240	3.641e-2	3.641e-2	2.649e-3	2.969e0
+layer19	10	10240	3.828e-2	3.828e-2	2.727e-3	3.000e0
+layer20	10	10240	3.628e-2	3.628e-2	2.774e-3	2.938e0
+layer21	10	10240	3.821e-2	3.821e-2	2.970e-3	2.969e0
+layer22	10	10240	3.808e-2	3.808e-2	3.195e-3	2.969e0
+layer23	10	10240	4.135e-2	4.135e-2	3.286e-3	2.969e0
+layer24	10	10240	4.415e-2	4.415e-2	3.629e-3	3.828e0
+layer25	10	10240	4.598e-2	4.598e-2	3.749e-3	3.859e0
+layer26	10	10240	4.796e-2	4.796e-2	4.048e-3	5.062e0
+layer27	10	10240	5.241e-2	5.241e-2	4.362e-3	4.750e0
+layer28	10	10240	6.440e-2	6.440e-2	4.784e-3	4.531e0
+layer29	10	10240	7.918e-2	7.918e-2	5.283e-3	4.469e0
+layer30	10	10240	8.751e-2	8.751e-2	5.835e-3	4.438e0
+layer31	10	10240	1.252e-1	1.252e-1	6.236e-3	4.281e0
+layer32	10	10240	1.439e-1	1.439e-1	6.911e-3	3.891e0
+layer33	10	10240	1.524e-1	1.524e-1	7.579e-3	3.844e0
+layer34	10	10240	1.494e-1	1.494e-1	8.300e-3	3.828e0
+layer35	10	10240	1.632e-1	1.632e-1	9.258e-3	3.859e0
+layer36	10	10240	3.300e-1	3.300e-1	1.263e-2	6.844e0
+layer37	10	10240	3.278e-1	3.278e-1	1.420e-2	7.094e0
+layer38	10	10240	3.274e-1	3.274e-1	1.643e-2	7.094e0
+layer39	10	10240	3.848e-1	3.778e-1	1.920e-2	7.188e0
+layer40	10	10240	4.305e-1	4.217e-1	2.234e-2	7.219e0
+layer41	10	10240	4.475e-1	4.108e-1	2.430e-2	7.125e0
+layer42	10	10240	4.586e-1	3.913e-1	2.669e-2	7.156e0
+layer43	10	10240	4.799e-1	4.158e-1	2.980e-2	7.188e0
+layer44	10	10240	6.259e-1	6.259e-1	3.642e-2	1.162e1
+layer45	10	10240	7.158e-1	7.060e-1	4.507e-2	1.169e1
+layer46	10	10240	8.605e-1	8.605e-1	5.328e-2	1.350e1
+layer47	10	10240	9.034e-1	9.034e-1	5.724e-2	2.575e1
+exit_mixer	10	2560	1.279e1	6.599e0	4.373e-1	1.880e2
+logits	10	248320	6.183e0	4.901e0	2.689e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.553e-1	3.553e-1	1.231e1	20438	20438	true
+1	1.170e0	1.057e0	1.431e1	4087	4087	true
+2	1.182e0	1.046e0	1.800e1	37550	37550	true
+3	1.315e0	1.012e0	1.638e1	33075	33075	true
+4	1.883e0	1.825e0	1.888e1	888	888	true
+5	1.522e0	1.332e0	1.862e1	279	279	true
+6	2.620e0	1.682e0	1.950e1	15217	15217	true
+7	1.841e0	1.686e0	1.888e1	5388	5388	true
+8	1.908e0	1.846e0	1.575e1	13	13	true
+9	6.183e0	4.901e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/home/ubuntu/realgate/mtp10/adm/probe-logits-adm-thinkon-a1p05.bin	rows=10	vocab=248320
+
+# hidden receipt: /home/ubuntu/realgate/mtp10/adm/hidden-gate-adm-thinkon-a1p05.tsv
+# greedy prompt 0: first_divergence=0 matched=0/83 prefill=1.03s mean_decode=15.2ms
+# greedy prompt 1: first_divergence=0 matched=0/91 prefill=1.10s mean_decode=15.2ms
+# greedy prompt 2: first_divergence=0 matched=0/104 prefill=1.21s mean_decode=15.3ms
+# greedy prompt 3: first_divergence=0 matched=0/105 prefill=1.20s mean_decode=15.3ms
+# greedy receipt: /home/ubuntu/realgate/mtp10/adm/greedy-gate-adm-thinkon-a1p05.tsv
+# spec-gate prompt 0: first_divergence=-1 accept_rate=0.820 mean_len=2.91 spec=10.1ms plain=15.0ms
+# spec-gate prompt 1: first_divergence=-1 accept_rate=0.918 mean_len=3.56 spec=9.3ms plain=15.2ms
+# spec-gate prompt 2: first_divergence=-1 accept_rate=0.852 mean_len=3.05 spec=10.3ms plain=15.2ms
+# spec-gate prompt 3: first_divergence=-1 accept_rate=0.800 mean_len=3.37 spec=9.8ms plain=15.2ms
+# spec-gate receipt: /home/ubuntu/realgate/mtp10/adm/spec-gate-k5-adm-thinkon-a1p05.tsv
+=== E2: thinkoff adapt1 (guard tax on the winning shape) ===
+# qwen4exp_real_gate	label=adm-thinkoff-adapt1	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.0 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+# load	171.6s
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+# qwen4exp_real_gate	label=adm-thinkoff-adapt1	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.0 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# spec-ab k=5: plain greedy decode vs spec_generate, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len
+0	plain	256	15.34	65.19	-	-
+0	spec	256	10.06	99.39	0.764	3.66
+# round-cost	rep=0	rounds=70	chain_ms=4.54	replay_ms=0.97	verify_ms=30.88	cross_ms=0.021	draft_prefill_ms=17.8	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+1	plain	256	15.33	65.24	-	-
+1	spec	256	9.88	101.24	0.764	3.66
+# round-cost	rep=1	rounds=70	chain_ms=4.53	replay_ms=0.96	verify_ms=30.27	cross_ms=0.021	draft_prefill_ms=15.6	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+2	plain	256	15.28	65.45	-	-
+2	spec	256	9.79	102.18	0.764	3.66
+# round-cost	rep=2	rounds=70	chain_ms=4.53	replay_ms=0.96	verify_ms=29.94	cross_ms=0.021	draft_prefill_ms=15.5	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+3	plain	256	15.27	65.49	-	-
+3	spec	256	9.64	103.74	0.764	3.66
+# round-cost	rep=3	rounds=70	chain_ms=4.53	replay_ms=0.96	verify_ms=29.40	cross_ms=0.021	draft_prefill_ms=15.6	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+4	plain	256	15.17	65.90	-	-
+4	spec	256	9.63	103.88	0.764	3.66
+# round-cost	rep=4	rounds=70	chain_ms=4.53	replay_ms=0.96	verify_ms=29.35	cross_ms=0.021	draft_prefill_ms=15.6	zero_draft=0	guard_stops=0	plain_steps=0	k_decays=[]
+# arm plain	mean_of_means_ms=15.28	min=15.17	max=15.34	tok_per_s=65.45
+# arm spec	mean_of_means_ms=9.80	min=9.63	max=10.06	tok_per_s=102.06
+# rep0_plain_vs_spec_first_divergence	-1
+# accept_hist_total	45,55,60,60,65,65
+# rep0_plain	2,1160,47755,21964,58303,5829,5534,310,20776,10052,11158,271,550,561,41096,271,12189,488,3105,914,3300,264,3050,709,11,353,3172,19264,440,264,17697,3010,321,10033,279,4437,5215,13,271,13962,12851,318,7259,5792,8,271,71093,13670,198,989,8355,283,1325,482,3720,4515,271,1628,59649,2939,14048,28638,11,4667,8,313,198,220,8355,52745,28638,11,359,4609,23,504,318,600,11,795,8,574,313,198,262,413,318,600,8,313,198,406,4667,3831,1174,198,406,460,26,198,262,333,198,262,1380,313,198,406,713,15215,283,4566,4482,2507,1174,198,406,4667,4806,11,15215,1174,198,262,333,2213,318,6199,7501,8,313,198,406,4667,26862,7501,1174,198,262,333,198,220,17574,198,92,198,71093,271,13962,4486,318,7449,14,11093,8,271,71093,13670,198,989,8355,283,1325,482,3720,1760,23693,4750,26,271,7449,709,59649,2939,14048,28638,8,313,198,220,713,795,283,2454,8355,52745,28638,11,359,4609,23,4515,198,220,460,4566,4482,2507,1174,198,92,198,71093,271,550,5141,27227,594,3975,2683,4451,13840,35035,271,91,77295,735,21964,5889,735,20776,10052,11158,5889,735,198,91,4277,91,4277,91,4277,91,198,91,2972,1401,51842,332,735,1510,13105,3831,44646,735,1510,6897,63,318,29925,4417,17030,10896,8,735,198
+# rep0_spec	2,1160,47755,21964,58303,5829,5534,310,20776,10052,11158,271,550,561,41096,271,12189,488,3105,914,3300,264,3050,709,11,353,3172,19264,440,264,17697,3010,321,10033,279,4437,5215,13,271,13962,12851,318,7259,5792,8,271,71093,13670,198,989,8355,283,1325,482,3720,4515,271,1628,59649,2939,14048,28638,11,4667,8,313,198,220,8355,52745,28638,11,359,4609,23,504,318,600,11,795,8,574,313,198,262,413,318,600,8,313,198,406,4667,3831,1174,198,406,460,26,198,262,333,198,262,1380,313,198,406,713,15215,283,4566,4482,2507,1174,198,406,4667,4806,11,15215,1174,198,262,333,2213,318,6199,7501,8,313,198,406,4667,26862,7501,1174,198,262,333,198,220,17574,198,92,198,71093,271,13962,4486,318,7449,14,11093,8,271,71093,13670,198,989,8355,283,1325,482,3720,1760,23693,4750,26,271,7449,709,59649,2939,14048,28638,8,313,198,220,713,795,283,2454,8355,52745,28638,11,359,4609,23,4515,198,220,460,4566,4482,2507,1174,198,92,198,71093,271,550,5141,27227,594,3975,2683,4451,13840,35035,271,91,77295,735,21964,5889,735,20776,10052,11158,5889,735,198,91,4277,91,4277,91,4277,91,198,91,2972,1401,51842,332,735,1510,13105,3831,44646,735,1510,6897,63,318,29925,4417,17030,10896,8,735,198
+
+# spec-ab receipt: /home/ubuntu/realgate/mtp10/adm/ab-spec-k5-adm-thinkoff-adapt1.tsv
+# qwen4exp_real_gate	label=adm-thinkoff-adapt1	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.0 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# load_seconds=171.6
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.29
+# vram	post-prefill	0, 90131 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.069e-2	1.069e-2	6.315e-4	5.039e-1
+layer4	10	10240	2.400e-2	2.400e-2	8.802e-4	5.000e-1
+layer5	10	10240	4.044e-2	2.199e-2	1.002e-3	3.047e0
+layer6	10	10240	3.950e-2	2.825e-2	1.187e-3	3.078e0
+layer7	10	10240	3.766e-2	3.047e-2	1.342e-3	3.047e0
+layer8	10	10240	3.723e-2	3.028e-2	1.464e-3	3.062e0
+layer9	10	10240	3.919e-2	3.018e-2	1.565e-3	3.062e0
+layer10	10	10240	3.944e-2	3.034e-2	1.643e-3	3.125e0
+layer11	10	10240	4.564e-2	3.057e-2	1.741e-3	3.016e0
+layer12	10	10240	3.579e-2	3.108e-2	1.835e-3	2.953e0
+layer13	10	10240	3.742e-2	3.152e-2	1.919e-3	2.984e0
+layer14	10	10240	3.983e-2	3.028e-2	2.022e-3	3.016e0
+layer15	10	10240	3.942e-2	3.175e-2	2.104e-3	2.953e0
+layer16	10	10240	3.426e-2	3.027e-2	2.300e-3	2.938e0
+layer17	10	10240	3.720e-2	3.012e-2	2.368e-3	2.969e0
+layer18	10	10240	3.641e-2	3.641e-2	2.649e-3	2.969e0
+layer19	10	10240	3.828e-2	3.828e-2	2.727e-3	3.000e0
+layer20	10	10240	3.628e-2	3.628e-2	2.774e-3	2.938e0
+layer21	10	10240	3.821e-2	3.821e-2	2.970e-3	2.969e0
+layer22	10	10240	3.808e-2	3.808e-2	3.195e-3	2.969e0
+layer23	10	10240	4.135e-2	4.135e-2	3.286e-3	2.969e0
+layer24	10	10240	4.415e-2	4.415e-2	3.629e-3	3.828e0
+layer25	10	10240	4.598e-2	4.598e-2	3.749e-3	3.859e0
+layer26	10	10240	4.796e-2	4.796e-2	4.048e-3	5.062e0
+layer27	10	10240	5.241e-2	5.241e-2	4.362e-3	4.750e0
+layer28	10	10240	6.440e-2	6.440e-2	4.784e-3	4.531e0
+layer29	10	10240	7.918e-2	7.918e-2	5.283e-3	4.469e0
+layer30	10	10240	8.751e-2	8.751e-2	5.835e-3	4.438e0
+layer31	10	10240	1.252e-1	1.252e-1	6.236e-3	4.281e0
+layer32	10	10240	1.439e-1	1.439e-1	6.911e-3	3.891e0
+layer33	10	10240	1.524e-1	1.524e-1	7.579e-3	3.844e0
+layer34	10	10240	1.494e-1	1.494e-1	8.300e-3	3.828e0
+layer35	10	10240	1.632e-1	1.632e-1	9.258e-3	3.859e0
+layer36	10	10240	3.300e-1	3.300e-1	1.263e-2	6.844e0
+layer37	10	10240	3.278e-1	3.278e-1	1.420e-2	7.094e0
+layer38	10	10240	3.274e-1	3.274e-1	1.643e-2	7.094e0
+layer39	10	10240	3.848e-1	3.778e-1	1.920e-2	7.188e0
+layer40	10	10240	4.305e-1	4.217e-1	2.234e-2	7.219e0
+layer41	10	10240	4.475e-1	4.108e-1	2.430e-2	7.125e0
+layer42	10	10240	4.586e-1	3.913e-1	2.669e-2	7.156e0
+layer43	10	10240	4.799e-1	4.158e-1	2.980e-2	7.188e0
+layer44	10	10240	6.259e-1	6.259e-1	3.642e-2	1.162e1
+layer45	10	10240	7.158e-1	7.060e-1	4.507e-2	1.169e1
+layer46	10	10240	8.605e-1	8.605e-1	5.328e-2	1.350e1
+layer47	10	10240	9.034e-1	9.034e-1	5.724e-2	2.575e1
+exit_mixer	10	2560	1.279e1	6.599e0	4.373e-1	1.880e2
+logits	10	248320	6.183e0	4.901e0	2.689e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.553e-1	3.553e-1	1.231e1	20438	20438	true
+1	1.170e0	1.057e0	1.431e1	4087	4087	true
+2	1.182e0	1.046e0	1.800e1	37550	37550	true
+3	1.315e0	1.012e0	1.638e1	33075	33075	true
+4	1.883e0	1.825e0	1.888e1	888	888	true
+5	1.522e0	1.332e0	1.862e1	279	279	true
+6	2.620e0	1.682e0	1.950e1	15217	15217	true
+7	1.841e0	1.686e0	1.888e1	5388	5388	true
+8	1.908e0	1.846e0	1.575e1	13	13	true
+9	6.183e0	4.901e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/home/ubuntu/realgate/mtp10/adm/probe-logits-adm-thinkoff-adapt1.bin	rows=10	vocab=248320
+
+# hidden receipt: /home/ubuntu/realgate/mtp10/adm/hidden-gate-adm-thinkoff-adapt1.tsv
+# greedy prompt 0: first_divergence=0 matched=0/43 prefill=0.67s mean_decode=15.0ms
+# greedy prompt 1: first_divergence=0 matched=0/51 prefill=0.73s mean_decode=15.0ms
+# greedy prompt 2: first_divergence=0 matched=0/64 prefill=0.83s mean_decode=15.1ms
+# greedy prompt 3: first_divergence=0 matched=0/65 prefill=0.82s mean_decode=15.0ms
+# greedy receipt: /home/ubuntu/realgate/mtp10/adm/greedy-gate-adm-thinkoff-adapt1.tsv
+# spec-gate prompt 0: first_divergence=-1 accept_rate=0.646 mean_len=3.05 spec=10.7ms plain=14.8ms
+# spec-gate prompt 1: first_divergence=-1 accept_rate=0.746 mean_len=3.56 spec=9.9ms plain=14.8ms
+# spec-gate prompt 2: first_divergence=-1 accept_rate=0.762 mean_len=3.76 spec=9.7ms plain=14.8ms
+# spec-gate prompt 3: first_divergence=-1 accept_rate=0.766 mean_len=3.37 spec=10.2ms plain=14.9ms
+# spec-gate receipt: /home/ubuntu/realgate/mtp10/adm/spec-gate-k5-adm-thinkoff-adapt1.tsv
+=== E2: thinkoff adapt1 + pmin0.5 ===
+# qwen4exp_real_gate	label=adm-thinkoff-a1p05	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.5 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
+# load	175.5s
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+# qwen4exp_real_gate	label=adm-thinkoff-a1p05	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.5 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# spec-ab k=5: plain greedy decode vs spec_generate, fresh states per arm per rep
+rep	arm	tokens	ms_per_token	tok_per_s	accept_rate	mean_accept_len
+0	plain	256	15.32	65.27	-	-
+0	spec	256	9.89	101.15	0.856	3.28
+# round-cost	rep=0	rounds=78	chain_ms=3.74	replay_ms=0.92	verify_ms=27.44	cross_ms=0.022	draft_prefill_ms=18.0	zero_draft=11	guard_stops=21	plain_steps=0	k_decays=[]
+1	plain	256	15.34	65.21	-	-
+1	spec	256	9.86	101.38	0.856	3.28
+# round-cost	rep=1	rounds=78	chain_ms=3.75	replay_ms=0.90	verify_ms=27.43	cross_ms=0.021	draft_prefill_ms=15.8	zero_draft=11	guard_stops=21	plain_steps=0	k_decays=[]
+2	plain	256	15.34	65.21	-	-
+2	spec	256	9.61	104.10	0.856	3.28
+# round-cost	rep=2	rounds=78	chain_ms=3.75	replay_ms=0.90	verify_ms=26.59	cross_ms=0.021	draft_prefill_ms=15.5	zero_draft=11	guard_stops=21	plain_steps=0	k_decays=[]
+3	plain	256	15.28	65.44	-	-
+3	spec	256	9.55	104.66	0.856	3.28
+# round-cost	rep=3	rounds=78	chain_ms=3.74	replay_ms=0.91	verify_ms=26.42	cross_ms=0.021	draft_prefill_ms=15.6	zero_draft=11	guard_stops=21	plain_steps=0	k_decays=[]
+4	plain	256	15.34	65.18	-	-
+4	spec	256	9.58	104.40	0.856	3.28
+# round-cost	rep=4	rounds=78	chain_ms=3.74	replay_ms=0.92	verify_ms=26.49	cross_ms=0.021	draft_prefill_ms=15.8	zero_draft=11	guard_stops=21	plain_steps=0	k_decays=[]
+# arm plain	mean_of_means_ms=15.32	min=15.28	max=15.34	tok_per_s=65.26
+# arm spec	mean_of_means_ms=9.70	min=9.55	max=9.89	tok_per_s=103.11
+# rep0_plain_vs_spec_first_divergence	-1
+# accept_hist_total	80,60,70,80,50,50
+# rep0_plain	2,1160,47755,21964,58303,5829,5534,310,20776,10052,11158,271,550,561,41096,271,12189,488,3105,914,3300,264,3050,709,11,353,3172,19264,440,264,17697,3010,321,10033,279,4437,5215,13,271,13962,12851,318,7259,5792,8,271,71093,13670,198,989,8355,283,1325,482,3720,4515,271,1628,59649,2939,14048,28638,11,4667,8,313,198,220,8355,52745,28638,11,359,4609,23,504,318,600,11,795,8,574,313,198,262,413,318,600,8,313,198,406,4667,3831,1174,198,406,460,26,198,262,333,198,262,1380,313,198,406,713,15215,283,4566,4482,2507,1174,198,406,4667,4806,11,15215,1174,198,262,333,2213,318,6199,7501,8,313,198,406,4667,26862,7501,1174,198,262,333,198,220,17574,198,92,198,71093,271,13962,4486,318,7449,14,11093,8,271,71093,13670,198,989,8355,283,1325,482,3720,1760,23693,4750,26,271,7449,709,59649,2939,14048,28638,8,313,198,220,713,795,283,2454,8355,52745,28638,11,359,4609,23,4515,198,220,460,4566,4482,2507,1174,198,92,198,71093,271,550,5141,27227,594,3975,2683,4451,13840,35035,271,91,77295,735,21964,5889,735,20776,10052,11158,5889,735,198,91,4277,91,4277,91,4277,91,198,91,2972,1401,51842,332,735,1510,13105,3831,44646,735,1510,6897,63,318,29925,4417,17030,10896,8,735,198
+# rep0_spec	2,1160,47755,21964,58303,5829,5534,310,20776,10052,11158,271,550,561,41096,271,12189,488,3105,914,3300,264,3050,709,11,353,3172,19264,440,264,17697,3010,321,10033,279,4437,5215,13,271,13962,12851,318,7259,5792,8,271,71093,13670,198,989,8355,283,1325,482,3720,4515,271,1628,59649,2939,14048,28638,11,4667,8,313,198,220,8355,52745,28638,11,359,4609,23,504,318,600,11,795,8,574,313,198,262,413,318,600,8,313,198,406,4667,3831,1174,198,406,460,26,198,262,333,198,262,1380,313,198,406,713,15215,283,4566,4482,2507,1174,198,406,4667,4806,11,15215,1174,198,262,333,2213,318,6199,7501,8,313,198,406,4667,26862,7501,1174,198,262,333,198,220,17574,198,92,198,71093,271,13962,4486,318,7449,14,11093,8,271,71093,13670,198,989,8355,283,1325,482,3720,1760,23693,4750,26,271,7449,709,59649,2939,14048,28638,8,313,198,220,713,795,283,2454,8355,52745,28638,11,359,4609,23,4515,198,220,460,4566,4482,2507,1174,198,92,198,71093,271,550,5141,27227,594,3975,2683,4451,13840,35035,271,91,77295,735,21964,5889,735,20776,10052,11158,5889,735,198,91,4277,91,4277,91,4277,91,198,91,2972,1401,51842,332,735,1510,13105,3831,44646,735,1510,6897,63,318,29925,4417,17030,10896,8,735,198
+
+# spec-ab receipt: /home/ubuntu/realgate/mtp10/adm/ab-spec-k5-adm-thinkoff-a1p05.tsv
+# qwen4exp_real_gate	label=adm-thinkoff-a1p05	binary_sha256=abdca1508b2a37fb50af93470559320813b7a51e67349565027f86dc8a622e03	ckpt=/home/ubuntu/data/q48fn-nvfp4	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.5 }
+# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
+# load_seconds=175.5
+# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+# probe_tokens=10	ids=[760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13]
+# prefill_seconds=0.29
+# vram	post-prefill	0, 90131 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
+record	rows	cols	max_abs	max_rel	mean_abs	ref_absmax
+layer0	10	10240	7.269e-3	7.269e-3	2.142e-4	3.242e-1
+layer1	10	10240	7.227e-3	7.227e-3	3.351e-4	4.551e-1
+layer2	10	10240	9.171e-3	9.171e-3	4.949e-4	5.273e-1
+layer3	10	10240	1.069e-2	1.069e-2	6.315e-4	5.039e-1
+layer4	10	10240	2.400e-2	2.400e-2	8.802e-4	5.000e-1
+layer5	10	10240	4.044e-2	2.199e-2	1.002e-3	3.047e0
+layer6	10	10240	3.950e-2	2.825e-2	1.187e-3	3.078e0
+layer7	10	10240	3.766e-2	3.047e-2	1.342e-3	3.047e0
+layer8	10	10240	3.723e-2	3.028e-2	1.464e-3	3.062e0
+layer9	10	10240	3.919e-2	3.018e-2	1.565e-3	3.062e0
+layer10	10	10240	3.944e-2	3.034e-2	1.643e-3	3.125e0
+layer11	10	10240	4.564e-2	3.057e-2	1.741e-3	3.016e0
+layer12	10	10240	3.579e-2	3.108e-2	1.835e-3	2.953e0
+layer13	10	10240	3.742e-2	3.152e-2	1.919e-3	2.984e0
+layer14	10	10240	3.983e-2	3.028e-2	2.022e-3	3.016e0
+layer15	10	10240	3.942e-2	3.175e-2	2.104e-3	2.953e0
+layer16	10	10240	3.426e-2	3.027e-2	2.300e-3	2.938e0
+layer17	10	10240	3.720e-2	3.012e-2	2.368e-3	2.969e0
+layer18	10	10240	3.641e-2	3.641e-2	2.649e-3	2.969e0
+layer19	10	10240	3.828e-2	3.828e-2	2.727e-3	3.000e0
+layer20	10	10240	3.628e-2	3.628e-2	2.774e-3	2.938e0
+layer21	10	10240	3.821e-2	3.821e-2	2.970e-3	2.969e0
+layer22	10	10240	3.808e-2	3.808e-2	3.195e-3	2.969e0
+layer23	10	10240	4.135e-2	4.135e-2	3.286e-3	2.969e0
+layer24	10	10240	4.415e-2	4.415e-2	3.629e-3	3.828e0
+layer25	10	10240	4.598e-2	4.598e-2	3.749e-3	3.859e0
+layer26	10	10240	4.796e-2	4.796e-2	4.048e-3	5.062e0
+layer27	10	10240	5.241e-2	5.241e-2	4.362e-3	4.750e0
+layer28	10	10240	6.440e-2	6.440e-2	4.784e-3	4.531e0
+layer29	10	10240	7.918e-2	7.918e-2	5.283e-3	4.469e0
+layer30	10	10240	8.751e-2	8.751e-2	5.835e-3	4.438e0
+layer31	10	10240	1.252e-1	1.252e-1	6.236e-3	4.281e0
+layer32	10	10240	1.439e-1	1.439e-1	6.911e-3	3.891e0
+layer33	10	10240	1.524e-1	1.524e-1	7.579e-3	3.844e0
+layer34	10	10240	1.494e-1	1.494e-1	8.300e-3	3.828e0
+layer35	10	10240	1.632e-1	1.632e-1	9.258e-3	3.859e0
+layer36	10	10240	3.300e-1	3.300e-1	1.263e-2	6.844e0
+layer37	10	10240	3.278e-1	3.278e-1	1.420e-2	7.094e0
+layer38	10	10240	3.274e-1	3.274e-1	1.643e-2	7.094e0
+layer39	10	10240	3.848e-1	3.778e-1	1.920e-2	7.188e0
+layer40	10	10240	4.305e-1	4.217e-1	2.234e-2	7.219e0
+layer41	10	10240	4.475e-1	4.108e-1	2.430e-2	7.125e0
+layer42	10	10240	4.586e-1	3.913e-1	2.669e-2	7.156e0
+layer43	10	10240	4.799e-1	4.158e-1	2.980e-2	7.188e0
+layer44	10	10240	6.259e-1	6.259e-1	3.642e-2	1.162e1
+layer45	10	10240	7.158e-1	7.060e-1	4.507e-2	1.169e1
+layer46	10	10240	8.605e-1	8.605e-1	5.328e-2	1.350e1
+layer47	10	10240	9.034e-1	9.034e-1	5.724e-2	2.575e1
+exit_mixer	10	2560	1.279e1	6.599e0	4.373e-1	1.880e2
+logits	10	248320	6.183e0	4.901e0	2.689e-1	1.950e1
+logits_row	max_abs	max_rel	ref_absmax	golden_top1	our_top1	match
+0	3.553e-1	3.553e-1	1.231e1	20438	20438	true
+1	1.170e0	1.057e0	1.431e1	4087	4087	true
+2	1.182e0	1.046e0	1.800e1	37550	37550	true
+3	1.315e0	1.012e0	1.638e1	33075	33075	true
+4	1.883e0	1.825e0	1.888e1	888	888	true
+5	1.522e0	1.332e0	1.862e1	279	279	true
+6	2.620e0	1.682e0	1.950e1	15217	15217	true
+7	1.841e0	1.686e0	1.888e1	5388	5388	true
+8	1.908e0	1.846e0	1.575e1	13	13	true
+9	6.183e0	4.901e0	1.638e1	271	271	true
+# logits_argmax_agreement	10/10
+# probe_logits	/home/ubuntu/realgate/mtp10/adm/probe-logits-adm-thinkoff-a1p05.bin	rows=10	vocab=248320
+
+# hidden receipt: /home/ubuntu/realgate/mtp10/adm/hidden-gate-adm-thinkoff-a1p05.tsv
+# greedy prompt 0: first_divergence=0 matched=0/43 prefill=0.68s mean_decode=15.3ms
+# greedy prompt 1: first_divergence=0 matched=0/51 prefill=0.75s mean_decode=15.3ms
+# greedy prompt 2: first_divergence=0 matched=0/64 prefill=0.84s mean_decode=15.4ms
+# greedy prompt 3: first_divergence=0 matched=0/65 prefill=0.83s mean_decode=15.4ms
+# greedy receipt: /home/ubuntu/realgate/mtp10/adm/greedy-gate-adm-thinkoff-a1p05.tsv
+# spec-gate prompt 0: first_divergence=-1 accept_rate=0.889 mean_len=2.67 spec=10.0ms plain=14.9ms
+# spec-gate prompt 1: first_divergence=-1 accept_rate=0.763 mean_len=3.20 spec=10.1ms plain=15.0ms
+# spec-gate prompt 2: first_divergence=-1 accept_rate=0.846 mean_len=3.37 spec=9.3ms plain=14.9ms
+# spec-gate prompt 3: first_divergence=-1 accept_rate=0.828 mean_len=3.20 spec=10.1ms plain=15.0ms
+# spec-gate receipt: /home/ubuntu/realgate/mtp10/adm/spec-gate-k5-adm-thinkoff-a1p05.tsv
+=== E2 DONE ===

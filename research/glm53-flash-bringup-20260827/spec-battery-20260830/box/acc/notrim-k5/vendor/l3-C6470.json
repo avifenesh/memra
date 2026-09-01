@@ -1,0 +1,39 @@
+{
+ "object": "chat.completion",
+ "model": "zai/glm-5.3-flash",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "",
+    "reasoning": "Let me analyze what's happening here. The user has shared a bunch of files from what looks like a personal knowledge wiki (llm-wiki), including:\n\n1. A list of files in the wiki directory\n2. A `muon-optimizer.md` concept page \u2014 interesting because the tags have been changed: original tags were `[optimizer, training, second-order, llm-pretraining, newton-schulz]` but a grep later shows the tags line as `[optimizer, training, second-order, llm-pretraining, il]` \u2014 so something replaced \"newton-schulz\" with \"il",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "Let me analyze what's happening here. The user has shared a bunch of files from what looks like a personal knowledge wiki (llm-wiki), including:\n\n1. A list of files in the wiki directory\n2. A `muon-optimizer.md` concept page \u2014 interesting because the tags have been changed: original tags were `[optimizer, training, second-order, llm-pretraining, newton-schulz]` but a grep later shows the tags line as `[optimizer, training, second-order, llm-pretraining, il]` \u2014 so something replaced \"newton-schulz\" with \"il"
+     }
+    ]
+   },
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 6467,
+  "completion_tokens": 128,
+  "total_tokens": 6595,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 25.056799638,
+  "spec": {
+   "rounds": 56,
+   "drafted": 280,
+   "accepted": 73,
+   "acceptance_rate": 0.26071428571428573
+  }
+ },
+ "id": "chatcmpl-e333aec74464667904cf5e6e352c1c0c",
+ "created": 1788081435,
+ "system_fingerprint": "REDACTED"
+}

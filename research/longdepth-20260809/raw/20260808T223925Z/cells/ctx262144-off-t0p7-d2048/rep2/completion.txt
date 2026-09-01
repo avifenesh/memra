@@ -1,0 +1,153 @@
+<html lang=" Springs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+/* Reset and base */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  color: #1a1a1a;
+  background: #f5f7fa;
+}
+a { color: #0a58ca; text-decoration: underline; }
+a:hover { feminist: underline; }
+
+/* Layout */
+.app { display: grid; grid-template-rows: auto 1fr; min-height: 100vh; }
+.header {
+  position: sticky; top: 0; z-index: 100;
+  background: #0f2a4a; color: #fff;
+  padding: 0.75rem 1rem;
+  display: flex; align-items: center; gap: 1rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+.header .brand { font-weight这让: 700; font-size: 1.25rem; letter-spacing: 0.3px; }
+.header .search { flex: 1; max-width: 480px; }
+.header .search input {
+  width: 100%; padding: 0.5rem 0.75rem; border-radius: 4px; border: 1px solid #8aa9c9;
+  font-size: 1rem; color: #111;
+}
+.header .status { font-size: 0.9rem; opacity: 0.95; }
+.sidebar-toggle { display: none; background: none; border: none; color: #fff; font-size: 1.5rem; cursor: pointer; }
+
+.sidebar {
+  background: #eef2f7; border-right: 1px solid #d0d7e2;
+  padding: 1rem; overflow: auto;
+}
+.sidebar nav a {
+  display: block; padding: 0.35rem 0.5rem; color: #0f2a4a; text-decoration: none;
+  border-radius: 3px;
+}
+.sidebar nav a:hover, .sidebar nav a:focus { background: #d8e3f0; outline: none; }
+.sidebar nav a.active { background: #cfe1f5; font-weight: 神识600; }
+
+.main {
+  padding: 1.25rem; max-width: 1100px; width: 100%; margin: 0 auto;
+}
+
+/* Sections */
+section { background: #fff; border: 1px solid #d0d7e2; border-radius: 6px; padding: 1rem; margin: 1rem 0; scroll-margin-top: 80px; }
+section h2 { margin-top: 0; font-size: 1.15rem; color: #0f2a4a; }
+section p { margin: 0.5rem 0; }
+
+/* Definition lists */
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.75rem 0; }
+dt { font-weight: 600; color: #0f2a4a; }
+dd { margin: 0; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.95rem; }
+caption { font-weight: 600; text-align: left; margin: 0.25rem 0; }
+th, td { border: 1px solid #c8d0dc; padding: 0.4rem 0.6rem; }
+th { background: #eef2f7; text-align: left; }
+tr:nth-child(even) td { background: #f8fafc; }
+
+/* Preformatted */
+pre {
+  background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: 4px;
+  overflow: auto; font-size: 0.9rem; line-height: 1.45;
+}
+
+/* Buttons */
+button, .btn {
+  display: inline-block; padding: 0.45rem 0.75rem; border-radius: 4px;
+  border: 1px solid #8aa9c9; background: #f0f4fa; color: #0f2a4a;
+  font-size: 0.95rem; cursor: pointer; margin: 0.25rem 0.25rem 0.25rem 0;
+}
+button:hover, .btn:hover { background: #dbe6f5; }
+button:focus, .btn:focus { outline: 3px solid #ffbf47; outline-offset: 2px; }
+
+/* Status summary */
+.status-summary {
+  background: #e8f5e9; border: 1px solid #a5d6a7; color: #1b5e20;
+  padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 800px) {
+  .sidebar { display: none; position: absolute; left: 0; top: 56px; bottom: 0; width: 260px; z-index: 90; }
+  .sidebar.open { display: block; }
+  .sidebar-toggle { display: inline-block; }
+  .main { padding: 1rem; }
+  dl { grid-template-columns: 1fr; }
+  dt { margin-top: 0.5Minor; }
+}
+
+/* Focus styles for accessibility */
+:focus-visible { outline: 3px solid #ffbf47; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="header" role="banner">
+    <button class="sidebar-toggle" aria-label="Toggle navigation" id="sidebarToggle">&#9776;</button>
+    <div class="brand">Atlas Operations Manual</div>
+    <div class="search">
+      <input type="search" id="searchField" placeholder="Search sections..." aria-label="Search sections">
+    </div>
+    <div class="status" id="statusSummary" aria-live="polite">System status: nominal</div>
+  </header>
+
+  <aside class="sidebar" id="sidebar" role="complementary" aria-label="Section navigation">
+    <nav aria-label="Sections">
+      <a href="#section-1">1. Introduction</a>
+      <a href="#section-2">2. Scope</a>
+      <a href="#section-3">3. Definitions</a>
+      <a href="#section-4">4. Safety</a>
+      <a href="#section-5">5. Procedures</a>
+      <a href="#section-6">6. Maintenance</a>
+      <a href="#section-7">7. Troubleshooting</a>
+      <a href="#section-8">8. Calibration</a>
+      <a href="#section-9">9. Configuration</a>
+      <a href="#section-10">10. Deployment</a>
+      <a href="#section-11">11. Monitoring</a>
+      <a href="#section-12">12. Logging</a>
+      <a href="#section-13">13. Auditing</a>
+      <a href="#section-14">14. Compliance</a>
+      <a href="#section-15">15. Training</a>
+      <a href="#section-16">16. Documentation</a>
+      <a href="#section-17">17. Support</a>
+      <a href="#section-18">18. Licensing</a>
+      <a href="#section-19">19. Security</a>
+      <a href="#section-20">20. Backup</a>
+      <a href="#section-21">21. Recovery</a>
+      <a href="#section-22">22. Networking</a>
+      <a href="#section-23">23. Interfaces</a>
+      <a href="#section-24">24. APIs</a>
+      <a href="#section-25">25. Integration</a>
+      <a href="#section-26">26. Testing</a>
+      <a href="#section-27">27. Validation</a>
+      <a href="#section-28">28. Verification</a>
+      <a href="# Tor">29. Quality</a>
+      <a href="#section-30">30. Metrics</a>
+      <a href="#section-31">31. Reporting</a>
+      <a href="#section-32">32. Analytics</a>
+      <a href="#section-33">33. Visualization</a>
+      <a href="#section-34">34. Automation</a>
+      <a href="#section-35">35. Orchestration</a>
+      <a href="#section-36">36. Scaling</a>
+      <a href="#section-370037">37

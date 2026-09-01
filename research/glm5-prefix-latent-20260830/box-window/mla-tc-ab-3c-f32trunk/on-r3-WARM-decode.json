@@ -1,0 +1,18 @@
+{
+ "name": "on-r3-WARM-decode",
+ "ttfd_s": 0.526,
+ "wall_s": 5.638,
+ "prompt_tokens": 415,
+ "completion_tokens": 128,
+ "prefill_tok_s": 789.0,
+ "decode_ms_tok": 40.25,
+ "first_chunk": "</think>The work above s",
+ "out_text": "</think>The work above spans two linked efforts: the **hqmtp inference engine** (a speculative-decoding project where the draft model's lm_head is being shrunk via the FR-Spec trim-at-load technique, targeting \u221285% on the draft lm_head kernel) and its **research wiki** (a personal knowledge base of distilled findings like `[[fr-spec]]`, `[[bw24]]`, and `[[hqmtp]]` notes that serve as the project's competitive moat).\n\n**Key tension:** the wiki is deliberately private \u2014 the measured trim recipe from `[[bw24]]` is unpublished research, and the",
+ "error": null,
+ "arm": "on",
+ "round": 3,
+ "prompt": "WARM",
+ "mode": "greedy",
+ "kind": "decode",
+ "log_census": null
+}

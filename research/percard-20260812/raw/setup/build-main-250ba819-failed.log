@@ -1,0 +1,15 @@
+start=2026-08-11T23:45:04Z
+250ba819e83f868d395c01c6f315a4c6344f54cb
+## main...origin/main
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+    Updating crates.io index
+error: failed to select a version for the requirement `memra-gguf = "=0.77.0"`
+candidate versions found which didn't match: 0.78.0
+location searched: /opt/scratch/nvme/cx-percard/memra/crates/memra-gguf
+required by package `memra-runtime v0.78.0 (/opt/scratch/nvme/cx-percard/memra/crates/memra-runtime)`

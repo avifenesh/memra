@@ -1,0 +1,41 @@
+2026-08-13T08:20:33+03:00
+run=fix-default-slru
+commit=5746272313b36b74a121b7a6d561f86544be6329
+tree=23ad9155eb62d32442dbb03f3451d687220749c5
+prefix_policy=<unset>
+focused_arms_exit=0
+59889be44b48c3c9b3ed19a229d265ab8fbcdf98777400cc266a7a1e5626b628  memra-server
+{"prompt_tokens_in":1632,"cached_tokens_in":1024,"computed_tokens_in":608,"cache_hit_token_ratio":0.6274509803921569,"prefix_cache_hits":4,"prefix_cache_misses":2,"prefix_cache_inserts":2,"prefix_cache_hit_tokens":1024}
+{"requests_n":20,"requests_ok":20,"hit_requests":18,"miss_requests":2,"prompt_tokens":97200,"cached_tokens":87480,"computed_prompt_tokens":9720,"cache_hit_token_ratio":0.9,"prefix_cache_entries_before":8,"prefix_cache_entries_after":10,"counter_deltas":{"admission_session_defers":0,"admission_vram_defers":0,"admitted":20,"cached_tokens_in":87480,"completed":20,"prefix_cache_evictions":0,"prefix_cache_hit_tokens":87480,"prefix_cache_hits":18,"prefix_cache_inserts":2,"prefix_cache_misses":2,"prompt_tokens_in":97200,"step_oom_parks":0,"tokens_out":1200},"integrity_failures":[],"clean":true}
+{"verdict":"PASS","requests":20,"hit_requests":18,"cold_misses":2,"seed_failures":[],"short_or_non_length":[],"cell_clean":true}
+failure_scan=clean
+run=fix-explicit-lru
+commit=5746272313b36b74a121b7a6d561f86544be6329
+tree=23ad9155eb62d32442dbb03f3451d687220749c5
+prefix_policy=lru
+focused_arms_exit=0
+59889be44b48c3c9b3ed19a229d265ab8fbcdf98777400cc266a7a1e5626b628  memra-server
+{"prompt_tokens_in":1632,"cached_tokens_in":1024,"computed_tokens_in":608,"cache_hit_token_ratio":0.6274509803921569,"prefix_cache_hits":4,"prefix_cache_misses":2,"prefix_cache_inserts":2,"prefix_cache_hit_tokens":1024}
+{"requests_n":20,"requests_ok":20,"hit_requests":18,"miss_requests":2,"prompt_tokens":97200,"cached_tokens":87480,"computed_prompt_tokens":9720,"cache_hit_token_ratio":0.9,"prefix_cache_entries_before":8,"prefix_cache_entries_after":10,"counter_deltas":{"admission_session_defers":0,"admission_vram_defers":0,"admitted":20,"cached_tokens_in":87480,"completed":20,"prefix_cache_evictions":0,"prefix_cache_hit_tokens":87480,"prefix_cache_hits":18,"prefix_cache_inserts":2,"prefix_cache_misses":2,"prompt_tokens_in":97200,"step_oom_parks":0,"tokens_out":1200},"integrity_failures":[],"clean":true}
+{"verdict":"PASS","requests":20,"hit_requests":18,"cold_misses":2,"seed_failures":[],"short_or_non_length":[],"cell_clean":true}
+failure_scan=clean
+run=fix-budgetsize-default-slru
+commit=5c602b340bf119e1b8159e6e195359d4cef7a4e8
+tree=2d55b47d278319363e8fa3d957185841c2348b66
+prefix_policy=<unset>
+focused_arms_exit=0
+c7dd155100bab78cdf7925abc7e5adb2a36ad370563824f45b718a65af70d84f  memra-server
+{"prompt_tokens_in":1632,"cached_tokens_in":1024,"computed_tokens_in":608,"cache_hit_token_ratio":0.6274509803921569,"prefix_cache_hits":4,"prefix_cache_misses":2,"prefix_cache_inserts":2,"prefix_cache_hit_tokens":1024}
+{"requests_n":20,"requests_ok":20,"hit_requests":18,"miss_requests":2,"prompt_tokens":97200,"cached_tokens":87480,"computed_prompt_tokens":9720,"cache_hit_token_ratio":0.9,"prefix_cache_entries_before":8,"prefix_cache_entries_after":10,"counter_deltas":{"admission_session_defers":0,"admission_vram_defers":0,"admitted":20,"cached_tokens_in":87480,"completed":20,"prefix_cache_evictions":0,"prefix_cache_hit_tokens":87480,"prefix_cache_hits":18,"prefix_cache_inserts":2,"prefix_cache_misses":2,"prompt_tokens_in":97200,"step_oom_parks":0,"tokens_out":1200},"integrity_failures":[],"clean":true}
+{"verdict":"PASS","requests":20,"hit_requests":18,"cold_misses":2,"seed_failures":[],"short_or_non_length":[],"cell_clean":true}
+failure_scan=clean
+run=fix-shmconflict-default-slru
+commit=50d3350be148af1be9c0a7820c0adfa171a3f873
+tree=9310d8008700aca49de0add89a877ba799cc71ad
+prefix_policy=<unset>
+focused_arms_exit=0
+d18408cde91374094eebe374366df36d334feaee2687081b2fafe83da0e2ef68  memra-server
+{"prompt_tokens_in":1632,"cached_tokens_in":1024,"computed_tokens_in":608,"cache_hit_token_ratio":0.6274509803921569,"prefix_cache_hits":4,"prefix_cache_misses":2,"prefix_cache_inserts":2,"prefix_cache_hit_tokens":1024}
+{"requests_n":20,"requests_ok":20,"hit_requests":18,"miss_requests":2,"prompt_tokens":97200,"cached_tokens":87480,"computed_prompt_tokens":9720,"cache_hit_token_ratio":0.9,"prefix_cache_entries_before":8,"prefix_cache_entries_after":10,"counter_deltas":{"admission_session_defers":0,"admission_vram_defers":0,"admitted":20,"cached_tokens_in":87480,"completed":20,"prefix_cache_evictions":0,"prefix_cache_hit_tokens":87480,"prefix_cache_hits":18,"prefix_cache_inserts":2,"prefix_cache_misses":2,"prompt_tokens_in":97200,"step_oom_parks":0,"tokens_out":1200},"integrity_failures":[],"clean":true}
+{"verdict":"PASS","requests":20,"hit_requests":18,"cold_misses":2,"seed_failures":[],"short_or_non_length":[],"cell_clean":true}
+failure_scan=clean

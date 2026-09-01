@@ -1,0 +1,35 @@
+timestamp=2026-08-12T07:04:48Z
+runtime_source=ac6ef049b8661008c0da91f4747f68f4dabdaa04
+shape=q27 physical GPU0 plus q35 physical GPU1; two independent servers
+<private-host-redacted>
+Linux <private-host-redacted> 6.17.0-1019-cloud #19~24.04.1-Ubuntu SMP Tue Jun 23 18:53:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+ac6ef049 (HEAD, origin/main) data(perf-ci): 5090 battery rows @ q35bug merge (0 fail 0 warn)
+43f0ad7d Merge lane/cx-q35bug: Q35 mixed-c=2 exactness — TWO defects fixed: (1) tokens_out counted post-survivor-branch so terminal EOS reached clients uncounted (billing undercount); (2) Qwen35-MoE numeric-class split between eager B=1 and batched B>=2 trunks (different token ids incl. real EOS) — now pinned to batched trunk at every B. Post-fix: 5x mixed-c=2 reps, 100/100 both wire surfaces, SSE==usage==engine==6000 exact, one hash across 140 requests. Q35 re-qualification eligible
+3012cecf docs(flags): peer-probe runtime re-probe now width-rotating post-sec9 (hermes stale-row find)
+fafbeb1d data: seal q35 exactness rerun
+7f305984 data(perf-ci): 5090 battery rows @ sec9 merge (0 fail 0 warn)
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+cargo 1.97.1 (c980f4866 2026-06-30)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2026 NVIDIA Corporation
+Built on Mon_Mar_02_09:52:23_PM_PST_2026
+Cuda compilation tools, release 13.2, V13.2.51
+Build cuda_13.2.r13.2/compiler.37434383_0
+0, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 595.71.05, 97887 MiB
+1, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 595.71.05, 97887 MiB
+	[4mGPU0	GPU1	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	PIX	0-47	0		N/A
+GPU1	PIX	 X 	0-47	0		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+Filesystem                      Size  Used Avail Use% Mounted on
+/dev/mapper/vg.01-lv_ephemeral  3.5T  148G  3.1T   5% /opt/scratch/nvme
+/dev/mapper/vg.01-lv_ephemeral  3.5T  148G  3.1T   5% /opt/scratch/nvme

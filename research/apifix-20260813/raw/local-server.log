@@ -1,0 +1,29 @@
+[auth] keyring loaded: 2 key(s) from /home/avifenesh/tmp-lanes/cx-apifix-runtime.1AlBjw/keys.toml
+[server] OpenRouter metadata loaded: 1 model(s) from /home/avifenesh/projects/wt-cx-apifix/deploy/gateway/q27-models.toml
+[ledger] durable request-cost ledger enabled: /home/avifenesh/tmp-lanes/cx-apifix-runtime.1AlBjw/ledger.jsonl
+[server] starting; models config = [("qwen/qwen3.6-35b-a3b", "/home/avifenesh/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
+[worker] loading model "qwen/qwen3.6-35b-a3b" <- /home/avifenesh/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 24.32GB (expert budget 19.72GB) -> RESIDENT
+[worker]   loaded "qwen/qwen3.6-35b-a3b": 41 layers, eos=248046
+[worker] qwen/qwen3.6-35b-a3b: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false gemma_think=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[server] worker ready; serving models: ["qwen/qwen3.6-35b-a3b"]
+[worker] qwen/qwen3.6-35b-a3b: decode wave cap 8; scheduler tick cap 8
+[prefix-cache] on: budget 537MB (536870912 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "qwen/qwen3.6-35b-a3b": plain 10208 B/token, spec 11136 B/token; fixed residual learns from effective-free deltas
+[server] listening on http://127.0.0.1:18084
+[meter] admit id=cmpl-8afdb0d9cb26d408097e054459f60bff tenant=apifix-long lane=interactive model="qwen/qwen3.6-35b-a3b"
+[meter] admit id=cmpl-7b0101c8d11d5a872a658a65bc0cda55 tenant=apifix-long lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=262208 path=plain = 10208 B/token x ctx + 0MB fixed = 2677MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-long" K=0 source=eligibility-fallback prompt=262143 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="qwen/qwen3.6-35b-a3b" 129MB (observed 2805MB at ctx 262144 path=plain)
+[prefix-cache] WARNING: first prefix insert is larger than the entire byte budget; this shape cannot produce cross-request hits. Subsequent refusals remain visible in prefix_cache_skips_budget
+[prefix-cache] skip seed insert: entry 2498.6MB > budget 537MB
+[meter] admit id=chatcmpl-4310d32cd8d5a0e5b5354798e97eb9d9 tenant=apifix-long lane=interactive model="qwen/qwen3.6-35b-a3b"
+[admission] request cost: model="qwen/qwen3.6-35b-a3b" ctx=262144 path=plain = 10208 B/token x ctx + 129MB fixed = 2805MB
+[spec-k] model="qwen/qwen3.6-35b-a3b" tenant="t:apifix-long" K=0 source=eligibility-fallback prompt=24 cached=0 lcp=0 active=1 placement=single-or-non-pp2
+[constrained] qwen/qwen3.6-35b-a3b: 257 masked steps, mask total 8.67 ms (0.034 ms/step)

@@ -1,0 +1,52 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas Operations Manual</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#1f2937;background:#f9fafb}
+body{display:flex;min-height:100vh}
+header{position:sticky;top:0;z-index:10;background:#0f172a;color:#e2e8f0;padding:0.75rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+header h1{font-size:1.25rem;font-weight:700;white-space:nowrap}
+header .search{margin-left:auto;display:flex;gap:.5rem;align-items:center}
+header input{background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:.35rem .6rem;border-radius:.25rem;min-width:220px}
+header button{background:#2563eb;color:#fff;border:0;padding:.35rem .7rem;border-radius:.25rem;cursor:pointer}
+aside{width:260px;background:#fff;border-right:1px solid #e5e7eb;padding:1rem;position:sticky;top:3.5rem;align-self:flex-start;max-height:calc(100vh - 3.5rem);overflow:auto}
+aside nav a{display:block;padding:.25rem .5rem;color:#2563eb;text-decoration:none;font-size:.9rem;border-radius:.25rem}
+aside nav a:hover{background:#eff6ff}
+main{flex:1;padding:1rem;max-width:1200px}
+section{margin-bottom:2rem;padding:1rem;background:#fff;border:1px solid #e5e7eb;border-radius:.5rem}
+h2{font-size:1.15rem;margin-bottom:.5rem;color:#0f172a}
+p{margin-bottom:.75rem}
+dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.5rem;margin:.75rem 0}
+dt{font-weight:600;color:#374151}
+dd{margin-left:0;color:#4b5563}
+table{width:100%;border-collapse:collapse;margin:.75rem 0;font-size:.9rem}
+th,td{border:1px solid #d1d5db;padding:.45rem .6rem;text-align:left}
+th{background:#f3f4f6}
+pre{background:#0f172a;color:#e2e8f0;padding:.75rem;border-radius:.35rem;overflow:auto;font-size:.85rem;margin:.75rem 0}
+.actions{display:flex;gap:.5rem;margin-top:.5rem}
+button.secondary{background:#fff;color:#1f2937;border:1px solid #d1d5db}
+button:focus-visible{outline:3px solid #fbbf24;outline-offset:2px}
+.status{display:inline-block;padding:.2rem .5rem;border-radius:.25rem;font-size:.8rem;font-weight:600;background:#dcfce7;color:#14532d}
+@media(max-width:768px){aside{display:none}header .search{width:100%}header input{width:100%}}
+</style>
+</head>
+<body>
+<header>
+<h1>Atlas Operations Manual</h1>
+<div class="search">
+<input type="search" id="search" placeholder="Search sections..." aria-label="Search sections">
+<button id="searchBtn">Search</button>
+</div>
+</header>
+<aside>
+<nav id="toc"></nav>
+</aside>
+<main>
+<p class="status">System Status: Operational</p>
+<section id="s1"><h2>1. Introduction</h2><p>This manual provides operational guidance for the Atlas platform. It covers configuration, monitoring, and troubleshooting.</p><p>All personnel should read this document before performing maintenance or updates.</p><dl><dt>Version</dt><dd>4.2.1</dd><dt>Release</dt><dd>2025-10-12</dd><dt>Owner</dt><dd>Platform Engineering</dd><dt>Audience</dt><dd>Operators, Engineers</dd></dl><table><tr><th>Field</th><th>Value</th><th>Notes</th></tr><tr><td>Mode</td><td>Production</td><td>Do not change without approval</td></tr><tr><td>Timeout</td><td>30s</td><td>Adjust per environment</td></tr><tr><td>Retry</td><td>3</td><td>Exponential backoff</td></tr><tr><td>Logging</td><td>Enabled</td><td>JSON format</td></tr><tr><td>Auth</td><td>OAuth2</td><td>Token expiry 1h</td></tr><tr><td>Region</td><td>N-Virginia</td><td>Primary region</td></tr></table><pre>atlasctl status --verbose</pre><div class="actions"><button>View Details</button><button class="secondary">Download PDF</button></div></section>
+<section id="s2"><h2>2. Scope</h2><p>The scope includes all Atlas services, supporting infrastructure, and related tooling.</p><p>Exclusions are third-party integrations not maintained by the Atlas team.</p><dl><dt>In Scope</dt><dd>Core services</dd><dt>Out of Scope</dt><dd>Client apps</dd><dt>Assumptions</dt><dd>Network stable</dd><dt>Constraints</dt><dd>Budget capped</dd></dl><table><tr><th>Item</th><th>Included</th><th>Owner</th></tr><tr><td>API</td><td>Yes</td><td>Backend</td></tr><tr><td>UI</td><td>Yes</td><td>Frontend</td></tr><tr><td>DB</td><td>Yes</td><td>DBA</td></tr><tr><td>Cache</td><td>Yes</td><td>Infra</td></tr><tr><td>Queue</td><td>Yes</td><td>Messaging</td></tr><tr><td>CDN</td><td>No</td><td>External</td></tr></table><pre>atlasctl scope list</pre><div class="actions"><button>View Details</button><button class="secondary">Download PDF</button></div></section>
+<section id="s3"><h2>3. Safety</h2><p>Operators must follow safety protocols when working in data centers or with live systems.</p><p>Always wear appropriate protective equipment and follow lockout/tagout procedures.</p><dl><dt>Risk</dt><dd>Electrical hazard</dd><dt>Mitigation</dt><dd>Insulated tools</dd><dt>Training</dt><dd>Required annually</dd><dt>Emergency</dt><dd>Call 911</dd></dl><table><tr><th>Hazard</th><th>Likelihood</th><th>Impact</th></tr><tr><td>Power loss</td><td>Low</td><td>High</td></tr><tr><td>Overheat</td><td>Medium</td><td>Medium</td></tr><tr><td>Water</td><td>Low</td><td>High</td></tr><tr><td>Fire</td><td>Low</td><td>High</td></tr><tr><td>Human error</td><td>Medium</td><td>Medium</td></tr><tr><td>Cyber</td><td>Medium</td><td>High</td></tr></table><pre>atlasctl safety check</pre><div class="actions"><button>View Details</button><button class="secondary">Download PDF</button></div></section>
+<section id="s4"><h2>4. Terminology</h2><p>This section defines key terms used throughout the manual.</p><p>Understanding these terms is essential for clear communication.</p><dl><dt>Node</dt><dd>Compute unit</dd><dt>Cluster</dt><dd>Group of nodes</dd><dt>Pod</dt><dd>Kubernetes unit</dd><dt>Service</dt><dd>Network endpoint</dd></dl><table><tr><th>Term</th><th>Definition</th><th>Example</th></tr><tr><td>API</td><td>Interface</td><td>REST</td></tr><tr><td>SDK</td><td>Toolkit</td><

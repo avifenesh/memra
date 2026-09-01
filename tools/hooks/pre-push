@@ -1,0 +1,404 @@
+#!/bin/sh
+# Refuses the push if research/tune-data/current-board.json changed but README.md /
+# docs/MODELS.md / docs/PERFORMANCE.md weren't regenerated
+# to match (tools/update-perf-board.py).
+#
+# Install once: git config core.hooksPath tools/hooks
+
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+# Captured before any function shadows $1: git hands this hook the remote name/URL there, and
+# log_skip() below needs it after its own positional parameters have taken over.
+push_remote=${1:-?}
+
+# ---- skip ledger (2026-08-23) ----
+# Every escape hatch in this hook PRINTS its use and appends a row here. Printing alone was the
+# house pattern (darklanes' SCRUMP_SKIP, and MEMRA_SKIP_PERF_CI below, which until today printed
+# nothing at all when used) and it loses the record the moment the terminal scrolls: a push is a
+# one-shot event, so "it was announced" and "anyone can find out" are not the same claim.
+#
+# Each row names WHAT WAS LET THROUGH, not merely that a skip happened — the pushed HEAD for the
+# census, the engine files for the perf gate. A row that cannot identify what it waved past is
+# not a record.
+#
+# PER-CLONE, UNDER THE GIT DIR, AND THAT IS THE DESIGN — not an oversight to be "fixed" later.
+# The purpose is "the person who did it can be asked about it afterwards", and a file in the git
+# dir serves exactly that: it is never committed, never in the way, and survives the session.
+# A TRACKED file would be strictly worse: parallel lanes appending to one tracked path race and
+# then need a merge strategy, which is the trap the budgets journal already hit (see darklanes,
+# two-box product seams). Fleet-wide skip visibility is a different and much larger thing; if it
+# is ever wanted, it wants an API fan-out, not a file. Owner-ruled 2026-08-23. Do not promote
+# this to a tracked file.
+log_skip() {
+    # log_skip <gate> <env-that-was-set> <detail>
+    _skip_log="$(git rev-parse --git-common-dir)/memra-gate-skips.log"
+    printf '%s\t%s\t%s\t%s\tremote=%s\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" "$3" "$push_remote" \
+        >> "$_skip_log" || true
+    echo "pre-push: skip recorded in $_skip_log" >&2
+}
+
+push_commits=$(mktemp "${TMPDIR:-/tmp}/memra-pre-push.XXXXXX")
+trap 'rm -f "$push_commits"' EXIT HUP INT TERM
+while read -r _local_ref local_oid _remote_ref remote_oid
+do
+    case "$local_oid" in
+        *[!0]*) ;;
+        *) continue ;; # Deleting a ref pushes no commits.
+    esac
+    case "$remote_oid" in
+        *[!0]*)
+            # A rewritten topic can be based on commits that are already published through
+            # another ref on this same remote (normally origin/main).  remote_oid..local_oid
+            # includes those commits even though this push does not introduce them, which made
+            # the blob-version boundary gate judge historical main blobs against the topic's
+            # final-tree allowlist.  Exclude every commit already reachable on the destination
+            # remote while still naming the exact old topic tip passed by Git.
+            if git remote get-url "$1" >/dev/null 2>&1; then
+                git rev-list "$local_oid" --not "$remote_oid" "--remotes=$1" \
+                    >> "$push_commits"
+            else
+                # A direct URL has no local remote-tracking namespace to consult.
+                git rev-list "$remote_oid..$local_oid" >> "$push_commits"
+            fi
+            ;;
+        *)
+            # A new remote ref has no left side. Exclude commits already reachable from
+            # this remote's tracking refs so only newly-pushed history is inspected.
+            git rev-list "$local_oid" --not --remotes="$1" >> "$push_commits"
+            ;;
+    esac
+done
+sort -u "$push_commits" -o "$push_commits"
+
+if ! python3 tools/update-perf-board.py --check; then
+    echo ""
+    echo "pre-push: perf board is stale. Run:"
+    echo "    python3 tools/update-perf-board.py"
+    echo "and commit the regenerated docs/MODELS.md + docs/PERFORMANCE.md before pushing."
+    exit 1
+fi
+
+# ---- MEMRA_* flags census (2026-08-23) ----
+# main went RED THREE TIMES in one day from a single cause: a lane landed a new MEMRA_* flag
+# read with no docs/FLAGS.md row, and ci.yml's "Flags census self-test" step — whose live arm
+# requires tools/check-flags.sh green on the checked-out tree — then failed on main, AFTER the
+# commit had landed, blocking every lane behind it. 61e99d5337 did it with
+# MEMRA_TCOL_OPROJ/_REF/_PROF (repaired by aad51f87bd); d7fed25562 did it with MEMRA_TCOL_FFN
+# (run 32603995018, repaired by 42285b047c); two further lanes inherited a red main mid-work and
+# each spent a commit fixing someone else's break before their own push could go green.
+#
+# The census was never wrong. It ran too late — the only local caller was tools/local-ci.sh,
+# where it is a WARNING (line 126) behind a cargo build and a GPU, so a docs- or research-only
+# lane pushing straight to main never posed the question at all. This is the earliest point that
+# intercepts the real path: every push runs this hook, and CLAUDE.md already forbids --no-verify.
+#
+# UNCONDITIONAL, no changed-file scoping. It costs 0.55 s on this tree (632 reads), so scoping
+# would buy nothing and would be wrong twice: a docs-only commit that DELETES a FLAGS row breaks
+# the census while touching no crate, and a gate that only fires once it has guessed which files
+# matter is exactly the shape that trained the MEMRA_SKIP_PERF_CI habit documented below.
+#
+# THE CENSUS, not tools/test_check_flags.sh. The self-test is the census's own coverage gate and
+# stays CI-only on purpose: its live block is bound to this tree by construction (three named
+# flags, census >= 100 names), so it cannot run inside the throwaway repo that
+# tools/test_flags_guard.sh uses to prove THIS arm is wired and able to refuse — and a gate whose
+# teeth cannot be exercised is the thing that rots. Census blindness also only regresses when
+# check-flags.sh itself is edited, which ci.yml and local-ci.sh both still gate. Neither is
+# weakened or duplicated here; ci.yml remains the backstop.
+#
+# ITS ONE GAP, stated rather than papered over: the census reads the WORKTREE, not the commits
+# being pushed, so a FLAGS row written on disk but not committed passes here and reds in CI. The
+# refusal message says so. Judging HEAD's tree instead needs a second checkout of 36k files per
+# push, and that latency is what gets a hook uninstalled.
+if [ "${MEMRA_SKIP_FLAGS_CENSUS:-0}" = "1" ]; then
+    # Escapable, and ON THE RECORD: printed here AND appended to the skip ledger defined at the
+    # top of this file, so the trace outlives the terminal that scrolled away.
+    echo "pre-push: MEMRA_* flags census SKIPPED for this push (MEMRA_SKIP_FLAGS_CENSUS=1)" >&2
+    log_skip flags-census MEMRA_SKIP_FLAGS_CENSUS=1 "head=$(git rev-parse HEAD)"
+elif ! command -v rg >/dev/null 2>&1; then
+    # A missing tool cannot answer the question, and blocking every push on a box without
+    # ripgrep would make this arm the reason someone unsets core.hooksPath. LOUD, and the
+    # server-side census still answers (ci.yml installs rg itself).
+    echo "pre-push: WARNING — rg is not on PATH, so the MEMRA_* flags census was SKIPPED." >&2
+    echo "          A missing docs/FLAGS.md row will red ci.yml instead of stopping here." >&2
+    echo "          Install it: sudo apt-get install ripgrep" >&2
+elif ! flags_out=$(tools/check-flags.sh 2>&1); then
+    printf '%s\n' "$flags_out" >&2
+    echo "" >&2
+    echo "pre-push: REFUSED — the MEMRA_* flags census is red (names listed above)." >&2
+    echo "    Add a row for each name to docs/FLAGS.md and commit it WITH the read that" >&2
+    echo "    introduced it; one prefix row (e.g. MEMRA_TCOL_*) covers a whole family." >&2
+    echo "    This is the check that reddened main three times on 2026-08-23 AFTER landing," >&2
+    echo "    so every lane behind those commits paid for it — that is what this arm stops." >&2
+    echo "    The census reads the WORKTREE: an uncommitted FLAGS row passes here and reds" >&2
+    echo "    ci.yml, so commit the row rather than only writing it." >&2
+    echo "    Genuine emergency: MEMRA_SKIP_FLAGS_CENSUS=1 git push ... (printed + logged)." >&2
+    exit 1
+else
+    # A green run SAYS SO, like "perf board is up to date" and the boundary arm's match count
+    # right beside it. A gate that is silent when it passes is indistinguishable from a gate
+    # that has stopped running — the failure mode this whole file keeps arguing against — and
+    # the line it echoes is the census's own count, not a claim restated by the hook.
+    echo "pre-push: flags census OK — $(printf '%s\n' "$flags_out" | sed -n 's/^check-flags: runtime/runtime/p')"
+fi
+
+# ---- releasability censuses (2026-08-23) ----
+# Same lesson as the arm above, one layer out: the check existed and ran TOO LATE. On
+# 2026-08-22 main became unreleasable and stayed that way for a day — cu/mmq_fp8_blk_stub.cu
+# lost ABI parity with cu/mmq_fp8_blk.cu, so sm_89 and sm_90a stopped LINKING, and
+# publish.yml's hardcoded crate list went stale against a workspace that had grown two
+# members. Neither was discoverable before a tag: ci.yml compiled one arch, and nothing
+# compared the publish list to the members. v0.105.0 and v0.106.0 both died of it, and the
+# second one permanently consumed six crates.io version numbers.
+#
+# HERE as well as in ci.yml, unlike the allowlist verifier (45.9 s, CI-only): all three
+# censuses together cost 0.15 s on this tree — 0.06 publish + 0.08 stub-ABI + 0.01 arch —
+# which is under a third of the flags census above and far under the ~45 s where a pre-push
+# arm starts getting hooks uninstalled. At that price the defect should not even be pushable.
+# The teeth (tools/test_releasability_census.sh, 12 arms, 0.65 s) stay in ci.yml for the same
+# reason the flags self-test does: they need throwaway trees this hook must not build.
+#
+# No skip switch on purpose. The flags census has one because a docs row can legitimately lag
+# a lane's own work; these three answer "can this tree ship at all", and there is no emergency
+# in which the right move is to push a tree that cannot. If one ever fires wrongly, fix the
+# census — do not add a bypass.
+# APPLICABILITY, and why it is not a fail-open. These censuses answer "can THIS WORKSPACE
+# ship", so they are scoped to a repo that has one: a root Cargo.toml carrying
+# [workspace.package]. Throwaway repos — including the ones tools/test_flags_guard.sh drives a
+# real `git push` through to prove the arm above is wired — have no workspace and no tools/
+# tree, and refusing there would mean this hook could only be tested by deleting it. The
+# fail-closed half is preserved exactly where it matters: if the repo IS the workspace and a
+# census script is missing or non-executable, that is someone removing a gate, and it refuses.
+# (Found by test_flags_guard.sh arm 6 reddening on this very arm — the fixture catching a change
+# to the hook it exists to protect, which is the whole reason it drives a real push.)
+if ! grep -q '^\[workspace\.package\]' Cargo.toml 2>/dev/null; then
+    echo "pre-push: releasability censuses N/A — no [workspace.package] in Cargo.toml (not the memra workspace)"
+else
+for census in tools/workspace-publish-census.sh tools/stub-abi-census.py tools/arch-matrix-census.sh; do
+    if [ ! -x "$census" ]; then
+        echo "pre-push: REFUSED — $census is missing or not executable." >&2
+        echo "    This repo IS the memra workspace, so a releasability gate that cannot answer" >&2
+        echo "    is a gate someone removed. Fails closed." >&2
+        exit 1
+    fi
+    if ! census_out=$("$census" 2>&1); then
+        printf '%s\n' "$census_out" >&2
+        echo "" >&2
+        echo "pre-push: REFUSED — $census is red (reason above)." >&2
+        echo "    This tree could not be released. The two defects these gates were built for:" >&2
+        echo "      * a stub cu/*_stub.cu missing a symbol its real twin exports -> sm_89/sm_90a" >&2
+        echo "        fail to LINK, and only the release tag matrix would have told you." >&2
+        echo "      * publish.yml's crate list missing a publishable workspace member -> a" >&2
+        echo "        half-finished crates.io publish that burns the version number for good." >&2
+        exit 1
+    fi
+done
+echo "pre-push: releasability censuses OK — publish list, stub ABI, arch matrix"
+fi
+
+# ---- docs-registry census (2026-08-30) ----
+# Same WHEN-lesson as the flags arm above, for the other registry docs: ci.yml runs
+# tools/docs-registry-census.sh as the backstop, and a census that first answers in CI
+# answers AFTER landing. A renamed or deleted file leaves a docs/KERNELS.md row pointing
+# at nothing, an off-vocabulary support state or an over-60-line docs/ROUTER.md ships
+# the same way, and main reds behind the push that did it. Text-only and sub-second
+# (rg + git ls-files), so it runs on every push, unconditional like the flags census.
+#
+# No skip switch, same reasoning as the releasability censuses: a registry row pointing
+# at a missing file has no emergency in which pushing it is right. Fix the row or
+# restore the file. Scoped to the memra workspace exactly like those censuses, for the
+# same two reasons: the registry docs only exist here, and the throwaway repos that
+# test_flags_guard.sh drives real pushes through carry neither the docs nor the script.
+# Inside the workspace, a missing census is someone removing a gate, and it refuses.
+if ! grep -q '^\[workspace\.package\]' Cargo.toml 2>/dev/null; then
+    echo "pre-push: docs-registry census N/A: no [workspace.package] in Cargo.toml (not the memra workspace)"
+elif ! command -v rg >/dev/null 2>&1; then
+    # Same degradation as the flags arm: a box without ripgrep cannot answer the
+    # question, and blocking every push there gets the hook uninstalled. LOUD, and
+    # ci.yml still answers (it installs rg itself before running the census).
+    echo "pre-push: WARNING: rg is not on PATH, so the docs-registry census was SKIPPED." >&2
+    echo "          A stale registry row will red ci.yml instead of stopping here." >&2
+    echo "          Install it: sudo apt-get install ripgrep" >&2
+elif [ ! -x tools/docs-registry-census.sh ]; then
+    echo "pre-push: REFUSED: tools/docs-registry-census.sh is missing or not executable." >&2
+    echo "    This repo IS the memra workspace, so a registry gate that cannot answer" >&2
+    echo "    is a gate someone removed. Fails closed." >&2
+    exit 1
+elif ! docs_census_out=$(tools/docs-registry-census.sh 2>&1); then
+    printf '%s\n' "$docs_census_out" >&2
+    echo "" >&2
+    echo "pre-push: REFUSED: the docs-registry census is red (violations above)." >&2
+    echo "    docs/KERNELS.md rows must point at tracked files, docs/MODELS.md may only" >&2
+    echo "    speak the three support states, and docs/ROUTER.md stays at or under 60" >&2
+    echo "    lines. Fix the row or restore the file; ci.yml runs the same census." >&2
+    exit 1
+else
+    # A green run SAYS SO, like the arms above, and it says it with the census's own
+    # measured counts (2>&1 keeps its WARNING lines in the record too).
+    echo "pre-push: docs-registry census OK"
+    printf '%s\n' "$docs_census_out" | sed 's/^docs-registry-census: /    /'
+fi
+
+# ---- target-aware hardware gate (2026-08-15) ----
+# Generic kernel/default changes retain the local perf-ci freshness gate. Step-specific
+# multi-card changes may instead use a hash-bound RTX PRO 6000 receipt:
+#
+#   MEMRA_HARDWARE_GATE=step-pro \
+#   MEMRA_STEP_PRO_RECEIPT=/absolute/path/to/receipt.json git push
+#
+# The receipt binds every changed engine source file and verifies the immutable kernel,
+# topology, and official-model evidence manifests. This is not an override: step-pro mode
+# rejects MEMRA_SKIP_PERF_CI and fails closed on an uncovered or changed source file.
+
+# ---- push range derivation (2026-08-19) ----
+# The base has to be the commit this branch actually FORKED FROM. It used to be, inline,
+#     range=$(git rev-parse '@{u}' 2>/dev/null || echo HEAD~20)
+# and `@{u}` is unset on a branch's FIRST push, so every fresh lane fell through to an
+# arbitrary depth of 20 commits — which on a busy day is OTHER LANES' work. Measured on this
+# tip 2026-08-19: HEAD~20..HEAD names 10 memra-engine files, and on the live
+# lane/gate-coverage-20260819 the fallback indicted 7 engine files where the branch adds 2.
+# Lanes that touch zero engine files got a red perf gate, verified by hand that it was
+# spurious, and pushed with MEMRA_SKIP_PERF_CI=1 — at least four times in one day. A gate
+# that is LOUDEST WHEN IT HAS LEAST INFORMATION trains everyone to override it, and the
+# trained habit is worse damage than the false positive.
+#
+# Now in tools/push-range.sh (upstream if set, else merge-base with <remote>/main, no
+# arbitrary fallback, informative exit when the fork point cannot be named) so that the
+# logic has a fixture: tools/test_push_range.sh drives all four arms in throwaway repos.
+# Diagnostics land on stderr; the base SHA on stdout.
+if ! range=$(tools/push-range.sh "$1"); then
+    echo "pre-push: refusing to guess the push range — see above." >&2
+    exit 1
+fi
+base_ref=$(git rev-parse --symbolic-full-name '@{u}' 2>/dev/null || echo "<remote>/main")
+# The diff itself must fail CLOSED. This used to be one pipeline —
+#     engine_files=$(git diff --name-only "$range"..HEAD 2>/dev/null | grep -E ... || true)
+# — and this is #!/bin/sh with `set -e` and no pipefail, so a failing `git diff` had its stderr
+# discarded, the pipeline status came from grep, `|| true` erased even that, engine_files came
+# back empty and the ENTIRE hardware/perf block below was skipped with no output at all. Same
+# fail-open class as the 2026-08-06 empty-operand bug documented further down.
+if ! changed=$(git diff --name-only "$range"..HEAD); then
+    echo "pre-push: could not enumerate the files changed since $range." >&2
+    echo "    Refusing rather than treating an unreadable diff as 'no engine files'." >&2
+    exit 1
+fi
+engine_files=$(printf '%s\n' "$changed" | grep -E '^crates/memra-engine/(cu/|src/.*\.rs$)' || true)
+if [ -n "$engine_files" ]; then
+    hardware_gate=${MEMRA_HARDWARE_GATE:-generic}
+    if [ "$hardware_gate" = "step-pro" ]; then
+        if [ "${MEMRA_SKIP_PERF_CI:-0}" = "1" ]; then
+            echo "pre-push: MEMRA_SKIP_PERF_CI is incompatible with the Step PRO gate."
+            exit 1
+        fi
+        if [ -z "${MEMRA_STEP_PRO_RECEIPT:-}" ]; then
+            echo "pre-push: Step PRO gate requires MEMRA_STEP_PRO_RECEIPT."
+            exit 1
+        fi
+        python3 tools/check_hardware_gate.py \
+            --receipt "$MEMRA_STEP_PRO_RECEIPT" \
+            --repo-root "$(pwd)" \
+            --base "$range"
+    elif [ "$hardware_gate" != "generic" ]; then
+        echo "pre-push: unknown MEMRA_HARDWARE_GATE=$hardware_gate"
+        exit 1
+    elif [ "${MEMRA_SKIP_PERF_CI:-0}" = "1" ]; then
+        # ANNOUNCE + LOG (2026-08-23). This used to be the negative arm below
+        # (`elif [ ... != "1" ]`), so setting the variable took NO branch at all and the whole
+        # perf-ci block vanished in complete silence — the single most-used override in this
+        # repo (at least four uses in one day on 2026-08-19) left no output and no trace. A
+        # skip that says nothing is indistinguishable from a gate that never applied.
+        #
+        # The negative condition is now a plain `else`, which is exactly equivalent and leaves
+        # somewhere to hang this. It sits INSIDE `if [ -n "$engine_files" ]` deliberately: the
+        # variable does nothing when no engine file is touched, and logging a skip that had no
+        # effect would make the ledger lie in the other direction — every lane that happens to
+        # export it in a shell would accumulate rows for pushes it never gated. Owner-ruled.
+        echo "pre-push: perf-ci freshness gate SKIPPED for this push (MEMRA_SKIP_PERF_CI=1)." >&2
+        echo "          These engine files reach main unmeasured:" >&2
+        printf '%s\n' "$engine_files" | sed 's/^/            /' >&2
+        log_skip perf-ci MEMRA_SKIP_PERF_CI=1 \
+            "engine_files=$(printf '%s' "$engine_files" | tr '\n' ',')"
+    else
+        models="${MEMRA_MODELS_DIR:-/data/ai-ml/hf-models}"
+        ci=research/tune-data/perf-ci.jsonl
+        if [ ! -d "$models" ]; then
+            echo "pre-push: NOTE — engine files touched but no model dir; perf-ci not enforced here."
+        elif [ ! -f "$ci" ]; then
+            echo "pre-push: engine files touched but no perf-ci rows exist. Run: tools/local-ci.sh --perf"
+            exit 1
+        else
+            # `git log -1 --format=%ct <range> -- crates/` EXITS 0 WITH EMPTY OUTPUT when
+            # history simplification prunes the pathspec (e.g. the crates/ changes in the
+            # range arrived through a merge), so `|| echo 0` never fires and the comparison
+            # below got an empty operand: dash printed "[: Illegal number:" and — because the
+            # failing `[` is a condition, not a command — the gate SILENTLY SKIPPED instead of
+            # blocking. Fail-open in a push gate is the rot mode the H100 lane's law 3 warns
+            # about, so both operands are defaulted explicitly. (Found 2026-08-06 when a
+            # research-only push tripped the message; that push was correctly exempt anyway.)
+            #
+            # The pathspec is `crates/` on purpose — BROADER than the memra-engine regex that
+            # triggered this block. Narrowing it to $engine_files would make the gate quieter
+            # (a branch whose engine edit predates the battery but whose crates/ edit does not
+            # would stop reporting), and a gate that stops firing is worse than a loud one.
+            # Note the asymmetry when reading the message below: the TRIGGER is engine files,
+            # the TIMESTAMP can come from any crates/ commit.
+            newest_commit=$(git log -1 --format=%ct "$range"..HEAD -- crates/ 2>/dev/null || true)
+            # NOTE: git does not preserve mtimes, so in a FRESH clone or worktree this reads
+            # as "the battery ran at checkout time" no matter when it really ran. That makes
+            # the gate quiet for history it inherited, and loud only for commits made after
+            # the checkout — which is the direction that fails closed for your own work.
+            newest_row=$(stat -c %Y "$ci" 2>/dev/null || true)
+            newest_commit=${newest_commit:-0}
+            # An unreadable perf-ci row must not read as "infinitely fresh" -> 0 blocks.
+            newest_row=${newest_row:-0}
+            if [ "$newest_row" -lt "$newest_commit" ]; then
+                echo "pre-push: engine files touched after the last perf-ci battery."
+                # Name the evidence. The old HEAD~20 fallback made this message accuse other
+                # lanes' files with no way to tell from the message itself, which is how it
+                # trained the override. Print the base and the files so the claim is checkable.
+                echo "  base (merge-base with $base_ref): $range"
+                echo "  engine files this branch changes:"
+                echo "$engine_files" | sed 's/^/      /'
+                echo "Run: tools/local-ci.sh --perf   (or --perf-quick for the 31B subset)"
+                echo "Override knowingly with MEMRA_SKIP_PERF_CI=1."
+                exit 1
+            fi
+        fi
+    fi
+fi
+
+# ---- profile-blob / secret guard (2026-08-06) ----
+# nsys full profiles (.nsys-rep/.qdrep/.qdstrm) embed the ENTIRE process environment —
+# a committed one leaked a live GH_TOKEN + hosted-provider API key (caught by GitHub push protection,
+# scrubbed via filter-repo). Refuse any push whose new commits add one. No override:
+# export the kern-sum CSV instead (nsys stats --report cuda_gpu_kern_sum).
+blobs=$(
+    while IFS= read -r commit
+    do
+        git diff-tree --no-commit-id --name-only --diff-filter=A -r -m --root \
+            --no-renames "$commit"
+    done < "$push_commits" |
+        grep -E '\.(nsys-rep|qdrep|qdstrm)$' |
+        sort -u || true
+)
+if [ -n "$blobs" ]; then
+    echo "pre-push: REFUSED — nsys profile blob(s) in the push range (they capture full env, incl. tokens):"
+    echo "$blobs" | sed 's/^/    /'
+    echo "Export kern-sum CSVs instead; strip the blob from history before pushing."
+    exit 1
+fi
+
+# ---- public-boundary policy (2026-08-14) ----
+# Refuses the push if any changed blob in the pushed commits matches the private serving
+# material or secret/host regexes in tools/public-boundary-policy.toml WITHOUT being
+# grandfathered in tools/public-boundary-allowlist.jsonl. The allowlist pins each entry by
+# SHA-256 so it cannot silently grow — changing a file forces either an intentional
+# allowlist bump (explicit review) or a migration to darklanes.
+if ! python3 tools/check-public-boundary.py check --commits-file "$push_commits"; then
+    echo ""
+    echo "pre-push: public-boundary check failed. Either migrate the new private surface"
+    echo "to darklanes or, if grandfathering is deliberate, add the (path, sha256) entry"
+    echo "to tools/public-boundary-allowlist.jsonl and re-run the check."
+    exit 1
+fi

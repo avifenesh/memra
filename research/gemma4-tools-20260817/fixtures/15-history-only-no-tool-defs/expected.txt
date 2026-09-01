@@ -1,0 +1,7 @@
+<|turn>user
+Weather in Paris?<turn|>
+<|turn>model
+<|tool_call>call:get_weather{location:<|"|>Paris<|"|>}<tool_call|><|tool_response>response:get_weather{value:<|"|>21C<|"|>}<tool_response|>It is 21C.<turn|>
+<|turn>user
+Summarize the conversation in one line.<turn|>
+<|turn>model

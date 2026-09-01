@@ -1,0 +1,12 @@
+warning: memra-engine@0.77.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.77.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.77.0 (/home/avifenesh/projects/wt-cx-dualpp2/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.28s
+     Running unittests src/main.rs (target/debug/deps/memra_server-82ac615fd504334f)
+
+running 3 tests
+test worker::tests::dual_pp_scheduler_balances_every_live_width_within_two_wave_caps ... ok
+test worker::tests::dual_pp_scheduler_keeps_priority_order_across_odd_wave_boundary ... ok
+test worker::tests::dual_pp_scheduler_resolves_host_bounce_to_serial_before_dispatch ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 187 filtered out; finished in 0.00s

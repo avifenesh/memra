@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "/home/ubuntu/memra-cx-grouped/research/concprefill-20260808/concurrent_prefill.py", line 299, in <module>
+    main()
+  File "/home/ubuntu/memra-cx-grouped/research/concprefill-20260808/concurrent_prefill.py", line 269, in main
+    rows, summary = burst(warm_args, warm_background, 1, 0, 1)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/memra-cx-grouped/research/concprefill-20260808/concurrent_prefill.py", line 216, in burst
+    rows = [future.result() for future in futures]
+            ^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/memra-cx-grouped/research/concprefill-20260808/concurrent_prefill.py", line 187, in one_prime
+    raise RuntimeError("prime request completed without visible output")
+RuntimeError: prime request completed without visible output
