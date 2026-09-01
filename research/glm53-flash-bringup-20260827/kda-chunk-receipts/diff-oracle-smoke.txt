@@ -1,0 +1,43 @@
+warning: memra-engine@0.119.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.119.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.119.0 (/home/avifenesh/projects/wt-glm5-l3/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.83s
+     Running tests/kda_fixture_gpu.rs (target/debug/deps/kda_fixture_gpu-d54a6c11cef078b6)
+
+running 3 tests
+test kda_decode_after_prefill_matches_full_recompute ... [loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[kda-diff call   0 T=7 C=64] out: max_abs=8.731e-11 max_rel=8.731e-8 mean_rel=5.122e-9 | state: max_abs=1.863e-9 max_rel=5.239e-7 mean_rel=2.850e-8
+[kda-diff call   1 T=63 C=64] out: max_abs=4.075e-10 max_rel=4.075e-7 mean_rel=1.522e-8 | state: max_abs=5.122e-9 max_rel=4.162e-6 mean_rel=1.630e-7
+[kda-diff call   2 T=64 C=64] out: max_abs=3.492e-10 max_rel=3.492e-7 mean_rel=1.492e-8 | state: max_abs=5.122e-9 max_rel=5.122e-6 mean_rel=1.350e-7
+[kda-diff call   3 T=65 C=64] out: max_abs=3.492e-10 max_rel=3.492e-7 mean_rel=1.478e-8 | state: max_abs=9.313e-10 max_rel=3.874e-7 mean_rel=2.276e-8
+ok
+test kda_prefill_matches_reference_across_chunk_boundaries ... [kda-diff call   4 T=7 C=64] out: max_abs=1.455e-10 max_rel=1.455e-7 mean_rel=6.554e-9 | state: max_abs=9.313e-10 max_rel=4.657e-7 mean_rel=3.039e-8
+[kda-diff call   5 T=63 C=64] out: max_abs=4.075e-10 max_rel=4.075e-7 mean_rel=1.667e-8 | state: max_abs=4.657e-9 max_rel=4.366e-6 mean_rel=1.430e-7
+[kda-diff call   6 T=64 C=64] out: max_abs=5.821e-10 max_rel=5.821e-7 mean_rel=1.921e-8 | state: max_abs=6.170e-9 max_rel=5.234e-6 mean_rel=1.804e-7
+[kda-diff call   7 T=65 C=64] out: max_abs=3.492e-10 max_rel=3.492e-7 mean_rel=1.694e-8 | state: max_abs=9.313e-10 max_rel=6.839e-7 mean_rel=2.913e-8
+[kda-diff call   8 T=130 C=64] out: max_abs=4.657e-10 max_rel=4.657e-7 mean_rel=1.779e-8 | state: max_abs=3.725e-9 max_rel=2.463e-7 mean_rel=2.165e-8
+ok
+test kda_two_chunk_prime_matches_single_shot ... [kda-diff call   9 T=129 C=64] out: max_abs=3.638e-10 max_rel=3.638e-7 mean_rel=1.731e-8 | state: max_abs=1.863e-9 max_rel=4.657e-7 mean_rel=2.271e-8
+[kda-diff call  10 T=2 C=64] out: max_abs=1.164e-10 max_rel=1.164e-7 mean_rel=7.519e-9 | state: max_abs=1.863e-9 max_rel=2.347e-7 mean_rel=1.466e-8
+[kda-diff call  11 T=128 C=64] out: max_abs=5.239e-10 max_rel=5.239e-7 mean_rel=1.703e-8 | state: max_abs=4.889e-9 max_rel=4.540e-6 mean_rel=1.621e-7
+[kda-diff call  12 T=3 C=64] out: max_abs=1.310e-10 max_rel=1.310e-7 mean_rel=1.041e-8 | state: max_abs=1.863e-9 max_rel=3.492e-7 mean_rel=2.117e-8
+[kda-diff call  13 T=127 C=64] out: max_abs=5.239e-10 max_rel=5.239e-7 mean_rel=1.711e-8 | state: max_abs=5.006e-9 max_rel=4.540e-6 mean_rel=1.614e-7
+[kda-diff call  14 T=63 C=64] out: max_abs=2.910e-10 max_rel=2.910e-7 mean_rel=1.792e-8 | state: max_abs=6.985e-9 max_rel=4.016e-6 mean_rel=1.281e-7
+[kda-diff call  15 T=67 C=64] out: max_abs=2.328e-10 max_rel=2.328e-7 mean_rel=1.429e-8 | state: max_abs=1.863e-9 max_rel=3.171e-7 mean_rel=2.016e-8
+[kda-diff call  16 T=64 C=64] out: max_abs=2.965e-10 max_rel=2.965e-7 mean_rel=1.794e-8 | state: max_abs=6.519e-9 max_rel=3.987e-6 mean_rel=1.712e-7
+[kda-diff call  17 T=66 C=64] out: max_abs=2.328e-10 max_rel=2.328e-7 mean_rel=1.357e-8 | state: max_abs=1.863e-9 max_rel=2.328e-7 mean_rel=1.921e-8
+[kda-diff call  18 T=65 C=64] out: max_abs=2.965e-10 max_rel=2.965e-7 mean_rel=1.779e-8 | state: max_abs=1.863e-9 max_rel=4.657e-7 mean_rel=2.947e-8
+[kda-diff call  19 T=65 C=64] out: max_abs=2.328e-10 max_rel=2.328e-7 mean_rel=1.455e-8 | state: max_abs=1.863e-9 max_rel=4.657e-7 mean_rel=2.271e-8
+[kda-diff call  20 T=127 C=64] out: max_abs=2.965e-10 max_rel=2.965e-7 mean_rel=1.585e-8 | state: max_abs=5.122e-9 max_rel=2.111e-6 mean_rel=1.500e-7
+[kda-diff call  21 T=3 C=64] out: max_abs=5.821e-11 max_rel=5.821e-8 mean_rel=5.410e-9 | state: max_abs=1.863e-9 max_rel=3.232e-7 mean_rel=2.061e-8
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.32s
+

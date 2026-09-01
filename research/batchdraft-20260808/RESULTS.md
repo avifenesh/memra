@@ -49,7 +49,7 @@ correct multi-cache attention semantics.
   teardown. During the sampled window, median SM clocks were 2362/2317 MHz. The width sweep was
   also warming (27/28 C to 33/34 C), and every repetition alternated forward/reverse width order.
 - Storage: box1 has no `/scratch`; the pinned source artifacts were on `/dev/root`. The release
-  target was on local NVMe at `/opt/scratch/nvme`. The model was fully resident before scored decode,
+  target was on local NVMe at `/opt/dl-image/nvme`. The model was fully resident before scored decode,
   so source storage affects startup, not these decode windows; this is not a spill benchmark.
 - Lock: serving held `/tmp/memra-gpu.lock` from 21:01:01Z to 21:03:43Z; m-scale held a separate
   block from 21:04:56Z to 21:05:43Z. Both release receipts and zero-memory post states are retained.

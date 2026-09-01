@@ -1,5 +1,5 @@
 ==WARNING== Note: Running with unmodified GPU clocks. If not controlled otherwise, profiling results may be inconsistent.
-==PROF== Connected to process 845265 (/opt/scratch/nvme/ncuspike-20260811/profile-target/release/ncuspike-profile)
+==PROF== Connected to process 845265 (/opt/dl-image/nvme/ncuspike-20260811/profile-target/release/ncuspike-profile)
 [pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
 [moe] resident-experts decision (PP dev0): experts 45.72GB + trunk 3.92GB vs free 100.72GB (expert budget 94.81GB) -> RESIDENT
 [moe] resident-experts decision (PP dev1): experts 55.35GB + trunk 3.92GB vs free 100.60GB (expert budget 94.68GB) -> RESIDENT
@@ -18,4 +18,4 @@
 ==PROF== Profiling "qmatvec_iq4_XS_dp4a": 0%....50%....100% - 11 passes
 serving decode window @d512: 2 tokens in 680.687s = 0.0 tok/s (340343475.7 us/tok) final_token=163
 ==PROF== Disconnected from process 845265
-==PROF== Report: /opt/scratch/nvme/ncuspike-20260811/ncu-device0/decode.ncu-rep
+==PROF== Report: /opt/dl-image/nvme/ncuspike-20260811/ncu-device0/decode.ncu-rep

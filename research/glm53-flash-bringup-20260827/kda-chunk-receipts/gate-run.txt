@@ -1,0 +1,56 @@
+warning: memra-engine@0.119.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.119.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.119.0 (/home/avifenesh/projects/wt-glm5-l3/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.53s
+     Running tests/kda_chunked_gpu.rs (target/debug/deps/kda_chunked_gpu-f2bd9ece63e55b35)
+
+running 8 tests
+test chunked_prefill_matches_reference_across_chunk_boundaries ... [loader-law] WARNING: blk.*.kda_q.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_k.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_v.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_a.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_f_b.weight loads as 2D Float ne=[128, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_a.weight loads as 2D Float ne=[256, 128] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_g_b.weight loads as 2D Float ne=[128, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[loader-law] WARNING: blk.*.kda_out.weight loads as 2D Float ne=[256, 256] (src F32) — a Float matmul weight rides cuBLAS f32 GEMV and poisons all-or-nothing q8-fast predicates (uses_q8_1_fast/mixer_in_q8_1_fast). If matmul-class: Q8_0-encode at load (model.rs ssm arm / source.rs BF16+F8 gates). If deliberately Float: add it to float_2d_audited with the audit rationale.
+[kda-chunk gate] chunked prefill T=63: maxdiff 3.353e-8 scale 3.373e-2 rel 9.940e-7
+[kda-chunk gate] chunked prefill T=64: maxdiff 4.098e-8 scale 4.739e-2 rel 8.648e-7
+[kda-chunk gate] chunked prefill T=65: maxdiff 4.843e-8 scale 5.526e-2 rel 8.763e-7
+[kda-chunk gate] chunked prefill T=128: maxdiff 4.098e-8 scale 5.558e-2 rel 7.373e-7
+[kda-chunk gate] chunked prefill T=130: maxdiff 4.470e-8 scale 5.670e-2 rel 7.885e-7
+[kda-chunk gate] chunked prefill T=192: maxdiff 5.215e-8 scale 5.750e-2 rel 9.070e-7
+ok
+test chunked_scan_matches_sequential_scan_with_carried_state ... [kda-chunk gate] scan out T=63: maxdiff 9.313e-9 scale 2.681e-2 rel 3.474e-7
+[kda-chunk gate] scan state T=63: maxdiff 2.086e-7 scale 2.358e-1 rel 8.849e-7
+[kda-chunk gate] scan out T=64: maxdiff 7.451e-9 scale 3.242e-2 rel 2.298e-7
+[kda-chunk gate] scan state T=64: maxdiff 1.718e-7 scale 1.992e-1 rel 8.628e-7
+[kda-chunk gate] scan out T=65: maxdiff 1.118e-8 scale 2.369e-2 rel 4.717e-7
+[kda-chunk gate] scan state T=65: maxdiff 2.012e-7 scale 1.817e-1 rel 1.107e-6
+[kda-chunk gate] scan out T=128: maxdiff 1.304e-8 scale 2.597e-2 rel 5.021e-7
+[kda-chunk gate] scan state T=128: maxdiff 2.831e-7 scale 2.009e-1 rel 1.409e-6
+[kda-chunk gate] scan out T=145: maxdiff 9.313e-9 scale 2.771e-2 rel 3.360e-7
+[kda-chunk gate] scan state T=145: maxdiff 7.451e-8 scale 2.174e-1 rel 3.427e-7
+[kda-chunk gate] scan out T=192: maxdiff 9.313e-9 scale 2.601e-2 rel 3.581e-7
+[kda-chunk gate] scan state T=192: maxdiff 1.788e-7 scale 2.210e-1 rel 8.090e-7
+ok
+test chunked_split_at_chunk_multiples_is_bit_identical ... [kda-chunk gate] split 64/128: BIT-identical (out + state)
+[kda-chunk gate] split 128/64: BIT-identical (out + state)
+ok
+test chunked_stateful_prime_and_decode_match_full_recompute ... [kda-chunk gate] chunked prime 64+66 then decode 3: maxdiff 4.098e-8 scale 4.211e-2 rel 9.731e-7
+[kda-chunk gate] chunked prime 65+63 then decode 2: maxdiff 4.284e-8 scale 4.837e-2 rel 8.857e-7
+[kda-chunk gate] chunked prime 128+64 then decode 2: maxdiff 4.470e-8 scale 5.613e-2 rel 7.964e-7
+ok
+test decode_is_byte_identical_with_the_flag_on ... [kda-chunk gate] decode 3 steps after prime 65: BYTE-identical both arms
+ok
+test red_arm_decay_applied_twice_at_boundary ... [kda-chunk RED] double-decay mutant (out, window 2): maxdiff 2.356e-2 scale 5.985e-2 rel 3.937e-1
+[kda-chunk RED] double-decay mutant (state): maxdiff 1.670e-1 scale 6.883e-1 rel 2.426e-1
+ok
+test red_arm_gate_cumulative_product_off_by_one ... [kda-chunk RED] gcum off-by-one mutant (out): maxdiff 7.886e-3 scale 2.728e-2 rel 2.891e-1
+[kda-chunk RED] gcum off-by-one mutant (state): maxdiff 4.051e-2 scale 2.281e-1 rel 1.776e-1
+ok
+test red_arm_state_not_carried_across_chunk_boundary ... [kda-chunk RED] state-drop mutant (out, window 2): maxdiff 5.937e-2 scale 7.280e-2 rel 8.155e-1
+[kda-chunk RED] state-drop mutant (state): maxdiff 3.035e-1 scale 7.685e-1 rel 3.949e-1
+ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.66s
+

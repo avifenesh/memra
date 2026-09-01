@@ -3,10 +3,10 @@
 set -Eeu -o pipefail
 
 : "${EXPECTED_SOURCE:?set EXPECTED_SOURCE to the source commit used for the build}"
-ROOT=${GSCOST_ROOT:-/opt/scratch/nvme/cx-gscost}
+ROOT=${GSCOST_ROOT:-/opt/dl-image/nvme/cx-gscost}
 REPO=${GSCOST_REPO:-$ROOT/memra}
 OUT=${GSCOST_OUT:-$REPO/research/gscost-20260813/raw/box1}
-MODEL_ROOT=${GSCOST_MODEL_ROOT:-/opt/scratch/nvme/cx-requal/models}
+MODEL_ROOT=${GSCOST_MODEL_ROOT:-/opt/dl-image/nvme/cx-requal/models}
 Q27=$MODEL_ROOT/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
 Q35=$MODEL_ROOT/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
 Q27_DRAFT=$MODEL_ROOT/draft-daily-owntrim-nvfp4head-q4blk.gguf
@@ -20,8 +20,8 @@ CACHE_HIT_BENCH=$REPO/research/gscost-20260813/cache-hit-decode.py
 CACHE_BENCH=$REPO/research/gscost-20260813/cache-single.py
 REDUCE=$REPO/research/gscost-20260813/reduce.py
 PROMPT=$REPO/research/e2e/prompts/pp512.txt
-SELLGATE_MODULE=/opt/scratch/nvme/cx-requal/harness/sellgate_replay.py
-WORKLOAD_LOCK=/opt/scratch/nvme/cx-requal/harness/workload.lock.json
+SELLGATE_MODULE=/opt/dl-image/nvme/cx-requal/harness/sellgate_replay.py
+WORKLOAD_LOCK=/opt/dl-image/nvme/cx-requal/harness/workload.lock.json
 PORT=${GSCOST_PORT:-18468}
 BASE=http://127.0.0.1:$PORT
 

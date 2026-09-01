@@ -3,20 +3,20 @@
 This lane owns two deliverables: spill-path improvements for large expert banks and a controlled
 five-arm quantization study. Every retained routed expert is quantized; there is no BF16 expert
 evaluation arm or BF16 expert fallback. Model loading, CUDA correctness, artifact generation,
-research measurement, calibration, and public evaluation happen on the provisioned cloudbox machine.
+research measurement, calibration, and public evaluation happen on the provisioned Sbox machine.
 The local RTX 5090 rig remains this lane's default-flip gate: runtime defaults are not flipped until
 the completed code and artifacts pass the same correctness, memory, and throughput gates there.
 (The *deployment* target moved — owner override 2026-08-03 makes RTX PRO 6000 Blackwell class the
 owned trajectory and the local 5090 Laptop a proof rig; see `docs/PERFORMANCE.md` §Rigs.)
 
-Mmap remains the default and correctness fallback, not the throughput endpoint. The cold cloudbox result
+Mmap remains the default and correctness fallback, not the throughput endpoint. The cold Sbox result
 and bounded explicit-read promotion probe are recorded in
-[`evidence/spill-prefetch-cloudbox-20260710.md`](evidence/spill-prefetch-cloudbox-20260710.md). The runtime now
+[`evidence/spill-prefetch-sbox-20260710.md`](evidence/spill-prefetch-sbox-20260710.md). The runtime now
 also provides blocking `pread` as the explicit-I/O oracle and a bounded worker backend that reads
 ahead into CUDA-pinned buffers while the caller thread retains all H2D and cache-publication work.
 On the first five frozen calibration requests, the depth-8 worker run was 2.866x faster than mmap
 with identical responses and 395 byte-identical routing rows; see
-[`evidence/spill-worker-ab-cloudbox-20260710.md`](evidence/spill-worker-ab-cloudbox-20260710.md). Test buffered
+[`evidence/spill-worker-ab-sbox-20260710.md`](evidence/spill-worker-ab-sbox-20260710.md). Test buffered
 and `O_DIRECT` reads through the same state machine; add io_uring only if it beats this worker
 baseline. The deferred ring design is specified in
 [`io-uring-spill-design.md`](io-uring-spill-design.md).
@@ -24,7 +24,7 @@ baseline. The deferred ring design is specified in
 The first Hy3 quality attempt exposed and fixed an architecture-scoping bug in RMSNorm loading.
 The official-reference layer gate, coherent generation smoke, exact mmap/pread parity result, and
 the hashes of traces invalidated by that fix are recorded in
-[`evidence/hy3-runtime-correctness-cloudbox-20260710.md`](evidence/hy3-runtime-correctness-cloudbox-20260710.md).
+[`evidence/hy3-runtime-correctness-sbox-20260710.md`](evidence/hy3-runtime-correctness-sbox-20260710.md).
 Do not use a routing trace captured before commit `38a5b08`.
 
 GGUF remains bw24's general runtime and delivery focus. This study reads the pinned Hy3
@@ -73,7 +73,7 @@ BF16 Hy3 is common source material only. It is never scored. The public MLX REAP
 mask donor only; none of its already-quantized expert weights enter a scored artifact.
 
 Exact validated overlay, staged-directory, logical payload, tier, and prune counts are frozen in
-[`evidence/five-arm-artifact-sizes-cloudbox-20260710.md`](evidence/five-arm-artifact-sizes-cloudbox-20260710.md).
+[`evidence/five-arm-artifact-sizes-sbox-20260710.md`](evidence/five-arm-artifact-sizes-sbox-20260710.md).
 
 Q8 means GGUF Q8_0 (8.5 effective bits/weight), Q2 means GGUF Q2_K (2.625 effective bits/weight),
 Q3 means Q3_K (3.4375 bits/weight), IQ4_XS is 4.25 bits/weight, Q4_K is 4.5 bits/weight, and
@@ -110,13 +110,13 @@ kernel exists.
   the uniform fused dispatch path for `plain_quant`; pruned or mixed arms retain per-expert layouts.
 - `BW24_MOE_PAGE_PREFETCH=1` issues best-effort `MADV_WILLNEED` one expert ahead for mmap-backed
   GGUF and repack ranges in both sequential and grouped dispatch. It is off by default until matched
-  cold-cache cloudbox measurements and final RTX 5090 gates prove a win.
+  cold-cache Sbox measurements and final RTX 5090 gates prove a win.
 - `BW24_SPILL_IO=mmap|pread|worker` selects the expert storage path. Mmap remains the default;
   `pread` is the blocking byte/H2D oracle, while `worker` moves exact positioned reads through a
   bounded CUDA-pinned pool and CPU read workers. Grouped prefill queues known-next expert reads, but
   only the caller thread submits H2D and publishes cache residency. Any initialization/read/ring
   degradation retains the validated mmap extent as fallback.
-- `BW24_SPILL_PREAD_DEPTH` bounds worker threads and pinned buffers (`2` by default; the cloudbox A/B used
+- `BW24_SPILL_PREAD_DEPTH` bounds worker threads and pinned buffers (`2` by default; the Sbox A/B used
   `8`). `BW24_SPILL_STATS=1` logs cumulative reads, bytes, errors, short reads, mmap fallbacks,
   buffer waits, ring-full events, expert-cache hits/misses, H2D staged bytes, and slot count when
   server requests finish. Public-eval metadata records start/end snapshots and per-run deltas.
@@ -140,8 +140,8 @@ stage timing, peak host/VRAM, and throughput separately from quality.
 Public eval examples must never tune cache size, prefetch policy, REAP masks, or precision tiers.
 
 `/data` is the durable artifact store on the target host. Before calibration, public evaluation, or
-spill measurement, copy the selected artifact to `/scratch/artifacts/<arm>` on the cloudbox local NVMe
-and confirm its `manifest.json` hash matches the durable copy. The persistent network volume is suitable
+spill measurement, copy the selected artifact to `/scratch/artifacts/<arm>` on the Sbox local NVMe
+and confirm its `manifest.json` hash matches the durable copy. The persistent EBS volume is suitable
 for sequential artifact construction but its 4 KiB mmap-fault throughput is not a valid bw24 spill
 benchmark.
 
@@ -149,9 +149,9 @@ benchmark.
 
 1. Done: `pread` into a bounded CUDA-pinned pool is the blocking correctness and storage-ceiling
    proof, not the throughput endpoint.
-2. Implemented and cloudbox-gated: a small disk worker pool fills the same pinned buffers while the CUDA
+2. Implemented and Sbox-gated: a small disk worker pool fills the same pinned buffers while the CUDA
    owner continues compute; only the CUDA owner submits H2D and publishes GPU-cache residency. Use
-   depth 2 as the current local-safe default and depth 8 for the measured cloudbox configuration. The
+   depth 2 as the current local-safe default and depth 8 for the measured Sbox configuration. The
    first-five A/B cut wall time by 65.1%; the local 5090 gate is still required before any default
    change.
 3. A/B buffered reads against `O_DIRECT`. Every offset and length in all five current Hy3 staged
@@ -159,7 +159,7 @@ benchmark.
    needs no artifact rewrite. General GGUF must query `STATX_DIOALIGN` and use aligned over-read or
    an aligned sidecar when a tensor extent is not directly readable.
 4. Compare io_uring registered files/buffers against the winning worker implementation. The local
-   8 MiB memlock limit bounds the current 3,538,944-byte expert ring to depth 2; cloudbox is unlimited.
+   8 MiB memlock limit bounds the current 3,538,944-byte expert ring to depth 2; Sbox is unlimited.
 5. Test mapped pinned-host reads only as a cold, read-once bypass. Recurrent experts belong in HBM;
    direct kernel reads from host memory repeatedly cross PCIe.
 
@@ -488,7 +488,7 @@ Run the five arms through one matched performance invocation after staging them 
 local-NVMe root:
 
     ARTIFACT_ROOT=/scratch/artifacts \
-      RUN_ID=cloudbox-optimized-YYYYMMDD \
+      RUN_ID=sbox-optimized-YYYYMMDD \
       research/per-expert-quant/run_performance_evals.sh
 
 When spill is storage-bound, run a fresh-server, expert-file-only cold-cache A/B before the
@@ -513,7 +513,7 @@ The matched performance runner fixes a 512-token synthetic prompt, three warmed 
 repetitions, and three fresh 128-token eager-decode processes per arm. It enables the shared cache,
 grouped dispatch, H2D prefetch, and mmap page prefetch for every arm, and records exact
 manifest/directory bytes, the GPU
-and code revision, peak process memory, and raw timing logs. cloudbox numbers are research-host results;
+and code revision, peak process memory, and raw timing logs. Sbox numbers are research-host results;
 the local RTX 5090 run remains the final deployment-performance result.
 
 ## Public evaluation
@@ -532,7 +532,7 @@ than the 350-request `LIMIT=50` screen.
 
 The pinned candidate tasks contain 4,746 evaluation documents per arm: GPQA Diamond 198,
 MATH-500 500, and MMLU-Pro history/other/economics/law/psychology
-381/924/844/1,101/798. At roughly 70 seconds per generation on the current cloudbox spill setup, a full
+381/924/844/1,101/798. At roughly 70 seconds per generation on the current Sbox spill setup, a full
 arm is about 93 hours. `LIMIT=all` therefore defaults to a 432,000-second (five-day) external
 timeout; bounded screens retain the 14,400-second default. Override `EVAL_TIMEOUT_S` deliberately
 when measured throughput changes. Every run receipt records the task list, requested limit, and

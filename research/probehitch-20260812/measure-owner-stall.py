@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Measure synthetic owner-thread stalls for the old and new peer-probe policies.
 
-The injected durations are the complete N=1 cloudbox rung costs captured in
-research/sec9-20260812/raw/cloudbox/driver.log. This deliberately measures scheduler blocking with
+The injected durations are the complete N=1 Sbox rung costs captured in
+research/sec9-20260812/raw/sbox/driver.log. This deliberately measures scheduler blocking with
 wall-clock sleeps; it is not a replacement for a two-GPU transport benchmark.
 """
 
@@ -56,7 +56,7 @@ def main() -> None:
         "kind": "config",
         "cycles": args.cycles,
         "budget_ms": BUDGET_MS,
-        "source": "research/sec9-20260812/raw/cloudbox/driver.log",
+        "source": "research/sec9-20260812/raw/sbox/driver.log",
         "rungs": RUNGS,
         "measurement": "CPU-only wall-clock sleep injection; no CUDA work",
     }, sort_keys=True))

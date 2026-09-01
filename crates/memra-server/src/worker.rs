@@ -105,75 +105,6 @@ fn dead_prime_kill_switch_refusal(
     None
 }
 
-/// `MEMRA_NVFP4_BANK_V2` and `MEMRA_SEL_DOWN8` were REMOVED from the engine on 2026-08-29
-/// (research/step37-bankv2-removal-20260829). The bank-v2 door's ON arm CHANGED GENERATED
-/// TEXT on the step37 serving path: one binary, one boot recipe, greedy, the qualified
-/// spec-on serving env, `What is 17*23? Reply with the number only.` at 25 prompt tokens --
-/// the FIRST generated token was `Ass` ("Assistance with the number only...", which then
-/// derailed) with the door ON and `Got` ("Got it, let's calculate 17 times 23... 391") with
-/// it OFF; the door alone reproduced the corruption in isolation over 9 boots
-/// (research/step37-reasoning-effort-20260829, the bisect lane). `MEMRA_SEL_DOWN8` required
-/// the v2 banks, so it came out with them.
-///
-/// **RESCOPED 2026-09-01 (bank-v3 lane, milestone 3): these two names stay REFUSED, and the
-/// programs they used to arm came back under three different names.** The mandate said retire
-/// this refusal in the same change as the restore; it is rescoped instead of deleted, because the
-/// restore does not reuse either name and deleting the guard would let a 140-era recipe boot into
-/// a program it was never written against.
-///
-/// What actually changed. The corruption above was NEVER the bank layout: it was a defaulted
-/// `in_f = 0` at two `kq_fetch` call sites in the PREFILL grouped-GEMM tail, which made the
-/// `QT_NVFP4_V2` branch fetch each per-16 UE4M3 scale from inside the packed-codes region while
-/// the 4-bit codes stayed correct — right weights, wrong scale, on every k-block but `kb = 0`.
-/// Fixed compiler-enforced (the default removed) at `1b18a61e8`, and gated device-side by the
-/// `nvfp4-bank-oracle` bin, which the original door claimed in a comment and never had. Full
-/// archaeology: research/step37-bankv3-20260901/DIAGNOSIS.md.
-///
-/// Why the names still refuse. `MEMRA_NVFP4_BANK_V2=1` armed THREE programs at once — the
-/// slot-major bank layout with its `_sel_v2` readers, the gate+up fusion (which auto-armed on the
-/// same predicate with no door of its own), and, via `MEMRA_SEL_DOWN8`, the fused down+combine.
-/// That coupling is why the 2026-08-29 bisect could name a door and not a mechanism, and it is
-/// why the restore splits them: `MEMRA_NVFP4_BANK_SM`, `MEMRA_NVFP4_SEL_GU`,
-/// `MEMRA_NVFP4_SEL_DOWN8`, each strict `0`/`1`, each admitted and priced on its own. Two of the
-/// three (`BANK_SM` + `SEL_DOWN8`) flipped to default ON on 2026-09-01 as ONE COUPLED decision
-/// with a deploy-grade battery attached; `SEL_GU` stays default OFF because it earns nothing
-/// measurable. A recipe that still says `MEMRA_NVFP4_BANK_V2=1` is asking for the bundle, by a name
-/// no code reads; honouring it silently as "just the layout" would serve a different program than
-/// the recipe was written against — the exact failure shape the incident documented, fluent wrong
-/// answers with every counter green. So the boot still fails loudly, for every model family, and
-/// the message now names the successors so the recipe is fixed in one pass.
-fn removed_bank_v2_doors_refusal(
-    nvfp4_bank_v2_env: Option<&str>,
-    sel_down8_env: Option<&str>,
-) -> Option<String> {
-    let bank_v2 = nvfp4_bank_v2_env == Some("1");
-    let sel_down8 = sel_down8_env == Some("1");
-    if bank_v2 || sel_down8 {
-        let named = match (bank_v2, sel_down8) {
-            (true, true) => "MEMRA_NVFP4_BANK_V2=1 and MEMRA_SEL_DOWN8=1 are",
-            (true, false) => "MEMRA_NVFP4_BANK_V2=1 is",
-            _ => "MEMRA_SEL_DOWN8=1 is",
-        };
-        return Some(format!(
-            "{named} set, but no code reads these names: they were REMOVED 2026-08-29 \
-             (research/step37-bankv2-removal-20260829) after the slot-major TP bank arm changed \
-             generated text in serving (bisect: research/step37-reasoning-effort-20260829). The \
-             cause was NOT the layout -- it was a defaulted scale-fetch argument in the prefill \
-             grouped GEMM, fixed 2026-09-01 -- and the programs are back under THREE separate \
-             strict 0/1 doors: MEMRA_NVFP4_BANK_SM (slot-major TP expert banks + the _sel_v2 \
-             readers) and MEMRA_NVFP4_SEL_DOWN8 (fused down+combine) are DEFAULT ON since \
-             2026-09-01, and MEMRA_NVFP4_SEL_GU (fused gate+up sweep) is DEFAULT OFF. One old \
-             name armed all three at once, which is why this boot refuses instead of guessing \
-             which one you meant. NOTE FOR THE FIX: two thirds of what this recipe asked for is \
-             now the DEFAULT, so the remediation is usually to DELETE these two vars rather than \
-             translate them; add MEMRA_NVFP4_SEL_GU=1 only if the recipe really wanted the gate+up \
-             fusion, and use MEMRA_NVFP4_BANK_SM=0 to roll back to the pre-2026-09-01 program. \
-             Receipts and per-program pricing: research/step37-bankv3-20260901."
-        ));
-    }
-    None
-}
-
 fn interactive_prefill_budget(
     configured: usize,
     configured_explicitly: bool,
@@ -244,34 +175,6 @@ fn carried_prime_batch_eligible(plan: &memra_gguf::model_plan::ModelPlan) -> boo
         .trunk_capabilities(plan)
         .batch
         .supported
-}
-
-fn concat_prime_pp_eligible(model: &HybridModel, engine: &Engine) -> bool {
-    let n_trunk = (model.cfg.n_layer - model.cfg.nextn_predict_layers) as usize;
-    let pp_open = memra_engine::pp::pp_cuts(n_trunk).is_some();
-    let streams_enabled = !memra_engine::pp::pp2_streams_off();
-    let step35 = model.uses_sliding_gated_moe_program();
-    let step35_ready = std::env::var("MEMRA_STEP35_PRIME_BATCH").as_deref() != Ok("0")
-        && model.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::CarriedPrime);
-    let cross_device = pp_open
-        && streams_enabled
-        && memra_engine::pp::PpNRt::get(engine)
-            .map(|runtime| runtime.cross_device())
-            .unwrap_or(true);
-    concat_prime_pp_eligibility(pp_open, streams_enabled, step35, step35_ready, cross_device)
-}
-
-fn concat_prime_pp_eligibility(
-    pp_open: bool,
-    streams_enabled: bool,
-    step35: bool,
-    step35_ready: bool,
-    cross_device: bool,
-) -> bool {
-    if step35 {
-        return step35_ready;
-    }
-    !pp_open || !streams_enabled || !cross_device
 }
 
 /// Prefix-split qualification follows the selected canonical layers, including mixed dense/MoE
@@ -948,53 +851,6 @@ struct LoadedModel {
     /// Constrained-decoding compiler. Its bounded, per-model background thread owns the
     /// lazily-built vocabulary trie and parser factory; none of that CPU work runs here.
     constraints: crate::constrained::ConstraintCompiler,
-    /// POST-THINK close contract (lane/step37-postthink-grammar): the think-close TOKEN-ID
-    /// sequence for a template that force-opens a think channel with no `enable_thinking`
-    /// switch (the step35 dialect). Non-empty = every constrained (`response_format`)
-    /// request on this model arms the two-phase gate at admission: think runs
-    /// unconstrained (EOS banned), the grammar engages when this sequence has been
-    /// emitted. Empty = not a post-think model (switchable templates keep their
-    /// grammar-from-token-1 path; templates with no derivable close contract keep the
-    /// HTTP-layer refusal). Derived once at load by `postthink_close_contract`; mirrored
-    /// into `ModelCaps::think_close` for the HTTP layer's admit/refuse decision.
-    postthink_close: Vec<u32>,
-}
-
-/// Derive the POST-THINK close contract from a model's template + tokenizer (load-time,
-/// pure). Returns the think-close token-id sequence, or empty when the model is not a
-/// think-forced template / no contract is derivable.
-///
-/// The template predicates are the SAME substring laws the caps probe uses (qwen think
-/// class, no enable_thinking switch); dsv4 is excluded — its renderer honours NoThink
-/// through its own `chat` thinking mode, so constrained requests there keep their
-/// existing path. The close marker for the qwen/step dialect is `</think>` (the string
-/// parser's THINK_END law); its TOKEN form is taken from the tokenizer:
-/// an atomic vocab entry when one exists (step37-NVFP4: added token 128799 — verified the
-/// only vocab entry whose bytes contain the close marker), else the special-aware
-/// encoding of the literal, accepted only if it round-trips byte-exactly. The detector
-/// matches token IDS, never decoded text: a multi-token byte alias of the close marker
-/// (e.g. "</" + "think" + ">") is NOT a close under this contract — the model signals
-/// close with its trained close token(s).
-fn postthink_close_contract(tok: &Tokenizer) -> Vec<u32> {
-    let Some(t) = tok.chat_template() else {
-        return Vec::new();
-    };
-    let think_forced = t.contains("<think>")
-        && t.contains("add_generation_prompt")
-        && !t.contains("enable_thinking")
-        && !memra_tokenizer::chat::template_is_dsv4(t);
-    if !think_forced {
-        return Vec::new();
-    }
-    const CLOSE: &str = "</think>";
-    if let Some(id) = tok.id_of(CLOSE) {
-        return vec![id];
-    }
-    let ids = tok.encode_special(CLOSE, false, true);
-    if !ids.is_empty() && tok.decode_bytes_special(&ids, true) == CLOSE.as_bytes() {
-        return ids;
-    }
-    Vec::new()
 }
 
 /// What the worker streams back to one request, over its per-request tokio mpsc channel.
@@ -1089,14 +945,6 @@ pub struct EngineError {
     pub message: String,
     /// OpenAI `error.param` when the failure names a request field.
     pub param: Option<&'static str>,
-    /// Producer-computed Retry-After seconds (lane/d2-engine-gaps-20260831, gap G6).
-    /// `None` = the HTTP layer's per-class default (the historical behavior at every
-    /// existing constructor). `Some(s)` lets a capacity producer that KNOWS its horizon
-    /// (the predictive-admission reject's earliest predicted in-flight completion)
-    /// put that estimate on the wire through the same `retry_contract_response`
-    /// machinery the shed 429s use, so the header pair stays byte-compatible
-    /// (integer seconds clamped 1..=60 + the `retry-after-ms` twin).
-    pub retry_after_s: Option<u64>,
 }
 
 impl EngineError {
@@ -1108,7 +956,6 @@ impl EngineError {
             class: ErrClass::InvalidRequest,
             message: message.into(),
             param: Some(param),
-            retry_after_s: None,
         }
     }
     pub fn context_length(message: impl Into<String>) -> Self {
@@ -1116,7 +963,6 @@ impl EngineError {
             class: ErrClass::ContextLength,
             message: message.into(),
             param: Some("messages"),
-            retry_after_s: None,
         }
     }
     pub fn model_not_found(message: impl Into<String>) -> Self {
@@ -1124,7 +970,6 @@ impl EngineError {
             class: ErrClass::ModelNotFound,
             message: message.into(),
             param: Some("model"),
-            retry_after_s: None,
         }
     }
     pub fn rate_limit(message: impl Into<String>) -> Self {
@@ -1132,23 +977,6 @@ impl EngineError {
             class: ErrClass::RateLimit,
             message: message.into(),
             param: None,
-            retry_after_s: None,
-        }
-    }
-    /// A rate-limit rejection whose producer computed its own retry horizon (D2 gap G6:
-    /// "an enforcing 429 should carry the predicted earliest-completion estimate").
-    /// Same class, same body shape, same header machinery as `rate_limit`; only the
-    /// Retry-After value is the producer's estimate instead of the class default.
-    /// Built and tested for the D2 enforcing flip (the shed byte-compat gate
-    /// `admit_predict_reject_matches_shed_contract` locks the response shape); the
-    /// first-token deadline gate (`MEMRA_FIRST_TOKEN_DEADLINE_GATE`,
-    /// lane/bench-debts-20260901) is its first production caller.
-    pub fn rate_limit_after(message: impl Into<String>, retry_after_s: u64) -> Self {
-        Self {
-            class: ErrClass::RateLimit,
-            message: message.into(),
-            param: None,
-            retry_after_s: Some(retry_after_s),
         }
     }
     pub fn overloaded(message: impl Into<String>) -> Self {
@@ -1156,7 +984,6 @@ impl EngineError {
             class: ErrClass::Overloaded,
             message: message.into(),
             param: None,
-            retry_after_s: None,
         }
     }
     /// An engine fault. A message carrying the DRIVER'S OWN out-of-memory text is promoted to
@@ -1179,7 +1006,6 @@ impl EngineError {
             class,
             message,
             param: None,
-            retry_after_s: None,
         }
     }
 }
@@ -1223,15 +1049,6 @@ pub struct Request {
     pub sampler_cfg: SamplerConfig,
     pub stop_strings: Vec<String>,
     pub trace_id: Option<String>,
-    /// The HTTP envelope's request id (`x-request-id`, the metering receipt identity).
-    /// Carried to the worker so the `[admit-predict]` shadow receipt (D2 gap G5) joins
-    /// admission verdicts to the same id every other per-request receipt uses. Empty
-    /// only for internally-constructed test requests.
-    pub request_id: String,
-    /// One-shot latch for the `[admit-predict]` receipt: a request logs its shadow
-    /// verdict at its FIRST decisive admission consideration and never again: defer
-    /// ticks and step-OOM park replays must not multiply one arrival into many rows.
-    pub(crate) admit_predict_logged: bool,
     /// Optional provider-declared prompt ceiling. The HTTP layer copies this from the
     /// model metadata; the worker enforces it after rendering/tokenization, before cache
     /// lookup, admission accounting, or any GPU work.
@@ -1286,12 +1103,6 @@ pub struct Request {
     /// GEMMA-4 vision units (lane/gemma-vision). Parallel to `images`; a request carries
     /// one family or the other (the process serves one). Same reuse-bypass law applies.
     pub gemma_images: Vec<memra_engine::vision_gemma::GemmaVisionUnit>,
-    /// glm5_next vision units (lane/glm5-vision). Same one-family + reuse-bypass laws;
-    /// placeholder runs are `<|begin_of_image|>` + `<|image|>` x n + `<|end_of_image|>`.
-    pub glm5_images: Vec<memra_engine::vision_glm5::Glm5VisionUnit>,
-    /// STEP37 vision units (lane/step37-vision). Third family, same one-family-per-process
-    /// law and the same reuse-bypass law as the two above.
-    pub step_images: Vec<memra_engine::vision_step::StepVisionUnit>,
     /// EMBEDDINGS/RERANK capture (lane/embed-serve): after prefill completes, publish
     /// `Event::PromptCapture` (last-position post-norm hidden and/or requested logit ids),
     /// then finish without decoding (the route forces `max_new: 0`). Capture requests
@@ -1301,14 +1112,6 @@ pub struct Request {
     /// Reserved host patch-memory budget. The permit is moved through requeues and released only
     /// when this worker-owned request is dropped, including streaming completion/cancellation.
     pub(crate) vision_memory: Option<crate::VisionMemoryPermit>,
-    /// The request's WIRE first-token deadline (`timeout_ms`, capped at the 90 s platform
-    /// ceiling), stamped by the HTTP handler at submission: the same instant the handler's
-    /// own 408 watch fires at (lane/bench-debts-20260901). Carried so the worker's
-    /// first-token deadline gate (`MEMRA_FIRST_TOKEN_DEADLINE_GATE`) can judge admission
-    /// against the REMAINING deadline at its own tick instead of a stale handler snapshot.
-    /// None for internally-constructed requests (tests, embeddings/rerank capture routes),
-    /// which the gate skips.
-    pub wire_deadline: Option<std::time::Instant>,
     /// per-request stream back to the handler. tokio mpsc so the async side can await it.
     pub tx: tokio::sync::mpsc::UnboundedSender<Event>,
 }
@@ -1382,10 +1185,8 @@ pub fn prompt_source_limit_error(req: &Request) -> Option<String> {
 /// HTTP layer never invents values (unknown = 0/""/None -> honest nulls in the route).
 #[derive(Debug, Clone, Default)]
 pub struct ModelCaps {
-    /// template carries a supported `<tools>` branch (qwen/step/HY3 or gemma/dsv4 dialect).
+    /// template carries the qwen-class `<tools>` branch (tools + tool_response rendering).
     pub tools_branch: bool,
-    /// Tencent HY3 suffixed-special-token dialect (native reasoning + tool calls).
-    pub hy3: bool,
     /// template appends a `<think>` tail on the generation prompt (qwen think class).
     pub qwen_think: bool,
     /// template has the `enable_thinking` switch (ThinkMode::NoThink is honored).
@@ -1395,9 +1196,7 @@ pub struct ModelCaps {
     /// checkpoint without a template 400s on /v1/chat/completions (serve-st v1 honesty
     /// gate) instead of silently rendering a format the model was never trained on.
     pub chat_ok: bool,
-    /// model's TRAINED context length (config; 0 = unknown). A training fact, not a serving
-    /// claim: the catalog bodies publish it through `published_context_length` (main.rs),
-    /// which caps it by the deployment's pinned prompt+output envelope when one exists.
+    /// model's trained context length (config; 0 = unknown) — /v1/models `context_length`.
     pub context_length: usize,
     /// tokenizer family (the GGUF/HF pre-tokenizer name, e.g. "qwen2"; "" = unknown).
     pub tokenizer: String,
@@ -1450,15 +1249,6 @@ pub struct ModelCaps {
     /// The tokenizer's own id space is the honest ceiling: ids past it aren't tokens,
     /// even where a padded lm_head would happen to make the gather "safe".
     pub n_vocab: usize,
-    /// POST-THINK close contract (lane/step37-postthink-grammar, 2026-08-30): non-empty =
-    /// this model's template force-opens a think channel with NO enable_thinking switch
-    /// AND the think-close token-id sequence is derivable from its tokenizer, so
-    /// `response_format` serves TWO-PHASE (unconstrained think with EOS banned, grammar
-    /// from the close on). Empty on switchable templates (they keep grammar-from-token-1
-    /// via the no-think switch) and on think-forced templates with no derivable close —
-    /// those keep the loud 400. Mirror of `LoadedModel::postthink_close`
-    /// (`postthink_close_contract` is the one derivation).
-    pub think_close: Vec<u32>,
 }
 
 /// Control messages into the worker. Currently just generation requests; /models and /health are
@@ -1471,41 +1261,6 @@ pub enum Cmd {
     /// Producer: `POST /admin/trim`, whose caller is serve-deploy's overlap preflight
     /// freeing VRAM for the green slot beside a warm blue.
     TrimPools(tokio::sync::oneshot::Sender<TrimReport>),
-    /// Purge every HOST-TIER (pinned RAM) prefix entry in one tenant's PC-ISO namespaces
-    /// (lane/kv-tenancy-compaction-20260831, tiering spec §0.5): key revocation or tenant
-    /// deletion must not leave that tenant's prompt bytes parked in process host memory.
-    /// This is the engine half of a deployment admin `/admin/tenants/{tenant}/purge`:
-    /// the admin contract's path parameter is `{tenant}` (the keyring tenant id), never
-    /// `{tenant_id}`. The command ALSO sweeps the tenant's UNPINNED device prefix-cache
-    /// entries: with the host tier armed, a device capacity eviction DEMOTES, so a
-    /// host-only purge would let a leftover device entry re-materialize the purged bytes
-    /// into host RAM minutes later. Pinned device entries (leased by in-flight sessions)
-    /// are reported, not dropped: revocation never aborts an admitted request; the
-    /// deployment re-fires the purge after the drain when the report says pins remained.
-    PurgeTenantHost {
-        tenant: String,
-        tx: tokio::sync::oneshot::Sender<HostPurgeReport>,
-    },
-    /// DEPLOY HANDOFF, export half (lane/host-tier-deploy-warmth-20260901): drain-demote
-    /// every evictable device prefix entry into the host tier, then serialize the tier
-    /// (newest-first under MEMRA_KV_HOST_HANDOFF_MB) to the MEMRA_KV_HOST_HANDOFF path.
-    /// Engine half of a deployment admin `POST /admin/kv-host/export`. The write is
-    /// SYNCHRONOUS on the worker thread by design: serve-deploy calls it on the DRAINED
-    /// blue slot after the edge flip, where a stalled tick has no one to stall; a slot
-    /// with active/queued requests refuses unless `force`.
-    ExportHostHandoff {
-        force: bool,
-        tx: tokio::sync::oneshot::Sender<Result<HostHandoffExportReport, String>>,
-    },
-    /// DEPLOY HANDOFF, import half: validate the handoff file's header (magic, digest,
-    /// layout_version, age, per-model artifact stamps) and answer immediately; the
-    /// entries then re-materialize ONE per scheduler tick (promote-class stalls, never a
-    /// multi-second gap on a slot that is already serving). Engine half of a deployment
-    /// admin `POST /admin/kv-host/import`. A file already present at boot arms the same
-    /// drip without this command (the sequential-deploy shape).
-    ImportHostHandoff {
-        tx: tokio::sync::oneshot::Sender<Result<HostHandoffImportStart, String>>,
-    },
 }
 
 /// What `Cmd::TrimPools` freed, by pool (entry counts, not bytes — the device memory
@@ -1516,59 +1271,6 @@ pub struct TrimReport {
     pub spec_reuse_entries: usize,
     pub dspark_reuse_entries: usize,
     pub prefix_entries: usize,
-}
-
-/// What `Cmd::PurgeTenantHost` removed (lane/kv-tenancy-compaction-20260831). `host_*`
-/// counts the pinned-RAM tier; `device_entries` counts the unpinned device prefix
-/// entries swept so they cannot re-demote the purged bytes back into host RAM;
-/// `device_pinned_left` > 0 means in-flight sessions still lease entries in the
-/// tenant's namespaces and the caller re-fires after those sessions retire.
-#[derive(Debug, serde::Serialize)]
-pub struct HostPurgeReport {
-    pub tenant: String,
-    pub host_namespaces: usize,
-    pub host_entries: usize,
-    pub host_bytes: usize,
-    pub device_entries: usize,
-    pub device_pinned_left: usize,
-}
-
-/// What `Cmd::ExportHostHandoff` wrote (lane/host-tier-deploy-warmth-20260901).
-/// `demoted_from_device` counts the drain-demote step's device->host moves;
-/// `entries`/`bytes` are what landed in the file; `skipped_over_cap` counts resident
-/// entries the MEMRA_KV_HOST_HANDOFF_MB newest-first cap left behind.
-#[derive(Debug, serde::Serialize)]
-pub struct HostHandoffExportReport {
-    pub path: String,
-    pub demoted_from_device: usize,
-    pub entries: u64,
-    pub bytes: u64,
-    pub skipped_over_cap: u64,
-    pub ms: f64,
-}
-
-/// `Cmd::ImportHostHandoff`'s immediate answer: the VALIDATED header, before any entry
-/// re-materializes (the drip then runs one frame per tick; completion is a summary log
-/// line plus the `prefix_host_handoff_*` /metrics counters). `refused_models` lists
-/// models whose entries will be skipped (artifact stamp mismatch, or not loaded here).
-#[derive(Debug, serde::Serialize)]
-pub struct HostHandoffImportStart {
-    pub path: String,
-    pub header_entries: u64,
-    pub header_bytes: u64,
-    pub age_secs: u64,
-    pub refused_models: Vec<String>,
-}
-
-/// Parked reply channels for the handoff commands, the same parking discipline as
-/// trims/purges: `handle_cmd` parks, the tick top executes where px/hpx are in scope.
-#[derive(Default)]
-struct PendingHandoffs {
-    exports: Vec<(
-        bool,
-        tokio::sync::oneshot::Sender<Result<HostHandoffExportReport, String>>,
-    )>,
-    import_starts: Vec<tokio::sync::oneshot::Sender<Result<HostHandoffImportStart, String>>>,
 }
 
 const CONSTRAINT_RESULT_POLL: Duration = Duration::from_millis(5);
@@ -1656,66 +1358,12 @@ pub struct Metrics {
     pub prefix_skips_budget: u64,
     pub prefix_skips_pinned: u64,
     pub prefix_hit_tokens: u64,
-    /// Pinned-host spill tier behind the prefix cache (lane/kv-host-spill-20260830;
-    /// MEMRA_KV_HOST_MB, default 0 = off). Entries/bytes are current gauges; demotions/
-    /// promotions count tier round-trips; the *_ms fields are CUMULATIVE copy wall-time (the
-    /// tick-stall receipt: ms per demotion = demote_ms / demotions); rejected_allocs counts
-    /// pinned-host or device allocation/copy failures during demote/promote (the first pinned
-    /// failure also latches the tier off, loudly).
-    pub prefix_host_entries: u64,
-    pub prefix_host_bytes: u64,
-    pub prefix_host_demotions: u64,
-    pub prefix_host_promotions: u64,
-    pub prefix_host_demote_ms: f64,
-    pub prefix_host_promote_ms: f64,
-    pub prefix_host_rejected_allocs: u64,
-    /// Tenant lifecycle purges (`Cmd::PurgeTenantHost`,
-    /// lane/kv-tenancy-compaction-20260831): invocation count and cumulative host-tier
-    /// entries/bytes removed, the operator receipt that revocation cleared residency.
-    pub prefix_host_purges: u64,
-    pub prefix_host_purged_entries: u64,
-    pub prefix_host_purged_bytes: u64,
-    /// Demotions EVAPORATED at the per-tenant share cap (MEMRA_KV_HOST_TENANT_PCT,
-    /// lane/kv-tenancy-compaction-20260831): a nonzero rate here with a low overall
-    /// pool occupancy is the whale-tenant signature the cap exists to bound.
-    pub prefix_host_tenant_rejects: u64,
-    /// Agent-pause demotion (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, tiering
-    /// spec Arc E): entries the pause sweep demoted to host (subset of
-    /// prefix_host_demotions), and armed candidates that expired without demoting because
-    /// the session's next request won the race (or nothing demotable remained).
-    pub prefix_host_pause_demotes: u64,
-    pub prefix_host_pause_cancels: u64,
-    /// Deploy handoff (MEMRA_KV_HOST_HANDOFF, lane/host-tier-deploy-warmth-20260901):
-    /// exports counts files written by this process; imported entries/bytes count host
-    /// entries re-materialized from a handoff file (also ordinary inserts, so the
-    /// entries/bytes gauges move with them); skips counts frames refused during import
-    /// (corrupt digest, refused model, insert refusal); each skip also logs its reason.
-    pub prefix_host_handoff_exports: u64,
-    pub prefix_host_handoff_imported_entries: u64,
-    pub prefix_host_handoff_imported_bytes: u64,
-    pub prefix_host_handoff_skips: u64,
-    /// KV budget flex (MEMRA_KV_FLEX, lane/kv-flex-20260831, tiering spec Arc G):
-    /// borrowed_bytes is the current device-cache residency ABOVE the configured floor
-    /// (a gauge, derived from the one byte accountant); sheds counts borrowed-slice
-    /// reclaims that actually evicted entries; shed_ms is CUMULATIVE shed wall-time:
-    /// ms per shed = shed_ms / sheds, the zero-tax transition receipt the Arc G gate
-    /// measures at p99.
-    pub kv_flex_borrowed_bytes: u64,
-    pub kv_flex_sheds: u64,
-    pub kv_flex_shed_ms: f64,
     /// Serving-hardening counters and gauges (lane/cx-cachespec, 2026-08-09). These make
     /// cache/admission latency attributable from `/metrics` instead of requiring a server-log
     /// grep. Defers count admission decisions (a queued request may be deferred on multiple
     /// ticks); parks count successful step-OOM requeues. Pool entry fields are current gauges.
     pub admission_session_defers: u64,
     pub admission_vram_defers: u64,
-    /// D2 gap G2 (lane/d2-engine-gaps-20260831): per-model in-flight session count and
-    /// the sum of those sessions' engine admission charges (the request-cost estimate
-    /// the VRAM gate booked at each admit). Gauges from the worker's `AdmissionBook`,
-    /// keyed by model id (bounded by the loaded roster). These are the counters a
-    /// predictive-admission decision reads; `/metrics` exposes them operator-scope.
-    pub admission_inflight: HashMap<String, u64>,
-    pub admission_booked_bytes: HashMap<String, u64>,
     pub step_oom_parks: u64,
     pub continuation_pool_hits: u64,
     pub continuation_pool_evictions: u64,
@@ -1976,70 +1624,6 @@ fn reuse_pool_global_cap() -> usize {
             .unwrap_or(DEFAULT_REUSE_POOL_GLOBAL_CAP)
     })
 }
-
-/// MEMRA_KV_PARK_COMPACT (lane/kv-tenancy-compaction-20260831, tiering spec Arc C1):
-/// `1` = at PLAIN-pool park time, compact the retiring session's `Cache` from its
-/// ladder cap (`cache.max_ctx`, up to the full server context: a 6k-token session can
-/// park ~1 GB on a 262k-ctx deployment because cap = max_ctx) to exactly its committed
-/// length, freeing the overcharge; resume re-allocates at the request's own charged
-/// cap through the same checkpoint-restore machinery the plain-affinity grow uses.
-/// Default **0 = OFF by design**: the resume byte-identity gate (compacted-park vs
-/// plain-park) and the step-OOM adjacency replay are pod-battery cells, PENDING
-/// (`research/kv-tenancy-20260831/REPORT.md`), and unmeasured behavior does not
-/// default on. OFF is byte-identical to today by construction: neither the park nor
-/// the probe path changes engage.
-fn kv_park_compact_on() -> bool {
-    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| std::env::var("MEMRA_KV_PARK_COMPACT").as_deref() == Ok("1"))
-}
-
-/// Park-time compaction eligibility for a PLAIN continuation-pool entry (Arc C1).
-/// Returns the compact row target (the parked cache's committed pos) or the NAMED
-/// refusal. Pure so the refusal matrix is unit-testable without a device. Refusals
-/// park the ORIGINAL cache unchanged: compaction is an optimization, never a gate.
-fn park_compact_rows(
-    pos: usize,
-    fed_len: usize,
-    max_ctx: usize,
-    has_swa_ring: bool,
-    has_tp_mirror: bool,
-    pp_host_bounce: bool,
-) -> Result<usize, &'static str> {
-    if has_swa_ring {
-        // The checkpoint-restore machinery can copy ring windows, but a FED-LENGTH ring
-        // target changes the physical row count and the compact-then-grow round trip
-        // has no gate receipts; a ring-aware compaction is a NAMED SEAM, not v1.
-        return Err("SWA ring cache (ring-aware compaction is a named seam, not v1)");
-    }
-    if has_tp_mirror {
-        return Err("distributed TP KV mirror present");
-    }
-    if pp_host_bounce {
-        return Err("MEMRA_PP_HOST_BOUNCE=1 (snapshot would retain peer copies)");
-    }
-    if pos == 0 || pos != fed_len {
-        // The park's whole exactness argument is that rows [0, fed) ARE the fed tokens;
-        // a pos/fed mismatch means there is nothing provably safe to copy.
-        return Err("cache pos != fed tokens (nothing provably safe to copy)");
-    }
-    if pos >= max_ctx {
-        return Err("cache is already at its committed length");
-    }
-    Ok(pos)
-}
-
-/// The exact-extension probe's capacity arm (lane/kv-tenancy-compaction-20260831).
-/// Legacy contract: a parked cache must already FIT the request's charged context
-/// (`entry_cap >= ctx_cap`), because the resume hands the cache to the session as-is.
-/// With park compaction armed, compacted entries park at fed-length capacity BY
-/// DESIGN, so the probe admits them and the admit path grows the cache to `ctx_cap`
-/// through the checkpoint-restore extension before any suffix primes. Pure so both
-/// arms are unit-testable; with the flag OFF the predicate is byte-identical to the
-/// legacy comparison.
-fn plain_resume_cap_admits(entry_cap: usize, ctx_cap: usize, park_compact: bool) -> bool {
-    entry_cap >= ctx_cap || park_compact
-}
-
 /// Minimum parked prefix worth reusing (below this, cold prime is cheaper than bookkeeping).
 const REUSE_MIN_PREFIX: usize = 16;
 
@@ -2144,16 +1728,6 @@ struct ReuseMetrics {
     plain_affinity_rewinds: u64,
 }
 
-/// Workspace-aware admission for hyper-trunk prefill (lane/glm5-gpf-workspace, 2026-08-30).
-/// DEFAULT ON, by design and with receipts (docs/FLAGS.md `MEMRA_ADMIT_PREFILL_WORKSPACE`):
-/// without it the 262k 2-card cell admitted every prompt depth on a `0 B/token` coefficient
-/// and the box died mid-prime at ~8k tokens. `=0` restores the pre-lane estimate everywhere
-/// (the rollback seam); non-hyper models are unaffected in BOTH arms.
-fn admit_prefill_workspace_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_ADMIT_PREFILL_WORKSPACE").as_deref() != Ok("0"))
-}
-
 /// Exact context allocation for a cache with one physically capped row class.
 pub(crate) fn context_cache_bytes(
     bytes_per_token: usize,
@@ -2169,18 +1743,6 @@ pub(crate) fn context_cache_bytes(
 /// Per-model request-shaped admission estimate. Full-attention rows scale with the request's
 /// context cap; Step35 SWA rows stop at their physical ring cap. Everything else is a measured
 /// high-water residual, never lowered by reuse or allocator-pool hits.
-///
-/// PREFILL WORKSPACE (lane/glm5-gpf-workspace, 2026-08-30): hyper-trunk models additionally
-/// charge the engine-published prefill-workspace formula
-/// (`HybridModel::hyper_prime_workspace_shape` — chunk-bounded per-call transients, the
-/// ctx-coupled k-pool score plane, and the prompt-long hiddens stack). The 262k 2-card cell
-/// proved the gap both ways: the coefficient here was 0 B/token for glm5 (its latent-plan
-/// layers were invisible to the KV sum) AND `observe` below can never learn the workspace
-/// (it measures the admit-time free-VRAM delta; the workspace grows at PRIME time), so every
-/// over-deep request was admitted and died as a mid-stream engine OOM
-/// (`research/glm53-flash-bringup-20260827/262k-2card-20260830/LANE.md`). Non-hyper models
-/// carry `prefill = None` and their arithmetic is byte-identical to the pre-lane behavior.
-/// `MEMRA_ADMIT_PREFILL_WORKSPACE=0` is the rollback seam (docs/FLAGS.md).
 #[derive(Debug)]
 struct AdmissionCostModel {
     plain_bytes_per_token: usize,
@@ -2189,15 +1751,6 @@ struct AdmissionCostModel {
     spec_ring_bytes_per_token: usize,
     ring_rows: usize,
     activation_bytes: usize,
-    prefill: Option<memra_engine::hybrid_forward::HyperPrimeWorkspaceShape>,
-    /// Boot-calibrated per-deployment transient floor (lane/step37-vram-admission-20260830):
-    /// the measured first-burst transient this deployment's spec path actually dips, charged
-    /// as the admission reserve instead of the static `SPEC_SHRINK_RESERVE` constant (which
-    /// the step37 capacity lane measured 4.6x low on a medium-class model: 1,611 MB charged
-    /// vs 7,458 MiB dipped). None until the boot calibration probe runs; the static constant
-    /// remains the lower bound either way (`admission_reserve`).
-    transient_floor: Option<usize>,
-    pp_activation_bytes: [usize; 4],
     last_logged: Option<(usize, bool, usize)>,
 }
 
@@ -2210,11 +1763,6 @@ impl AdmissionCostModel {
         debug_assert!(
             plain_ring_rows == 0 || spec_ring_rows == 0 || plain_ring_rows == spec_ring_rows
         );
-        let prefill = if admit_prefill_workspace_on() {
-            model.hyper_prime_workspace_shape()
-        } else {
-            None
-        };
         Self {
             plain_bytes_per_token,
             spec_bytes_per_token,
@@ -2222,9 +1770,6 @@ impl AdmissionCostModel {
             spec_ring_bytes_per_token,
             ring_rows: plain_ring_rows.max(spec_ring_rows),
             activation_bytes: 0,
-            prefill,
-            transient_floor: None,
-            pp_activation_bytes: [0; 4],
             last_logged: None,
         }
     }
@@ -2254,26 +1799,8 @@ impl AdmissionCostModel {
         )
     }
 
-    /// Prefill-workspace charge at this request's shape; 0 for every non-hyper model and under
-    /// the `MEMRA_ADMIT_PREFILL_WORKSPACE=0` rollback (both leave `prefill` unset).
-    ///
-    /// Keyed on PROMPT rows, not `ctx_cap`, deliberately: every workspace term (the per-call
-    /// transients, the k-pool score plane, the returned hiddens stack) is a function of what
-    /// the PRIME walks, and a `max_tokens`-omitted request carries `ctx_cap = server window`
-    /// (`request_ctx_cap`'s ctx-bounded arm) — charging the window there would refuse every
-    /// vendor-default short prompt on a deep-window box for workspace it never allocates. The
-    /// context planes keep charging `ctx_cap` in `context_bytes`, because that IS the eager
-    /// allocation (`Cache::new_planned` books latent rows at the session's max_ctx).
-    fn prefill_workspace_bytes(&self, prompt_rows: usize) -> usize {
-        self.prefill
-            .as_ref()
-            .map(|shape| shape.admission_bytes(prompt_rows))
-            .unwrap_or(0)
-    }
-
-    fn estimate(&self, ctx_cap: usize, prompt_rows: usize, spec: bool) -> usize {
+    fn estimate(&self, ctx_cap: usize, spec: bool) -> usize {
         self.context_bytes(ctx_cap, spec)
-            .saturating_add(self.prefill_workspace_bytes(prompt_rows))
             .saturating_add(self.activation_bytes)
     }
 
@@ -2288,17 +1815,6 @@ impl AdmissionCostModel {
         } else {
             None
         }
-    }
-
-    fn observe_pp(&mut self, residuals: &[usize]) -> Option<Vec<usize>> {
-        let mut moved = false;
-        for (stage, &residual) in residuals.iter().enumerate().take(4) {
-            if residual > self.pp_activation_bytes[stage] {
-                self.pp_activation_bytes[stage] = residual;
-                moved = true;
-            }
-        }
-        moved.then(|| self.pp_activation_bytes[..residuals.len().min(4)].to_vec())
     }
 }
 
@@ -2501,77 +2017,6 @@ fn prepare_park<P: ParkedEntryAge, S: ParkedEntryAge, D: ParkedEntryAge>(
     }
     true
 }
-
-/// PARK COMPACTION (MEMRA_KV_PARK_COMPACT, tiering spec Arc C1): shrink a retiring
-/// PLAIN session's parked `Cache` from its ladder cap to exactly its committed length.
-/// Allocate a fed-length cache, D2D-copy the live rows through the SAME machinery the
-/// plain-affinity grow path uses (`Cache::snapshot` at the committed boundary +
-/// `pp::new_cache_planned` + `pp::restore_cache_checkpoint` with the parked cache as
-/// source), and let the big allocation free on drop. SPEC/DSPARK pools are OUT OF
-/// SCOPE by design: they park LIVE engine sessions (draft scratch, captured graphs,
-/// sampler state), not a lone `Cache`. Returns the cache to park plus its cap; every
-/// refusal or failure returns the ORIGINAL cache unchanged, because compaction is an
-/// optimization and must never cost a park.
-fn compact_parked_plain_cache(
-    engine: &Engine,
-    lm: &LoadedModel,
-    cache: Cache,
-    fed_len: usize,
-    model: &str,
-) -> (Cache, usize) {
-    let orig_cap = cache.max_ctx;
-    let target = match park_compact_rows(
-        cache.pos,
-        fed_len,
-        cache.max_ctx,
-        cache.has_swa_ring(),
-        cache.tp_kv.iter().any(Option::is_some),
-        memra_engine::pp::pp_host_bounce_active(),
-    ) {
-        Ok(rows) => rows,
-        Err(why) => {
-            eprintln!(
-                "[kv-reuse] park-compact declined ({why}); parking the full \
-                 {orig_cap}-row cache (model {model})"
-            );
-            return (cache, orig_cap);
-        }
-    };
-    let t0 = Instant::now();
-    let compacted: Result<Cache, Box<dyn std::error::Error>> = (|| {
-        let snap = cache.snapshot(engine)?;
-        let mut small =
-            memra_engine::pp::new_cache_planned(engine, &lm.model.cfg, &lm.model.plan, target)?;
-        memra_engine::pp::restore_cache_checkpoint(
-            engine,
-            &lm.model,
-            Some(&cache),
-            &mut small,
-            &snap,
-        )?;
-        Ok(small)
-    })();
-    match compacted {
-        Ok(small) => {
-            eprintln!(
-                "[kv-reuse] park-compact: {target} of {orig_cap} rows retained in \
-                 {:.1}ms (model {model})",
-                t0.elapsed().as_secs_f64() * 1e3,
-            );
-            (small, target)
-        }
-        Err(err) => {
-            // Alloc or copy failure: the parked source is untouched (the restore only
-            // READS it), so the full-size park proceeds exactly as with the flag off.
-            eprintln!(
-                "[kv-reuse] park-compact failed ({err}); parking the full \
-                 {orig_cap}-row cache (model {model})"
-            );
-            (cache, orig_cap)
-        }
-    }
-}
-
 /// Right-size ladder slack: a shrunken spec session's cap must cover
 /// prompt + budget + this, so the burst-loop ContextFull guard
 /// (`committed + k + 3 >= cache_max_ctx`) can NEVER fire before MaxNew — a
@@ -2702,58 +2147,6 @@ fn affinity_enabled() -> bool {
 fn spec_stable_boundary_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_SPEC_STABLE_BOUNDARY").as_deref() != Ok("0"))
-}
-
-/// MEMRA_PREFIX_STABLE_BOUNDARY (default **0 = OFF by design**, lane/bench-debts-20260901):
-/// arm the PLAIN prefix-cache boundary capture at the render-stable last-turn boundary
-/// (`plain_checkpoint_boundary`) on both the miss path and the shallow-hit path, so the
-/// entry a cold turn mints is exact-prefix-matchable by the SAME session's next re-rendered
-/// turn: on the device tier and, after a capacity demotion, on the host tier.
-///
-/// WHY (the competitive bench's promote-starvation finding, darklanes
-/// research/competitive-bench-20260901/RESULTS.md §7): the prompt-end SEED's key carries
-/// the template's live generation header, which the next turn re-renders (the pi-rewrite
-/// divergence `plain_checkpoint_boundary` documents), so under organic multi-turn churn the
-/// demoted population is dominated by keys that can never match again: N56 cell: 425 of
-/// 432 device hits at exactly 64 tokens (the shared-system-prompt seed), 28 demotions
-/// against 1 promotion, every deep hit a grid-aligned boundary entry. The spec tier fixed
-/// this exact defect 2026-08-21 (`MEMRA_SPEC_STABLE_BOUNDARY`, frozen-boundary finding B4);
-/// this flag ports the same law to the plain capture side. OFF is byte-identical to today
-/// by construction (no call site changes an armed boundary). Default OFF because the arm is
-/// unmeasured on serving hardware: the GPU gate (organic-churn promote-rate cell, next
-/// hardware window) is named in docs/FLAGS.md.
-fn prefix_stable_boundary_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_PREFIX_STABLE_BOUNDARY").as_deref() == Ok("1"))
-}
-
-/// MEMRA_FIRST_TOKEN_DEADLINE_GATE (default **0 = OFF by design**, lane/bench-debts-20260901,
-/// competitive-bench engine debt 3: deadline behavior under thrash). `1` arms a first-token
-/// deadline feasibility check at the worker's admission seam (post-tokenize, the D2 G1
-/// placement): when the request's own prompt plus the live prime backlog cannot produce a
-/// first token inside the remaining wire deadline even at the pessimistic prefill floor
-/// (x1.5 margin, `admit_predict::first_token_wait_infeasible`), the request is refused with
-/// the shed contract's 429 + Retry-After BEFORE it burns its 90 s deadline queueing: the
-/// bench's N56 cells cancelled 70-74% of turns at that wall. Full doc: docs/FLAGS.md row.
-fn first_token_deadline_gate_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_FIRST_TOKEN_DEADLINE_GATE").as_deref() == Ok("1"))
-}
-
-/// Pure arming rule for the stable-boundary capture (unit-tested half; the stateful
-/// `has_key` dedupe stays at the call site). Deepest-wins: a stable boundary only replaces
-/// an already-armed capture when it is strictly deeper, so LCP teaching from a deeper
-/// sibling is never downgraded. The boundary must clear the entry floor and sit strictly
-/// inside the prompt (`plain_checkpoint_boundary` already grid-aligned it and handled the
-/// W1 sub-floor remainder).
-fn stable_boundary_arm(
-    stable: Option<usize>,
-    current: Option<usize>,
-    prompt_len: usize,
-) -> Option<usize> {
-    let b = stable?;
-    (b >= PREFIX_CACHE_MIN_TOKENS && b < prompt_len && current.is_none_or(|cur| b > cur))
-        .then_some(b)
 }
 
 /// FNV-1a over a token stream — a stable, allocation-free 64-bit mix. (Not a cryptographic
@@ -3178,8 +2571,7 @@ const DEFAULT_PREFIX_CACHE_PROTECTED_PCT: usize = 80;
 /// makes a stale/corrupt object fail before any bounded device copy and keeps the same identity
 /// rule a future host tier will need. v2 (lane/spec-on-cache-hit): + optional draft plane
 /// (MTP scratch rows `[0..pos)`) + boundary hidden, published from spec boundary captures.
-/// v3 (lane/glm5-prefix-latent): + per-layer latent (MLA/DSA) plane snapshots.
-const PREFIX_ENTRY_LAYOUT_VERSION: u32 = 3;
+const PREFIX_ENTRY_LAYOUT_VERSION: u32 = 2;
 
 /// Max distinct per-tenant metering rows in `Metrics::ns_tokens` (lane/cache-metering).
 /// Past the cap, new tenants/salts aggregate under "(other)" — the totals stay exact,
@@ -3569,41 +2961,6 @@ fn prefix_recurrent_state_bytes(plan: &memra_gguf::model_plan::ModelPlan) -> usi
         .saturating_mul(std::mem::size_of::<f32>())
 }
 
-/// Context-linear bytes one cached token costs in LATENT (MLA/DSA) planes: the f32 latent row
-/// per layer, plus the carried pool keys (d f32 per `pool` tokens, rounded up so the derived
-/// budget never under-books). Zero for every plan without `StatePlan::LatentKvCache`. Counted
-/// only while `MEMRA_PREFIX_LATENT` arms latent capture — with it off, glm5-class captures
-/// refuse and no entry carries these bytes (lane/glm5-prefix-latent, 2026-08-30: the defective
-/// entry cost ZERO bytes per token, 152.6 MB flat, and the derived "2 entries" budget would
-/// have held a fraction of one honest entry).
-fn prefix_latent_bytes_per_token(plan: &memra_gguf::model_plan::ModelPlan) -> usize {
-    use memra_gguf::model_plan::{AttentionPlan, MlaAttentionPlan, SparseIndexPlan, StatePlan};
-    plan.layers
-        .iter()
-        .map(|layer| match layer.state {
-            StatePlan::LatentKvCache { width, index_width } => {
-                let rows = (width as usize).saturating_mul(std::mem::size_of::<f32>());
-                let keys = match &layer.attention {
-                    AttentionPlan::Mla(MlaAttentionPlan::LatentKv {
-                        sparse_index:
-                            SparseIndexPlan::Own {
-                                head_dim,
-                                kpool: Some(kpool),
-                                ..
-                            },
-                        ..
-                    }) if index_width > 0 && kpool.pool > 0 => (*head_dim as usize)
-                        .saturating_mul(std::mem::size_of::<f32>())
-                        .div_ceil(kpool.pool as usize),
-                    _ => 0,
-                };
-                rows.saturating_add(keys)
-            }
-            _ => 0,
-        })
-        .sum()
-}
-
 fn prefix_entry_geometry_bytes(
     bytes_per_token: usize,
     recurrent_bytes: usize,
@@ -3617,14 +2974,8 @@ fn prefix_entry_geometry_bytes(
 fn model_prefix_entry_bytes(model: &HybridModel, ctx: usize) -> usize {
     let cfg = &model.cfg;
     let n_trunk = model.plan.layers.len();
-    let latent_bpt = if prefix_latent_planes_on() {
-        prefix_latent_bytes_per_token(&model.plan)
-    } else {
-        0
-    };
     prefix_entry_geometry_bytes(
-        memra_engine::cache::cache_bytes_per_token_for_plan(cfg, &model.plan, 0, n_trunk)
-            .saturating_add(latent_bpt),
+        memra_engine::cache::cache_bytes_per_token_for_plan(cfg, &model.plan, 0, n_trunk),
         prefix_recurrent_state_bytes(&model.plan),
         ctx,
     )
@@ -3772,494 +3123,10 @@ fn prefix_cache_protected_bytes(budget: usize, protected_pct: usize) -> usize {
         .saturating_add((budget % 100).saturating_mul(protected_pct) / 100)
 }
 
-/// MEMRA_KV_HOST_MB (lane/kv-host-spill-20260830): pinned-host spill tier for the prefix
-/// cache, in binary MiB. Default 0 = OFF BY DESIGN: the tier is unmeasured on serving
-/// hardware until its pod battery lands (tick-stall, identity, stress, 8-turn cache twin),
-/// and unmeasured behavior does not default on. With MEMRA_KV_HOST_MB=0 the serving path is
-/// byte-identical to today by construction: nothing is ever demoted or promoted.
-///
-/// CO-TENANCY: multiple memra stacks will share one host (fleet direction 2026-08-30), so the
-/// operator sets an explicit per-stack budget; the MemAvailable x 0.6 boot clamp below is a
-/// backstop against a fat-fingered value (the 2026-08-17 swap-storm law), NEVER the sizing
-/// mechanism. Pinned RAM is not reclaimable by the kernel once allocated.
-fn kv_host_budget_bytes() -> usize {
-    static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *B.get_or_init(|| {
-        let requested = std::env::var("MEMRA_KV_HOST_MB")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(0)
-            .saturating_mul(1024 * 1024);
-        if requested == 0 {
-            return 0;
-        }
-        let avail = std::fs::read_to_string("/proc/meminfo")
-            .ok()
-            .and_then(|s| meminfo_available_bytes(&s));
-        let Some(avail) = avail else {
-            eprintln!(
-                "[prefix-host] WARNING: MEMRA_KV_HOST_MB is set but /proc/meminfo \
-                 MemAvailable is unreadable; host tier stays OFF rather than pinning \
-                 unbudgeted RAM"
-            );
-            return 0;
-        };
-        let (budget, clamped) = clamp_kv_host_budget(requested, avail);
-        if clamped {
-            eprintln!(
-                "[prefix-host] WARNING: MEMRA_KV_HOST_MB={} MiB exceeds the MemAvailable x 0.6 \
-                 backstop ({} MiB of {} MiB available); budget CLAMPED to {} MiB. Pinned RAM \
-                 is not reclaimable: size the per-stack budget explicitly on co-tenant hosts",
-                requested / (1024 * 1024),
-                budget / (1024 * 1024),
-                avail / (1024 * 1024),
-                budget / (1024 * 1024),
-            );
-        }
-        budget
-    })
-}
-
-/// Boot clamp for the host-tier budget: at most MemAvailable x 0.6, the same fraction the
-/// spill `MemBudget` precedent uses for pinnable RAM (memra-engine spill.rs). Pure so the
-/// arithmetic is unit-testable without an environment.
-fn clamp_kv_host_budget(requested: usize, mem_available: usize) -> (usize, bool) {
-    let cap = (mem_available / 10).saturating_mul(6);
-    if requested > cap {
-        (cap, true)
-    } else {
-        (requested, false)
-    }
-}
-
-/// Parse `MemAvailable` (kB, NOT MemFree: same field the spill budget reads) out of
-/// /proc/meminfo content. None when absent or malformed.
-fn meminfo_available_bytes(meminfo: &str) -> Option<usize> {
-    let line = meminfo.lines().find(|l| l.starts_with("MemAvailable:"))?;
-    let kb = line.split_whitespace().nth(1)?.parse::<usize>().ok()?;
-    Some(kb.saturating_mul(1024))
-}
-
-/// MEMRA_KV_HOST_TENANT_PCT (lane/kv-tenancy-compaction-20260831, tiering spec Arc B):
-/// one tenant's maximum share of the MEMRA_KV_HOST_MB byte budget, integer percent
-/// 1..=100, keyed on the same PC-ISO metering row as `ns_tokens` (`t:<tenant>` under a
-/// keyring; the raw cache_salt otherwise). A demotion that would push the tenant past
-/// `budget * pct / 100` EVAPORATES instead of demoting. Default 50 BY DESIGN: one tenant
-/// can hold at most half the pool, so a second tenant always finds real capacity the
-/// moment it starts demoting (the single-tenant-occupancy hole the spec triage pulled
-/// into Arc B); a genuinely single-tenant deployment sets 100, which makes the cap equal
-/// the global budget and never bind. See the FLAGS.md row for the full trade discussion.
-fn kv_host_tenant_pct() -> usize {
-    static P: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *P.get_or_init(|| {
-        parse_kv_host_tenant_pct(std::env::var("MEMRA_KV_HOST_TENANT_PCT").ok().as_deref())
-    })
-}
-
-/// Pure parse half of [`kv_host_tenant_pct`] so the fallback matrix is unit-testable
-/// without an environment. Malformed or out-of-range values fall back to the default
-/// LOUDLY (the same posture as MEMRA_PREFIX_CACHE_PROTECTED_PCT): a share cap silently
-/// parsed as 0 would evaporate every demotion, and one parsed as huge would never bind.
-fn parse_kv_host_tenant_pct(raw: Option<&str>) -> usize {
-    const DEFAULT_KV_HOST_TENANT_PCT: usize = 50;
-    let Some(raw) = raw else {
-        return DEFAULT_KV_HOST_TENANT_PCT;
-    };
-    match raw.parse::<usize>() {
-        Ok(pct) if (1..=100).contains(&pct) => pct,
-        _ => {
-            eprintln!(
-                "[prefix-host] WARNING: MEMRA_KV_HOST_TENANT_PCT={raw:?} is not an integer \
-                 in 1..=100; using the default {DEFAULT_KV_HOST_TENANT_PCT}"
-            );
-            DEFAULT_KV_HOST_TENANT_PCT
-        }
-    }
-}
-
-/// MEMRA_KV_HOST_VERIFY (default 0 = off): sha256 the demoted entry's logical trunk state
-/// (`prefix_entry_state_digest` over KV planes + conv/ssm) at demote and re-verify it on the
-/// re-materialized device entry at promote; a mismatch drops the host entry and serves cold.
-/// Gate/diagnostic arm ONLY: the digest D2Hs every plane byte on both sides of the round
-/// trip, far too slow always-on for GB-class entries.
-fn kv_host_verify_on() -> bool {
-    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| std::env::var("MEMRA_KV_HOST_VERIFY").as_deref() == Ok("1"))
-}
-
-/// MEMRA_KV_HOST_FAULT (diagnostic door, lane/kv-host-spill-20260830): fault injection so
-/// the host tier's failure paths are EXECUTED by a gate instead of asserted in prose (the
-/// loud-failures-fail-quietly law). Values: `alloc-fail` = every pinned host alloc reports
-/// failure, exercising the loud latch-off with no pageable fallback; `flip-demote` = flip
-/// one K byte of the first demoted plane AFTER the demote digest is recorded, exercising the
-/// MEMRA_KV_HOST_VERIFY promote mismatch. Unset (the default) = off. NEVER set on a serving
-/// box: `flip-demote` intentionally corrupts host-tier bytes.
-fn kv_host_fault() -> &'static str {
-    static F: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    F.get_or_init(|| std::env::var("MEMRA_KV_HOST_FAULT").unwrap_or_default())
-}
-
-/// MEMRA_KV_HOST_HANDOFF (lane/host-tier-deploy-warmth-20260901): filesystem path of the
-/// host tier's cross-deploy handoff file. Default EMPTY/unset = OFF BY DESIGN (rollback =
-/// unset): the tier stays process-lifetime pinned memory and a blue/green flip starts cold,
-/// exactly as before this flag (darklanes TRAP:host-tier-empties-on-deploy; measured 34.1 s
-/// cold re-prefill at 82.5k tokens on box12, research/stress-campaign-20260901/RESULTS.md).
-/// Set the SAME path on both slots of a box: the draining slot's export writes it
-/// atomically (.tmp + rename), the incoming slot's import consumes it and UNLINKS it
-/// (consume-once; a refused file is also unlinked so a stale leftover cannot retry forever).
-fn kv_host_handoff_path() -> Option<&'static str> {
-    static P: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    P.get_or_init(|| {
-        std::env::var("MEMRA_KV_HOST_HANDOFF")
-            .ok()
-            .filter(|p| !p.is_empty())
-    })
-    .as_deref()
-}
-
-/// MEMRA_KV_HOST_HANDOFF_MB (default 0 = whole resident pool): newest-first byte cap on the
-/// exported entries, in binary MiB. The pool is already operator-bounded by MEMRA_KV_HOST_MB,
-/// so the uncapped default is a deliberate decision, not an accident: the handoff exists to
-/// carry exactly what the tier holds. The cap is the bounded-policy knob for boxes where the
-/// full pool's write+hash time would stretch the deploy tail (selection walks the LRU from
-/// most-recent, keeping the newest entries that fit under the cap).
-fn kv_host_handoff_cap_bytes() -> usize {
-    static B: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *B.get_or_init(|| {
-        std::env::var("MEMRA_KV_HOST_HANDOFF_MB")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(0)
-            .saturating_mul(1024 * 1024)
-    })
-}
-
 /// In-batch cold-prefix fanout. `=0` is the rollback/measurement seam.
-/// MEMRA_KV_PAUSE_DEMOTE (default **0 = OFF by design**, lane/kv-pause-demote-20260831,
-/// tiering spec Arc E): a response ending in a completed tool-call block is a session about
-/// to pause for a client-side tool round trip. With this armed (and the host tier on), the
-/// retire path arms a pause candidate; after MEMRA_KV_PAUSE_DEMOTE_MS untouched, the
-/// session's boundary prefix entry demotes to the pinned host tier instead of waiting for
-/// SLRU pressure, freeing device cache budget for the pause's duration. The next request
-/// (the tool-result turn) finds the host entry through the unchanged admit-time probe and
-/// promotes. OFF is byte-identical to today by construction: the retire path takes zero
-/// new work and the sweep never runs. See the FLAGS.md row for both arms and receipts.
-fn kv_pause_demote_on() -> bool {
-    static P: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *P.get_or_init(|| std::env::var("MEMRA_KV_PAUSE_DEMOTE").as_deref() == Ok("1"))
-}
-
-/// MEMRA_KV_PAUSE_DEMOTE_MS (default **5000 by design**): how long a tool-calls-paused
-/// boundary must sit untouched before it demotes. The default is set from the A3 session
-/// census (darklanes `research/kv-fastband-20260830/a3-census/RESULTS.md`): in-session gap
-/// p50 is 1.9 s and 56% of gaps are under 5 s, so an unconditional eager demote would pay a
-/// host round trip on the MAJORITY of tool pauses; at 5 s the demote fires only on the long
-/// tail (p90 1.9 min, p99 6.7 min) where the device bytes would otherwise idle for minutes.
-/// `0` demotes at the first sweep after retire: a gate/diagnostic arm, deliberately the
-/// A3-refuted unconditional shape.
-fn kv_pause_demote_ms() -> u64 {
-    static MS: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-    *MS.get_or_init(|| {
-        parse_kv_pause_demote_ms(std::env::var("MEMRA_KV_PAUSE_DEMOTE_MS").ok().as_deref())
-    })
-}
-
-/// Pure parse half of [`kv_pause_demote_ms`] so the fallback matrix is unit-testable without
-/// an environment. Malformed values fall back to the default LOUDLY (the
-/// MEMRA_KV_HOST_TENANT_PCT posture): a delay silently parsed as junk would either demote
-/// every pause immediately or never fire.
-fn parse_kv_pause_demote_ms(raw: Option<&str>) -> u64 {
-    const DEFAULT_KV_PAUSE_DEMOTE_MS: u64 = 5000;
-    let Some(raw) = raw else {
-        return DEFAULT_KV_PAUSE_DEMOTE_MS;
-    };
-    match raw.parse::<u64>() {
-        Ok(ms) => ms,
-        Err(_) => {
-            eprintln!(
-                "[prefix-host] WARNING: MEMRA_KV_PAUSE_DEMOTE_MS={raw:?} is not an integer \
-                 millisecond count; using the default {DEFAULT_KV_PAUSE_DEMOTE_MS}"
-            );
-            DEFAULT_KV_PAUSE_DEMOTE_MS
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// KV BUDGET FLEX (lane/kv-flex-20260831, tiering spec Arc G; default OFF).
-//
-// The one static device-KV partition in this process is the prefix cache's byte budget
-// (`prefix_cache_budget_bytes`): session KV is admitted dynamically against live free VRAM
-// (`free >= cost + reserve`) and capture-surface (embeddings/rerank) prefills are transient
-// sessions through that same gate, so sessions already occupy any idle headroom by
-// construction. What does NOT flex is the parked prefix state: an explicit
-// MEMRA_PREFIX_CACHE_MB is a fixed ceiling sized for the worst co-resident case, and every
-// byte of headroom above it sits idle whenever the capture surfaces are quiet.
-//
-// With MEMRA_KV_FLEX=1 the device prefix cache may BORROW that idle headroom: the effective
-// insert budget becomes `floor + grant`, where the grant is re-derived once per scheduler
-// tick from live effective-free VRAM minus a guard, and the SUBORDINATE-PRIORITY LAW is
-// preserved by an instant shed: a capture request's arrival in the admission pass
-// synchronously evicts the borrowed residency back to the configured floor BEFORE that
-// request's admission math runs, so embeddings/rerank see the same headroom a no-borrow
-// binary would give them. Borrowed bytes EVAPORATE on shed (no host demote: an
-// admission-tick shed must not stall behind D2H copies, the same law as `evict_all`).
-//
-// SINGLE ALLOCATOR OWNER (the spec's design law): `PrefixCache::total_bytes` remains the
-// only byte accountant, and the scheduler thread's `KvFlex` value is the only budget-policy
-// authority: `KV_FLEX_GRANT` below is written EXCLUSIVELY by `KvFlex` methods and read by
-// the insert wrappers through `kv_flex_effective_budget`. Borrowed occupancy is DERIVED
-// (`total_bytes - floor`), never double-booked.
-//
-// OFF (the default) is byte-identical to today by construction: the grant static stays 0,
-// `kv_flex_effective_budget() == prefix_cache_budget_bytes()`, and every shed call
-// early-returns without touching the cache.
-
-/// MEMRA_KV_FLEX (default **0 = OFF by design**): arm the prefix-cache borrow/shed flex.
-fn kv_flex_on() -> bool {
-    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *F.get_or_init(|| std::env::var("MEMRA_KV_FLEX").as_deref() == Ok("1"))
-}
-
-/// MEMRA_KV_FLEX_GUARD_MB (default **4096 by design**): effective-free VRAM the grant never
-/// touches. The shed is what protects capture admission; the guard bounds the mid-tick
-/// transient classes that allocate between grant refreshes (prefill/FA workspaces, capture
-/// prefill slabs, the SPEC_SHRINK_RESERVE class, plus margin). 4 GiB is the fleet VRAM
-/// margin the orn launcher already budgets.
-fn kv_flex_guard_bytes() -> usize {
-    static G: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-    *G.get_or_init(|| {
-        parse_kv_flex_mb_default(
-            std::env::var("MEMRA_KV_FLEX_GUARD_MB").ok().as_deref(),
-            "MEMRA_KV_FLEX_GUARD_MB",
-            4096,
-        ) << 20
-    })
-}
-
-/// MEMRA_KV_FLEX_HOLD_MS (default **2000 by design**): after a capture arrival, the grant
-/// stays 0 this long so a burst's later members (an embeddings array admits one worker
-/// request PER INPUT) cannot interleave with re-borrowing inserts. Re-armed by every capture
-/// arrival; expiry alone re-opens the grant at the next tick refresh.
-fn kv_flex_hold_ms() -> u64 {
-    static H: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-    *H.get_or_init(|| {
-        parse_kv_flex_mb_default(
-            std::env::var("MEMRA_KV_FLEX_HOLD_MS").ok().as_deref(),
-            "MEMRA_KV_FLEX_HOLD_MS",
-            2000,
-        ) as u64
-    })
-}
-
-/// Pure parse half for the flex knobs (the MEMRA_KV_HOST_TENANT_PCT posture: malformed
-/// values fall back LOUDLY, never silently to 0 or to unbounded).
-fn parse_kv_flex_mb_default(raw: Option<&str>, name: &str, default: usize) -> usize {
-    let Some(raw) = raw else {
-        return default;
-    };
-    match raw.parse::<usize>() {
-        Ok(v) => v,
-        Err(_) => {
-            eprintln!(
-                "[kv-flex] WARNING: {name}={raw:?} is not an unsigned integer; using the \
-                 default {default}"
-            );
-            default
-        }
-    }
-}
-
-/// The published flex grant: bytes ABOVE the configured floor the device prefix cache may
-/// currently occupy. Written EXCLUSIVELY by `KvFlex` methods on the scheduler thread (the
-/// single-owner law); read by the insert wrappers below. 0 whenever the flag is off, the
-/// hold is armed, or a shed has fired, which is exactly what makes OFF byte-identical.
-static KV_FLEX_GRANT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
-/// The effective prefix-cache insert budget: the configured/derived floor plus the current
-/// flex grant. THE one budget the production insert wrappers consult.
-fn kv_flex_effective_budget() -> usize {
-    prefix_cache_budget_bytes()
-        .saturating_add(KV_FLEX_GRANT.load(std::sync::atomic::Ordering::Relaxed))
-}
-
-/// Scheduler-owned flex state: grant policy, hold window, and shed metrics. Constructed
-/// once at worker boot; every mutation happens on the scheduler thread.
-struct KvFlex {
-    /// Armed = flag on AND a live device cache to extend (floor > 0, batched serving).
-    /// Flex extends a live cache; it never resurrects a disabled one.
-    armed: bool,
-    /// The configured/derived budget the cache sheds back to (captured at boot: the
-    /// OnceLock budget is process-lifetime).
-    floor: usize,
-    guard: usize,
-    hold: Duration,
-    hold_until: Option<Instant>,
-    sheds: u64,
-    shed_ms_total: f64,
-}
-
-impl KvFlex {
-    fn from_env(floor: usize, batching: bool) -> KvFlex {
-        let armed = kv_flex_on() && floor > 0 && batching;
-        if armed {
-            eprintln!(
-                "[kv-flex] on: device prefix cache may borrow idle headroom above its \
-                 {:.0}MB floor (guard {:.0}MB effective-free, MEMRA_KV_FLEX_GUARD_MB; \
-                 capture-arrival hold {}ms, MEMRA_KV_FLEX_HOLD_MS); borrowed bytes \
-                 EVAPORATE on shed",
-                floor as f64 / 1e6,
-                kv_flex_guard_bytes() as f64 / 1e6,
-                kv_flex_hold_ms(),
-            );
-        } else if kv_flex_on() {
-            eprintln!(
-                "[kv-flex] MEMRA_KV_FLEX=1 but the device prefix cache is off \
-                 (MEMRA_PREFIX_CACHE_MB=0 or non-batched serving): flex has nothing to \
-                 extend and stays inert"
-            );
-        }
-        KvFlex {
-            armed,
-            floor,
-            guard: kv_flex_guard_bytes(),
-            hold: Duration::from_millis(kv_flex_hold_ms()),
-            hold_until: None,
-            sheds: 0,
-            shed_ms_total: 0.0,
-        }
-    }
-
-    /// Pure grant policy: what the published grant should be at `now` given the current
-    /// effective-free reading. Unit-testable without a device.
-    fn grant_for(&self, effective_free: usize, now: Instant) -> usize {
-        if !self.armed {
-            return 0;
-        }
-        if self.hold_until.is_some_and(|until| now < until) {
-            return 0;
-        }
-        effective_free.saturating_sub(self.guard)
-    }
-
-    /// Tick-top refresh: re-derive the grant from live effective-free VRAM and publish it.
-    /// A failed memory query publishes 0 (the safe direction). No driver call when disarmed.
-    fn refresh_grant(&mut self, engine: &Engine) {
-        if !self.armed {
-            return;
-        }
-        let grant = effective_free_bytes(engine)
-            .map(|(free, _)| self.grant_for(free, Instant::now()))
-            .unwrap_or(0);
-        KV_FLEX_GRANT.store(grant, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    /// Instant shed: zero the grant and evict the borrowed residency back to the floor.
-    /// `arm_hold` marks a capture arrival (embeddings/rerank), which also parks the grant
-    /// for the hold window so the rest of the burst cannot race re-borrowing inserts.
-    /// Returns entries evicted. Borrowed bytes EVAPORATE (no demote sink; see module doc).
-    fn shed(&mut self, px: &mut PrefixCache, arm_hold: bool, why: &str) -> usize {
-        if !self.armed {
-            return 0;
-        }
-        KV_FLEX_GRANT.store(0, std::sync::atomic::Ordering::Relaxed);
-        if arm_hold {
-            self.hold_until = Some(Instant::now() + self.hold);
-        }
-        if px.total_bytes <= self.floor {
-            return 0;
-        }
-        let t0 = Instant::now();
-        let (n, freed) = px.evict_to_bytes(self.floor);
-        if n == 0 {
-            // Above-floor residency that is entirely pinned (in-flight fanout leases)
-            // cannot shed; loud, because the zero-tax gate would otherwise read a silent
-            // no-op as a pass.
-            eprintln!(
-                "[kv-flex] shed ({why}): {:.1}MB above the floor is pinned by in-flight \
-                 leases; nothing evictable",
-                (px.total_bytes - self.floor) as f64 / 1e6,
-            );
-            return 0;
-        }
-        let ms = t0.elapsed().as_secs_f64() * 1e3;
-        self.sheds += 1;
-        self.shed_ms_total += ms;
-        eprintln!(
-            "[kv-flex] shed ({why}): {n} borrowed entries, {:.1}MB evaporated in {ms:.2}ms \
-             (resident {:.1}MB / floor {:.0}MB)",
-            freed as f64 / 1e6,
-            px.total_bytes as f64 / 1e6,
-            self.floor as f64 / 1e6,
-        );
-        n
-    }
-
-    /// Current borrowed occupancy, DERIVED from the one byte accountant (never a second
-    /// counter): device-cache residency above the floor while armed, else 0.
-    fn borrowed_bytes(&self, px: &PrefixCache) -> usize {
-        if !self.armed {
-            return 0;
-        }
-        px.total_bytes.saturating_sub(self.floor)
-    }
-}
-
 fn prefix_dedup_enabled() -> bool {
     static D: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *D.get_or_init(|| std::env::var("MEMRA_PREFIX_DEDUP").as_deref() != Ok("0"))
-}
-
-/// `MEMRA_PREFIX_LATENT=1` arms latent (MLA/DSA) plane capture + restore in prefix entries
-/// (lane/glm5-prefix-latent, 2026-08-30; docs/FLAGS.md row). DEFAULT OFF BY DESIGN: the failure
-/// class this mechanism replaces was a fluent wrong answer behind a truthful-looking
-/// `cached_tokens` counter, so it ships dark until the box battery banks restored-vs-cold byte
-/// identity on real hardware. OFF is bit-exact the parent lane's guard (capture refuses,
-/// restore refuses, plain-affinity declines); unsetting the flag is the rollback seam.
-fn prefix_latent_planes_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_PREFIX_LATENT").as_deref() == Ok("1"))
-}
-
-/// `MEMRA_HYPER_SUFFIX_PRIME=1` lets a CARRIED suffix (prefix-cache restore, reuse hit,
-/// continuation) on a hyper-connections trunk ride the PRIME program instead of tokenwise
-/// `decode_step` (lane/glm5-prefix-latent2, 2026-09-01; docs/FLAGS.md row).
-///
-/// WHY: the `eager_mono && carried` veto in the two prefill sites exists for gemma4, whose
-/// engine REFUSES a pos>0 prime. glm5_next's engine does not — `prime_cache_hyper` is
-/// positional by construction (pos from `cache.pos`, KDA state via `cache.recur`, MLA/DSA
-/// via the latent planes; every chunk after the first inside one cold prime already runs
-/// exactly this program). The veto therefore sent every restored glm5 suffix through the
-/// t=1 decode program at ~33 ms/token — 10-14x a cold prime, the parent lane's
-/// PRODUCT-SUSPECT defect (research/glm5-prefix-latent-20260830/box-window, box B: suffixes
-/// 469/1407/1899 tok predicted 15.5/46.4/62.7 s at 33 ms/tok, measured 15.10/46.13/62.49 s).
-/// A prefix hit MUST NOT be slower than a miss; with the veto in place it was.
-///
-/// DEFAULT OFF BY DESIGN (new-flags law): the ON arm changes the suffix's numeric program
-/// (chunked prefill vs t=1 decode), so it ships dark until the box battery banks
-/// restored-vs-cold byte identity ON THE CONTINUATION plus the 8-turn cache twin's TTFT
-/// receipts. OFF is byte-for-byte today's tokenwise path; unsetting the flag is the
-/// rollback seam. gemma stays vetoed regardless — see `carried_suffix_primes`.
-fn hyper_suffix_prime_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_HYPER_SUFFIX_PRIME").as_deref() == Ok("1"))
-}
-
-/// Pure carve-out predicate (unit-testable half of the `eager_mono && carried` veto lift):
-/// true = this eager-only model's carried suffix may take the prime branch. Scoped to
-/// hyper-connections trunks (`decode_batch_unconverted`) — the ONLY eager-only class whose
-/// engine prime is continuation-capable. gemma4 (`DecodeBatchProgram::Gemma` / E4B) keeps
-/// the tokenwise path: its prime is fresh-monolithic only and the engine refuses pos>0.
-///
-/// PROXY WARNING (PR #93 review finding 7, the no-generic-model-support law):
-/// `decode_batch_unconverted` literally means "topology carries HyperConnections", and
-/// "continuation-capable prime" is a MEASURED property of glm5_next's walk, not of the
-/// topology class. A SECOND hyper-connections family inherits this carve-out under the
-/// flag automatically and MUST re-gate its own restored-vs-cold byte identity before its
-/// serving recipe may arm MEMRA_HYPER_SUFFIX_PRIME — loading and running never proves
-/// support.
-fn carried_suffix_primes(hyper_trunk: bool, flag_on: bool) -> bool {
-    hyper_trunk && flag_on
 }
 
 /// Immediate LCP-boundary restore. **Default OFF**: the lane that built this mechanism
@@ -4356,47 +3223,6 @@ fn dspark_spec_boot_conflict(
         }
     }
     None
-}
-
-/// MEMRA_MTP_SKIP boot verdict for a model whose embedded MTP head was skipped at load
-/// (declared NextN blocks, `mtp == None`) and that has NO dspark drafter armed, i.e. the
-/// only spec program the model could have run was the embedded MTP arm the skip removed.
-/// `Err` = FATAL, `Ok` = the announced serves-PLAIN line; pure (env value in, verdict out)
-/// so the tooth exercises every arm without a worker spawn; the caller panics on `Err`.
-///
-/// CONTRACT (refuse-loud, hermes review finding baf261e2bfdae118, 2026-08-31): the ONLY
-/// value that boots plain is the literal `MEMRA_SERVE_SPEC=0`, because that is the one
-/// value `serve_spec_enabled()` treats as spec-off. Everything else — an explicit non-zero
-/// request AND the unset/blank default — refuses at boot. The earlier contract announced
-/// PLAIN once for the unset default, but unset means spec ON for serving, so a skip-on
-/// deployment with no drafter would fluently serve plain decode at half speed with no
-/// receipt: the DFlash2 2026-08-25 incident class. The refusal names the missing drafter
-/// and the explicit override so the operator states the intent instead of inheriting it.
-fn mtp_skip_no_drafter_verdict(serve_spec_env: Option<&str>) -> Result<String, String> {
-    match serve_spec_env {
-        // The one spec-off form serve_spec_enabled() honors: an explicit plain choice.
-        Some("0") => Ok(
-            "serves PLAIN decode by explicit choice (MEMRA_SERVE_SPEC=0): the embedded MTP \
-             head was skipped (MEMRA_MTP_SKIP=1) and no dspark drafter is armed, so no spec \
-             program exists for this model"
-                .to_string(),
-        ),
-        Some(v) if !v.trim().is_empty() && v.trim() != "0" => Err(format!(
-            "MEMRA_MTP_SKIP=1 removed the embedded MTP head but MEMRA_SERVE_SPEC={v} explicitly \
-             requests speculative serving and no dspark drafter is armed for this model; the \
-             spec request cannot be honored; unset MEMRA_MTP_SKIP, set MEMRA_SERVE_SPEC=0, or \
-             arm MEMRA_DSPARK_SPEC"
-        )),
-        _ => Err(
-            "MEMRA_MTP_SKIP=1 removed the embedded MTP head, no dspark drafter is armed, and \
-             MEMRA_SERVE_SPEC is unset (or a form other than the literal 0), which leaves \
-             serving spec ON by default; booting would silently serve PLAIN decode at reduced \
-             speed with no receipt (the DFlash2 2026-08-25 incident class). Refusing at boot: \
-             set MEMRA_SERVE_SPEC=0 to choose plain serving explicitly, arm MEMRA_DSPARK_SPEC, \
-             or unset MEMRA_MTP_SKIP"
-                .to_string(),
-        ),
-    }
 }
 
 fn gemma4_spec_k_env() -> usize {
@@ -4820,114 +3646,27 @@ fn admit_reserve_override() -> Option<usize> {
 /// the admit-oom gate was calibrated on); it only unbinds where the old rule over-reserved.
 /// The teeth/diagnostics override door applies to both branches — a forced-tiny reserve must
 /// invert the verdict on whichever path the gate is exercising.
-fn admission_reserve(
-    spec_capable: bool,
-    cost: usize,
-    calibrated_floor: Option<usize>,
-    override_bytes: Option<usize>,
-) -> usize {
-    // Floor precedence (lane/step37-vram-admission-20260830): the teeth/diagnostics door
-    // wins outright (it exists to force a deliberately-wrong reserve and watch the gate go
-    // red); otherwise the BOOT-CALIBRATED per-deployment transient floor, never below the
-    // static constant (the c<=48 no-regression contract: this math only ever tightens where
-    // the static floor under-charged — measured 4.6x low on the step37 capacity lane's
-    // medium-class deployment: 1,611 MB charged vs 7,458 MiB measured first-burst transient).
-    let floor = override_bytes.unwrap_or_else(|| {
-        calibrated_floor
-            .unwrap_or(SPEC_SHRINK_RESERVE)
-            .max(SPEC_SHRINK_RESERVE)
-    });
+fn admission_reserve(spec_capable: bool, cost: usize, override_bytes: Option<usize>) -> usize {
+    let floor = override_bytes.unwrap_or(SPEC_SHRINK_RESERVE);
     if spec_capable { floor } else { cost.min(floor) }
 }
 
-#[cfg(test)]
-fn pp_boundary_slot_bytes(token_cap: usize, n_embd: usize) -> usize {
-    token_cap
+fn dual_pp_boundary_slot_bytes(wave_cap: usize, n_embd: usize) -> usize {
+    wave_cap
         .saturating_mul(n_embd)
         .saturating_mul(std::mem::size_of::<f32>())
-}
-
-fn pp_boundary_slot_token_cap(
-    model: &HybridModel,
-    n_trunk: usize,
-    context_cap: usize,
-    decode_wave_cap: usize,
-) -> usize {
-    if !memra_engine::pp::prime_pp_on() || memra_engine::pp::pp2_streams_off() {
-        return decode_wave_cap;
-    }
-    let single = memra_engine::hybrid_forward::prime_chunk_ranges(
-        context_cap,
-        n_trunk,
-        model.gdn_prime_grid_on(),
-    )
-    .into_iter()
-    .map(|(start, end)| end.saturating_sub(start))
-    .max()
-    .unwrap_or(0)
-    .max(decode_wave_cap);
-    // Concat-prime transports the sum of all selected rows through one boundary payload. The
-    // scheduler caps each member by PRIME_BATCH_MAX_T and the group by PRIME_BATCH.
-    let batch_members = std::env::var("MEMRA_PRIME_BATCH")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(6);
-    let batch_rows = std::env::var("MEMRA_PRIME_BATCH_MAX_T")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(2048);
-    pp_boundary_token_cap_resolve(
-        single,
-        decode_wave_cap,
-        model.uses_sliding_gated_moe_program()
-            && std::env::var("MEMRA_STEP35_PRIME_BATCH").as_deref() != Ok("0"),
-        batch_members,
-        batch_rows,
-    )
-}
-
-fn pp_boundary_token_cap_resolve(
-    single_prime_rows: usize,
-    decode_wave_cap: usize,
-    concat_eligible: bool,
-    batch_members: usize,
-    batch_rows: usize,
-) -> usize {
-    let concat = if concat_eligible && batch_members >= 2 {
-        batch_members.saturating_mul(batch_rows)
-    } else {
-        0
-    };
-    single_prime_rows.max(decode_wave_cap).max(concat)
-}
-
-fn pp_boundary_growth_projection(
-    runtime: &memra_engine::pp::PpNRt,
-    stages: usize,
-    elements: usize,
-) -> Option<Vec<usize>> {
-    if runtime.n_stages() != stages {
-        return None;
-    }
-    let mut growth = vec![0usize; stages];
-    for (stage, slot) in growth.iter_mut().enumerate().skip(1) {
-        *slot = runtime
-            .boundary_slot_growth_bytes(stage - 1, elements)
-            .ok()?;
-    }
-    Some(growth)
 }
 
 fn admission_required(cost: usize, reserve: usize) -> usize {
     cost.saturating_add(reserve)
 }
 
-/// One PP stage's admission charge. `session_bytes` is the exact stage-owned context allocation
-/// plus the conservative fixed high-water residual. Each simultaneously active stage walker gets
-/// the existing transient reserve. Every receiving stage additionally owns both persistent
-/// boundary slots prepared before the first dual tick.
+/// One stage's dual-only admission charge. `session_bytes` is the exact stage-owned context
+/// allocation plus the conservative fixed high-water residual. Each simultaneously active stage
+/// walker gets the existing transient reserve. The receiving stage additionally owns both
+/// persistent boundary slots prepared before the first dual tick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PpStageAdmission {
+struct DualPpStageAdmission {
     session_bytes: usize,
     reserve_bytes: usize,
     boundary_bytes: usize,
@@ -4952,7 +3691,7 @@ impl AdmissionDeviceRequirement {
             .saturating_add(self.boundary_bytes)
     }
 
-    fn add_stage(&mut self, stage: PpStageAdmission) {
+    fn add_stage(&mut self, stage: DualPpStageAdmission) {
         self.session_bytes = self.session_bytes.saturating_add(stage.session_bytes);
         self.reserve_bytes = self.reserve_bytes.saturating_add(stage.reserve_bytes);
         self.boundary_bytes = self.boundary_bytes.saturating_add(stage.boundary_bytes);
@@ -4970,21 +3709,12 @@ impl AdmissionDeviceRequirement {
     }
 }
 
-fn pp_device_requirements(
-    devices: &[usize],
-    stages: &[PpStageAdmission],
+fn dual_pp_device_requirements(
+    devices: [usize; 2],
+    stages: [DualPpStageAdmission; 2],
 ) -> Vec<AdmissionDeviceRequirement> {
-    assert_eq!(
-        devices.len(),
-        stages.len(),
-        "PP devices/stages length mismatch"
-    );
-    assert!(
-        (2..=4).contains(&stages.len()),
-        "PP admission supports 2..=4 stages"
-    );
-    let mut requirements: Vec<AdmissionDeviceRequirement> = Vec::with_capacity(devices.len());
-    for (&device, &stage) in devices.iter().zip(stages) {
+    let mut requirements: Vec<AdmissionDeviceRequirement> = Vec::with_capacity(2);
+    for (device, stage) in devices.into_iter().zip(stages) {
         if let Some(existing) = requirements
             .iter_mut()
             .find(|requirement| requirement.device == device)
@@ -5035,12 +3765,12 @@ fn parallel_device_requirements(
     primary_device: usize,
     primary_cost: usize,
     reserve_bytes: usize,
-    pp: Option<(&[usize], &[PpStageAdmission])>,
+    dual: Option<([usize; 2], [DualPpStageAdmission; 2])>,
     request_tp_kv: &[StepTpKvDeviceAdmission],
     pending_tp_kv: &[StepTpKvDeviceAdmission],
 ) -> Vec<AdmissionDeviceRequirement> {
-    let mut requirements = if let Some((devices, stages)) = pp {
-        pp_device_requirements(devices, stages)
+    let mut requirements = if let Some((devices, stages)) = dual {
+        dual_pp_device_requirements(devices, stages)
     } else {
         vec![AdmissionDeviceRequirement {
             device: primary_device,
@@ -5099,25 +3829,24 @@ fn active_unmaterialized_tp_kv(
     Ok(totals)
 }
 
-fn pp_stage_context_bytes(
+fn dual_pp_stage_context_bytes(
     model: &HybridModel,
     fence: &[usize],
     ctx_cap: usize,
     spec: bool,
-) -> Option<Vec<usize>> {
-    let n_stages = fence.len().checked_sub(1)?;
-    if !(2..=4).contains(&n_stages) || fence[0] != 0 {
+) -> Option<[usize; 2]> {
+    if fence.len() != 3 || fence[0] != 0 {
         return None;
     }
     let n_layers = model.cfg.n_layer as usize;
-    if fence.windows(2).any(|pair| pair[0] > pair[1]) || fence[n_stages] > n_layers {
+    if fence[1] > fence[2] || fence[2] > n_layers {
         return None;
     }
     let ring_rows = memra_engine::cache::cache_ring_row_cap_for_plan(&model.plan);
-    let mut stage_bytes = vec![0usize; n_stages];
-    for stage in 0..n_stages {
+    let mut stage_bytes = [0usize; 2];
+    for stage in 0..2 {
         let lo = fence[stage];
-        let hi = if stage + 1 == n_stages {
+        let hi = if stage == 1 {
             n_layers
         } else {
             fence[stage + 1]
@@ -5136,7 +3865,7 @@ fn pp_stage_context_bytes(
     if spec {
         let (plain, plain_ring, _) = model.plain_session_kv_shape();
         let (spec, spec_ring, _) = model.spec_session_kv_shape();
-        stage_bytes[n_stages - 1] = stage_bytes[n_stages - 1].saturating_add(context_cache_bytes(
+        stage_bytes[1] = stage_bytes[1].saturating_add(context_cache_bytes(
             spec.saturating_sub(plain),
             spec_ring.saturating_sub(plain_ring),
             ring_rows,
@@ -5149,52 +3878,31 @@ fn pp_stage_context_bytes(
         model.plain_session_kv_shape()
     };
     debug_assert_eq!(
-        stage_bytes
-            .iter()
-            .fold(0usize, |total, bytes| total.saturating_add(*bytes)),
+        stage_bytes[0].saturating_add(stage_bytes[1]),
         context_cache_bytes(total, total_ring, ring_rows, ctx_cap),
         "PP stage-local KV admission must partition the aggregate cache geometry",
     );
     Some(stage_bytes)
 }
 
-fn pp_admission_stage_count(streams_enabled: bool, fence: Option<&[usize]>) -> Option<usize> {
-    if !streams_enabled {
-        return None;
-    }
-    let stages = fence?.len().checked_sub(1)?;
-    (2..=4).contains(&stages).then_some(stages)
-}
-
-fn pp_stage_admissions(
-    context_bytes: &[usize],
-    activation_bytes: &[usize],
+fn dual_pp_stage_admission(
+    context_bytes: [usize; 2],
+    activation_bytes: usize,
     reserve_bytes: usize,
-    boundary_growth_bytes: &[usize],
-) -> Vec<PpStageAdmission> {
-    assert!(
-        (2..=4).contains(&context_bytes.len()),
-        "PP admission supports 2..=4 stages"
-    );
-    assert_eq!(
-        context_bytes.len(),
-        boundary_growth_bytes.len(),
-        "PP admission boundary growth/stage mismatch"
-    );
-    assert_eq!(
-        context_bytes.len(),
-        activation_bytes.len(),
-        "PP admission activation/stage mismatch"
-    );
-    context_bytes
-        .iter()
-        .enumerate()
-        .map(|(stage, &context_bytes)| PpStageAdmission {
-            session_bytes: context_bytes.saturating_add(activation_bytes[stage]),
+    boundary_slot_bytes: usize,
+) -> [DualPpStageAdmission; 2] {
+    [
+        DualPpStageAdmission {
+            session_bytes: context_bytes[0].saturating_add(activation_bytes),
             reserve_bytes,
-            boundary_bytes: boundary_growth_bytes[stage],
-        })
-        .collect()
+            boundary_bytes: 0,
+        },
+        DualPpStageAdmission {
+            session_bytes: context_bytes[1].saturating_add(activation_bytes),
+            reserve_bytes,
+            boundary_bytes: boundary_slot_bytes.saturating_mul(2),
+        },
+    ]
 }
 
 /// STEP-OOM PARK budget (lane/admit-oom, 2026-08-06): how many times a session may be parked
@@ -5221,74 +3929,6 @@ fn step_oom_retries() -> u32 {
 /// silently retried as if it were a capacity blip.
 fn is_cuda_oom(err: &str) -> bool {
     err.contains("CUDA_ERROR_OUT_OF_MEMORY") || err.contains("out of memory")
-}
-
-/// The error the MEMRA_STEP_OOM_FAULT door forges: a QUOTED CUDA OOM (so `is_cuda_oom`
-/// matches it exactly like a driver failure) that NAMES the door (so every downstream log
-/// line that prints the error (the park line, the honest-error line) carries the receipt
-/// that this was an injection, never a real alloc failure).
-const STEP_OOM_FAULT_MSG: &str =
-    "CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_STEP_OOM_FAULT diagnostic door)";
-
-/// MEMRA_STEP_OOM_FAULT (diagnostic fault door, default absent/0 = OFF): how many phase-(a)
-/// session steps to fail with [`STEP_OOM_FAULT_MSG`] instead of running. THE REASON IT
-/// EXISTS (battery-20260831 tenancy-gates T2, darklanes
-/// `research/kv-fastband-20260830/battery-20260831/tenancy-gates/RESULTS.md`): the step-OOM
-/// PARK branch is unreachable from outside the process: four independent refusal layers
-/// (the KV-capacity 429, the `[admit-oom]` VRAM defer, the TTFT deadline on queued
-/// requests, and the boot-time pool reservation that makes a later ballast invisible) catch
-/// every external pressure shape first, so the branch whose multi-active form was
-/// fleet-fatal before lane/step37-vram-admission had NO executable gate (the
-/// loud-failures / executed-failure-path laws). This is the same posture as
-/// `MEMRA_KV_HOST_FAULT`: the injection forges ONLY the error; the park-vs-honest-error
-/// match, the teardown fence, `park_requeue`, and the retry budget all run un-doctored
-/// production logic. `1` proves the park branch (fresh session parks, requeues, re-primes,
-/// answers 200); a value above `MEMRA_STEP_OOM_RETRIES` walks the same session into the
-/// bounded-retry honest error. Malformed values are OFF with a loud warning. NEVER set on
-/// a serving box.
-fn step_oom_fault_remaining() -> &'static std::sync::atomic::AtomicU32 {
-    static R: std::sync::OnceLock<std::sync::atomic::AtomicU32> = std::sync::OnceLock::new();
-    R.get_or_init(|| {
-        let n = match std::env::var("MEMRA_STEP_OOM_FAULT") {
-            Ok(raw) => match raw.parse::<u32>() {
-                Ok(n) => n,
-                Err(_) => {
-                    eprintln!(
-                        "[admit-oom] WARNING: MEMRA_STEP_OOM_FAULT={raw:?} is not an \
-                         injection count; the door stays OFF"
-                    );
-                    0
-                }
-            },
-            Err(_) => 0,
-        };
-        if n > 0 {
-            eprintln!(
-                "[admit-oom] WARN: MEMRA_STEP_OOM_FAULT={n} armed: the next {n} session \
-                 step(s) will report a SYNTHETIC CUDA OOM (diagnostic door, never a \
-                 serving configuration)"
-            );
-        }
-        std::sync::atomic::AtomicU32::new(n)
-    })
-}
-
-/// Consume one injection from the door's budget. Pure half of [`step_oom_fault_fire`] so
-/// the countdown is unit-testable without an environment.
-fn step_oom_fault_consume(remaining: &std::sync::atomic::AtomicU32) -> bool {
-    use std::sync::atomic::Ordering;
-    let mut cur = remaining.load(Ordering::Relaxed);
-    while cur > 0 {
-        match remaining.compare_exchange(cur, cur - 1, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(_) => return true,
-            Err(now) => cur = now,
-        }
-    }
-    false
-}
-
-fn step_oom_fault_fire() -> bool {
-    step_oom_fault_consume(step_oom_fault_remaining())
 }
 
 /// Run one allocation retry only when the first failure released reclaimable state. The caller
@@ -5328,14 +3968,6 @@ struct PrefixEntry {
     kv: Vec<Option<PrefixPlane>>,
     conv: Vec<Option<CudaSlice<f32>>>,
     ssm: Vec<Option<CudaSlice<f32>>>,
-    /// Per-layer latent (MLA/DSA) plane snapshots (lane/glm5-prefix-latent, 2026-08-30):
-    /// f32 latent rows, the carried k-pool keys + `index_pools_ready`, and the live tail-ring
-    /// rows. `None` on every non-MLA layer and on an allocated-but-unexecuted MTP latent layer
-    /// (the same absent-at-capture convention `kv` uses). Populated ONLY when
-    /// `MEMRA_PREFIX_LATENT=1` armed the capture; the restore guard admits a latent-bearing
-    /// cache ONLY for entries whose slots here are populated, so entries minted before the
-    /// flag flip (or by a publish site that cannot capture latent state) keep refusing.
-    latent: Vec<Option<memra_engine::cache::LatentPlaneSnapshot>>,
     pos: usize,
     last_logits: Vec<f32>,
     /// MTP draft-scratch rows `[0..pos)` (lane/spec-on-cache-hit): present only on entries
@@ -5381,7 +4013,6 @@ enum PartialPrefixDecision {
     RefuseNoSuffix,
     RefuseRoutedMoe,
     RefuseRecurrentMidEntry,
-    RefuseLatentMidEntry,
 }
 
 impl PartialPrefixDecision {
@@ -5397,24 +4028,15 @@ impl PartialPrefixDecision {
             Self::RefuseRecurrentMidEntry => Some(
                 "hybrid conv/SSM state exists only at the entry endpoint and cannot be truncated",
             ),
-            Self::RefuseLatentMidEntry => Some(
-                "latent (MLA/DSA) planes restore whole-entry only: an interior boundary's index \
-                 tail ring is unrecoverable and the suffix would re-prime through a different \
-                 numeric program",
-            ),
         }
     }
 }
 
 /// Decide only the NEW mid-entry path. Whole-entry lookup remains unchanged and already restores
 /// recurrent state exactly at its captured endpoint. For an actual mid-entry split, recurrent
-/// state, latent planes, and routed-MoE are fail-closed until their own boundary exactness
-/// receipts exist. The latent arm exists in its own right (not just via glm5's recurrent
-/// layers): an all-MLA pack (glm_dsa class) has `entry_has_recurrent == false` and must not
-/// slide through that gap when `MEMRA_PREFIX_PARTIAL_RESTORE=1` is armed.
+/// state and routed-MoE are fail-closed until their own boundary exactness receipts exist.
 fn partial_prefix_decision(
     entry_has_recurrent: bool,
-    entry_has_latent: bool,
     routed_moe: bool,
     lcp: usize,
     entry_pos: usize,
@@ -5426,8 +4048,6 @@ fn partial_prefix_decision(
         PartialPrefixDecision::RefuseRoutedMoe
     } else if entry_has_recurrent && lcp != entry_pos {
         PartialPrefixDecision::RefuseRecurrentMidEntry
-    } else if entry_has_latent && lcp != entry_pos {
-        PartialPrefixDecision::RefuseLatentMidEntry
     } else {
         PartialPrefixDecision::Restore
     }
@@ -6062,7 +4682,6 @@ impl PrefixCache {
     /// Insert (exact-key deduped per namespace) into probation, then SLRU-evict back under
     /// MEMRA_PREFIX_CACHE_MB. The byte budget and both segment targets stay GLOBAL across
     /// namespaces (VRAM is one resource); only visibility is namespaced.
-    #[cfg_attr(not(test), allow(dead_code))]
     fn insert(&mut self, key: &PoolKey, e: PrefixEntry, why: &str) {
         let _ = self.insert_with_budget_pins_and_pct(
             key,
@@ -6071,58 +4690,25 @@ impl PrefixCache {
             prefix_cache_budget_bytes(),
             prefix_cache_protected_pct(),
             0,
-            None,
         );
     }
 
-    /// `insert`, with capacity-evicted entries DEMOTED into the pinned host tier instead of
-    /// dropped (lane/kv-host-spill-20260830). Every production insert site routes here; the
-    /// plain `insert` above remains for env-independent unit tests and is demote-free. With
-    /// the tier off (`MEMRA_KV_HOST_MB=0`) the demote sink is a no-op drop, byte-identical
-    /// to `insert`.
-    fn insert_demoting(
-        &mut self,
-        key: &PoolKey,
-        e: PrefixEntry,
-        why: &str,
-        engine: &Engine,
-        host: &mut HostPrefixCache,
-    ) {
-        let _ = self.insert_with_budget_pins_and_pct(
-            key,
-            e,
-            why,
-            // Floor + flex grant (lane/kv-flex-20260831); with MEMRA_KV_FLEX off the grant
-            // is 0 by construction and this is exactly prefix_cache_budget_bytes().
-            kv_flex_effective_budget(),
-            prefix_cache_protected_pct(),
-            0,
-            Some(&mut |dead| host_demote_prefix_entry(engine, host, dead)),
-        );
-    }
-
-    /// Insert a prefix already serving `pins` in-flight sessions, with the host-tier demote
-    /// sink attached (lane/kv-host-spill-20260830; this replaced the sink-less
-    /// `insert_pinned`). Returns one stable handle which each participating Session clones
-    /// and releases once.
-    fn insert_pinned_demoting(
+    /// Insert a prefix already serving `pins` in-flight sessions. Returns one stable
+    /// handle which each participating Session clones and releases once.
+    fn insert_pinned(
         &mut self,
         key: &PoolKey,
         e: PrefixEntry,
         why: &str,
         pins: usize,
-        engine: &Engine,
-        host: &mut HostPrefixCache,
     ) -> Option<PrefixPin> {
         let id = self.insert_with_budget_pins_and_pct(
             key,
             e,
             why,
-            // Floor + flex grant (lane/kv-flex-20260831); grant is 0 with the flag off.
-            kv_flex_effective_budget(),
+            prefix_cache_budget_bytes(),
             prefix_cache_protected_pct(),
             pins,
-            Some(&mut |dead| host_demote_prefix_entry(engine, host, dead)),
         )?;
         Some(PrefixPin {
             key: key.clone(),
@@ -6141,11 +4727,9 @@ impl PrefixCache {
             budget,
             DEFAULT_PREFIX_CACHE_PROTECTED_PCT,
             0,
-            None,
         );
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the eviction/demote seam's call contract; bundling into a struct is a refactor, not a lint fix
     fn insert_with_budget_pins_and_pct(
         &mut self,
         key: &PoolKey,
@@ -6154,11 +4738,6 @@ impl PrefixCache {
         budget: usize,
         protected_pct: usize,
         initial_pins: usize,
-        // HOST-TIER DEMOTE SINK (lane/kv-host-spill-20260830): capacity-evicted entries are
-        // handed here still holding their device bytes; the sink D2H-copies them into the
-        // pinned host tier and drops the device planes. None (tests / tier off) = plain drop.
-        // Leased/pinned entries never reach the sink: they are absent from the evictable LRU.
-        mut demote: Option<&mut dyn FnMut(PrefixEntry)>,
     ) -> Option<u64> {
         if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
             eprintln!(
@@ -6269,11 +4848,6 @@ impl PrefixCache {
                 k.0,
                 ns_suffix(&k.1)
             );
-            // Host-tier demote (lane/kv-host-spill-20260830): the evicted entry still holds
-            // its device bytes; the sink copies them to pinned host RAM before the drop.
-            if let Some(sink) = demote.as_mut() {
-                sink(dead);
-            }
         }
         debug_assert!(
             self.total_bytes <= budget,
@@ -6283,30 +4857,6 @@ impl PrefixCache {
             .get(key)
             .and_then(|pool| pool.iter().find(|entry| entry.id == inserted_id))
             .map(|_| inserted_id)
-    }
-
-    /// KV-FLEX SHED (lane/kv-flex-20260831): evict entries in capacity order (probation
-    /// LRU first, protected LRU past its share: the SAME victim function the insert-time
-    /// budget loop uses, so flex adds no second eviction policy) until residency is back
-    /// at `target`. Evicted bytes EVAPORATE (deliberately no demote sink, the `evict_all`
-    /// law: an admission-tick shed must not stall behind gigabytes of D2H). Pinned entries
-    /// are untouchable and the loop stops when no victim remains. Returns
-    /// (entries evicted, bytes freed).
-    fn evict_to_bytes(&mut self, target: usize) -> (usize, usize) {
-        let mut n = 0usize;
-        let mut freed = 0usize;
-        while self.total_bytes > target {
-            let Some((key, i)) = self.capacity_victim() else {
-                break;
-            };
-            let Some(dead) = self.remove_at(&key, i) else {
-                break;
-            };
-            freed += dead.bytes;
-            n += 1;
-        }
-        self.evictions += n as u64;
-        (n, freed)
     }
 
     /// Drop every EVICTABLE entry (session cache alloc failed — sessions win over
@@ -6322,40 +4872,6 @@ impl PrefixCache {
         self.evictions += n as u64;
         n
     }
-
-    /// TENANT LIFECYCLE PURGE, device half (lane/kv-tenancy-compaction-20260831): drop
-    /// every UNPINNED entry in the tenant's PC-ISO namespaces so a later capacity
-    /// eviction cannot DEMOTE the purged bytes back into the host tier. Same namespace
-    /// match as `HostPrefixCache::purge_tenant` (scope_namespace -> meter_key, the one
-    /// derivation). Entries drop directly, never through the demote sink. Pinned
-    /// entries (leased by in-flight sessions) are counted and left: revocation does not
-    /// abort admitted requests, and the caller re-fires after those sessions retire.
-    /// Returns (entries removed, pinned entries left).
-    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize) {
-        let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
-        let victims: Vec<PoolKey> = self
-            .entries
-            .keys()
-            .filter(|k| crate::auth::meter_key(&k.1) == row)
-            .cloned()
-            .collect();
-        let (mut removed, mut pinned_left) = (0usize, 0usize);
-        for key in &victims {
-            let mut i = 0usize;
-            while i < self.entries.get(key).map_or(0, Vec::len) {
-                // remove_at swap_removes: on success the next candidate lands AT i; a
-                // pinned refusal (None with i in bounds) advances past the leased entry.
-                if self.remove_at(key, i).is_some() {
-                    removed += 1;
-                } else {
-                    pinned_left += 1;
-                    i += 1;
-                }
-            }
-        }
-        self.evictions += removed as u64;
-        (removed, pinned_left)
-    }
 }
 
 fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
@@ -6363,2242 +4879,6 @@ fn retire_prefix_pin(px: &mut PrefixCache, prefix_pin: &mut Option<PrefixPin>) {
         && !px.unpin(&pin)
     {
         eprintln!("[prefix-cache] warning: retired session held a missing prefix pin");
-    }
-}
-
-// ---------------------------------------------------------------------------
-// PREFIX-CACHE HOST TIER (lane/kv-host-spill-20260830).
-//
-// Design law: the host tier FEEDS the device cache; the restore path is untouched. A device
-// capacity eviction demotes the entry's bytes VERBATIM into pinned cacheable host RAM (they
-// are already q8_0 K / q5_1 V at rest: no requantization anywhere); a later probe that
-// misses the device pool but exactly matches a host entry re-materializes a NORMAL device
-// `PrefixEntry` (alloc_u8 + htod_u8_into), inserts it pinned, and serves through the existing
-// `prefix_restore_at`. Byte-lossless by construction, and `MEMRA_KV_HOST_MB=0` (the default)
-// is byte-identical to today because nothing ever reaches the tier.
-//
-// Model exclusions ride the upstream refusals for free: step37's SWA ring and glm5's latent
-// planes are refused at `prefix_snapshot`, so no such entry can ever exist to demote.
-//
-// v1 keeps every copy on the CUDA owner thread (the HY3 spill law) and instruments each
-// demote/promote duration so the pod tick-stall cell has its receipt. The overlapped
-// copy-stream variant is a NAMED SEAM on `Engine::dtoh_u8_into_pinned`, not built.
-
-/// One full-attn layer's demoted prefix bytes: the pinned-host twin of `PrefixPlane`.
-struct HostPlane {
-    k: memra_engine::PinnedHostBuf,
-    v: memra_engine::PinnedHostBuf,
-    len: usize,
-    k_tok_bytes: usize,
-    v_tok_bytes: usize,
-}
-
-/// Host copy of a `DflashKvTail` (device f32 layer pairs pulled D2H). Small beside the trunk
-/// planes (~85 MB at the flagship shape) and required for losslessness: a promoted entry must
-/// be field-for-field the entry that was demoted, or a dspark restore silently downgrades.
-struct HostDflashTail {
-    layers: Vec<(Vec<f32>, Vec<f32>)>,
-    base: usize,
-    rows: usize,
-    len: usize,
-    row_bytes: usize,
-}
-
-/// Field-for-field host mirror of `PrefixEntry`. `layout_version` travels with the entry and a
-/// mismatched version is REFUSED at both insert and promote: the identity rule the
-/// PREFIX_ENTRY_LAYOUT_VERSION comment reserved for exactly this tier.
-struct HostPrefixEntry {
-    layout_version: u32,
-    pool_key: PoolKey,
-    toks: Vec<u32>,
-    kv: Vec<Option<HostPlane>>,
-    conv: Vec<Option<Vec<f32>>>,
-    ssm: Vec<Option<Vec<f32>>>,
-    pos: usize,
-    last_logits: Vec<f32>,
-    draft: Option<HostPlane>,
-    dspark_draft: Option<HostDflashTail>,
-    last_h: Vec<f32>,
-    bytes: usize,
-    last_use: Instant,
-    id: u64,
-    /// MEMRA_KV_HOST_VERIFY=1 arm: `prefix_entry_state_digest` of the device entry at demote,
-    /// re-checked against the re-materialized entry at promote. None with the flag off.
-    verify_digest: Option<String>,
-}
-
-/// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU on purpose:
-/// demotions arrive already SLRU-ordered from the device tier, so a second segmentation here
-/// would re-derive the same ordering at extra bookkeeping cost. Keyed exactly like the device
-/// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
-#[derive(Default)]
-struct HostPrefixCache {
-    entries: HashMap<PoolKey, Vec<HostPrefixEntry>>,
-    /// (last_use, id) -> (pool key, index); same deterministic tie-break as the device LRU.
-    lru: std::collections::BTreeMap<(Instant, u64), (PoolKey, usize)>,
-    next_id: u64,
-    total_bytes: usize,
-    budget: usize,
-    /// Latched OFF on the first pinned-alloc failure (loud, never a silent pageable
-    /// fallback): pinned RAM exhaustion on a co-tenant host is an operator sizing error and
-    /// retrying it every eviction would grind the tick.
-    disabled: bool,
-    demotions: u64,
-    promotions: u64,
-    evictions: u64,
-    /// Pinned-host or device allocation/copy failures during demote/promote.
-    rejected_allocs: u64,
-    /// MEMRA_KV_HOST_VERIFY mismatches (each is also a loud log line and drops the entry).
-    digest_mismatches: u64,
-    /// Cumulative copy wall-time, the tick-stall receipt for the pod cell.
-    demote_ms_total: f64,
-    promote_ms_total: f64,
-    /// Tenant lifecycle purges executed (`Cmd::PurgeTenantHost`,
-    /// lane/kv-tenancy-compaction-20260831) and what they removed, cumulative: the
-    /// operator receipt that a revocation/deletion actually cleared resident bytes.
-    purges: u64,
-    purged_entries: u64,
-    purged_bytes: u64,
-    /// PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT, lane/kv-tenancy-compaction-
-    /// 20260831): one tenant's ceiling as a percent of `budget`. Resident bytes per
-    /// metering row (`auth::meter_key` of the pool namespace, the same row identity as
-    /// `ns_tokens`) are maintained at insert/remove/purge; a demotion that would push a
-    /// row past `tenant_budget()` EVAPORATES (counted in `tenant_rejects`) instead of
-    /// demoting, so one tenant can never squeeze the others out of the pool. The map is
-    /// bounded by the entries themselves: every row holds at least one resident entry,
-    /// and empty rows are removed on decrement.
-    tenant_pct: usize,
-    tenant_bytes: HashMap<String, usize>,
-    tenant_rejects: u64,
-    /// AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, tiering
-    /// spec Arc E). `pause_demotes` counts entries the pause sweep moved into this tier
-    /// (a subset of `demotions`: park-boundary publishes plus resident device entries);
-    /// `pause_cancels` counts armed candidates that expired WITHOUT demoting anything:
-    /// the session's next request arrived first (park consumed / entry touched or pinned),
-    /// or nothing demotable remained. Cancels are counted at the deadline, not at arrival.
-    pause_demotes: u64,
-    pause_cancels: u64,
-    /// DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901, MEMRA_KV_HOST_HANDOFF):
-    /// `handoff_exports` counts export invocations that wrote a file; `handoff_imports` /
-    /// `handoff_import_bytes` count entries re-materialized from a handoff file (each is
-    /// ALSO an ordinary `insert`, so entries/bytes gauges move with them); `handoff_skips`
-    /// counts frames refused during import (corrupt digest, refused model, insert
-    /// refusal), each with its own loud log line. The sentinel's fresh-empty-vs-broken
-    /// read post-deploy: imports > 0 with skips == 0 is a clean warm start.
-    handoff_exports: u64,
-    handoff_imports: u64,
-    handoff_import_bytes: u64,
-    handoff_skips: u64,
-}
-
-impl HostPrefixCache {
-    fn new(budget: usize) -> Self {
-        HostPrefixCache {
-            budget,
-            tenant_pct: kv_host_tenant_pct(),
-            ..Default::default()
-        }
-    }
-
-    /// One tenant's byte ceiling in this pool: MEMRA_KV_HOST_TENANT_PCT of the budget.
-    fn tenant_budget(&self) -> usize {
-        self.budget.saturating_mul(self.tenant_pct) / 100
-    }
-
-    /// Monotonic change stamp over every host-tier event counter: a tick whose stamp
-    /// moved forces the throttled metrics publish (see `host_telem_published` in `run`),
-    /// so `/metrics` can never quiesce behind the `[prefix-host]` log lines (battery O6
-    /// finding: an admit-tick promote and the idle-wake pause sweep both land on ticks
-    /// the 32-tick/retire publish skips). Every summand is monotonic, so `!=` against the
-    /// last published stamp is exactly "something happened since"; wrapping_add keeps the
-    /// comparison honest even at u64 edges. `evictions` and `digest_mismatches` are
-    /// included although unrendered: each moves the rendered entries/bytes gauges.
-    fn telemetry_stamp(&self) -> u64 {
-        self.demotions
-            .wrapping_add(self.promotions)
-            .wrapping_add(self.evictions)
-            .wrapping_add(self.rejected_allocs)
-            .wrapping_add(self.digest_mismatches)
-            .wrapping_add(self.purges)
-            .wrapping_add(self.purged_entries)
-            .wrapping_add(self.tenant_rejects)
-            .wrapping_add(self.pause_demotes)
-            .wrapping_add(self.pause_cancels)
-            .wrapping_add(self.handoff_exports)
-            .wrapping_add(self.handoff_imports)
-            .wrapping_add(self.handoff_skips)
-    }
-
-    /// Would demoting `bytes` under `key` push its tenant past the share cap? The ONE
-    /// derivation of the evaporation decision, used both by the demote hook (BEFORE the
-    /// D2H copy, so an evaporating demotion skips the PCIe trip entirely) and by
-    /// `insert` (the authoritative gate). An exact-key twin's bytes are credited first:
-    /// a same-key re-demote at the cap replaces its twin rather than being refused.
-    /// `tenant_pct >= 100` DISARMS the check by design: at 100 the share equals the
-    /// whole pool, and the global byte-LRU already governs that boundary with better
-    /// semantics (evict-oldest) than evaporation, so the tier stays byte-identical to
-    /// its pre-flag behavior.
-    fn tenant_cap_would_evaporate(&self, key: &PoolKey, toks: &[u32], bytes: usize) -> bool {
-        if self.tenant_pct >= 100 {
-            return false;
-        }
-        let row = crate::auth::meter_key(&key.1);
-        let twin = self
-            .key_index(key, toks)
-            .map_or(0, |i| self.entries[key][i].bytes);
-        let resident = self.tenant_bytes.get(row).copied().unwrap_or(0);
-        resident.saturating_sub(twin) + bytes > self.tenant_budget()
-    }
-
-    /// The tier takes work only when it has a budget and has not latched off.
-    fn armed(&self) -> bool {
-        self.budget > 0 && !self.disabled
-    }
-
-    fn disable(&mut self, why: &str) {
-        if !self.disabled {
-            eprintln!(
-                "[prefix-host] TIER DISABLED: {why}. No pageable fallback by design: pinned \
-                 RAM on this host is exhausted or misbudgeted; lower MEMRA_KV_HOST_MB (or fix \
-                 the co-tenant split) and restart to re-arm"
-            );
-        }
-        self.disabled = true;
-    }
-
-    fn n_entries(&self) -> usize {
-        self.entries.values().map(|p| p.len()).sum()
-    }
-
-    /// Longest entry whose token key exactly prefixes `prompt`: the SAME rules as the device
-    /// `PrefixCache::lookup` (PC-ISO pool key, PREFIX_CACHE_MIN_TOKENS floor, exact tokens).
-    fn lookup(&self, key: &PoolKey, prompt: &[u32]) -> Option<usize> {
-        let pool = self.entries.get(key)?;
-        let mut best: Option<(usize, usize)> = None;
-        for (i, e) in pool.iter().enumerate() {
-            let n = e.toks.len();
-            if n >= PREFIX_CACHE_MIN_TOKENS
-                && n <= prompt.len()
-                && prompt[..n] == e.toks[..]
-                && best.is_none_or(|(_, bn)| n > bn)
-            {
-                best = Some((i, n));
-            }
-        }
-        best.map(|(i, _)| i)
-    }
-
-    fn key_index(&self, key: &PoolKey, toks: &[u32]) -> Option<usize> {
-        self.entries
-            .get(key)?
-            .iter()
-            .position(|e| e.toks[..] == *toks)
-    }
-
-    /// Refresh recency for pool[i] (promote reuse). The only unpinned-LRU writer besides
-    /// insert/remove, mirroring the device cache's touch discipline.
-    fn touch(&mut self, key: &PoolKey, i: usize) {
-        let Some(old_lru) = self
-            .entries
-            .get(key)
-            .and_then(|p| p.get(i))
-            .map(|e| (e.last_use, e.id))
-        else {
-            return;
-        };
-        self.lru.remove(&old_lru);
-        let e = &mut self.entries.get_mut(key).unwrap()[i];
-        e.last_use = Instant::now();
-        let new_lru = (e.last_use, e.id);
-        self.lru.insert(new_lru, (key.clone(), i));
-    }
-
-    /// Remove pool[i], keeping the LRU index exact (swap_remove + moved-entry fixup, the same
-    /// invariant the device cache's `remove_at` maintains).
-    fn remove_at(&mut self, key: &PoolKey, i: usize) -> Option<HostPrefixEntry> {
-        let pool = self.entries.get_mut(key)?;
-        if i >= pool.len() {
-            return None;
-        }
-        let dead = pool.swap_remove(i);
-        self.lru.remove(&(dead.last_use, dead.id));
-        if let Some(moved) = pool.get(i) {
-            self.lru
-                .insert((moved.last_use, moved.id), (key.clone(), i));
-        }
-        if pool.is_empty() {
-            self.entries.remove(key);
-        }
-        self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
-        // Per-tenant share-cap accounting (MEMRA_KV_HOST_TENANT_PCT): every removal
-        // path (LRU eviction, exact-key replace, promote drop) flows through here.
-        let row = crate::auth::meter_key(&key.1);
-        if let Some(t) = self.tenant_bytes.get_mut(row) {
-            *t = t.saturating_sub(dead.bytes);
-            if *t == 0 {
-                self.tenant_bytes.remove(row);
-            }
-        }
-        Some(dead)
-    }
-
-    /// Insert a demoted entry: identity/version-checked, exact-key REPLACE (the incoming
-    /// entry is the last-evicted device state: it may carry draft planes an older twin
-    /// lacks, so it wins), then LRU-evict back under the host byte budget.
-    fn insert(&mut self, key: &PoolKey, mut e: HostPrefixEntry) -> bool {
-        if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION || e.pool_key != *key {
-            eprintln!(
-                "[prefix-host] REFUSED demote insert: entry identity/version mismatch \
-                 (entry model {}{}, version {}; pool model {}{}, version {})",
-                e.pool_key.0,
-                ns_suffix(&e.pool_key.1),
-                e.layout_version,
-                key.0,
-                ns_suffix(&key.1),
-                PREFIX_ENTRY_LAYOUT_VERSION,
-            );
-            return false;
-        }
-        if e.bytes > self.budget {
-            eprintln!(
-                "[prefix-host] skip demote: entry {:.1}MB > host budget {:.0}MB",
-                e.bytes as f64 / 1e6,
-                self.budget as f64 / 1e6,
-            );
-            return false;
-        }
-        // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT): a demotion that would push
-        // this tenant's resident bytes past its share EVAPORATES (the entry drops,
-        // exactly as with the tier off) instead of demoting; the tenant's own resident
-        // entries are never evicted to make room. Checked BEFORE the exact-key twin is
-        // removed, charging only the replace delta, so a same-key re-demote at the cap
-        // cannot destroy the resident twin and then refuse its replacement. The demote
-        // hook runs the same predicate BEFORE the D2H copy; reaching this arm means an
-        // insert bypassed that hook (tests, future callers), and the gate holds here.
-        let row = crate::auth::meter_key(&key.1).to_string();
-        if self.tenant_cap_would_evaporate(key, &e.toks, e.bytes) {
-            self.tenant_rejects += 1;
-            eprintln!(
-                "[prefix-host] skip demote: tenant {row:?} at its share cap \
-                 ({:.1}MB resident + {:.1}MB entry > {:.0}MB = {}% of {:.0}MB); \
-                 entry evaporates",
-                self.tenant_bytes.get(&row).copied().unwrap_or(0) as f64 / 1e6,
-                e.bytes as f64 / 1e6,
-                self.tenant_budget() as f64 / 1e6,
-                self.tenant_pct,
-                self.budget as f64 / 1e6,
-            );
-            return false;
-        }
-        if let Some(i) = self.key_index(key, &e.toks) {
-            let _ = self.remove_at(key, i);
-        }
-        e.id = self.next_id;
-        self.next_id += 1;
-        e.last_use = Instant::now();
-        let lru_key = (e.last_use, e.id);
-        self.total_bytes += e.bytes;
-        *self.tenant_bytes.entry(row).or_insert(0) += e.bytes;
-        let idx = {
-            let pool = self.entries.entry(key.clone()).or_default();
-            pool.push(e);
-            pool.len() - 1
-        };
-        self.lru.insert(lru_key, (key.clone(), idx));
-        while self.total_bytes > self.budget {
-            let Some((victim_key, victim_i)) = self.lru.values().next().cloned() else {
-                break;
-            };
-            let Some(dead) = self.remove_at(&victim_key, victim_i) else {
-                break;
-            };
-            self.evictions += 1;
-            eprintln!(
-                "[prefix-host] evict (LRU): {} tokens, {:.1}MB (host resident {:.1}MB / \
-                 {:.0}MB, model {}{})",
-                dead.toks.len(),
-                dead.bytes as f64 / 1e6,
-                self.total_bytes as f64 / 1e6,
-                self.budget as f64 / 1e6,
-                victim_key.0,
-                ns_suffix(&victim_key.1)
-            );
-        }
-        true
-    }
-
-    /// TENANT LIFECYCLE PURGE (lane/kv-tenancy-compaction-20260831, tiering spec §0.5):
-    /// remove EVERY resident entry whose pool namespace belongs to `tenant`: all of that
-    /// tenant's end-user salts at once, across every model. The match is the metering row
-    /// identity of the tenant's keyring-scoped namespace, derived through the SAME two
-    /// functions that scoped the entries in (`auth::scope_namespace` -> `auth::meter_key`),
-    /// so the purge key can never drift from the insert key. Raw-salt (no-keyring)
-    /// namespaces carry no tenant and never match. Runs even when the tier is latched off
-    /// (`disabled`): latched-off means no NEW pinned allocs, and the resident bytes are
-    /// exactly what a revocation must clear. Returns (namespaces, entries, bytes) removed.
-    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {
-        let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
-        let victims: Vec<PoolKey> = self
-            .entries
-            .keys()
-            .filter(|k| crate::auth::meter_key(&k.1) == row)
-            .cloned()
-            .collect();
-        let (mut entries, mut bytes) = (0usize, 0usize);
-        for key in &victims {
-            if let Some(pool) = self.entries.remove(key) {
-                for e in &pool {
-                    self.lru.remove(&(e.last_use, e.id));
-                    entries += 1;
-                    bytes += e.bytes;
-                }
-            }
-        }
-        self.total_bytes = self.total_bytes.saturating_sub(bytes);
-        // The tenant's whole share-cap row goes with its pools (every pool for the row
-        // was just removed, so the row's resident bytes are 0 by construction).
-        self.tenant_bytes.remove(&row);
-        self.purges += 1;
-        self.purged_entries += entries as u64;
-        self.purged_bytes += bytes as u64;
-        (victims.len(), entries, bytes)
-    }
-}
-
-/// D2H one device plane into pinned cacheable host memory. Alloc failures LATCH THE TIER OFF
-/// (loud, no pageable fallback); copy failures drop the entry and count, without latching.
-fn host_plane_from_device(
-    engine: &Engine,
-    host: &mut HostPrefixCache,
-    p: &PrefixPlane,
-) -> Result<HostPlane, String> {
-    let kb = p.len * p.k_tok_bytes;
-    let vb = p.len * p.v_tok_bytes;
-    let mut alloc = |n: usize| -> Result<memra_engine::PinnedHostBuf, String> {
-        let attempt = if kv_host_fault() == "alloc-fail" {
-            Err("injected failure (MEMRA_KV_HOST_FAULT=alloc-fail)".to_string())
-        } else {
-            memra_engine::PinnedHostBuf::new(n).map_err(|err| err.to_string())
-        };
-        attempt.map_err(|err| {
-            host.rejected_allocs += 1;
-            host.disable(&format!("pinned host alloc of {n} B failed: {err}"));
-            format!("pinned host alloc of {n} B failed: {err}")
-        })
-    };
-    let mut k = alloc(kb)?;
-    let mut v = alloc(vb)?;
-    if kb > 0 {
-        engine
-            .dtoh_u8_into_pinned(&p.k, &mut k, kb)
-            .map_err(|err| format!("K plane D2H failed: {err}"))?;
-    }
-    if vb > 0 {
-        engine
-            .dtoh_u8_into_pinned(&p.v, &mut v, vb)
-            .map_err(|err| format!("V plane D2H failed: {err}"))?;
-    }
-    Ok(HostPlane {
-        k,
-        v,
-        len: p.len,
-        k_tok_bytes: p.k_tok_bytes,
-        v_tok_bytes: p.v_tok_bytes,
-    })
-}
-
-/// Deep-copy one evicted device entry into a host entry, field for field. The device entry is
-/// dropped by the caller afterwards (its planes free back to the device pool).
-fn host_entry_from_device(
-    engine: &Engine,
-    host: &mut HostPrefixCache,
-    dead: &PrefixEntry,
-    verify_digest: Option<String>,
-) -> Result<HostPrefixEntry, String> {
-    let mut kv = Vec::with_capacity(dead.kv.len());
-    for plane in &dead.kv {
-        kv.push(match plane {
-            Some(p) => Some(host_plane_from_device(engine, host, p)?),
-            None => None,
-        });
-    }
-    // Diagnostic fault door (see kv_host_fault): corrupt one demoted byte AFTER the demote
-    // digest was recorded, so the MEMRA_KV_HOST_VERIFY promote check has a real mismatch to
-    // catch. Gate-box only.
-    if kv_host_fault() == "flip-demote"
-        && let Some(plane) = kv.iter_mut().flatten().find(|p| p.len * p.k_tok_bytes > 0)
-    {
-        plane.k.as_mut_slice()[0] ^= 0xff;
-        eprintln!(
-            "[prefix-host] FAULT: flipped one demoted K byte \
-                 (MEMRA_KV_HOST_FAULT=flip-demote)"
-        );
-    }
-    let mut conv = Vec::with_capacity(dead.conv.len());
-    for c in &dead.conv {
-        conv.push(match c {
-            Some(c) => Some(
-                engine
-                    .dtoh(c)
-                    .map_err(|err| format!("conv state D2H failed: {err}"))?,
-            ),
-            None => None,
-        });
-    }
-    let mut ssm = Vec::with_capacity(dead.ssm.len());
-    for s in &dead.ssm {
-        ssm.push(match s {
-            Some(s) => Some(
-                engine
-                    .dtoh(s)
-                    .map_err(|err| format!("ssm state D2H failed: {err}"))?,
-            ),
-            None => None,
-        });
-    }
-    let draft = match &dead.draft {
-        Some(p) => Some(host_plane_from_device(engine, host, p)?),
-        None => None,
-    };
-    let dspark_draft = match &dead.dspark_draft {
-        Some(t) => {
-            let mut layers = Vec::with_capacity(t.layers.len());
-            for (k, v) in &t.layers {
-                layers.push((
-                    engine
-                        .dtoh(k)
-                        .map_err(|err| format!("draft tail K D2H failed: {err}"))?,
-                    engine
-                        .dtoh(v)
-                        .map_err(|err| format!("draft tail V D2H failed: {err}"))?,
-                ));
-            }
-            Some(HostDflashTail {
-                layers,
-                base: t.base,
-                rows: t.rows,
-                len: t.len,
-                row_bytes: t.row_bytes,
-            })
-        }
-        None => None,
-    };
-    Ok(HostPrefixEntry {
-        layout_version: dead.layout_version,
-        pool_key: dead.pool_key.clone(),
-        toks: dead.toks.clone(),
-        kv,
-        conv,
-        ssm,
-        pos: dead.pos,
-        last_logits: dead.last_logits.clone(),
-        draft,
-        dspark_draft,
-        last_h: dead.last_h.clone(),
-        bytes: dead.bytes,
-        last_use: Instant::now(),
-        id: 0, // recency identity assigned by HostPrefixCache::insert
-        verify_digest,
-    })
-}
-
-/// What one demotion attempt did with the source entry's bytes, so callers that still OWN
-/// device state (the pause sweep) can dispose of it honestly. The SLRU sink ignores this:
-/// its source entry was already evicted and dies either way.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HostDemoteOutcome {
-    /// Tier off or latched off: nothing was attempted.
-    Off,
-    /// The tenant share cap refused residence BEFORE any copy (the tier's evaporation law):
-    /// the bytes cease to exist, they do not stay on device.
-    Evaporated,
-    /// The host copy PUBLISHED (insert succeeded); the device bytes are now redundant.
-    Demoted,
-    /// Digest/copy/alloc/insert failure: no host copy exists. A caller holding live device
-    /// state keeps it (fail closed); the SLRU sink's dying entry just drops.
-    Failed,
-}
-
-/// The demote hook: called from the device cache's capacity-eviction loop (the ONLY
-/// pressure-driven demote site: the emergency `evict_all` flush still DROPS bytes rather
-/// than stalling an alloc-pressure tick behind gigabytes of synchronous D2H; that flush is a
-/// named seam for a copy-stream follow-up, not an oversight). Pinned/leased entries never
-/// reach here: they are absent from the evictable LRU by construction.
-fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, dead: PrefixEntry) {
-    let _ = host_demote_prefix_ref(engine, host, &dead);
-    // `dead` drops here whatever happened: it was already evicted from the device tier.
-}
-
-/// By-reference demote body shared by the SLRU sink above and the pause sweep
-/// (lane/kv-pause-demote-20260831): the SOURCE ENTRY IS NOT CONSUMED, so a caller whose
-/// device state is still live (a parked session, a resident prefix entry) removes it only
-/// after `Demoted`/`Evaporated`: the entry stays until the host copy publishes, which is
-/// what makes a demote racing the next request lose cleanly.
-fn host_demote_prefix_ref(
-    engine: &Engine,
-    host: &mut HostPrefixCache,
-    dead: &PrefixEntry,
-) -> HostDemoteOutcome {
-    if !host.armed() {
-        return HostDemoteOutcome::Off; // tier off (or latched off): byte-identical to today
-    }
-    // LATENT (MLA/DSA) planes cannot be expressed in the host tier yet (`HostPrefixEntry`
-    // carries no latent slot — extending it is its own lane's work, not this seam's). A
-    // latent-bearing entry refuses BEFORE any copy: `Failed` keeps live device state at the
-    // pause-demote caller (fail closed), and the SLRU sink's dying entry drops exactly as it
-    // did before the tier existed. Silently demoting would strip the planes and the restore
-    // guard (`unsupported_prefix_restore`) would then refuse every promote-hit anyway.
-    if dead.latent.iter().any(Option::is_some) {
-        eprintln!(
-            "[prefix-host] demote refused: entry carries latent (MLA/DSA) planes the host \
-             tier cannot hold ({} tokens, model {}{})",
-            dead.toks.len(),
-            dead.pool_key.0,
-            ns_suffix(&dead.pool_key.1)
-        );
-        return HostDemoteOutcome::Failed;
-    }
-    // PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT), checked BEFORE the D2H copy: a
-    // demotion that would evaporate at insert must skip the PCIe trip entirely, not
-    // pay gigabytes of synchronous copy for an entry the pool then refuses.
-    if host.tenant_cap_would_evaporate(&dead.pool_key, &dead.toks, dead.bytes) {
-        host.tenant_rejects += 1;
-        eprintln!(
-            "[prefix-host] demote evaporated at the tenant share cap before the D2H \
-             copy: {} tokens, {:.1}MB ({}% of {:.0}MB, MEMRA_KV_HOST_TENANT_PCT; \
-             model {}{})",
-            dead.toks.len(),
-            dead.bytes as f64 / 1e6,
-            host.tenant_pct,
-            host.budget as f64 / 1e6,
-            dead.pool_key.0,
-            ns_suffix(&dead.pool_key.1),
-        );
-        return HostDemoteOutcome::Evaporated;
-    }
-    let t0 = Instant::now();
-    let verify_digest = if kv_host_verify_on() {
-        match prefix_entry_state_digest(engine, dead, dead.pos) {
-            Ok(d) => Some(d),
-            Err(err) => {
-                eprintln!("[prefix-host] demote digest failed ({err}); nothing demoted");
-                return HostDemoteOutcome::Failed;
-            }
-        }
-    } else {
-        None
-    };
-    match host_entry_from_device(engine, host, dead, verify_digest) {
-        Ok(e) => {
-            let toks = e.toks.len();
-            let bytes = e.bytes;
-            if host.insert(&dead.pool_key, e) {
-                let ms = t0.elapsed().as_secs_f64() * 1e3;
-                host.demotions += 1;
-                host.demote_ms_total += ms;
-                eprintln!(
-                    "[prefix-host] demote: {toks} tokens, {:.1}MB in {ms:.1}ms (host resident \
-                     {:.1}MB / {:.0}MB, model {}{})",
-                    bytes as f64 / 1e6,
-                    host.total_bytes as f64 / 1e6,
-                    host.budget as f64 / 1e6,
-                    dead.pool_key.0,
-                    ns_suffix(&dead.pool_key.1)
-                );
-                HostDemoteOutcome::Demoted
-            } else {
-                // insert's own refusals (identity/version mismatch, entry > whole budget)
-                // already logged their reason.
-                HostDemoteOutcome::Failed
-            }
-        }
-        Err(err) => {
-            eprintln!("[prefix-host] demote failed ({err}); nothing demoted");
-            HostDemoteOutcome::Failed
-        }
-    }
-}
-
-/// AGENT-PAUSE KV DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, tiering
-/// spec Arc E): one retired tool-calls-paused session whose boundary state should demote to
-/// the host tier if the pause outlives MEMRA_KV_PAUSE_DEMOTE_MS. Armed at retire, fired (or
-/// cancelled) by the per-tick sweep in `run()`, the existing tick/timer machinery, never a
-/// thread. The tape is the retiring session's committed token sequence: it identifies both
-/// the exact-fed plain continuation-pool park and the deepest device prefix entry that
-/// prefixes it, at FIRE time rather than arm time so anything the next request consumed or
-/// touched in between reads as a cancel.
-struct PauseCandidate {
-    pool_key: PoolKey,
-    /// Committed tokens at retire (prompt + generated feedback; `SpecSession::committed` on
-    /// the spec path, `Session::fed` otherwise). Owned clone, bounded by PAUSE_PENDING_CAP.
-    tape: Vec<u32>,
-    armed_at: Instant,
-    deadline: Instant,
-}
-
-/// Bound on outstanding pause candidates: each owns a tape clone (<= ~1 MiB at a 262k
-/// context), and the A3 census puts concurrent warm sessions in single digits (max 9 at a
-/// 60-minute TTL), so 32 is comfortably above any measured shape while capping worker
-/// memory. Overflow evicts the nearest-deadline candidate, which was about to resolve
-/// anyway.
-const PAUSE_PENDING_CAP: usize = 32;
-
-/// Generated-token window decoded at retire for the tool-call tail check. The longest close
-/// marker (`</｜DSML｜tool_calls>`, 24 bytes with two 3-byte `｜`) plus trailing whitespace
-/// fits comfortably in 24 tokens on every served tokenizer; the decode is retire-time only
-/// and flag-gated.
-const PAUSE_TAIL_TOKENS: usize = 24;
-
-/// The generated-token window the pause tail predicate decodes, with trailing STOP ids
-/// removed first. THE BATTERY BLOCKER (darklanes
-/// `research/kv-fastband-20260830/battery-20260831/pause-gates/RESULTS.md`, FINDING 1):
-/// qwen3.8's natural `finish_reason:"tool_calls"` turns end `...</tool_call><eos>`: the
-/// stop id is pushed into `Session::generated` BEFORE the stop check fires
-/// (`advance_sample_emit` / `advance_token_emit`), so the decoded tail ended with the
-/// rendered stop token and `tail_ends_with_tool_call` refused 6 of 6 real tool pauses,
-/// making `MEMRA_KV_PAUSE_DEMOTE=1` a no-op on exactly the workload it was built for. The
-/// same requests with `stop:["</tool_call>"]` (stop-string truncation, no stop id in the
-/// tape) armed 2/2, which is what pinned the cause to the tail, not the tools
-/// precondition. `stop_ids` is `Session::params.eos`, the exact per-request stop set
-/// (caller-supplied eos UNION the model's `eog_ids()`, built at admit), so the trim
-/// reconstructs precisely the byte tail the HTTP layer's `ToolStreamParser` judged; an id
-/// the session could not have stopped on is never stripped, and a stop id in the middle of
-/// the tape (impossible for a terminated stream, but cheap to be exact about) stays put.
-fn pause_tail_window<'a>(generated: &'a [u32], stop_ids: &[u32]) -> &'a [u32] {
-    let mut end = generated.len();
-    while end > 0 && stop_ids.contains(&generated[end - 1]) {
-        end -= 1;
-    }
-    &generated[end.saturating_sub(PAUSE_TAIL_TOKENS)..end]
-}
-
-/// Arm (or refresh) a pause candidate. An exact (pool_key, tape) twin refreshes in place:
-/// a retried identical conversation must not hold two timers for one boundary.
-fn arm_pause_candidate(
-    pending: &mut Vec<PauseCandidate>,
-    pool_key: PoolKey,
-    tape: Vec<u32>,
-    now: Instant,
-    delay: std::time::Duration,
-) {
-    if let Some(c) = pending
-        .iter_mut()
-        .find(|c| c.pool_key == pool_key && c.tape == tape)
-    {
-        c.armed_at = now;
-        c.deadline = now + delay;
-        return;
-    }
-    if pending.len() >= PAUSE_PENDING_CAP
-        && let Some(i) = pending
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, c)| c.deadline)
-            .map(|(i, _)| i)
-    {
-        let dropped = pending.swap_remove(i);
-        eprintln!(
-            "[prefix-host] pause candidate cap ({PAUSE_PENDING_CAP}) reached; dropped \
-                 the nearest-deadline candidate ({} tokens, model {}{})",
-            dropped.tape.len(),
-            dropped.pool_key.0,
-            ns_suffix(&dropped.pool_key.1),
-        );
-    }
-    pending.push(PauseCandidate {
-        pool_key,
-        tape,
-        armed_at: now,
-        deadline: now + delay,
-    });
-}
-
-/// Nearest pending pause deadline: what bounds the idle `recv_timeout` so a timer can fire
-/// on a box with zero active sessions (exactly the pause scenario at low concurrency).
-fn next_pause_deadline(pending: &[PauseCandidate]) -> Option<Instant> {
-    pending.iter().map(|c| c.deadline).min()
-}
-
-/// Bounded idle wait when either timer class is pending. Constraint compiles keep their
-/// 5 ms poll cadence exactly as before; a pause-only wait sleeps until the nearest pause
-/// deadline (floored at 1 ms so an already-expired deadline still takes a real
-/// `recv_timeout` instead of a hot spin).
-fn idle_recv_wait(
-    pending_constraints: &HashMap<u64, PendingConstraintCompile>,
-    pause_pending: &[PauseCandidate],
-    now: Instant,
-) -> Duration {
-    let constraint =
-        (!pending_constraints.is_empty()).then(|| constraint_poll_wait(pending_constraints, now));
-    let pause = next_pause_deadline(pause_pending).map(|d| {
-        d.saturating_duration_since(now)
-            .max(Duration::from_millis(1))
-    });
-    match (constraint, pause) {
-        (Some(c), Some(p)) => c.min(p),
-        (Some(c), None) => c,
-        (None, Some(p)) => p,
-        (None, None) => CONSTRAINT_RESULT_POLL,
-    }
-}
-
-/// FIRE-TIME park lookup: index of the plain continuation-pool entry whose fed tokens equal
-/// the candidate's tape exactly. `None` means the park is gone: the session's next request
-/// resumed it (the cancel case) or pool churn evicted it.
-fn pause_park_index<'a>(mut feds: impl Iterator<Item = &'a [u32]>, tape: &[u32]) -> Option<usize> {
-    feds.position(|fed| fed == tape)
-}
-
-/// FIRE-TIME device prefix-entry decision for one pause candidate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PausePxDecision {
-    /// Demote the deepest committed-prefix entry at this pool index.
-    Demote(usize),
-    /// The deepest matching entry is leased by an in-flight session: the demote LOSES
-    /// cleanly (a promote-vs-demote race is resolved in the request's favor).
-    Pinned,
-    /// The deepest matching entry was re-hit after arming (`last_use` advanced): the
-    /// session (or a sibling) came back; cancel.
-    Touched,
-    /// No resident entry prefixes the tape.
-    None,
-}
-
-/// Pick the DEEPEST device prefix entry whose tokens are a prefix of the candidate's tape,
-/// then classify it: untouched and unpinned demotes; a pin or a post-arm touch loses
-/// cleanly. Pure over (toks, last_use, pins) views so the race matrix is unit-testable
-/// without CUDA; `run()` executes the chosen copy on the CUDA owner thread.
-fn pause_px_decision<'a>(
-    entries: impl Iterator<Item = (&'a [u32], Instant, usize)>,
-    tape: &[u32],
-    armed_at: Instant,
-) -> PausePxDecision {
-    let mut best: Option<(usize, usize, Instant, usize)> = None; // (index, len, last_use, pins)
-    for (i, (toks, last_use, pins)) in entries.enumerate() {
-        if toks.len() > tape.len() || toks != &tape[..toks.len()] {
-            continue;
-        }
-        if best.is_none_or(|(_, len, _, _)| toks.len() > len) {
-            best = Some((i, toks.len(), last_use, pins));
-        }
-    }
-    match best {
-        Some((_, _, _, pins)) if pins > 0 => PausePxDecision::Pinned,
-        Some((_, _, last_use, _)) if last_use > armed_at => PausePxDecision::Touched,
-        Some((i, _, _, _)) => PausePxDecision::Demote(i),
-        None => PausePxDecision::None,
-    }
-}
-
-/// H2D-rebuild a device `PrefixEntry` from its host twin. REFUSES a layout-version mismatch
-/// before any allocation: the host entry carries the version for exactly this check.
-fn device_entry_from_host(engine: &Engine, src: &HostPrefixEntry) -> Result<PrefixEntry, String> {
-    if src.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
-        return Err(format!(
-            "host entry layout version {} != runtime {}: promote refused",
-            src.layout_version, PREFIX_ENTRY_LAYOUT_VERSION,
-        ));
-    }
-    let plane_up = |p: &HostPlane| -> Result<PrefixPlane, String> {
-        let kb = p.len * p.k_tok_bytes;
-        let vb = p.len * p.v_tok_bytes;
-        let mut k = engine
-            .alloc_u8(kb.max(1))
-            .map_err(|err| format!("device alloc of {kb} B failed: {err}"))?;
-        let mut v = engine
-            .alloc_u8(vb.max(1))
-            .map_err(|err| format!("device alloc of {vb} B failed: {err}"))?;
-        if kb > 0 {
-            engine
-                .htod_u8_into(&mut k, 0, &p.k.as_slice()[..kb])
-                .map_err(|err| format!("K plane H2D failed: {err}"))?;
-        }
-        if vb > 0 {
-            engine
-                .htod_u8_into(&mut v, 0, &p.v.as_slice()[..vb])
-                .map_err(|err| format!("V plane H2D failed: {err}"))?;
-        }
-        Ok(PrefixPlane {
-            k,
-            v,
-            len: p.len,
-            k_tok_bytes: p.k_tok_bytes,
-            v_tok_bytes: p.v_tok_bytes,
-        })
-    };
-    let mut kv = Vec::with_capacity(src.kv.len());
-    for plane in &src.kv {
-        kv.push(match plane {
-            Some(p) => Some(plane_up(p)?),
-            None => None,
-        });
-    }
-    let mut conv = Vec::with_capacity(src.conv.len());
-    for c in &src.conv {
-        conv.push(match c {
-            Some(c) => Some(
-                engine
-                    .htod(c)
-                    .map_err(|err| format!("conv state H2D failed: {err}"))?,
-            ),
-            None => None,
-        });
-    }
-    let mut ssm = Vec::with_capacity(src.ssm.len());
-    for s in &src.ssm {
-        ssm.push(match s {
-            Some(s) => Some(
-                engine
-                    .htod(s)
-                    .map_err(|err| format!("ssm state H2D failed: {err}"))?,
-            ),
-            None => None,
-        });
-    }
-    let draft = match &src.draft {
-        Some(p) => Some(plane_up(p)?),
-        None => None,
-    };
-    let dspark_draft = match &src.dspark_draft {
-        Some(t) => {
-            let mut layers = Vec::with_capacity(t.layers.len());
-            for (k, v) in &t.layers {
-                layers.push((
-                    engine
-                        .htod(k)
-                        .map_err(|err| format!("draft tail K H2D failed: {err}"))?,
-                    engine
-                        .htod(v)
-                        .map_err(|err| format!("draft tail V H2D failed: {err}"))?,
-                ));
-            }
-            Some(memra_engine::dflash::DflashKvTail {
-                layers,
-                base: t.base,
-                rows: t.rows,
-                len: t.len,
-                row_bytes: t.row_bytes,
-            })
-        }
-        None => None,
-    };
-    Ok(PrefixEntry {
-        layout_version: src.layout_version,
-        pool_key: src.pool_key.clone(),
-        toks: src.toks.clone(),
-        kv,
-        conv,
-        ssm,
-        // Latent-bearing entries refuse demotion at `host_demote_prefix_ref`, so every host
-        // entry is latent-free by construction and each promoted slot is legitimately absent.
-        latent: (0..src.kv.len()).map(|_| None).collect(),
-        pos: src.pos,
-        last_logits: src.last_logits.clone(),
-        draft,
-        dspark_draft,
-        last_h: src.last_h.clone(),
-        bytes: src.bytes,
-        last_use: Instant::now(),
-        id: 0, // recency identity assigned by PrefixCache::insert
-        segment: PrefixSegment::Probation,
-        pins: 0,
-    })
-}
-
-/// Pure admit-time probe-order decision (the unit-tested half of `host_promote_prefix_hit`):
-/// consult the host tier and name the entry worth re-materializing, or None. The rule the
-/// competitive bench's promote-starvation finding is anchored on (darklanes
-/// research/competitive-bench-20260901/RESULTS.md §7): the host is consulted on a device
-/// MISS **or a device hit SHALLOWER than the host's best exact-prefix entry**: a surviving
-/// shallow device entry (the shared-system-prompt seed shape: 425 of 432 device hits at
-/// exactly 64 tokens in the N56 cell) must never shadow a deeper demoted twin.
-/// `device_best_len = 0` encodes a device miss.
-fn host_promote_candidate(
-    host: &HostPrefixCache,
-    pool_key: &PoolKey,
-    prompt: &[u32],
-    device_best_len: usize,
-) -> Option<usize> {
-    if !host.armed() {
-        return None;
-    }
-    let hi = host.lookup(pool_key, prompt)?;
-    (host.entries[pool_key][hi].toks.len() > device_best_len).then_some(hi)
-}
-
-/// The promote hook (admit-time): device miss (or a device hit SHALLOWER than the host's
-/// best) -> host probe with the SAME exact-token / PC-ISO key rules -> on hit, re-materialize
-/// a normal device `PrefixEntry` and insert it PINNED so it survives until the unmodified hit
-/// path pins it for the serving session. Returns the device pool index plus the insertion
-/// pin; the caller RELEASES that pin after the probe, whatever route the request took. The
-/// host twin is kept (recency-touched): a later re-eviction of the promoted entry demotes a
-/// fresh copy anyway, and keeping it makes an evict/promote flap cheap to re-serve.
-fn host_promote_prefix_hit(
-    engine: &Engine,
-    px: &mut PrefixCache,
-    host: &mut HostPrefixCache,
-    pool_key: &PoolKey,
-    prompt: &[u32],
-    device_best_len: usize,
-) -> Option<(usize, PrefixPin)> {
-    let hi = host_promote_candidate(host, pool_key, prompt, device_best_len)?;
-    let (host_len, expected_digest) = {
-        let e = &host.entries[pool_key][hi];
-        (e.toks.len(), e.verify_digest.clone())
-    };
-    let t0 = Instant::now();
-    let e = match device_entry_from_host(engine, &host.entries[pool_key][hi]) {
-        Ok(e) => e,
-        Err(err) => {
-            host.rejected_allocs += 1;
-            eprintln!("[prefix-host] promote failed ({err}); serving without the host entry");
-            return None;
-        }
-    };
-    if let Some(expected) = expected_digest {
-        match prefix_entry_state_digest(engine, &e, e.pos) {
-            Ok(actual) if actual == expected => {
-                eprintln!(
-                    "[prefix-host] verify ok: promoted state digest matches demote digest \
-                     ({host_len} tokens)"
-                );
-            }
-            Ok(actual) => {
-                host.digest_mismatches += 1;
-                host.remove_at(pool_key, hi);
-                eprintln!(
-                    "[prefix-host] VERIFY FAILED: promoted digest {actual} != demote digest \
-                     {expected} ({host_len} tokens); host entry dropped, cold path serves"
-                );
-                return None;
-            }
-            Err(err) => {
-                eprintln!("[prefix-host] verify digest failed ({err}); promote refused");
-                return None;
-            }
-        }
-    }
-    // Recency BEFORE the device insert: its demote sink can evict/replace host entries and
-    // shift pool indexes, so `hi` must not be used past this point.
-    host.touch(pool_key, hi);
-    let bytes = e.bytes;
-    let pin = px.insert_pinned_demoting(pool_key, e, "host-promote", 1, engine, host)?;
-    let i = px.id_index(&pin)?;
-    let ms = t0.elapsed().as_secs_f64() * 1e3;
-    host.promotions += 1;
-    host.promote_ms_total += ms;
-    eprintln!(
-        "[prefix-host] promote: {host_len} tokens, {:.1}MB in {ms:.1}ms (model {}{})",
-        bytes as f64 / 1e6,
-        pool_key.0,
-        ns_suffix(&pool_key.1)
-    );
-    Some((i, pin))
-}
-
-// ---------------------------------------------------------------------------
-// HOST-TIER DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901).
-//
-// The tier is process-lifetime pinned memory, so every blue/green flip booted a fresh-empty
-// pool and every parked long-context session paid a full cold re-prefill until re-warmed
-// (darklanes TRAP:host-tier-empties-on-deploy: 34.1 s at 82.5k tokens measured on box12,
-// research/stress-campaign-20260901/RESULTS.md). The fix is a drain-demote + file handoff:
-// the DRAINED old slot demotes its evictable device entries into the host tier and
-// serializes the tier to MEMRA_KV_HOST_HANDOFF; the new slot re-materializes host entries
-// from that file, one per tick, and the untouched promote path serves them on demand.
-//
-// Design laws, in order:
-// - The restore path is UNTOUCHED: import = ordinary `HostPrefixCache::insert` of an
-//   ordinary `HostPrefixEntry`; budget LRU, tenant share caps, and identity checks all
-//   apply exactly as to a demotion.
-// - Every frame is digest-checked (sha256 over the payload, written at export, verified at
-//   import): a corrupt frame is SKIPPED LOUDLY and the stream continues; it can never
-//   become a bad restore.
-// - A `layout_version` mismatch refuses the WHOLE file cleanly: a deploy that changes the
-//   entry layout starts cold BY DESIGN, and says so.
-// - Same-name model artifacts are stamp-checked (file count/bytes/max-mtime, a cheap stat
-//   walk, deliberately not a byte hash): KV bytes minted by different weights must never
-//   restore, so a stamp mismatch skips that model's entries loudly.
-// - Consume-once: the importer unlinks the file at completion AND at refusal; the 1-hour
-//   age bound refuses leftovers from a crashed deploy.
-// - The format is SAME-HOST by construction (blue/green share the box), so native
-//   endianness is part of the format and the digests catch any cross-host misuse.
-//
-// Out of scope, stated: the continuation pools (plain/spec/dspark session reuse) do not
-// hand off: a parked session on the new slot re-enters through the prefix entry covering
-// its committed tape (prefix-restore cost, sub-second measured) instead of the 34.1 s
-// re-prefill. Latent-plane (MLA/DSA) entries never reach the host tier upstream, so no
-// such frame can exist.
-
-/// File magic; the trailing digit is the format version (bump it on any wire change: an
-/// old file then refuses at the magic check, which is the correct cold start).
-const HANDOFF_MAGIC: &[u8; 16] = b"MEMRA-KVHANDOFF1";
-/// A handoff spans one deploy (seconds to minutes). Anything older is a leftover from a
-/// crashed or rolled-back deploy and is refused + unlinked rather than imported.
-const HANDOFF_MAX_AGE_SECS: u64 = 3600;
-/// Header body sanity bound (model stamps only; entries carry their own frames).
-const HANDOFF_MAX_HEADER_BYTES: u64 = 1 << 20;
-
-/// Cheap fidelity stamp over one model's artifact path (file or directory, walked
-/// recursively). Deliberately NOT a byte hash: hashing tens of GB of weights at export
-/// would eat the deploy window, while any artifact byte change moves size or mtime.
-/// `readable: false` NEVER matches, including against another unreadable stamp: two sides
-/// equally blind is refusal, not agreement.
-#[derive(Clone, Debug, PartialEq)]
-struct HandoffModelStamp {
-    name: String,
-    path: String,
-    readable: bool,
-    files: u64,
-    bytes: u64,
-    max_mtime_ns: u64,
-}
-
-fn handoff_model_stamp(name: &str, path: &str) -> HandoffModelStamp {
-    fn walk(p: &std::path::Path, acc: &mut (u64, u64, u64)) -> std::io::Result<()> {
-        let md = std::fs::metadata(p)?;
-        if md.is_dir() {
-            for ent in std::fs::read_dir(p)? {
-                walk(&ent?.path(), acc)?;
-            }
-        } else {
-            acc.0 += 1;
-            acc.1 += md.len();
-            let mtime = md
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_nanos() as u64);
-            acc.2 = acc.2.max(mtime);
-        }
-        Ok(())
-    }
-    let mut acc = (0u64, 0u64, 0u64);
-    let readable = walk(std::path::Path::new(path), &mut acc).is_ok();
-    HandoffModelStamp {
-        name: name.to_string(),
-        path: path.to_string(),
-        readable,
-        files: acc.0,
-        bytes: acc.1,
-        max_mtime_ns: acc.2,
-    }
-}
-
-fn handoff_stamp_matches(a: &HandoffModelStamp, b: &HandoffModelStamp) -> bool {
-    a.readable
-        && b.readable
-        && a.files == b.files
-        && a.bytes == b.bytes
-        && a.max_mtime_ns == b.max_mtime_ns
-}
-
-#[derive(Debug, PartialEq)]
-struct HandoffHeader {
-    layout_version: u32,
-    created_unix: u64,
-    models: Vec<HandoffModelStamp>,
-    entries: u64,
-    resident_bytes: u64,
-}
-
-/// Header-level import verdict, pure so the refusal matrix is unit-testable. `Err` refuses
-/// the whole file; `Ok` carries the per-model refusals (name, reason) whose entries the
-/// drip will skip.
-fn handoff_header_verdict(
-    h: &HandoffHeader,
-    runtime_layout: u32,
-    now_unix: u64,
-    local_stamps: &[HandoffModelStamp],
-) -> Result<Vec<(String, String)>, String> {
-    if h.layout_version != runtime_layout {
-        return Err(format!(
-            "handoff layout version {} != runtime {}: a deploy that changes the entry \
-             layout starts cold by design",
-            h.layout_version, runtime_layout,
-        ));
-    }
-    let age = now_unix.saturating_sub(h.created_unix);
-    if age > HANDOFF_MAX_AGE_SECS {
-        return Err(format!(
-            "handoff file is {age}s old (bound {HANDOFF_MAX_AGE_SECS}s): a deploy handoff \
-             is minutes old by construction; refusing a leftover"
-        ));
-    }
-    let mut refused = Vec::new();
-    for m in &h.models {
-        match local_stamps.iter().find(|l| l.name == m.name) {
-            Some(l) if handoff_stamp_matches(m, l) => {}
-            Some(l) => refused.push((
-                m.name.clone(),
-                format!(
-                    "artifact stamp mismatch (file: {} files/{} B/mtime {}, {}; here: {} \
-                     files/{} B/mtime {}, {}): KV state minted by different weights must \
-                     not restore",
-                    m.files,
-                    m.bytes,
-                    m.max_mtime_ns,
-                    if m.readable { "readable" } else { "UNREADABLE" },
-                    l.files,
-                    l.bytes,
-                    l.max_mtime_ns,
-                    if l.readable { "readable" } else { "UNREADABLE" },
-                ),
-            )),
-            None => refused.push((m.name.clone(), "model not loaded on this slot".into())),
-        }
-    }
-    Ok(refused)
-}
-
-// ---- wire primitives -------------------------------------------------------
-
-/// Reinterpret an f32 slice as raw bytes (native endianness; same-host format by design,
-/// see the module comment). Safety: f32 and u32 have no invalid bit patterns and u8 has
-/// alignment 1.
-fn f32s_as_bytes(v: &[f32]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), std::mem::size_of_val(v)) }
-}
-
-fn u32s_as_bytes(v: &[u32]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), std::mem::size_of_val(v)) }
-}
-
-/// Counting + hashing writer for one frame payload: every payload byte flows through
-/// `put`, so the digest and the byte count can never drift from what was written.
-struct HandoffFrameWriter<'a, W: std::io::Write> {
-    w: &'a mut W,
-    hasher: Sha256,
-    written: u64,
-}
-
-impl<'a, W: std::io::Write> HandoffFrameWriter<'a, W> {
-    fn new(w: &'a mut W) -> Self {
-        HandoffFrameWriter {
-            w,
-            hasher: Sha256::new(),
-            written: 0,
-        }
-    }
-    fn put(&mut self, bytes: &[u8]) -> Result<(), String> {
-        self.w
-            .write_all(bytes)
-            .map_err(|e| format!("handoff write failed: {e}"))?;
-        self.hasher.update(bytes);
-        self.written += bytes.len() as u64;
-        Ok(())
-    }
-    fn put_u8(&mut self, v: u8) -> Result<(), String> {
-        self.put(&[v])
-    }
-    fn put_u32(&mut self, v: u32) -> Result<(), String> {
-        self.put(&v.to_le_bytes())
-    }
-    fn put_u64(&mut self, v: u64) -> Result<(), String> {
-        self.put(&v.to_le_bytes())
-    }
-    fn put_str(&mut self, s: &str) -> Result<(), String> {
-        self.put_u64(s.len() as u64)?;
-        self.put(s.as_bytes())
-    }
-    fn put_f32s(&mut self, v: &[f32]) -> Result<(), String> {
-        self.put_u64(v.len() as u64)?;
-        self.put(f32s_as_bytes(v))
-    }
-    fn finish(self) -> (u64, [u8; 32]) {
-        (self.written, self.hasher.finalize().into())
-    }
-}
-
-/// Bounds-checked + hashing reader over one frame payload. Every read is charged against
-/// `remaining`, so a corrupt length field can never allocate or read past the frame.
-struct HandoffFrameReader<'a, R: std::io::Read> {
-    r: &'a mut R,
-    hasher: Sha256,
-    remaining: u64,
-}
-
-impl<'a, R: std::io::Read> HandoffFrameReader<'a, R> {
-    fn take_into(&mut self, buf: &mut [u8]) -> Result<(), String> {
-        if buf.len() as u64 > self.remaining {
-            return Err(format!(
-                "frame overrun: {} bytes wanted, {} left (corrupt length field)",
-                buf.len(),
-                self.remaining
-            ));
-        }
-        self.r
-            .read_exact(buf)
-            .map_err(|e| format!("handoff read failed: {e}"))?;
-        self.hasher.update(&buf[..]);
-        self.remaining -= buf.len() as u64;
-        Ok(())
-    }
-    fn u8(&mut self) -> Result<u8, String> {
-        let mut b = [0u8; 1];
-        self.take_into(&mut b)?;
-        Ok(b[0])
-    }
-    fn u32(&mut self) -> Result<u32, String> {
-        let mut b = [0u8; 4];
-        self.take_into(&mut b)?;
-        Ok(u32::from_le_bytes(b))
-    }
-    fn u64(&mut self) -> Result<u64, String> {
-        let mut b = [0u8; 8];
-        self.take_into(&mut b)?;
-        Ok(u64::from_le_bytes(b))
-    }
-    /// Length-checked usize (all counts/sizes travel as u64).
-    fn size(&mut self) -> Result<usize, String> {
-        let v = self.u64()?;
-        usize::try_from(v).map_err(|_| format!("size {v} does not fit this platform"))
-    }
-    fn string(&mut self, cap: usize) -> Result<String, String> {
-        let n = self.size()?;
-        if n > cap {
-            return Err(format!("string of {n} bytes exceeds the {cap} bound"));
-        }
-        let mut buf = vec![0u8; n];
-        self.take_into(&mut buf)?;
-        String::from_utf8(buf).map_err(|_| "non-UTF-8 string in frame".into())
-    }
-    fn bytes_vec(&mut self, n: usize) -> Result<Vec<u8>, String> {
-        if n as u64 > self.remaining {
-            return Err(format!(
-                "byte run of {n} exceeds the {} remaining (corrupt length field)",
-                self.remaining
-            ));
-        }
-        let mut buf = vec![0u8; n];
-        self.take_into(&mut buf)?;
-        Ok(buf)
-    }
-    fn f32s(&mut self) -> Result<Vec<f32>, String> {
-        let n = self.size()?;
-        let nb = n
-            .checked_mul(4)
-            .ok_or_else(|| "f32 count overflow".to_string())?;
-        if nb as u64 > self.remaining {
-            return Err(format!(
-                "f32 run of {nb} bytes exceeds the {} remaining (corrupt length field)",
-                self.remaining
-            ));
-        }
-        let mut v = vec![0f32; n];
-        // Safety: same representation argument as f32s_as_bytes, mutable side.
-        let view = unsafe { std::slice::from_raw_parts_mut(v.as_mut_ptr().cast::<u8>(), nb) };
-        self.take_into(view)?;
-        Ok(v)
-    }
-    /// Consume (and hash) the payload remainder, keeping the digest check honest and the
-    /// stream in register with the next frame whatever the parse did.
-    fn drain(&mut self) -> Result<(), String> {
-        let mut scratch = [0u8; 64 * 1024];
-        while self.remaining > 0 {
-            let n = (self.remaining as usize).min(scratch.len());
-            self.take_into(&mut scratch[..n])?;
-        }
-        Ok(())
-    }
-}
-
-// ---- wire entry shapes ------------------------------------------------------
-
-/// Borrowed view of one host entry for serialization. Production borrows the pinned
-/// buffers straight out of `HostPrefixEntry` (zero copies before the file write); tests
-/// build these from plain vectors, which is what keeps the round-trip CPU-testable.
-struct HandoffPlaneRef<'a> {
-    len: usize,
-    k_tok_bytes: usize,
-    v_tok_bytes: usize,
-    k: &'a [u8],
-    v: &'a [u8],
-}
-
-struct HandoffTailRef<'a> {
-    layers: Vec<(&'a [f32], &'a [f32])>,
-    base: usize,
-    rows: usize,
-    len: usize,
-    row_bytes: usize,
-}
-
-struct HandoffEntryRef<'a> {
-    layout_version: u32,
-    model: &'a str,
-    ns: &'a str,
-    toks: &'a [u32],
-    kv: Vec<Option<HandoffPlaneRef<'a>>>,
-    conv: &'a [Option<Vec<f32>>],
-    ssm: &'a [Option<Vec<f32>>],
-    pos: usize,
-    last_logits: &'a [f32],
-    draft: Option<HandoffPlaneRef<'a>>,
-    dspark: Option<HandoffTailRef<'a>>,
-    last_h: &'a [f32],
-    bytes: usize,
-    verify_digest: Option<&'a str>,
-}
-
-/// Owned twin the reader produces: plain heap vectors, no pinned memory, no CUDA: the
-/// CPU-testable half of the round trip. `host_entry_from_owned` turns it into a real
-/// `HostPrefixEntry` (pinned allocations + memcpy) on the worker thread.
-#[derive(Debug, PartialEq)]
-struct HandoffPlaneOwned {
-    len: usize,
-    k_tok_bytes: usize,
-    v_tok_bytes: usize,
-    k: Vec<u8>,
-    v: Vec<u8>,
-}
-
-#[derive(Debug, PartialEq)]
-struct HandoffTailOwned {
-    layers: Vec<(Vec<f32>, Vec<f32>)>,
-    base: usize,
-    rows: usize,
-    len: usize,
-    row_bytes: usize,
-}
-
-#[derive(Debug, PartialEq)]
-struct HandoffEntryOwned {
-    layout_version: u32,
-    model: String,
-    ns: String,
-    toks: Vec<u32>,
-    kv: Vec<Option<HandoffPlaneOwned>>,
-    conv: Vec<Option<Vec<f32>>>,
-    ssm: Vec<Option<Vec<f32>>>,
-    pos: usize,
-    last_logits: Vec<f32>,
-    draft: Option<HandoffPlaneOwned>,
-    dspark: Option<HandoffTailOwned>,
-    last_h: Vec<f32>,
-    bytes: usize,
-    verify_digest: Option<String>,
-}
-
-#[cfg(test)]
-impl HandoffEntryOwned {
-    /// Test-side view builder: the round-trip cell writes exactly what production writes,
-    /// through the same `HandoffEntryRef` writer, with no pinned memory anywhere.
-    fn as_wire_ref(&self) -> HandoffEntryRef<'_> {
-        fn plane(p: &HandoffPlaneOwned) -> HandoffPlaneRef<'_> {
-            HandoffPlaneRef {
-                len: p.len,
-                k_tok_bytes: p.k_tok_bytes,
-                v_tok_bytes: p.v_tok_bytes,
-                k: &p.k,
-                v: &p.v,
-            }
-        }
-        HandoffEntryRef {
-            layout_version: self.layout_version,
-            model: &self.model,
-            ns: &self.ns,
-            toks: &self.toks,
-            kv: self.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-            conv: &self.conv,
-            ssm: &self.ssm,
-            pos: self.pos,
-            last_logits: &self.last_logits,
-            draft: self.draft.as_ref().map(plane),
-            dspark: self.dspark.as_ref().map(|t| HandoffTailRef {
-                layers: t
-                    .layers
-                    .iter()
-                    .map(|(k, v)| (k.as_slice(), v.as_slice()))
-                    .collect(),
-                base: t.base,
-                rows: t.rows,
-                len: t.len,
-                row_bytes: t.row_bytes,
-            }),
-            last_h: &self.last_h,
-            bytes: self.bytes,
-            verify_digest: self.verify_digest.as_deref(),
-        }
-    }
-}
-
-/// Production view builder over a resident host entry (borrows the pinned slices).
-fn handoff_entry_ref(e: &HostPrefixEntry) -> HandoffEntryRef<'_> {
-    fn plane(p: &HostPlane) -> HandoffPlaneRef<'_> {
-        HandoffPlaneRef {
-            len: p.len,
-            k_tok_bytes: p.k_tok_bytes,
-            v_tok_bytes: p.v_tok_bytes,
-            k: p.k.as_slice(),
-            v: p.v.as_slice(),
-        }
-    }
-    HandoffEntryRef {
-        layout_version: e.layout_version,
-        model: &e.pool_key.0,
-        ns: &e.pool_key.1,
-        toks: &e.toks,
-        kv: e.kv.iter().map(|p| p.as_ref().map(plane)).collect(),
-        conv: &e.conv,
-        ssm: &e.ssm,
-        pos: e.pos,
-        last_logits: &e.last_logits,
-        draft: e.draft.as_ref().map(plane),
-        dspark: e.dspark_draft.as_ref().map(|t| HandoffTailRef {
-            layers: t
-                .layers
-                .iter()
-                .map(|(k, v)| (k.as_slice(), v.as_slice()))
-                .collect(),
-            base: t.base,
-            rows: t.rows,
-            len: t.len,
-            row_bytes: t.row_bytes,
-        }),
-        last_h: &e.last_h,
-        bytes: e.bytes,
-        verify_digest: e.verify_digest.as_deref(),
-    }
-}
-
-// ---- header IO --------------------------------------------------------------
-
-fn handoff_header_body(h: &HandoffHeader) -> Vec<u8> {
-    fn put_u64(out: &mut Vec<u8>, v: u64) {
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-    fn put_str(out: &mut Vec<u8>, s: &str) {
-        put_u64(out, s.len() as u64);
-        out.extend_from_slice(s.as_bytes());
-    }
-    let mut out = Vec::new();
-    out.extend_from_slice(&h.layout_version.to_le_bytes());
-    put_u64(&mut out, h.created_unix);
-    put_u64(&mut out, h.models.len() as u64);
-    for m in &h.models {
-        put_str(&mut out, &m.name);
-        put_str(&mut out, &m.path);
-        out.push(u8::from(m.readable));
-        put_u64(&mut out, m.files);
-        put_u64(&mut out, m.bytes);
-        put_u64(&mut out, m.max_mtime_ns);
-    }
-    put_u64(&mut out, h.entries);
-    put_u64(&mut out, h.resident_bytes);
-    out
-}
-
-fn handoff_write_header<W: std::io::Write>(w: &mut W, h: &HandoffHeader) -> Result<(), String> {
-    let body = handoff_header_body(h);
-    w.write_all(HANDOFF_MAGIC)
-        .and_then(|()| w.write_all(&(body.len() as u64).to_le_bytes()))
-        .and_then(|()| w.write_all(&body))
-        .and_then(|()| w.write_all(&Sha256::digest(&body)))
-        .map_err(|e| format!("handoff header write failed: {e}"))
-}
-
-fn handoff_read_header<R: std::io::Read>(r: &mut R) -> Result<HandoffHeader, String> {
-    let mut magic = [0u8; 16];
-    r.read_exact(&mut magic)
-        .map_err(|e| format!("handoff magic read failed: {e}"))?;
-    if &magic != HANDOFF_MAGIC {
-        return Err(format!(
-            "not a v{} handoff file (magic {:?})",
-            HANDOFF_MAGIC[15] as char,
-            String::from_utf8_lossy(&magic),
-        ));
-    }
-    let mut len8 = [0u8; 8];
-    r.read_exact(&mut len8)
-        .map_err(|e| format!("handoff header length read failed: {e}"))?;
-    let len = u64::from_le_bytes(len8);
-    if len > HANDOFF_MAX_HEADER_BYTES {
-        return Err(format!(
-            "handoff header of {len} bytes exceeds the {HANDOFF_MAX_HEADER_BYTES} bound \
-             (corrupt file)"
-        ));
-    }
-    let mut body = vec![0u8; len as usize];
-    r.read_exact(&mut body)
-        .map_err(|e| format!("handoff header read failed: {e}"))?;
-    let mut expected = [0u8; 32];
-    r.read_exact(&mut expected)
-        .map_err(|e| format!("handoff header digest read failed: {e}"))?;
-    let actual: [u8; 32] = Sha256::digest(&body).into();
-    if actual != expected {
-        return Err("handoff header digest mismatch (corrupt file)".into());
-    }
-    let mut slice: &[u8] = &body;
-    let mut fr = HandoffFrameReader {
-        r: &mut slice,
-        hasher: Sha256::new(),
-        remaining: len,
-    };
-    let layout_version = fr.u32()?;
-    let created_unix = fr.u64()?;
-    let n_models = fr.size()?;
-    if n_models > 4096 {
-        return Err(format!("{n_models} model stamps exceed the 4096 bound"));
-    }
-    let mut models = Vec::with_capacity(n_models);
-    for _ in 0..n_models {
-        let name = fr.string(4096)?;
-        let path = fr.string(65536)?;
-        let readable = fr.u8()? != 0;
-        let files = fr.u64()?;
-        let bytes = fr.u64()?;
-        let max_mtime_ns = fr.u64()?;
-        models.push(HandoffModelStamp {
-            name,
-            path,
-            readable,
-            files,
-            bytes,
-            max_mtime_ns,
-        });
-    }
-    let entries = fr.u64()?;
-    let resident_bytes = fr.u64()?;
-    if fr.remaining != 0 {
-        return Err("handoff header carries trailing bytes (corrupt file)".into());
-    }
-    Ok(HandoffHeader {
-        layout_version,
-        created_unix,
-        models,
-        entries,
-        resident_bytes,
-    })
-}
-
-// ---- entry IO ---------------------------------------------------------------
-
-/// Serialized payload size of one entry, in bytes. MUST agree with `handoff_write_entry`;
-/// the writer counts what it wrote and refuses the frame on drift (covered by the
-/// round-trip test), so the two can never silently diverge in a shipped file.
-fn handoff_entry_wire_len(e: &HandoffEntryRef) -> u64 {
-    fn str_len(s: &str) -> u64 {
-        8 + s.len() as u64
-    }
-    fn f32s_len(v: &[f32]) -> u64 {
-        8 + 4 * v.len() as u64
-    }
-    fn plane_len(p: &HandoffPlaneRef) -> u64 {
-        8 * 3 + 8 + p.k.len() as u64 + 8 + p.v.len() as u64
-    }
-    let mut n = 4; // layout_version
-    n += str_len(e.model) + str_len(e.ns);
-    n += 8 + 4 * e.toks.len() as u64;
-    n += 8; // kv layer count
-    for p in &e.kv {
-        n += 1 + p.as_ref().map_or(0, plane_len);
-    }
-    for class in [e.conv, e.ssm] {
-        n += 8;
-        for c in class {
-            n += 1 + c.as_ref().map_or(0, |v| f32s_len(v));
-        }
-    }
-    n += 8; // pos
-    n += f32s_len(e.last_logits);
-    n += 1 + e.draft.as_ref().map_or(0, plane_len);
-    n += 1;
-    if let Some(t) = &e.dspark {
-        n += 8;
-        for (k, v) in &t.layers {
-            n += f32s_len(k) + f32s_len(v);
-        }
-        n += 8 * 4;
-    }
-    n += f32s_len(e.last_h);
-    n += 8; // bytes
-    n += 1 + e.verify_digest.map_or(0, str_len);
-    n
-}
-
-fn handoff_write_plane<W: std::io::Write>(
-    w: &mut HandoffFrameWriter<W>,
-    p: &HandoffPlaneRef,
-) -> Result<(), String> {
-    w.put_u64(p.len as u64)?;
-    w.put_u64(p.k_tok_bytes as u64)?;
-    w.put_u64(p.v_tok_bytes as u64)?;
-    w.put_u64(p.k.len() as u64)?;
-    w.put(p.k)?;
-    w.put_u64(p.v.len() as u64)?;
-    w.put(p.v)
-}
-
-/// Write one frame: `[payload_len u64][payload][sha256(payload) 32]`. Returns the payload
-/// length written.
-fn handoff_write_entry<W: std::io::Write>(out: &mut W, e: &HandoffEntryRef) -> Result<u64, String> {
-    let len = handoff_entry_wire_len(e);
-    out.write_all(&len.to_le_bytes())
-        .map_err(|err| format!("handoff frame length write failed: {err}"))?;
-    let mut w = HandoffFrameWriter::new(out);
-    w.put_u32(e.layout_version)?;
-    w.put_str(e.model)?;
-    w.put_str(e.ns)?;
-    w.put_u64(e.toks.len() as u64)?;
-    w.put(u32s_as_bytes(e.toks))?;
-    w.put_u64(e.kv.len() as u64)?;
-    for p in &e.kv {
-        match p {
-            Some(p) => {
-                w.put_u8(1)?;
-                handoff_write_plane(&mut w, p)?;
-            }
-            None => w.put_u8(0)?,
-        }
-    }
-    for class in [e.conv, e.ssm] {
-        w.put_u64(class.len() as u64)?;
-        for c in class {
-            match c {
-                Some(v) => {
-                    w.put_u8(1)?;
-                    w.put_f32s(v)?;
-                }
-                None => w.put_u8(0)?,
-            }
-        }
-    }
-    w.put_u64(e.pos as u64)?;
-    w.put_f32s(e.last_logits)?;
-    match &e.draft {
-        Some(p) => {
-            w.put_u8(1)?;
-            handoff_write_plane(&mut w, p)?;
-        }
-        None => w.put_u8(0)?,
-    }
-    match &e.dspark {
-        Some(t) => {
-            w.put_u8(1)?;
-            w.put_u64(t.layers.len() as u64)?;
-            for (k, v) in &t.layers {
-                w.put_f32s(k)?;
-                w.put_f32s(v)?;
-            }
-            w.put_u64(t.base as u64)?;
-            w.put_u64(t.rows as u64)?;
-            w.put_u64(t.len as u64)?;
-            w.put_u64(t.row_bytes as u64)?;
-        }
-        None => w.put_u8(0)?,
-    }
-    w.put_f32s(e.last_h)?;
-    w.put_u64(e.bytes as u64)?;
-    match e.verify_digest {
-        Some(d) => {
-            w.put_u8(1)?;
-            w.put_str(d)?;
-        }
-        None => w.put_u8(0)?,
-    }
-    let (written, digest) = w.finish();
-    if written != len {
-        return Err(format!(
-            "handoff wire-length drift: computed {len}, wrote {written} (refusing the file)"
-        ));
-    }
-    out.write_all(&digest)
-        .map_err(|err| format!("handoff frame digest write failed: {err}"))?;
-    Ok(written)
-}
-
-fn handoff_parse_plane<R: std::io::Read>(
-    fr: &mut HandoffFrameReader<R>,
-) -> Result<HandoffPlaneOwned, String> {
-    let len = fr.size()?;
-    let k_tok_bytes = fr.size()?;
-    let v_tok_bytes = fr.size()?;
-    let kb = fr.size()?;
-    let k = fr.bytes_vec(kb)?;
-    let vb = fr.size()?;
-    let v = fr.bytes_vec(vb)?;
-    let expect_k = len
-        .checked_mul(k_tok_bytes)
-        .ok_or_else(|| "plane K size overflow".to_string())?;
-    let expect_v = len
-        .checked_mul(v_tok_bytes)
-        .ok_or_else(|| "plane V size overflow".to_string())?;
-    if kb != expect_k || vb != expect_v {
-        return Err(format!(
-            "plane shape mismatch: {len} tokens x {k_tok_bytes}/{v_tok_bytes} B/tok vs \
-             {kb}/{vb} plane bytes"
-        ));
-    }
-    Ok(HandoffPlaneOwned {
-        len,
-        k_tok_bytes,
-        v_tok_bytes,
-        k,
-        v,
-    })
-}
-
-fn handoff_parse_entry<R: std::io::Read>(
-    fr: &mut HandoffFrameReader<R>,
-) -> Result<HandoffEntryOwned, String> {
-    const MAX_LAYERS: usize = 4096;
-    let layout_version = fr.u32()?;
-    let model = fr.string(4096)?;
-    let ns = fr.string(65536)?;
-    let n_toks = fr.size()?;
-    let tok_bytes = n_toks
-        .checked_mul(4)
-        .ok_or_else(|| "token count overflow".to_string())?;
-    let raw = fr.bytes_vec(tok_bytes)?;
-    let toks: Vec<u32> = raw
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect();
-    let n_kv = fr.size()?;
-    if n_kv > MAX_LAYERS {
-        return Err(format!("{n_kv} kv layers exceed the {MAX_LAYERS} bound"));
-    }
-    let mut kv = Vec::with_capacity(n_kv);
-    for _ in 0..n_kv {
-        kv.push(match fr.u8()? {
-            0 => None,
-            1 => Some(handoff_parse_plane(fr)?),
-            f => return Err(format!("bad kv plane flag {f}")),
-        });
-    }
-    let mut recur = [Vec::new(), Vec::new()];
-    for class in &mut recur {
-        let n = fr.size()?;
-        if n > MAX_LAYERS {
-            return Err(format!(
-                "{n} recurrent layers exceed the {MAX_LAYERS} bound"
-            ));
-        }
-        for _ in 0..n {
-            class.push(match fr.u8()? {
-                0 => None,
-                1 => Some(fr.f32s()?),
-                f => return Err(format!("bad recurrent flag {f}")),
-            });
-        }
-    }
-    let [conv, ssm] = recur;
-    let pos = fr.size()?;
-    let last_logits = fr.f32s()?;
-    let draft = match fr.u8()? {
-        0 => None,
-        1 => Some(handoff_parse_plane(fr)?),
-        f => return Err(format!("bad draft flag {f}")),
-    };
-    let dspark = match fr.u8()? {
-        0 => None,
-        1 => {
-            let n = fr.size()?;
-            if n > MAX_LAYERS {
-                return Err(format!(
-                    "{n} draft tail layers exceed the {MAX_LAYERS} bound"
-                ));
-            }
-            let mut layers = Vec::with_capacity(n);
-            for _ in 0..n {
-                let k = fr.f32s()?;
-                let v = fr.f32s()?;
-                layers.push((k, v));
-            }
-            Some(HandoffTailOwned {
-                layers,
-                base: fr.size()?,
-                rows: fr.size()?,
-                len: fr.size()?,
-                row_bytes: fr.size()?,
-            })
-        }
-        f => return Err(format!("bad draft tail flag {f}")),
-    };
-    let last_h = fr.f32s()?;
-    let bytes = fr.size()?;
-    let verify_digest = match fr.u8()? {
-        0 => None,
-        1 => Some(fr.string(4096)?),
-        f => return Err(format!("bad verify-digest flag {f}")),
-    };
-    Ok(HandoffEntryOwned {
-        layout_version,
-        model,
-        ns,
-        toks,
-        kv,
-        conv,
-        ssm,
-        pos,
-        last_logits,
-        draft,
-        dspark,
-        last_h,
-        bytes,
-        verify_digest,
-    })
-}
-
-/// Read one frame. `Ok(None)` = clean EOF. `Ok(Some(Err(reason)))` = THIS frame is corrupt
-/// or malformed but was fully consumed: skip it loudly, the stream continues in register.
-/// `Err` = the stream itself is broken (truncated / unreadable): abort the import; what
-/// was already imported stays, the rest serves cold.
-fn handoff_read_entry<R: std::io::Read>(
-    r: &mut R,
-    max_frame: u64,
-) -> Result<Option<Result<HandoffEntryOwned, String>>, String> {
-    let mut len8 = [0u8; 8];
-    match r.read_exact(&mut len8) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(format!("frame length read failed: {e}")),
-    }
-    let len = u64::from_le_bytes(len8);
-    if len > max_frame {
-        return Err(format!(
-            "frame length {len} exceeds the file-size bound {max_frame} (corrupt stream)"
-        ));
-    }
-    let mut fr = HandoffFrameReader {
-        r,
-        hasher: Sha256::new(),
-        remaining: len,
-    };
-    let parsed = handoff_parse_entry(&mut fr);
-    let leftover = fr.remaining;
-    fr.drain().map_err(|e| format!("frame drain failed: {e}"))?;
-    let actual: [u8; 32] = fr.hasher.finalize().into();
-    let mut expected = [0u8; 32];
-    r.read_exact(&mut expected)
-        .map_err(|e| format!("frame digest read failed: {e}"))?;
-    if actual != expected {
-        return Ok(Some(Err(
-            "entry digest mismatch (corrupt handoff bytes)".into()
-        )));
-    }
-    Ok(Some(match parsed {
-        Ok(_) if leftover != 0 => Err(format!(
-            "entry parsed with {leftover} trailing payload bytes (malformed frame)"
-        )),
-        Ok(e) => Ok(e),
-        Err(reason) => Err(reason),
-    }))
-}
-
-// ---- re-materialization ------------------------------------------------------
-
-/// Pinned-host twin of a parsed plane. Alloc failures are the ONLY error class here
-/// (shapes were validated at parse), and the caller treats them with the tier's latch
-/// posture: pinned RAM exhaustion aborts the import loudly.
-fn host_plane_from_owned(p: HandoffPlaneOwned) -> Result<HostPlane, String> {
-    let mut k = memra_engine::PinnedHostBuf::new(p.k.len()).map_err(|e| e.to_string())?;
-    k.as_mut_slice().copy_from_slice(&p.k);
-    let mut v = memra_engine::PinnedHostBuf::new(p.v.len()).map_err(|e| e.to_string())?;
-    v.as_mut_slice().copy_from_slice(&p.v);
-    Ok(HostPlane {
-        k,
-        v,
-        len: p.len,
-        k_tok_bytes: p.k_tok_bytes,
-        v_tok_bytes: p.v_tok_bytes,
-    })
-}
-
-fn host_entry_from_owned(e: HandoffEntryOwned) -> Result<HostPrefixEntry, String> {
-    let mut kv = Vec::with_capacity(e.kv.len());
-    for p in e.kv {
-        kv.push(match p {
-            Some(p) => Some(host_plane_from_owned(p)?),
-            None => None,
-        });
-    }
-    let draft = match e.draft {
-        Some(p) => Some(host_plane_from_owned(p)?),
-        None => None,
-    };
-    Ok(HostPrefixEntry {
-        layout_version: e.layout_version,
-        pool_key: (e.model, e.ns),
-        toks: e.toks,
-        kv,
-        conv: e.conv,
-        ssm: e.ssm,
-        pos: e.pos,
-        last_logits: e.last_logits,
-        draft,
-        dspark_draft: e.dspark.map(|t| HostDflashTail {
-            layers: t.layers,
-            base: t.base,
-            rows: t.rows,
-            len: t.len,
-            row_bytes: t.row_bytes,
-        }),
-        last_h: e.last_h,
-        bytes: e.bytes,
-        last_use: Instant::now(),
-        id: 0, // recency identity assigned by HostPrefixCache::insert
-        verify_digest: e.verify_digest,
-    })
-}
-
-// ---- export -----------------------------------------------------------------
-
-fn handoff_now_unix() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
-/// The export body: drain-demote, select, write. Runs synchronously on the worker thread
-/// (see `Cmd::ExportHostHandoff` for why that is the design, not an accident).
-fn host_handoff_export(
-    path: &str,
-    cap_bytes: usize,
-    engine: &Engine,
-    px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
-    local_stamps: &[HandoffModelStamp],
-) -> Result<HostHandoffExportReport, String> {
-    if !hpx.armed() {
-        return Err(
-            "host tier is off (MEMRA_KV_HOST_MB=0) or latched off; nothing to export".into(),
-        );
-    }
-    let t0 = Instant::now();
-    // 1. DRAIN-DEMOTE: pull every evictable device prefix entry through the ordinary
-    //    demote sink, oldest first so host recency stays device-true. The freshest KV
-    //    state on a draining slot lives on the DEVICE (parked sessions' boundary
-    //    entries); without this step the handoff would carry only what pressure had
-    //    already spilled. Pinned (leased) entries are absent from the evictable LRU by
-    //    construction; latent-plane entries refuse at the demote hook and drop, exactly
-    //    as a device eviction would treat them.
-    let mut demoted = 0usize;
-    while let Some((key, i)) = px.oldest_evictable() {
-        let Some(dead) = px.remove_at(&key, i) else {
-            break;
-        };
-        px.evictions += 1;
-        if host_demote_prefix_ref(engine, hpx, &dead) == HostDemoteOutcome::Demoted {
-            demoted += 1;
-        }
-    }
-    // 2. SELECT newest-first under the MEMRA_KV_HOST_HANDOFF_MB cap (0 = everything).
-    //    An entry that does not fit is skipped and scanning continues, so the cap fills
-    //    with the newest entries that fit rather than stopping at the first oversized one.
-    let mut selected: Vec<(PoolKey, usize)> = Vec::new();
-    let (mut sel_bytes, mut skipped_over_cap) = (0u64, 0u64);
-    for (key, i) in hpx.lru.values().rev() {
-        let b = hpx.entries[key][*i].bytes as u64;
-        if cap_bytes > 0 && sel_bytes + b > cap_bytes as u64 {
-            skipped_over_cap += 1;
-            continue;
-        }
-        sel_bytes += b;
-        selected.push((key.clone(), *i));
-    }
-    // 3. WRITE `.tmp`, fsync, rename: the destination path only ever holds a complete
-    //    file. Frames go OLDEST-first (selection reversed) so the importer's sequential
-    //    inserts reconstruct true LRU recency.
-    let tmp = format!("{path}.tmp");
-    let write = (|| -> Result<(), String> {
-        let f = std::fs::File::create(&tmp).map_err(|e| format!("create {tmp}: {e}"))?;
-        let mut w = std::io::BufWriter::with_capacity(4 << 20, f);
-        handoff_write_header(
-            &mut w,
-            &HandoffHeader {
-                layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
-                created_unix: handoff_now_unix(),
-                models: local_stamps.to_vec(),
-                entries: selected.len() as u64,
-                resident_bytes: sel_bytes,
-            },
-        )?;
-        for (key, i) in selected.iter().rev() {
-            handoff_write_entry(&mut w, &handoff_entry_ref(&hpx.entries[key][*i]))?;
-        }
-        let f = w
-            .into_inner()
-            .map_err(|e| format!("handoff flush failed: {e}"))?;
-        f.sync_all()
-            .map_err(|e| format!("handoff fsync failed: {e}"))?;
-        std::fs::rename(&tmp, path).map_err(|e| format!("rename {tmp} -> {path}: {e}"))
-    })();
-    if let Err(err) = write {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(err);
-    }
-    hpx.handoff_exports += 1;
-    let ms = t0.elapsed().as_secs_f64() * 1e3;
-    eprintln!(
-        "[prefix-host] handoff export: {} entries / {:.1}MB to {path} in {ms:.0}ms \
-         (drain-demoted {demoted} device entries first; {skipped_over_cap} skipped over \
-         the MEMRA_KV_HOST_HANDOFF_MB cap)",
-        selected.len(),
-        sel_bytes as f64 / 1e6,
-    );
-    Ok(HostHandoffExportReport {
-        path: path.to_string(),
-        demoted_from_device: demoted,
-        entries: selected.len() as u64,
-        bytes: sel_bytes,
-        skipped_over_cap,
-        ms,
-    })
-}
-
-// ---- import -----------------------------------------------------------------
-
-/// Drip-import state: the validated header plus an open reader. One frame re-materializes
-/// per scheduler tick (a promote-class stall, bounded by the largest single entry), so a
-/// slot that is already serving warms in the background instead of stalling behind the
-/// whole file.
-struct HostHandoffImport {
-    path: String,
-    reader: std::io::BufReader<std::fs::File>,
-    max_frame: u64,
-    refused_models: std::collections::HashSet<String>,
-    header_entries: u64,
-    seen: u64,
-    imported: u64,
-    imported_bytes: u64,
-    skipped: u64,
-    started: Instant,
-}
-
-fn open_host_handoff_import(
-    path: &str,
-    local_stamps: &[HandoffModelStamp],
-) -> Result<(HostHandoffImport, HostHandoffImportStart), String> {
-    let f = std::fs::File::open(path).map_err(|e| format!("open {path}: {e}"))?;
-    let max_frame = f.metadata().map_or(u64::MAX, |m| m.len());
-    let mut reader = std::io::BufReader::with_capacity(4 << 20, f);
-    let header = handoff_read_header(&mut reader)?;
-    let now = handoff_now_unix();
-    let refused = handoff_header_verdict(&header, PREFIX_ENTRY_LAYOUT_VERSION, now, local_stamps)?;
-    for (model, why) in &refused {
-        eprintln!("[prefix-host] handoff import will SKIP every entry of model {model:?}: {why}");
-    }
-    let age_secs = now.saturating_sub(header.created_unix);
-    let start = HostHandoffImportStart {
-        path: path.to_string(),
-        header_entries: header.entries,
-        header_bytes: header.resident_bytes,
-        age_secs,
-        refused_models: refused.iter().map(|(m, _)| m.clone()).collect(),
-    };
-    Ok((
-        HostHandoffImport {
-            path: path.to_string(),
-            reader,
-            max_frame,
-            refused_models: refused.into_iter().map(|(m, _)| m).collect(),
-            header_entries: header.entries,
-            seen: 0,
-            imported: 0,
-            imported_bytes: 0,
-            skipped: 0,
-            started: Instant::now(),
-        },
-        start,
-    ))
-}
-
-/// Import at most ONE frame. Returns `true` when the import is FINISHED (clean EOF, broken
-/// stream, or the tier latched off) and the caller should unlink the file and drop the
-/// state: consume-once, whatever the outcome.
-fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCache) -> bool {
-    if !hpx.armed() {
-        eprintln!(
-            "[prefix-host] handoff import ABORTED: the tier latched off mid-import \
-             ({} of {} frames in); the rest serves cold",
-            imp.seen, imp.header_entries,
-        );
-        return true;
-    }
-    match handoff_read_entry(&mut imp.reader, imp.max_frame) {
-        Ok(None) => {
-            eprintln!(
-                "[prefix-host] handoff import DONE: {} entries / {:.1}MB re-materialized, \
-                 {} skipped, in {:.1}s from {}",
-                imp.imported,
-                imp.imported_bytes as f64 / 1e6,
-                imp.skipped,
-                imp.started.elapsed().as_secs_f64(),
-                imp.path,
-            );
-            true
-        }
-        Ok(Some(Ok(e))) => {
-            imp.seen += 1;
-            if imp.refused_models.contains(&e.model) {
-                imp.skipped += 1;
-                hpx.handoff_skips += 1;
-                return false;
-            }
-            let t0 = Instant::now();
-            let key: PoolKey = (e.model.clone(), e.ns.clone());
-            match host_entry_from_owned(e) {
-                Ok(entry) => {
-                    let (toks, bytes) = (entry.toks.len(), entry.bytes);
-                    // Ordinary insert: identity/version re-checked, budget LRU and tenant
-                    // share cap enforced exactly as for a demotion. Refusals log their
-                    // own reason there.
-                    if hpx.insert(&key, entry) {
-                        imp.imported += 1;
-                        imp.imported_bytes += bytes as u64;
-                        hpx.handoff_imports += 1;
-                        hpx.handoff_import_bytes += bytes as u64;
-                        eprintln!(
-                            "[prefix-host] handoff import: {toks} tokens, {:.1}MB in \
-                             {:.1}ms ({}/{} frames; host resident {:.1}MB / {:.0}MB)",
-                            bytes as f64 / 1e6,
-                            t0.elapsed().as_secs_f64() * 1e3,
-                            imp.seen,
-                            imp.header_entries,
-                            hpx.total_bytes as f64 / 1e6,
-                            hpx.budget as f64 / 1e6,
-                        );
-                    } else {
-                        imp.skipped += 1;
-                        hpx.handoff_skips += 1;
-                    }
-                    false
-                }
-                Err(err) => {
-                    // Pinned alloc failure: the tier's no-pageable-fallback latch posture.
-                    hpx.rejected_allocs += 1;
-                    hpx.disable(&format!("handoff import pinned alloc failed: {err}"));
-                    eprintln!(
-                        "[prefix-host] handoff import ABORTED at frame {} of {}: {err}; \
-                         {} entries already imported stay resident, the rest serves cold",
-                        imp.seen, imp.header_entries, imp.imported,
-                    );
-                    true
-                }
-            }
-        }
-        Ok(Some(Err(reason))) => {
-            imp.seen += 1;
-            imp.skipped += 1;
-            hpx.handoff_skips += 1;
-            eprintln!(
-                "[prefix-host] handoff import SKIPPED a corrupt frame ({}/{}): {reason}; \
-                 that prefix serves cold",
-                imp.seen, imp.header_entries,
-            );
-            false
-        }
-        Err(err) => {
-            eprintln!(
-                "[prefix-host] handoff import ABORTED ({err}); {} entries / {:.1}MB \
-                 imported before the break, the rest serves cold",
-                imp.imported,
-                imp.imported_bytes as f64 / 1e6,
-            );
-            true
-        }
     }
 }
 
@@ -8626,55 +4906,11 @@ fn host_handoff_import_step(imp: &mut HostHandoffImport, hpx: &mut HostPrefixCac
 /// passphrase stated only in the prompt, restored reps did neither (research receipts in the
 /// lane; the same split reproduces at vendor-default sampling).
 ///
-/// So the capture was refused and no such entry could exist. lane/glm5-prefix-latent
-/// (2026-08-30, design in research/glm5-prefix-latent-20260830/DESIGN.md) makes entries CARRY
-/// the latent planes behind `MEMRA_PREFIX_LATENT` (default OFF): f32 latent rows, the carried
-/// k-pool keys + `index_pools_ready` (a rebuild is impossible under the shipped tail ring: the
-/// source rows are overwritten by design), and the sub-pool live tail rows. The restore-side
-/// guard becomes an ADMIT only for entries whose latent slots are populated; entries minted
-/// before the flip, or by a publish site that cannot capture latent state, keep refusing.
-///
-/// This predicate remains the guard for the seams that still cannot express latent state:
-/// `CacheSnapshot` / `Cache::rollback` (the plain-affinity checkpoint and any future spec
-/// rewind) stay two-plane and stay refused regardless of the flag.
+/// So the capture is refused and no such entry can exist. Carrying latent planes in an entry is
+/// a separate lane: the rows are f32 and unquantized, the DSA `index_rows` plane is a tail ring,
+/// and `index_pool_keys` / `index_pools_ready` would have to travel or be rebuilt.
 fn unsupported_prefix_state_plane(has_latent_plane: bool) -> Option<&'static str> {
     has_latent_plane.then_some("latent (MLA/DSA) KV planes are not carried by prefix entries")
-}
-
-/// Capture-side gate: with `MEMRA_PREFIX_LATENT` off this is byte-for-byte the parent lane's
-/// refusal; with it on, `prefix_snapshot` captures the latent planes instead.
-fn unsupported_prefix_capture(
-    has_latent_plane: bool,
-    latent_capture_on: bool,
-) -> Option<&'static str> {
-    if latent_capture_on {
-        return None;
-    }
-    unsupported_prefix_state_plane(has_latent_plane)
-}
-
-/// Restore-side gate, defence in depth for the capture-side one: a latent-bearing cache admits
-/// ONLY an entry that carries latent planes, and only while the flag arms the mechanism. An
-/// entry minted before the flip (or by the spec-boundary publisher, which cannot capture latent
-/// state) refuses here exactly as it did under the parent lane's guard.
-fn unsupported_prefix_restore(
-    cache_has_latent: bool,
-    latent_capture_on: bool,
-    entry_carries_latent: bool,
-) -> Option<&'static str> {
-    if !cache_has_latent {
-        return None;
-    }
-    if !latent_capture_on {
-        return unsupported_prefix_state_plane(true);
-    }
-    if entry_carries_latent {
-        return None;
-    }
-    Some(
-        "entry does not carry the latent (MLA/DSA) planes this cache requires \
-         (minted before or without latent capture)",
-    )
 }
 
 fn prefix_snapshot(
@@ -8687,10 +4923,7 @@ fn prefix_snapshot(
     if cache.has_swa_ring() {
         return Err("SWA ring sessions do not support flat-history prefix snapshots".into());
     }
-    if let Some(why) = unsupported_prefix_capture(
-        cache.latent.iter().any(Option::is_some),
-        prefix_latent_planes_on(),
-    ) {
+    if let Some(why) = unsupported_prefix_state_plane(cache.latent.iter().any(Option::is_some)) {
         return Err(why.into());
     }
     if cache.pos != toks.len() {
@@ -8708,31 +4941,8 @@ fn prefix_snapshot(
     let mut kv = Vec::with_capacity(n);
     let mut conv = Vec::with_capacity(n);
     let mut ssm = Vec::with_capacity(n);
-    let mut latent = Vec::with_capacity(n);
     let mut bytes = 0usize;
     for il in 0..n {
-        // Latent (MLA/DSA) plane capture. Reached only with `MEMRA_PREFIX_LATENT=1` (the gate
-        // above refuses otherwise). Same absent-at-capture convention as `kv` below: the MTP
-        // latent layer is allocated but never executed by the trunk, so len 0 at pos > 0 records
-        // it absent and a restore leaves the destination slot at len 0.
-        match &cache.latent[il] {
-            Some(l) if l.len == 0 && cache.pos > 0 => latent.push(None),
-            Some(l) => {
-                if l.len != cache.pos {
-                    return Err(format!(
-                        "prefix snapshot latent layer {il} len {} != cache pos {}",
-                        l.len, cache.pos,
-                    )
-                    .into());
-                }
-                let snap = l
-                    .snapshot_plane(engine)
-                    .map_err(|err| format!("prefix snapshot latent layer {il}: {err}"))?;
-                bytes += snap.bytes();
-                latent.push(Some(snap));
-            }
-            None => latent.push(None),
-        }
         match &cache.kv[il] {
             // A NextN/MTP head layer is ALLOCATED but never executed by the trunk, so it
             // legitimately carries len 0 while the trunk layers are at cache.pos. Treating that as
@@ -8794,7 +5004,6 @@ fn prefix_snapshot(
         kv,
         conv,
         ssm,
-        latent,
         pos: cache.pos,
         last_logits: last_logits.to_vec(),
         draft: None,        // plain-session snapshot: no draft plane to publish
@@ -8823,16 +5032,9 @@ fn prefix_restore_at(
     if cache.has_swa_ring() {
         return Err("SWA ring sessions do not support flat-history prefix restores".into());
     }
-    // Defence in depth for the capture-side gate in `prefix_snapshot`: an entry that does not
-    // carry latent planes (minted before the flag flip, or by the spec-boundary publisher) must
-    // never land in a latent-bearing cache; with `MEMRA_PREFIX_LATENT` off this is byte-for-byte
-    // the parent lane's refusal.
-    let entry_has_latent = e.latent.iter().any(Option::is_some);
-    if let Some(why) = unsupported_prefix_restore(
-        cache.latent.iter().any(Option::is_some),
-        prefix_latent_planes_on(),
-        entry_has_latent,
-    ) {
+    // Defence in depth for the capture-side refusal in `prefix_snapshot`: an entry minted
+    // before this guard (or by any future publish site) must never land in a latent-bearing cache.
+    if let Some(why) = unsupported_prefix_state_plane(cache.latent.iter().any(Option::is_some)) {
         return Err(why.into());
     }
     if e.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
@@ -8874,27 +5076,20 @@ fn prefix_restore_at(
         )
         .into());
     }
-    if cache.pos != 0
-        || cache.kv.iter().flatten().any(|layer| layer.len != 0)
-        || cache.latent.iter().flatten().any(|layer| layer.len != 0)
-    {
+    if cache.pos != 0 || cache.kv.iter().flatten().any(|layer| layer.len != 0) {
         return Err("prefix restore destination is not fresh".into());
     }
     if cache.kv.len() != e.kv.len()
         || cache.recur.len() != e.conv.len()
         || cache.recur.len() != e.ssm.len()
-        || cache.latent.len() != e.latent.len()
     {
         return Err(format!(
-            "prefix entry layer counts kv/conv/ssm/latent={}/{}/{}/{} != cache \
-             kv/recur/latent={}/{}/{}",
+            "prefix entry layer counts kv/conv/ssm={}/{}/{} != cache kv/recur={}/{}",
             e.kv.len(),
             e.conv.len(),
             e.ssm.len(),
-            e.latent.len(),
             cache.kv.len(),
             cache.recur.len(),
-            cache.latent.len(),
         )
         .into());
     }
@@ -8903,15 +5098,6 @@ fn prefix_restore_at(
         return Err(format!(
             "hybrid mid-entry prefix restore refused at {restore_len} of {}: recurrent state \
              exists only at the captured endpoint",
-            e.pos,
-        )
-        .into());
-    }
-    if entry_has_latent && restore_len != e.pos {
-        return Err(format!(
-            "latent mid-entry prefix restore refused at {restore_len} of {}: the index tail \
-             ring for an interior boundary is unrecoverable (rows below the built pools are \
-             overwritten by design)",
             e.pos,
         )
         .into());
@@ -8963,19 +5149,8 @@ fn prefix_restore_at(
             (None, None, None) => {}
             _ => return Err(format!("prefix entry recur {il} mismatch").into()),
         }
-        match (cache.latent[il].as_ref(), &e.latent[il]) {
-            (Some(dst), Some(src)) => dst
-                .validate_restore(src, cache.max_ctx)
-                .map_err(|err| format!("prefix entry latent {il}: {err}"))?,
-            (None, None) => {}
-            // Capture records an allocated-but-unexecuted MTP latent layer as absent (see
-            // prefix_snapshot); the destination keeps that slot allocated at len 0.
-            (Some(_), None) => {}
-            _ => return Err(format!("prefix entry latent {il} kind mismatch").into()),
-        }
     }
 
-    let max_ctx = cache.max_ctx;
     for il in 0..cache.kv.len() {
         if let (Some(dst), Some(src)) = (cache.kv[il].as_mut(), &e.kv[il]) {
             let kb = restore_len * dst.k_tok_bytes;
@@ -8992,10 +5167,6 @@ fn prefix_restore_at(
         if let (Some(dst), Some(c), Some(s)) = (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il]) {
             engine.copy_into(&mut dst.conv_state, 0, c, c.len())?;
             engine.copy_into(&mut dst.ssm_state, 0, s, s.len())?;
-        }
-        if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
-            dst.restore_plane(engine, src, max_ctx)
-                .map_err(|err| format!("prefix entry latent {il}: {err}"))?;
         }
     }
     cache.pos = restore_len;
@@ -9037,13 +5208,8 @@ fn prefix_entry_state_digest(
     if has_recurrent && at != entry.pos {
         return Err("entry digest refuses mid-entry recurrent state".into());
     }
-    if entry.latent.iter().any(Option::is_some) && at != entry.pos {
-        return Err("entry digest refuses mid-entry latent state".into());
-    }
     let mut hasher = Sha256::new();
-    // v2 (lane/glm5-prefix-latent): the digest now covers the latent plane class, so it must
-    // never collide with a v1 digest that was blind to it.
-    hasher.update(b"memra-prefix-split-state-v2");
+    hasher.update(b"memra-prefix-split-state-v1");
     digest_usize(&mut hasher, at);
     digest_usize(&mut hasher, entry.kv.len());
     for il in 0..entry.kv.len() {
@@ -9080,32 +5246,6 @@ fn prefix_entry_state_digest(
             (None, None) => hasher.update([0]),
             _ => return Err(format!("entry digest recur {il} mismatch").into()),
         }
-        match &entry.latent[il] {
-            Some(snap) => {
-                hasher.update([1]);
-                digest_usize(&mut hasher, snap.width);
-                digest_usize(&mut hasher, snap.len);
-                digest_f32_plane(&mut hasher, &engine.dtoh(&snap.rows)?);
-                digest_usize(&mut hasher, snap.index_width);
-                digest_usize(&mut hasher, snap.index_pool);
-                digest_usize(&mut hasher, snap.index_pools_ready);
-                match &snap.index_pool_keys {
-                    Some(keys) => {
-                        hasher.update([1]);
-                        digest_f32_plane(&mut hasher, &engine.dtoh(keys)?);
-                    }
-                    None => hasher.update([0]),
-                }
-                match &snap.index_tail {
-                    Some(tail) => {
-                        hasher.update([1]);
-                        digest_f32_plane(&mut hasher, &engine.dtoh(tail)?);
-                    }
-                    None => hasher.update([0]),
-                }
-            }
-            None => hasher.update([0]),
-        }
     }
     Ok(format!("{:x}", hasher.finalize()))
 }
@@ -9121,7 +5261,7 @@ fn prefix_cache_state_digest(
         return Err(format!("cache digest pos {} != split {at}", cache.pos).into());
     }
     let mut hasher = Sha256::new();
-    hasher.update(b"memra-prefix-split-state-v2");
+    hasher.update(b"memra-prefix-split-state-v1");
     digest_usize(&mut hasher, at);
     digest_usize(&mut hasher, cache.kv.len());
     for il in 0..cache.kv.len() {
@@ -9165,73 +5305,6 @@ fn prefix_cache_state_digest(
             }
             None => hasher.update([0]),
         }
-        // The latent twin of the entry-side digest: hash the LOGICAL windows a snapshot carries
-        // (rows [0..len*width), keys [0..ready*d), the live tail), so a correctly restored cache
-        // digests byte-identically to its source entry. A layer left at len 0 (MTP, recorded
-        // absent at capture) digests as absent, matching the entry's None slot.
-        match &cache.latent[il] {
-            Some(layer) if layer.len > 0 => {
-                if layer.len != at {
-                    return Err(format!(
-                        "cache digest latent {il} len {} != split {at}",
-                        layer.len,
-                    )
-                    .into());
-                }
-                let len_d = engine.dtoh_i32(&layer.len_d)?;
-                if len_d.as_slice() != [at as i32] {
-                    return Err(
-                        format!("cache digest latent {il} len_d {len_d:?} != [{at}]",).into(),
-                    );
-                }
-                hasher.update([1]);
-                digest_usize(&mut hasher, layer.width);
-                digest_usize(&mut hasher, layer.len);
-                let rows = engine.dtoh_view(&layer.rows.slice(0..layer.len * layer.width))?;
-                digest_f32_plane(&mut hasher, &rows);
-                digest_usize(&mut hasher, layer.index_width);
-                digest_usize(&mut hasher, layer.index_pool);
-                digest_usize(&mut hasher, layer.index_pools_ready);
-                if layer.index_width > 0 && layer.index_pools_ready > 0 {
-                    let d = layer.index_width / 2;
-                    let keys = layer
-                        .index_pool_keys
-                        .as_ref()
-                        .ok_or_else(|| format!("cache digest latent {il} has no key plane"))?;
-                    hasher.update([1]);
-                    let keys = engine.dtoh_view(&keys.slice(0..layer.index_pools_ready * d))?;
-                    digest_f32_plane(&mut hasher, &keys);
-                } else {
-                    hasher.update([0]);
-                }
-                let tail_rows = if layer.index_width > 0 && layer.index_pool > 0 {
-                    layer.len - layer.index_pools_ready * layer.index_pool
-                } else {
-                    0
-                };
-                if tail_rows > 0 {
-                    let ring = layer.index_ring_rows.unwrap_or(0);
-                    let phys = memra_engine::cache::index_plane_physical_row(
-                        ring,
-                        layer.index_pool,
-                        layer.index_pools_ready * layer.index_pool,
-                    );
-                    let plane = layer
-                        .index_rows
-                        .as_ref()
-                        .ok_or_else(|| format!("cache digest latent {il} has no index plane"))?;
-                    hasher.update([1]);
-                    let tail =
-                        engine.dtoh_view(&plane.slice(
-                            phys * layer.index_width..(phys + tail_rows) * layer.index_width,
-                        ))?;
-                    digest_f32_plane(&mut hasher, &tail);
-                } else {
-                    hasher.update([0]);
-                }
-            }
-            _ => hasher.update([0]),
-        }
     }
     Ok(format!("{:x}", hasher.finalize()))
 }
@@ -9274,10 +5347,7 @@ fn kv_prefix_digest(
         return Err(format!("kvprobe at {at} outside [1,{}]", cache.pos).into());
     }
     let mut hasher = Sha256::new();
-    // v2 (lane/glm5-prefix-latent): kvprobe was blind to the latent plane — on glm5_next it
-    // reported a constant empty digest for a cache with a full latent history (the parent
-    // lane's named receipt gap). It now folds in the position-addressed latent rows.
-    hasher.update(b"memra-kvprobe-prefix-v2");
+    hasher.update(b"memra-kvprobe-prefix-v1");
     digest_usize(&mut hasher, at);
     digest_usize(&mut hasher, cache.kv.len());
     let mut per_layer = Vec::new();
@@ -9331,22 +5401,6 @@ fn kv_prefix_digest(
                 digest_f32_plane(&mut hasher, &engine.dtoh(&recur.ssm_state)?);
             }
             None => hasher.update([0]),
-        }
-        match &cache.latent[il] {
-            Some(layer) if layer.len > 0 => {
-                if layer.len < at {
-                    return Err(format!(
-                        "kvprobe latent {il} holds {} rows, probe wants {at}",
-                        layer.len,
-                    )
-                    .into());
-                }
-                hasher.update([1]);
-                digest_usize(&mut hasher, layer.width);
-                let rows = engine.dtoh_view(&layer.rows.slice(0..at * layer.width))?;
-                digest_f32_plane(&mut hasher, &rows);
-            }
-            _ => hasher.update([0]),
         }
     }
     Ok((format!("{:x}", hasher.finalize()), per_layer))
@@ -9452,7 +5506,6 @@ fn trace_prefix_cache_state(engine: &Engine, cache: &Cache, at: usize, role: &st
 fn prefix_insert_from_spec_boundary(
     engine: &Engine,
     px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
     pool_key: &PoolKey,
     committed: &[u32],
     cache: &Cache,
@@ -9473,75 +5526,14 @@ fn prefix_insert_from_spec_boundary(
     if cache.has_swa_ring() {
         return;
     }
-    // LATENT ARM (lane/glm5-prefix-latent2, 2026-09-01 — the case the old refusal named
-    // "unreachable today ... IF A SPEC ARM EVER LANDS FIRST"; the glm5 spec arm landed):
-    // a latent-bearing cache publishes ONLY when the capture carries the boundary tails
-    // (taken at prime time, before generation lapped the tail ring) AND the latent plane
-    // flag arms publication. The append-only planes (latent rows, final pool keys) are
-    // sliced from the LIVE cache below the boundary (`snapshot_plane_at` validates every
-    // slice); anything else keeps the loud refusal — fail closed, never a guessed plane.
-    let has_latent = cache.latent.iter().any(Option::is_some);
-    let mut cap = cap;
-    let n = cache.kv.len();
-    let mut latent: Vec<Option<memra_engine::cache::LatentPlaneSnapshot>> = Vec::new();
-    let mut latent_bytes = 0usize;
-    if has_latent {
-        if !prefix_latent_planes_on() || cap.latent_tails.len() != n {
-            eprintln!(
-                "[prefix-cache] spec publish REFUSED: latent (MLA/DSA) cache without \
-                 boundary tails in the capture (or MEMRA_PREFIX_LATENT off); entry dropped",
-            );
-            return;
-        }
-        for il in 0..n {
-            match (&cache.latent[il], cap.latent_tails[il].take()) {
-                (Some(l), Some(tail)) => match l.snapshot_plane_at(engine, tail) {
-                    Ok(snap) => {
-                        latent_bytes += snap.bytes();
-                        latent.push(Some(snap));
-                    }
-                    Err(err) => {
-                        eprintln!(
-                            "[prefix-cache] spec publish REFUSED: latent layer {il} boundary \
-                             slice: {err}; entry dropped",
-                        );
-                        return;
-                    }
-                },
-                // Absent at the boundary (the MTP plane on the DFlash2 arm) stays absent —
-                // the prefix_snapshot convention, capture/restore symmetric. Identity
-                // hardening (PR #96 review round 2, finding 1): a LIVE plane carrying rows
-                // whose capture slot is None is a disagreement, not a convention — refuse
-                // rather than publish an absent history for a layer that has one.
-                (Some(l), None) if l.len == 0 => latent.push(None),
-                (None, None) => latent.push(None),
-                (Some(_), None) => {
-                    eprintln!(
-                        "[prefix-cache] spec publish REFUSED: live latent layer {il} \
-                         carries rows but the capture recorded it absent; entry dropped",
-                    );
-                    return;
-                }
-                (None, Some(_)) => {
-                    eprintln!(
-                        "[prefix-cache] spec publish REFUSED: capture carries a tail for \
-                         layer {il} but the live cache has no latent plane there; entry \
-                         dropped",
-                    );
-                    return;
-                }
-            }
-        }
-    } else {
-        latent = (0..n).map(|_| None).collect();
-    }
     debug_assert!(
         cap.snap.pos == pos,
         "spec boundary capture snap pos {} != capture pos {pos}",
         cap.snap.pos,
     );
+    let n = cache.kv.len();
     let mut kv = Vec::with_capacity(n);
-    let mut bytes = latent_bytes;
+    let mut bytes = 0usize;
     for il in 0..n {
         match &cache.kv[il] {
             // MTP head layer: allocated, never executed by the trunk — absent, like
@@ -9641,9 +5633,6 @@ fn prefix_insert_from_spec_boundary(
         kv,
         conv: cap.snap.conv,
         ssm: cap.snap.ssm,
-        // Latent planes: boundary-tail capture + live append-only slices (the latent arm
-        // above); every slot absent on two-plane models, byte-identical to the pre-arm entry.
-        latent,
         pos,
         last_logits: cap.logits,
         draft,
@@ -9656,16 +5645,10 @@ fn prefix_insert_from_spec_boundary(
         pins: 0,
     };
     trace_prefix_entry_state(engine, &e, e.pos, "spec-snapshot", why);
-    px.insert_demoting(pool_key, e, why, engine, hpx);
+    px.insert(pool_key, e, why);
 }
 
-fn prefix_insert_from_session(
-    engine: &Engine,
-    px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
-    s: &Session,
-    why: &str,
-) {
+fn prefix_insert_from_session(engine: &Engine, px: &mut PrefixCache, s: &Session, why: &str) {
     if memra_engine::pp::pp_host_bounce_active() {
         return;
     }
@@ -9679,7 +5662,7 @@ fn prefix_insert_from_session(
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits) {
         Ok(e) => {
             trace_prefix_entry_state(engine, &e, e.pos, "snapshot", why);
-            px.insert_demoting(&pool_key, e, why, engine, hpx);
+            px.insert(&pool_key, e, why);
         }
         Err(err) => eprintln!("[prefix-cache] snapshot failed ({err}); prefix not cached"),
     }
@@ -9778,29 +5761,11 @@ fn maybe_plain_checkpoint(engine: &Engine, s: &mut Session) {
 /// EXACTNESS: the deep entry is a whole-entry snapshot of THIS session's cache, and a future
 /// hit whole-entry restores it — byte-identical to the session that seeded it, exactly the
 /// contract every seed already has. No new numeric program is introduced.
-fn maybe_prefix_seed(
-    engine: &Engine,
-    px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
-    s: &mut Session,
-) {
+fn maybe_prefix_seed(engine: &Engine, px: &mut PrefixCache, s: &mut Session) {
     if !s.seed_prefix || s.vision.is_some() {
         return;
     }
     s.seed_prefix = false;
-    // PROVENANCE REFUSAL (PR #93 review finding 3a): a hyper-under-flag session whose
-    // prompt tokens rode tokenwise decode_step must not publish — the entry would carry
-    // the restore+decode_step chained provenance R16 refuses. Checked here rather than
-    // inferred from which prefill branch should have run, so ANY veto (budget starvation,
-    // sub-floor suffix, a future term) fails closed.
-    if s.prompt_tok_decode_step {
-        eprintln!(
-            "[suffix-prime] seed REFUSED: prompt tokens rode decode_step under \
-             MEMRA_HYPER_SUFFIX_PRIME; mixed-provenance entry not published (model {})",
-            s.model
-        );
-        return;
-    }
     if s.cache.is_none() || s.fed.len() < PREFIX_CACHE_MIN_TOKENS {
         return;
     }
@@ -9808,7 +5773,7 @@ fn maybe_prefix_seed(
     if !prefix_seed_deepens(px.deepest_covering(&key, &s.fed), s.fed.len()) {
         return; // an entry of (near-)equal depth already serves this prefix class
     }
-    prefix_insert_from_session(engine, px, hpx, s, "seed");
+    prefix_insert_from_session(engine, px, s, "seed");
 }
 
 /// Minimum extra depth (tokens) a seed must add over the deepest covering entry before it is
@@ -9827,12 +5792,9 @@ fn prefix_seed_deepens(deepest_covering: Option<usize>, fed_len: usize) -> bool 
 }
 
 /// Pure half of the H11 hit re-arm (`seed_prefix` for a plain prefix-cache hit session) —
-/// the unit-testable predicate; the call site supplies the EFFECTIVE eager-only bit
-/// (`eager_only_model(lm)` narrowed by the `carried_suffix_primes` carve-out — a hyper
-/// trunk under MEMRA_HYPER_SUFFIX_PRIME is not eager-only for this purpose, its suffix is
-/// prime-provenance) and `spec.is_none()`. The eager-only refusal is R16's hard
-/// prerequisite for this mechanism (research/cacheinval-20260813; full reasoning at the
-/// arming site).
+/// the unit-testable predicate; the call site supplies `eager_only_model(lm)` and
+/// `spec.is_none()`. The eager-only refusal is R16's hard prerequisite for this mechanism
+/// (research/cacheinval-20260813; full reasoning at the arming site).
 fn plain_hit_reseed_arms(
     prefix_hit: bool,
     plain_path: bool,
@@ -9864,69 +5826,14 @@ struct ReplayPlan {
 
 /// Build a session's embedding overlay: tower forward per image, merger rows concatenated
 /// into one device buffer. Drops the host patch buffers afterwards. No-op if already built.
-///
-/// `intake` is the engine that will CONSUME the overlay at embedding intake
-/// (`HybridModel::vision_intake_engine`): the primary engine on a single-device, doorless or
-/// `MEMRA_PP_STREAMS=0` shape, pp stage 0's engine under a per-stage-stream ppN split. The
-/// towers always run on `engine` (that is where their weights are resident, ~2.3 GiB f32 for
-/// glm5); `EmbedOverlay::new_published` then publishes the finished rows into `intake`'s
-/// context when the two differ. Once per session, prefill only (lane/glm53-vision-ppn).
-#[allow(clippy::too_many_arguments)] // allow: one tower parameter per vision family plus the two engines the publication needs; bundling them hides which engine owns which side of the copy
 fn build_vision_overlay(
     engine: &Engine,
-    intake: &Engine,
     tower: Option<&memra_engine::vision::VisionTower>,
     gemma_tower: Option<&memra_engine::vision_gemma::GemmaVisionTower>,
-    glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
-    step_tower: Option<&memra_engine::vision_step::StepVisionTower>,
     n_embd: usize,
     v: &mut VisionState,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if v.overlay.is_some() {
-        return Ok(());
-    }
-    // GLM5: forward each image through the glm5 tower, concat rows in prompt order.
-    if let VisionImages::Glm5(units) = &mut v.images {
-        let tower = glm5_tower.ok_or("glm5 vision request without a loaded glm5 tower")?;
-        let total: usize = units.iter().map(|u| u.n_merged()).sum();
-        let mut rows = engine.uninit(total * n_embd)?;
-        let mut off = 0usize;
-        for u in units.iter() {
-            let emb = tower.forward(engine, &u.patches, u.gh, u.gw)?;
-            engine.dtod_copy_into(&emb, &mut rows, off * n_embd)?;
-            off += u.n_merged();
-        }
-        v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
-            intake,
-            rows,
-            v.spans.clone(),
-        )?);
-        for u in units.iter_mut() {
-            u.patches = Vec::new();
-        }
-        return Ok(());
-    }
-    // STEP37: forward each unit (crop tiles first, then the 728 main view — the vendor
-    // merge order) through the step tower, concat rows in prompt order.
-    if let VisionImages::Step(units) = &mut v.images {
-        let tower = step_tower.ok_or("step vision request without a loaded step tower")?;
-        let total: usize = units.iter().map(|u| u.n_rows()).sum();
-        let mut rows = engine.uninit(total * n_embd)?;
-        let mut off = 0usize;
-        for u in units.iter() {
-            off += tower.forward_unit(engine, u, &mut rows, off)?;
-        }
-        v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
-            intake,
-            rows,
-            v.spans.clone(),
-        )?);
-        for u in units.iter_mut() {
-            u.main = Vec::new();
-            u.tiles = Vec::new();
-        }
         return Ok(());
     }
     // GEMMA-4: forward each image through the gemma tower, concat rows in prompt order.
@@ -9940,19 +5847,17 @@ fn build_vision_overlay(
             engine.dtod_copy_into(&emb, &mut rows, off * n_embd)?;
             off += u.n_soft();
         }
-        v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-            engine,
-            intake,
+        v.overlay = Some(memra_engine::vision::EmbedOverlay {
             rows,
-            v.spans.clone(),
-        )?);
+            spans: v.spans.clone(),
+        });
         for u in units.iter_mut() {
             u.patches = Vec::new();
         }
         return Ok(());
     }
     let VisionImages::Qwen(units) = &mut v.images else {
-        unreachable!("glm5, gemma and step handled above")
+        unreachable!("gemma handled above")
     };
     let tower = tower.ok_or("qwen vision request without a loaded tower (MEMRA_VISION_DIR)")?;
     let total: usize = units.iter().map(|u| u.prep.n_tokens()).sum();
@@ -9985,12 +5890,10 @@ fn build_vision_overlay(
             }
         }
     }
-    v.overlay = Some(memra_engine::vision::EmbedOverlay::new_published(
-        engine,
-        intake,
+    v.overlay = Some(memra_engine::vision::EmbedOverlay {
         rows,
-        v.spans.clone(),
-    )?);
+        spans: v.spans.clone(),
+    });
     for u in units.iter_mut() {
         u.prep.patches = Vec::new();
     }
@@ -10003,8 +5906,6 @@ fn build_vision_overlay(
 enum VisionImages {
     Qwen(Vec<memra_engine::vision_pre::VisionUnit>),
     Gemma(Vec<memra_engine::vision_gemma::GemmaVisionUnit>),
-    Glm5(Vec<memra_engine::vision_glm5::Glm5VisionUnit>),
-    Step(Vec<memra_engine::vision_step::StepVisionUnit>),
 }
 struct VisionState {
     images: VisionImages,
@@ -10051,212 +5952,6 @@ fn gemma_vision_spans(
         }
         spans.push((start, row_off, n));
         row_off += n;
-    }
-    Ok(spans)
-}
-
-/// Align the tokenized prompt's `<|image|>` placeholder runs with the request's glm5
-/// units, in order. Same fail-loud contract as `vision_spans` (user text faking
-/// placeholder tokens, count drift, or a truncated run refuses at admission).
-fn glm5_vision_spans(
-    prompt: &[u32],
-    units: &[memra_engine::vision_glm5::Glm5VisionUnit],
-    placeholder: u32,
-) -> Result<Vec<(usize, usize, usize)>, String> {
-    let mut runs: Vec<(usize, usize)> = Vec::new();
-    let mut i = 0;
-    while i < prompt.len() {
-        if prompt[i] == placeholder {
-            let start = i;
-            while i < prompt.len() && prompt[i] == placeholder {
-                i += 1;
-            }
-            runs.push((start, i - start));
-        } else {
-            i += 1;
-        }
-    }
-    if runs.len() != units.len() {
-        return Err(format!(
-            "prompt carries {} glm5 image run(s) but the request has {} unit(s) — \
-             literal <|image|> tokens in message text are not allowed",
-            runs.len(),
-            units.len()
-        ));
-    }
-    let mut spans = Vec::with_capacity(runs.len());
-    let mut row_off = 0usize;
-    for (&(start, len), unit) in runs.iter().zip(units) {
-        let n = unit.n_merged();
-        if len != n {
-            return Err(format!(
-                "glm5 image run at token {start} is {len} tokens; the unit needs {n}"
-            ));
-        }
-        spans.push((start, row_off, n));
-        row_off += n;
-    }
-    Ok(spans)
-}
-
-/// One guarded vision special id and the count this request's OWN image parts render.
-struct VisionSpecialBudget {
-    id: u32,
-    piece: &'static str,
-    expected: usize,
-}
-
-/// INTAKE HYGIENE — vision special ids may enter a prompt ONLY through the render of this
-/// request's own image parts (lane/glm5-vision-default-on, 2026-08-30).
-///
-/// The tokenizer parses special-token literals out of RAW TEXT (`st_partition`, llama's
-/// default tokenize()), so a plain-text `<|image|>` in any message becomes id 154854 in
-/// the rendered stream. With image units present, the run/unit alignment
-/// (`glm5_vision_spans` and kin) caught that; WITHOUT units no scan ran at all, and the
-/// special id reached the trunk as a raw placeholder embedding — served 200, fluent,
-/// invisible (measured on the card3 box probe: vision-cell arms 20/22,
-/// research/glm53-flash-bringup-20260827/acceptance-probe-20260830). Acceptable behind a
-/// default-OFF flag, NOT default-ON. This extends the codebase's existing reject-by-name
-/// hygiene ("literal <|image|> tokens in message text are not allowed") to EVERY prompt
-/// source — chat render, raw prompt text, and explicit prompt_ids — by counting each
-/// guarded id in the ENCODED prompt (token ids, never prose) against the render budget.
-///
-/// Family scope: the glm5 six (placeholder + begin/end + the video triple, all expected 0
-/// for video — `video_url` refuses at intake), the gemma soft token (same literal, its own
-/// vocab), and the qwen pad pair. Wrapper markers other families render around their runs
-/// are NOT policed here — they never carry overlay rows, and their semantics belong to
-/// those families' own lanes (no-generic-support).
-fn vision_special_budgets(tok: &Tokenizer, req: &Request) -> Vec<VisionSpecialBudget> {
-    vision_special_budgets_inner(
-        tok,
-        req.glm5_images.len(),
-        req.glm5_images.iter().map(|u| u.n_merged()).sum(),
-        req.gemma_images.iter().map(|u| u.n_soft()).sum(),
-        req.images
-            .iter()
-            .filter(|u| u.video.is_none())
-            .map(|u| u.prep.n_tokens())
-            .sum(),
-        req.images
-            .iter()
-            .filter(|u| u.video.is_some())
-            .map(|u| u.prep.n_tokens())
-            .sum(),
-    )
-}
-
-/// The tokenizer-facing half of `vision_special_budgets`, parameterized on the unit sums so
-/// the red/green tests drive it against a fixture tokenizer without building a `Request`.
-fn vision_special_budgets_inner(
-    tok: &Tokenizer,
-    glm5_units: usize,
-    glm5_rows: usize,
-    gemma_rows: usize,
-    qwen_image_rows: usize,
-    qwen_video_rows: usize,
-) -> Vec<VisionSpecialBudget> {
-    let budgets = [
-        // glm5 placeholder and gemma soft token share the literal; one family per process.
-        ("<|image|>", glm5_rows + gemma_rows),
-        ("<|begin_of_image|>", glm5_units),
-        ("<|end_of_image|>", glm5_units),
-        ("<|video|>", 0),
-        ("<|begin_of_video|>", 0),
-        ("<|end_of_video|>", 0),
-        ("<|image_pad|>", qwen_image_rows),
-        ("<|video_pad|>", qwen_video_rows),
-    ];
-    budgets
-        .into_iter()
-        .filter_map(|(piece, expected)| {
-            let id = tok.id_of(piece)?;
-            // Only ids `st_partition` splits from raw text: an ordinary vocab entry that
-            // merely looks like a marker is honest text, never an injection vector.
-            tok.token_is_special(id).then_some(VisionSpecialBudget {
-                id,
-                piece,
-                expected,
-            })
-        })
-        .collect()
-}
-
-/// The pure half of the guard (unit-tested on ids): every guarded id's count in the
-/// encoded prompt must EQUAL its render budget — more is smuggled text, fewer is a render
-/// desync; both refuse by name before any cache allocation or GPU work.
-fn vision_special_id_guard(prompt: &[u32], budgets: &[VisionSpecialBudget]) -> Result<(), String> {
-    for b in budgets {
-        let got = prompt.iter().filter(|&&t| t == b.id).count();
-        if got != b.expected {
-            return Err(format!(
-                "prompt carries {got} {} special token(s) (id {}) but this request's image \
-                 parts render {} — literal vision special tokens in message text are not \
-                 allowed",
-                b.piece, b.id, b.expected
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Align the tokenized prompt's `<im_patch>` runs with the request's step37 units, in
-/// order. One unit owns SEVERAL runs: n_tiles runs of 81 (the 504 crops, delimited by
-/// <patch_start>/<patch_end>/<patch_newline> so each is its own run) then one run of
-/// 169 (the 728 main view) — the vendor token layout. Each run becomes its own overlay
-/// span; rows are laid out crops-then-main per unit (forward_unit order). Same
-/// fail-loud contract as `vision_spans`: any mismatch is an admission error.
-fn step_vision_spans(
-    prompt: &[u32],
-    units: &[memra_engine::vision_step::StepVisionUnit],
-    pad: u32,
-) -> Result<Vec<(usize, usize, usize)>, String> {
-    let mut runs: Vec<(usize, usize)> = Vec::new();
-    let mut i = 0;
-    while i < prompt.len() {
-        if prompt[i] == pad {
-            let start = i;
-            while i < prompt.len() && prompt[i] == pad {
-                i += 1;
-            }
-            runs.push((start, i - start));
-        } else {
-            i += 1;
-        }
-    }
-    let expected: usize = units.iter().map(|u| u.tiles.len() + 1).sum();
-    if runs.len() != expected {
-        return Err(format!(
-            "prompt carries {} step image pad run(s) but the request's units need {expected} — \
-             literal pad tokens in message text are not allowed",
-            runs.len(),
-        ));
-    }
-    let mut spans = Vec::with_capacity(runs.len());
-    let mut row_off = 0usize;
-    let mut ri = 0usize;
-    for unit in units {
-        for _ in 0..unit.tiles.len() {
-            let (start, len) = runs[ri];
-            ri += 1;
-            if len != memra_engine::vision_step::SV_TILE_ROWS {
-                return Err(format!(
-                    "step tile pad run at token {start} is {len} tokens; a 504 crop needs {}",
-                    memra_engine::vision_step::SV_TILE_ROWS
-                ));
-            }
-            spans.push((start, row_off, len));
-            row_off += len;
-        }
-        let (start, len) = runs[ri];
-        ri += 1;
-        if len != memra_engine::vision_step::SV_MAIN_ROWS {
-            return Err(format!(
-                "step main pad run at token {start} is {len} tokens; the main view needs {}",
-                memra_engine::vision_step::SV_MAIN_ROWS
-            ));
-        }
-        spans.push((start, row_off, len));
-        row_off += len;
     }
     Ok(spans)
 }
@@ -10407,40 +6102,6 @@ struct Session {
     /// Whether the lazy DFlash prime should retain one full-prompt trunk capture for the
     /// cross-request prefix cache. False preserves the prefix-cache-disabled byte path.
     dspark_capture_prefix: bool,
-    /// GLM5 SPEC route (lane/glm5-spec-routing, 2026-08-30): the glm5_next twin of
-    /// `gspec`/`dspark` — Some = this session decodes in `glm5_spec_session_burst` bursts
-    /// via `step_glm5_spec` (MTP draft chain -> one t=K+1 verify walk -> accept ->
-    /// rollback); it owns its trunk cache (s.cache stays None) and its session-continuity
-    /// Philox counters. Created lazily at the first spec tick (the prime). Greedy
-    /// (unpenalized) OR sampled (T>0 rejection-sampling accept, penalties EXCLUDED — no
-    /// penalty arm yet) + unconstrained + text-only + cold sessions only — EXCEPT the
-    /// prefix-restored carrier (lane/glm5-prefix-latent2, `MEMRA_GLM5_SPEC_PREFIX`), which
-    /// re-arms via `glm5_spec_session_from_restored`; no demotion-to-park (each a named
-    /// follow-up).
-    glm5: Option<memra_engine::glm_spec::Glm5SpecSession>,
-    /// Marks the session as glm5-routed even before `glm5` exists (the pre-prime window)
-    /// — scheduler filters key on this, the dspark_on convention (derived from what
-    /// admission actually installs, so dispatch and session can never disagree).
-    glm5_on: bool,
-    /// GLM5 SPEC RESTORE carrier (lane/glm5-prefix-latent2, 2026-09-01): the DFlash2
-    /// drafter KV rebuilt from a prefix entry's tail at admission (while the PrefixCache
-    /// was borrowable). `Some` = the first spec tick builds the session via
-    /// `glm5_spec_session_from_restored` (restored trunk cache in `s.cache`, restored
-    /// prefix in `s.fed`, suffix in the prefill queue — the gemma spec-on-cache-hit
-    /// carrier shape); `None` = the cold `glm5_spec_session_new` path, byte-identical to
-    /// the pre-lane literal.
-    glm5_restored_dkv: Option<memra_engine::dflash::DflashKv>,
-    /// PROMPT-TOKEN PROVENANCE BIT (PR #93 review finding 3a): set the moment a prompt
-    /// token of a HYPER trunk walks tokenwise `decode_step` while MEMRA_HYPER_SUFFIX_PRIME
-    /// is armed (budget starvation, sub-floor suffix, any future prime-branch veto). The
-    /// two capture sites (`maybe_prefix_seed`, the lcp-split insert) refuse to publish
-    /// from a session carrying it — R16's chained-provenance prerequisite as a CHECKED
-    /// invariant, never an inference from which branch should have run. Non-hyper and
-    /// flag-off sessions never set it (their capture behavior is byte-identical).
-    prompt_tok_decode_step: bool,
-    /// Draft depth K for the glm5 route (shared spec-K policy at admit, clamped to the
-    /// verify walk's K+1 <= 15 decode-exact knee); 0 = plain.
-    glm5_k: usize,
     /// Constrained decoding (`response_format`): per-session llguidance grammar state.
     /// `Some` masks the logits BEFORE every sample and advances with each accepted token.
     /// FULL path (2026-08-03): the packed mask uploads to `mask_dev` each step and
@@ -10483,37 +6144,9 @@ struct Session {
     /// not a reusable conversation state. Abort retirement drops all session caches instead
     /// of publishing an implicit branch into affinity/prefix reuse.
     aborted: bool,
-    /// STEP-OOM TEARDOWN (lane/step37-vram-admission-20260830): this session's step died of
-    /// a CUDA OOM (parked back to the queue or errored honestly). Retirement must DROP its
-    /// caches behind a device fence — never run the pending-carry flush (a GPU pass on a
-    /// card that just proved full) and never publish its state into a reuse pool (the park
-    /// contract is "caches drop, freeing exactly the VRAM the retry needs"; a pool-park
-    /// keeps the VRAM alive and starves the retry).
-    oom_teardown: bool,
     params: GenParams,
     stop_strings: Vec<String>,
     trace_id: Option<String>,
-    /// The admitting request's envelope id, carried for the step-OOM park rebuild
-    /// (`park_requeue`) so a replayed request keeps its receipt identity.
-    request_id: String,
-    /// The request's `[admit-predict]` one-shot latch, carried across a park replay.
-    admit_predict_logged: bool,
-    /// The request's wire first-token deadline, carried across a step-OOM park replay so
-    /// the first-token deadline gate can judge the retry against the REAL remaining
-    /// deadline (the handler's 408 watch is still armed on the original stream).
-    wire_deadline: Option<std::time::Instant>,
-    /// D2 gap G2: the engine admission charge this session was admitted under (the
-    /// request-cost estimate the VRAM gate used). Booked into the per-model
-    /// `AdmissionBook` at `active.push` and released at `active.remove`; a step-OOM
-    /// park releases too (its KV drops) and the replay re-books at re-admission.
-    booked_kv_bytes: u64,
-    /// D2 gap G5: this session's SHADOW kv_hat (P-tenant-p95 book). 0 whenever
-    /// `MEMRA_ADMIT_PREDICT_SHADOW` is off.
-    shadow_kv_hat: u64,
-    /// The predicted TOTAL completion tokens behind `shadow_kv_hat`; with
-    /// `generated.len()` this gives the per-session remainder the would-reject
-    /// Retry-After hint scans (D2 gap G6).
-    shadow_pred_total: u64,
     /// Append-only detokenized generated bytes. Re-decoding the whole token tail on every step is
     /// quadratic and makes field-length completions impractical; token pieces are context-free.
     decoded_bytes: Vec<u8>,
@@ -10569,7 +6202,6 @@ fn take_dspark_prefix_capture(s: &mut Session) -> Option<memra_engine::spec::Spe
 fn publish_dspark_prefix_capture(
     engine: &Engine,
     px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
     s: &Session,
     cap: memra_engine::spec::SpecBoundaryCapture,
 ) {
@@ -10615,7 +6247,6 @@ fn publish_dspark_prefix_capture(
     prefix_insert_from_spec_boundary(
         engine,
         px,
-        hpx,
         &pool_key,
         &s.fed,
         &dspark.cache,
@@ -10626,68 +6257,11 @@ fn publish_dspark_prefix_capture(
     );
 }
 
-fn drain_dspark_prefix_capture(
-    engine: &Engine,
-    px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
-    s: &mut Session,
-) {
+fn drain_dspark_prefix_capture(engine: &Engine, px: &mut PrefixCache, s: &mut Session) {
     let Some(cap) = take_dspark_prefix_capture(s) else {
         return;
     };
-    publish_dspark_prefix_capture(engine, px, hpx, s, cap);
-}
-
-/// GLM5 SPEC boundary publication (lane/glm5-prefix-latent2, 2026-09-01): the glm5 twin of
-/// the dspark drain above, with one timing difference — glm5 defers the prompt's drafter
-/// ingest to round 1, so the drain waits for `prefix_capture_ready` (drafter KV covers the
-/// boundary) instead of firing on the first sweep. Publication carries the latent boundary
-/// planes (the capture's tails + live append-only slices) and the DFlash2 drafter tail, so
-/// a later hit can re-arm a spec session instead of demoting to plain.
-fn drain_glm5_prefix_capture(
-    engine: &Engine,
-    px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
-    s: &mut Session,
-) {
-    if !s.glm5.as_ref().is_some_and(|g| g.prefix_capture_ready()) {
-        return;
-    }
-    let Some(cap) = s.glm5.as_mut().and_then(|g| g.take_prefix_capture()) else {
-        return;
-    };
-    let Some(g) = s.glm5.as_ref() else { return };
-    let end = cap.pos.min(s.fed.len());
-    if end == 0 {
-        return;
-    }
-    let pool_key = s.pool_key();
-    if px.has_key(&pool_key, &s.fed[..end]) {
-        return;
-    }
-    // The drafter tail travels with the entry or the restore half cannot exist (the draft
-    // state derives from trunk hidden FEATURES a KV restore cannot return — the dspark
-    // publisher's law, verbatim). Publication and consumption gate on the SAME flag
-    // (`glm5_spec_prefix_on`), so unset is a true rollback, memory profile included.
-    let tail = g.export_draft_tail(engine, end);
-    if tail.is_none() {
-        eprintln!(
-            "[prefix-cache] glm5 publish: draft tail export failed; entry published \
-             trunk-only (a later spec hit will demote to the plain path)"
-        );
-    }
-    prefix_insert_from_spec_boundary(
-        engine,
-        px,
-        hpx,
-        &pool_key,
-        &s.fed,
-        g.cache_ref(),
-        None,
-        tail,
-        cap,
-        "glm5-boundary",
-    );
+    publish_dspark_prefix_capture(engine, px, s, cap);
 }
 
 /// Primary CUDA ordinal for the serving worker. CUDA_VISIBLE_DEVICES already remaps physical GPUs
@@ -10708,9 +6282,8 @@ fn drain_glm5_prefix_capture(
 /// stage restores the exact topology every 212/212 crash-gate + 112.5 perf receipt validated
 /// (research/pp2spec-crash-20260807), keeps the cx-503b correctness win (the primary is still a
 /// placement device, never an unconditional 0), and fixes the pre-merge dev01 ~20x note — the
-/// same mismatch, from the other end. Non-spec gate/bench binaries keep
-/// primary=devices[0]: they deliberately exercise the shared-engine stage-0 case. `run-spec`
-/// follows the head stage because it does execute the serving speculative round.
+/// same mismatch, from the other end. Gate/bench binaries keep primary=devices[0]: they
+/// deliberately exercise the shared-engine stage-0 case and don't run the serving spec round.
 fn worker_device(pp_devices: Option<&str>) -> Result<usize, String> {
     let Some(devices) = pp_devices.filter(|v| !v.trim().is_empty()) else {
         return Ok(0);
@@ -10954,27 +6527,6 @@ pub fn run(
     health: crate::health::SharedHealth,
 ) {
     // ---- one-time init on the worker thread: Engine + all models resident ----
-    //
-    // CPU AFFINITY FIRST, BEFORE `Engine::new` (lane/glm5-host-audit, 2026-09-01). This is the
-    // only thread every family's decode tick runs on, and it was measured unpinned and migrating
-    // across L3 domains on a 12-CCD EPYC while 192 tokio workers shared the same CPUs. The mask
-    // is set HERE rather than in `spawn()`'s closure prologue for two reasons: this is the worker
-    // thread itself, so `sched_setaffinity(0, ..)` needs no TID plumbing; and a mask installed
-    // before the CUDA context exists is inherited by every thread the driver and the decode walk
-    // create afterwards (the driver's helper threads, and the per-step scoped threads the
-    // dual-active PP arm spawns), which is the point on a big-core box.
-    //
-    // A malformed or unsatisfiable value FAILS THE BOOT through the same verdict channel as a bad
-    // device: `MEMRA_WORKER_CPUSET` is machine config, and an operator who mistypes a cpu list
-    // must not get a silently unpinned server whose numbers are then filed under the pinned arm.
-    let affinity = match crate::affinity::worker_affinity_spec() {
-        Ok(spec) => spec,
-        Err(why) => {
-            let _ = ready_tx.send(Err(why));
-            return;
-        }
-    };
-    crate::affinity::apply_and_announce(&affinity);
     let pp_devices = std::env::var("MEMRA_PP_DEVICES").ok();
     let device = match worker_device(pp_devices.as_deref()) {
         Ok(device) => device,
@@ -11021,20 +6573,6 @@ pub fn run(
     // model name at Cmd dispatch; caps merged into the ready handoff below.
     let mut dsv4_routes: HashMap<String, std::sync::mpsc::Sender<Box<Request>>> = HashMap::new();
     let mut dsv4_caps: HashMap<String, ModelCaps> = HashMap::new();
-    // REMOVED-DOORS REFUSAL (2026-08-29). Env-only, so it runs BEFORE any model load: the
-    // old step37-scoped refusal needed the loaded model's class and therefore paid a full
-    // multi-minute checkpoint load before refusing; this one needs nothing but the
-    // environment and fails in milliseconds. The bank-v2 door did not time work out, it
-    // answered wrongly and fluently, so no counter, gate or soak metric in the stack could
-    // catch it. The flags are gone from the engine; a recipe still setting them is stale
-    // and boots refused for every model family. See `removed_bank_v2_doors_refusal`.
-    if let Some(msg) = removed_bank_v2_doors_refusal(
-        std::env::var("MEMRA_NVFP4_BANK_V2").ok().as_deref(),
-        std::env::var("MEMRA_SEL_DOWN8").ok().as_deref(),
-    ) {
-        let _ = ready_tx.send(Err(msg));
-        return;
-    }
     for (name, path, draft) in &models {
         eprintln!("[worker] loading model {name:?} <- {path}");
         // DIRECTORY path = safetensors HF checkpoint or a manifest-backed memra repack/overlay;
@@ -11282,14 +6820,6 @@ pub fn run(
         };
         // (#68 closed 2026-08-04: the former ST-spec quarantine notice lived here — dir
         // checkpoints are spec-eligible again, research/fp8ship-20260804/RESULTS.md.)
-        let postthink_close = postthink_close_contract(&tok);
-        if !postthink_close.is_empty() {
-            eprintln!(
-                "[postthink] {name}: think-forced template with a derivable close contract \
-                 (ids {postthink_close:?}) -- response_format serves two-phase (unconstrained \
-                 think, grammar after close; spec disengaged)"
-            );
-        }
         loaded.insert(
             name.clone(),
             LoadedModel {
@@ -11298,7 +6828,6 @@ pub fn run(
                 eos_id,
                 from_dir,
                 constraints,
-                postthink_close,
             },
         );
         order.push(name.clone());
@@ -11312,10 +6841,9 @@ pub fn run(
         .map(|(n, lm)| {
             let t = lm.tok.chat_template();
             let caps = ModelCaps {
-                // qwen/step/HY3 `<tools>` OR the gemma4 tooluse dialect (`<|turn>` +
-                // `<|tool>`). Shared law with the renderer dispatch.
+                // qwen/step `<tools>` OR the gemma4 tooluse dialect (`<|turn>` + `<|tool>`);
+                // never hy3. Shared law with the renderer dispatch.
                 tools_branch: t.is_some_and(memra_tokenizer::chat::template_has_tools_branch),
-                hy3: t.is_some_and(|t| t.contains("hy_User")),
                 qwen_think: t
                     .is_some_and(|t| t.contains("<think>") && t.contains("add_generation_prompt")),
                 think_switch: t.is_some_and(|t| t.contains("enable_thinking")),
@@ -11334,8 +6862,6 @@ pub fn run(
                         Some("deepseek".to_string())
                     } else if memra_tokenizer::chat::template_is_glm5(t) {
                         Some("glm".to_string())
-                    } else if t.contains("hy_User") {
-                        Some("hy3".to_string())
                     } else {
                         None
                     }
@@ -11373,7 +6899,6 @@ pub fn run(
                     .sampling_defaults
                     .map(|defaults| defaults.top_p),
                 n_vocab: lm.tok.vocab_size(),
-                think_close: lm.postthink_close.clone(),
             };
             eprintln!(
                 "[worker] {n}: template caps tools={} think={} think_switch={} chat_ok={} \
@@ -11404,7 +6929,7 @@ pub fn run(
     // default-off dual PP door may combine two such waves into one worker tick.
     let chunk_policies: HashMap<String, DecodeChunkPolicy> = loaded
         .iter()
-        .map(|(n, lm)| (n.clone(), decode_chunk_policy(lm, &engine)))
+        .map(|(n, lm)| (n.clone(), decode_chunk_policy(lm)))
         .collect();
     for (n, policy) in &chunk_policies {
         eprintln!(
@@ -11412,9 +6937,7 @@ pub fn run(
             policy.wave_cap,
             policy.tick_cap(),
             if policy.dual {
-                " (dual PP2)"
-            } else if policy.stages > 1 {
-                " (PP3/PP4 wavefront, experimental)"
+                " (dual PP, default-off arm)"
             } else if policy.wave_cap > 8 {
                 " (exact-16 tier)"
             } else {
@@ -11434,19 +6957,13 @@ pub fn run(
         .filter(|(_, lm)| eager_only_model(lm))
         .map(|(n, _)| n.clone())
         .collect();
-    // Decode-site subset (lane/gemma-batched; extended lane/glm53-batched-decode): eager_only
-    // MINUS the models whose batched decode arm is live (dense gemma4 — DEFAULT ON since the
-    // 2026-08-16 owner flip, MEMRA_GEMMA4_BATCH=0 is the eager kill switch; mHC hyper trunks —
-    // DEFAULT OFF, MEMRA_HYPER_BATCH=1 is the opt-in until serving-box receipts land).
-    // Consumed ONLY by the two decode scheduling sites below; all other eager-only exclusions
-    // keep the full set.
+    // Decode-site subset (lane/gemma-batched): eager_only MINUS the models whose batched
+    // decode arm is live (dense gemma4 — DEFAULT ON since the 2026-08-16 owner flip;
+    // MEMRA_GEMMA4_BATCH=0 is the eager kill switch). Consumed ONLY by the two decode
+    // scheduling sites below; all other eager-only exclusions keep the full set.
     let eager_decode: std::collections::HashSet<String> = loaded
         .iter()
-        .filter(|(_, lm)| {
-            eager_only_model(lm)
-                && !gemma4_batched_decode_model(lm)
-                && !hyper_batched_decode_model(lm)
-        })
+        .filter(|(_, lm)| eager_only_model(lm) && !gemma4_batched_decode_model(lm))
         .map(|(n, _)| n.clone())
         .collect();
     for n in &eager_only {
@@ -11459,16 +6976,6 @@ pub fn run(
                 "[worker] {n}: EAGER-ONLY serving ({class} — no batched decode arm): \
                    per-session eager decode, monolithic prefill, no graph promotion, \
                    no prime batching"
-            );
-        } else if loaded
-            .get(n)
-            .is_some_and(|lm| memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan))
-        {
-            eprintln!(
-                "[worker] {n}: BATCHED DECODE (mHC hyper arm, opt-in via MEMRA_HYPER_BATCH=1; \
-                   unset/0 = eager per-session rollback): batched decode chunks, serial ticks \
-                   only (no dual waves); monolithic prefill, no graph promotion, no prime \
-                   batching (eager-only for every non-decode entry point)"
             );
         } else {
             eprintln!(
@@ -11531,18 +7038,6 @@ pub fn run(
         }
     }
 
-    // glm5 TP-2 door (MEMRA_GLM5_TP, lane/glm5-tp2): the SERVER wiring for the TP walk is
-    // unwired in v1 — per-session TP state ownership, admission accounting, and rollback
-    // seams are the named box-lane increment. Fail LOUD at spawn rather than serve a
-    // program the serving gates have not held (same guard law as the dspark block below).
-    if memra_engine::glm5_tp::glm5_tp_armed() {
-        panic!(
-            "MEMRA_GLM5_TP is set on a serving worker: the glm5 TP-2 seam is \
-             engine/gate-only in v1 (serving wiring is the named tp2-lane box increment); \
-             unset it"
-        );
-    }
-
     // DSPARK SPEC drafter attach (lane/dspark-q38-recover serve route): one DflashDraft
     // per qwen-hybrid model, loaded at spawn behind MEMRA_DSPARK_SPEC=1 +
     // MEMRA_DSPARK_DRAFT=<export_dir>. Fail LOUD on any ambiguity or load error — the
@@ -11592,10 +7087,6 @@ pub fn run(
                         .mtp
                         .as_ref()
                         .and_then(|m| m.d2t_from_target_head.then_some(m.d2t.as_ref()).flatten())
-                        // MEMRA_MTP_SKIP stub: the trimmed rows live in `dflash_trim` when the
-                        // embedded MTP block was skipped (hybrid.rs): same TRIMMED receipt,
-                        // same N, because the DFlash2 round consumes them identically.
-                        .or_else(|| lm.model.dflash_trim.as_ref().map(|t| &t.d2t))
                     {
                         Some(d2t) => eprintln!(
                             "[dspark] {n}: DFlash2 draft head TRIMMED to {} rows \
@@ -11620,27 +7111,6 @@ pub fn run(
             panic!("MEMRA_DSPARK_SPEC=1 but no qwen-hybrid (non-gemma) model is loaded");
         }
     }
-    // MEMRA_MTP_SKIP serving policy (mtp-skip lane 2026-08-30; refuse-loud contract 2026-08-31,
-    // hermes finding baf261e2bfdae118). The loader already refused the contradictory
-    // combinations (skip+MEMRA_MTP_DRAFT; skip+trim on a per-block-head artifact); what only
-    // THIS spawn point knows is whether a dspark drafter took over the spec program. For every
-    // model whose declared MTP head the skip removed and that has no dspark drafter: only the
-    // literal MEMRA_SERVE_SPEC=0 boots (announced PLAIN); an explicit spec request AND the
-    // unset default (which means spec ON for serving) both refuse at boot -> FATAL, so a
-    // default-spec deployment can never silently serve plain decode at half speed (the
-    // DFlash2 2026-08-25 incident class).
-    if std::env::var("MEMRA_MTP_SKIP").as_deref() == Ok("1") {
-        for (n, lm) in &loaded {
-            let head_skipped = !lm.model.plan.mtp_blocks.is_empty() && lm.model.mtp.is_none();
-            if !head_skipped || dspark_drafts.contains_key(n) {
-                continue;
-            }
-            match mtp_skip_no_drafter_verdict(std::env::var("MEMRA_SERVE_SPEC").ok().as_deref()) {
-                Ok(msg) => eprintln!("[mtp-skip] {n}: {msg}"),
-                Err(msg) => panic!("[mtp-skip] {n}: {msg}"),
-            }
-        }
-    }
 
     // ---- scheduler loop ----
     let mut active: Vec<Session> = Vec::new();
@@ -11655,13 +7125,6 @@ pub fn run(
     // Cmd::TrimPools reply channels parked by handle_cmd; executed at the tick top
     // where the pools above are in scope (deploy-headroom lane, 2026-08-27).
     let mut pending_trims: Vec<tokio::sync::oneshot::Sender<TrimReport>> = Vec::new();
-    // Cmd::PurgeTenantHost reply channels parked by handle_cmd; executed at the tick top
-    // beside the trims, where hpx/px are in scope (lane/kv-tenancy-compaction-20260831).
-    let mut pending_purges: Vec<(String, tokio::sync::oneshot::Sender<HostPurgeReport>)> =
-        Vec::new();
-    // Cmd::{Export,Import}HostHandoff reply channels, same parking discipline
-    // (lane/host-tier-deploy-warmth-20260901).
-    let mut pending_handoffs = PendingHandoffs::default();
     // F5: learned spec-session sizing (evict-first models + right-sized ctx asks).
     let mut spec_sizing = SpecSizing::default();
     let mut reuse_metrics = ReuseMetrics::default();
@@ -11699,222 +7162,8 @@ pub fn run(
         ),
         _ => None,
     };
-    // glm5_next vision tower (lane/glm5-vision): loaded once at spawn behind the seam.
-    // Fail LOUD at boot if configured but unloadable. DEFAULT ON (owner order 2026-08-30,
-    // lane/glm5-vision-default-on): a glm5_next DIRECTORY checkpoint whose own index
-    // carries `model.visual.*` loads its tower from itself — the mint ships the tensors in
-    // its own shards (MINT-BYTES twin receipt, research/glm5-vision-20260830/LANE.md).
-    // Absent tensors = a text-only artifact, no vision and no flag needed.
-    // MEMRA_GLM5_VISION=0 is the rollback seam; MEMRA_GLM5_VISION_DIR overrides the tower
-    // source (split artifacts). ~2.3 GB f32-resident (v1 correctness posture; BF16
-    // residency is a measured later optimization).
-    let glm5_tower: Option<memra_engine::vision_glm5::Glm5VisionTower> =
-        if std::env::var("MEMRA_GLM5_VISION").as_deref() == Ok("0") {
-            eprintln!("[glm5-vision] MEMRA_GLM5_VISION=0 — tower NOT loaded, image input disabled");
-            None
-        } else if let Ok(path) = std::env::var("MEMRA_GLM5_VISION_DIR") {
-            Some(
-                memra_engine::vision_glm5::Glm5VisionTower::load(
-                    &engine,
-                    std::path::Path::new(&path),
-                )
-                .unwrap_or_else(|e| {
-                    panic!("MEMRA_GLM5_VISION_DIR={path}: glm5 tower load failed: {e}")
-                }),
-            )
-        } else {
-            // Default-ON detection: first loaded glm5_next dir checkpoint carrying the probe
-            // tensor. One tower per deployment (the one-vision-family law); a probe/IO error is
-            // a loud boot panic, never a silent text-only downgrade.
-            let mut tower = None;
-            for (name, path, _) in &models {
-                let dir = std::path::Path::new(path);
-                if !dir.is_dir()
-                    || !loaded
-                        .get(name)
-                        .is_some_and(|lm| lm.model.cfg.arch.is_glm5_next())
-                {
-                    continue;
-                }
-                match memra_engine::vision_glm5::glm5_visual_tensors_present(dir) {
-                    Ok(true) => {
-                        tower = Some(
-                            memra_engine::vision_glm5::Glm5VisionTower::load(&engine, dir)
-                                .unwrap_or_else(|e| {
-                                    panic!(
-                                        "{path}: glm5 tower load failed after the artifact's index \
-                                     declared model.visual.* present: {e}"
-                                    )
-                                }),
-                        );
-                        break;
-                    }
-                    Ok(false) => {
-                        eprintln!(
-                            "[glm5-vision] {name}: no model.visual.* tensors in {path} — \
-                         text-only artifact, vision stays off"
-                        );
-                    }
-                    Err(e) => panic!("{path}: glm5 vision tensor probe failed: {e}"),
-                }
-            }
-            tower
-        };
-    // Publish the serving decision to the HTTP intake (main.rs glm5_vision_enabled):
-    // image_url parts route to the glm5 planner iff a tower is actually loaded, whatever
-    // combination of default/flag/dir produced it — AND the placement can actually deliver
-    // the overlay to embedding intake.
-    //
-    // PLACEMENT ADMISSIBILITY (lane/glm53-vision-ppn, 2026-09-01). A loaded tower is not
-    // sufficient. The overlay's rows have to be resident in the context of the engine that
-    // embeds (pp stage 0 under a per-stage-stream split), which the tower's own engine is NOT
-    // on the deployed multi-card shape. `EmbedOverlay::new_published` closes that by default;
-    // pinned to `MEMRA_VISION_OVERLAY_PUBLISH=0` it cannot, and the refusal would land
-    // MID-PREFILL on a live request (a 500, which is exactly what the launch window saw).
-    // Decide it ONCE here and refuse at the HTTP waist instead — the same named 4xx the
-    // `MEMRA_GLM5_VISION=0` kill switch produces. An unrecognized door value is a BOOT death,
-    // the same shape as an unloadable tower above: a mistyped correctness door must never
-    // resolve to a default.
-    let glm5_vision_servable = match glm5_tower.as_ref() {
-        None => false,
-        Some(_) => {
-            let publish = memra_engine::vision::overlay_publish_mode()
-                .unwrap_or_else(|e| panic!("glm5 vision: {e}"));
-            match loaded
-                .values()
-                .find(|lm| lm.model.cfg.arch.is_glm5_next())
-                .map(|lm| lm.model.vision_intake_engine(&engine))
-            {
-                None => true,
-                Some(Err(e)) => panic!(
-                    "glm5 vision: the embedding-intake engine for this placement could not be \
-                     resolved: {e}"
-                ),
-                Some(Ok(intake)) => {
-                    let cross = intake.ctx().cu_ctx() != engine.ctx().cu_ctx();
-                    let servable = !cross || publish != memra_engine::vision::OverlayPublish::Never;
-                    eprintln!(
-                        "[glm5-vision] overlay intake: tower dev{} -> intake dev{} \
-                         (cross_context={cross}) publish={publish:?} servable={servable}",
-                        engine.ctx().ordinal(),
-                        intake.ctx().ordinal()
-                    );
-                    if !servable {
-                        eprintln!(
-                            "[glm5-vision] IMAGE INPUT DISABLED: this placement embeds on \
-                             another CUDA context and MEMRA_VISION_OVERLAY_PUBLISH=0 forbids \
-                             publishing the overlay there. Image requests refuse at intake \
-                             instead of failing mid-prefill; unset the door (default auto) to \
-                             serve images, or run MEMRA_PP_STREAMS=0 (~3x decode cost)"
-                        );
-                    }
-                    servable
-                }
-            }
-        }
-    };
-    crate::GLM5_VISION_SERVING.store(glm5_vision_servable, std::sync::atomic::Ordering::Release);
-    // STEP37 vision tower (lane/step37-vision): loaded once at spawn from the serving
-    // artifact's own directory (the perception_encoder tensors live unquantized inside
-    // the checkpoint — MEMRA_STEP_VISION_DIR points at the model dir). Fail LOUD at boot
-    // if configured but unloadable; MEMRA_STEP_VISION=0 skips the tower with the dir
-    // configured (owner knob: ~8 GB f32-resident). Image requests then 400 at HTTP.
-    let step_tower: Option<memra_engine::vision_step::StepVisionTower> =
-        match std::env::var("MEMRA_STEP_VISION_DIR") {
-            Ok(_) if std::env::var("MEMRA_STEP_VISION").as_deref() == Ok("0") => {
-                eprintln!(
-                    "[step-vision] MEMRA_STEP_VISION=0 — tower NOT loaded, image input disabled"
-                );
-                None
-            }
-            Ok(dir) => Some(
-                memra_engine::vision_step::StepVisionTower::load(
-                    &engine,
-                    std::path::Path::new(&dir),
-                )
-                .unwrap_or_else(|e| {
-                    panic!("MEMRA_STEP_VISION_DIR={dir}: step tower load failed: {e}")
-                }),
-            ),
-            Err(_) => None,
-        };
     // Cross-request prefix cache (token-prefix keyed, budget-bound; see the module doc above).
     let mut px = PrefixCache::default();
-    // Pinned-host spill tier behind it (lane/kv-host-spill-20260830; default OFF, see
-    // kv_host_budget_bytes). Feeds the device cache only: the restore path is untouched.
-    let mut hpx = HostPrefixCache::new(kv_host_budget_bytes());
-    if hpx.budget > 0 {
-        if prefix_cache_budget_bytes() > 0 && serve_batching() {
-            eprintln!(
-                "[prefix-host] on: budget {:.0}MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, \
-                 boot-clamped to MemAvailable x 0.6), plain byte-LRU, demote on device \
-                 capacity eviction, promote on exact-prefix probe; verify={} \
-                 (MEMRA_KV_HOST_VERIFY); tenant share cap {}% = {:.0}MB \
-                 (MEMRA_KV_HOST_TENANT_PCT)",
-                hpx.budget as f64 / 1e6,
-                if kv_host_verify_on() { "on" } else { "off" },
-                hpx.tenant_pct,
-                hpx.tenant_budget() as f64 / 1e6,
-            );
-        } else {
-            eprintln!(
-                "[prefix-host] MEMRA_KV_HOST_MB is set but the device prefix cache is off \
-                 (MEMRA_PREFIX_CACHE_MB=0 or non-batched serving): the host tier has no \
-                 feed and stays inert"
-            );
-        }
-    }
-    // DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901, MEMRA_KV_HOST_HANDOFF):
-    // artifact stamps are computed once per boot (a cheap stat walk); the export header
-    // carries them, and an import refuses entries whose model artifact changed under the
-    // same name (KV bytes minted by different weights must never restore). A handoff file
-    // already present at boot arms the drip import immediately: the sequential-deploy
-    // shape, where the old process exported before this one booted. Overlap deploys have
-    // no file yet at green boot; serve-deploy triggers `Cmd::ImportHostHandoff` post-flip.
-    let handoff_stamps: Vec<HandoffModelStamp> = if kv_host_handoff_path().is_some() {
-        models
-            .iter()
-            .map(|(name, path, _)| handoff_model_stamp(name, path))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let mut handoff_import: Option<HostHandoffImport> = None;
-    if let Some(path) = kv_host_handoff_path()
-        && std::path::Path::new(path).exists()
-    {
-        if hpx.armed() && prefix_cache_budget_bytes() > 0 && serve_batching() {
-            match open_host_handoff_import(path, &handoff_stamps) {
-                Ok((imp, start)) => {
-                    eprintln!(
-                        "[prefix-host] handoff import armed at boot: {} entries / {:.1}MB \
-                         from {path} (file age {}s); re-materializing one per tick",
-                        start.header_entries,
-                        start.header_bytes as f64 / 1e6,
-                        start.age_secs,
-                    );
-                    handoff_import = Some(imp);
-                }
-                Err(why) => {
-                    eprintln!(
-                        "[prefix-host] handoff file {path} REFUSED at boot ({why}); \
-                         starting cold by design and removing the file"
-                    );
-                    let _ = std::fs::remove_file(path);
-                }
-            }
-        } else {
-            eprintln!(
-                "[prefix-host] handoff file {path} present but the host tier is not armed \
-                 on this slot; leaving the file untouched"
-            );
-        }
-    }
-    // KV budget flex (lane/kv-flex-20260831, tiering spec Arc G; MEMRA_KV_FLEX, default
-    // OFF): the device prefix cache may borrow idle headroom above its configured floor and
-    // sheds it back the instant capture-surface traffic arrives. Scheduler-owned, the
-    // single budget-policy authority beside PrefixCache's one byte accountant.
-    let mut kv_flex = KvFlex::from_env(prefix_cache_budget_bytes(), serve_batching());
     if memra_engine::pp::pp_host_bounce_active() {
         eprintln!(
             "[pp] MEMRA_PP_HOST_BOUNCE=1 safety doors: speculative PP, cross-device prefix \
@@ -12010,13 +7259,6 @@ pub fn run(
             );
         }
     }
-    // BOOT ADMISSION CALIBRATION (lane/step37-vram-admission-20260830): measure this
-    // deployment's real first-burst transient and per-session draft-graph state BEFORE the
-    // worker reports ready, so the very first customer admission is charged honestly.
-    // The probe rides the SERVED route per model (lane/graph-launch-guard-sweep-20260831):
-    // a dspark-armed model is probed through the dspark session, never the MTP spec arm
-    // it has disabled — the receipt names the route it measured.
-    run_boot_calibration(&engine, &loaded, &dspark_drafts, &mut admission_costs);
 
     // ---- serving counters + engine-truth step stats (30s percentile window) ----
     // Lane machinery (x-lane QoS gate, lane/dl-metering port): policy from env; step_stats
@@ -12070,68 +7312,11 @@ pub fn run(
     // retired spec request, so this adds no per-token work and shares the forced-retire
     // metrics publication above.
     let mut adsd_detector = AdsdDetector::default();
-    // PREDICTIVE-ADMISSION SHADOW state (lane/d2-engine-gaps-20260831, darklanes Arc D2).
-    // The book (G2) and completion history (G3) run ALWAYS (one map update per
-    // admit/retire, the same request-frequency cost class as ns_tokens above) so the
-    // counters are live and the history is warm whenever the shadow flag is armed. The
-    // verdict computation and its `[admit-predict]` receipt (G5) run only when
-    // MEMRA_ADMIT_PREDICT_SHADOW=1, and they only ever LOG: nothing here rejects.
-    let mut admit_predict_cfg = crate::admit_predict::ShadowConfig::from_env();
-    if admit_predict_cfg.armed {
-        // LIVE BUDGET DEFAULT (lane/admit-predict-calibration-20260901, stress-campaign
-        // FINDING 3 cause 1): when MEMRA_ADMIT_PREDICT_BUDGET_MB is unset, derive the
-        // KV budget arm from the engine's own boot numbers instead of a hand-carried
-        // deployment constant that goes stale when another lane's deploy changes the
-        // box config. The three inputs are the same quantities the real machinery
-        // reads: effective free VRAM (the VRAM gate's own read; this runs after model
-        // load + boot calibration, so weights and calibration transients are already
-        // out of `free`), the device prefix-cache budget (init_prefix_cache_budget ran
-        // above), and the admission transient reserve at the real gate's own floor
-        // arithmetic (max calibrated per-model floor, never below the static constant,
-        // teeth override honored). resolve_budget emits the boot line with the value
-        // AND the formula inputs; an env value remains the explicit override.
-        let derived = effective_free_bytes(&engine).map(|(free, _)| {
-            let calibrated_floor = admission_costs
-                .values()
-                .filter_map(|model| model.transient_floor)
-                .max();
-            crate::admit_predict::DerivedShadowBudget {
-                effective_free_bytes: free as u64,
-                prefix_cache_budget_bytes: prefix_cache_budget_bytes() as u64,
-                admission_reserve_bytes: admission_reserve(
-                    true, // box-level arm: charge the full transient floor, cost-independent
-                    0,
-                    calibrated_floor,
-                    admit_reserve_override(),
-                ) as u64,
-            }
-        });
-        admit_predict_cfg.resolve_budget(derived);
-    }
-    let admit_predict_cfg = admit_predict_cfg;
-    let mut admission_book = crate::admit_predict::AdmissionBook::default();
-    let mut completion_history = crate::admit_predict::CompletionHistory::default();
-    // AGENT-PAUSE DEMOTION (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831, Arc E):
-    // candidates armed at tool-calls-shaped retires, fired or cancelled by the per-tick
-    // sweep after the retire section. Empty forever with the flag OFF (default).
-    let mut pause_pending: Vec<PauseCandidate> = Vec::new();
     // Starvation sentinel (estimator blind spot, 2026-07-26 native-judge battery): last
     // time an interactive session decoded. Interactive work waiting with no interactive
     // decode tick inside the SLO age IS an SLO breach the percentile window can't see.
     let mut last_interactive_decode = Instant::now();
     let mut tick_n: u64 = 0;
-    // HOST-TIER TELEMETRY FLUSH (lane/kv-battery-fixups-20260831, battery O6 finding):
-    // the `prefix_host_*` stamp as of the last snapshot publish. Host-tier events land on
-    // ticks the throttled publish usually skips: a promote fires at ADMIT (nothing
-    // finished, off the 32 boundary) and a pause-sweep demote fires on a TIMER wake after
-    // which the worker blocks idle, so the counters lagged the authoritative
-    // `[prefix-host]` log lines around quiesce: the battery banked a logged 89.9 ms
-    // promote still reading promotions=0 / promote_ms=0.0 in the scrape taken right after
-    // its response completed (darklanes research/kv-fastband-20260830/battery-20260831/
-    // RESULTS.md, O6). A stamp change forces the publish at that same tick's end; host
-    // events are per-entry copies costing tens of ms, so the ~ms publish is noise, never
-    // the per-token cost class the 32-tick throttle protects.
-    let mut host_telem_published: u64 = 0;
     // SPEC GATE (lane/spec-gate): how many live sessions this worker has handed from the spec
     // burst path to batched decode. The thrash observable — under a correct hysteresis band
     // this counts LOAD CROSSINGS, not ticks (a per-tick demotion count would mean the band is
@@ -12165,15 +7350,9 @@ pub fn run(
         // 1. Drain pending commands. Block ONLY when there is no work at all (no active sessions),
         //    otherwise poll non-blocking so the decode loop keeps interleaving. A request waiting
         //    on off-tick grammar compilation is BUSY work: use a short recv timeout so command
-        //    arrivals, compile completion, expiry, and the heartbeat all stay responsive. A
-        //    pending PAUSE-DEMOTE candidate (Arc E) is timer work: its recv timeout is the
-        //    nearest deadline, so the sweep fires even on a box with zero active sessions:
-        //    exactly the tool-round-trip pause shape at low concurrency.
+        //    arrivals, compile completion, expiry, and the heartbeat all stay responsive.
         if active.is_empty() && queue.is_empty() {
-            if pending_constraints.is_empty()
-                && pause_pending.is_empty()
-                && handoff_import.is_none()
-            {
+            if pending_constraints.is_empty() {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
                 // enters its ordinary indefinite idle block.
@@ -12187,8 +7366,6 @@ pub fn run(
                             &order,
                             &mut queue,
                             &mut pending_trims,
-                            &mut pending_purges,
-                            &mut pending_handoffs,
                         );
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -12217,8 +7394,6 @@ pub fn run(
                                     &order,
                                     &mut queue,
                                     &mut pending_trims,
-                                    &mut pending_purges,
-                                    &mut pending_handoffs,
                                 );
                             }
                             Err(_) => break, // all senders dropped -> shutdown
@@ -12228,13 +7403,7 @@ pub fn run(
                 }
             } else {
                 health.beat_busy();
-                // A pending handoff import is tick work too: cap the idle wait so the drip
-                // keeps re-materializing on a box with zero traffic (exactly the fresh
-                // post-flip green slot, lane/host-tier-deploy-warmth-20260901).
-                let mut wait = idle_recv_wait(&pending_constraints, &pause_pending, Instant::now());
-                if handoff_import.is_some() {
-                    wait = wait.min(Duration::from_millis(1));
-                }
+                let wait = constraint_poll_wait(&pending_constraints, Instant::now());
                 match rx.recv_timeout(wait) {
                     Ok(cmd) => handle_cmd(
                         cmd,
@@ -12243,8 +7412,6 @@ pub fn run(
                         &order,
                         &mut queue,
                         &mut pending_trims,
-                        &mut pending_purges,
-                        &mut pending_handoffs,
                     ),
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
@@ -12265,8 +7432,6 @@ pub fn run(
                     &order,
                     &mut queue,
                     &mut pending_trims,
-                    &mut pending_purges,
-                    &mut pending_handoffs,
                 ),
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -12312,94 +7477,6 @@ pub fn run(
             );
             let _ = tx.send(report);
         }
-        // TENANT PURGE (lane/kv-tenancy-compaction-20260831, tiering spec §0.5): key
-        // revocation / tenant deletion clears the tenant's parked prompt bytes. The
-        // pinned-host tier is the retention concern, and the unpinned device prefix
-        // entries go with it so a later capacity eviction cannot demote the purged
-        // bytes straight back into host RAM. Worker-thread execution, same reason as
-        // trim: the pools live in this scope and the sweep must not race a demote.
-        for (tenant, tx) in pending_purges.drain(..) {
-            let (host_namespaces, host_entries, host_bytes) = hpx.purge_tenant(&tenant);
-            let (device_entries, device_pinned_left) = px.purge_tenant(&tenant);
-            eprintln!(
-                "[prefix-host] purge tenant={tenant:?}: host {host_entries} entries / \
-                 {:.1}MB across {host_namespaces} namespaces (resident now {:.1}MB); \
-                 device {device_entries} entries dropped, {device_pinned_left} pinned \
-                 entries left to in-flight sessions",
-                host_bytes as f64 / 1e6,
-                hpx.total_bytes as f64 / 1e6,
-            );
-            let _ = tx.send(HostPurgeReport {
-                tenant,
-                host_namespaces,
-                host_entries,
-                host_bytes,
-                device_entries,
-                device_pinned_left,
-            });
-        }
-        // DEPLOY HANDOFF (lane/host-tier-deploy-warmth-20260901). Export is SYNCHRONOUS
-        // here by design: its caller is serve-deploy on the DRAINED old slot, where a
-        // stalled tick has nobody to stall; a slot still carrying traffic refuses unless
-        // forced. Import is a DRIP: one frame re-materializes per tick below, so a slot
-        // that is already serving warms in the background at promote-class stalls.
-        for (force, tx) in pending_handoffs.exports.drain(..) {
-            let answer = match kv_host_handoff_path() {
-                None => Err("MEMRA_KV_HOST_HANDOFF is not set on this slot".to_string()),
-                Some(_) if !force && !(active.is_empty() && queue.is_empty()) => Err(format!(
-                    "refusing to export with {} active / {} queued requests: the \
-                     synchronous write stalls every tick for its duration; drain this \
-                     slot first (or force)",
-                    active.len(),
-                    queue.len(),
-                )),
-                Some(path) => host_handoff_export(
-                    path,
-                    kv_host_handoff_cap_bytes(),
-                    &engine,
-                    &mut px,
-                    &mut hpx,
-                    &handoff_stamps,
-                ),
-            };
-            let _ = tx.send(answer);
-        }
-        for tx in pending_handoffs.import_starts.drain(..) {
-            let answer = match kv_host_handoff_path() {
-                None => Err("MEMRA_KV_HOST_HANDOFF is not set on this slot".to_string()),
-                Some(_) if handoff_import.is_some() => {
-                    Err("a handoff import is already in progress".to_string())
-                }
-                Some(_) if !hpx.armed() => {
-                    Err("host tier is off (MEMRA_KV_HOST_MB=0) or latched off".to_string())
-                }
-                Some(path) => match open_host_handoff_import(path, &handoff_stamps) {
-                    Ok((imp, start)) => {
-                        eprintln!(
-                            "[prefix-host] handoff import armed: {} entries / {:.1}MB \
-                             from {path} (file age {}s); re-materializing one per tick",
-                            start.header_entries,
-                            start.header_bytes as f64 / 1e6,
-                            start.age_secs,
-                        );
-                        handoff_import = Some(imp);
-                        Ok(start)
-                    }
-                    Err(why) => {
-                        // Consume-once even on refusal: a leftover must not retry forever.
-                        let _ = std::fs::remove_file(path);
-                        Err(format!("{why}; file removed, this slot serves cold"))
-                    }
-                },
-            };
-            let _ = tx.send(answer);
-        }
-        if let Some(imp) = handoff_import.as_mut()
-            && host_handoff_import_step(imp, &mut hpx)
-        {
-            let _ = std::fs::remove_file(&imp.path); // consume-once, whatever the outcome
-            handoff_import = None;
-        }
         // 2. ADMISSION + LANE GATE (x-lane yield gate, engine-side): interactive admits up
         //    to the cap and WAITS beyond it (FIFO, never rejected — its queue wait is the
         //    protected tenant's own backlog). Judge/harvest are gated on the measured
@@ -12417,10 +7494,6 @@ pub fn run(
         let mut requeue: std::collections::VecDeque<Box<Request>> = Default::default();
         // Per-tick count of requests the VRAM gate deferred (logged once per tick).
         let mut vram_defers = 0usize;
-        // KV-FLEX GRANT REFRESH (lane/kv-flex-20260831): re-derive the borrowable slice
-        // from live effective-free VRAM once per tick, before this tick's admissions and
-        // inserts consult it. No-op (no driver call) while disarmed.
-        kv_flex.refresh_grant(&engine);
         while let Some(mut req) = queue.pop_front() {
             // DISCONNECT ABORT (gap-scan F8): a queued request whose client already hung
             // up (receiver dropped) never reaches the GPU — dropped here, logged for the
@@ -12432,18 +7505,6 @@ pub fn run(
                 );
                 release_admission_reservation(req.lane);
                 continue;
-            }
-            // KV-FLEX SHED-ON-ARRIVAL (lane/kv-flex-20260831, tiering spec Arc G): a
-            // capture request (embeddings/rerank, the subordinate-priority surfaces) has
-            // arrived, so the chat cache's borrowed slice yields NOW, synchronously,
-            // before ANY of this request's admission math runs, including the lane p99
-            // gate below, on purpose: a shed-then-429'd capture retries against a box
-            // already back at its no-borrow shape. The zero-tax law is preserved because
-            // the headroom this request's VRAM gate will read is the same a no-borrow
-            // binary would give it; the shed's wall time is the transition the Arc G
-            // GPU gate measures at p99 (kv_flex_shed_ms / kv_flex_sheds).
-            if req.capture.is_some() {
-                kv_flex.shed(&mut px, true, "capture arrival");
             }
             // CONSTRAINED PRE-ADMISSION: transfer the schema to this model's bounded compiler
             // and retain the request off-queue until a fresh matcher comes back. This happens
@@ -12503,53 +7564,6 @@ pub fn run(
                 policy.max_sessions[lane.idx()]
             };
             let lane_count = active.iter().filter(|s| s.lane == lane).count();
-            // PREDICTIVE-ADMISSION SHADOW, slot arm (D2 gap G5; contract §3/§4: the slot
-            // check runs FIRST and needs no tokenization). One receipt per request at
-            // its first decisive consideration; the latch keeps defer ticks from
-            // multiplying one arrival into many rows. Interactive-lane only: dark
-            // lanes already shed at cap inside this loop, which the D2 contract
-            // excludes as existing mechanism, not predictor signal. LOG ONLY: the
-            // request proceeds into today's exact admission behavior either way.
-            if admit_predict_cfg.armed
-                && !req.admit_predict_logged
-                && lane == crate::lanes::Lane::Interactive
-                && admission_book.inflight(&req.model) >= cap as u64
-            {
-                req.admit_predict_logged = true;
-                let tenant_row = crate::auth::meter_key(&req.cache_ns).to_string();
-                let max_tokens_bound = (req.params.max_new != MAX_NEW_CTX_BOUNDED)
-                    .then_some(req.params.max_new as u64);
-                let (predicted, reason) =
-                    completion_history.lhat(&tenant_row, &req.model, max_tokens_bound);
-                // A slot frees when a session ON THIS MODEL completes.
-                let retry_after_s = crate::admit_predict::earliest_completion_retry_s(
-                    active
-                        .iter()
-                        .filter(|s| s.model == req.model)
-                        .map(|s| (s.shadow_pred_total, s.generated.len() as u64)),
-                    step_stats.p(50.0).unwrap_or(0.0),
-                );
-                eprintln!(
-                    "{}",
-                    crate::admit_predict::shadow_verdict_line(&crate::admit_predict::VerdictLine {
-                        request_id: &req.request_id,
-                        tenant_row: &tenant_row,
-                        model: &req.model,
-                        verdict: crate::admit_predict::Verdict::RejectSlot,
-                        reason,
-                        prompt_tokens: req.prepared_prompt.as_ref().map(|p| p.len() as u64),
-                        predicted_completion: predicted,
-                        kv_hat_bytes: None,
-                        booked_bytes: admission_book.shadow_booked_total(),
-                        booked_real_bytes: admission_book.booked_total(),
-                        inflight: admission_book.inflight(&req.model),
-                        cap: cap as u64,
-                        budget_bytes: admit_predict_cfg.budget_bytes,
-                        retry_after_s,
-                        exempt: admit_predict_cfg.is_exempt(&tenant_row),
-                    })
-                );
-            }
             if lane_count >= cap {
                 if lane == crate::lanes::Lane::Interactive {
                     n_session_defers += 1;
@@ -12591,60 +7605,6 @@ pub fn run(
             };
             let model_key = req.model.clone();
             let prompt_len = req.prepared_prompt.as_ref().unwrap().len();
-            // FIRST-TOKEN DEADLINE GATE (lane/bench-debts-20260901; darklanes
-            // research/competitive-bench-20260901/RESULTS.md §7 item 3 and
-            // research/d2-shadow-20260831/RESULTS.md §7's named streaming analog):
-            // at 1.64x KV oversubscription the bench cancelled 70-74% of turns at the
-            // 90 s wire ceiling: each one burned its full deadline queueing behind the
-            // aggregate prime backlog and then discarded the prefill it had bought. The
-            // handler-side `shed_deadline` cannot see this shape (its backlog gauge is
-            // the handler->worker queue, which stays ~0 while sessions grind inside the
-            // cap); this gate judges the same contract at the seam that can: exact
-            // prompt tokens, the live prime backlog, and the REMAINING wire deadline.
-            // Refusal is the shed contract byte-shape (429 rate_limit + Retry-After,
-            // never billed, request not admitted): the D2 G6 machinery. Interactive
-            // lane only (dark lanes already shed at cap); capture requests bypass
-            // (their prime is the product). Re-evaluated on every defer tick by
-            // construction, so a request whose deadline decays while queued is refused
-            // at the first infeasible consideration, not at the 408.
-            if first_token_deadline_gate_on()
-                && lane == crate::lanes::Lane::Interactive
-                && req.capture.is_none()
-                && let Some(dl) = req.wire_deadline
-            {
-                let remaining_ms = dl.saturating_duration_since(Instant::now()).as_millis() as u64;
-                let backlog_tokens: u64 = active.iter().map(|s| s.prefill_queue.len() as u64).sum();
-                if let Some(est_ms) = crate::admit_predict::first_token_wait_infeasible(
-                    prompt_len as u64,
-                    backlog_tokens,
-                    remaining_ms,
-                    crate::env_u64("MEMRA_PREFILL_FLOOR_TOK_S", crate::PREFILL_FLOOR_TOK_S),
-                ) {
-                    let retry_after_s = (est_ms / 1_000).clamp(1, 60);
-                    eprintln!(
-                        "[first-token-gate] id={} refused: est_first_token_ms={est_ms} \
-                         (prompt {prompt_len} tok + prime backlog {backlog_tokens} tok at \
-                         the prefill floor) exceeds remaining deadline {remaining_ms} ms \
-                         x{}% margin; 429 retry_after_s={retry_after_s}",
-                        req.request_id,
-                        crate::admit_predict::FIRST_TOKEN_DEADLINE_MARGIN_PCT,
-                    );
-                    release_admission_reservation(req.lane);
-                    let _ = req.tx.send(Event::Error(EngineError::rate_limit_after(
-                        format!(
-                            "estimated first-token wait ~{}s (a {prompt_len}-token prompt \
-                             behind a {backlog_tokens}-token prime backlog at the \
-                             pessimistic prefill floor) exceeds this request's remaining \
-                             timeout_ms deadline ({remaining_ms} ms); this request was not \
-                             admitted and is not billed; retry after ~{retry_after_s}s or \
-                             raise timeout_ms (a coarse estimate, not a promise)",
-                            est_ms / 1_000,
-                        ),
-                        retry_after_s,
-                    )));
-                    continue;
-                }
-            }
             let peer_probe_allows_spec = health.peer_probe_allows_spec_admission();
             let estimate_spec = admission_request_may_spec(
                 &loaded[&model_key],
@@ -12660,18 +7620,11 @@ pub fn run(
             let decode_policy = chunk_policies
                 .get(&model_key)
                 .expect("loaded model missing decode chunk policy");
-            let (
-                cost,
-                bytes_per_token,
-                activation_bytes,
-                prefill_bytes,
-                pp_activation_bytes,
-                log_estimate,
-            ) = {
+            let (cost, bytes_per_token, activation_bytes, log_estimate) = {
                 let model = admission_costs
                     .get_mut(&model_key)
                     .expect("loaded model missing admission cost model");
-                let cost = model.estimate(admission_cap, prompt_len, estimate_spec);
+                let cost = model.estimate(admission_cap, estimate_spec);
                 let key = (admission_cap, estimate_spec, cost);
                 let log = model.last_logged != Some(key);
                 if log {
@@ -12681,113 +7634,21 @@ pub fn run(
                     cost,
                     model.bytes_per_token(estimate_spec),
                     model.activation_bytes,
-                    model.prefill_workspace_bytes(prompt_len),
-                    model.pp_activation_bytes,
                     log,
                 )
             };
-            // PER-SESSION DRAFT-GRAPH STATE (lane/step37-vram-admission-20260830, defect 2):
-            // since the multi-head chain capture, every capturing session parks real device
-            // state (capture-retain keepers, q slots, instantiated graphs' backing) that the
-            // estimate above charged at ZERO. Charge the model's measured high-water per
-            // spec-capable admission — session-owned state belongs in the session COST, not
-            // in the shared transient reserve. 0 until observed (the boot calibration probe
-            // normally supplies the first observation). NEVER charged on a dspark-armed
-            // model (lane/graph-launch-guard-sweep-20260831, fleet-peer refuted-read fix):
-            // arming dspark DISABLES the MTP spec arm for that model, so MTP draft-graph
-            // state never allocates there — charging a wrong-route calibration figure was
-            // cutting clean full-ctx sessions on the box's arithmetic.
-            let draft_state_bytes = if estimate_spec && !dspark_drafts.contains_key(&model_key) {
-                loaded[&model_key].model.draft_session_admission_bytes()
-            } else {
-                0
-            };
-            let cost_pre_draft = cost;
-            let cost = cost.saturating_add(draft_state_bytes);
-            if log_estimate && draft_state_bytes > 0 {
-                // Separate line, never a reshape of the request-cost line below (ops gates
-                // grep that line's existing arithmetic shape).
-                eprintln!(
-                    "[admission] per-session draft-state charge: model={model_key:?} \
-                     +{:.0}MB (measured capture high-water)",
-                    draft_state_bytes as f64 / 1e6,
-                );
-            }
             if log_estimate {
                 eprintln!(
                     "[admission] request cost: model={model_key:?} ctx={} path={} = {} \
-                     B/token x ctx + {:.0}MB prefill-workspace + {:.0}MB fixed = {:.0}MB",
+                     B/token x ctx + {:.0}MB fixed = {:.0}MB",
                     admission_cap,
                     if estimate_spec { "spec" } else { "plain" },
                     bytes_per_token,
-                    prefill_bytes as f64 / 1e6,
                     activation_bytes as f64 / 1e6,
-                    cost_pre_draft as f64 / 1e6,
+                    cost as f64 / 1e6,
                 );
             }
 
-            // PREDICTIVE-ADMISSION SHADOW, KV arm (D2 gaps G1+G5). This sits at exactly
-            // the seam the D2 report named for G1: post-tokenize (prepare_request just
-            // ran; prompt_len is the EXACT count) and pre-prefill (no GPU work has been
-            // spent on this request). The verdict follows the contract's decision rule
-            // (slot first, handled above at its own seam, then
-            // kv_hat(r) + sum(in-flight kv_hat) > budget) using the admission cost
-            // model's own bytes/token and fixed residual so the shadow book speaks the
-            // same arithmetic as the real gate. LOG ONLY; the request continues into
-            // today's admission unconditionally.
-            if admit_predict_cfg.armed && !req.admit_predict_logged {
-                req.admit_predict_logged = true;
-                let tenant_row = crate::auth::meter_key(&req.cache_ns).to_string();
-                let max_tokens_bound = (req.params.max_new != MAX_NEW_CTX_BOUNDED)
-                    .then_some(req.params.max_new as u64);
-                let (predicted, reason) =
-                    completion_history.lhat(&tenant_row, &req.model, max_tokens_bound);
-                let request_kv_hat = crate::admit_predict::kv_hat(
-                    prompt_len as u64,
-                    predicted,
-                    bytes_per_token as u64,
-                    activation_bytes as u64,
-                );
-                let booked = admission_book.shadow_booked_total();
-                let verdict = match admit_predict_cfg.budget_bytes {
-                    Some(budget) if request_kv_hat.saturating_add(booked) > budget => {
-                        crate::admit_predict::Verdict::RejectKv
-                    }
-                    _ => crate::admit_predict::Verdict::Admit,
-                };
-                let retry_after_s = if verdict == crate::admit_predict::Verdict::RejectKv {
-                    // Any in-flight completion returns bytes to the book, so the KV
-                    // hint scans every model's sessions (one card, one budget arm).
-                    crate::admit_predict::earliest_completion_retry_s(
-                        active
-                            .iter()
-                            .map(|s| (s.shadow_pred_total, s.generated.len() as u64)),
-                        step_stats.p(50.0).unwrap_or(0.0),
-                    )
-                } else {
-                    None
-                };
-                eprintln!(
-                    "{}",
-                    crate::admit_predict::shadow_verdict_line(&crate::admit_predict::VerdictLine {
-                        request_id: &req.request_id,
-                        tenant_row: &tenant_row,
-                        model: &req.model,
-                        verdict,
-                        reason,
-                        prompt_tokens: Some(prompt_len as u64),
-                        predicted_completion: predicted,
-                        kv_hat_bytes: Some(request_kv_hat),
-                        booked_bytes: booked,
-                        booked_real_bytes: admission_book.booked_total(),
-                        inflight: admission_book.inflight(&req.model),
-                        cap: cap as u64,
-                        budget_bytes: admit_predict_cfg.budget_bytes,
-                        retry_after_s,
-                        exempt: admit_predict_cfg.is_exempt(&tenant_row),
-                    })
-                );
-            }
             // VRAM-AWARE ADMISSION (lane/fast-router, 2026-08-02). The original gate learned
             // one scalar from the first measurable admit. At mixed context that scalar was
             // guaranteed wrong in one direction: a short first request over-admitted a later
@@ -12852,27 +7713,23 @@ pub fn run(
                     peer_probe_spec_admission(serve_spec_enabled(), peer_probe_allows_spec)
                         && loaded.get(&req.model).is_some_and(mtp_spec_capable),
                     cost,
-                    admission_costs
-                        .get(&model_key)
-                        .and_then(|model| model.transient_floor),
                     admit_reserve_override(),
                 );
                 // DSPARK VERIFY-GRAPH POOL DEBT (lane/hermes-perf-fixes, 2026-08-23):
-                // the model-owned verify-graph pool grows monotonically to a multi-GiB
-                // high-water (per-export; unknown until observed on the serving box)
+                // the model-owned verify-graph pool grows monotonically to a measured
+                // multi-GiB high-water (8,852 MiB at storm-complete on the q38 export)
                 // that neither `cost` nor the 1.5 GiB transient floor ever charged —
                 // sessions admitted while the pool is cold overcommitted VRAM the pool
                 // was going to hold. Charge the self-measured projected remaining
-                // growth on top of the reserve (projection contract on
-                // `dspark_vg_debt_projection`; the teeth door `MEMRA_ADMIT_RESERVE_MB`
-                // deliberately does NOT override this term — it calibrates the
-                // transient floor, not the pool). CHARGED BY STRUCT, not by route
-                // (lane/graph-launch-guard-sweep-20260831): the MTP spec route's
-                // verify-graph door fills the SAME pool ("[spec-vg] pool ENGAGED"
-                // receipt) and used to escape this term behind a
-                // `dspark_drafts.contains_key` gate; the debt fn self-gates on its
-                // doors and returns 0 when no pool can engage.
-                let vg_debt = loaded[&model_key].model.dspark_vg_admission_debt(&engine);
+                // growth on top of the reserve for models whose dspark route is armed
+                // (projection contract on `dspark_vg_debt_projection`; the teeth door
+                // `MEMRA_ADMIT_RESERVE_MB` deliberately does NOT override this term —
+                // it calibrates the transient floor, not the pool).
+                let vg_debt = if dspark_drafts.contains_key(&model_key) {
+                    loaded[&model_key].model.dspark_vg_admission_debt(&engine)
+                } else {
+                    0
+                };
                 if vg_debt > 0 && log_estimate {
                     eprintln!(
                         "[admission] dspark verify-graph pool debt: +{:.0}MB reserved \
@@ -12907,85 +7764,55 @@ pub fn run(
                         continue;
                     }
                 };
-                let model = &loaded[&model_key].model;
-                let n_trunk = (model.cfg.n_layer - model.cfg.nextn_predict_layers) as usize;
-                let pp_fence = memra_engine::pp::pp_cuts(n_trunk);
-                let pp_admission_stages = pp_admission_stage_count(
-                    !memra_engine::pp::pp2_streams_off(),
-                    pp_fence.as_deref(),
-                );
-                let pp_plan = if let Some(pp_stages) = pp_admission_stages {
-                    let fence = pp_fence.as_ref().unwrap();
-                    let runtime = memra_engine::pp::PpNRt::get(&engine)
-                        .expect("parallel decode policy missing PP runtime");
-                    assert_eq!(
-                        runtime.n_stages(),
-                        pp_stages,
-                        "parallel decode policy/runtime stage count mismatch"
-                    );
+                let dual_plan = if decode_policy.dual {
+                    let model = &loaded[&model_key].model;
+                    let n_trunk = (model.cfg.n_layer - model.cfg.nextn_predict_layers) as usize;
+                    let fence = memra_engine::pp::pp_cuts(n_trunk)
+                        .expect("dual decode policy missing PP stage fence");
                     let context_bytes =
-                        pp_stage_context_bytes(model, fence, admission_cap, estimate_spec)
-                            .expect("parallel decode policy requires 2..=4 PP stages");
-                    let boundary_token_cap = pp_boundary_slot_token_cap(
-                        model,
-                        n_trunk,
-                        prompt_len,
+                        dual_pp_stage_context_bytes(model, &fence, admission_cap, estimate_spec)
+                            .expect("dual decode policy requires exactly two PP stages");
+                    let boundary_slot_bytes = dual_pp_boundary_slot_bytes(
                         decode_policy.wave_cap,
+                        model.cfg.n_embd as usize,
                     );
-                    let boundary_elements =
-                        boundary_token_cap.saturating_mul(model.cfg.n_embd as usize);
-                    let mut boundary_growth_bytes = vec![0usize; pp_stages];
-                    for (stage, slot) in boundary_growth_bytes.iter_mut().enumerate().skip(1) {
-                        *slot = runtime
-                            .boundary_slot_growth_bytes(stage - 1, boundary_elements)
-                            .expect("PP boundary growth projection failed");
-                    }
-                    let stages = pp_stage_admissions(
-                        &context_bytes,
-                        &pp_activation_bytes[..pp_stages],
+                    let stages = dual_pp_stage_admission(
+                        context_bytes,
+                        activation_bytes,
                         reserve,
-                        &boundary_growth_bytes,
+                        boundary_slot_bytes,
                     );
                     if log_estimate {
-                        let detail = stages
-                            .iter()
-                            .enumerate()
-                            .map(|(stage, charge)| {
-                                format!(
-                                    "stage{stage} session {:.0}MB + reserve {:.0}MB + boundary {:.3}MB",
-                                    charge.session_bytes as f64 / 1e6,
-                                    charge.reserve_bytes as f64 / 1e6,
-                                    charge.boundary_bytes as f64 / 1e6,
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join("; ");
                         eprintln!(
-                            "[admission] PP{pp_stages} per-stage {} plan: boundary_slot_tokens={boundary_token_cap}; {detail}",
-                            if decode_policy.stages > 1 {
-                                "wave"
-                            } else {
-                                "serial"
-                            },
+                            "[admission] dual PP per-stage plan: stage0 session {:.0}MB + \
+                             reserve {:.0}MB; stage1 session {:.0}MB + reserve {:.0}MB + \
+                             two boundary slots {:.3}MB",
+                            stages[0].session_bytes as f64 / 1e6,
+                            stages[0].reserve_bytes as f64 / 1e6,
+                            stages[1].session_bytes as f64 / 1e6,
+                            stages[1].reserve_bytes as f64 / 1e6,
+                            stages[1].boundary_bytes as f64 / 1e6,
                         );
                     }
-                    let devices: Vec<usize> = (0..pp_stages)
-                        .map(|stage| runtime.engine(stage, &engine).ctx().ordinal())
-                        .collect();
-                    Some((devices, stages))
+                    let runtime = memra_engine::pp::PpNRt::get(&engine)
+                        .expect("dual decode policy missing PP runtime");
+                    assert_eq!(
+                        runtime.n_stages(),
+                        2,
+                        "dual decode policy requires exactly two PP stages"
+                    );
+                    Some((
+                        [
+                            runtime.engine(0, &engine).ctx().ordinal(),
+                            runtime.engine(1, &engine).ctx().ordinal(),
+                        ],
+                        stages,
+                    ))
                 } else {
                     None
                 };
                 let required = admission_required(cost, reserve);
-                // EAGER-ARM twin (lane/step37-vram-admission-20260830): the draft-state
-                // charge models a session that CAPTURES its draft graphs. When headroom
-                // cannot hold that arm, the pre-capture reserve gate will refuse the
-                // captures at this same headroom, so the honest charge for the work that
-                // will actually run is the EAGER one. Consulted only after the captured
-                // arm defers, and only while the gate that enforces it is armed.
-                let required_eager =
-                    admission_required(cost.saturating_sub(draft_state_bytes), reserve);
-                let device_requirements = if pp_plan.is_some()
+                let device_requirements = if dual_plan.is_some()
                     || !request_tp_kv.is_empty()
                     || !pending_tp_kv.is_empty()
                 {
@@ -12993,9 +7820,7 @@ pub fn run(
                         engine.ctx().ordinal(),
                         cost,
                         reserve,
-                        pp_plan
-                            .as_ref()
-                            .map(|(devices, stages)| (devices.as_slice(), stages.as_slice())),
+                        dual_plan,
                         &request_tp_kv,
                         &pending_tp_kv,
                     ))
@@ -13050,19 +7875,6 @@ pub fn run(
                     // stage-owned KV plus one transient reserve per simultaneous stage walker,
                     // and both prepared boundary slots on the receiver. Serial mode retains this
                     // function's historical primary-device `cost + reserve` equation exactly.
-                    // KV-FLEX BORROWED-FIRST (lane/kv-flex-20260831): before the nuclear
-                    // reclaim ladder below, return ONLY the borrowed slice: shedding to
-                    // the configured floor often satisfies the arrival without evaporating
-                    // the floor residency the operator actually budgeted for. No hold: this
-                    // is session pressure, not capture traffic; the grant re-derives from
-                    // the post-admission free reading at the next tick.
-                    if !headroom.sufficient(required)
-                        && kv_flex.shed(&mut px, false, "admission headroom") > 0
-                        && let Some(next_headroom) =
-                            admission_headroom(&engine, &loaded, device_requirements.as_deref())
-                    {
-                        headroom = next_headroom;
-                    }
                     if !headroom.sufficient(required) {
                         // Prefix snapshots are cache, not capacity reservations. Sessions win:
                         // drop them before deciding that a request must queue or be rejected.
@@ -13116,96 +7928,7 @@ pub fn run(
                             );
                         }
                     }
-                    let eager_arm = !headroom.sufficient(required)
-                        && draft_state_bytes > 0
-                        && memra_engine::spec::spec_capture_gate_on()
-                        && {
-                            let requirements_eager = if pp_plan.is_some()
-                                || !request_tp_kv.is_empty()
-                                || !pending_tp_kv.is_empty()
-                            {
-                                Some(parallel_device_requirements(
-                                    engine.ctx().ordinal(),
-                                    cost.saturating_sub(draft_state_bytes),
-                                    reserve,
-                                    pp_plan.as_ref().map(|(devices, stages)| {
-                                        (devices.as_slice(), stages.as_slice())
-                                    }),
-                                    &request_tp_kv,
-                                    &pending_tp_kv,
-                                ))
-                            } else {
-                                None
-                            };
-                            admission_headroom(&engine, &loaded, requirements_eager.as_deref())
-                                .is_some_and(|h| h.sufficient(required_eager))
-                        };
-                    if eager_arm {
-                        // Grep-stable receipt: the session is admitted for EAGER serving;
-                        // if headroom later grows, an opportunistic capture stays bounded
-                        // by the pre-capture gate's own post-capture floor.
-                        eprintln!(
-                            "[admission] eager-arm admit: model={model_key:?} ctx={} \
-                             draft-state {:.0}MB uncharged (capture would be refused at \
-                             current headroom; the pre-capture gate enforces it)",
-                            admission_cap,
-                            draft_state_bytes as f64 / 1e6,
-                        );
-                    } else if !headroom.sufficient(required) && active.is_empty() && {
-                        // STALE-READ HONESTY (measured on the med-class cell): the
-                        // retire sweep's frees are stream-ordered, so an admission
-                        // pass one tick later can read a card that still LOOKS full
-                        // and 429 a whole queue a drained device would serve. A
-                        // reject with no active peers is the coldest path there is:
-                        // fence every device, hand cached pool blocks back to the
-                        // driver, and re-read before declaring headroom unattainable.
-                        oom_teardown_fence(&engine, &loaded);
-                        for_each_device_engine(&engine, &loaded, &mut |_d, dev_engine| {
-                            let _ = dev_engine.pool_trim_to_zero();
-                        });
-                        // The captured-arm and eager-arm device plans DIFFER, and the
-                        // Devices-variant sufficiency check reads its per-device
-                        // requirements rather than the scalar — evaluate each arm against
-                        // its own plan (the first version fed the eager scalar to the
-                        // captured plan and never recovered; measured on the med-class
-                        // cell's post-drain 429 cluster).
-                        let requirements_eager = if pp_plan.is_some()
-                            || !request_tp_kv.is_empty()
-                            || !pending_tp_kv.is_empty()
-                        {
-                            Some(parallel_device_requirements(
-                                engine.ctx().ordinal(),
-                                cost.saturating_sub(draft_state_bytes),
-                                reserve,
-                                pp_plan.as_ref().map(|(devices, stages)| {
-                                    (devices.as_slice(), stages.as_slice())
-                                }),
-                                &request_tp_kv,
-                                &pending_tp_kv,
-                            ))
-                        } else {
-                            None
-                        };
-                        let captured_ok =
-                            admission_headroom(&engine, &loaded, device_requirements.as_deref())
-                                .is_some_and(|h| h.sufficient(required));
-                        let eager_ok = draft_state_bytes > 0
-                            && memra_engine::spec::spec_capture_gate_on()
-                            && admission_headroom(&engine, &loaded, requirements_eager.as_deref())
-                                .is_some_and(|h| h.sufficient(required_eager));
-                        if captured_ok || eager_ok {
-                            eprintln!(
-                                "[admission] reject averted: model={model_key:?} \
-                                     ctx={} headroom recovered after fence+trim re-read \
-                                     (arm {})",
-                                admission_cap,
-                                if captured_ok { "captured" } else { "eager" },
-                            );
-                        }
-                        captured_ok || eager_ok
-                    } {
-                        // fall through to admit: the drained re-read says the work fits.
-                    } else if !headroom.sufficient(required) {
+                    if !headroom.sufficient(required) {
                         if active.is_empty() {
                             eprintln!(
                                 "[admit-oom] VRAM reject: model={model_key:?} ctx={} has no \
@@ -13293,35 +8016,7 @@ pub fn run(
                     }
                 }
             }
-            let observe_model = &loaded[&model_key].model;
-            let observe_n_trunk =
-                (observe_model.cfg.n_layer - observe_model.cfg.nextn_predict_layers) as usize;
-            let observe_pp_stages = pp_admission_stage_count(
-                !memra_engine::pp::pp2_streams_off(),
-                memra_engine::pp::pp_cuts(observe_n_trunk).as_deref(),
-            );
-            let observe_boundary_elements = observe_pp_stages.map(|_| {
-                pp_boundary_slot_token_cap(
-                    observe_model,
-                    observe_n_trunk,
-                    prompt_len,
-                    decode_policy.wave_cap,
-                )
-                .saturating_mul(observe_model.cfg.n_embd as usize)
-            });
-            let pp_growth_before =
-                observe_pp_stages
-                    .zip(observe_boundary_elements)
-                    .and_then(|(stages, elements)| {
-                        let runtime = memra_engine::pp::PpNRt::get(&engine).ok()?;
-                        pp_boundary_growth_projection(runtime, stages, elements)
-                    });
-            let pp_free_before =
-                observe_pp_stages.and_then(|stages| pp_effective_free_snapshot(&engine, stages));
-            let free_before = pp_free_before
-                .is_none()
-                .then(|| effective_free_bytes(&engine).map(|(free, _)| free))
-                .flatten();
+            let free_before = effective_free_bytes(&engine).map(|(free, _)| free);
             let gemma_draft_ready = gemma_drafts.contains_key(&req.model);
             let dspark_draft = dspark_drafts.get(&req.model);
             let dspark_prime_feasible =
@@ -13373,7 +8068,6 @@ pub fn run(
                 &mut spec_sizing,
                 &mut reuse_metrics,
                 &mut px,
-                &mut hpx,
                 active.len(),
                 queue.len() + requeue.len(),
                 has_live_non_demotable_dspark,
@@ -13385,23 +8079,12 @@ pub fn run(
                 dspark_draft,
                 dspark_prime_feasible,
                 vision_tower.as_ref(),
-                glm5_tower.as_ref(),
-                step_tower.as_ref(),
             ) {
-                Ok(mut s) => {
+                Ok(s) => {
                     // The request has crossed the worker admission boundary and now lives in
                     // `active`; its queue reservation must no longer count against waiting
                     // capacity. The HTTP in-flight gauge continues to cover the live stream.
                     release_admission_reservation(lane);
-                    // FAIL-SAFE (lane/step37-vram-admission-20260830): a step-OOM park REPLAY
-                    // must not re-enter the draft-capture path — the capture appetite is part
-                    // of what drove the card to the OOM. The replay serves eager; exhausted
-                    // retries surface the honest recoverable Overloaded error.
-                    if s.oom_retries > 0
-                        && let Some(sess) = s.spec.as_mut()
-                    {
-                        sess.capture_disabled = true;
-                    }
                     let actual_spec = s.spec.is_some();
                     let actual_ctx = s
                         .spec
@@ -13409,49 +8092,7 @@ pub fn run(
                         .map(|spec| spec.cache_max_ctx())
                         .or_else(|| s.cache.as_ref().map(|cache| cache.max_ctx))
                         .unwrap_or(shape.ctx_cap);
-                    if let (Some(stages), Some(before)) =
-                        (observe_pp_stages, pp_free_before.as_ref())
-                        && let Some(after) = pp_effective_free_snapshot(&engine, stages)
-                        && let Some(context_bytes) = pp_stage_context_bytes(
-                            &loaded[&model_key].model,
-                            memra_engine::pp::pp_cuts(observe_n_trunk)
-                                .as_deref()
-                                .expect("observed PP fence disappeared"),
-                            actual_ctx,
-                            actual_spec,
-                        )
-                        && let Some(growth_before) = pp_growth_before.as_ref()
-                        && let Some(growth_after) = observe_boundary_elements.and_then(|elements| {
-                            let runtime = memra_engine::pp::PpNRt::get(&engine).ok()?;
-                            pp_boundary_growth_projection(runtime, stages, elements)
-                        })
-                        && let Some(residuals) = pp_stage_observed_residuals(
-                            before,
-                            &after,
-                            &context_bytes,
-                            &growth_before
-                                .iter()
-                                .zip(&growth_after)
-                                .map(|(before, after)| before.saturating_sub(*after))
-                                .collect::<Vec<_>>(),
-                        )
-                    {
-                        let model = admission_costs
-                            .get_mut(&model_key)
-                            .expect("loaded model missing admission cost model");
-                        if let Some(high_water) = model.observe_pp(&residuals) {
-                            model.last_logged = None;
-                            eprintln!(
-                                "[admission] PP fixed residual high-water: model={model_key:?} per_stage={:?}MB at ctx {} path={}",
-                                high_water
-                                    .iter()
-                                    .map(|bytes| *bytes as f64 / 1e6)
-                                    .collect::<Vec<_>>(),
-                                actual_ctx,
-                                if actual_spec { "spec" } else { "plain" },
-                            );
-                        }
-                    } else if let (Some(before), Some((after, _))) =
+                    if let (Some(before), Some((after, _))) =
                         (free_before, effective_free_bytes(&engine))
                     {
                         let observed = before.saturating_sub(after);
@@ -13493,29 +8134,6 @@ pub fn run(
                         s.n_prompt as u64,
                         s.n_cached as u64,
                     );
-                    // PREDICTIVE-ADMISSION BOOK (D2 gaps G2+G5): book this session at
-                    // the single admit seam. booked_kv_bytes is the engine's OWN
-                    // charge (the `cost` the VRAM gate just used); the shadow twin is
-                    // the P-tenant-p95 kv_hat, computed fresh at admission time so the
-                    // in-flight sum is "each in-flight request's OWN admission-time
-                    // kv_hat" per the contract. EVERY admitted session enters the book
-                    // as load: lanes, probes, and exempt tenants included.
-                    s.booked_kv_bytes = cost as u64;
-                    if admit_predict_cfg.armed {
-                        let tenant_row = crate::auth::meter_key(&s.cache_ns).to_string();
-                        let max_tokens_bound = (s.params.max_new != MAX_NEW_CTX_BOUNDED)
-                            .then_some(s.params.max_new as u64);
-                        let (predicted, _) =
-                            completion_history.lhat(&tenant_row, &s.model, max_tokens_bound);
-                        s.shadow_pred_total = predicted;
-                        s.shadow_kv_hat = crate::admit_predict::kv_hat(
-                            prompt_len as u64,
-                            predicted,
-                            bytes_per_token as u64,
-                            activation_bytes as u64,
-                        );
-                    }
-                    admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
                     active.push(s);
                 }
                 Err((tx, msg)) => {
@@ -13929,7 +8547,6 @@ pub fn run(
                         prefix_insert_from_spec_boundary(
                             &engine,
                             &mut px,
-                            &mut hpx,
                             &pool_key,
                             &sp.committed,
                             sp.cache_ref(),
@@ -13945,12 +8562,7 @@ pub fn run(
                 // (lane/dspark-draft-plane-20260827), so a later hit can re-arm a dspark
                 // session instead of cold-priming. It still has no hidden anchor, LCP split
                 // or message-boundary arm, so whole-entry hits are the only restorable shape.
-                drain_dspark_prefix_capture(&engine, &mut px, &mut hpx, s);
-
-                // The glm5 twin (lane/glm5-prefix-latent2): latent boundary planes + the
-                // DFlash2 drafter tail; waits for the drafter KV to cover the boundary
-                // (glm5 ingests the prompt's features at round 1, not at creation).
-                drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);
+                drain_dspark_prefix_capture(&engine, &mut px, s);
             }
 
             if automatic_demote || demote_at.is_some() {
@@ -14027,89 +8639,6 @@ pub fn run(
                                 s.model,
                                 s.generated.len()
                             );
-                            continue;
-                        }
-                        // GLM5 TICK DEMOTION (lane/glm5-loop-port, map #8): the glm5 twin
-                        // of the dspark arm above — same policy, same thresholds, same
-                        // greedy-only exclusion. glm5's live anchor is the CARRIED-PENDING
-                        // shape (emitted, not yet committed), so the handoff flushes it
-                        // through ONE plain decode step first and hands that step's argmax
-                        // as device_next — HybridModel::glm5_spec_into_demoted carries the
-                        // proof. Without this arm the spec-gate HIGH sweep never touched
-                        // glm5_on rows: a session admitted on an idle box kept bursting
-                        // serially when load arrived (the map's named ship-safety gap).
-                        if active[i].glm5.is_some() {
-                            let s = &mut active[i];
-                            if !s.sampler.is_greedy() || s.constraint.is_some() {
-                                continue;
-                            }
-                            if let Some(n) = demote_at {
-                                if s.generated.len() < n {
-                                    continue;
-                                }
-                            } else if n_live < spec_gate_high() {
-                                continue;
-                            }
-                            let sess = s.glm5.as_ref().unwrap();
-                            let sess_pos = sess.pos();
-                            // Handoff shape: committed rows == fed minus the live anchor,
-                            // greedy, not finished, room for the one-row flush. Anything
-                            // else finishes or demotes at its next boundary — loud, never
-                            // silent (the dspark arm's discipline).
-                            if sess_pos + 1 != s.fed.len()
-                                || sess.finished()
-                                || !sess.demote_eligible()
-                                || sess_pos + 1 > sess.cache_max_ctx()
-                            {
-                                eprintln!(
-                                    "[spec-gate] glm5 demote SKIPPED: not in handoff shape \
-                                     (cache rows {sess_pos}, fed {}, finished {}, model {}); \
-                                     staying on spec",
-                                    s.fed.len(),
-                                    sess.finished(),
-                                    s.model
-                                );
-                                continue;
-                            }
-                            let sess = s.glm5.take().unwrap();
-                            let lm = &loaded[&s.model];
-                            match lm.model.glm5_spec_into_demoted(&engine, sess) {
-                                Ok((cache, next)) => {
-                                    s.cache = Some(cache);
-                                    s.device_next = Some(next);
-                                    s.glm5_on = false;
-                                    s.glm5_k = 0;
-                                    s.prefill_done = true;
-                                    s.last_logits.clear();
-                                    n_demoted += 1;
-                                    let why = match demote_at {
-                                        Some(n) => format!("FORCED at DEMOTE_AT={n} (test door)"),
-                                        None => {
-                                            format!("{n_live} active >= HIGH={}", spec_gate_high())
-                                        }
-                                    };
-                                    eprintln!(
-                                        "[spec-gate] demoted glm5 session to batched decode: \
-                                         {why} (model {}, cache rows {}, generated {})",
-                                        s.model,
-                                        s.fed.len(),
-                                        s.generated.len()
-                                    );
-                                }
-                                Err(err) => {
-                                    // The flush consumed the session before failing (the MTP
-                                    // arm's honesty): retire with the quoted cause rather
-                                    // than hand back a session that cannot burst.
-                                    eprintln!(
-                                        "[spec-gate] glm5 demote flush FAILED (model {}): {err}",
-                                        s.model
-                                    );
-                                    let _ = s.tx.send(Event::Error(EngineError::engine(format!(
-                                        "glm5 demote flush failed: {err}"
-                                    ))));
-                                    finished.push(i);
-                                }
-                            }
                             continue;
                         }
                         let s = &mut active[i];
@@ -14217,10 +8746,7 @@ pub fn run(
             let mut spec_prev_end_ms = 0.0f32;
             let mut spec_order: Vec<usize> = (0..active.len())
                 .filter(|&i| {
-                    active[i].spec.is_some()
-                        || active[i].gspec_k > 0
-                        || active[i].dspark_on
-                        || active[i].glm5_on
+                    active[i].spec.is_some() || active[i].gspec_k > 0 || active[i].dspark_on
                 })
                 .collect();
             let admit_yield_on = {
@@ -14346,26 +8872,8 @@ pub fn run(
                     )
                 });
                 let was_dspark_step = active[i].dspark_on;
-                // MEMRA_STEP_OOM_FAULT (diagnostic door, battery-20260831 tenancy-gates
-                // T2): forge a quoted CUDA OOM instead of running this step, LOUD and
-                // named. The step itself is SKIPPED (no device work on a card the gate is
-                // pretending is full); the match below (park-vs-honest-error, the
-                // teardown fence, park_requeue, the retry budget) is production logic,
-                // un-doctored. This is the ONLY injection point of the door.
-                let step_result = if step_oom_fault_fire() {
-                    eprintln!(
-                        "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this step reports a \
-                         synthetic CUDA OOM (model {}, generated {}, oom_retries {}/{})",
-                        active[i].model,
-                        active[i].generated.len(),
-                        active[i].oom_retries,
-                        step_oom_retries(),
-                    );
-                    Err(STEP_OOM_FAULT_MSG.into())
-                } else if was_dspark_step {
+                let step_result = if was_dspark_step {
                     step_dspark_spec(&engine, &loaded, &mut dspark_drafts, &mut active[i])
-                } else if active[i].glm5_on {
-                    step_glm5_spec(&engine, &loaded, &mut active[i])
                 } else if active[i].gspec_k > 0 {
                     step_gemma_spec(&engine, &loaded, &mut gemma_drafts, &mut active[i])
                 } else {
@@ -14453,25 +8961,9 @@ pub fn run(
                         let n_active = active.len();
                         let s = &mut active[i];
                         s.oom_retries += 1;
-                        s.oom_teardown = true;
-                        let telemetry = {
-                            let mut parts: Vec<String> = Vec::new();
-                            for_each_device_engine(&engine, &loaded, &mut |device, dev_engine| {
-                                let free =
-                                    dev_engine.ctx().mem_get_info().map(|(f, _)| f).unwrap_or(0);
-                                let (res, used) = dev_engine.pool_reserved_used();
-                                parts.push(format!(
-                                    "dev{device} free {}MB pool-res {}MB pool-used {}MB",
-                                    free / (1 << 20),
-                                    res / (1 << 20),
-                                    used / (1 << 20),
-                                ));
-                            });
-                            parts.join("; ")
-                        };
                         eprintln!(
                             "[admit-oom] step OOM parked session back to queue \
-                                   (model {}, retry {}/{}, {n_active} active) [{telemetry}]: {err}",
+                                   (model {}, retry {}/{}, {n_active} active): {err}",
                             s.model,
                             s.oom_retries,
                             step_oom_retries()
@@ -14495,10 +8987,6 @@ pub fn run(
                     }
                     Err(err) => {
                         if is_cuda_oom(&err.to_string()) {
-                            // Honest-error OOM exits take the SAME fenced teardown as parks:
-                            // the card just proved full and the stream may still be chewing
-                            // this session's aborted work (lane/step37-vram-admission).
-                            active[i].oom_teardown = true;
                             eprintln!(
                                 "[admit-oom] step OOM NOT parked (model {}, retries \
                                        {}/{}, generated {}): reporting honestly",
@@ -14564,7 +9052,6 @@ pub fn run(
                     &loaded,
                     &eager_only,
                     &mut px,
-                    &mut hpx,
                     &mut active,
                     &mut finished,
                     budgets[0],
@@ -14657,8 +9144,6 @@ pub fn run(
                             && (whole_fresh || cold_chunk)
                             // eager-only models have no batched prime core (engine refuses)
                             && !eager_only.contains(&s.model)
-                            // Only Step35 has a cross-device concat-prime PP split today.
-                            && concat_prime_pp_eligible(&loaded[&s.model].model, &engine)
                             // prefix-cache LCP split primes alone (the boundary snapshot
                             // needs a per-session stop inside the prompt; concat can't stop).
                             && s.snapshot_at.is_none()
@@ -14748,35 +9233,18 @@ pub fn run(
                                     }
                                     // prefix-cache seed: batch-primed bytes are the concat
                                     // config — the entry stores whatever config ran (contract).
-                                    maybe_prefix_seed(&engine, &mut px, &mut hpx, s);
+                                    maybe_prefix_seed(&engine, &mut px, s);
                                 }
                                 batch_advanced.insert(i);
                             }
                             fired = true;
                         }
                         Err(err) => {
-                            let tainted = cand.iter().any(|&(i, _)| {
-                                active[i].cache.as_ref().is_some_and(|cache| cache.tainted)
-                            });
-                            if tainted {
-                                eprintln!(
-                                    "[prime-batch] failed after a partial pipeline wave ({err}); dropping tainted sessions"
-                                );
-                                for &(i, _) in &cand {
-                                    active[i].aborted = true;
-                                    let _ = active[i].tx.send(Event::Error(EngineError::engine(
-                                        format!("prime batch: {err}"),
-                                    )));
-                                    finished.push(i);
-                                }
-                            } else {
-                                // Pre-mutation refusal: restore queues, then the per-session path
-                                // can safely serve this tick.
-                                eprintln!("[prime-batch] failed ({err}); single primes serve");
-                                for (&(i, _), prompt) in cand.iter().zip(&prompts) {
-                                    for &tok in prompt.iter().rev() {
-                                        active[i].prefill_queue.push_front(tok);
-                                    }
+                            // fall back: restore queues, the per-session path serves this tick
+                            eprintln!("[prime-batch] failed ({err}); single primes serve");
+                            for (&(i, _), prompt) in cand.iter().zip(&prompts) {
+                                for &tok in prompt.iter().rev() {
+                                    active[i].prefill_queue.push_front(tok);
                                 }
                             }
                         }
@@ -14873,13 +9341,10 @@ pub fn run(
                     &engine,
                     &loaded,
                     &mut px,
-                    &mut hpx,
                     s,
                     budget,
                     vision_tower.as_ref(),
                     gemma_tower.as_ref(),
-                    glm5_tower.as_ref(),
-                    step_tower.as_ref(),
                 ) {
                     Ok(consumed) => {
                         if consumed > 0 {
@@ -15098,7 +9563,6 @@ pub fn run(
                     }
                     Err(err) => {
                         for &i in &idxs {
-                            active[i].aborted = true;
                             let _ = active[i].tx.send(Event::Error(EngineError::engine(format!(
                                 "batch step: {err}"
                             ))));
@@ -15204,9 +9668,6 @@ pub fn run(
                     if eager_only.contains(&s.model) {
                         continue;
                     }
-                    if !concat_prime_pp_eligible(&loaded[&s.model].model, &engine) {
-                        continue;
-                    }
                     let cap = budgets[li].min(adaptive_cap);
                     if ql < min_t || dsum + ql > cap {
                         continue;
@@ -15258,25 +9719,9 @@ pub fn run(
                             }
                         }
                         Err(err) => {
-                            let tainted = dcand.iter().any(|&i| {
-                                active[i].cache.as_ref().is_some_and(|cache| cache.tainted)
-                            });
-                            if tainted {
-                                eprintln!(
-                                    "[prime-batch dark] failed after a partial pipeline wave ({err}); dropping tainted sessions"
-                                );
-                                for &i in &dcand {
-                                    active[i].aborted = true;
-                                    let _ = active[i].tx.send(Event::Error(EngineError::engine(
-                                        format!("dark prime batch: {err}"),
-                                    )));
-                                    finished.push(i);
-                                }
-                            } else {
-                                eprintln!("[prime-batch dark] failed ({err}); chunks serve");
-                                for (&i, prompt) in dcand.iter().zip(&prompts) {
-                                    active[i].prefill_queue = prompt.iter().copied().collect();
-                                }
+                            eprintln!("[prime-batch dark] failed ({err}); chunks serve");
+                            for (&i, prompt) in dcand.iter().zip(&prompts) {
+                                active[i].prefill_queue = prompt.iter().copied().collect();
                             }
                             dcand.clear();
                         }
@@ -15309,13 +9754,10 @@ pub fn run(
                     &engine,
                     &loaded,
                     &mut px,
-                    &mut hpx,
                     s,
                     chunk,
                     vision_tower.as_ref(),
                     gemma_tower.as_ref(),
-                    glm5_tower.as_ref(),
-                    step_tower.as_ref(),
                 ) {
                     let _ = s.tx.send(Event::Error(EngineError::engine(format!(
                         "prefill error: {err}"
@@ -15335,7 +9777,7 @@ pub fn run(
             // have all yielded. Finished rows still exist in the active set; retirement is next,
             // and the next admission pass cannot run until the following tick.
             for (i, cap) in dspark_phase_captures {
-                publish_dspark_prefix_capture(&engine, &mut px, &mut hpx, &active[i], cap);
+                publish_dspark_prefix_capture(&engine, &mut px, &active[i], cap);
             }
         }
         // retire finished sessions (reverse order so indices stay valid). Long-enough sessions
@@ -15343,23 +9785,8 @@ pub fn run(
         finished.sort_unstable();
         finished.dedup();
         let mut retired_interactive = false;
-        let mut oom_teardowns = 0usize;
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
-            // PREDICTIVE-ADMISSION BOOK, retire seam (D2 gaps G2+G3): the single point
-            // a session leaves `active`, so the book stays exact by construction. The
-            // completion history records only terminal completions: a step-OOM park
-            // re-admits (nothing completed; its replay re-books) and a client abort's
-            // length is a disconnect point, not a completion length (the D2 offline
-            // history was built from completed rows only; aborts stay load-only).
-            admission_book.retire(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
-            if !s.oom_teardown && !s.aborted {
-                completion_history.record(
-                    crate::auth::meter_key(&s.cache_ns),
-                    &s.model,
-                    u32::try_from(s.generated.len()).unwrap_or(u32::MAX),
-                );
-            }
             retired_interactive |= s.lane == crate::lanes::Lane::Interactive;
             retire_prefix_pin(&mut px, &mut s.prefix_pin);
             let pool_key = s.pool_key(); // before the partial moves below (PC-ISO park key)
@@ -15404,89 +9831,7 @@ pub fn run(
                     );
                 }
             }
-            if s.oom_teardown {
-                // STEP-OOM TEARDOWN FENCE (lane/step37-vram-admission-20260830, defect 3):
-                // synchronize every device stream BEFORE this session's device state drops,
-                // so graph-exec destroys and pool frees can never race work the aborted step
-                // (or a same-tick peer) left in flight — the multi-active park cliff was a
-                // silent libcuda segfault, dmesg-only, killing every live session. The drop
-                // happens at `continue` below, against idle streams.
-                oom_teardown_fence(&engine, &loaded);
-                oom_teardowns += 1;
-                continue;
-            }
-            if !retire_may_park(s.aborted, s.oom_teardown) {
-                continue;
-            }
-            // AGENT-PAUSE DEMOTE ARM (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831,
-            // tiering spec Arc E). A retiring response whose generation tail is a COMPLETED
-            // tool-call block is a session pausing for a client-side tool round trip (the
-            // worker-side predictor of the HTTP layer's finish_reason=tool_calls verdict;
-            // both divergence directions are documented at
-            // `toolcall::tail_ends_with_tool_call` and neither touches correctness). Arm a
-            // candidate; the sweep below the retire section demotes the boundary after
-            // MEMRA_KV_PAUSE_DEMOTE_MS untouched. Everything here is flag-gated: OFF (the
-            // default) adds zero work to the retire path. Exclusions: the host tier must be
-            // armed (it is the demote target), vision sessions never enter reuse tiers, and
-            // SWA-ring caches inherit the upstream flat-history snapshot refusal
-            // (`prefix_snapshot` would refuse at fire; skipping the arm keeps the candidate
-            // list honest).
-            if kv_pause_demote_on() {
-                if !hpx.armed() {
-                    static WARNED: std::sync::Once = std::sync::Once::new();
-                    WARNED.call_once(|| {
-                        eprintln!(
-                            "[prefix-host] MEMRA_KV_PAUSE_DEMOTE=1 but the host tier is off \
-                             (MEMRA_KV_HOST_MB=0 or latched); pause demote disabled"
-                        );
-                    });
-                } else if (!s.replay.tools_json.is_empty() || !s.replay.tools_struct.is_empty())
-                    && s.vision.is_none()
-                    && !s.cache.as_ref().is_some_and(|c| c.has_swa_ring())
-                {
-                    // Trailing stop ids are trimmed BEFORE the decode: the natural
-                    // tool_calls finish lands the stop id after the close marker, and on
-                    // qwen3.8 that shape was 100% of real tool pauses, not an edge case
-                    // (battery-20260831 pause-gates FINDING 1; see `pause_tail_window`).
-                    let tail = loaded[&s.model]
-                        .tok
-                        .decode_special(pause_tail_window(&s.generated, &s.params.eos), true);
-                    if crate::toolcall::tail_ends_with_tool_call(&tail) {
-                        let tape = s
-                            .spec
-                            .as_ref()
-                            .map(|sp| sp.committed.clone())
-                            .unwrap_or_else(|| s.fed.clone());
-                        if tape.len() >= REUSE_MIN_PREFIX {
-                            let delay = Duration::from_millis(kv_pause_demote_ms());
-                            eprintln!(
-                                "[prefix-host] pause armed: {} committed tokens demote in \
-                                 {}ms unless the session returns (model {}{})",
-                                tape.len(),
-                                delay.as_millis(),
-                                pool_key.0,
-                                ns_suffix(&pool_key.1),
-                            );
-                            arm_pause_candidate(
-                                &mut pause_pending,
-                                pool_key.clone(),
-                                tape,
-                                Instant::now(),
-                                delay,
-                            );
-                        }
-                    }
-                }
-            }
-            if s.cache.as_ref().is_some_and(|cache| cache.tainted)
-                || s.spec
-                    .as_ref()
-                    .is_some_and(|session| session.cache_ref().tainted)
-            {
-                eprintln!(
-                    "[worker] reuse park REFUSED: pipeline-tainted cache (model {:?})",
-                    s.model
-                );
+            if !retire_may_park(s.aborted) {
                 continue;
             }
             if let Some(mut sess) = s.spec {
@@ -15651,22 +9996,6 @@ pub fn run(
                             reuse_pool_per_namespace(),
                             reuse_pool_global_cap(),
                         ) {
-                            // PARK COMPACTION (MEMRA_KV_PARK_COMPACT, Arc C1): with the
-                            // flag on, the parked cache shrinks to its committed length
-                            // here and grows back to the resuming request's own cap at
-                            // the admit probe. Flag off: the ladder-cap cache parks
-                            // whole, byte-identical to today.
-                            let (cache, cap) = if kv_park_compact_on() {
-                                compact_parked_plain_cache(
-                                    &engine,
-                                    &loaded[&s.model],
-                                    cache,
-                                    s.fed.len(),
-                                    &s.model,
-                                )
-                            } else {
-                                (cache, cap)
-                            };
                             reuse.entry(pool_key).or_default().push(ReuseEntry {
                                 fed: s.fed,
                                 cache,
@@ -15681,29 +10010,6 @@ pub fn run(
                     }
                 }
             }
-        }
-        if oom_teardowns > 0 {
-            // Post-teardown reclaim (lane/step37-vram-admission-20260830): the dropped
-            // caches' frees are stream-ordered — fence once more so they have landed in
-            // the async pool, then release the pool's cached blocks back to the driver.
-            // The step-OOM retry (and every driver-side allocation: graph instantiate,
-            // cuBLAS workspaces) allocates from the DRIVER; a pool sitting on the freed
-            // bytes would starve it (the owner's card sat at 5 MiB driver-free while the
-            // pool held the room).
-            oom_teardown_fence(&engine, &loaded);
-            let mut trimmed_total = 0usize;
-            let mut trim_devices = 0usize;
-            for_each_device_engine(&engine, &loaded, &mut |_device, dev_engine| {
-                trimmed_total += dev_engine.pool_trim_to_zero();
-                trim_devices += 1;
-            });
-            eprintln!(
-                "[admit-oom] step-OOM teardown complete: {} session(s) dropped behind a \
-                 device fence; pool trim released {}MB across {} device(s)",
-                oom_teardowns,
-                trimmed_total / (1 << 20),
-                trim_devices,
-            );
         }
         if retired_interactive
             && pb_hold_ms > 0
@@ -15720,131 +10026,6 @@ pub fn run(
         while let Some(req) = requeue_oom.pop_back() {
             queue.push_front(req);
         }
-        // AGENT-PAUSE DEMOTE SWEEP (MEMRA_KV_PAUSE_DEMOTE, lane/kv-pause-demote-20260831,
-        // tiering spec Arc E): fire candidates whose deadline passed. It runs AFTER this
-        // tick's admission and retire, so a request that arrived in time already consumed
-        // its park or touched/pinned its entry and reads as a cancel. Two demotable shapes
-        // per candidate, every copy on this thread (the CUDA owner):
-        //   1. the exact-fed PLAIN continuation-pool park: publish its boundary through the
-        //      existing capture machinery (`prefix_snapshot` at the committed boundary),
-        //      demote that entry to host, and only THEN release the parked device cache:
-        //      a published host copy (or the tenant-cap evaporation that is the tier's law)
-        //      is the only thing that frees the park; any failure keeps it (lose cleanly);
-        //   2. the deepest resident device prefix entry prefixing the tape: demote by
-        //      reference, then remove from the device cache: the entry stays resident
-        //      until the host copy publishes, and a pinned or post-arm-touched entry means
-        //      the session (or a sibling) won the race, so the demote loses cleanly.
-        // SPEC/DSPARK parks are OUT OF SCOPE by design: they hold LIVE engine sessions
-        // (draft scratch, captured CUDA graphs, sampler state; spec Arc C scoping); their
-        // device boundary entries still take shape 2. A candidate that demotes nothing
-        // counts as a cancel: the pause never got long enough to matter.
-        if !pause_pending.is_empty() {
-            let now = Instant::now();
-            let mut ci = 0;
-            while ci < pause_pending.len() {
-                if now < pause_pending[ci].deadline {
-                    ci += 1;
-                    continue;
-                }
-                let cand = pause_pending.swap_remove(ci);
-                let mut demoted = 0u64;
-                // Shape 1: the plain park.
-                if let Some(pi) = pause_park_index(
-                    reuse
-                        .get(&cand.pool_key)
-                        .into_iter()
-                        .flatten()
-                        .map(|e| e.fed.as_slice()),
-                    &cand.tape,
-                ) {
-                    let pool = reuse
-                        .get_mut(&cand.pool_key)
-                        .expect("park index came from this pool");
-                    let park = &pool[pi];
-                    match prefix_snapshot(
-                        &engine,
-                        &park.cache,
-                        &cand.pool_key,
-                        &park.fed,
-                        &park.last_logits,
-                    ) {
-                        Ok(entry) => match host_demote_prefix_ref(&engine, &mut hpx, &entry) {
-                            HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
-                                drop(entry); // the boundary copy's device planes free here
-                                let fed_len = pool[pi].fed.len();
-                                drop(pool.remove(pi));
-                                if pool.is_empty() {
-                                    reuse.remove(&cand.pool_key);
-                                }
-                                eprintln!(
-                                    "[prefix-host] pause demote: plain park released \
-                                     ({fed_len} fed tokens, model {}{})",
-                                    cand.pool_key.0,
-                                    ns_suffix(&cand.pool_key.1),
-                                );
-                                demoted += 1;
-                            }
-                            HostDemoteOutcome::Failed | HostDemoteOutcome::Off => {
-                                eprintln!(
-                                    "[prefix-host] pause demote: host copy did not \
-                                     publish; park kept"
-                                );
-                            }
-                        },
-                        Err(err) => eprintln!(
-                            "[prefix-host] pause demote: boundary snapshot refused \
-                             ({err}); park kept"
-                        ),
-                    }
-                }
-                // Shape 2: the deepest resident device prefix entry.
-                if let PausePxDecision::Demote(ei) = pause_px_decision(
-                    px.entries
-                        .get(&cand.pool_key)
-                        .into_iter()
-                        .flatten()
-                        .map(|e| (e.toks.as_slice(), e.last_use, e.pins)),
-                    &cand.tape,
-                    cand.armed_at,
-                ) {
-                    let outcome =
-                        host_demote_prefix_ref(&engine, &mut hpx, &px.entries[&cand.pool_key][ei]);
-                    if matches!(
-                        outcome,
-                        HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated
-                    ) {
-                        // `remove_at` refuses pinned entries, the second guard behind the
-                        // decision's pin check; a refusal leaves a redundant host twin,
-                        // exactly the promote path's kept-twin state.
-                        if let Some(dead) = px.remove_at(&cand.pool_key, ei) {
-                            eprintln!(
-                                "[prefix-host] pause demote: device prefix entry released \
-                                 ({} tokens, {:.1}MB, model {}{})",
-                                dead.toks.len(),
-                                dead.bytes as f64 / 1e6,
-                                cand.pool_key.0,
-                                ns_suffix(&cand.pool_key.1),
-                            );
-                            drop(dead);
-                            demoted += 1;
-                        }
-                    }
-                }
-                if demoted > 0 {
-                    hpx.pause_demotes += demoted;
-                } else {
-                    hpx.pause_cancels += 1;
-                    eprintln!(
-                        "[prefix-host] pause cancelled: nothing demoted for the {}-token \
-                         boundary (session returned first, entry leased, or nothing \
-                         resident; model {}{})",
-                        cand.tape.len(),
-                        cand.pool_key.0,
-                        ns_suffix(&cand.pool_key.1),
-                    );
-                }
-            }
-        }
         // publish serving metrics (worker owns the counters; axum reads the snapshot).
         // THROTTLED: the per-tick mutex+percentile cost ~1.7ms/token of B=1 TPOT
         // (2026-07-26 live A/B) — publish every 32nd tick. A spec-session retire forces
@@ -15856,20 +10037,11 @@ pub fn run(
         // worker blocks idle in recv(), and the post-workload /metrics scrape (the
         // hit-rate receipt query) reads stale totals. Same cost class as the spec
         // force-publish: per-request, never per-token.
-        // HOST-TIER FLUSH (battery O6): any tick whose `prefix_host_*` stamp moved also
-        // forces the publish: an admit-tick promote and an idle-wake pause-sweep demote
-        // both land on ticks the two forces above skip, and both were banked lagging the
-        // log around quiesce. Per-entry-copy cost class, never per-token.
         tick_n = tick_n.wrapping_add(1);
-        let host_telem = hpx.telemetry_stamp();
-        if (tick_n.is_multiple_of(32)
-            || spec_telem_dirty
-            || !finished.is_empty()
-            || host_telem != host_telem_published)
+        if (tick_n.is_multiple_of(32) || spec_telem_dirty || !finished.is_empty())
             && let Ok(mut m) = metrics.lock()
         {
             spec_telem_dirty = false;
-            host_telem_published = host_telem;
             m.admitted = n_admitted;
             m.completed = n_completed;
             m.tokens_out = n_tokens_out;
@@ -15886,30 +10058,8 @@ pub fn run(
             m.prefix_skips_budget = px.skips_budget;
             m.prefix_skips_pinned = px.skips_pinned;
             m.prefix_hit_tokens = px.hit_tokens;
-            m.prefix_host_entries = hpx.n_entries() as u64;
-            m.prefix_host_bytes = hpx.total_bytes as u64;
-            m.prefix_host_demotions = hpx.demotions;
-            m.prefix_host_promotions = hpx.promotions;
-            m.prefix_host_demote_ms = hpx.demote_ms_total;
-            m.prefix_host_promote_ms = hpx.promote_ms_total;
-            m.prefix_host_rejected_allocs = hpx.rejected_allocs;
-            m.prefix_host_purges = hpx.purges;
-            m.prefix_host_purged_entries = hpx.purged_entries;
-            m.prefix_host_purged_bytes = hpx.purged_bytes;
-            m.prefix_host_tenant_rejects = hpx.tenant_rejects;
-            m.prefix_host_pause_demotes = hpx.pause_demotes;
-            m.prefix_host_pause_cancels = hpx.pause_cancels;
-            m.prefix_host_handoff_exports = hpx.handoff_exports;
-            m.prefix_host_handoff_imported_entries = hpx.handoff_imports;
-            m.prefix_host_handoff_imported_bytes = hpx.handoff_import_bytes;
-            m.prefix_host_handoff_skips = hpx.handoff_skips;
-            m.kv_flex_borrowed_bytes = kv_flex.borrowed_bytes(&px) as u64;
-            m.kv_flex_sheds = kv_flex.sheds;
-            m.kv_flex_shed_ms = kv_flex.shed_ms_total;
             m.admission_session_defers = n_session_defers;
             m.admission_vram_defers = n_vram_defers;
-            m.admission_inflight = admission_book.inflight_snapshot();
-            m.admission_booked_bytes = admission_book.booked_snapshot();
             m.step_oom_parks = n_step_oom_parks;
             m.continuation_pool_hits = reuse_metrics.continuation_hits;
             m.continuation_pool_evictions = reuse_metrics.continuation_evictions;
@@ -15996,7 +10146,6 @@ fn fail_request(mut req: Box<Request>, error: EngineError) {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // one parked-reply vec per admin command class
 fn handle_cmd(
     cmd: Cmd,
     loaded: &HashMap<String, LoadedModel>,
@@ -16004,31 +10153,12 @@ fn handle_cmd(
     order: &[String],
     queue: &mut std::collections::VecDeque<Box<Request>>,
     trims: &mut Vec<tokio::sync::oneshot::Sender<TrimReport>>,
-    purges: &mut Vec<(String, tokio::sync::oneshot::Sender<HostPurgeReport>)>,
-    handoffs: &mut PendingHandoffs,
 ) {
     match cmd {
         // The pools live in run()'s scheduler scope — park the reply channel; run()
         // performs the trim at the tick top where they are in scope.
         Cmd::TrimPools(tx) => {
             trims.push(tx);
-            return;
-        }
-        // Same parking discipline: the host tier and device prefix cache live in run()'s
-        // scope, and executing the purge there (never between a demote and its insert)
-        // is what makes it race-free against the tier's own traffic.
-        Cmd::PurgeTenantHost { tenant, tx } => {
-            purges.push((tenant, tx));
-            return;
-        }
-        // Same parking discipline again (lane/host-tier-deploy-warmth-20260901): export
-        // and import both mutate px/hpx, which live in run()'s scope.
-        Cmd::ExportHostHandoff { force, tx } => {
-            handoffs.exports.push((force, tx));
-            return;
-        }
-        Cmd::ImportHostHandoff { tx } => {
-            handoffs.import_starts.push(tx);
             return;
         }
         Cmd::Generate(_) => {}
@@ -16041,10 +10171,7 @@ fn handle_cmd(
     // touched either gauge.
     release_pending_admit();
     match cmd {
-        Cmd::TrimPools(_)
-        | Cmd::PurgeTenantHost { .. }
-        | Cmd::ExportHostHandoff { .. }
-        | Cmd::ImportHostHandoff { .. } => unreachable!("handled above"),
+        Cmd::TrimPools(_) => unreachable!("handled above"),
         Cmd::Generate(req) => {
             // dsv4 route: hand the request to the model's dedicated serving thread —
             // its channel is the FIFO admission queue (bs=1 engine; queueing is the
@@ -16304,11 +10431,6 @@ fn prepare_request(
         if let Some(trace) = req.ttft.as_ref() {
             trace.mark_tokenize_end(prompt.len());
         }
-        // Vision special-id intake guard (lane/glm5-vision-default-on): runs at the single
-        // render/tokenize waist so every prompt source is covered, once per request
-        // (prepared_prompt caches the result across admission defers).
-        vision_special_id_guard(&prompt, &vision_special_budgets(&lm.tok, req))
-            .map_err(|e| EngineError::invalid_param(e, "messages"))?;
         req.prepared_prompt = Some(prompt);
     }
 
@@ -16387,123 +10509,6 @@ fn mtp_spec_capable(lm: &LoadedModel) -> bool {
             .supported
 }
 
-/// GLM5 SPEC-ROUTE CAPABILITY (lane/glm5-spec-routing, 2026-08-30): true for exactly the
-/// glm5_next class the T-parallel loop is gated on, and false for everything else —
-/// fail-closed is the default, extended deliberately, never inferred:
-///   * hc trunk actually loaded (`hyper`) AND the embedded MTP head actually loaded
-///     (`mtp` — requires `MEMRA_GLM5_MTP=1` at load for glm5_next);
-///   * `MEMRA_GLM5_SPEC=1` — ONE master flag, default OFF, flips the whole route;
-///   * placement: single-engine, OR a ppN split inside the GATED stage set with a
-///     qualified pipeline rewrite (`glm5_sharded_placement_admits` — lane/glm5-ppn-verify
-///     landed the `[t, streams, n_embd]` verify-walk twin gated at stages=2 and 3; more
-///     stages or a step-TP/EP composition stays fail-closed by name);
-///   * the GLM5_SPEC manifest declares the plan's operation classes (hc topology +
-///     KDA/MLA/kpool mixers + a serial MLA-mixer MoE MTP block; the class-matrix gate in
-///     `execution_manifest.rs` pins the yes/no rows);
-///   * a SEALED bundle must carry a `glm5-spec.v1` receipt (`rewrite_allowed` — a bundle
-///     without one keeps production fail-closed until the real-artifact qualification lane).
-///
-/// Mutual exclusion with the qwen MTP route holds by MANIFEST, not by luck: `MTP_SPEC`
-/// reports glm5 plans unsupported (hc/KDA/MLA absent from its table), so `mtp_spec_capable`
-/// stays false for glm5 and no plan can ever satisfy both predicates
-/// (`the_two_spec_programs_never_both_claim_one_plan`).
-fn glm5_spec_capable(lm: &LoadedModel) -> bool {
-    lm.model.hyper.is_some()
-        // A DRAFT SOURCE must be loaded (lane/glm5-dflash-draft-src): the embedded MTP
-        // head (MEMRA_GLM5_MTP=1) OR the DFlash2 drafter (MEMRA_GLM5_DFLASH) — the
-        // DFlash2 source deliberately does NOT require the head (the q38 VRAM pattern).
-        && (lm.model.mtp.is_some() || lm.model.glm5_dflash.is_some())
-        && memra_engine::glm_spec::glm5_spec_on()
-        && match memra_engine::pp::pp_cuts(lm.model.layers.len()) {
-            None => true,
-            Some(fence) => {
-                glm5_sharded_placement_admits(
-                    fence.len() - 1,
-                    std::env::var("MEMRA_STEP_TP").ok().as_deref(),
-                    std::env::var("MEMRA_STEP_EP").ok().as_deref(),
-                ) && lm
-                    .model
-                    .rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)
-            }
-        }
-        && lm
-            .model
-            .rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec)
-        && memra_engine::plan_backend::GLM5_SPEC
-            .capabilities(&lm.model.plan)
-            .speculative
-            .supported
-}
-
-/// Which SHARDED placements the glm5 spec route admits (lane/glm5-ppn-verify, 2026-08-30) —
-/// PURE (env values in, verdict out) so the matrix gate exercises every arm without CUDA.
-/// The verify-walk ppN twin, the per-stage rollback and the last-stage MTP chain are
-/// red-proven by `glm5-spec-ppn-gate` at **stages=2 and stages=3** (the 3-card SPLITS=15,30
-/// serving shape's class); a stage count outside that set has NO gate receipt and refuses.
-/// A step-TP/EP composition has never been co-gated with the glm5 walk (the dspark
-/// precedent: `dspark_spec_boot_conflict`) and refuses by name — fail-closed is the
-/// default, extended deliberately, never inferred.
-fn glm5_sharded_placement_admits(
-    fence_stages: usize,
-    step_tp: Option<&str>,
-    step_ep: Option<&str>,
-) -> bool {
-    let tp_set = |value: Option<&str>| {
-        value.is_some_and(|v| {
-            let v = v.trim();
-            !v.is_empty() && v != "0"
-        })
-    };
-    (2..=3).contains(&fence_stages) && !tp_set(step_tp) && !tp_set(step_ep)
-}
-
-/// The glm5 serve-time route decision over the request shape, PURE so the routing gate can
-/// exercise the full class matrix without CUDA. Exclusions, each stated:
-///   * `penalized` (ANY requested penalties, greedy or sampled): the glm5 accept walk has
-///     no penalty arm yet — the engine session refuses them loudly; admission keeps those
-///     requests on the plain path where the host sampler applies them (the dspark
-///     penalized-greedy split, extended to sampled until the penalty arm lands gated);
-///   * `constrained`: grammar hooks exist only on the qwen spec program;
-///   * `vision`: the glm5 session prime has no embedding-overlay seam;
-///   * `!cold`: the session owns its cache and has no restore/resume arm — any reused or
-///     restored state serves plain (session pooling is a named follow-up);
-///   * `temp_ok`: greedy or a real temperature (the spec_eligible convention).
-#[allow(clippy::too_many_arguments)]
-// allow: the parameter list IS the class matrix the routing gate pins; a struct would hide it
-fn glm5_route_admits(
-    capable: bool,
-    serve_spec: bool,
-    k: usize,
-    temp_ok: bool,
-    penalized: bool,
-    constrained: bool,
-    vision: bool,
-    // COLD session, or the prefix-restored CARRIER (lane/glm5-prefix-latent2): a hit whose
-    // drafter KV was rebuilt from the entry's tail admits the route — every other warm
-    // shape (live spec state, continuation resume, plain reuse without a tail) still
-    // refuses; the call site owns the carrier proof (`glm5_restored_carrier`).
-    cold_or_restored_carrier: bool,
-) -> bool {
-    capable
-        && serve_spec
-        && k > 0
-        && temp_ok
-        && !penalized
-        && !constrained
-        && !vision
-        && cold_or_restored_carrier
-}
-
-/// K+1 <= 15 HARD BOUND for the glm5 route: verify rows ride the batched-decode walk's
-/// per-row decode-exact kernel classes, and the MoE shared-expert trio crosses OFF that
-/// class at t = PRIME_MIN_T = 16 (the measured B=16 shexp knee,
-/// `batched-decode-gate/31-KNEE-b16-forced.log`) — so K <= hyper_batch_cap() - 1 = 14.
-/// The shared policy table's automatic depths (3/3/2/5) sit well inside; only an operator
-/// pin (`MEMRA_SPEC_K`) can reach the clamp, and the admission site logs when it does.
-fn glm5_clamp_spec_k(k: usize) -> usize {
-    k.min(memra_engine::hybrid::HybridModel::hyper_batch_cap() - 1)
-}
-
 fn model_forces_spec_replay(plan: &memra_gguf::model_plan::ModelPlan) -> bool {
     use memra_gguf::model_plan::OperationKind;
 
@@ -16525,79 +10530,6 @@ fn effective_free_bytes(engine: &Engine) -> Option<(usize, usize)> {
         let pool_cached = engine.pool_cached_bytes();
         (driver_free.saturating_add(pool_cached), pool_cached)
     })
-}
-
-#[derive(Debug)]
-struct PpFreeSnapshot {
-    stage_devices: Vec<usize>,
-    free_by_device: Vec<(usize, usize)>,
-}
-
-fn pp_effective_free_snapshot(engine: &Engine, stages: usize) -> Option<PpFreeSnapshot> {
-    let runtime = memra_engine::pp::PpNRt::get(engine).ok()?;
-    if runtime.n_stages() != stages {
-        return None;
-    }
-    let stage_devices: Vec<_> = (0..stages)
-        .map(|stage| runtime.engine(stage, engine).ctx().ordinal())
-        .collect();
-    let mut free_by_device = Vec::new();
-    for (stage, &device) in stage_devices.iter().enumerate() {
-        if free_by_device
-            .iter()
-            .any(|(existing, _)| *existing == device)
-        {
-            continue;
-        }
-        let free = effective_free_bytes(runtime.engine(stage, engine))?.0;
-        free_by_device.push((device, free));
-    }
-    free_by_device.sort_unstable_by_key(|(device, _)| *device);
-    Some(PpFreeSnapshot {
-        stage_devices,
-        free_by_device,
-    })
-}
-
-fn pp_stage_observed_residuals(
-    before: &PpFreeSnapshot,
-    after: &PpFreeSnapshot,
-    stage_context_bytes: &[usize],
-    stage_global_bytes: &[usize],
-) -> Option<Vec<usize>> {
-    if before.stage_devices != after.stage_devices
-        || before.free_by_device.len() != after.free_by_device.len()
-        || before.stage_devices.len() != stage_context_bytes.len()
-        || stage_context_bytes.len() != stage_global_bytes.len()
-    {
-        return None;
-    }
-    let mut residuals = vec![0usize; stage_context_bytes.len()];
-    for &(device, before_free) in &before.free_by_device {
-        let after_free = after
-            .free_by_device
-            .iter()
-            .find_map(|&(candidate, free)| (candidate == device).then_some(free))?;
-        let observed = before_free.saturating_sub(after_free);
-        let stages: Vec<_> = before
-            .stage_devices
-            .iter()
-            .enumerate()
-            .filter_map(|(stage, &candidate)| (candidate == device).then_some(stage))
-            .collect();
-        let context = stages.iter().fold(0usize, |total, &stage| {
-            total
-                .saturating_add(stage_context_bytes[stage])
-                .saturating_add(stage_global_bytes[stage])
-        });
-        let residual = observed.saturating_sub(context);
-        let base = residual / stages.len();
-        let remainder = residual % stages.len();
-        for (index, &stage) in stages.iter().enumerate() {
-            residuals[stage] = base.saturating_add(usize::from(index < remainder));
-        }
-    }
-    Some(residuals)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16826,10 +10758,6 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         sampler_cfg: p.sampler_cfg.clone(),
         stop_strings: s.stop_strings.clone(),
         trace_id: s.trace_id.clone(),
-        request_id: s.request_id.clone(),
-        // A park replay is the SAME arrival: its shadow verdict (if any) was already
-        // logged, and the latch rides along so re-admission cannot log a second row.
-        admit_predict_logged: s.admit_predict_logged,
         max_prompt_tokens: p.max_prompt_tokens,
         cache_ns: s.cache_ns.clone(),
         affinity: s.affinity.clone(),
@@ -16838,13 +10766,10 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         prepared_constraint: None,
         constraint_ready: None,
         oom_retries: s.oom_retries,
-        wire_deadline: s.wire_deadline,
         spec_k_replay: Some(s.spec_k),
         prepared_prompt: None,
         images: Vec::new(),
         gemma_images: Vec::new(),
-        glm5_images: Vec::new(),
-        step_images: Vec::new(),
         // A parked capture session already emitted (or lost) its PromptCapture; the
         // replay regenerates it because the session's `capture` is carried back here.
         capture: s.capture.clone(),
@@ -16873,7 +10798,6 @@ fn admit(
     spec_sizing: &mut SpecSizing,
     reuse_metrics: &mut ReuseMetrics,
     px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
     n_active: usize,
     n_pending: usize,
     has_live_non_demotable_dspark: bool,
@@ -16888,8 +10812,6 @@ fn admit(
     dspark_draft: Option<&memra_engine::dflash::DflashDraft>,
     dspark_prime_feasible: bool,
     vision_tower: Option<&memra_engine::vision::VisionTower>,
-    glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
-    step_tower: Option<&memra_engine::vision_step::StepVisionTower>,
 ) -> Result<Session, (tokio::sync::mpsc::UnboundedSender<Event>, EngineError)> {
     let dspark_draft_ready = dspark_draft.is_some();
     let lm = &loaded[&req.model];
@@ -16908,121 +10830,18 @@ fn admit(
     // there would see the drained Vec and never fire; caught live 2026-08-15: a public
     // vision request served through the SPEC path, whose turn-1 burst primes inside
     // generate_spec_session with no overlay seam — pads primed as pad embeddings).
-    let vision_req = !req.images.is_empty()
-        || !req.gemma_images.is_empty()
-        || !req.glm5_images.is_empty()
-        || !req.step_images.is_empty();
+    let vision_req = !req.images.is_empty() || !req.gemma_images.is_empty();
     // Capture requests (embeddings/rerank) must run the real prime that produces the
     // hidden stack: every reuse tier and the spec path are bypassed below, exactly like
     // vision (a cache hit would skip the forward the capture reads from).
     let capture_req = req.capture.is_some();
-    let vision_state: Option<VisionState> = if !req.glm5_images.is_empty() {
-        // glm5_next vision: <|image|> placeholder runs align 1:1 with the request's units.
-        // Err-not-assert: a glm5 image request on a worker whose tower is missing, or whose
-        // trunk width differs from the tower's merger output, refuses loudly here — it
-        // never silently primes placeholder embeddings as text.
-        let placeholder = match lm.tok.id_of("<|image|>") {
-            Some(id) => id,
-            None => {
-                return Err((
-                    req.tx,
-                    EngineError::invalid_param(
-                        "model tokenizer has no <|image|> token — glm5 vision unsupported",
-                        "messages",
-                    ),
-                ));
-            }
-        };
-        match glm5_tower {
-            None => {
-                return Err((
-                    req.tx,
-                    EngineError::invalid_param(
-                        "no glm5 vision tower loaded (the artifact carries no model.visual.* \
-                         tensors, or MEMRA_GLM5_VISION=0) — image input disabled",
-                        "messages",
-                    ),
-                ));
-            }
-            Some(t) if lm.model.cfg.n_embd as usize != t.out_width() => {
-                return Err((
-                    req.tx,
-                    EngineError::invalid_param(
-                        "glm5 vision tower output width does not match this model — \
-                         vision unsupported",
-                        "model",
-                    ),
-                ));
-            }
-            Some(_) => {}
-        }
-        let units = std::mem::take(&mut req.glm5_images);
-        match glm5_vision_spans(&prompt, &units, placeholder) {
-            Ok(spans) => Some(VisionState {
-                images: VisionImages::Glm5(units),
-                spans,
-                overlay: None,
-            }),
-            Err(e) => return Err((req.tx, EngineError::invalid_param(e, "messages"))),
-        }
-    } else if !req.gemma_images.is_empty() {
+    let vision_state: Option<VisionState> = if !req.gemma_images.is_empty() {
         // GEMMA-4 vision: soft-token (258880) runs align 1:1 with the request's units.
         let soft = memra_engine::vision_gemma::GV_TOK_SOFT;
         let units = std::mem::take(&mut req.gemma_images);
         match gemma_vision_spans(&prompt, &units, soft) {
             Ok(spans) => Some(VisionState {
                 images: VisionImages::Gemma(units),
-                spans,
-                overlay: None,
-            }),
-            Err(e) => return Err((req.tx, EngineError::invalid_param(e, "messages"))),
-        }
-    } else if !req.step_images.is_empty() {
-        // STEP37 vision: <im_patch> runs align with each unit's crops-then-main layout.
-        // The pad id comes from THIS model's tokenizer, never a constant; a trunk whose
-        // tokenizer lacks the token cannot have rendered the placeholder expansion.
-        let pad_id = match lm.tok.id_of("<im_patch>") {
-            Some(id) => id,
-            None => {
-                return Err((
-                    req.tx,
-                    EngineError::invalid_param(
-                        "model tokenizer has no <im_patch> token — step vision unsupported",
-                        "messages",
-                    ),
-                ));
-            }
-        };
-        // Width law (same as the qwen arm): the projector rows splice into the trunk's
-        // embedding stream, so the loaded tower's out_width must equal THIS trunk's
-        // n_embd (4096 on Step-3.7-Flash) — compared against the tower instance.
-        match step_tower {
-            None => {
-                return Err((
-                    req.tx,
-                    EngineError::invalid_param(
-                        "no step vision tower loaded (set MEMRA_STEP_VISION_DIR) — \
-                         image input disabled",
-                        "messages",
-                    ),
-                ));
-            }
-            Some(t) if lm.model.cfg.n_embd as usize != t.out_width() => {
-                return Err((
-                    req.tx,
-                    EngineError::invalid_param(
-                        "step vision tower output width does not match this model — \
-                         vision unsupported",
-                        "model",
-                    ),
-                ));
-            }
-            Some(_) => {}
-        }
-        let units = std::mem::take(&mut req.step_images);
-        match step_vision_spans(&prompt, &units, pad_id) {
-            Ok(spans) => Some(VisionState {
-                images: VisionImages::Step(units),
                 spans,
                 overlay: None,
             }),
@@ -17123,82 +10942,12 @@ fn admit(
     if let (true, Some(pool)) = (reuse_on, reuse.get_mut(&pool_key))
         && let Some(idx) = pool.iter().rposition(|e| {
             e.fed.len() >= REUSE_MIN_PREFIX
-                && plain_resume_cap_admits(e.cap, ctx_cap, kv_park_compact_on())
+                && e.cap >= ctx_cap
                 && prompt.len() >= e.fed.len()
                 && prompt.starts_with(&e.fed)
         })
     {
         reused = Some(pool.remove(idx));
-    }
-    // PARK-COMPACT GROW (MEMRA_KV_PARK_COMPACT, Arc C1): a compacted entry parked at
-    // fed-length capacity; grow it to THIS request's charged cap before anything primes
-    // into it, through the same snapshot + checkpoint-restore extension the
-    // plain-affinity grow path uses. Failure leaves no trustworthy resume state: drop
-    // the entry and let the cold path serve (the plain-affinity failure contract).
-    // Unreachable with the flag off: the legacy probe arm requires e.cap >= ctx_cap.
-    if let Some(e) = reused.as_mut()
-        && e.cap < ctx_cap
-    {
-        let old_cap = e.cap;
-        let grown: Result<(), Box<dyn std::error::Error>> = (|| {
-            let snap = e.cache.snapshot(engine)?;
-            let mut grown_cache = alloc_with_single_reclaim_retry(
-                || {
-                    memra_engine::pp::new_cache_planned(
-                        engine,
-                        &lm.model.cfg,
-                        &lm.model.plan,
-                        ctx_cap,
-                    )
-                },
-                |err| {
-                    let evicted_prefix = px.evict_all();
-                    if evicted_prefix > 0 {
-                        eprintln!(
-                            "[prefix-cache] evicted {evicted_prefix} entries after \
-                                 park-compact grow alloc failure; retrying"
-                        );
-                    }
-                    let evicted_parked = if is_cuda_oom(&err.to_string()) {
-                        evict_oldest_parked(reuse, spec_reuse, dspark_reuse, reuse_metrics)
-                    } else {
-                        None
-                    };
-                    if evicted_parked.is_some() {
-                        eprintln!(
-                            "[admit-oom] park-compact grow: evicted oldest parked \
-                                 session (global LRU); retrying cache alloc once"
-                        );
-                    }
-                    evicted_prefix > 0 || evicted_parked.is_some()
-                },
-            )?;
-            memra_engine::pp::restore_cache_checkpoint(
-                engine,
-                &lm.model,
-                Some(&e.cache),
-                &mut grown_cache,
-                &snap,
-            )?;
-            e.cache = grown_cache;
-            e.cap = ctx_cap;
-            Ok(())
-        })();
-        match grown {
-            Ok(()) => eprintln!(
-                "[kv-reuse] park-compact grow: {old_cap} -> {ctx_cap} rows \
-                     (request-owned cap; model {})",
-                req.model
-            ),
-            Err(err) => {
-                eprintln!(
-                    "[kv-reuse] park-compact grow failed ({err}); dropping session, \
-                         full prime (model {})",
-                    req.model
-                );
-                reused = None;
-            }
-        }
     }
     if reused.is_some() {
         reuse_metrics.continuation_hits += 1;
@@ -17427,12 +11176,6 @@ fn admit(
             ));
         }
     };
-    let mut constraint = constraint;
-    // POST-THINK (lane/step37-postthink-grammar, 2026-08-30): a constrained request on a
-    // model with a think-forced template + derivable close contract serves two-phase —
-    // the gate is armed below once the request's FINAL eos set exists (after the eog
-    // union), and the session NEVER rides spec (see the spec_eligible conjunction).
-    let postthink = constraint.is_some() && !lm.postthink_close.is_empty();
     let prefix_requested = reuse_on && serve_batching() && prefix_cache_budget_bytes() > 0;
     let ring_prefix_excluded = memra_engine::cache::swa_ring_on()
         && memra_engine::plan_backend::decode_batch_program(&lm.model.plan)
@@ -17487,12 +11230,6 @@ fn admit(
         && spec_k_decision.k > 0
         && (constraint.is_none() || (sampler.is_greedy() && !constrain_host()))
         && !constrained_replay_incompatible
-        // POST-THINK sessions take plain constrained decode, greedy included (the
-        // [spec-k] admit line receipts K=0 source=eligibility-fallback): phase-1
-        // unconstrained sampling followed by a mid-stream grammar flip would need the
-        // draft-side clone to be phase-aware and byte-exact THROUGH the flip — ungated,
-        // so it stays off by design (lane/step37-postthink-grammar).
-        && !postthink
         && (sampler.is_greedy() || sampler.temperature() > 0.0)
         && !greedy_penalized
         && mtp_spec_capable(lm)
@@ -17515,31 +11252,11 @@ fn admit(
     // hybrid/GDN trunk `gdn_dspark_compatible` selects — so for this route a full-prefix entry
     // is the whole set. Third and final granularity of the defect review chased across three
     // rounds: the veto must never fire without a hit to take the cold prime's place.
-    let mut consumable_hit = if prefix_on {
+    let consumable_hit = if prefix_on {
         px.lookup(&pool_key, &prompt)
     } else {
         None
     };
-    // HOST-TIER PROMOTE (lane/kv-host-spill-20260830): the host tier FEEDS the device cache.
-    // On a device miss (or a device hit shallower than the host's best exact-prefix entry),
-    // the host probe (SAME exact-token / PC-ISO key rules as `lookup` above) re-materializes
-    // a normal device PrefixEntry and inserts it pinned; every later step (the restore below,
-    // the hit pin, the counters) is the unmodified device path, which is what keeps the tier
-    // byte-lossless by construction. The insertion pin protects the entry until the probe
-    // resolves; it is RELEASED unconditionally after the probe block below, whatever route
-    // the request took (the serving hit path takes its own pin first).
-    let mut host_promote_pin: Option<PrefixPin> = None;
-    if prefix_on && reused.is_none() && hpx.armed() {
-        let device_best_len = consumable_hit
-            .map(|i| px.entries[&pool_key][i].toks.len())
-            .unwrap_or(0);
-        if let Some((i, pin)) =
-            host_promote_prefix_hit(engine, px, hpx, &pool_key, &prompt, device_best_len)
-        {
-            consumable_hit = Some(i);
-            host_promote_pin = Some(pin);
-        }
-    }
     // Can the consumable hit re-arm speculation? Tail present AND whole-entry cover, read here
     // beside the hit itself so the probe gate can distinguish "a hit the conversion will
     // consume" from "a hit that would cost the restore for nothing" (strict-prefix hits — the
@@ -17688,35 +11405,11 @@ fn admit(
                     // tokenwise `decode_step` for the whole suffix (`!(eager_mono && carried)`
                     // in `prefill_tick`), so ITS capture would always be decode_step
                     // provenance — the chained-provenance class R16
-                    // (research/cacheinval-20260813) refuses. EXCEPT under the
-                    // MEMRA_HYPER_SUFFIX_PRIME carve-out (lane/glm5-prefix-latent2): a hyper
-                    // trunk's carried suffix then rides the PRIME program, the capture is
-                    // prime-provenance, and R16's ground dissolves — same predicate as the
-                    // prefill_tick veto lift, one law.
-                    // STABLE-BOUNDARY CAPTURE on the shallow-hit shape (lane/
-                    // bench-debts-20260901; flag doc at `prefix_stable_boundary_on`): the
-                    // LCP teacher only reaches as deep as a surviving device sibling, so
-                    // when the session's deep entries were evicted/demoted the taught
-                    // boundary collapses to the shared shallow entry and the cold prime
-                    // captures nothing a later turn (or the host tier) can serve. The
-                    // render-stable last-turn boundary is derivable from the prompt alone;
-                    // deepest-wins, and the fed-start floor plus the grid law apply through
-                    // the same `hit_lcp_snapshot_boundary` body either way.
-                    let lcp_taught = px.best_lcp_entry(&pool_key, &prompt).map(|(_, lcp)| lcp);
-                    let stable = if prefix_stable_boundary_on() {
-                        plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
-                    } else {
-                        None
-                    };
-                    if let Some(la) = hit_lcp_snapshot_boundary(
-                        lcp_taught.unwrap_or(0).max(stable.unwrap_or(0)),
-                        hit_len,
-                        prompt.len(),
-                    ) && (!eager_only_model(lm)
-                        || carried_suffix_primes(
-                            memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
-                            hyper_suffix_prime_on(),
-                        ))
+                    // (research/cacheinval-20260813) refuses.
+                    if let Some(la) = px
+                        .best_lcp_entry(&pool_key, &prompt)
+                        .and_then(|(_, lcp)| hit_lcp_snapshot_boundary(lcp, hit_len, prompt.len()))
+                        && !eager_only_model(lm)
                         && !px.has_key(&pool_key, &prompt[..la])
                     {
                         snapshot_at = Some(la);
@@ -17747,12 +11440,10 @@ fn admit(
                     let e = &px.entries[&pool_key][i];
                     let has_recurrent =
                         e.conv.iter().any(Option::is_some) || e.ssm.iter().any(Option::is_some);
-                    let has_latent = e.latent.iter().any(Option::is_some);
                     let routed_moe = routed_moe_prefix_split(&lm.model.plan);
                     (
                         partial_prefix_decision(
                             has_recurrent,
-                            has_latent,
                             routed_moe,
                             lcp,
                             e.pos,
@@ -17889,46 +11580,10 @@ fn admit(
                     snapshot_at = Some(ba);
                 }
             }
-            // STABLE-BOUNDARY CAPTURE on the miss path (lane/bench-debts-20260901; flag
-            // doc at `prefix_stable_boundary_on`): whatever the LCP or first-message arms
-            // taught, a cold turn also captures at the render-stable last-turn boundary,
-            // the deepest key the SAME session's next re-rendered turn resends verbatim.
-            // The prompt-end seed at prefill-done keeps its exact-resend role; when the
-            // stable boundary sits within `prefix_seed_deepen_min()` of prompt end (the
-            // common template-header gap), `prefix_seed_deepens` skips that seed on its
-            // own, so the flag does not double-mint. Deepest-wins over an armed boundary;
-            // `has_key` dedupes against a prior turn's capture.
-            if prefix_stable_boundary_on()
-                && let Some(b) = stable_boundary_arm(
-                    plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)),
-                    snapshot_at,
-                    prompt.len(),
-                )
-                && !px.has_key(&pool_key, &prompt[..b])
-            {
-                snapshot_at = Some(b);
-                eprintln!(
-                    "[prefix-cache] stable-boundary capture armed at {b} of {} prompt \
-                     tokens (model {})",
-                    prompt.len(),
-                    req.model
-                );
-            }
             if prompt.len() >= PREFIX_CACHE_MIN_TOKENS {
                 seed_prefix = true; // re-checked against covering entries at prefill-done
             }
         }
-    }
-    // HOST-TIER PROMOTE pin release (lane/kv-host-spill-20260830): the insertion pin has
-    // done its job: on the served-hit route the hit path above holds its OWN pin by now
-    // (net one lease, released at session retire, exactly like a native device hit); on
-    // every other route (probe skipped, restore failed, alloc-pressure flush) the promoted
-    // entry becomes ordinary evictable probation. An evict_all inside the probe cannot have
-    // removed it: pinned entries are absent from the evictable index.
-    if let Some(pin) = host_promote_pin.take()
-        && !px.unpin(&pin)
-    {
-        eprintln!("[prefix-host] warning: promote pin vanished before release");
     }
 
     // SPEC-ON-CACHE-HIT (lane/spec-on-cache-hit, 2026-08-18 — PORT-PLAN item 3, scoped to
@@ -18160,7 +11815,7 @@ fn admit(
         None;
     // ONLY when the request WOULD HAVE COLD-PRIMED. The shipped shape guard already decides
     // who gets what: short-decode requests take the plain hit (proven byte-exact, ~1 s), and
-    // only cold-preferring long decodes have a prime to save. The first gate run on the rented
+    // only cold-preferring long decodes have a prime to save. The first gate run on the sbox
     // box proved why this condition is load-bearing and not an optimization: without it the
     // conversion re-armed dspark for a 64-token request the guard had JUST routed to the
     // plain hit (the log shows "serving the hit and going plain" followed by "DSPARK
@@ -18249,56 +11904,6 @@ fn admit(
             );
         }
     }
-    // GLM5 SPEC RESTORE, half 1 of 2 (lane/glm5-prefix-latent2, 2026-09-01): rebuild the
-    // DFlash2 drafter KV from the entry's tail HERE, while the PrefixCache is borrowable
-    // (the dspark placement law above, verbatim) — the session itself is born at the first
-    // spec tick from the CARRIER (restored cache in s.cache, restored prefix in s.fed,
-    // suffix in the prefill queue: the gemma spec-on-cache-hit shape), because the suffix
-    // prime belongs on the tick, not in admission. The carrier is NOT taken: the normal
-    // hit plumbing below carries it into the session either way, so a K-shed at the route
-    // decision (glm5_on false) degrades to the PLAIN HIT, never to a cold prime. A
-    // session-BUILD error at the first tick is different (PR #96 review round 2, finding
-    // 3): admission pre-validated the shape, so from_restored failing there is an
-    // invariant break and FAILS THE REQUEST loudly (the dspark law in step_glm5_spec) —
-    // do not build on a tick-time degrade; it does not exist.
-    let mut glm5_prefix_restored_dkv: Option<memra_engine::dflash::DflashKv> = None;
-    if memra_engine::glm_spec::glm5_spec_prefix_on()
-        && glm5_spec_capable(lm)
-        && serve_spec
-        && !vision_req
-        && constraint.is_none()
-        && ((sampler.is_greedy() && !greedy_penalized) || sampler.temperature() > 0.0)
-        && !spec_sampling_for(&sampler).is_some_and(|sp| sp.pen_on())
-        && spec_restored.is_none()
-        && dspark_prefix_restored.is_none()
-        && let Some(carrier) = reused.as_ref()
-        && prefix_hit
-    {
-        let suffix_len = prompt.len().saturating_sub(carrier.fed.len());
-        // Empty-suffix full-cover hits keep the plain boundary-logits resume (faster than
-        // any prime); sub-floor suffixes keep the plain hit (the prime-floor law — a
-        // tokenwise suffix under a spec session is the exact two-programs door this lane
-        // closes). Both are hits, both bill cached, neither is a defect.
-        if suffix_len >= memra_engine::hybrid_forward::PRIME_MIN_T {
-            let tail_dkv = prefix_pin
-                .as_ref()
-                .and_then(|p| px.id_index(p))
-                .and_then(|i| px.entries[&pool_key][i].dspark_draft.as_ref())
-                .and_then(|tail| {
-                    let dr = lm.model.glm5_dflash.as_ref()?;
-                    memra_engine::dflash::DflashKv::from_tail(engine, &dr.draft.cfg, ctx_cap, tail)
-                });
-            match tail_dkv {
-                Some(dkv) => glm5_prefix_restored_dkv = Some(dkv),
-                None => eprintln!(
-                    "[prefix-cache] glm5 spec restore declined (no drafter tail on the \
-                     entry, or the tail does not cover the drafter window); the plain \
-                     path serves the hit (model {})",
-                    req.model,
-                ),
-            }
-        }
-    }
     // Downgrade-on-hit (lane/spec-prefix-cache): a restored prefix carrier without a
     // re-armed SpecSession is plain-session state — the plain path serves the hit exactly
     // as spec-off did at 8.5 req/s on the sold shape. Reached only when the entry carries
@@ -18349,33 +11954,6 @@ fn admit(
         if !params.eos.contains(&id) {
             params.eos.push(id);
         }
-    }
-    // POST-THINK arm (lane/step37-postthink-grammar): deliberately AFTER the eog union —
-    // the phase-1 mask bans the request's FINAL end-of-generation set, so the model cannot
-    // end the response inside the think channel on any stop id (the receipted step37
-    // EOS-inside-think quirk: finish=stop with empty content). Arming failure is a loud
-    // request error, never a silently unconstrained (or constrained-from-token-1) session.
-    if postthink {
-        let c = constraint.as_mut().expect("postthink implies a constraint");
-        let ceiling = crate::constrained::postthink_ceiling();
-        if let Err(err) = c.arm_postthink(
-            lm.postthink_close.clone(),
-            &params.eos,
-            lm.tok.vocab_size(),
-            ceiling,
-        ) {
-            return Err((
-                req.tx,
-                EngineError::engine(format!("post-think gate: {err}")),
-            ));
-        }
-        eprintln!(
-            "[postthink] model={:?} armed: close={:?} ceiling={ceiling} (0=off) -- think \
-             unconstrained with {} banned end ids, grammar engages at close, spec disengaged",
-            req.model,
-            lm.postthink_close,
-            params.eos.len(),
-        );
     }
 
     // Suffix-only prefill on a reuse hit; sampler penalty history replayed over the whole prefix.
@@ -19151,106 +12729,6 @@ fn admit(
         dspark_exact_key_present,
         has_exact_preprime_dspark_owner,
     );
-    // ---- GLM5 SPEC ROUTE decision (lane/glm5-spec-routing, 2026-08-30) ----
-    // Mutually exclusive with every other spec program BY MANIFEST: `mtp_spec_capable` is
-    // false for glm5 plans (MTP_SPEC's table has no hc/KDA/MLA classes — pinned by
-    // `the_two_spec_programs_never_both_claim_one_plan`), gemma needs a gemma drafter and
-    // dspark a dspark drafter, neither of which an hc model loads. K comes from the SAME
-    // spec-K policy surface as the qwen route (operator pin `MEMRA_SPEC_K` included),
-    // clamped to the verify walk's K+1 <= 15 decode-exact knee. The prefix cache is inert
-    // for this family (latent-bearing caches are refused by the capture guard), so there
-    // is no hit-vs-cold trade to price here.
-    let glm5_capable = glm5_spec_capable(lm);
-    let glm5_k = if glm5_capable {
-        let decision = choose_spec_k(
-            spec_k_pin(),
-            spec_gate_on(),
-            *spec_gate_thresholds(),
-            projected_wave,
-            prompt.len(),
-            0,
-            spec_trim_head(lm),
-        );
-        let clamped = glm5_clamp_spec_k(decision.k);
-        if clamped != decision.k {
-            eprintln!(
-                "[glm5-spec] K={} ({}) clamped to {clamped}: verify rows K+1 must stay \
-                 inside the decode-exact knee (hyper_batch_cap 15)",
-                decision.k,
-                decision.reason.as_str(),
-            );
-        }
-        // DFlash2 draft source (lane/glm5-dflash-draft-src): the drafter proposes at most
-        // block_size-1 tokens per round (its trained mask pattern, 7 on the pinned
-        // artifact) — clamp here, loudly; the engine burst refuses past it fail-closed.
-        match lm.model.glm5_dflash.as_ref() {
-            Some(dr) if clamped + 1 > dr.draft.cfg.block_size => {
-                let dk = dr.draft.cfg.block_size - 1;
-                eprintln!(
-                    "[glm5-spec] K={clamped} clamped to {dk}: the DFlash2 drafter blocks \
-                     {} tokens (anchor + {dk} drafts)",
-                    dr.draft.cfg.block_size
-                );
-                dk
-            }
-            _ => clamped,
-        }
-    } else {
-        0
-    };
-    let glm5_penalized =
-        greedy_penalized || spec_sampling_for(&sampler).is_some_and(|sp| sp.pen_on());
-    let glm5_cold = spec.is_none()
-        && spec_resumed == 0
-        && seed_fed.is_empty()
-        && cache.is_none()
-        && !dspark_on
-        && gspec_k == 0
-        && req_spec_k_replay.is_none();
-    // GLM5 SPEC RESTORE, half 2 of 2 (lane/glm5-prefix-latent2): a prefix-hit CARRIER with
-    // a rebuilt drafter KV admits the spec route — every OTHER cold-only term still holds
-    // (no live spec state of any family), only the "owns no cache" terms flip: the carrier
-    // IS the restored cache + prefix, consumed by the first spec tick (the gemma
-    // spec-on-cache-hit shape).
-    let glm5_restored_carrier = glm5_prefix_restored_dkv.is_some()
-        && spec.is_none()
-        && spec_resumed == 0
-        && !seed_fed.is_empty()
-        && cache.is_some()
-        && !dspark_on
-        && gspec_k == 0
-        && req_spec_k_replay.is_none();
-    let glm5_on = glm5_route_admits(
-        glm5_capable,
-        serve_spec,
-        glm5_k,
-        sampler.is_greedy() || sampler.temperature() > 0.0,
-        glm5_penalized,
-        constraint.is_some(),
-        vision_state.is_some(),
-        glm5_cold || glm5_restored_carrier,
-    );
-    // A carrier the route did not take (K shed to 0 under load, capability lost) serves
-    // the PLAIN hit — drop the drafter KV so the session literal below stays truthful and
-    // the tick dispatch can never see a dkv on a plain session.
-    if !(glm5_on && glm5_restored_carrier) {
-        glm5_prefix_restored_dkv = None;
-    }
-    if glm5_capable {
-        // Admission receipt (the [spec-k] shape): the deploy gate greps route+K per request.
-        eprintln!(
-            "[glm5-spec] route={} K={glm5_k} model={:?} tenant={:?} prompt={} \
-             wave={projected_wave} sampled={} penalized={} cold={} restored={}",
-            if glm5_on { "spec" } else { "plain" },
-            req.model,
-            crate::auth::meter_key(&req.cache_ns),
-            prompt.len(),
-            (sampler.temperature() > 0.0) as u8,
-            glm5_penalized as u8,
-            glm5_cold as u8,
-            glm5_prefix_restored_dkv.is_some() as u8,
-        );
-    }
     // legacy tokenwise cache only when the spec path did NOT take the session (spec owns its own).
     //
     // STAGE-OWNED KV (pp2-batch 2026-08-06): `pp::new_cache`, not `Cache::new`. With the ppN
@@ -19269,16 +12747,8 @@ fn admit(
     // a COLD session (gspec_k == 0, spec none, cache none, no seed), so the arms below
     // are mutually exclusive and with dspark off this expression is exactly the
     // spec-on-cache-hit lane's text.
-    // A glm5-spec session is the same shape: its cache is born inside
-    // glm5_spec_session_new at the first spec tick, and glm5_on requires a COLD session
-    // (glm5_cold above), so allocating a plain cache here would only be dropped —
-    // EXCEPT the restored carrier (lane/glm5-prefix-latent2): like the gemma
-    // spec-on-cache-hit shape, the restored trunk cache rides in s.cache and
-    // glm5_spec_session_from_restored takes it at the first spec tick.
-    let cache = if dspark_on || (glm5_on && glm5_prefix_restored_dkv.is_none()) {
+    let cache = if dspark_on {
         None
-    } else if glm5_on {
-        cache // the restored carrier (glm5_restored_carrier proved it Some)
     } else if gspec_k > 0 {
         if gspec_carrier { cache } else { None }
     } else {
@@ -19449,18 +12919,10 @@ fn admit(
     // suffix (H1), so its "deepened" seed would publish restore+decode_step chained
     // provenance and multiply traffic onto the H1 crossing. Same predicate as the ckpt
     // arm below; the qwen-class lever this fix targets is untouched by the exclusion.
-    // MEMRA_HYPER_SUFFIX_PRIME carve-out (lane/glm5-prefix-latent2): with a hyper trunk's
-    // carried suffix riding the PRIME program, the deepened seed is prime-provenance and
-    // R16's prerequisite is met — the "effective eager-only" below narrows exactly as the
-    // prefill_tick veto does, so an 8-turn conversation can deepen its entry every turn.
     if plain_hit_reseed_arms(
         prefix_hit,
         spec.is_none(),
-        eager_only_model(lm)
-            && !carried_suffix_primes(
-                memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan),
-                hyper_suffix_prime_on(),
-            ),
+        eager_only_model(lm),
         prompt.len(),
     ) {
         seed_prefix = true;
@@ -19545,16 +13007,6 @@ fn admit(
         // correct dispatch was byte-exact, including 414-prompt/64-budget.
         dspark_on: dspark_on || dspark_session_installed,
         dspark_capture_prefix,
-        // The glm5 dispatch flag follows the dspark convention: derived from the decision
-        // that shaped THIS literal, so the tick dispatch and the installed session cannot
-        // disagree. The restore fold (lane/glm5-prefix-latent2) rides the carrier shape:
-        // the dkv below is Some ONLY when glm5_on took the restored carrier, and the
-        // first spec tick consumes it together with s.cache + s.fed.
-        glm5: None,
-        glm5_on,
-        glm5_k,
-        glm5_restored_dkv: glm5_prefix_restored_dkv,
-        prompt_tok_decode_step: false,
         constraint,
         mask_dev: None,
         mask_words: 0,
@@ -19574,18 +13026,9 @@ fn admit(
         generated: Vec::new(),
         tokens_emitted: 0,
         aborted: false,
-        oom_teardown: false,
         params,
         stop_strings: req.stop_strings,
         trace_id: req.trace_id,
-        request_id: req.request_id,
-        admit_predict_logged: req.admit_predict_logged,
-        wire_deadline: req.wire_deadline,
-        // Booked by the worker loop at active.push (the admission charge is computed
-        // there); zero until then so a test-constructed Session books nothing.
-        booked_kv_bytes: 0,
-        shadow_kv_hat: 0,
-        shadow_pred_total: 0,
         decoded_bytes: Vec::new(),
         emitted_bytes: 0,
         budget,
@@ -19828,7 +13271,6 @@ fn dedup_interactive_prefixes(
     loaded: &HashMap<String, LoadedModel>,
     eager_only: &std::collections::HashSet<String>,
     px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
     active: &mut [Session],
     finished: &mut Vec<usize>,
     prefix_cap: usize,
@@ -19976,14 +13418,7 @@ fn dedup_interactive_prefixes(
             advanced.insert(i);
         }
 
-        let pin = px.insert_pinned_demoting(
-            &key,
-            entry,
-            "in-batch fanout",
-            participants.len(),
-            engine,
-            hpx,
-        );
+        let pin = px.insert_pinned(&key, entry, "in-batch fanout", participants.len());
         for &i in &participants {
             active[i].seed_prefix = false;
             if let Some(pin) = &pin {
@@ -20016,18 +13451,14 @@ fn dedup_interactive_prefixes(
 ///     Same chunking laws as step_session's prefill phase (PRIME_MIN_T floor, tail handling). The
 ///     tail-handling half of that claim was FALSE until 2026-08-13 — this site's merge was a no-op
 ///     while both sibling sites' worked; see the tail-merge comment inside.
-#[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn prefill_tick(
     engine: &Engine,
     loaded: &HashMap<String, LoadedModel>,
     px: &mut PrefixCache,
-    hpx: &mut HostPrefixCache,
     s: &mut Session,
     budget: usize,
     vision_tower: Option<&memra_engine::vision::VisionTower>,
     gemma_tower: Option<&memra_engine::vision_gemma::GemmaVisionTower>,
-    glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
-    step_tower: Option<&memra_engine::vision_step::StepVisionTower>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     if let Some(trace) = s.ttft.as_ref() {
         trace.mark_prime_start();
@@ -20050,11 +13481,8 @@ fn prefill_tick(
     {
         build_vision_overlay(
             engine,
-            lm.model.vision_intake_engine(engine)?,
             vision_tower,
             gemma_tower,
-            glm5_tower,
-            step_tower,
             lm.model.cfg.n_embd as usize,
             v,
         )?;
@@ -20062,7 +13490,7 @@ fn prefill_tick(
     let q = s.prefill_queue.len();
     if q == 0 {
         s.prefill_done = true;
-        maybe_prefix_seed(engine, px, hpx, s);
+        maybe_prefix_seed(engine, px, s);
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
@@ -20078,43 +13506,11 @@ fn prefill_tick(
     // LCP split is skipped (its boundary-stop would turn the tail into a continuation).
     let eager_mono = eager_only_model(lm);
     let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
-    // CARRIED-SUFFIX PRIME CARVE-OUT (lane/glm5-prefix-latent2, 2026-09-01): hyper trunks
-    // (glm5_next) are eager-only for BATCHING reasons, not prime reasons — their engine
-    // prime is continuation-capable (see `hyper_suffix_prime_on`), so with the flag armed
-    // a carried suffix takes the prime branch below instead of ~33 ms/token tokenwise.
-    let hyper_trunk = memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan);
-    let suffix_prime = carried_suffix_primes(hyper_trunk, hyper_suffix_prime_on());
-    if eager_mono
-        && carried
-        && !suffix_prime
-        && q > 0
-        && hyper_trunk
-        && s.n_cached > 0
-        && s.fed.len() == s.n_cached
-    {
-        // Loud DECLINED receipt, hyper trunks only (gemma's tokenwise suffix is by engine
-        // design, not a defect — logging it would spam every gemma reuse hit): the parent
-        // lane's C2 defect was only ever inferred from TTFT arithmetic; the deploy gate
-        // greps this line instead. `fed == n_cached` holds only before the first suffix
-        // token is consumed — once per admitted request (so once per TURN in a multi-turn
-        // conversation and once per sibling in an N-way fanout), never per token.
-        eprintln!(
-            "[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off): carried suffix \
-             {q} tokens rides tokenwise decode_step (model {})",
-            s.model
-        );
-    }
-    if eager_mono && !suffix_prime {
-        s.snapshot_at = None;
-    }
     if eager_mono {
+        s.snapshot_at = None;
         // eager-only models (gemma4) cannot continuation-prime a suffix over a rewound cache
         // (the engine refuses pos > 0 prime), so plain-affinity resume excludes them — no
-        // point capturing a checkpoint they can never resume from. This stays cleared for
-        // hyper trunks under the carve-out too: `maybe_plain_checkpoint` refuses to arm on
-        // latent-bearing caches in its own right (the parent lane's guard), so a checkpoint
-        // here could never be consumed — the LCP-split retention above is the deliberate
-        // delta, the checkpoint clearing is not.
+        // point capturing a checkpoint they can never resume from.
         s.ckpt_at = None;
     }
     // BOUNDARY STOP: the prime must stop exactly at the NEXT of two pre-generation boundaries
@@ -20141,21 +13537,10 @@ fn prefill_tick(
     if !confidence_trace_enabled()
         && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
         && budget >= memra_engine::hybrid_forward::PRIME_MIN_T
-        && !(eager_mono && carried && !suffix_prime)
+        && !(eager_mono && carried)
         && bound_rem.is_none_or(|r| r >= memra_engine::hybrid_forward::PRIME_MIN_T)
     {
         let take = prefill_tick_take(q, budget, eager_mono, bound_rem);
-        if eager_mono && carried && suffix_prime {
-            // ENGAGEMENT RECEIPT (lane/glm5-prefix-latent2): the deploy gate greps this —
-            // a restored-turn TTFT number alone cannot distinguish the prime program from
-            // a fast box (never-serve-greedy law's receipt discipline, applied here).
-            eprintln!(
-                "[suffix-prime] ENGAGED: carried suffix {take} of {q} tokens primes at \
-                 base={} (MEMRA_HYPER_SUFFIX_PRIME, model {})",
-                s.cache.as_ref().map_or(0, |c| c.pos),
-                s.model
-            );
-        }
         if std::env::var("MEMRA_DEBUG_PRIMESEG").is_ok() {
             // PRIME-PROGRAM RECEIPT (lane/spec-longctx-20260821). A cross-prime-path byte
             // comparison is only interpretable if the CALL SEQUENCE is known: the prime-grid
@@ -20211,21 +13596,6 @@ fn prefill_tick(
         }
         consumed = take;
     } else if let Some(tok) = s.prefill_queue.pop_front() {
-        // PROVENANCE BIT + TOKENWISE receipt (PR #93 review finding 3a/5): a hyper-trunk
-        // prompt token walking decode_step UNDER THE FLAG marks the session — the capture
-        // sites refuse to publish from it (R16 as a checked invariant; budget starvation,
-        // sub-floor suffixes and any future prime-branch veto all land in this branch).
-        // First-token receipt, once per session; non-hyper and flag-off sessions are
-        // byte-identical (the bit stays false).
-        if hyper_trunk && suffix_prime && !s.prompt_tok_decode_step {
-            s.prompt_tok_decode_step = true;
-            eprintln!(
-                "[suffix-prime] TOKENWISE (flag on): prompt tokens ride decode_step \
-                 (carried={}, q={q}, budget={budget}); captures for this session refuse \
-                 (model {})",
-                carried as u8, s.model
-            );
-        }
         if std::env::var("MEMRA_DEBUG_PRIMESEG").is_ok() {
             // The W1 two-programs door (see the comment above): prompt tokens going through
             // decode_step one at a time. Loud under the diagnostic so a byte comparison can
@@ -20279,18 +13649,7 @@ fn prefill_tick(
     // of the prompt as a continuation (the LCP-split learning insert).
     if s.snapshot_at == Some(s.fed.len()) {
         s.snapshot_at = None;
-        // PROVENANCE REFUSAL (PR #93 review finding 3a) — the seed site's twin: a
-        // decode_step-fed hyper-under-flag session publishes nothing (R16).
-        if s.prompt_tok_decode_step {
-            eprintln!(
-                "[suffix-prime] lcp-split capture REFUSED: prompt tokens rode decode_step \
-                 under MEMRA_HYPER_SUFFIX_PRIME; mixed-provenance entry not published \
-                 (model {})",
-                s.model
-            );
-        } else {
-            prefix_insert_from_session(engine, px, hpx, s, "lcp-split");
-        }
+        prefix_insert_from_session(engine, px, s, "lcp-split");
     }
     // PLAIN-AFFINITY: capture the pre-generation checkpoint the instant the prime reaches its
     // boundary (no-op unless s.ckpt_at == s.fed.len()). Cheap — one GDN-state snapshot.
@@ -20300,7 +13659,7 @@ fn prefill_tick(
         if let Some(c) = s.cache.as_ref() {
             kvprobe(engine, c, &s.last_logits, "prefill-done");
         }
-        maybe_prefix_seed(engine, px, hpx, s);
+        maybe_prefix_seed(engine, px, s);
         if let Some(trace) = s.ttft.as_ref() {
             trace.mark_prime_end();
         }
@@ -20357,18 +13716,6 @@ fn gemma4_batched_decode_model(lm: &LoadedModel) -> bool {
         == memra_engine::plan_backend::DecodeBatchProgram::Gemma
         && !lm.model.is_gemma4_e4b()
         && HybridModel::gemma4_batch_on()
-}
-
-/// BATCHED-DECODE carve-out for mHC (HyperConnections) trunks (lane/glm53-batched-decode,
-/// 2026-08-28): the engine's `decode_step_batch_hyper` walk — batched hc glue + MoE, per-
-/// session mixers, decode-exact seams, gate `glm5-hyper-batch-gate` — serves these sessions
-/// in batched chunks. OPT-IN (`MEMRA_HYPER_BATCH=1`, default OFF) until serving-box receipts
-/// land; the kill switch returns every session to the eager per-session decode. Like the
-/// gemma4 carve-out, ONLY the two decode scheduling sites consume this: prime batching,
-/// graph promotion, and every speculative entry point stay eager-only for this topology.
-fn hyper_batched_decode_model(lm: &LoadedModel) -> bool {
-    memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan)
-        && HybridModel::hyper_batch_on()
 }
 
 fn stage_grammar_mask(engine: &Engine, s: &mut Session) -> Result<(), String> {
@@ -20640,9 +13987,6 @@ struct DecodeChunkPolicy {
     wave_cap: usize,
     /// True only for the explicit native-peer `MEMRA_DUAL_PP=1` + `MEMRA_PP_OVERLAP=1` PP-2 arm.
     dual: bool,
-    /// Number of independently scheduled PP waves. One is the serial policy; PP2 retains the
-    /// legacy midpoint seam, while PP3/PP4 use the engine's deterministic anti-diagonal split.
-    stages: usize,
 }
 
 impl DecodeChunkPolicy {
@@ -20650,12 +13994,15 @@ impl DecodeChunkPolicy {
         Self {
             wave_cap,
             dual: false,
-            stages: 1,
         }
     }
 
     fn tick_cap(self) -> usize {
-        self.wave_cap.saturating_mul(self.stages)
+        if self.dual {
+            self.wave_cap.saturating_mul(2)
+        } else {
+            self.wave_cap
+        }
     }
 
     fn wave_mid(self, width: usize) -> Option<usize> {
@@ -20689,37 +14036,6 @@ fn resolve_decode_chunk_policy(
     DecodeChunkPolicy {
         wave_cap,
         dual: dual_requested && overlap_requested && pp2_ready && !host_bounce_active,
-        stages: if dual_requested && overlap_requested && pp2_ready && !host_bounce_active {
-            2
-        } else {
-            1
-        },
-    }
-}
-
-fn resolve_pp_wave_chunk_policy(
-    wave_cap: usize,
-    stages: usize,
-    requested: bool,
-    overlap_requested: bool,
-    host_bounce_active: bool,
-    repeated_device: bool,
-    batch_supported: bool,
-) -> DecodeChunkPolicy {
-    if requested
-        && overlap_requested
-        && !host_bounce_active
-        && !repeated_device
-        && batch_supported
-        && (3..=memra_engine::pp::PP_WAVE_MAX_STAGES).contains(&stages)
-    {
-        DecodeChunkPolicy {
-            wave_cap,
-            dual: false,
-            stages,
-        }
-    } else {
-        DecodeChunkPolicy::serial(wave_cap)
     }
 }
 
@@ -20737,25 +14053,6 @@ fn resolve_pp_wave_chunk_policy(
 /// real MIXED checkpoints. Before that, one missing class refused the whole model, so
 /// chunk 16 was unreachable for every shipped artifact, GGUF and FP8-ST alike.
 fn chunk_cap_for(lm: &LoadedModel) -> usize {
-    // mHC hyper trunks (lane/glm53-batched-decode, 2026-08-28): checked BEFORE the generic
-    // DECODE_BATCH capability read, which describes the GENERIC batched body and reports
-    // HyperConnections (and this topology's Mla/Kda mixer ops) unsupported — correctly, for
-    // that body. The hyper walk is its own program (`decode_step_batch_hyper`); admitting
-    // its ops into `decode_batch_support` would falsely flip SERIAL MLA plans (glm_dsa)
-    // to "supported" while the generic body panics on their mixers, so the manifest table
-    // stays conservative and this arm routes by topology instead. Qualifying a
-    // decode-batch surface for hyper plans in the manifest (so sealed rewrite bundles can
-    // select it) is named follow-up work. Cap = `HybridModel::hyper_batch_cap()` — DERIVED
-    // (PRIME_MIN_T - 1 = 15, the MoE shared-expert decode-exact knee; see that fn's audit),
-    // one source of truth with the engine body's refusal; the env door narrows only.
-    // Kill-switch-off returns 1 (unused: the model stays in eager_decode and never enters
-    // the chunks).
-    if memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan) {
-        if !hyper_batched_decode_model(lm) {
-            return 1;
-        }
-        return HybridModel::hyper_batch_cap();
-    }
     if !memra_engine::plan_backend::DECODE_BATCH
         .trunk_capabilities(&lm.model.plan)
         .batch
@@ -20813,59 +14110,17 @@ fn chunk_cap_for(lm: &LoadedModel) -> usize {
     }
 }
 
-fn decode_chunk_policy(lm: &LoadedModel, engine: &Engine) -> DecodeChunkPolicy {
+fn decode_chunk_policy(lm: &LoadedModel) -> DecodeChunkPolicy {
     let wave_cap = chunk_cap_for(lm);
-    // mHC hyper trunks form SERIAL ticks only: `decode_step_batch_dual` has no hyper arm
-    // and the scheduled entry refuses it by name, so the policy must never hand the engine
-    // a dual-wave midpoint for this topology (decode_step_batch_hyper owns the PP-N split
-    // as a serial stage walk).
-    if memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan) {
-        return DecodeChunkPolicy::serial(wave_cap);
-    }
-    let fence = memra_engine::pp::pp_cuts(lm.model.layers.len());
-    let pp_stages = fence.as_ref().map_or(1, |fence| fence.len() - 1);
-    let pp_ready = memra_engine::pp::batch_pp_on() && !memra_engine::pp::pp2_streams_off();
-    let pp2_ready = pp_ready && pp_stages == 2;
-    let dual = resolve_decode_chunk_policy(
+    let pp2_ready = memra_engine::pp::batch_pp_on()
+        && !memra_engine::pp::pp2_streams_off()
+        && memra_engine::pp::pp_cuts(lm.model.layers.len()).is_some_and(|fence| fence.len() == 3);
+    resolve_decode_chunk_policy(
         wave_cap,
         memra_engine::pp::dual_pp_on(),
         memra_engine::pp::pp2_overlap(),
         pp2_ready,
         memra_engine::pp::pp_host_bounce_active(),
-    );
-    if dual.stages > 1 {
-        return dual;
-    }
-    let batch_supported = memra_engine::plan_backend::DECODE_BATCH
-        .trunk_capabilities(&lm.model.plan)
-        .batch
-        .supported
-        && lm
-            .model
-            .rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::DecodeBatch);
-    let runtime = (pp_stages > 1)
-        .then(|| memra_engine::pp::PpNRt::get(engine).ok())
-        .flatten();
-    let wave_requested = pp_ready && matches!(memra_engine::pp::pp_wave_on(), Ok(true));
-    if wave_requested && !batch_supported {
-        eprintln!(
-            "[pp-wave] requested for a plan without a qualified batched decode rewrite; scheduler stays serial"
-        );
-    }
-    resolve_pp_wave_chunk_policy(
-        wave_cap,
-        pp_stages,
-        wave_requested,
-        memra_engine::pp::pp2_overlap(),
-        runtime
-            .as_ref()
-            .map_or_else(memra_engine::pp::pp_host_bounce_active, |rt| {
-                rt.host_bounce_active()
-            }),
-        runtime
-            .as_ref()
-            .is_some_and(|rt| rt.repeated_stage_device()),
-        batch_supported,
     )
 }
 
@@ -21097,15 +14352,6 @@ fn step_session(
     if s.dspark.is_some() {
         return Err(
             "plain step_session received a session holding a dspark spec session — \
-             dispatch flag disagrees with the installed session"
-                .into(),
-        );
-    }
-    // Same refusal class for the glm5 route: a glm5 session owns its cache (s.cache is
-    // None), so a plain step over it would decode coherent garbage from an empty context.
-    if s.glm5.is_some() {
-        return Err(
-            "plain step_session received a session holding a glm5 spec session — \
              dispatch flag disagrees with the installed session"
                 .into(),
         );
@@ -21412,42 +14658,12 @@ fn step_session(
         // EAGER-ONLY prime shape (lane/gemma4-serve-gaps): same law as prefill_tick —
         // gemma4 primes fresh prompts WHOLE (no chunked prime in the engine; chunk 2 used
         // to kill the worker) and carried suffixes tokenwise (no continuation prime).
-        // Hyper trunks carve out of the carried veto under MEMRA_HYPER_SUFFIX_PRIME
-        // exactly as in prefill_tick (lane/glm5-prefix-latent2 — one law, both sites).
         let eager_mono = eager_only_model(lm);
         let carried = s.cache.as_ref().is_some_and(|c| c.pos > 0);
-        let hyper_trunk = memra_engine::plan_backend::decode_batch_unconverted(&lm.model.plan);
-        let suffix_prime = carried_suffix_primes(hyper_trunk, hyper_suffix_prime_on());
-        if eager_mono
-            && carried
-            && !suffix_prime
-            && q > 0
-            && hyper_trunk
-            && s.n_cached > 0
-            && s.fed.len() == s.n_cached
-        {
-            // The prefill_tick DECLINED receipt's twin (PR #93 review finding 5): the
-            // per-session path's OFF-arm hyper suffix was silent. Same once-per-request
-            // predicate (`fed == n_cached` holds only before the first suffix token).
-            eprintln!(
-                "[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off): carried suffix \
-                 {q} tokens rides tokenwise decode_step (model {})",
-                s.model
-            );
-        }
         if !confidence_trace_enabled()
             && q >= memra_engine::hybrid_forward::PRIME_MIN_T.max(2)
-            && !(eager_mono && carried && !suffix_prime)
+            && !(eager_mono && carried)
         {
-            if eager_mono && carried && suffix_prime {
-                // The prefill_tick receipt's twin — same grep target, per-session path.
-                eprintln!(
-                    "[suffix-prime] ENGAGED: carried suffix {q} tokens primes at base={} \
-                     (MEMRA_HYPER_SUFFIX_PRIME, model {})",
-                    s.cache.as_ref().map_or(0, |c| c.pos),
-                    s.model
-                );
-            }
             // leave a tail chunk >= PRIME_MIN_T if this tick doesn't finish the queue
             let mut take = if eager_mono { q } else { q.min(PREFILL_TICK_T) };
             if q - take > 0 && q - take < memra_engine::hybrid_forward::PRIME_MIN_T {
@@ -21482,17 +14698,6 @@ fn step_session(
                 s.sampler.accept(tok);
             }
         } else if let Some(tok) = s.prefill_queue.pop_front() {
-            // PROVENANCE BIT + TOKENWISE receipt (PR #93 review finding 3a/5) — the
-            // prefill_tick twin: mark hyper-under-flag sessions whose prompt tokens walk
-            // decode_step so the capture sites refuse them (R16 as a checked invariant).
-            if hyper_trunk && suffix_prime && !s.prompt_tok_decode_step {
-                s.prompt_tok_decode_step = true;
-                eprintln!(
-                    "[suffix-prime] TOKENWISE (flag on): prompt tokens ride decode_step \
-                     (carried={}, q={q}); captures for this session refuse (model {})",
-                    carried as u8, s.model
-                );
-            }
             // CAPTURE (lane/embed-serve): the FINAL prompt token walks decode_step_h so
             // sub-prime-floor prompts can still pool their last position (same numeric
             // program; prime_cache hard-asserts T >= PRIME_MIN_T).
@@ -22036,186 +15241,6 @@ fn step_dspark_spec(
     Ok(true)
 }
 
-/// GLM5 SPEC per-tick step (lane/glm5-spec-routing, 2026-08-30): the glm5_next twin of
-/// step_dspark_spec — greedy or sampled (the session owns the SpecSampling + Philox
-/// counters; penalized requests never route here). Turn 1 primes the prompt inside
-/// `glm5_spec_session_new` (TTFT prime marks around it); every tick runs ONE
-/// `glm5_spec_session_burst` (MEMRA_SPEC_BURST cap, default 32) and emits the burst's
-/// public tokens through the same `emit_spec_token_events` machinery — one Event::Token
-/// per public id, EOS text never streamed, budget clamp via `spec_visible_len` (engine
-/// overshoot stays committed in the session cache, never in the worker's public vectors).
-/// Between bursts the scheduler round-robins batch chunks — the coexistence contract.
-fn step_glm5_spec(
-    engine: &Engine,
-    loaded: &HashMap<String, LoadedModel>,
-    s: &mut Session,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let lm = &loaded[&s.model];
-    debug_assert!(s.spec.is_none(), "a session cannot be on both spec routes");
-    debug_assert!(
-        s.gspec.is_none() && s.dspark.is_none(),
-        "a session cannot be on two drafter routes"
-    );
-    let k = s.glm5_k;
-    debug_assert!(k > 0, "plain sessions must not enter the glm5 spec round");
-    let request_room = s.budget.saturating_sub(s.generated.len());
-    if request_room == 0 {
-        finish(s, StopReason::MaxNew);
-        return Ok(false);
-    }
-    // turn 1: prime (the session owns its cache; s.cache stays None). Cold sessions drain
-    // the whole prompt from the prefill queue; the RESTORED carrier (lane/glm5-prefix-
-    // latent2) drains only the suffix — the restored prefix already sits in s.fed and the
-    // restored trunk cache in s.cache (the gemma spec-on-cache-hit shape), and the dkv
-    // admission rebuilt from the entry's tail rides s.glm5_restored_dkv.
-    if s.glm5.is_none() {
-        let queued: Vec<u32> = s.prefill_queue.drain(..).collect();
-        if queued.is_empty() {
-            finish(s, StopReason::MaxNew);
-            return Ok(false);
-        }
-        if let Some(trace) = s.ttft.as_ref() {
-            trace.mark_prime_start();
-        }
-        // Sampled admission (T>0): the ONE Sampler->SpecSampling seam (spec_sampling_for),
-        // same as the frspec/dspark routes — None = greedy, byte-identical instrument route.
-        let sess = match s.glm5_restored_dkv.take() {
-            Some(dkv) => {
-                let restored = s
-                    .cache
-                    .take()
-                    .ok_or("glm5 restored dkv without a carrier cache (admission literal bug)")?;
-                lm.model
-                    .glm5_spec_session_from_restored(
-                        engine,
-                        restored,
-                        &s.fed,
-                        &queued,
-                        dkv,
-                        s.gspec_ctx,
-                        spec_sampling_for(&s.sampler),
-                    )
-                    // A restored-arm refusal is an invariant break (admission pre-validated
-                    // the shape): fail loudly rather than silently switching numeric
-                    // programs mid-request — the dspark law, same as the cold arm below.
-                    .map_err(|err| format!("glm5 spec restore prime failed: {err}"))?
-            }
-            None => match lm.model.glm5_spec_session_new(
-                engine,
-                &queued,
-                s.gspec_ctx,
-                spec_sampling_for(&s.sampler),
-            ) {
-                Ok(sess) => sess,
-                Err(err) => {
-                    // Prime-time refusal (ctx shape, alloc failure): fail the request loudly
-                    // rather than silently switching numeric programs mid-request — admission
-                    // is where the plain fallback lives (the dspark law).
-                    return Err(format!("glm5 spec prime failed: {err}").into());
-                }
-            },
-        };
-        if let Some(trace) = s.ttft.as_ref() {
-            trace.mark_prime_end();
-        }
-        for &tok in &queued {
-            s.fed.push(tok);
-            s.sampler.accept(tok);
-        }
-        s.prefill_done = true;
-        s.glm5 = Some(sess);
-    }
-    let burst_t: usize = std::env::var("MEMRA_SPEC_BURST")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(32);
-    let burst_target = request_room.min(burst_t);
-    let sess = s.glm5.as_mut().unwrap();
-    let rounds_before = sess.rounds;
-    let (burst, dr, ac) =
-        lm.model
-            .glm5_spec_session_burst(engine, sess, burst_target, k, &s.params.eos)?;
-    let rounds_delta = s.glm5.as_ref().unwrap().rounds - rounds_before;
-    s.spec_rounds += rounds_delta as u64;
-    s.spec_drafted += dr;
-    s.spec_accepted += ac;
-    if dr > 0 {
-        // PER-REQUEST ENGAGEMENT RECEIPT (the q38 [dspark-acc] shape): the deploy gate
-        // greps this line for spec engagement — a 200 alone proves nothing
-        // (never-serve-greedy law). usage.spec (rounds/drafted/accepted) rides the same
-        // counters through finish().
-        eprintln!(
-            "[glm5-acc] ctx={} burst={}/{} cum={}/{}={:.3}",
-            s.fed.len(),
-            ac,
-            dr,
-            s.spec_accepted,
-            s.spec_drafted,
-            s.spec_accepted as f64 / s.spec_drafted.max(1) as f64
-        );
-    }
-    if let Some(trace) = s.ttft.as_ref()
-        && !burst.is_empty()
-    {
-        trace.mark_first_decode();
-    }
-    let eos_ids = s.params.eos.clone();
-    let public_len = spec_visible_len(&burst, request_room, &eos_ids);
-    let public_burst = &burst[..public_len];
-    let mut decoded_visible = std::mem::take(&mut s.decoded_bytes);
-    let mut cursor = s.emitted_bytes;
-    let mut emit_remaining = request_room;
-    let mut eos_seen = false;
-    let tok_ref = &lm.tok;
-    let emitted = emit_spec_token_events(
-        public_burst,
-        &mut emit_remaining,
-        &mut decoded_visible,
-        &mut cursor,
-        &eos_ids,
-        &mut eos_seen,
-        |id| tok_ref.decode_bytes_special(&[id], true),
-        |event| s.tx.send(event).is_ok(),
-    );
-    let mut stop: Option<StopReason> = None;
-    for &tok in public_burst {
-        s.sampler.accept(tok);
-        s.generated.push(tok);
-        s.fed.push(tok);
-        if s.params.eos.contains(&tok) {
-            stop = Some(StopReason::Eos);
-            break;
-        }
-    }
-    s.tokens_emitted += emitted.sent;
-    s.emitted_bytes = cursor;
-    s.decoded_bytes = decoded_visible;
-    if !emitted.send_ok {
-        abort_log(s);
-        return Ok(false);
-    }
-    debug_assert_eq!(
-        emitted.sent, public_len,
-        "one token event per public glm5 spec token"
-    );
-    if stop.is_none() && contains_stop_string(&s.decoded_bytes, &s.stop_strings) {
-        stop = Some(StopReason::Callback);
-    }
-    if stop.is_none() && s.generated.len() >= s.budget {
-        stop = Some(StopReason::MaxNew);
-    }
-    // The engine marks the session done on EOS or when the next verify round would overflow
-    // the session ctx; EOS/budget above take precedence for the reason.
-    if stop.is_none() && s.glm5.as_ref().unwrap().finished() {
-        stop = Some(StopReason::ContextFull);
-    }
-    if let Some(r) = stop {
-        finish(s, r);
-        return Ok(false);
-    }
-    Ok(true)
-}
-
 fn abort_log(s: &mut Session) {
     s.aborted = true;
     eprintln!(
@@ -22229,369 +15254,17 @@ fn abort_log(s: &mut Session) {
     );
 }
 
-fn retire_may_park(aborted: bool, oom_teardown: bool) -> bool {
-    !aborted && !oom_teardown
-}
-
-/// Run `f` on every device engine a serving process can hold state on: the worker's
-/// primary engine, every PP stage engine, and every Step-TP rank engine
-/// (lane/step37-vram-admission-20260830). Used by the step-OOM teardown fence and the
-/// post-teardown pool trim — both must cover EVERY device a torn-down session's caches
-/// lived on, not just the primary.
-fn for_each_device_engine(
-    engine: &Engine,
-    loaded: &HashMap<String, LoadedModel>,
-    f: &mut dyn FnMut(usize, &Engine),
-) {
-    let mut seen = std::collections::HashSet::new();
-    let primary = engine.ctx().ordinal();
-    seen.insert(primary);
-    f(primary, engine);
-    if let Ok(runtime) = memra_engine::pp::PpNRt::get(engine) {
-        for stage in 0..runtime.n_stages() {
-            let stage_engine = runtime.engine(stage, engine);
-            if seen.insert(stage_engine.ctx().ordinal()) {
-                f(stage_engine.ctx().ordinal(), stage_engine);
-            }
-        }
-    }
-    for lm in loaded.values() {
-        // Bounded scan: CUDA device ordinals are small; step_tp_rank_engine returns the
-        // rank engine owning that device's TP allocations, None where there is none.
-        for device in 0..16usize {
-            if seen.contains(&device) {
-                continue;
-            }
-            if let Some(rank_engine) = lm.model.step_tp_rank_engine(device) {
-                seen.insert(device);
-                f(device, rank_engine);
-            }
-        }
-    }
-}
-
-/// STEP-OOM TEARDOWN FENCE (lane/step37-vram-admission-20260830, defect 3): synchronize
-/// every device stream BEFORE a step-OOM'd session's device state drops. The multi-active
-/// park cliff was a silent fleet-fatal segfault in libcuda (same fault offset, reproduced
-/// at 4 and 8 active sessions, dmesg-only): with peers still stepping in the same tick,
-/// the torn-down session's graph-exec destroys and pool frees raced work the aborted step
-/// had left in flight. Single-active parks ran 18x clean because the error path had
-/// already drained the stream. A fence failure is LOUD and the drop proceeds — there is
-/// no safer alternative at that point, but the log names the risk instead of hiding it.
-fn oom_teardown_fence(engine: &Engine, loaded: &HashMap<String, LoadedModel>) {
-    for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
-        if let Err(err) = dev_engine.stream().synchronize() {
-            eprintln!(
-                "[admit-oom] WARN: step-OOM teardown fence sync failed on dev{device}: {err}"
-            );
-        }
-    });
-}
-
-/// BOOT ADMISSION CALIBRATION door (lane/step37-vram-admission-20260830), DEFAULT ON.
-/// `MEMRA_ADMIT_CALIBRATE=0` skips the boot probe and keeps the static
-/// `SPEC_SHRINK_RESERVE` transient floor (the pre-lane behavior, which the step37
-/// capacity lane measured 4.6x low on a medium-class deployment).
-fn admit_calibrate_on() -> bool {
-    std::env::var("MEMRA_ADMIT_CALIBRATE").as_deref() != Ok("0")
-}
-
-/// Pure arithmetic of the calibrated transient floor (unit-testable): the probe device's
-/// pool-used high-water dip above its post-probe rest, minus the state classes admission
-/// charges separately (the probe session's context-linear KV and its measured draft-graph
-/// state). What remains is the RECURRING first-burst transient — capture arenas, verify
-/// activations, prime chunk slabs — the reserve exists to hold room for.
-fn calibration_transient_floor(
-    used_high: usize,
-    used_rest: usize,
-    charged_kv: usize,
-    charged_draft: usize,
-) -> usize {
-    used_high
-        .saturating_sub(used_rest)
-        .saturating_sub(charged_kv)
-        .saturating_sub(charged_draft)
-}
-
-/// BOOT ADMISSION CALIBRATION (lane/step37-vram-admission-20260830, defect 1): measure the
-/// deployment's REAL first-burst transient BEFORE the first customer request, and charge it
-/// as the admission transient floor. The static `SPEC_SHRINK_RESERVE` (1,611 MB) was
-/// calibrated on a small-model control fit and under-charged a medium-class deployment
-/// 4.6x (measured 7,458 MiB), so admission admitted past the card with zero defers and the
-/// card hard-failed from a clean boot.
-///
-/// The probe runs ONE spec-shaped generation through the real serving path (chunked prime +
-/// draft capture + sampled verify) on a synthetic one-chunk prompt — a memory-shape probe,
-/// never a perf cell — then reads the driver-kept pool high-water on every device. It also
-/// leaves the process warm in exactly the way a first request would (dspark/vg pools, prime
-/// slabs, cuBLAS workspaces are materialized at boot instead of surprising request 1), and
-/// it supplies the first per-session draft-state observation the admission cost charges.
-/// Failure is LOUD and non-fatal: the static floor serves, headroom is trimmed back.
-fn run_boot_calibration(
-    engine: &Engine,
-    loaded: &HashMap<String, LoadedModel>,
-    dspark_drafts: &HashMap<String, memra_engine::dflash::DflashDraft>,
-    admission_costs: &mut HashMap<String, AdmissionCostModel>,
-) {
-    if !admit_calibrate_on() {
-        eprintln!(
-            "[admit-cal] boot calibration disarmed (MEMRA_ADMIT_CALIBRATE=0); static \
-             transient floor serves"
-        );
-        return;
-    }
-    if !serve_spec_enabled() {
-        eprintln!(
-            "[admit-cal] boot calibration skipped: spec serving disabled (static floor; \
-             the plain transient class is chunk-bounded)"
-        );
-        return;
-    }
-    if admit_reserve_override().is_some() {
-        eprintln!(
-            "[admit-cal] boot calibration skipped: MEMRA_ADMIT_RESERVE_MB teeth door \
-             overrides the floor anyway"
-        );
-        return;
-    }
-    for (name, lm) in loaded {
-        // ROUTE SELECTION (lane/graph-launch-guard-sweep-20260831, fleet-peer refuted-read
-        // fix): calibrate the SERVED route, not the capability bit. A dspark-armed model
-        // has its MTP spec arm DISABLED (refuse-on-ambiguity at drafter attach), so the
-        // old `mtp_spec_capable` key probed a route serving never runs and its
-        // draft-state figure was then charged at every spec admission for state the
-        // dspark route never allocates. It also skipped MTP-skipped dspark boots
-        // entirely, leaving their dspark transient class on the static floor.
-        let dspark_draft = dspark_drafts.get(name);
-        if dspark_draft.is_none() && !mtp_spec_capable(lm) {
-            continue;
-        }
-        let route = if dspark_draft.is_some() {
-            "dspark"
-        } else {
-            "mtp"
-        };
-        let t0 = Instant::now();
-        // Synthetic one-chunk prompt: this is a MEMORY-SHAPE probe (the transient classes
-        // scale with chunk geometry and capture shapes, not with prompt semantics).
-        let seed_ids = lm.tok.encode(
-            &"The quick brown fox jumps over the lazy dog. ".repeat(64),
-            true,
-        );
-        if seed_ids.len() < 2 {
-            eprintln!("[admit-cal] {name:?}: empty probe prompt after tokenization; skipped");
-            continue;
-        }
-        let target = 4096usize;
-        let mut prompt = seed_ids.clone();
-        while prompt.len() < target {
-            prompt.extend_from_slice(&seed_ids[1..]);
-        }
-        prompt.truncate(target);
-        let max_new = 64usize;
-        let probe_ctx = prompt.len() + max_new + 64;
-        for_each_device_engine(engine, loaded, &mut |_device, dev_engine| {
-            let _ = dev_engine.pool_high_water_reset();
-        });
-        // Vendor-shaped FILTERED sampling with a pinned seed: engages the sampled
-        // draft-chain capture (the widest arena) through the same doors serving uses.
-        let sampling = memra_engine::spec::SpecSampling {
-            temp: 0.7,
-            seed: 0xADC1_CA1B,
-            top_k: 0,
-            top_p: 0.9,
-            min_p: 0.0,
-            penalty_last_n: 0,
-            penalty_repeat: 1.0,
-            penalty_freq: 0.0,
-            penalty_present: 0.0,
-        };
-        let probe = (|| -> Result<(usize, usize), Box<dyn std::error::Error>> {
-            match dspark_draft {
-                // The served dspark route: same sampled shape through the same session
-                // doors serving uses (dspark session prime + one committed burst). The
-                // MTP draft-graph capture never runs here, so `record_draft_state_bytes`
-                // never observes phantom MTP state on a dspark box.
-                Some(draft) => {
-                    let mut sess = lm.model.dspark_spec_session_new(
-                        engine,
-                        draft,
-                        &prompt,
-                        probe_ctx,
-                        Some(sampling),
-                        false,
-                    )?;
-                    let (_out, drafted, accepted) = lm.model.dspark_spec_session_burst(
-                        engine,
-                        draft,
-                        &mut sess,
-                        max_new,
-                        max_new,
-                        &[],
-                    )?;
-                    Ok((drafted, accepted))
-                }
-                None => {
-                    let mut sess = lm.model.new_session(engine, probe_ctx)?;
-                    let (_out, drafted, accepted) = lm.model.generate_spec_session_sampled(
-                        engine,
-                        &mut sess,
-                        &prompt,
-                        max_new,
-                        3,
-                        Some(sampling),
-                        None,
-                    )?;
-                    Ok((drafted, accepted))
-                }
-            }
-        })();
-        match probe {
-            Err(err) => {
-                eprintln!(
-                    "[admit-cal] boot calibration FAILED: model={name:?} route={route} \
-                     ({err}); static transient floor retained"
-                );
-                // Recover whatever headroom the failed attempt stranded in the pool.
-                oom_teardown_fence(engine, loaded);
-                for_each_device_engine(engine, loaded, &mut |_device, dev_engine| {
-                    let _ = dev_engine.pool_trim_to_zero();
-                });
-                continue;
-            }
-            Ok((drafted, accepted)) => {
-                // Drain every stream so the probe session's frees have landed before the
-                // rest-state reads below.
-                oom_teardown_fence(engine, loaded);
-                let charged_kv = admission_costs[name].context_bytes(probe_ctx, true);
-                let charged_draft = lm.model.draft_session_admission_bytes();
-                let tp_kv = lm
-                    .model
-                    .step_tp_unmaterialized_kv_bytes(None, probe_ctx)
-                    .unwrap_or_default();
-                let primary = engine.ctx().ordinal();
-                // Read the driver-visible peak (RESERVED high watermark: everything the pool
-                // MAPPED at the burst's deepest point), then TRIM, then read what stays live.
-                // The floor is the DRIVER-VISIBLE dip minus the separately charged classes.
-                // The first instrument used the pool-USED watermark and under-read ~2x: a
-                // burst's transient peak is mapped-from-the-driver reserved growth (plus
-                // driver-side graph/cuBLAS allocations the pool never sees), and the
-                // admission gate spends driver-visible free — the floor must be in the same
-                // currency (measured escalation, owner-shape cells).
-                let mut highs: Vec<(usize, usize, usize)> = Vec::new();
-                for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
-                    let (res_high, used_high) = dev_engine.pool_high_water_reset();
-                    highs.push((device, res_high, used_high));
-                });
-                // POST-PROBE POOL TRIM (measured on the med-class c=8 cell): the probe's
-                // freed blocks sit CACHED in the async pool where only pool allocations can
-                // reuse them, while eager serving still takes DRIVER allocations (cuBLAS
-                // workspaces, graph plumbing). Hand the cache back; the pool re-maps on
-                // demand (a few one-time re-maps, never a per-token cost class).
-                let mut trimmed = 0usize;
-                for_each_device_engine(engine, loaded, &mut |_device, dev_engine| {
-                    trimmed += dev_engine.pool_trim_to_zero();
-                });
-                if trimmed > 0 {
-                    eprintln!(
-                        "[admit-cal] post-probe pool trim: released {}MB cached back to \
-                         the driver",
-                        trimmed / (1 << 20)
-                    );
-                }
-                let mut floor_meas = 0usize;
-                let mut parts: Vec<String> = Vec::new();
-                for_each_device_engine(engine, loaded, &mut |device, dev_engine| {
-                    let (res_rest, _used_rest) = dev_engine.pool_reserved_used();
-                    let res_high = highs
-                        .iter()
-                        .find(|(d, _, _)| *d == device)
-                        .map(|(_, r, _)| *r)
-                        .unwrap_or(0);
-                    let mut charged = tp_kv
-                        .iter()
-                        .find(|charge| charge.device == device)
-                        .map(|charge| charge.bytes)
-                        .unwrap_or(0);
-                    if device == primary {
-                        charged = charged
-                            .saturating_add(charged_kv)
-                            .saturating_add(charged_draft);
-                    }
-                    let dev_floor = calibration_transient_floor(res_high, res_rest, charged, 0);
-                    parts.push(format!(
-                        "dev{device} peak-mapped {}MB rest-mapped {}MB charged {}MB -> {}MB",
-                        res_high / (1 << 20),
-                        res_rest / (1 << 20),
-                        charged / (1 << 20),
-                        dev_floor / (1 << 20),
-                    ));
-                    floor_meas = floor_meas.max(dev_floor);
-                });
-                let floor = floor_meas.max(SPEC_SHRINK_RESERVE);
-                if let Some(model) = admission_costs.get_mut(name) {
-                    model.transient_floor = Some(floor);
-                }
-                eprintln!(
-                    "[admit-cal] boot calibration done: model={name:?} route={route} \
-                     transient floor \
-                     {}MB (static was {}MB; measured {}MB; probe kv charge {}MB, \
-                     draft-state {}MB, drafted {drafted} accepted {accepted}; [{}]; {:.1}s)",
-                    floor / (1 << 20),
-                    SPEC_SHRINK_RESERVE / (1 << 20),
-                    floor_meas / (1 << 20),
-                    charged_kv / (1 << 20),
-                    charged_draft / (1 << 20),
-                    parts.join("; "),
-                    t0.elapsed().as_secs_f64(),
-                );
-            }
-        }
-    }
+fn retire_may_park(aborted: bool) -> bool {
+    !aborted
 }
 
 #[cfg(test)]
 mod abort_park_tests {
     #[test]
     fn aborted_sessions_never_publish_reusable_kv() {
-        assert!(super::retire_may_park(false, false));
-        assert!(!super::retire_may_park(true, false));
+        assert!(super::retire_may_park(false));
+        assert!(!super::retire_may_park(true));
     }
-
-    #[test]
-    fn oom_teardown_sessions_never_publish_reusable_kv() {
-        // The step-OOM park contract: caches DROP (freeing exactly the VRAM the retry
-        // needs). A pool-park would keep the VRAM alive and starve the requeued retry —
-        // and the pending-carry flush would run a GPU pass on a card that just proved
-        // full (lane/step37-vram-admission-20260830).
-        assert!(!super::retire_may_park(false, true));
-        assert!(!super::retire_may_park(true, true));
-    }
-}
-
-/// The POST-THINK fail-closed terminal (lane/step37-postthink-grammar review fix): the
-/// named, client-actionable error for a `response_format` request whose generation ended
-/// inside the think channel (the grammar never engaged, so no schema-constrained content
-/// exists). 400 invalid_request_error, param = the request field that ended generation.
-/// Pure so both faces are pinned GPU-free.
-fn postthink_unclosed_error(reason: StopReason, think_tokens: u64) -> EngineError {
-    let (cause, param): (&str, &'static str) = match reason {
-        StopReason::MaxNew => ("max_tokens was reached", "max_tokens"),
-        StopReason::Callback => ("a stop sequence matched", "stop"),
-        StopReason::ContextFull => ("the context window filled", "max_tokens"),
-        // EOS is banned inside think by construction; defensive arm, same failure face.
-        StopReason::Eos => ("generation ended", "max_tokens"),
-    };
-    EngineError::invalid_param(
-        format!(
-            "response_format could not be honored: {cause} inside the model's reasoning \
-             channel after {think_tokens} reasoning tokens, before the think-close token, \
-             so no schema-constrained content was produced. This model reasons before \
-             answering; raise max_tokens (stream for large budgets), or have the operator \
-             set MEMRA_POSTTHINK_CEILING to force the reasoning to close at a bound"
-        ),
-        param,
-    )
 }
 
 fn finish(s: &Session, reason: StopReason) {
@@ -22612,35 +15285,6 @@ fn finish(s: &Session, reason: StopReason) {
                 c.mask_ns as f64 / 1e6,
                 c.mask_ns as f64 / 1e6 / c.steps as f64
             );
-        }
-        // POST-THINK receipt (lane/step37-postthink-grammar): think-phase token count and
-        // HOW the phase closed — the model's own close token(s), the ceiling's forced
-        // close, or never.
-        if let Some((think_tokens, closed, forced)) = c.postthink_receipt() {
-            eprintln!(
-                "[postthink] {}: think tokens {}, close {}",
-                s.model,
-                think_tokens,
-                if !closed {
-                    "NEVER (generation ended inside think; failing closed)"
-                } else if forced {
-                    "FORCED by MEMRA_POSTTHINK_CEILING"
-                } else {
-                    "emitted by the model"
-                },
-            );
-            // FAIL CLOSED (review fix, 2026-08-30): a response_format request whose
-            // generation ended INSIDE the think channel produced zero schema-constrained
-            // content — a 200 with `content: ""` here is a success a structured-output
-            // client cannot distinguish from the contract being honored, which is exactly
-            // the violation this feature exists to prevent. The terminal becomes a NAMED
-            // error instead (400 invalid_request_error non-streaming; the mid-stream
-            // error object + close when streaming), never a normal finish.
-            if !closed {
-                let err = postthink_unclosed_error(reason, think_tokens);
-                let _ = s.tx.send(Event::Error(err));
-                return;
-            }
         }
         // DRAFT-SIDE MASKING receipt (lane/draft-mask): the speculative Matcher clone (one per
         // spec round) and the draft-position masks computed on it — the two costs the lane adds.
@@ -22911,7 +15555,6 @@ mod tests {
     use super::context_cache_bytes;
     use super::dead_prime_kill_switch_refusal;
     use super::plain_chat_render_path;
-    use super::removed_bank_v2_doors_refusal;
     use super::{
         ADSD_MIN_RATE_DROP, ADSD_SUSTAINED_OBSERVATIONS, ADSD_TENANT_WINDOW, ADSD_Z_THRESHOLD,
         AdsdDetector,
@@ -22920,23 +15563,12 @@ mod tests {
         AdmissionCostModel, AdmissionDeviceHeadroom, AdmissionHeadroom, MAX_NEW_CTX_BOUNDED,
         MAX_PROMPT_SOURCE_BYTES, ParkedCandidate, ParkedPool, Request, ReuseMetrics,
         SPEC_SHRINK_RESERVE, admission_required, admission_reserve,
-        alloc_with_single_reclaim_retry, calibration_transient_floor, enforce_prompt_limit,
-        is_cuda_oom, oldest_parked_candidate, parallel_device_requirements, parked_entry_count,
-        pp_admission_stage_count, pp_boundary_slot_bytes, pp_boundary_token_cap_resolve,
-        pp_device_requirements, pp_stage_admissions, pp_stage_observed_residuals, prepare_park,
-        prompt_source_limit_error, request_ctx_cap,
+        alloc_with_single_reclaim_retry, dual_pp_boundary_slot_bytes, dual_pp_device_requirements,
+        dual_pp_stage_admission, enforce_prompt_limit, is_cuda_oom, oldest_parked_candidate,
+        parallel_device_requirements, parked_entry_count, prepare_park, prompt_source_limit_error,
+        request_ctx_cap,
     };
-    use super::{
-        DEFAULT_PREFIX_CACHE_PROTECTED_PCT, HostPrefixCache, HostPrefixEntry,
-        PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PartialPrefixDecision, PoolKey,
-        PrefixCache, PrefixEntry, PrefixFanoutCandidate, PrefixFanoutGroup, PrefixSegment,
-        host_promote_candidate, partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
-        stable_boundary_arm, validate_prefix_plane_shape,
-    };
-    use super::{
-        DecodeChunkPolicy, resolve_decode_chunk_policy, resolve_pp_wave_chunk_policy,
-        schedule_decode_chunk,
-    };
+    use super::{DecodeChunkPolicy, resolve_decode_chunk_policy, schedule_decode_chunk};
     use super::{DraftVerdict, draft_verdict, draft_verdict_message};
     use super::{
         Event, cached_hit_needs_first_token, carried_prime_batch_eligible, emit_spec_token_events,
@@ -22946,11 +15578,15 @@ mod tests {
         summarize_confidence, utf8_delta,
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
-    use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
     use super::{
         PREFIX_CACHE_DEFAULT_ENTRIES, derived_prefix_cache_budget, prefix_entry_geometry_bytes,
     };
-    use super::{PpFreeSnapshot, concat_prime_pp_eligibility};
+    use super::{
+        PREFIX_CACHE_MIN_TOKENS, PREFIX_ENTRY_LAYOUT_VERSION, PartialPrefixDecision, PoolKey,
+        PrefixCache, PrefixEntry, PrefixFanoutCandidate, PrefixFanoutGroup, PrefixSegment,
+        partial_prefix_decision, prefix_fanout_groups, retire_prefix_pin,
+        validate_prefix_plane_shape,
+    };
     use super::{
         RuntimePeerProbeDeferralState, RuntimePeerProbeWorkerAction, peer_probe_spec_admission,
         resolve_runtime_peer_probe_deferral_bound, runtime_peer_probe_allowed,
@@ -22993,16 +15629,11 @@ mod tests {
             prepared_constraint: None,
             constraint_ready: None,
             prepared_prompt: None,
-            request_id: String::new(),
-            admit_predict_logged: false,
             ttft: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
-            glm5_images: Vec::new(),
-            step_images: Vec::new(),
             capture: None,
             vision_memory: None,
-            wire_deadline: None,
             tx,
         }
     }
@@ -23396,15 +16027,10 @@ mod tests {
             prepared_constraint: None,
             constraint_ready: Some(ready_tx),
             prepared_prompt: None,
-            request_id: String::new(),
-            admit_predict_logged: false,
             images: Vec::new(),
             gemma_images: Vec::new(),
-            glm5_images: Vec::new(),
-            step_images: Vec::new(),
             capture: None,
             vision_memory: None,
-            wire_deadline: None,
             ttft: None,
             tx: bad_tx,
         });
@@ -23563,7 +16189,6 @@ mod tests {
             DecodeChunkPolicy {
                 wave_cap: 8,
                 dual: true,
-                stages: 2,
             },
         );
         assert_eq!(scheduled.wave_mid, Some(3));
@@ -23571,106 +16196,6 @@ mod tests {
         let mid = scheduled.wave_mid.unwrap();
         assert_eq!(&scheduled.rows[..mid], &[(10, 100), (11, 101), (20, 200)]);
         assert_eq!(&scheduled.rows[mid..], &[(21, 201), (30, 300)]);
-    }
-
-    #[test]
-    fn pp_wave_scheduler_expands_pp3_and_pp4_only_on_the_qualified_shape() {
-        let pp3 = resolve_pp_wave_chunk_policy(8, 3, true, true, false, false, true);
-        assert_eq!(pp3.tick_cap(), 24);
-        assert_eq!(pp3.stages, 3);
-        assert!(!pp3.dual);
-        assert_eq!(pp3.wave_mid(24), None);
-
-        let pp4 = resolve_pp_wave_chunk_policy(8, 4, true, true, false, false, true);
-        assert_eq!(pp4.tick_cap(), 32);
-        assert_eq!(pp4.stages, 4);
-
-        for serial in [
-            resolve_pp_wave_chunk_policy(8, 2, true, true, false, false, true),
-            resolve_pp_wave_chunk_policy(8, 5, true, true, false, false, true),
-            resolve_pp_wave_chunk_policy(8, 4, false, true, false, false, true),
-            resolve_pp_wave_chunk_policy(8, 4, true, false, false, false, true),
-            resolve_pp_wave_chunk_policy(8, 4, true, true, true, false, true),
-            resolve_pp_wave_chunk_policy(8, 4, true, true, false, true, true),
-            resolve_pp_wave_chunk_policy(8, 4, true, true, false, false, false),
-        ] {
-            assert_eq!(serial, DecodeChunkPolicy::serial(8));
-        }
-    }
-
-    #[test]
-    fn overlap_off_is_serial_in_both_worker_policy_and_engine_route() {
-        let policy = resolve_pp_wave_chunk_policy(8, 4, true, false, false, false, true);
-        assert_eq!(policy, DecodeChunkPolicy::serial(8));
-        assert!(!memra_engine::pp::pp_wave_route_enabled(
-            true,
-            false,
-            4,
-            policy.tick_cap(),
-        ));
-    }
-
-    #[test]
-    fn pp_boundary_capacity_covers_only_reachable_prime_shapes() {
-        assert_eq!(pp_boundary_token_cap_resolve(128, 8, false, 6, 2048), 128);
-        assert_eq!(pp_boundary_token_cap_resolve(128, 8, true, 0, 2048), 128);
-        assert_eq!(pp_boundary_token_cap_resolve(128, 8, true, 1, 2048), 128);
-        assert_eq!(pp_boundary_token_cap_resolve(128, 8, true, 2, 2048), 4096);
-        assert_eq!(
-            pp_boundary_token_cap_resolve(128, 8, true, usize::MAX, 2),
-            usize::MAX
-        );
-    }
-
-    #[test]
-    fn concat_prime_pp_policy_routes_dense_and_non_step_moe_to_individual_primes() {
-        assert!(concat_prime_pp_eligibility(
-            false, true, false, false, false
-        ));
-        assert!(concat_prime_pp_eligibility(true, false, false, false, true));
-        assert!(!concat_prime_pp_eligibility(true, true, false, false, true));
-        assert!(concat_prime_pp_eligibility(true, true, false, false, false));
-        assert!(concat_prime_pp_eligibility(true, true, true, true, true));
-        assert!(!concat_prime_pp_eligibility(true, true, true, false, true));
-    }
-
-    #[test]
-    fn pp_residual_learning_subtracts_context_and_one_time_global_growth_per_device() {
-        let distinct_before = PpFreeSnapshot {
-            stage_devices: vec![0, 1, 2],
-            free_by_device: vec![(0, 1_000), (1, 1_000), (2, 1_000)],
-        };
-        let distinct_after = PpFreeSnapshot {
-            stage_devices: vec![0, 1, 2],
-            free_by_device: vec![(0, 800), (1, 700), (2, 900)],
-        };
-        assert_eq!(
-            pp_stage_observed_residuals(
-                &distinct_before,
-                &distinct_after,
-                &[100, 200, 50],
-                &[20, 30, 0],
-            ),
-            Some(vec![80, 70, 50])
-        );
-
-        let repeated_before = PpFreeSnapshot {
-            stage_devices: vec![0, 1, 0],
-            free_by_device: vec![(0, 1_000), (1, 1_000)],
-        };
-        let repeated_after = PpFreeSnapshot {
-            stage_devices: vec![0, 1, 0],
-            free_by_device: vec![(0, 500), (1, 700)],
-        };
-        assert_eq!(
-            pp_stage_observed_residuals(
-                &repeated_before,
-                &repeated_after,
-                &[100, 200, 100],
-                &[50, 0, 50],
-            ),
-            Some(vec![100, 100, 100])
-        );
     }
 
     #[test]
@@ -23682,141 +16207,17 @@ mod tests {
             spec_ring_bytes_per_token: 0,
             ring_rows: 0,
             activation_bytes: 64 << 20,
-            prefill: None,
-            transient_floor: None,
-            pp_activation_bytes: [0; 4],
             last_logged: None,
         };
-        let cost_128k = cost.estimate(131_072, 131_072, false);
-        let cost_256k = cost.estimate(262_144, 262_144, false);
+        let cost_128k = cost.estimate(131_072, false);
+        let cost_256k = cost.estimate(262_144, false);
 
         assert_ne!(cost_128k, cost_256k, "128k must not inherit a 256k scalar");
         assert_eq!(cost_256k - cost_128k, cost.plain_bytes_per_token * 131_072,);
         assert_eq!(
-            cost.estimate(131_072, 131_072, true) - cost_128k,
+            cost.estimate(131_072, true) - cost_128k,
             (cost.spec_bytes_per_token - cost.plain_bytes_per_token) * 131_072,
             "the spec scratch coefficient is charged only on the spec-shaped path",
-        );
-    }
-
-    /// lane/glm5-gpf-workspace, 2026-08-30 — the 262k 2-card cell's own rungs
-    /// (`research/glm53-flash-bringup-20260827/262k-2card-20260830/LANE.md`). The box had
-    /// 9,227 MiB free at ready and admission charged glm5 `0 B/token x ctx + 155MB fixed`,
-    /// so a 262,144-token request was admitted and died as a mid-stream engine OOM. With the
-    /// latent-plan coefficient (memra-kv) and the engine-published prefill-workspace shape:
-    /// the 262k request is refused BEFORE prime (the existing `[admit-oom] VRAM reject`
-    /// 429 path binds when no attainable headroom exists), while the cell's measured stable
-    /// rung (7,108 prompt tokens) stays admitted. The red arm IS the pre-lane model: with
-    /// `prefill: None` and the 0 B/token coefficient the same 262k request sails through —
-    /// the reproduced hole, kept as an assertion so the gap cannot silently reopen.
-    #[test]
-    fn hyper_prefill_workspace_makes_admission_see_the_262k_wall() {
-        // GLM-5.3-Flash geometry (research/glm53-flash-bringup-20260827/CENSUS.md), spelled
-        // out so this test IS the formula and not a magic constant.
-        const H: usize = 4096; // hidden
-        const S: usize = 4; // hc streams
-        const F: usize = 2048; // moe_intermediate_size
-        const U: usize = 8; // experts/token
-        const HEADS: usize = 64;
-        const QK: usize = 256;
-        const V: usize = 256;
-        const TOPK: usize = 2048;
-        const P: usize = 4; // index_kpool
-        const LATENT_LAYERS: usize = 11;
-        const W: usize = 512; // kv_lora_rank
-        const DH: usize = 128; // index_head_dim
-        const N_TRUNK: usize = 45;
-        let shape = memra_engine::hybrid_forward::HyperPrimeWorkspaceShape {
-            chunk_token_bytes: 4 * S * H * 4 // stream state x2 + ppN boundary pair
-                + 4 * H * 4 // pre/norm transients
-                + 2 * H * 4 // prime tail
-                + U * (10 * H + 14 * F) + 4 * H // grouped-MoE staging
-                + HEADS * (QK + V) * 4 // MLA q/attn planes
-                + (TOPK / P + 1) * 4, // k-pool idx plane
-            prompt_bytes_per_token: H * 4, // returned hiddens stack
-            kpool_score_pool: P,
-            n_layers: N_TRUNK,
-            gdn_grid: false,
-        };
-        let latent_per_token = LATENT_LAYERS * (W * 4 + DH * 4 / P);
-        let cost = AdmissionCostModel {
-            plain_bytes_per_token: latent_per_token,
-            spec_bytes_per_token: latent_per_token,
-            plain_ring_bytes_per_token: 0,
-            spec_ring_bytes_per_token: 0,
-            ring_rows: 0,
-            activation_bytes: 155 << 20, // the cell's measured fixed residual
-            prefill: Some(shape),
-            transient_floor: None,
-            // Single-origin admission ladder: no PP stages, so the per-stage activation
-            // plane main added is zero here, matching AdmissionCostModel::new's default.
-            pp_activation_bytes: [0; 4],
-            last_logged: None,
-        };
-        let free = 9_227usize << 20; // dev0 free at ready, vram-at-ready.csv
-        // The ladder's own request shape: a `prompt`-token prime with max_tokens=32
-        // (`ctx_cap = prompt + 32 + 8`). The workspace half is keyed on the PROMPT
-        // (`prefill_workspace_bytes`' contract); the context planes on `ctx_cap`.
-        let required_at = |prompt: usize| {
-            let estimate = cost.estimate(prompt + 40, prompt, false);
-            admission_required(estimate, admission_reserve(false, estimate, None, None))
-        };
-
-        // The 262k SKU question: refused at admission, not OOM'd mid-prime.
-        assert!(
-            required_at(262_144) > free,
-            "a 262k request must exceed the box's whole at-ready headroom"
-        );
-        // The measured stable rung stays admitted (in-budget request unaffected).
-        assert!(
-            required_at(7_108) <= free,
-            "the 7k rung the cell served must remain admissible"
-        );
-        // The vendor-default trap the charge is keyed against: a SHORT prompt whose
-        // `max_tokens` is omitted carries ctx_cap = the whole server window
-        // (request_ctx_cap's ctx-bounded arm). The workspace half must charge the PROMPT,
-        // not the window, or every vendor-default short request on a deep-window box gets
-        // refused for workspace it never allocates. (The context half still charges the
-        // window — that IS the session's eager latent allocation.)
-        let vendor_short = cost.estimate(262_144, 541, false);
-        assert!(
-            admission_required(
-                vendor_short,
-                admission_reserve(false, vendor_short, None, None)
-            ) <= free,
-            "a 541-token vendor-default prompt (ctx-bounded output) must stay admissible"
-        );
-        // With the ppN chunk walk the workspace term is bounded by the chunk, so the charge
-        // is sublinear past one chunk: 16k costs ~one chunk of workspace more state, not 2x.
-        let chunk_workspace = shape.chunk_token_bytes * 4096;
-        assert!(
-            cost.prefill_workspace_bytes(16_447)
-                < chunk_workspace + 16_447 * (H * 4 + 4_096) + 1_000_000,
-            "the workspace charge must be chunk-bounded, not request-scaled"
-        );
-
-        // RED ARM — the pre-lane cost model (0 B/token, no prefill shape): the same 262k
-        // request is admitted, which is exactly the hole the cell banked. If this arm ever
-        // starts refusing, the old behavior changed underneath us and the receipts are stale.
-        let pre_lane = AdmissionCostModel {
-            plain_bytes_per_token: 0,
-            spec_bytes_per_token: 0,
-            plain_ring_bytes_per_token: 0,
-            spec_ring_bytes_per_token: 0,
-            ring_rows: 0,
-            activation_bytes: 155 << 20,
-            prefill: None,
-            transient_floor: None,
-            pp_activation_bytes: [0; 4],
-            last_logged: None,
-        };
-        let old_estimate = pre_lane.estimate(262_144 + 40, 262_144, false);
-        assert!(
-            admission_required(
-                old_estimate,
-                admission_reserve(false, old_estimate, None, None)
-            ) <= free,
-            "the pre-lane arithmetic admitted the 262k request (the banked hole)"
         );
     }
 
@@ -23840,13 +16241,13 @@ mod tests {
         // Below the floor: byte-identical to the old `reserve = cost` contract (the
         // admit-oom no-regression cell — small models, c<=64).
         let small_cost = 192 << 20;
-        assert_eq!(admission_reserve(false, small_cost, None, None), small_cost);
+        assert_eq!(admission_reserve(false, small_cost, None), small_cost);
         // At a 262,144-token Step-3.7-Flash charge (21,894 MB) the plain path must NOT
         // reserve a second whole session; it pays the same measured constant the spec
         // path pays, because the plain transient class is chunk-bounded, not ctx-scaled.
         let big_cost = 21_894 << 20;
         assert_eq!(
-            admission_reserve(false, big_cost, None, None),
+            admission_reserve(false, big_cost, None),
             SPEC_SHRINK_RESERVE
         );
         assert!(SPEC_SHRINK_RESERVE < big_cost);
@@ -23856,63 +16257,12 @@ mod tests {
     fn spec_reserve_keeps_the_full_transient_floor() {
         // The spec path's floor is independent of cost in BOTH directions: a small spec
         // request still reserves the full capture-arena transient…
-        assert_eq!(
-            admission_reserve(true, 64 << 20, None, None),
-            SPEC_SHRINK_RESERVE
-        );
+        assert_eq!(admission_reserve(true, 64 << 20, None), SPEC_SHRINK_RESERVE);
         // …and a huge one adds nothing beyond it.
         assert_eq!(
-            admission_reserve(true, 21_894 << 20, None, None),
+            admission_reserve(true, 21_894 << 20, None),
             SPEC_SHRINK_RESERVE
         );
-    }
-
-    #[test]
-    fn calibrated_floor_replaces_the_static_constant_and_never_loosens_it() {
-        // The boot-measured floor wins over the static constant when LARGER (the whole
-        // point: the static 1.5 GiB was measured 4.6x low on a medium-class deployment)…
-        let measured = 7_458usize << 20;
-        assert_eq!(
-            admission_reserve(true, 64 << 20, Some(measured), None),
-            measured
-        );
-        // …but can never LOOSEN admission below the proven constant (a probe that dipped
-        // less than the static floor keeps the static floor — the c<=48 no-regression
-        // contract).
-        assert_eq!(
-            admission_reserve(true, 64 << 20, Some(1), None),
-            SPEC_SHRINK_RESERVE
-        );
-        // The plain path's reserve cap follows the calibrated floor too: chunk-bounded
-        // transients grow with the deployment, not with the path.
-        assert_eq!(
-            admission_reserve(false, 21_894 << 20, Some(measured), None),
-            measured
-        );
-        // The teeth/diagnostics override door still wins outright over calibration.
-        let forced = 16 << 20;
-        assert_eq!(
-            admission_reserve(true, 64 << 20, Some(measured), Some(forced)),
-            forced
-        );
-    }
-
-    #[test]
-    fn calibration_floor_subtracts_only_the_separately_charged_state() {
-        // peak dip = kv + draft-state + transient; the floor is the transient alone,
-        // because admission charges kv (cost) and draft-state (per-session add) itself.
-        let kv = 1_200usize << 20;
-        let draft = 900usize << 20;
-        let transient = 7_458usize << 20;
-        let rest = 512usize << 20;
-        let peak = rest + kv + draft + transient;
-        assert_eq!(
-            calibration_transient_floor(peak, rest, kv, draft),
-            transient
-        );
-        // Saturating on every term: a probe whose charged state exceeds the dip yields 0
-        // (the static lower bound then serves), never an underflow.
-        assert_eq!(calibration_transient_floor(rest, rest, kv, draft), 0);
     }
 
     #[test]
@@ -23920,35 +16270,22 @@ mod tests {
         // The teeth arm (MEMRA_ADMIT_RESERVE_MB) must be able to force a tiny reserve on
         // whichever path the stress gate exercises, or the teeth prove nothing.
         let forced = 16 << 20;
-        assert_eq!(
-            admission_reserve(true, 21_894 << 20, None, Some(forced)),
-            forced
-        );
-        assert_eq!(
-            admission_reserve(false, 21_894 << 20, None, Some(forced)),
-            forced
-        );
+        assert_eq!(admission_reserve(true, 21_894 << 20, Some(forced)), forced);
+        assert_eq!(admission_reserve(false, 21_894 << 20, Some(forced)), forced);
         // A plain request smaller than the forced floor still pays only its own cost.
-        assert_eq!(
-            admission_reserve(false, 8 << 20, None, Some(forced)),
-            8 << 20
-        );
+        assert_eq!(admission_reserve(false, 8 << 20, Some(forced)), 8 << 20);
     }
 
     #[test]
-    fn pp_admission_pp2_preserves_both_devices_and_receiver_slots() {
+    fn dual_pp_admission_checks_both_devices_and_both_receiver_slots() {
         let wave_cap = 16;
         let n_embd = 7_168;
-        let slot_bytes = pp_boundary_slot_bytes(wave_cap, n_embd);
+        let slot_bytes = dual_pp_boundary_slot_bytes(wave_cap, n_embd);
         let reserve = 1_500 << 20;
         let activation = 32 << 20;
-        let stages = pp_stage_admissions(
-            &[320 << 20, 360 << 20],
-            &[activation; 2],
-            reserve,
-            &[0, slot_bytes * 2],
-        );
-        let devices = pp_device_requirements(&[0, 1], &stages);
+        let stages =
+            dual_pp_stage_admission([320 << 20, 360 << 20], activation, reserve, slot_bytes);
+        let devices = dual_pp_device_requirements([0, 1], stages);
 
         assert_eq!(devices.len(), 2);
         assert_eq!(devices[0].device, 0);
@@ -23983,148 +16320,25 @@ mod tests {
     }
 
     #[test]
-    fn pp_admission_follows_every_open_stage_placement_even_when_serial_or_unsharded() {
-        assert_eq!(pp_admission_stage_count(true, Some(&[0, 10, 20])), Some(2));
-        assert_eq!(
-            pp_admission_stage_count(true, Some(&[0, 10, 20, 30])),
-            Some(3)
-        );
-        assert_eq!(
-            pp_admission_stage_count(true, Some(&[0, 10, 20, 30, 40])),
-            Some(4)
-        );
-        assert_eq!(pp_admission_stage_count(false, Some(&[0, 10, 20])), None);
-        assert_eq!(pp_admission_stage_count(true, None), None);
-        assert_eq!(pp_admission_stage_count(true, Some(&[0, 1])), None);
-        assert_eq!(
-            pp_admission_stage_count(true, Some(&[0, 1, 2, 3, 4, 5])),
-            None
-        );
-    }
+    fn dual_pp_admission_aggregates_two_stages_on_one_device() {
+        let stages = dual_pp_stage_admission([10, 20], 3, 5, 7);
+        let devices = dual_pp_device_requirements([4, 4], stages);
 
-    #[test]
-    fn pp_admission_pp3_and_pp4_charge_each_distinct_device() {
-        let pp3_stages = pp_stage_admissions(&[10, 20, 30], &[3; 3], 5, &[0, 14, 14]);
-        let pp3_devices = pp_device_requirements(&[2, 4, 6], &pp3_stages);
-
-        assert_eq!(pp3_devices.len(), 3);
-        assert_eq!(pp3_devices[0].device, 2);
-        assert_eq!(pp3_devices[0].session_bytes, 13);
-        assert_eq!(pp3_devices[0].boundary_bytes, 0);
-        assert_eq!(pp3_devices[1].device, 4);
-        assert_eq!(pp3_devices[1].session_bytes, 23);
-        assert_eq!(pp3_devices[1].boundary_bytes, 14);
-        assert_eq!(pp3_devices[2].device, 6);
-        assert_eq!(pp3_devices[2].session_bytes, 33);
-        assert_eq!(pp3_devices[2].boundary_bytes, 14);
-
-        let pp4_stages = pp_stage_admissions(&[10, 20, 30, 40], &[3; 4], 5, &[0, 14, 14, 14]);
-        let pp4_devices = pp_device_requirements(&[1, 3, 5, 7], &pp4_stages);
-
-        assert_eq!(pp4_devices.len(), 4);
-        for (index, requirement) in pp4_devices.iter().enumerate() {
-            assert_eq!(requirement.device, index * 2 + 1);
-            assert_eq!(requirement.session_bytes, (index + 1) * 10 + 3);
-            assert_eq!(requirement.reserve_bytes, 5);
-            assert_eq!(requirement.boundary_bytes, if index == 0 { 0 } else { 14 });
-        }
-    }
-
-    #[test]
-    fn pp_admission_pp4_assigns_boundary_slots_to_every_receiver() {
-        let stages = pp_stage_admissions(&[10, 20, 30, 40], &[3; 4], 5, &[0, 14, 14, 14]);
-
-        assert_eq!(
-            stages
-                .iter()
-                .map(|stage| stage.boundary_bytes)
-                .collect::<Vec<_>>(),
-            vec![0, 14, 14, 14],
-        );
-    }
-
-    #[test]
-    fn pp_admission_pp4_aggregates_repeated_devices() {
-        let stages = pp_stage_admissions(&[10, 20, 30, 40], &[3; 4], 5, &[0, 14, 14, 14]);
-        let devices = pp_device_requirements(&[4, 5, 4, 5], &stages);
-
-        assert_eq!(devices.len(), 2);
+        assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].device, 4);
-        assert_eq!(devices[0].session_bytes, 46);
+        assert_eq!(devices[0].session_bytes, 36);
         assert_eq!(devices[0].reserve_bytes, 10);
         assert_eq!(devices[0].boundary_bytes, 14);
-        assert_eq!(devices[0].required(), 70);
-        assert_eq!(devices[1].device, 5);
-        assert_eq!(devices[1].session_bytes, 66);
-        assert_eq!(devices[1].reserve_bytes, 10);
-        assert_eq!(devices[1].boundary_bytes, 28);
-        assert_eq!(devices[1].required(), 104);
+        assert_eq!(devices[0].required(), 60);
     }
 
     #[test]
-    fn pp_admission_pp4_preserves_step_tp_kv_aggregation() {
-        use memra_engine::hybrid::StepTpKvDeviceAdmission;
+    fn dual_pp_admission_arithmetic_saturates_and_serial_is_unchanged() {
+        let stages = dual_pp_stage_admission([usize::MAX, 1], 1, 1, usize::MAX);
+        let devices = dual_pp_device_requirements([0, 1], stages);
 
-        let stages = pp_stage_admissions(&[10, 20, 30, 40], &[0; 4], 5, &[0, 14, 14, 14]);
-        let devices = [0, 1, 2, 3];
-        let request = [
-            StepTpKvDeviceAdmission {
-                device: 1,
-                bytes: 11,
-            },
-            StepTpKvDeviceAdmission {
-                device: 4,
-                bytes: 13,
-            },
-        ];
-        let pending = [
-            StepTpKvDeviceAdmission {
-                device: 1,
-                bytes: 17,
-            },
-            StepTpKvDeviceAdmission {
-                device: 4,
-                bytes: 19,
-            },
-        ];
-        let requirements =
-            parallel_device_requirements(0, 0, 5, Some((&devices, &stages)), &request, &pending);
-
-        assert_eq!(requirements.len(), 5);
-        assert_eq!(requirements[1].device, 1);
-        assert_eq!(requirements[1].session_bytes, 20);
-        assert_eq!(requirements[1].tp_kv_bytes, 11);
-        assert_eq!(requirements[1].pending_tp_kv_bytes, 17);
-        assert_eq!(requirements[1].reserve_bytes, 5);
-        assert_eq!(requirements[1].boundary_bytes, 14);
-        assert_eq!(requirements[1].required(), 67);
-        assert_eq!(requirements[4].device, 4);
-        assert_eq!(requirements[4].session_bytes, 0);
-        assert_eq!(requirements[4].tp_kv_bytes, 13);
-        assert_eq!(requirements[4].pending_tp_kv_bytes, 19);
-        assert_eq!(requirements[4].reserve_bytes, 5);
-        assert_eq!(requirements[4].boundary_bytes, 0);
-        assert_eq!(requirements[4].required(), 37);
-    }
-
-    #[test]
-    fn pp_admission_arithmetic_saturates_and_serial_is_unchanged() {
-        let stages = pp_stage_admissions(
-            &[usize::MAX, 1, usize::MAX, 1],
-            &[1; 4],
-            1,
-            &[0, usize::MAX, usize::MAX, usize::MAX],
-        );
-        let devices = pp_device_requirements(&[0, 1, 2, 3], &stages);
-
-        assert!(
-            devices
-                .iter()
-                .all(|requirement| requirement.required() == usize::MAX)
-        );
-        let repeated = pp_device_requirements(&[9, 9, 9, 9], &stages);
-        assert_eq!(repeated.len(), 1);
-        assert_eq!(repeated[0].required(), usize::MAX);
+        assert_eq!(devices[0].required(), usize::MAX);
+        assert_eq!(devices[1].required(), usize::MAX);
         assert_eq!(admission_required(usize::MAX, 1), usize::MAX);
         assert_eq!(
             admission_required(680 << 20, 680 << 20),
@@ -24211,9 +16425,6 @@ mod tests {
             spec_ring_bytes_per_token: 0,
             ring_rows: 0,
             activation_bytes: 0,
-            prefill: None,
-            transient_floor: None,
-            pp_activation_bytes: [0; 4],
             last_logged: None,
         };
         let ctx_8k = 8_192;
@@ -24229,7 +16440,7 @@ mod tests {
             "the residual never moves down"
         );
         assert_eq!(
-            cost.estimate(131_072, 131_072, false),
+            cost.estimate(131_072, false),
             cost.plain_bytes_per_token * 131_072 + 32_000_000,
             "an 8k observation contributes only its fixed residual to a later 128k request",
         );
@@ -24840,69 +17051,6 @@ mod tests {
     }
 
     #[test]
-    fn the_removed_bank_v2_doors_cannot_boot_a_server() {
-        // refused: either removed flag set to 1, alone or together. This is the shape a
-        // stale launch recipe ships (the pre-incident serving env pinned both =1), and the
-        // shape whose first token measured `Ass` instead of `Got` at 25 prompt tokens
-        // before the doors were removed.
-        assert!(removed_bank_v2_doors_refusal(Some("1"), None).is_some());
-        assert!(removed_bank_v2_doors_refusal(None, Some("1")).is_some());
-        assert!(removed_bank_v2_doors_refusal(Some("1"), Some("1")).is_some());
-        // allowed: unset or explicit off, the only states the engine still has code for.
-        assert!(removed_bank_v2_doors_refusal(None, None).is_none());
-        assert!(removed_bank_v2_doors_refusal(Some("0"), Some("0")).is_none());
-        assert!(removed_bank_v2_doors_refusal(Some("0"), None).is_none());
-        // the refusal names REMOVAL and the bisect receipt lane, and it names every flag
-        // the recipe actually set, so the operator fixes the recipe in one pass.
-        let msg = removed_bank_v2_doors_refusal(Some("1"), Some("1")).unwrap();
-        assert!(
-            msg.contains("MEMRA_NVFP4_BANK_V2=1 and MEMRA_SEL_DOWN8=1"),
-            "{msg}"
-        );
-        assert!(msg.contains("REMOVED"), "{msg}");
-        assert!(msg.contains("step37-reasoning-effort-20260829"), "{msg}");
-        let msg = removed_bank_v2_doors_refusal(None, Some("1")).unwrap();
-        assert!(msg.contains("MEMRA_SEL_DOWN8=1 is"), "{msg}");
-        // RESCOPED 2026-09-01: the three programs the old bundle armed are back under three
-        // SEPARATE doors. The refusal must name all three, or an operator holding a 140-era
-        // recipe has no path forward and the obvious guess ("it's just the layout") silently
-        // arms one third of what the recipe asked for.
-        let msg = removed_bank_v2_doors_refusal(Some("1"), None).unwrap();
-        for successor in [
-            "MEMRA_NVFP4_BANK_SM",
-            "MEMRA_NVFP4_SEL_GU",
-            "MEMRA_NVFP4_SEL_DOWN8",
-        ] {
-            assert!(msg.contains(successor), "missing {successor} in: {msg}");
-        }
-        assert!(msg.contains("step37-bankv3-20260901"), "{msg}");
-        // DEFAULT FLIP 2026-09-01: two of the three successors are now DEFAULT ON, which CHANGES
-        // THE REMEDIATION this message has to give. An operator translating `BANK_V2=1` into
-        // `BANK_SM=1 SEL_DOWN8=1` would be re-stating the default and would likely also add
-        // `SEL_GU=1` "to be safe", quietly arming a program that was deliberately left off. So
-        // the message must say which are default and offer the rollback seam, and that is
-        // asserted rather than trusted to survive the next edit of the string.
-        assert!(msg.contains("DEFAULT ON"), "{msg}");
-        assert!(msg.contains("DEFAULT OFF"), "{msg}");
-        assert!(msg.contains("MEMRA_NVFP4_BANK_SM=0"), "{msg}");
-        // and the successors are NOT themselves refused — that is the whole point of milestone 3.
-        assert!(removed_bank_v2_doors_refusal(None, None).is_none());
-    }
-
-    /// The three restored doors are read by the ENGINE (tp.rs `bank_slot_major_on` /
-    /// `sel_gu_fused_on` / `sel_down8_on`), so the server must not carry a boot guard against
-    /// them. This pins that: `MEMRA_NVFP4_SEL_DOWN8` is a NEW name and the legacy guard reads
-    /// only the exact legacy names, so an env carrying the new names boots.
-    #[test]
-    fn the_restored_bank_doors_are_not_caught_by_the_legacy_guard() {
-        // the guard takes the legacy values explicitly; the new names are different strings, so
-        // there is no prefix or substring path by which a restored door reaches it.
-        assert_ne!("MEMRA_NVFP4_BANK_V2", "MEMRA_NVFP4_BANK_SM");
-        assert_ne!("MEMRA_SEL_DOWN8", "MEMRA_NVFP4_SEL_DOWN8");
-        assert!(removed_bank_v2_doors_refusal(None, None).is_none());
-    }
-
-    #[test]
     fn solo_prefill_widening_preserves_operator_and_fairness_caps() {
         // REGRESSION (cold-TTFT lane, 2026-08-28): a lone fresh request with an ARMED
         // plain-affinity checkpoint is still fresh. `ckpt_at` is a COLD-only signal (a
@@ -25406,126 +17554,6 @@ mod tests {
         // No carrier: K=0 stays the plain path, never floored.
         assert_eq!(super::resumed_carrier_spec_k_floor(false, 0), (0, false));
         assert_eq!(super::resumed_carrier_spec_k_floor(false, 3), (0, false));
-    }
-
-    /// POST-THINK fail-closed terminal (review fix): generation ending inside the think
-    /// channel on a response_format request is a NAMED 400, never a success — and the
-    /// param names the request field that ended generation.
-    #[test]
-    fn postthink_unclosed_terminal_is_a_named_client_error() {
-        use memra_engine::decode::StopReason;
-        for (reason, param, needle) in [
-            (StopReason::MaxNew, "max_tokens", "max_tokens was reached"),
-            (StopReason::Callback, "stop", "a stop sequence matched"),
-            (
-                StopReason::ContextFull,
-                "max_tokens",
-                "context window filled",
-            ),
-            (StopReason::Eos, "max_tokens", "generation ended"),
-        ] {
-            let err = super::postthink_unclosed_error(reason, 1024);
-            assert_eq!(err.class, super::ErrClass::InvalidRequest, "{reason:?}");
-            assert_eq!(err.param, Some(param), "{reason:?}");
-            assert!(
-                err.message.contains("response_format could not be honored"),
-                "{reason:?}: {}",
-                err.message
-            );
-            assert!(err.message.contains(needle), "{reason:?}: {}", err.message);
-            assert!(
-                err.message.contains("1024 reasoning tokens"),
-                "the receipt count must reach the client: {}",
-                err.message
-            );
-        }
-    }
-
-    /// POST-THINK close-contract derivation (lane/step37-postthink-grammar): the four
-    /// template classes against a real HF-dir tokenizer whose vocab carries `</think>`
-    /// as an ATOMIC added token (the step37-NVFP4 shape — id 128799 there, id 17 here).
-    /// Fail-closed everywhere the contract is not airtight.
-    #[test]
-    fn postthink_close_contract_derivation() {
-        // Byte-level BPE fixture with <think>/<\u{2f}think> added tokens; letters `t i n k`
-        // are deliberately NOT in the base vocab, so a template-carrying tokenizer
-        // WITHOUT the atomic close token cannot tokenize the literal and derives EMPTY
-        // (the refusal arm), never a lossy sequence.
-        const TOKENIZER_JSON: &str = r#"{
-          "version": "1.0",
-          "added_tokens": [
-            {"id": 15, "content": "<|end|>", "special": true},
-            {"id": 16, "content": "<think>", "special": false},
-            {"id": 17, "content": "</think>", "special": false}
-          ],
-          "pre_tokenizer": {
-            "type": "Sequence",
-            "pretokenizers": [
-              {"type": "Split", "pattern": {"Regex": "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"}, "behavior": "Isolated"},
-              {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false}
-            ]
-          },
-          "model": {
-            "type": "BPE",
-            "vocab": {
-              "h": 0, "e": 1, "l": 2, "o": 3, "Ġ": 4, "w": 5, "r": 6, "d": 7,
-              "he": 8, "ll": 9, "hell": 10, "hello": 11, "Ġw": 12, "or": 13, "!": 14
-            },
-            "merges": ["h e", "he ll", "hell o"]
-          }
-        }"#;
-        let write = |name: &str, template: Option<&str>| -> std::path::PathBuf {
-            let dir = std::env::temp_dir().join(format!(
-                "memra-postthink-contract-{name}-{}",
-                std::process::id()
-            ));
-            let _ = std::fs::remove_dir_all(&dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("tokenizer.json"), TOKENIZER_JSON).unwrap();
-            let tc = match template {
-                Some(t) => format!(
-                    r#"{{"eos_token": "<|end|>", "chat_template": {}}}"#,
-                    serde_json::to_string(t).unwrap()
-                ),
-                None => r#"{"eos_token": "<|end|>"}"#.to_string(),
-            };
-            std::fs::write(dir.join("tokenizer_config.json"), tc).unwrap();
-            dir
-        };
-        let contract = |name: &str, template: Option<&str>| -> Vec<u32> {
-            let dir = write(name, template);
-            let tok = memra_tokenizer::Tokenizer::from_hf_dir(&dir).expect("fixture tokenizer");
-            let close = super::postthink_close_contract(&tok);
-            let _ = std::fs::remove_dir_all(&dir);
-            close
-        };
-        // step37 class: think-forced (open tail, no switch) + atomic close token.
-        assert_eq!(
-            contract(
-                "forced",
-                Some(
-                    "... {%- if add_generation_prompt %}'<|im_start|>assistant\\n<think>\\n'{%- endif %}"
-                )
-            ),
-            vec![17],
-            "think-forced template must derive the atomic close token"
-        );
-        // qwen class: the enable_thinking switch exists — NOT a post-think model.
-        assert_eq!(
-            contract(
-                "switch",
-                Some("... add_generation_prompt ... enable_thinking ... '<think>\\n' ...")
-            ),
-            Vec::<u32>::new(),
-            "switch-carrying template must keep the grammar-from-token-1 path"
-        );
-        // no think tail at all: not a post-think model.
-        assert_eq!(
-            contract("plain", Some("{{ messages }}<|end|>")),
-            Vec::<u32>::new(),
-        );
-        // no template: nothing derivable.
-        assert_eq!(contract("naked", None), Vec::<u32>::new());
     }
 
     /// The bypass is a TRADE: it spends the prefill a cache hit would have saved to buy
@@ -26236,255 +18264,6 @@ mod tests {
         );
     }
 
-    /// GLM5 ROUTING GATE (lane/glm5-spec-routing, 2026-08-30): the serve-time route
-    /// decision, exact over the class matrix — one green row per sampling regime, then
-    /// every exclusion flipped alone must refuse (fail-closed reds, each named).
-    #[test]
-    fn glm5_route_class_matrix_is_exact() {
-        use super::glm5_route_admits;
-        // (capable, serve_spec, k, temp_ok, penalized, constrained, vision, cold)
-        let green = |k| glm5_route_admits(true, true, k, true, false, false, false, true);
-        assert!(
-            green(3),
-            "greedy/sampled cold unpenalized K>0 is the routed class"
-        );
-        assert!(green(1) && green(14), "every legal K routes");
-        assert!(
-            !glm5_route_admits(false, true, 3, true, false, false, false, true),
-            "not capable (flag off / no MTP head / manifest blocked / ppN / sealed bundle \
-             without a glm5-spec receipt) must refuse — the off-flag arm"
-        );
-        assert!(
-            !glm5_route_admits(true, false, 3, true, false, false, false, true),
-            "MEMRA_SERVE_SPEC=0 / vision / capture / pp-bounce (serve_spec) must refuse"
-        );
-        assert!(
-            !glm5_route_admits(true, true, 0, true, false, false, false, true),
-            "K=0 (operator pin 0 or the concurrency shed) must refuse"
-        );
-        assert!(
-            !glm5_route_admits(true, true, 3, false, false, false, false, true),
-            "neither greedy nor a real temperature must refuse"
-        );
-        assert!(
-            !glm5_route_admits(true, true, 3, true, true, false, false, true),
-            "penalties (greedy OR sampled) must refuse — the glm5 accept walk has no \
-             penalty arm; silently dropping them is the failure class"
-        );
-        assert!(
-            !glm5_route_admits(true, true, 3, true, false, true, false, true),
-            "constrained requests must refuse (grammar hooks live on the qwen program only)"
-        );
-        assert!(
-            !glm5_route_admits(true, true, 3, true, false, false, true, true),
-            "vision sessions must refuse (no embedding-overlay seam in the glm5 prime)"
-        );
-        assert!(
-            !glm5_route_admits(true, true, 3, true, false, false, false, false),
-            "a warm session that is NEITHER cold NOR the restored carrier must refuse — \
-             the last param is `cold_or_restored_carrier` (lane/glm5-prefix-latent2): the \
-             call site passes `glm5_cold || glm5_restored_carrier`, and the carrier proof \
-             (rebuilt drafter KV + restored cache + non-empty seed, every other spec-state \
-             term still cold) lives at the call site, not here"
-        );
-    }
-
-    /// The K+1 <= 15 hard bound (the shexp decode-exact knee at t=16): only an operator
-    /// pin can reach the clamp; every automatic policy depth passes through untouched.
-    #[test]
-    fn glm5_spec_k_clamp_holds_the_verify_knee() {
-        use super::glm5_clamp_spec_k;
-        assert_eq!(glm5_clamp_spec_k(14), 14, "K=14 is the last legal depth");
-        assert_eq!(
-            glm5_clamp_spec_k(15),
-            14,
-            "K+1 = 16 crosses the knee — clamped"
-        );
-        assert_eq!(
-            glm5_clamp_spec_k(64),
-            14,
-            "any operator pin clamps to the knee"
-        );
-        for policy_k in [
-            SPEC_K_COLD_SHORT,
-            SPEC_K_COLD_LONG,
-            SPEC_K_CACHED_LONG,
-            SPEC_K_CACHED_LONG_TRIM,
-        ] {
-            assert_eq!(
-                glm5_clamp_spec_k(policy_k),
-                policy_k,
-                "the shared policy table's automatic depths sit inside the knee"
-            );
-        }
-    }
-
-    /// WIRING GATE (anchored on invocations in comment-stripped source, never prose —
-    /// the wiring-assertions-match-prose law): the glm5 route's seams are LIVE code.
-    #[test]
-    fn glm5_route_wiring_is_live_in_comment_stripped_source() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        // 1. The tick dispatch keys on the session flag and calls the glm5 step — BEFORE
-        //    the gemma arm and the plain fallback (a glm5 session reaching either is the
-        //    empty-context garbage class).
-        let dispatch = code
-            .find("step_dspark_spec(&engine, &loaded, &mut dspark_drafts, &mut active[i])")
-            .expect("the spec dispatch exists");
-        let window = &code[dispatch..dispatch + 700];
-        let glm5_arm = window
-            .find("else if active[i].glm5_on {")
-            .expect("the glm5 dispatch arm keys on glm5_on");
-        let glm5_call = window
-            .find("step_glm5_spec(&engine, &loaded, &mut active[i])")
-            .expect("the glm5 dispatch arm invokes step_glm5_spec");
-        let gemma_arm = window
-            .find("else if active[i].gspec_k > 0 {")
-            .expect("the gemma arm still exists");
-        assert!(glm5_arm < glm5_call && glm5_call < gemma_arm);
-        // 2. The phase-(a) scheduler filter includes glm5 sessions, or they never burst.
-        let filter = code
-            .find("active[i].spec.is_some()")
-            .expect("the phase-a filter exists");
-        assert!(
-            code[filter..filter + 300].contains("|| active[i].glm5_on"),
-            "the phase-a spec filter must include glm5_on sessions"
-        );
-        // 3. Admission computes the route through the PURE predicate and the K clamp.
-        assert!(
-            code.contains("let glm5_on = glm5_route_admits("),
-            "glm5_on must be computed via glm5_route_admits"
-        );
-        assert!(
-            code.contains("glm5_clamp_spec_k(decision.k)"),
-            "the chosen K must pass the knee clamp"
-        );
-        // 4. The session-owned-cache arm: admission must not allocate a plain cache under
-        //    a glm5 route — EXCEPT the restored carrier (lane/glm5-prefix-latent2), which
-        //    keeps the restored cache for the first spec tick to consume. Anchored on the
-        //    PRE-TEST slice: the old form of this assertion matched its own string literal
-        //    (the self-match trap the wiring-assertions law names).
-        let live_pre_tests = &code[..code.find("mod tests").expect("the test module exists")];
-        assert!(
-            live_pre_tests.contains(
-                "let cache = if dspark_on || (glm5_on && glm5_prefix_restored_dkv.is_none()) {"
-            ),
-            "the cache literal must carry the glm5 no-alloc arm with the restored-carrier exception"
-        );
-        assert!(
-            live_pre_tests.contains("glm5_restored_dkv: glm5_prefix_restored_dkv,"),
-            "the session literal must carry the restored drafter KV"
-        );
-        assert!(
-            live_pre_tests.contains("glm5_spec_session_from_restored("),
-            "the first spec tick must consume the restored carrier via from_restored"
-        );
-        assert!(
-            live_pre_tests.contains("drain_glm5_prefix_capture(&engine, &mut px, &mut hpx, s);"),
-            "the retire-adjacent sweep must drain glm5 boundary captures"
-        );
-        // 5. The per-request engagement receipt is an INVOCATION inside step_glm5_spec
-        //    (the deploy gate greps the server log for it; never-serve-greedy law).
-        let step = code
-            .split("fn step_glm5_spec(")
-            .nth(1)
-            .expect("step_glm5_spec exists");
-        let step_body = &step[..step.find("\nfn ").unwrap_or(step.len())];
-        assert!(
-            step_body.contains("\"[glm5-acc] ctx={} burst={}/{} cum={}/{}={:.3}\""),
-            "the [glm5-acc] engagement line must be emitted by step_glm5_spec"
-        );
-        assert!(
-            step_body.contains("glm5_spec_session_burst(engine, sess, burst_target, k,"),
-            "step_glm5_spec must drive the engine session burst"
-        );
-        assert!(
-            step_body.contains("emit_spec_token_events("),
-            "glm5 bursts must emit through the shared one-event-per-public-id machinery"
-        );
-        // 6. The capability predicate carries the flag, the manifest, the sealed-bundle
-        //    surface and the ppN refusal — each an invocation, not a comment.
-        let cap = code
-            .split("fn glm5_spec_capable(")
-            .nth(1)
-            .expect("glm5_spec_capable exists");
-        let cap_body = &cap[..cap.find("\nfn ").unwrap_or(cap.len())];
-        for anchor in [
-            "glm5_spec_on()",
-            "RewriteSurface::Glm5Spec",
-            "GLM5_SPEC",
-            "pp_cuts(",
-            ".speculative",
-            // lane/glm5-ppn-verify: sharded placements admit ONLY through the gated-set
-            // predicate AND a qualified pipeline rewrite — both as invocations.
-            "glm5_sharded_placement_admits(",
-            "RewriteSurface::Pipeline",
-        ] {
-            assert!(
-                cap_body.contains(anchor),
-                "glm5_spec_capable must consult {anchor}"
-            );
-        }
-    }
-
-    /// The sharded-placement matrix (lane/glm5-ppn-verify): stages 2 and 3 are the gated
-    /// set (`glm5-spec-ppn-gate`); everything else sharded refuses by name, and a step
-    /// TP/EP composition refuses at ANY stage count.
-    #[test]
-    fn glm5_sharded_placement_matrix_is_exact() {
-        use super::glm5_sharded_placement_admits;
-        assert!(
-            glm5_sharded_placement_admits(2, None, None),
-            "stages=2 is gated (SPLITS=24, the 2-card shape)"
-        );
-        assert!(
-            glm5_sharded_placement_admits(3, None, None),
-            "stages=3 is gated (SPLITS=15,30, the 3-card serving shape)"
-        );
-        assert!(
-            !glm5_sharded_placement_admits(4, None, None),
-            "stages=4 has no gate receipt and must refuse"
-        );
-        assert!(
-            !glm5_sharded_placement_admits(1, None, None),
-            "a one-stage fence cannot reach here (pp_cuts returns >= 2 stages) — refuse \
-             rather than trust the impossible"
-        );
-        assert!(
-            !glm5_sharded_placement_admits(2, Some("2"), None)
-                && !glm5_sharded_placement_admits(3, None, Some("2")),
-            "a step-TP/EP composition has never been co-gated with the glm5 walk"
-        );
-        assert!(
-            glm5_sharded_placement_admits(2, Some("0"), Some("")),
-            "an explicit off/empty TP value is not a TP placement"
-        );
-    }
-
-    /// The plain step's glm5 refusal fires BEFORE any model work (the dspark
-    /// dispatch-disagreement guard, extended): a session holding a glm5 spec session must
-    /// never be stepped plain over its absent s.cache.
-    #[test]
-    fn a_plain_step_refuses_a_session_holding_a_glm5_session() {
-        let src = include_str!("worker.rs");
-        let f = src
-            .split("fn step_session(")
-            .nth(1)
-            .expect("step_session exists");
-        let guard_at = f
-            .find("s.glm5.is_some()")
-            .expect("the glm5 dispatch guard exists");
-        let first_model_use = f.find("let lm = ").expect("model bind exists");
-        assert!(
-            guard_at < first_model_use,
-            "the glm5-session refusal must run before any model work in step_session"
-        );
-    }
-
     #[test]
     fn worker_device_defaults_to_cuda_visible_zero_and_follows_the_pp_head_stage() {
         assert_eq!(worker_device(None), Ok(0));
@@ -26585,7 +18364,6 @@ mod tests {
             kv: Vec::new(),
             conv: Vec::new(),
             ssm: Vec::new(),
-            latent: Vec::new(),
             pos: 0,
             last_logits: vec![0.0],
             draft: None,
@@ -26606,91 +18384,18 @@ mod tests {
         (0..n as u32).collect()
     }
 
-    /// A cache carrying a latent (MLA/DSA) plane must never be snapshotted into a PrefixEntry
-    /// that has no state for that plane, or a "whole-entry" restore returns a session whose
-    /// full-attention history is EMPTY while `cached_tokens` reports the whole prompt.
-    /// lane/glm5-prefix-latent (2026-08-30): with `MEMRA_PREFIX_LATENT` OFF (the default) every
-    /// arm is byte-for-byte the parent lane's guard; with it ON the capture proceeds (the entry
-    /// then CARRIES the planes) and the restore admits ONLY carrying entries. Ordinary kv/recur
-    /// models are untouched in every arm.
+    /// A cache carrying a latent (MLA/DSA) plane must never be snapshotted into a PrefixEntry:
+    /// the entry has no field for that plane, so a "whole-entry" restore returns a session whose
+    /// full-attention history is EMPTY while `cached_tokens` reports the whole prompt. Refusing
+    /// the capture is what keeps such an entry from existing. Ordinary kv/recur models are
+    /// untouched: the predicate is false for them, so their capture path is byte-unchanged.
     #[test]
     fn a_latent_bearing_cache_is_refused_by_the_prefix_capture() {
-        const GUARD: &str = "latent (MLA/DSA) KV planes are not carried by prefix entries";
-        assert_eq!(super::unsupported_prefix_state_plane(true), Some(GUARD));
+        assert_eq!(
+            super::unsupported_prefix_state_plane(true),
+            Some("latent (MLA/DSA) KV planes are not carried by prefix entries"),
+        );
         assert_eq!(super::unsupported_prefix_state_plane(false), None);
-
-        // Capture side. Flag off: the parent lane's refusal, string-identical (the box
-        // flag-off arm greps this exact line). Flag on: capture proceeds and carries.
-        assert_eq!(super::unsupported_prefix_capture(true, false), Some(GUARD));
-        assert_eq!(super::unsupported_prefix_capture(true, true), None);
-        assert_eq!(super::unsupported_prefix_capture(false, false), None);
-        assert_eq!(super::unsupported_prefix_capture(false, true), None);
-    }
-
-    /// Restore side of the same guard: the admit is scoped to (flag ON) x (entry carries
-    /// latent planes). An entry minted before the flip, or by the spec-boundary publisher,
-    /// refuses exactly as under the parent lane's guard; flipping the flag OFF is the
-    /// documented rollback seam and must refuse even carrying entries.
-    #[test]
-    fn the_restore_guard_admits_only_carrying_entries_and_only_under_the_flag() {
-        const GUARD: &str = "latent (MLA/DSA) KV planes are not carried by prefix entries";
-        // Non-latent cache: every entry class is unaffected in every flag state.
-        for flag in [false, true] {
-            for carries in [false, true] {
-                assert_eq!(
-                    super::unsupported_prefix_restore(false, flag, carries),
-                    None
-                );
-            }
-        }
-        // Latent cache, flag off: the parent guard, regardless of what the entry carries
-        // (rollback seam: unsetting the flag refuses carrying entries wholesale).
-        assert_eq!(
-            super::unsupported_prefix_restore(true, false, false),
-            Some(GUARD)
-        );
-        assert_eq!(
-            super::unsupported_prefix_restore(true, false, true),
-            Some(GUARD)
-        );
-        // Latent cache, flag on: the admit exists ONLY for carrying entries.
-        assert_eq!(super::unsupported_prefix_restore(true, true, true), None);
-        assert_eq!(
-            super::unsupported_prefix_restore(true, true, false),
-            Some(
-                "entry does not carry the latent (MLA/DSA) planes this cache requires \
-                 (minted before or without latent capture)"
-            ),
-        );
-    }
-
-    /// Whole-entry only for latent-bearing entries, in its own right: an all-MLA pack has
-    /// `entry_has_recurrent == false`, so without the latent arm an armed
-    /// MEMRA_PREFIX_PARTIAL_RESTORE would slice latent rows mid-entry while the index tail
-    /// ring for that interior boundary is unrecoverable.
-    #[test]
-    fn a_latent_entry_refuses_a_mid_entry_split_even_without_recurrent_state() {
-        use super::{PartialPrefixDecision, partial_prefix_decision};
-        // Mid-entry split on a latent-only entry: refused by the latent arm.
-        assert_eq!(
-            partial_prefix_decision(false, true, false, 100, 200, 300),
-            PartialPrefixDecision::RefuseLatentMidEntry,
-        );
-        // The split AT the endpoint is not a mid-entry split; the suffix primes ahead.
-        assert_eq!(
-            partial_prefix_decision(false, true, false, 200, 200, 300),
-            PartialPrefixDecision::Restore,
-        );
-        // The recurrent arm keeps precedence for hybrid entries (glm5: both are true).
-        assert_eq!(
-            partial_prefix_decision(true, true, false, 100, 200, 300),
-            PartialPrefixDecision::RefuseRecurrentMidEntry,
-        );
-        // Non-latent entries decide exactly as before.
-        assert_eq!(
-            partial_prefix_decision(false, false, false, 100, 200, 300),
-            PartialPrefixDecision::Restore,
-        );
     }
 
     #[test]
@@ -26783,478 +18488,6 @@ mod tests {
         assert_eq!(px.lcp_hist.iter().sum::<u64>(), 2);
     }
 
-    /// A sized entry for the KV-flex byte-accounting cells: `entry()` with controllable
-    /// residency bytes and distinct token keys (exact-token dedup would swallow twins).
-    fn sized_entry(pool_key: &PoolKey, salt: u32, bytes: usize) -> PrefixEntry {
-        let mut t = toks(PREFIX_CACHE_MIN_TOKENS);
-        t[0] = u32::MAX - salt;
-        let mut e = entry(pool_key, t);
-        e.bytes = bytes;
-        e
-    }
-
-    fn armed_flex(floor: usize) -> KvFlex {
-        KvFlex {
-            armed: true,
-            floor,
-            guard: 0,
-            hold: std::time::Duration::from_secs(60),
-            hold_until: None,
-            sheds: 0,
-            shed_ms_total: 0.0,
-        }
-    }
-
-    /// The shed's eviction body: down to the target in capacity order, pins untouchable,
-    /// terminates when nothing is evictable, evictions counted in the one accountant.
-    #[test]
-    fn kv_flex_evict_to_bytes_sheds_to_the_target_and_spares_pins() {
-        let k = key("");
-        let mut px = PrefixCache::default();
-        for salt in 0..4 {
-            px.insert_with_budget(&k, sized_entry(&k, salt, 10), "flex-test", 100);
-        }
-        assert_eq!(px.total_bytes, 40);
-        let pin = px.pin_n(&k, 0, 1).expect("pinnable entry");
-        let evictions_before = px.evictions;
-
-        let (n, freed) = px.evict_to_bytes(20);
-        assert_eq!((n, freed), (2, 20), "two 10-byte victims reach the target");
-        assert_eq!(px.total_bytes, 20);
-        assert_eq!(px.evictions, evictions_before + 2);
-
-        // Target below the pinned residency: the loop stops at no-victim instead of
-        // hanging or touching the lease.
-        let (n, freed) = px.evict_to_bytes(0);
-        assert_eq!((n, freed), (1, 10), "only the unpinned entry is evictable");
-        assert_eq!(px.total_bytes, 10, "the pinned entry's bytes remain");
-        assert!(px.unpin(&pin));
-    }
-
-    /// The grant policy, pure: free minus guard while armed, zero under hold, zero
-    /// disarmed, saturating: a grant can never underflow into a giant budget.
-    #[test]
-    fn kv_flex_grant_policy_is_guarded_held_and_disarmed_to_zero() {
-        let now = std::time::Instant::now();
-        let mut f = armed_flex(100);
-        f.guard = 1000;
-        assert_eq!(
-            f.grant_for(5000, now),
-            4000,
-            "free above the guard is grantable"
-        );
-        assert_eq!(
-            f.grant_for(999, now),
-            0,
-            "the guard saturates, never underflows"
-        );
-        f.hold_until = Some(now + std::time::Duration::from_secs(1));
-        assert_eq!(
-            f.grant_for(5000, now),
-            0,
-            "an armed hold parks the grant at 0"
-        );
-        f.hold_until = Some(now - std::time::Duration::from_secs(1));
-        assert_eq!(
-            f.grant_for(5000, now),
-            4000,
-            "an expired hold re-opens the grant"
-        );
-        f.armed = false;
-        assert_eq!(f.grant_for(5000, now), 0, "disarmed is always 0");
-    }
-
-    /// The shed transition end to end, and every assertion that reads the published
-    /// grant static, kept in ONE test so parallel test threads cannot interleave on it.
-    #[test]
-    fn kv_flex_shed_returns_borrowed_bytes_to_the_floor_and_counts_the_transition() {
-        let k = key("");
-        let mut px = PrefixCache::default();
-        for salt in 0..3 {
-            px.insert_with_budget(&k, sized_entry(&k, salt, 10), "flex-test", 100);
-        }
-        let mut f = armed_flex(10);
-
-        // OFF is identity: with the grant at 0 the effective budget IS the floor budget.
-        KV_FLEX_GRANT.store(0, std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(kv_flex_effective_budget(), prefix_cache_budget_bytes());
-        KV_FLEX_GRANT.store(7, std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(
-            kv_flex_effective_budget(),
-            prefix_cache_budget_bytes() + 7,
-            "the effective budget is floor + published grant"
-        );
-
-        // Capture-arrival shed: grant zeroed, residency back at the floor, transition
-        // counted with its wall time, hold armed against re-borrowing mid-burst.
-        assert_eq!(f.borrowed_bytes(&px), 20);
-        let n = f.shed(&mut px, true, "test capture");
-        assert_eq!(n, 2, "both borrowed entries evaporate");
-        assert_eq!(px.total_bytes, 10, "residency is back at the floor");
-        assert_eq!(f.borrowed_bytes(&px), 0);
-        assert_eq!(
-            KV_FLEX_GRANT.load(std::sync::atomic::Ordering::Relaxed),
-            0,
-            "the shed unpublishes the grant"
-        );
-        assert_eq!(f.sheds, 1);
-        assert!(f.shed_ms_total >= 0.0);
-        assert!(
-            f.hold_until.is_some_and(|t| t > std::time::Instant::now()),
-            "a capture arrival arms the hold"
-        );
-        assert_eq!(
-            f.grant_for(usize::MAX, std::time::Instant::now()),
-            0,
-            "no grant re-opens during the hold"
-        );
-
-        // Nothing borrowed: the shed is a no-op that must NOT inflate the transition
-        // counter (an embeddings array admits one request per input; only the first
-        // arrival of a burst finds borrowed bytes).
-        assert_eq!(f.shed(&mut px, true, "test capture"), 0);
-        assert_eq!(f.sheds, 1, "a no-op arrival is not a shed transition");
-
-        // Disarmed: shed refuses to touch the cache at all.
-        let mut off = armed_flex(0);
-        off.armed = false;
-        assert_eq!(off.shed(&mut px, true, "test off"), 0);
-        assert_eq!(px.total_bytes, 10);
-        assert_eq!(off.borrowed_bytes(&px), 0, "disarmed borrow gauge reads 0");
-    }
-
-    /// WIRING (the wiring-assertions law: anchor on invocations in comment-stripped
-    /// source, never on prose). The capture-arrival shed must run inside the admission
-    /// pass, guarded on the request's capture marker, BEFORE the VRAM headroom math.
-    #[test]
-    fn kv_flex_shed_on_capture_arrival_is_wired_before_admission_math() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let shed_at = code
-            .find("kv_flex.shed(&mut px, true, \"capture arrival\")")
-            .expect("the capture-arrival shed invocation exists");
-        let guard_at = code[..shed_at]
-            .rfind("if req.capture.is_some()")
-            .expect("the capture guard exists upstream of the shed");
-        assert!(
-            shed_at - guard_at < 200,
-            "the arrival shed must be guarded on the request's capture marker"
-        );
-        let required_at = code
-            .find("let required = admission_required(cost, reserve);")
-            .expect("the admission requirement site exists");
-        assert!(
-            shed_at < required_at,
-            "the borrowed slice must yield BEFORE the capture request's admission math"
-        );
-    }
-
-    /// WIRING: at admission insufficiency, the borrowed slice sheds FIRST, before the
-    /// nuclear reclaim ladder evaporates the floor residency the operator budgeted.
-    #[test]
-    fn kv_flex_borrowed_first_shed_precedes_the_nuclear_reclaim_ladder() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let shed_at = code
-            .find("kv_flex.shed(&mut px, false, \"admission headroom\")")
-            .expect("the headroom shed invocation exists");
-        let evict_at = code[shed_at..]
-            .find("let evicted_prefix = px.evict_all();")
-            .expect("the evict_all ladder exists downstream of the shed");
-        assert!(
-            evict_at < 2500,
-            "the borrowed-first shed must sit immediately upstream of the evict_all ladder"
-        );
-        let gate_at = code[..shed_at]
-            .rfind("!headroom.sufficient(required)")
-            .expect("the insufficiency gate exists upstream of the shed");
-        assert!(
-            shed_at - gate_at < 400,
-            "the headroom shed fires only on admission insufficiency"
-        );
-    }
-
-    /// WIRING, single-owner law (tiering spec Arc G: \"budget accounting must have ONE
-    /// allocator owner or the design is wrong\"): the grant static is written only by
-    /// KvFlex methods, both production insert wrappers consult the ONE effective-budget
-    /// function, and the /metrics gauge derives from the one byte accountant.
-    #[test]
-    fn kv_flex_single_owner_wiring() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        // Every production write of the grant lives inside impl KvFlex.
-        let impl_start = prod.find("impl KvFlex {").expect("impl KvFlex exists");
-        let impl_end = impl_start
-            + prod[impl_start..]
-                .find("\nfn prefix_dedup_enabled")
-                .expect("impl KvFlex ends before prefix_dedup_enabled");
-        let stores: Vec<usize> = prod
-            .match_indices("KV_FLEX_GRANT.store(")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(
-            stores.len(),
-            2,
-            "exactly two production grant writers: refresh_grant and shed"
-        );
-        for i in stores {
-            assert!(
-                i > impl_start && i < impl_end,
-                "a grant write escaped impl KvFlex: a second budget owner"
-            );
-        }
-
-        // Both production insert wrappers consult the one effective-budget function and
-        // no longer read the bare floor themselves.
-        for wrapper in ["fn insert_demoting(", "fn insert_pinned_demoting("] {
-            let start = prod.find(wrapper).expect("wrapper exists");
-            let body = &prod[start..];
-            let flexed_at = body
-                .find("kv_flex_effective_budget()")
-                .expect("the flexed budget is consulted");
-            assert!(
-                flexed_at < 900,
-                "{wrapper} must consult kv_flex_effective_budget"
-            );
-            assert!(
-                body.find("prefix_cache_budget_bytes()")
-                    .is_none_or(|i| i > 900),
-                "{wrapper} must not read the bare floor beside the flexed budget"
-            );
-        }
-
-        // The /metrics borrow gauge derives from the one byte accountant, never a
-        // second counter.
-        assert!(
-            prod.contains("m.kv_flex_borrowed_bytes = kv_flex.borrowed_bytes(&px) as u64;"),
-            "the metrics publish must derive borrowed bytes via KvFlex::borrowed_bytes"
-        );
-        assert!(
-            prod.contains("m.kv_flex_sheds = kv_flex.sheds;")
-                && prod.contains("m.kv_flex_shed_ms = kv_flex.shed_ms_total;"),
-            "shed transition counters must publish to /metrics"
-        );
-    }
-
-    /// PREDICTIVE-ADMISSION SHADOW wiring (lane/d2-engine-gaps-20260831, darklanes Arc
-    /// D2 gaps G2/G3/G5): anchored on INVOCATIONS in comment-stripped production text,
-    /// per the wiring-assertions law: a rationale comment must never satisfy this.
-    #[test]
-    fn admit_predict_shadow_wiring() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        // G2: exactly one book-admit and one book-retire, so the book has one owner
-        // per direction and stays exact by construction.
-        assert_eq!(
-            prod.matches("admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);")
-                .count(),
-            1,
-            "one production book-admit"
-        );
-        assert_eq!(
-            prod.matches("admission_book.retire(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);")
-                .count(),
-            1,
-            "one production book-retire"
-        );
-        // The admit charge sits at the active.push seam...
-        let admit_at = prod
-            .find("admission_book.admit(")
-            .expect("book admit exists");
-        let push_at = prod.find("active.push(s);").expect("active.push exists");
-        assert!(
-            admit_at < push_at && push_at - admit_at < 200,
-            "book-admit must immediately precede active.push"
-        );
-        // ...and the retire release at the single active.remove seam.
-        let remove_at = prod.find("active.remove(i)").expect("retire remove exists");
-        let retire_at = prod
-            .find("admission_book.retire(")
-            .expect("book retire exists");
-        assert!(
-            retire_at > remove_at && retire_at - remove_at < 800,
-            "book-retire must sit at the active.remove seam"
-        );
-
-        // G3: the completion history records exactly once, at retirement, and only for
-        // terminal completions (parks re-admit; aborts are load, not completions).
-        assert_eq!(prod.matches("completion_history.record(").count(), 1);
-        assert!(
-            prod.contains("if !s.oom_teardown && !s.aborted {"),
-            "history excludes parks and aborts"
-        );
-
-        // G2 metrics: the /metrics gauges derive from the one book, never a twin counter.
-        assert!(prod.contains("m.admission_inflight = admission_book.inflight_snapshot();"));
-        assert!(prod.contains("m.admission_booked_bytes = admission_book.booked_snapshot();"));
-
-        // G5: exactly two verdict emission sites (the slot arm pre-tokenize, the KV arm
-        // post-tokenize), each behind the armed flag + the per-request one-shot latch,
-        // and each inside an eprintln!: the shadow LOGS, it never answers a request.
-        let sites: Vec<usize> = prod
-            .match_indices("shadow_verdict_line(")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(sites.len(), 2, "slot arm + kv arm, nothing else");
-        for i in sites {
-            let before = &prod[i.saturating_sub(120)..i];
-            assert!(
-                before.contains("eprintln!"),
-                "a verdict site must be a log line, never a response path"
-            );
-        }
-        assert_eq!(
-            prod.matches("admit_predict_cfg.armed").count(),
-            4,
-            "slot arm, kv arm, the admit-time shadow book charge, and the boot \
-             budget resolution"
-        );
-        assert_eq!(
-            prod.matches("req.admit_predict_logged = true;").count(),
-            2,
-            "both arms latch the one-shot receipt"
-        );
-
-        // LIVE BUDGET DEFAULT (lane/admit-predict-calibration-20260901): the boot
-        // resolution is invoked exactly once, and its derivation reads the engine's
-        // own quantities (effective free, the prefix-cache budget, the real gate's
-        // reserve arithmetic), never a second hand-rolled formula.
-        assert_eq!(
-            prod.matches("admit_predict_cfg.resolve_budget(derived);")
-                .count(),
-            1,
-            "one boot budget resolution"
-        );
-        let resolve_at = prod
-            .find("admit_predict_cfg.resolve_budget(derived);")
-            .expect("resolution exists");
-        let derive_block = &prod[resolve_at.saturating_sub(1600)..resolve_at];
-        for input in [
-            "effective_free_bytes(&engine)",
-            "prefix_cache_budget_bytes() as u64",
-            "admission_reserve(",
-            "admit_reserve_override()",
-        ] {
-            assert!(
-                derive_block.contains(input),
-                "the derivation must read `{input}`"
-            );
-        }
-
-        // Dual book (FINDING 3 calibration): both verdict sites carry the
-        // engine-charge book beside the predictive one.
-        assert_eq!(
-            prod.matches("booked_real_bytes: admission_book.booked_total(),")
-                .count(),
-            2,
-            "both arms log booked_real from the engine-charge book"
-        );
-    }
-
-    /// FIRST-TOKEN DEADLINE GATE wiring (lane/bench-debts-20260901, competitive-bench
-    /// engine debt 3): anchored on INVOCATIONS in comment-stripped production text
-    /// (wiring-assertions law).
-    #[test]
-    fn first_token_deadline_gate_wiring() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        // ONE gate site, judging through the pure predicate.
-        let sites: Vec<usize> = prod
-            .match_indices("crate::admit_predict::first_token_wait_infeasible(")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(sites.len(), 1, "exactly one production gate site");
-        let i = sites[0];
-        // Behind the flag, interactive-only, capture-exempt, judging the REMAINING
-        // wire deadline and the live prime backlog.
-        let before = &prod[i.saturating_sub(1000)..i];
-        assert!(
-            before.contains("first_token_deadline_gate_on()"),
-            "the gate must be flag-guarded"
-        );
-        assert!(
-            before.contains("lane == crate::lanes::Lane::Interactive"),
-            "interactive lane only"
-        );
-        assert!(
-            before.contains("req.capture.is_none()"),
-            "capture requests bypass"
-        );
-        assert!(
-            before.contains("req.wire_deadline"),
-            "the wire deadline is the judged contract"
-        );
-        assert!(
-            before.contains("s.prefill_queue.len()"),
-            "the backlog is the live prime queue, not a proxy"
-        );
-        // The refusal is the shed contract: Retry-After constructor, reservation
-        // released, and the request never falls through to admission.
-        let after = &prod[i..(i + 2200).min(prod.len())];
-        assert!(
-            after.contains("EngineError::rate_limit_after("),
-            "refusal takes the Retry-After shed constructor"
-        );
-        assert!(
-            after.contains("release_admission_reservation(req.lane);"),
-            "the lane reservation is released on refusal"
-        );
-        assert!(
-            after.contains("continue;"),
-            "a refused request never reaches admission"
-        );
-        // The receipt line is grep-stable.
-        assert!(
-            after.contains("[first-token-gate] id="),
-            "the refusal logs a joined receipt line"
-        );
-        // The deadline is stamped at every handler submission seam beside the receipt
-        // identity: the two lib.rs handlers plus the shared surfaces body.
-        for (file, want) in [
-            (include_str!("lib.rs"), 2usize),
-            (include_str!("surfaces.rs"), 1usize),
-        ] {
-            let stripped: String = file
-                .lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert_eq!(
-                stripped
-                    .matches("wire_deadline = Some(deadline.at.into_std());")
-                    .count(),
-                want,
-                "every handler submission stamps the wire deadline"
-            );
-        }
-    }
-
     /// TOOTH for the H11 depth freeze (the measured 3.1x lever, canonflip-20260813):
     /// the seed decision must compare DEPTH against the deepest covering entry, never a
     /// boolean covering check. Under the pre-fix rule (`has_covering` -> skip), the shallow
@@ -27313,112 +18546,6 @@ mod tests {
         assert!(!arms(false, true, false, 4860));
         assert!(!arms(true, false, false, 4860));
         assert!(!arms(true, true, false, PREFIX_CACHE_MIN_TOKENS - 1));
-    }
-
-    /// lane/glm5-prefix-latent2 (2026-09-01): the carried-suffix prime carve-out is scoped
-    /// to hyper trunks AND the flag — gemma-class eager-only models never carve out (their
-    /// engine genuinely refuses pos>0 prime; the veto is load-bearing there).
-    #[test]
-    fn carried_suffix_prime_carveout_is_hyper_and_flag_scoped() {
-        let p = super::carried_suffix_primes;
-        // hyper trunk + flag = the carve-out (glm5 restored suffix rides the prime program)
-        assert!(p(true, true));
-        // flag off = today's tokenwise path, byte-identical (the rollback seam)
-        assert!(!p(true, false));
-        // gemma-class (not a hyper trunk) never carves out, flag or no flag
-        assert!(!p(false, true));
-        assert!(!p(false, false));
-    }
-
-    /// WIRING GATE (anchored on invocations in comment-stripped source, never prose —
-    /// the wiring-assertions-match-prose law): the MEMRA_HYPER_SUFFIX_PRIME carve-out is
-    /// LIVE at all four seams it claims (both prefill sites' veto terms + receipts, the
-    /// H11 reseed narrowing, the hit-LCP deepening disjunction).
-    #[test]
-    fn suffix_prime_carveout_wiring_is_live_in_comment_stripped_source() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        // Assertions run over the PRE-TEST slice: this test's own string literals would
-        // otherwise count themselves (comment-stripping does not strip strings).
-        let live = &code[..code.find("mod tests").expect("the test module exists")];
-        // 1. Both prefill sites compute the carve-out through the PURE predicate over the
-        //    plan's hyper-trunk truth and the flag, and their veto terms consume it.
-        assert_eq!(
-            live.matches("carried_suffix_primes(").count(),
-            5, // fn def + 2 prefill sites + reseed narrowing + hit-LCP deepening (update
-            // this count AND this comment together when a new consumer lands)
-            "the carve-out predicate must be consumed at exactly the claimed seams"
-        );
-        assert_eq!(
-            live.matches("!(eager_mono && carried && !suffix_prime)")
-                .count(),
-            2,
-            "both prefill sites (prefill_tick + step_session) must carry the lifted veto"
-        );
-        // Any THIRD variant of the veto expression (an unlifted reintroduction under
-        // different formatting — PR #93 review finding 6a: the old newline-anchored
-        // negative assertion passed on same-line braces) fails this exact count.
-        assert_eq!(
-            live.matches("(eager_mono && carried").count(),
-            2,
-            "exactly the two lifted veto forms may mention (eager_mono && carried"
-        );
-        // 2. The engagement receipt is an INVOCATION in both sites (the deploy gate greps
-        //    the server log for it); the OFF arm announces DECLINED in both sites; the
-        //    flag-ON tokenwise fallbacks (budget starvation, sub-floor suffix) announce
-        //    TOKENWISE in both sites and set the provenance bit the capture sites refuse
-        //    on (PR #93 review findings 3a + 5 — R16 as a checked invariant).
-        assert_eq!(
-            live.matches("\"[suffix-prime] ENGAGED:").count(),
-            2,
-            "both prefill sites must emit the ENGAGED receipt"
-        );
-        assert_eq!(
-            live.matches("\"[suffix-prime] DECLINED (MEMRA_HYPER_SUFFIX_PRIME off):")
-                .count(),
-            2,
-            "both prefill sites must announce the OFF-arm tokenwise suffix on hyper trunks"
-        );
-        assert_eq!(
-            live.matches("\"[suffix-prime] TOKENWISE (flag on):")
-                .count(),
-            2,
-            "both tokenwise branches must announce the flag-ON fallback on hyper trunks"
-        );
-        assert_eq!(
-            live.matches("s.prompt_tok_decode_step = true;").count(),
-            2,
-            "both tokenwise branches must set the provenance bit"
-        );
-        assert_eq!(
-            live.matches("if s.prompt_tok_decode_step {").count(),
-            2,
-            "both capture sites (maybe_prefix_seed + the lcp-split insert) must refuse on \
-             the provenance bit"
-        );
-        // 3. The H11 reseed call site narrows the eager bit through the predicate.
-        let reseed = live
-            .find("if plain_hit_reseed_arms(")
-            .expect("the H11 re-arm call site exists");
-        assert!(
-            live[reseed..reseed + 400].contains("&& !carried_suffix_primes("),
-            "the reseed call site must pass the carve-out-narrowed eager bit"
-        );
-        // 4. The hit-LCP deepening carries the carve-out disjunction beside the eager
-        //    veto. The invocation shape is the deepest-wins max over the LCP teacher and
-        //    the stable boundary (lane/bench-debts-20260901); the carve-out anchor is
-        //    unchanged.
-        let deepen = live
-            .find("lcp_taught.unwrap_or(0).max(stable.unwrap_or(0)),")
-            .expect("the hit-LCP deepening site exists");
-        assert!(
-            live[deepen..deepen + 500].contains("|| carried_suffix_primes("),
-            "the deepening site must admit prime-provenance hyper suffixes"
-        );
     }
 
     #[test]
@@ -27505,25 +18632,25 @@ mod tests {
     #[test]
     fn immediate_partial_restore_support_matrix_is_fail_closed() {
         assert_eq!(
-            partial_prefix_decision(false, false, false, 96, 160, 128),
+            partial_prefix_decision(false, false, 96, 160, 128),
             PartialPrefixDecision::Restore,
             "transformer-only mid-entry splits are the supported first arm",
         );
         assert_eq!(
-            partial_prefix_decision(true, false, false, 96, 160, 128),
+            partial_prefix_decision(true, false, 96, 160, 128),
             PartialPrefixDecision::RefuseRecurrentMidEntry,
         );
         assert_eq!(
-            partial_prefix_decision(true, false, false, 160, 160, 192),
+            partial_prefix_decision(true, false, 160, 160, 192),
             PartialPrefixDecision::Restore,
             "recurrent state is exact at its captured endpoint",
         );
         assert_eq!(
-            partial_prefix_decision(false, false, true, 96, 160, 128),
+            partial_prefix_decision(false, true, 96, 160, 128),
             PartialPrefixDecision::RefuseRoutedMoe,
         );
         assert_eq!(
-            partial_prefix_decision(false, false, false, 128, 160, 128),
+            partial_prefix_decision(false, false, 128, 160, 128),
             PartialPrefixDecision::RefuseNoSuffix,
             "a truncated entry does not carry logits for an interior endpoint",
         );
@@ -27842,7 +18969,6 @@ mod tests {
             kv: Vec::new(),
             conv: Vec::new(),
             ssm: Vec::new(),
-            latent: Vec::new(),
             pos: 0,
             last_logits: vec![0.0],
             draft: None,
@@ -27864,1164 +18990,6 @@ mod tests {
                 return u;
             }
         }
-    }
-
-    // ---- PREFIX-CACHE HOST TIER (lane/kv-host-spill-20260830) ----
-    // CPU-side halves only: key rules, LRU/byte accounting, layout refusal, and the demote
-    // sink's contract with the device eviction loop. The D2H/H2D copy halves and the promote
-    // refusal are pod-gate territory (tools/kv-host-spill-*.sh).
-
-    fn host_entry(pool_key: &PoolKey, toks: Vec<u32>, bytes: usize) -> HostPrefixEntry {
-        HostPrefixEntry {
-            layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
-            pool_key: pool_key.clone(),
-            toks,
-            kv: Vec::new(),
-            conv: Vec::new(),
-            ssm: Vec::new(),
-            pos: 0,
-            last_logits: vec![0.0],
-            draft: None,
-            dspark_draft: None,
-            last_h: Vec::new(),
-            bytes,
-            last_use: next_instant(),
-            id: 0,
-            verify_digest: None,
-        }
-    }
-
-    #[test]
-    fn host_cache_lookup_enforces_the_device_caches_key_rules() {
-        let mut h = HostPrefixCache::new(1 << 20);
-        let ka = key("tenant-a");
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        assert!(h.insert(&ka, host_entry(&ka, toks(min), 4)));
-        // PC-ISO: another namespace never sees the entry.
-        assert!(h.lookup(&key("tenant-b"), &toks(min + 32)).is_none());
-        assert!(h.lookup(&key(""), &toks(min + 32)).is_none());
-        // Exact-prefix hit in the owning namespace.
-        assert!(h.lookup(&ka, &toks(min + 32)).is_some());
-        // An entry LONGER than the prompt is not a hit (n <= prompt.len()).
-        assert!(h.lookup(&ka, &toks(min - 1)).is_none());
-        // The MIN_TOKENS floor holds even if a short entry somehow lands in the pool.
-        let kb = key("tenant-short");
-        assert!(h.insert(&kb, host_entry(&kb, toks(min - 1), 4)));
-        assert!(h.lookup(&kb, &toks(min + 32)).is_none());
-        // Diverging tokens are not a hit: same length, different content.
-        let kc = key("tenant-div");
-        let mut diverged = toks(min);
-        diverged[min - 1] = 999_999;
-        assert!(h.insert(&kc, host_entry(&kc, diverged, 4)));
-        assert!(h.lookup(&kc, &toks(min + 32)).is_none());
-        // Longest exact prefix wins when several cover the prompt.
-        let kd = key("tenant-long");
-        assert!(h.insert(&kd, host_entry(&kd, toks(min), 4)));
-        assert!(h.insert(&kd, host_entry(&kd, toks(min + 64), 4)));
-        let i = h.lookup(&kd, &toks(min + 128)).expect("a hit exists");
-        assert_eq!(h.entries[&kd][i].toks.len(), min + 64);
-    }
-
-    // ---- COMPETITIVE-BENCH DEBT 1: promote starvation under organic churn ----
-    // (darklanes research/competitive-bench-20260901/RESULTS.md §7: N56 cell: 28-49
-    // demotions per promotion.) CPU-side halves: the admit-time probe-order rule (host
-    // consulted on a device miss OR a shallower device hit) and the key-shape reason the
-    // demoted population could not match (prompt-end seeds carry the live generation
-    // header the next turn re-renders).
-
-    #[test]
-    fn host_probe_fires_on_device_miss_and_on_shallower_device_hit() {
-        let mut h = HostPrefixCache::new(1 << 20);
-        let k = key("t");
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        let deep = min + 256;
-        assert!(h.insert(&k, host_entry(&k, toks(deep), 8)));
-        let prompt = toks(deep + 512);
-        // Device miss (best_len 0): the host entry is the candidate.
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, 0), Some(0));
-        // A surviving SHALLOW device entry (the bench's shared-system-prompt seed, hit
-        // 425x at exactly 64 tokens) must not shadow the deeper demoted twin.
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, min), Some(0));
-        // The device already serves at least as deep: nothing to feed.
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, deep), None);
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, deep + 32), None);
-        // A latched-off tier is never consulted.
-        h.disable("test latch");
-        assert_eq!(host_promote_candidate(&h, &k, &prompt, 0), None);
-    }
-
-    #[test]
-    fn prompt_end_seed_key_never_matches_the_rerendered_next_turn_but_a_stable_key_does() {
-        // Turn N's prompt ends inside the live generation header; turn N+1 re-renders that
-        // header after the stripped answer (the pi-rewrite divergence documented at
-        // `plain_checkpoint_boundary`). A prompt-END seed key therefore diverges a couple
-        // of tokens below its own end and can never exact-prefix-match again: the
-        // starvation shape. The same state keyed at the stable boundary matches trivially.
-        let k = key("t");
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        let body = min * 4;
-        let header = [900_001u32, 900_002];
-        let mut turn_n: Vec<u32> = toks(body);
-        turn_n.extend_from_slice(&header);
-        let mut turn_n1: Vec<u32> = toks(body);
-        turn_n1.extend_from_slice(&[700_000, 700_001, 700_002]);
-        turn_n1.extend_from_slice(&header);
-        let mut h = HostPrefixCache::new(1 << 20);
-        // The demoted prompt-end seed of turn N.
-        assert!(h.insert(&k, host_entry(&k, turn_n, 8)));
-        assert_eq!(
-            host_promote_candidate(&h, &k, &turn_n1, 0),
-            None,
-            "a prompt-end seed key carries the volatile header tail and starves the tier"
-        );
-        // The same session state keyed at the render-stable boundary (before the header).
-        assert!(h.insert(&k, host_entry(&k, toks(body), 8)));
-        let hi = host_promote_candidate(&h, &k, &turn_n1, 0).expect("stable key promotes");
-        assert_eq!(h.entries[&k][hi].toks.len(), body);
-    }
-
-    #[test]
-    fn stable_boundary_arm_is_deepest_wins_and_floor_checked() {
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        // No boundary, nothing arms.
-        assert_eq!(stable_boundary_arm(None, None, 10 * min), None);
-        // Below the entry floor never arms.
-        assert_eq!(stable_boundary_arm(Some(min - 1), None, 10 * min), None);
-        // At/above the floor arms on a bare miss.
-        assert_eq!(stable_boundary_arm(Some(min), None, 10 * min), Some(min));
-        // Deeper than an already-taught boundary wins...
-        assert_eq!(
-            stable_boundary_arm(Some(4 * min), Some(2 * min), 10 * min),
-            Some(4 * min)
-        );
-        // ...but a shallower stable boundary never downgrades a deeper armed capture.
-        assert_eq!(
-            stable_boundary_arm(Some(2 * min), Some(4 * min), 10 * min),
-            None
-        );
-        assert_eq!(
-            stable_boundary_arm(Some(2 * min), Some(2 * min), 10 * min),
-            None
-        );
-        // A boundary at/past prompt end is not a boundary.
-        assert_eq!(stable_boundary_arm(Some(10 * min), None, 10 * min), None);
-    }
-
-    /// Competitive-bench debt 1 wiring: anchored on INVOCATIONS in comment-stripped
-    /// production text (wiring-assertions law: a rationale comment must never satisfy
-    /// this).
-    #[test]
-    fn stable_boundary_and_host_probe_wiring() {
-        let src = include_str!("worker.rs");
-        let code: String = src
-            .lines()
-            .map(|l| l.split("//").next().unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        // The admit-time probe-order decision has ONE owner and the promote hook consults
-        // it (definition + the one call site).
-        assert_eq!(
-            prod.matches("host_promote_candidate(").count(),
-            2,
-            "definition + the promote hook's consult, nothing else"
-        );
-        let hook = prod
-            .find("fn host_promote_prefix_hit(")
-            .expect("promote hook exists");
-        let consult = prod[hook..]
-            .find("host_promote_candidate(")
-            .expect("the hook consults the candidate rule");
-        assert!(
-            consult < 900,
-            "the candidate consult must be the promote hook's first act"
-        );
-
-        // Both plain capture paths arm through the flag + the stable-boundary derivation:
-        // the shallow-hit arm and the miss-path arm.
-        let flag_sites: Vec<usize> = prod
-            .match_indices("if prefix_stable_boundary_on()")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(flag_sites.len(), 2, "hit arm + miss arm, nothing else");
-        for i in flag_sites {
-            let window = &prod[i..(i + 700).min(prod.len())];
-            assert!(
-                window.contains("plain_checkpoint_boundary(&prompt"),
-                "each armed site derives the boundary from plain_checkpoint_boundary"
-            );
-        }
-        // The miss arm goes through the pure deepest-wins rule (definition + one call).
-        assert_eq!(
-            prod.matches("stable_boundary_arm(").count(),
-            2,
-            "definition + the miss-path arm"
-        );
-    }
-
-    #[test]
-    fn host_cache_budget_evicts_lru_first_and_keeps_bytes_exact() {
-        let mut h = HostPrefixCache::new(10);
-        // This cell exercises the GLOBAL byte-budget LRU; disarm the per-tenant share
-        // cap (100 = off by contract) so the single "" row can reach the global bound.
-        h.tenant_pct = 100;
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        let k = key("");
-        let (a, b, c): (Vec<u32>, Vec<u32>, Vec<u32>) = (
-            (1000..1000 + min as u32).collect(),
-            (2000..2000 + min as u32).collect(),
-            (3000..3000 + min as u32).collect(),
-        );
-        assert!(h.insert(&k, host_entry(&k, a.clone(), 4)));
-        assert!(h.insert(&k, host_entry(&k, b.clone(), 4)));
-        assert_eq!((h.total_bytes, h.n_entries()), (8, 2));
-        // Touch A so B becomes the LRU victim.
-        let ai = h.key_index(&k, &a).expect("A resident");
-        h.touch(&k, ai);
-        assert!(h.insert(&k, host_entry(&k, c.clone(), 4)));
-        assert_eq!(h.evictions, 1);
-        assert_eq!((h.total_bytes, h.n_entries()), (8, 2));
-        assert!(h.key_index(&k, &b).is_none(), "LRU victim B evicted");
-        assert!(h.key_index(&k, &a).is_some(), "touched A survives");
-        assert!(h.key_index(&k, &c).is_some(), "newest C survives");
-        // An entry larger than the whole host budget is refused outright.
-        assert!(!h.insert(&k, host_entry(&k, toks(min), 11)));
-        assert_eq!((h.total_bytes, h.n_entries()), (8, 2));
-        // Byte accounting survives removal too.
-        let ci = h.key_index(&k, &c).unwrap();
-        let dead = h.remove_at(&k, ci).expect("C removable");
-        assert_eq!(dead.toks, c);
-        assert_eq!((h.total_bytes, h.n_entries()), (4, 1));
-        assert_eq!(h.lru.len(), 1, "LRU index tracks the surviving entry only");
-    }
-
-    #[test]
-    fn host_cache_demote_of_an_existing_key_replaces_the_stale_twin() {
-        let mut h = HostPrefixCache::new(100);
-        let k = key("");
-        let t = toks(super::PREFIX_CACHE_MIN_TOKENS);
-        assert!(h.insert(&k, host_entry(&k, t.clone(), 4)));
-        // Same exact token key demoted again (e.g. a draft-bearing re-publication of the
-        // same prefix was evicted): the incoming entry REPLACES the twin, never duplicates.
-        assert!(h.insert(&k, host_entry(&k, t.clone(), 6)));
-        assert_eq!(
-            h.n_entries(),
-            1,
-            "exact-key demote must replace, not duplicate"
-        );
-        assert_eq!(
-            h.total_bytes, 6,
-            "the replacement's bytes are the resident bytes"
-        );
-        assert_eq!(h.evictions, 0, "a replace is not an eviction");
-    }
-
-    #[test]
-    fn host_cache_refuses_layout_version_and_identity_mismatches() {
-        let mut h = HostPrefixCache::new(100);
-        let k = key("");
-        let mut stale = host_entry(&k, toks(super::PREFIX_CACHE_MIN_TOKENS), 4);
-        stale.layout_version = PREFIX_ENTRY_LAYOUT_VERSION + 1;
-        assert!(
-            !h.insert(&k, stale),
-            "a future/stale layout version must be refused"
-        );
-        assert_eq!(h.n_entries(), 0);
-        let foreign = host_entry(&key("other-ns"), toks(super::PREFIX_CACHE_MIN_TOKENS), 4);
-        assert!(
-            !h.insert(&k, foreign),
-            "an entry keyed to another pool must be refused"
-        );
-        assert_eq!((h.n_entries(), h.total_bytes), (0, 0));
-    }
-
-    /// TENANT LIFECYCLE PURGE (lane/kv-tenancy-compaction-20260831, tiering spec §0.5):
-    /// the executed two-namespace cell: populate two tenants (two salts each) plus a
-    /// raw-salt pool, purge one tenant, and prove the others SURVIVE while the gauges
-    /// and cumulative purge counters both move by exactly the removed amount.
-    #[test]
-    fn host_purge_removes_one_tenants_namespaces_and_no_others() {
-        let mut h = HostPrefixCache::new(1 << 20);
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        let acme1 = key(&crate::auth::scope_namespace("acme", "s1"));
-        let acme2 = key(&crate::auth::scope_namespace("acme", "s2"));
-        let beta = key(&crate::auth::scope_namespace("beta", "s1"));
-        let raw = key("raw-salt");
-        for k in [&acme1, &acme2, &beta, &raw] {
-            assert!(h.insert(k, host_entry(k, toks(min), 8)));
-        }
-        assert_eq!((h.n_entries(), h.total_bytes), (4, 32));
-        assert_eq!(
-            h.purge_tenant("acme"),
-            (2, 2, 16),
-            "both acme salts and nothing else"
-        );
-        // The purged tenant no longer hits; the OTHER tenant and the raw-salt pool serve.
-        assert!(h.lookup(&acme1, &toks(min + 8)).is_none());
-        assert!(h.lookup(&acme2, &toks(min + 8)).is_none());
-        assert!(h.lookup(&beta, &toks(min + 8)).is_some());
-        assert!(h.lookup(&raw, &toks(min + 8)).is_some());
-        // Metrics reflect the purge: gauges drop, cumulative counters advance, LRU exact.
-        assert_eq!((h.n_entries(), h.total_bytes), (2, 16));
-        assert_eq!((h.purges, h.purged_entries, h.purged_bytes), (1, 2, 16));
-        assert_eq!(h.lru.len(), 2, "the LRU index tracks only survivors");
-        // Idempotent: a tenant with nothing resident is a clean zero report.
-        assert_eq!(h.purge_tenant("acme"), (0, 0, 0));
-        // A raw salt is NOT a tenant: a tenant NAMED like the salt must not match it,
-        // because the client-controlled string lives outside the `t:` keyring row space.
-        assert_eq!(h.purge_tenant("raw-salt"), (0, 0, 0));
-        assert!(h.lookup(&raw, &toks(min + 8)).is_some());
-    }
-
-    #[test]
-    fn kv_host_tenant_pct_parse_falls_back_loudly_on_junk() {
-        // Absent = the deliberate default (FLAGS.md row carries the justification).
-        assert_eq!(super::parse_kv_host_tenant_pct(None), 50);
-        // The whole valid range parses as itself; 100 is the documented cap-off arm.
-        assert_eq!(super::parse_kv_host_tenant_pct(Some("1")), 1);
-        assert_eq!(super::parse_kv_host_tenant_pct(Some("50")), 50);
-        assert_eq!(super::parse_kv_host_tenant_pct(Some("100")), 100);
-        // 0 would evaporate EVERY demotion and >100 could never bind tighter than the
-        // global budget: both are misconfigurations and fall back to the default.
-        assert_eq!(super::parse_kv_host_tenant_pct(Some("0")), 50);
-        assert_eq!(super::parse_kv_host_tenant_pct(Some("101")), 50);
-        assert_eq!(super::parse_kv_host_tenant_pct(Some("half")), 50);
-        assert_eq!(super::parse_kv_host_tenant_pct(Some("")), 50);
-    }
-
-    /// PER-TENANT SHARE CAP (MEMRA_KV_HOST_TENANT_PCT): the executed two-namespace
-    /// fill. Tenant A hits its cap and its next demotion EVAPORATES (refused, counted,
-    /// nothing of A's evicted); tenant B still demotes into the same pool.
-    #[test]
-    fn host_cache_tenant_share_cap_evaporates_one_tenant_and_still_demotes_the_other() {
-        let mut h = HostPrefixCache::new(100);
-        h.tenant_pct = 50; // pin the arm: the cell must not depend on the process env
-        let min = super::PREFIX_CACHE_MIN_TOKENS;
-        let a = key(&crate::auth::scope_namespace("acme", "s1"));
-        let b = key(&crate::auth::scope_namespace("beta", "s1"));
-        let t = |base: u32| -> Vec<u32> { (base..base + min as u32).collect() };
-        // A fills to its 50-byte share...
-        assert!(h.insert(&a, host_entry(&a, t(1000), 20)));
-        assert!(h.insert(&a, host_entry(&a, t(2000), 30)));
-        // ...and the demotion beyond it EVAPORATES: refused and counted, and A's own
-        // resident entries are NOT evicted to make room.
-        assert!(!h.insert(&a, host_entry(&a, t(3000), 20)));
-        assert_eq!(h.tenant_rejects, 1);
-        assert_eq!((h.n_entries(), h.total_bytes), (2, 50));
-        // B still demotes: the global pool has room and B's own share is untouched.
-        assert!(h.insert(&b, host_entry(&b, t(1000), 20)));
-        assert_eq!((h.n_entries(), h.total_bytes), (3, 70));
-        // An exact-key replace charges only the DELTA: A at 50/50 re-demotes its
-        // 30-byte key at 30 bytes, but not at 31, and the refused replace must NOT
-        // have destroyed the resident twin.
-        assert!(h.insert(&a, host_entry(&a, t(2000), 30)));
-        assert!(!h.insert(&a, host_entry(&a, t(2000), 31)));
-        assert_eq!(h.tenant_rejects, 2);
-        assert!(h.key_index(&a, &t(2000)).is_some());
-        // Every removal path returns headroom: drop A's 20-byte entry and a fresh
-        // 20-byte demotion lands again, with the row accounting exact.
-        let i = h.key_index(&a, &t(1000)).expect("resident");
-        let _ = h.remove_at(&a, i);
-        assert!(h.insert(&a, host_entry(&a, t(3000), 20)));
-        assert_eq!(h.tenant_bytes.get("t:acme").copied(), Some(50));
-        assert_eq!(h.tenant_bytes.get("t:beta").copied(), Some(20));
-        // An entry bigger than the SHARE evaporates even into an empty row: the cap is
-        // per-row arithmetic, not pool pressure.
-        let c = key(&crate::auth::scope_namespace("gamma", "s1"));
-        assert!(!h.insert(&c, host_entry(&c, t(1000), 51)));
-        assert_eq!(h.tenant_rejects, 3);
-        // The demote hook's pre-copy predicate is the same arithmetic (one derivation).
-        assert!(h.tenant_cap_would_evaporate(&c, &t(1000), 51));
-        assert!(!h.tenant_cap_would_evaporate(&c, &t(1000), 50));
-        // 100 = cap off by contract: the same overfull insert is then governed only by
-        // the global budget (byte-identical to the pre-flag tier).
-        h.tenant_pct = 100;
-        assert!(!h.tenant_cap_would_evaporate(&a, &t(4000), 60));
-        // A purge clears the row: the next demotion sees a fresh ceiling.
-        h.tenant_pct = 50;
-        let _ = h.purge_tenant("acme");
-        assert!(!h.tenant_bytes.contains_key("t:acme"));
-        assert!(h.insert(&a, host_entry(&a, t(5000), 50)));
-    }
-
-    /// PARK COMPACTION eligibility (MEMRA_KV_PARK_COMPACT, tiering spec Arc C1): the
-    /// refusal matrix is pure and every refusal is NAMED, because the park site logs
-    /// the reason and parks the FULL cache on any of them.
-    #[test]
-    fn park_compact_refusal_matrix_is_named_and_exact() {
-        // The target shape: committed == fed, flat single-device cache, room to shave
-        // (the 6k-fed / 262k-cap overcharge the arc exists for).
-        assert_eq!(
-            super::park_compact_rows(6000, 6000, 262_144, false, false, false),
-            Ok(6000)
-        );
-        let err = |pos, fed, cap, ring, tp, pp| {
-            super::park_compact_rows(pos, fed, cap, ring, tp, pp).unwrap_err()
-        };
-        assert!(err(6000, 6000, 262_144, true, false, false).contains("SWA ring"));
-        assert!(err(6000, 6000, 262_144, false, true, false).contains("TP KV mirror"));
-        assert!(err(6000, 6000, 262_144, false, false, true).contains("PP_HOST_BOUNCE"));
-        // pos/fed disagreement means rows [0, fed) are NOT provably the fed tokens.
-        assert!(err(5999, 6000, 262_144, false, false, false).contains("pos != fed"));
-        assert!(err(0, 0, 262_144, false, false, false).contains("pos != fed"));
-        // Already tight: nothing to shave, skip the copy entirely.
-        assert!(
-            err(6000, 6000, 6000, false, false, false).contains("already at its committed length")
-        );
-    }
-
-    /// The exact-extension probe's capacity arm: byte-identical to the legacy
-    /// comparison with the flag OFF; admits fed-length compacted entries (grown at
-    /// admit) with it ON. Plus the comment-stripped wiring: the park site must CALL
-    /// the compactor behind the flag, the probe must go through this predicate, and
-    /// the grow arm must restore through the checkpoint machinery.
-    #[test]
-    fn park_compact_probe_and_park_site_wiring_is_real() {
-        // Legacy arm (flag off): the parked cache must fit the request's charged cap.
-        assert!(super::plain_resume_cap_admits(8192, 8192, false));
-        assert!(super::plain_resume_cap_admits(8193, 8192, false));
-        assert!(!super::plain_resume_cap_admits(8191, 8192, false));
-        // Compaction armed: a fed-length entry is admitted; the admit path grows it.
-        assert!(super::plain_resume_cap_admits(6000, 8192, true));
-        let strip = |src: &str| -> String {
-            src.lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let code = strip(include_str!("worker.rs"));
-        let gate = code
-            .find("if kv_park_compact_on() {")
-            .expect("the park-site gate exists");
-        assert!(
-            code[gate..gate + 500].contains("compact_parked_plain_cache("),
-            "the park site must CALL the compactor behind the flag"
-        );
-        let probe = code
-            .find("prompt.starts_with(&e.fed)")
-            .expect("the exact-extension probe exists");
-        assert!(
-            code[probe.saturating_sub(300)..probe].contains("plain_resume_cap_admits("),
-            "the probe's capacity arm must go through the shared predicate"
-        );
-        let grow = code
-            .find("if e.cap < ctx_cap {")
-            .expect("the grow arm exists");
-        assert!(
-            code[grow..grow + 3000].contains("restore_cache_checkpoint("),
-            "the grow arm must restore the parked rows through the checkpoint machinery \
-             before any suffix primes"
-        );
-    }
-
-    /// The device half of the purge: unpinned entries in the tenant's namespaces drop
-    /// (so a later capacity eviction cannot DEMOTE the purged bytes back into host RAM),
-    /// pinned entries are counted and left, and other tenants are untouched.
-    #[test]
-    fn device_purge_drops_unpinned_tenant_entries_and_reports_pinned_leases() {
-        let mut px = PrefixCache::default();
-        let acme = ("m".to_string(), crate::auth::scope_namespace("acme", "s1"));
-        let beta = ("m".to_string(), crate::auth::scope_namespace("beta", "s1"));
-        for (k, ident) in [(&acme, 1u32), (&acme, 2), (&acme, 3), (&beta, 4)] {
-            px.insert_with_budget(k, entry_b(k, ident, 5), "purge-test", 1 << 20);
-        }
-        let i2 = px.key_index(&acme, &[2]).expect("entry 2 resident");
-        let pin = px.pin(&acme, i2).expect("pin held");
-        assert_eq!(
-            px.purge_tenant("acme"),
-            (2, 1),
-            "two unpinned acme entries drop; the leased one is counted, not dropped"
-        );
-        assert_eq!(
-            px_survivors(&px),
-            vec![2, 4],
-            "the pinned acme entry and the beta entry survive"
-        );
-        assert_prefix_cache_accounting(&px);
-        // After the lease retires, the re-fired purge clears the remainder.
-        assert!(px.unpin(&pin));
-        assert_eq!(px.purge_tenant("acme"), (1, 0));
-        assert_eq!(px_survivors(&px), vec![4]);
-        assert_prefix_cache_accounting(&px);
-    }
-
-    /// WIRING (comment-stripped so prose cannot satisfy it): the worker's purge drain
-    /// must invoke BOTH halves, `hpx.purge_tenant(` and `px.purge_tenant(`, and the
-    /// deployment-facing handle must send `Cmd::PurgeTenantHost`, or revocation purges
-    /// nothing while returning 200.
-    #[test]
-    fn the_purge_drain_invokes_both_tiers_and_the_handle_sends_the_command() {
-        let strip = |src: &str| -> String {
-            src.lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let worker = strip(include_str!("worker.rs"));
-        let drain = worker
-            .find("for (tenant, tx) in pending_purges.drain(..)")
-            .expect("the purge drain exists in run()");
-        let body = &worker[drain..drain + 1200];
-        assert!(
-            body.contains("hpx.purge_tenant("),
-            "the drain must purge the HOST tier"
-        );
-        assert!(
-            body.contains("px.purge_tenant("),
-            "the drain must sweep the DEVICE tier too, or leftover device entries \
-             re-demote the purged bytes into host RAM"
-        );
-        let lib = strip(include_str!("lib.rs"));
-        let handle = lib
-            .find("pub async fn purge_tenant(")
-            .expect("PurgeHandle::purge_tenant exists");
-        assert!(
-            lib[handle..handle + 600].contains("Cmd::PurgeTenantHost"),
-            "the handle must send the worker command"
-        );
-    }
-
-    #[test]
-    fn device_eviction_hands_unpinned_victims_to_the_demote_sink() {
-        // The demote hook's contract with insert_with_budget_pins_and_pct: capacity-evicted
-        // entries reach the sink still whole (identity intact), and PINNED entries never do
-        // (they are absent from the evictable LRU).
-        let mut px = PrefixCache::default();
-        let k = key("");
-        let mut demoted: Vec<u32> = Vec::new();
-        let budget = 10usize;
-        for ident in [1u32, 2] {
-            let _ = px.insert_with_budget_pins_and_pct(
-                &k,
-                entry_b(&k, ident, 5),
-                "test",
-                budget,
-                DEFAULT_PREFIX_CACHE_PROTECTED_PCT,
-                0,
-                Some(&mut |dead: PrefixEntry| demoted.push(dead.toks[0])),
-            );
-        }
-        assert!(demoted.is_empty(), "no eviction happened yet");
-        // Pin entry 1: the eviction that admits entry 3 must victimize entry 2 instead.
-        let i1 = px.key_index(&k, &[1]).expect("entry 1 resident");
-        let pin = px.pin(&k, i1).expect("pin held");
-        let _ = px.insert_with_budget_pins_and_pct(
-            &k,
-            entry_b(&k, 3, 5),
-            "test",
-            budget,
-            DEFAULT_PREFIX_CACHE_PROTECTED_PCT,
-            0,
-            Some(&mut |dead: PrefixEntry| demoted.push(dead.toks[0])),
-        );
-        assert_eq!(
-            demoted,
-            vec![2],
-            "the unpinned LRU victim reaches the sink; the pinned entry never does"
-        );
-        assert!(px.unpin(&pin));
-        assert_prefix_cache_accounting(&px);
-        // And with NO sink (tests / tier off) the same eviction is a plain drop.
-        let _ = px.insert_with_budget_pins_and_pct(
-            &k,
-            entry_b(&k, 4, 5),
-            "test",
-            budget,
-            DEFAULT_PREFIX_CACHE_PROTECTED_PCT,
-            0,
-            None,
-        );
-        assert_eq!(demoted, vec![2], "no sink, no demotion record");
-    }
-
-    #[test]
-    fn kv_host_budget_clamp_and_meminfo_parse_are_exact() {
-        // Under the 0.6 backstop: authoritative, unclamped.
-        assert_eq!(super::clamp_kv_host_budget(100, 1000), (100, false));
-        assert_eq!(super::clamp_kv_host_budget(600, 1000), (600, false));
-        // Over it: clamped to MemAvailable x 0.6, and the caller logs LOUDLY on `true`.
-        assert_eq!(super::clamp_kv_host_budget(700, 1000), (600, true));
-        assert_eq!(super::clamp_kv_host_budget(usize::MAX, 1000), (600, true));
-        // /proc/meminfo parsing: MemAvailable specifically, kB to bytes.
-        let meminfo = "MemTotal:       65536000 kB\nMemFree:        1000 kB\n\
-                       MemAvailable:   2048 kB\nBuffers:        12 kB\n";
-        assert_eq!(super::meminfo_available_bytes(meminfo), Some(2048 * 1024));
-        assert_eq!(super::meminfo_available_bytes("MemFree: 5 kB\n"), None);
-        assert_eq!(
-            super::meminfo_available_bytes("MemAvailable: junk kB\n"),
-            None
-        );
-    }
-
-    // ---- AGENT-PAUSE DEMOTION (lane/kv-pause-demote-20260831, tiering spec Arc E) ----
-    // CPU-side halves only: the parse fallback, the idle timer wait, candidate arming, and
-    // the fire-time selection/race matrix. The snapshot + D2H copy halves, the
-    // tool-round-trip byte identity, and the decode-tax A/B are pod-gate territory
-    // (research/kv-pause-20260831/REPORT.md).
-
-    #[test]
-    fn kv_pause_demote_ms_parse_falls_back_loudly_on_junk() {
-        assert_eq!(super::parse_kv_pause_demote_ms(None), 5000);
-        assert_eq!(super::parse_kv_pause_demote_ms(Some("1200")), 1200);
-        // 0 is a legal gate/diagnostic arm: demote at the first sweep after retire, the
-        // deliberately A3-refuted unconditional shape, for measurement only.
-        assert_eq!(super::parse_kv_pause_demote_ms(Some("0")), 0);
-        assert_eq!(super::parse_kv_pause_demote_ms(Some("fast")), 5000);
-        assert_eq!(super::parse_kv_pause_demote_ms(Some("-5")), 5000);
-        assert_eq!(super::parse_kv_pause_demote_ms(Some("")), 5000);
-    }
-
-    /// Every host-tier event counter must move the stamp (battery O6: a counter outside
-    /// the stamp is a counter that can quiesce stale behind its own log line).
-    #[test]
-    fn host_telemetry_stamp_moves_on_every_event_counter() {
-        let mut hpx = super::HostPrefixCache::default();
-        let mut last = hpx.telemetry_stamp();
-        let mut bumped = |hpx: &super::HostPrefixCache, what: &str| {
-            let now = hpx.telemetry_stamp();
-            assert_ne!(now, last, "{what} must move the telemetry stamp");
-            last = now;
-        };
-        hpx.demotions += 1;
-        bumped(&hpx, "demotions");
-        hpx.promotions += 1;
-        bumped(&hpx, "promotions");
-        hpx.evictions += 1;
-        bumped(&hpx, "evictions");
-        hpx.rejected_allocs += 1;
-        bumped(&hpx, "rejected_allocs");
-        hpx.digest_mismatches += 1;
-        bumped(&hpx, "digest_mismatches");
-        hpx.purges += 1;
-        bumped(&hpx, "purges");
-        hpx.purged_entries += 1;
-        bumped(&hpx, "purged_entries");
-        hpx.tenant_rejects += 1;
-        bumped(&hpx, "tenant_rejects");
-        hpx.pause_demotes += 1;
-        bumped(&hpx, "pause_demotes");
-        hpx.pause_cancels += 1;
-        bumped(&hpx, "pause_cancels");
-        // No event: the stamp holds (an idle tick must not force the publish).
-        assert_eq!(hpx.telemetry_stamp(), last);
-    }
-
-    /// The stamp must FORCE the throttled publish (battery O6: an admit-tick promote and
-    /// an idle-wake pause-sweep demote both land on ticks the 32-tick/retire forces skip,
-    /// and both were banked lagging the log around quiesce). Anchored on the publish
-    /// condition and the stamp record inside the publish body, comment-stripped.
-    #[test]
-    fn host_telemetry_dirty_forces_the_metrics_publish() {
-        let strip = |src: &str| -> String {
-            src.lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        fn window(s: &str, at: usize, len: usize) -> &str {
-            let mut end = (at + len).min(s.len());
-            while !s.is_char_boundary(end) {
-                end += 1;
-            }
-            &s[at..end]
-        }
-        let worker = strip(include_str!("worker.rs"));
-        let at = worker
-            .find("tick_n = tick_n.wrapping_add(1);")
-            .expect("the publish gate exists in run()");
-        let gate = window(&worker, at, 800);
-        assert!(
-            gate.contains("let host_telem = hpx.telemetry_stamp();"),
-            "the gate must read the host-tier stamp"
-        );
-        assert!(
-            gate.contains("host_telem != host_telem_published"),
-            "a moved stamp must be a publish condition"
-        );
-        assert!(
-            gate.contains("host_telem_published = host_telem;"),
-            "the publish body must record the stamp it published"
-        );
-    }
-
-    #[test]
-    fn step_oom_fault_msg_is_a_quoted_cuda_oom_naming_the_door() {
-        // The forged error must take the SAME `is_cuda_oom` classification as a driver
-        // failure (otherwise the injection exercises a branch production never takes),
-        // and it must NAME the door, so every downstream log line that prints the error
-        // (the park line, the honest-error line) carries the injection receipt.
-        assert!(super::is_cuda_oom(super::STEP_OOM_FAULT_MSG));
-        assert!(super::STEP_OOM_FAULT_MSG.contains("MEMRA_STEP_OOM_FAULT"));
-        assert!(super::STEP_OOM_FAULT_MSG.contains("synthetic"));
-    }
-
-    #[test]
-    fn step_oom_fault_consume_counts_down_and_latches_off() {
-        use std::sync::atomic::AtomicU32;
-        let r = AtomicU32::new(2);
-        assert!(super::step_oom_fault_consume(&r));
-        assert!(super::step_oom_fault_consume(&r));
-        assert!(!super::step_oom_fault_consume(&r));
-        assert!(!super::step_oom_fault_consume(&r));
-        // Default absent/0: the door never fires.
-        let off = AtomicU32::new(0);
-        assert!(!super::step_oom_fault_consume(&off));
-    }
-
-    /// The door's SCOPE contract (battery-20260831 tenancy-gates T2): injection only in
-    /// the step path, exactly one injection point, sitting in front of the production
-    /// step dispatch so the forged error flows into the SAME `match step_result` the real
-    /// step errors take (park branch, teardown fence, retry budget, honest error).
-    #[test]
-    fn step_oom_fault_door_injects_only_at_the_step_dispatch() {
-        let strip = |src: &str| -> String {
-            src.lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        fn window(s: &str, at: usize, len: usize) -> &str {
-            let mut end = (at + len).min(s.len());
-            while !s.is_char_boundary(end) {
-                end += 1;
-            }
-            &s[at..end]
-        }
-        let worker = strip(include_str!("worker.rs"));
-        // One definition, one call site: the door cannot grow a second seam silently.
-        // Needles are assembled so this test's own literals never self-match.
-        let call = format!("step_oom_fault_fire{}", "()");
-        assert_eq!(
-            worker.matches(call.as_str()).count(),
-            2,
-            "expected exactly one fault-door call beside its definition"
-        );
-        let at = worker
-            .find(format!("if {call}").as_str())
-            .expect("the injection sits at the step dispatch");
-        let body = window(&worker, at, 4000);
-        assert!(
-            body.contains("Err(STEP_OOM_FAULT_MSG.into())"),
-            "the injection must forge the quoted CUDA OOM constant"
-        );
-        assert!(
-            body.contains("step_dspark_spec(") && body.contains("step_session("),
-            "the injection must gate the production step dispatch, not a copy of it"
-        );
-        assert!(
-            body.contains("match step_result"),
-            "the forged error must reach the same match the real step errors take"
-        );
-    }
-
-    #[test]
-    fn idle_recv_wait_prefers_the_nearest_pause_deadline() {
-        use std::time::Duration;
-        let now = std::time::Instant::now();
-        let no_constraints = super::HashMap::new();
-        // No timers at all: the legacy constraint poll cadence (callers only reach this
-        // with work pending, but the fallback must stay bounded either way).
-        assert_eq!(
-            super::idle_recv_wait(&no_constraints, &[], now),
-            super::CONSTRAINT_RESULT_POLL
-        );
-        let cand = |deadline: std::time::Instant| super::PauseCandidate {
-            pool_key: key(""),
-            tape: vec![1, 2, 3],
-            armed_at: now,
-            deadline,
-        };
-        // A pause-only wait sleeps until the NEAREST deadline, not the 5 ms poll: an idle
-        // box must not spin a thousand wakeups through one 5 s pause.
-        let pause = [
-            cand(now + Duration::from_secs(5)),
-            cand(now + Duration::from_secs(2)),
-        ];
-        assert_eq!(
-            super::idle_recv_wait(&no_constraints, &pause, now),
-            Duration::from_secs(2)
-        );
-        assert_eq!(
-            super::next_pause_deadline(&pause),
-            Some(now + Duration::from_secs(2))
-        );
-        // An already-expired deadline still takes a real (1 ms) recv_timeout, never a zero
-        // hot spin.
-        let expired = [cand(now)];
-        assert_eq!(
-            super::idle_recv_wait(&no_constraints, &expired, now + Duration::from_secs(1)),
-            Duration::from_millis(1)
-        );
-        assert_eq!(super::next_pause_deadline(&[]), None);
-    }
-
-    #[test]
-    fn idle_recv_wait_takes_the_minimum_of_both_timer_classes() {
-        use std::time::Duration;
-        let now = std::time::Instant::now();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let request = Box::new(super::Request {
-            model: "m".into(),
-            prompt_ids: vec![1],
-            prompt_text: String::new(),
-            chat: false,
-            chat_turns: Vec::new(),
-            tools_json: Vec::new(),
-            tools_struct: Vec::new(),
-            think: memra_tokenizer::chat::ThinkMode::Default,
-            reasoning_effort: None,
-            params: memra_engine::decode::GenParams::default(),
-            sampler_cfg: memra_engine::sampler::SamplerConfig::default(),
-            stop_strings: Vec::new(),
-            trace_id: None,
-            max_prompt_tokens: None,
-            cache_ns: String::new(),
-            affinity: None,
-            lane: crate::lanes::Lane::Interactive,
-            oom_retries: 0,
-            spec_k_replay: None,
-            grammar: None,
-            prepared_constraint: None,
-            constraint_ready: None,
-            prepared_prompt: None,
-            request_id: String::new(),
-            admit_predict_logged: false,
-            images: Vec::new(),
-            gemma_images: Vec::new(),
-            glm5_images: Vec::new(),
-            step_images: Vec::new(),
-            capture: None,
-            vision_memory: None,
-            wire_deadline: None,
-            ttft: None,
-            tx,
-        });
-        let mut constraints = super::HashMap::new();
-        constraints.insert(
-            7u64,
-            super::PendingConstraintCompile {
-                request,
-                deadline: now + Duration::from_millis(3),
-            },
-        );
-        let cand = |deadline: std::time::Instant| super::PauseCandidate {
-            pool_key: key(""),
-            tape: vec![1],
-            armed_at: now,
-            deadline,
-        };
-        // Pause nearer than the constraint poll: pause wins.
-        assert_eq!(
-            super::idle_recv_wait(&constraints, &[cand(now + Duration::from_millis(2))], now),
-            Duration::from_millis(2)
-        );
-        // Constraint nearer: constraint cadence wins, unchanged from before this lane.
-        assert_eq!(
-            super::idle_recv_wait(&constraints, &[cand(now + Duration::from_millis(40))], now),
-            Duration::from_millis(3)
-        );
-    }
-
-    #[test]
-    fn arm_pause_candidate_refreshes_twins_and_caps_the_list() {
-        use std::time::Duration;
-        let now = std::time::Instant::now();
-        let delay = Duration::from_millis(100);
-        let mut pending: Vec<super::PauseCandidate> = Vec::new();
-        super::arm_pause_candidate(&mut pending, key(""), vec![1, 2], now, delay);
-        assert_eq!(pending.len(), 1);
-        // An exact (pool_key, tape) twin refreshes in place: one boundary, one timer.
-        let later = now + Duration::from_millis(50);
-        super::arm_pause_candidate(&mut pending, key(""), vec![1, 2], later, delay);
-        assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].deadline, later + delay);
-        assert_eq!(pending[0].armed_at, later);
-        // A different tape (or namespace) is a distinct candidate.
-        super::arm_pause_candidate(&mut pending, key(""), vec![1, 2, 3], now, delay);
-        super::arm_pause_candidate(&mut pending, key("other"), vec![1, 2], now, delay);
-        assert_eq!(pending.len(), 3);
-        // Overflow never grows past the cap; the nearest-deadline candidate is the one
-        // sacrificed (it was about to resolve anyway).
-        for i in 0..(super::PAUSE_PENDING_CAP as u32 + 5) {
-            super::arm_pause_candidate(
-                &mut pending,
-                key(""),
-                vec![100 + i],
-                now,
-                delay + Duration::from_millis(u64::from(i)),
-            );
-        }
-        assert_eq!(pending.len(), super::PAUSE_PENDING_CAP);
-    }
-
-    #[test]
-    fn pause_park_index_matches_the_exact_fed_tape_only() {
-        let feds: Vec<Vec<u32>> = vec![vec![1, 2, 3], vec![1, 2], vec![9]];
-        assert_eq!(
-            super::pause_park_index(feds.iter().map(|f| f.as_slice()), &[1, 2]),
-            Some(1)
-        );
-        // A prefix or an extension is NOT this session's park; releasing it would demote
-        // some OTHER conversation's live resume state.
-        assert_eq!(
-            super::pause_park_index(feds.iter().map(|f| f.as_slice()), &[1, 2, 3, 4]),
-            None
-        );
-        assert_eq!(
-            super::pause_park_index(feds.iter().map(|f| f.as_slice()), &[1]),
-            None
-        );
-        // Gone park (the next request's resume consumed it): the cancel case.
-        assert_eq!(super::pause_park_index(std::iter::empty(), &[1, 2]), None);
-    }
-
-    #[test]
-    fn pause_tail_window_strips_trailing_stop_ids_only() {
-        let stop = vec![7u32, 9];
-        // The battery tape shape: content, close marker, then the stop id.
-        assert_eq!(super::pause_tail_window(&[1, 2, 3, 7], &stop), &[1, 2, 3]);
-        // Multiple trailing stop ids (e.g. a turn token then eos) all trim.
-        assert_eq!(
-            super::pause_tail_window(&[1, 2, 3, 9, 7], &stop),
-            &[1, 2, 3]
-        );
-        // A stop id in the MIDDLE of the tape is content: never stripped.
-        assert_eq!(super::pause_tail_window(&[1, 7, 3], &stop), &[1, 7, 3]);
-        // No stop tail: the window is untouched.
-        assert_eq!(super::pause_tail_window(&[1, 2, 3], &stop), &[1, 2, 3]);
-        // All-stop tape: an empty window (the predicate then refuses on "").
-        assert_eq!(super::pause_tail_window(&[7, 7], &stop), &[] as &[u32]);
-        // The PAUSE_TAIL_TOKENS bound still applies after the trim.
-        let long: Vec<u32> = (0..48).collect();
-        let w = super::pause_tail_window(&long, &[47]);
-        assert_eq!(w.len(), super::PAUSE_TAIL_TOKENS);
-        assert_eq!(*w.last().unwrap(), 46);
-    }
-
-    /// REGRESSION for the battery blocker (darklanes
-    /// `research/kv-fastband-20260830/battery-20260831/pause-gates/RESULTS.md`, FINDING 1):
-    /// with `MEMRA_KV_PAUSE_DEMOTE=1`, the host tier armed, and tools declared, 6 of 6
-    /// natural qwen3.8 `finish_reason:"tool_calls"` turns armed ZERO pause candidates,
-    /// because the generation tape ends `...</tool_call>\n<eos>` and the decoded tail
-    /// therefore did not END with the close marker; the identical requests with
-    /// `stop:["</tool_call>"]` armed 2/2. This test replays that exact tape shape through
-    /// a real tokenizer (the eos as an added special token, exactly the chatml layout) and
-    /// asserts the raw decode reproduces the miss while the `pause_tail_window` trim arms.
-    #[test]
-    fn pause_tail_arms_on_the_battery_eos_after_close_tape() {
-        let dir =
-            std::env::temp_dir().join(format!("memra-pause-tail-fixture-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("tokenizer.json"),
-            r#"{
-              "added_tokens": [
-                {"id": 2, "content": "</tool_call>", "special": false},
-                {"id": 3, "content": "<|im_end|>", "special": true}
-              ],
-              "pre_tokenizer": {
-                "type": "Sequence",
-                "pretokenizers": [
-                  {"type": "Split", "pattern": {"Regex": "(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\\r\\n\\p{L}\\p{N}]?[\\p{L}\\p{M}]+|\\p{N}| ?[^\\s\\p{L}\\p{M}\\p{N}]+[\\r\\n]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+"}, "behavior": "Isolated"},
-                  {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": false}
-                ]
-              },
-              "model": {"type": "BPE", "vocab": {"a": 0, "Ċ": 1}, "merges": []}
-            }"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.join("tokenizer_config.json"),
-            r#"{"eos_token": "<|im_end|>"}"#,
-        )
-        .unwrap();
-        let tok = memra_tokenizer::Tokenizer::from_hf_dir(&dir).expect("fixture tokenizer");
-        assert_eq!(tok.eos_id(), 3);
-        // The natural-finish tape: "a", "</tool_call>", "\n", eos; the stop id is pushed
-        // into `generated` before the stop check fires, so it IS in the tape.
-        let generated = vec![0u32, 2, 1, 3];
-        let stop = vec![tok.eos_id()];
-        // Pre-fix shape (no trim): the rendered eos lands after the close marker and the
-        // predicate refuses; the 0-of-6 battery miss, reproduced.
-        let raw = tok.decode_special(&generated, true);
-        assert_eq!(raw, "a</tool_call>\n<|im_end|>");
-        assert!(!crate::toolcall::tail_ends_with_tool_call(&raw));
-        // The fix: trailing stop ids trim at the id level, the predicate sees the close.
-        let tail = tok.decode_special(super::pause_tail_window(&generated, &stop), true);
-        assert!(crate::toolcall::tail_ends_with_tool_call(&tail));
-        // The stop:["</tool_call>"] discriminator shape (stop-string truncation, no stop
-        // id in the tape; armed 2/2 in the battery) must keep arming.
-        let truncated = vec![0u32, 2];
-        let tail = tok.decode_special(super::pause_tail_window(&truncated, &stop), true);
-        assert!(crate::toolcall::tail_ends_with_tool_call(&tail));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// THE PROMOTE-VS-DEMOTE RACE, decision half: a pause demote must LOSE to the session's
-    /// next request. A pinned entry (leased by an in-flight request) and a post-arm touch
-    /// (the admit probe re-hit it) both refuse the demote; only the DEEPEST untouched,
-    /// unpinned committed-prefix entry demotes.
-    #[test]
-    fn pause_px_decision_demotes_deepest_untouched_and_loses_to_pins_and_touches() {
-        use std::time::Duration;
-        let t0 = std::time::Instant::now();
-        let armed_at = t0 + Duration::from_millis(10);
-        let before = t0; // last_use predates the arm: untouched
-        let after = armed_at + Duration::from_millis(10); // re-hit after the arm
-        let tape: Vec<u32> = vec![1, 2, 3, 4, 5];
-        // Deepest prefix wins; non-prefixes and LONGER-than-tape entries never match.
-        let entries: Vec<(&[u32], std::time::Instant, usize)> = vec![
-            (&[1, 2], before, 0),
-            (&[1, 2, 3, 4], before, 0),
-            (&[9], before, 0),
-            (&[1, 2, 3, 4, 5, 6], before, 0),
-        ];
-        assert_eq!(
-            super::pause_px_decision(entries.iter().copied(), &tape, armed_at),
-            super::PausePxDecision::Demote(1)
-        );
-        // The deepest entry is leased: the race is the request's, cleanly.
-        let pinned: Vec<(&[u32], std::time::Instant, usize)> =
-            vec![(&[1, 2], before, 0), (&[1, 2, 3, 4], before, 2)];
-        assert_eq!(
-            super::pause_px_decision(pinned.iter().copied(), &tape, armed_at),
-            super::PausePxDecision::Pinned
-        );
-        // The deepest entry was touched after arming (admit-probe hit): cancel.
-        let touched: Vec<(&[u32], std::time::Instant, usize)> = vec![(&[1, 2, 3, 4], after, 0)];
-        assert_eq!(
-            super::pause_px_decision(touched.iter().copied(), &tape, armed_at),
-            super::PausePxDecision::Touched
-        );
-        // Nothing resident prefixes the tape.
-        let none: Vec<(&[u32], std::time::Instant, usize)> = vec![(&[7], before, 0)];
-        assert_eq!(
-            super::pause_px_decision(none.iter().copied(), &tape, armed_at),
-            super::PausePxDecision::None
-        );
-    }
-
-    /// THE PROMOTE-VS-DEMOTE RACE, cache half (the second guard): even if a lease landed
-    /// between the decision and the removal, `remove_at` refuses a pinned entry: the
-    /// device entry stays resident and keeps serving; the demote loses.
-    #[test]
-    fn pause_demote_second_guard_pinned_entry_stays_resident() {
-        let mut px = PrefixCache::default();
-        let k = key("");
-        px.insert(&k, entry(&k, vec![1, 2, 3]), "test");
-        let i = px.key_index(&k, &[1, 2, 3]).expect("resident");
-        let pin = px.pin(&k, i).expect("leased");
-        assert!(
-            px.remove_at(&k, i).is_none(),
-            "a leased entry never leaves the device tier"
-        );
-        assert!(
-            px.key_index(&k, &[1, 2, 3]).is_some(),
-            "still resident, still serving the request that won the race"
-        );
-        assert!(px.unpin(&pin));
-        // Unpinned it removes normally, which is what the sweep does only AFTER the host copy
-        // published.
-        assert!(px.remove_at(&k, i).is_some());
-        assert_prefix_cache_accounting(&px);
-    }
-
-    /// WIRING (comment-stripped so prose cannot satisfy it): the retire path must ARM
-    /// through the tool-call tail predicate, the sweep must FIRE through both fire-time
-    /// selectors and the BY-REFERENCE demote (the entry stays until the host copy
-    /// publishes), the idle block must WAIT on the pause deadline, and both counters must
-    /// reach the published metrics, or MEMRA_KV_PAUSE_DEMOTE is a no-op that still logs
-    /// "pause armed".
-    #[test]
-    fn pause_demote_wiring_arms_fires_waits_and_publishes() {
-        let strip = |src: &str| -> String {
-            src.lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        // Byte-window clamped to a char boundary: the stripped source still carries
-        // multibyte string literals (the dsv4 `｜` markers), and a raw slice could panic.
-        fn window(s: &str, at: usize, len: usize) -> &str {
-            let mut end = (at + len).min(s.len());
-            while !s.is_char_boundary(end) {
-                end += 1;
-            }
-            &s[at..end]
-        }
-        let worker = strip(include_str!("worker.rs"));
-        // Arm: the retire site consults the tail predicate and arms a candidate.
-        let arm = worker
-            .find("if kv_pause_demote_on() {")
-            .expect("the retire arm exists");
-        let arm_body = window(&worker, arm, 4000);
-        assert!(
-            arm_body.contains("tail_ends_with_tool_call("),
-            "the arm must consult the tool-call tail predicate"
-        );
-        assert!(
-            arm_body.contains("pause_tail_window(&s.generated, &s.params.eos)"),
-            "the arm must trim the session's trailing stop ids before the tail check \
-             (battery-20260831 pause-gates FINDING 1: the natural tool_calls finish lands \
-             the stop id after the close marker)"
-        );
-        assert!(
-            arm_body.contains("arm_pause_candidate("),
-            "the arm must arm a candidate"
-        );
-        // Fire: both fire-time selectors, the boundary publish through the existing capture
-        // machinery, and the by-ref demote on BOTH halves before any removal.
-        let sweep = worker
-            .find("if !pause_pending.is_empty() {")
-            .expect("the sweep exists in run()");
-        let sweep_body = window(&worker, sweep, 8000);
-        assert!(sweep_body.contains("pause_park_index("));
-        assert!(
-            sweep_body.contains("prefix_snapshot("),
-            "the park half must publish the boundary through the existing capture machinery"
-        );
-        assert!(sweep_body.contains("pause_px_decision("));
-        let by_ref = sweep_body.matches("host_demote_prefix_ref(").count();
-        assert!(
-            by_ref >= 2,
-            "both halves demote by reference (the entry stays until the copy publishes); \
-             found {by_ref}"
-        );
-        assert!(
-            sweep_body.contains("px.remove_at("),
-            "the device entry leaves only after the host copy published"
-        );
-        assert!(sweep_body.contains("pause_demotes"));
-        assert!(sweep_body.contains("pause_cancels"));
-        // Timer: the idle block must not sleep forever past a pending pause deadline.
-        let idle = worker
-            .find("if active.is_empty() && queue.is_empty() {")
-            .expect("the idle block exists in run()");
-        let idle_body = window(&worker, idle, 8000);
-        assert!(
-            idle_body.contains("pause_pending.is_empty()"),
-            "the indefinite recv() block must be conditional on no pending pause timers"
-        );
-        assert!(
-            idle_body.contains("idle_recv_wait(&pending_constraints, &pause_pending"),
-            "the bounded wait must consult the pause deadlines"
-        );
-        // Receipts: both counters reach the published snapshot and the HTTP render.
-        let publish = worker
-            .find("m.prefix_host_tenant_rejects = hpx.tenant_rejects")
-            .expect("the host-tier metrics publish exists");
-        let publish_body = window(&worker, publish, 400);
-        assert!(publish_body.contains("m.prefix_host_pause_demotes = hpx.pause_demotes"));
-        assert!(publish_body.contains("m.prefix_host_pause_cancels = hpx.pause_cancels"));
-        let lib = strip(include_str!("lib.rs"));
-        let render = lib
-            .find("body[\"prefix_host_tenant_rejects\"]")
-            .expect("the host-tier /metrics render exists");
-        let render_body = window(&lib, render, 600);
-        assert!(render_body.contains("prefix_host_pause_demotes"));
-        assert!(render_body.contains("prefix_host_pause_cancels"));
     }
 
     fn px_survivors(px: &PrefixCache) -> Vec<u32> {
@@ -29246,8 +19214,7 @@ mod tests {
                     "test",
                     8,
                     protected_pct,
-                    1,
-                    None,
+                    1
                 )
                 .is_some()
             );
@@ -29258,8 +19225,7 @@ mod tests {
                     "test",
                     8,
                     protected_pct,
-                    1,
-                    None,
+                    1
                 )
                 .is_none()
             );
@@ -29273,7 +19239,6 @@ mod tests {
                 8,
                 protected_pct,
                 0,
-                None,
             );
             assert_eq!((px.skips_budget, px.skips_pinned), (1, 1));
         }
@@ -29284,7 +19249,7 @@ mod tests {
         let k = key("");
         let mut px = PrefixCache::default();
         let id = px
-            .insert_with_budget_pins_and_pct(&k, entry_b(&k, 0, 4), "fanout test", 8, 80, 2, None)
+            .insert_with_budget_pins_and_pct(&k, entry_b(&k, 0, 4), "fanout test", 8, 80, 2)
             .unwrap();
         let entry = px.entries[&k].iter().find(|entry| entry.id == id).unwrap();
         assert_eq!(entry.segment, PrefixSegment::Protected);
@@ -29312,7 +19277,7 @@ mod tests {
         // A one-participant pinned insert has not demonstrated reuse. With no probation bytes to
         // reclaim, it must be refused rather than evicting protected below its 80% byte share.
         assert!(
-            px.insert_with_budget_pins_and_pct(&k, entry_b(&k, 1, 3), "test", BUDGET, 80, 1, None)
+            px.insert_with_budget_pins_and_pct(&k, entry_b(&k, 1, 3), "test", BUDGET, 80, 1)
                 .is_none()
         );
         assert_eq!(px_survivors(&px), vec![0]);
@@ -30120,36 +20085,6 @@ mod dspark_boot_conflict_tests {
 }
 
 #[cfg(test)]
-mod mtp_skip_verdict_tests {
-    use super::mtp_skip_no_drafter_verdict;
-
-    #[test]
-    fn default_spec_refuses_only_explicit_zero_boots_plain() {
-        // FATAL arm: MEMRA_SERVE_SPEC explicitly armed while the skip removed the only spec
-        // program; the request cannot be honored and must not silently degrade to plain.
-        assert!(
-            mtp_skip_no_drafter_verdict(Some("1"))
-                .is_err_and(|m| m.contains("cannot be honored") && m.contains("MEMRA_MTP_SKIP"))
-        );
-        // Any non-zero value is the serve_spec_enabled() armed form; same refusal.
-        assert!(mtp_skip_no_drafter_verdict(Some("2")).is_err());
-        // FATAL arm (refuse-loud contract, 2026-08-31): unset defaults spec ON for serving,
-        // and a default-spec deployment with no spec program must refuse at boot, never
-        // silently serve plain at half speed (the DFlash2 2026-08-25 incident class). The
-        // refusal names the explicit override and the missing drafter.
-        assert!(mtp_skip_no_drafter_verdict(None).is_err_and(
-            |m| m.contains("MEMRA_SERVE_SPEC=0") && m.contains("MEMRA_DSPARK_SPEC")
-        ));
-        // Blank is NOT the spec-off form serve_spec_enabled() honors (only the literal "0"
-        // is): it leaves spec armed, so it refuses the same way.
-        assert!(mtp_skip_no_drafter_verdict(Some("")).is_err());
-        assert!(mtp_skip_no_drafter_verdict(Some(" 0 ")).is_err());
-        // Explicit "0" is the one plain choice: boots, announcing PLAIN once.
-        assert!(mtp_skip_no_drafter_verdict(Some("0")).is_ok_and(|m| m.contains("PLAIN")));
-    }
-}
-
-#[cfg(test)]
 mod stop_string_tests {
     #[test]
     fn empty_stop_string_element_never_matches() {
@@ -30168,507 +20103,5 @@ mod stop_string_tests {
             &["".to_string(), "STOP".to_string()]
         ));
         assert!(!super::contains_stop_string(b"hello world", &[]));
-    }
-
-    /// step37 pad-run alignment law (lane/step37-vision): one unit owns n_tiles runs
-    /// of 81 then one run of 169; faked pads and truncated runs refuse loudly.
-    #[test]
-    fn step_vision_spans_layout() {
-        use memra_engine::vision_step::{SV_MAIN_ROWS, SV_TILE_ROWS, StepVisionUnit};
-        let pad = 128001u32;
-        let unit = |n_tiles: usize| StepVisionUnit {
-            main: Vec::new(),
-            tiles: vec![Vec::new(); n_tiles],
-            newline_mask: vec![false; n_tiles],
-        };
-        // tile-free image: text, <im_start>(10), 169 pads, <im_end>(11), text
-        let mut prompt = vec![1u32, 2, 10];
-        prompt.extend(std::iter::repeat_n(pad, SV_MAIN_ROWS));
-        prompt.extend([11u32, 3]);
-        let spans = super::step_vision_spans(&prompt, &[unit(0)], pad).unwrap();
-        assert_eq!(spans, vec![(3, 0, SV_MAIN_ROWS)]);
-
-        // two crop tiles then the main view; delimiters split the runs
-        let mut prompt = vec![7u32];
-        for _ in 0..2 {
-            prompt.push(20); // <patch_start>
-            prompt.extend(std::iter::repeat_n(pad, SV_TILE_ROWS));
-            prompt.push(21); // <patch_end>
-        }
-        prompt.push(10);
-        prompt.extend(std::iter::repeat_n(pad, SV_MAIN_ROWS));
-        prompt.push(11);
-        let spans = super::step_vision_spans(&prompt, &[unit(2)], pad).unwrap();
-        assert_eq!(
-            spans,
-            vec![
-                (2, 0, SV_TILE_ROWS),
-                (2 + SV_TILE_ROWS + 2, SV_TILE_ROWS, SV_TILE_ROWS),
-                (2 + 2 * (SV_TILE_ROWS + 2), 2 * SV_TILE_ROWS, SV_MAIN_ROWS),
-            ]
-        );
-
-        // user text faking an extra pad run refuses
-        let mut prompt2 = prompt.clone();
-        prompt2.extend([9u32, pad, pad, 9]);
-        assert!(super::step_vision_spans(&prompt2, &[unit(2)], pad).is_err());
-        // a truncated main run refuses
-        let mut prompt3 = vec![10u32];
-        prompt3.extend(std::iter::repeat_n(pad, SV_MAIN_ROWS - 1));
-        prompt3.push(11);
-        assert!(super::step_vision_spans(&prompt3, &[unit(0)], pad).is_err());
-        // a tile-sized run where the main view is expected refuses
-        let mut prompt4 = vec![10u32];
-        prompt4.extend(std::iter::repeat_n(pad, SV_TILE_ROWS));
-        prompt4.push(11);
-        assert!(super::step_vision_spans(&prompt4, &[unit(0)], pad).is_err());
-    }
-}
-
-#[cfg(test)]
-mod vision_special_guard_tests {
-    //! Red/green gates for the vision special-id intake guard
-    //! (lane/glm5-vision-default-on, 2026-08-30). Every assertion is on TOKEN IDS, never on
-    //! prose: the injection finding (vision-cell arms 20/22) was fluent prose over a
-    //! smuggled special id, so a prose-anchored test would be exactly the class of check
-    //! that cannot see it.
-    use super::{VisionSpecialBudget, vision_special_budgets_inner, vision_special_id_guard};
-
-    /// The glm5 splice ids (config.json truth, mirrored by
-    /// `memra_engine::vision_glm5::G5V_TOK_*`).
-    const IMG: u32 = memra_engine::vision_glm5::G5V_TOK_IMAGE;
-    const BEG: u32 = memra_engine::vision_glm5::G5V_TOK_IMAGE_START;
-    const END: u32 = memra_engine::vision_glm5::G5V_TOK_IMAGE_END;
-
-    fn glm5_budgets(units: usize, rows: usize) -> Vec<VisionSpecialBudget> {
-        vec![
-            VisionSpecialBudget {
-                id: IMG,
-                piece: "<|image|>",
-                expected: rows,
-            },
-            VisionSpecialBudget {
-                id: BEG,
-                piece: "<|begin_of_image|>",
-                expected: units,
-            },
-            VisionSpecialBudget {
-                id: END,
-                piece: "<|end_of_image|>",
-                expected: units,
-            },
-        ]
-    }
-
-    /// A rendered image run: begin + n placeholders + end, framed by ordinary text ids.
-    fn prompt_with_run(n: usize) -> Vec<u32> {
-        let mut p = vec![10, 11, 12];
-        p.push(BEG);
-        p.extend(std::iter::repeat_n(IMG, n));
-        p.push(END);
-        p.extend([13, 14]);
-        p
-    }
-
-    /// RED — the injection finding: a TEXT-ONLY prompt carrying the placeholder id (what
-    /// literal "<|image|>" in message text tokenizes to) must refuse, not serve. Also the
-    /// begin/end forms, per the finding's extension.
-    #[test]
-    fn text_only_special_ids_refuse_by_name() {
-        for (id, piece) in [
-            (IMG, "<|image|>"),
-            (BEG, "<|begin_of_image|>"),
-            (END, "<|end_of_image|>"),
-        ] {
-            let prompt = vec![10, 11, id, 12];
-            let err = vision_special_id_guard(&prompt, &glm5_budgets(0, 0))
-                .expect_err("a smuggled vision special id must refuse");
-            assert!(
-                err.contains(piece) && err.contains(&id.to_string()),
-                "refusal must name the piece and the id: {err}"
-            );
-        }
-    }
-
-    /// GREEN — a real image part's exact render budget still admits: one run of its grid's
-    /// ids, nothing more.
-    #[test]
-    fn exact_render_budget_admits() {
-        vision_special_id_guard(&prompt_with_run(16), &glm5_budgets(1, 16))
-            .expect("the rendered run must admit");
-    }
-
-    /// RED — one smuggled placeholder NEXT TO a legitimate run (the count class the old
-    /// run-alignment could conflate into the run) refuses on the count, on ids.
-    #[test]
-    fn extra_placeholder_beside_a_real_run_refuses() {
-        let mut prompt = prompt_with_run(16);
-        prompt.push(IMG);
-        let err = vision_special_id_guard(&prompt, &glm5_budgets(1, 16))
-            .expect_err("17 placeholders against a 16-row budget must refuse");
-        assert!(err.contains("17") && err.contains("16"), "{err}");
-        // A smuggled lone begin marker with the run intact refuses too (the class the
-        // run-alignment check never saw).
-        let mut prompt = prompt_with_run(16);
-        prompt.insert(0, BEG);
-        assert!(vision_special_id_guard(&prompt, &glm5_budgets(1, 16)).is_err());
-    }
-
-    /// MECHANISM + WIRING, hermetic: a fixture BPE tokenizer whose added_tokens carry the
-    /// glm5 special LITERALS proves at the tokenizer boundary that plain text becomes the
-    /// special id (`st_partition` splits it before BPE), that `token_is_special` sees it,
-    /// and that `vision_special_budgets_inner` + the guard turn that encode into a refusal
-    /// while the exact render budget still admits. Compact ids: `from_hf_dir` refuses a
-    /// vocabulary as sparse as the real 154k ids over a mini vocab, and the guard reads ids
-    /// from the tokenizer (`id_of`), never from constants, so nothing here depends on the
-    /// real id values.
-    #[test]
-    fn text_literal_becomes_special_id_and_guard_refuses() {
-        // GPT-2 byte-level base vocab (the standard bytes_to_unicode mapping).
-        let mut vocab_entries: Vec<(String, u32)> = Vec::new();
-        let mut extra = 0u32;
-        for b in 0u32..=255 {
-            let printable = (0x21..=0x7E).contains(&b)
-                || (0xA1..=0xAC).contains(&b)
-                || (0xAE..=0xFF).contains(&b);
-            let ch = if printable {
-                char::from_u32(b).unwrap()
-            } else {
-                let c = char::from_u32(256 + extra).unwrap();
-                extra += 1;
-                c
-            };
-            vocab_entries.push((ch.to_string(), b));
-        }
-        let vocab_json: String = vocab_entries
-            .iter()
-            .map(|(t, id)| format!("{}: {id}", serde_json::to_string(t).unwrap()))
-            .collect::<Vec<_>>()
-            .join(",");
-        let added: String = [
-            (300u32, "<|begin_of_image|>"),
-            (301, "<|end_of_image|>"),
-            (302, "<|image|>"),
-            (303, "<|begin_of_video|>"),
-            (304, "<|end_of_video|>"),
-            (305, "<|video|>"),
-            (306, "<|eos|>"),
-        ]
-        .iter()
-        .map(|(id, c)| format!("{{\"id\": {id}, \"content\": \"{c}\", \"special\": true}}"))
-        .collect::<Vec<_>>()
-        .join(",");
-        let tokenizer_json = format!(
-            "{{\"model\": {{\"type\": \"BPE\", \"vocab\": {{{vocab_json}}}, \"merges\": []}}, \
-             \"pre_tokenizer\": {{\"type\": \"ByteLevel\"}}, \"added_tokens\": [{added}]}}"
-        );
-        // glm4 pretokenize regex (GLM-5.3-Flash's own split family) via the
-        // tokenizer_config seam from_hf_dir reads first.
-        let tokenizer_config = format!(
-            "{{\"eos_token\": \"<|eos|>\", \"pretokenize_regex\": {}}}",
-            serde_json::to_string(
-                r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"
-            )
-            .unwrap()
-        );
-        let dir =
-            std::env::temp_dir().join(format!("memra-vision-guard-tok-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("tokenizer.json"), tokenizer_json).unwrap();
-        std::fs::write(dir.join("tokenizer_config.json"), tokenizer_config).unwrap();
-        let tok = memra_tokenizer::Tokenizer::from_hf_dir(&dir).expect("fixture tokenizer loads");
-        let _ = std::fs::remove_dir_all(&dir);
-
-        let img_id = tok.id_of("<|image|>").expect("fixture carries <|image|>");
-        assert!(tok.token_is_special(img_id));
-
-        // THE MECHANISM, on ids: plain text containing the literal encodes to the special id.
-        let ids = tok.encode("What does <|image|> mean here?", false);
-        assert_eq!(
-            ids.iter().filter(|&&t| t == img_id).count(),
-            1,
-            "the literal in plain text must tokenize to the special id (st_partition)"
-        );
-
-        // THE WIRING: budgets from the tokenizer + zero units refuse that encode by name...
-        let budgets = vision_special_budgets_inner(&tok, 0, 0, 0, 0, 0);
-        assert!(
-            budgets.iter().any(|b| b.id == img_id),
-            "budgets must guard the tokenizer's own <|image|> id"
-        );
-        let err = vision_special_id_guard(&ids, &budgets).expect_err("text-only must refuse");
-        assert!(err.contains("<|image|>"), "{err}");
-
-        // ...and the exact render budget still admits: begin + 16 x image + end.
-        let rendered = format!(
-            "describe this: <|begin_of_image|>{}<|end_of_image|> please",
-            "<|image|>".repeat(16)
-        );
-        let run_ids = tok.encode(&rendered, false);
-        let budgets = vision_special_budgets_inner(&tok, 1, 16, 0, 0, 0);
-        vision_special_id_guard(&run_ids, &budgets).expect("the rendered run must admit");
-    }
-}
-
-/// HOST-TIER DEPLOY HANDOFF gates (lane/host-tier-deploy-warmth-20260901).
-/// CPU-testable by construction: the wire layer works on plain vectors (the owned shapes
-/// the reader produces, the borrowed views the writer takes); pinned memory only enters
-/// at `host_entry_from_owned`, which the GPU/box gate covers.
-#[cfg(test)]
-mod host_handoff_tests {
-    use super::{
-        HANDOFF_MAX_AGE_SECS, HandoffEntryOwned, HandoffHeader, HandoffModelStamp,
-        HandoffPlaneOwned, HandoffTailOwned, PREFIX_ENTRY_LAYOUT_VERSION, handoff_header_verdict,
-        handoff_read_entry, handoff_read_header, handoff_write_entry, handoff_write_header,
-    };
-
-    /// One entry with EVERY field class populated somewhere across the fixture pair:
-    /// planes present and absent, conv/ssm split, draft, dspark tail, verify digest.
-    fn handoff_fixture(model: &str, ns: &str, seed: u8) -> HandoffEntryOwned {
-        let plane = |len: usize, ktb: usize, vtb: usize| HandoffPlaneOwned {
-            len,
-            k_tok_bytes: ktb,
-            v_tok_bytes: vtb,
-            k: (0..len * ktb)
-                .map(|i| (i as u8).wrapping_add(seed))
-                .collect(),
-            v: (0..len * vtb)
-                .map(|i| (i as u8).wrapping_mul(3).wrapping_add(seed))
-                .collect(),
-        };
-        HandoffEntryOwned {
-            layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
-            model: model.to_string(),
-            ns: ns.to_string(),
-            toks: (0..48u32).map(|i| i + u32::from(seed)).collect(),
-            kv: vec![Some(plane(4, 8, 6)), None],
-            conv: vec![Some(vec![1.5, -2.25, f32::from(seed)]), None],
-            ssm: vec![None, Some(vec![0.5; 7])],
-            pos: 48,
-            last_logits: vec![0.25, -0.125, 3.5],
-            draft: Some(plane(4, 2, 2)),
-            dspark: Some(HandoffTailOwned {
-                layers: vec![(vec![1.0, 2.0], vec![3.0, 4.0])],
-                base: 5,
-                rows: 2,
-                len: 4,
-                row_bytes: 16,
-            }),
-            last_h: vec![9.75; 5],
-            bytes: 12345,
-            verify_digest: Some(format!("digest-{seed}")),
-        }
-    }
-
-    fn handoff_stamp(name: &str, files: u64, bytes: u64, mtime: u64) -> HandoffModelStamp {
-        HandoffModelStamp {
-            name: name.to_string(),
-            path: format!("/models/{name}"),
-            readable: true,
-            files,
-            bytes,
-            max_mtime_ns: mtime,
-        }
-    }
-
-    fn handoff_header_fixture(created_unix: u64) -> HandoffHeader {
-        HandoffHeader {
-            layout_version: PREFIX_ENTRY_LAYOUT_VERSION,
-            created_unix,
-            models: vec![handoff_stamp("m", 3, 999, 42)],
-            entries: 2,
-            resident_bytes: 24690,
-        }
-    }
-
-    #[test]
-    fn host_handoff_round_trips_every_field_class() {
-        let a = handoff_fixture("m", "ns-a", 7);
-        let b = handoff_fixture("m", "ns-b", 91);
-        let mut buf = Vec::new();
-        handoff_write_header(&mut buf, &handoff_header_fixture(1000)).unwrap();
-        handoff_write_entry(&mut buf, &a.as_wire_ref()).unwrap();
-        handoff_write_entry(&mut buf, &b.as_wire_ref()).unwrap();
-
-        let mut r: &[u8] = &buf;
-        let header = handoff_read_header(&mut r).unwrap();
-        assert_eq!(header, handoff_header_fixture(1000));
-        let max = buf.len() as u64;
-        let got_a = handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap();
-        let got_b = handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap();
-        assert_eq!(got_a, a, "entry A must survive the round trip byte-exact");
-        assert_eq!(got_b, b, "entry B must survive the round trip byte-exact");
-        assert!(
-            handoff_read_entry(&mut r, max).unwrap().is_none(),
-            "clean EOF after the last frame"
-        );
-    }
-
-    #[test]
-    fn host_handoff_skips_a_corrupt_frame_and_keeps_the_stream_in_register() {
-        let a = handoff_fixture("m", "ns-a", 7);
-        let b = handoff_fixture("m", "ns-b", 91);
-        let mut buf = Vec::new();
-        handoff_write_header(&mut buf, &handoff_header_fixture(1000)).unwrap();
-        let frames_start = buf.len();
-        handoff_write_entry(&mut buf, &a.as_wire_ref()).unwrap();
-        handoff_write_entry(&mut buf, &b.as_wire_ref()).unwrap();
-        // Flip one payload byte of frame A (past its 8-byte length prefix): the digest
-        // check must skip EXACTLY that frame and frame B must still parse.
-        buf[frames_start + 8 + 3] ^= 0xff;
-
-        let mut r: &[u8] = &buf;
-        handoff_read_header(&mut r).unwrap();
-        let max = buf.len() as u64;
-        let first = handoff_read_entry(&mut r, max).unwrap().unwrap();
-        let reason = first.expect_err("the corrupt frame must refuse, never restore");
-        assert!(reason.contains("digest mismatch"), "{reason}");
-        let got_b = handoff_read_entry(&mut r, max).unwrap().unwrap().unwrap();
-        assert_eq!(got_b, b, "the frame after a corrupt one must read intact");
-    }
-
-    #[test]
-    fn host_handoff_truncated_stream_aborts_instead_of_inventing_entries() {
-        let a = handoff_fixture("m", "ns-a", 7);
-        let mut buf = Vec::new();
-        handoff_write_header(&mut buf, &handoff_header_fixture(1000)).unwrap();
-        let frames_start = buf.len();
-        handoff_write_entry(&mut buf, &a.as_wire_ref()).unwrap();
-        buf.truncate(frames_start + 40); // mid-payload
-
-        let mut r: &[u8] = &buf;
-        handoff_read_header(&mut r).unwrap();
-        // max_frame is the ORIGINAL file's bound: the break must come from the payload
-        // EOF itself, the exact mid-write-crash shape.
-        let err = handoff_read_entry(&mut r, 1 << 20).unwrap_err();
-        assert!(
-            err.contains("failed"),
-            "a truncated stream is a broken stream, not a skippable frame: {err}"
-        );
-        // And a frame LENGTH beyond the file bound refuses before any allocation.
-        let mut huge = Vec::new();
-        huge.extend_from_slice(&u64::MAX.to_le_bytes());
-        let mut r: &[u8] = &huge;
-        let err = handoff_read_entry(&mut r, 1024).unwrap_err();
-        assert!(err.contains("exceeds the file-size bound"), "{err}");
-    }
-
-    #[test]
-    fn host_handoff_header_corruption_refuses_the_whole_file() {
-        let mut buf = Vec::new();
-        handoff_write_header(&mut buf, &handoff_header_fixture(1000)).unwrap();
-        buf[16 + 8 + 2] ^= 0xff; // a header body byte, past magic + length
-        let mut r: &[u8] = &buf;
-        let err = handoff_read_header(&mut r).unwrap_err();
-        assert!(err.contains("header digest mismatch"), "{err}");
-
-        let mut r: &[u8] = b"definitely not a handoff file, long enough to read";
-        let err = handoff_read_header(&mut r).unwrap_err();
-        assert!(err.contains("not a"), "{err}");
-    }
-
-    #[test]
-    fn host_handoff_verdict_refuses_layout_age_and_stamp_mismatch() {
-        let local = [handoff_stamp("m", 3, 999, 42)];
-        let h = handoff_header_fixture(1000);
-        // Clean: same layout, fresh, matching stamp.
-        assert_eq!(
-            handoff_header_verdict(&h, PREFIX_ENTRY_LAYOUT_VERSION, 1000 + 60, &local).unwrap(),
-            Vec::new(),
-        );
-        // Layout mismatch refuses the WHOLE file: a deploy that changes the entry layout
-        // starts cold by design.
-        let err =
-            handoff_header_verdict(&h, PREFIX_ENTRY_LAYOUT_VERSION + 1, 1060, &local).unwrap_err();
-        assert!(err.contains("cold by design"), "{err}");
-        // Stale leftover refuses.
-        let err = handoff_header_verdict(
-            &h,
-            PREFIX_ENTRY_LAYOUT_VERSION,
-            1000 + HANDOFF_MAX_AGE_SECS + 1,
-            &local,
-        )
-        .unwrap_err();
-        assert!(err.contains("leftover"), "{err}");
-        // Artifact stamp mismatch refuses THAT model's entries (not the file).
-        let refused = handoff_header_verdict(
-            &h,
-            PREFIX_ENTRY_LAYOUT_VERSION,
-            1060,
-            &[handoff_stamp("m", 3, 1000, 42)],
-        )
-        .unwrap();
-        assert_eq!(refused.len(), 1);
-        assert_eq!(refused[0].0, "m");
-        assert!(refused[0].1.contains("stamp mismatch"), "{}", refused[0].1);
-        // A model absent on this slot refuses its entries too.
-        let refused = handoff_header_verdict(&h, PREFIX_ENTRY_LAYOUT_VERSION, 1060, &[]).unwrap();
-        assert_eq!(refused[0].1, "model not loaded on this slot");
-        // An UNREADABLE stamp never matches, even against an identical unreadable twin:
-        // two sides equally blind is refusal, not agreement.
-        let mut blind_file = handoff_header_fixture(1000);
-        blind_file.models[0].readable = false;
-        let mut blind_local = handoff_stamp("m", 3, 999, 42);
-        blind_local.readable = false;
-        let refused = handoff_header_verdict(
-            &blind_file,
-            PREFIX_ENTRY_LAYOUT_VERSION,
-            1060,
-            &[blind_local],
-        )
-        .unwrap();
-        assert_eq!(refused.len(), 1, "unreadable stamps must refuse");
-    }
-
-    /// WIRING (anchored on invocations in comment-stripped production text, per the
-    /// wiring-assertions law): the drip runs at the tick top, both admin commands
-    /// execute against the real export/import bodies, the boot probe arms the same
-    /// import, the idle block cannot sleep forever past a pending import, and the
-    /// counters reach /metrics and the HTTP render.
-    #[test]
-    fn host_handoff_wiring() {
-        let strip = |src: &str| -> String {
-            src.lines()
-                .map(|l| l.split("//").next().unwrap_or(""))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-        let code = strip(include_str!("worker.rs"));
-        let prod = &code[..code.find("\nmod tests").expect("tests module exists")];
-
-        assert!(
-            prod.contains("host_handoff_import_step(imp, &mut hpx)"),
-            "the tick top must drive the drip import"
-        );
-        assert!(
-            prod.contains("host_handoff_export("),
-            "the export command must execute the real export body"
-        );
-        assert_eq!(
-            prod.matches("open_host_handoff_import(path, &handoff_stamps)")
-                .count(),
-            2,
-            "boot probe AND admin import must open through the one validated path"
-        );
-        assert!(
-            prod.contains("handoff_import.is_none()"),
-            "the indefinite recv() block must be conditional on no pending import"
-        );
-        assert!(
-            prod.contains("wait.min(Duration::from_millis(1))"),
-            "an idle worker with a pending import must keep dripping"
-        );
-        assert!(
-            prod.contains("m.prefix_host_handoff_exports = hpx.handoff_exports;")
-                && prod.contains("m.prefix_host_handoff_imported_entries = hpx.handoff_imports;")
-                && prod.contains("m.prefix_host_handoff_skips = hpx.handoff_skips;"),
-            "handoff counters must publish to the metrics snapshot"
-        );
-        let lib = strip(include_str!("lib.rs"));
-        assert!(
-            lib.contains("prefix_host_handoff_imported_entries")
-                && lib.contains("prefix_host_handoff_skips"),
-            "the /metrics render must expose the handoff counters"
-        );
     }
 }

@@ -135,8 +135,8 @@ driver advertises it.**
 
 - Corroborated: PyTorch `torch.cuda.can_device_access_peer()` returns **True both
   directions** on 2x RTX PRO 6000 Blackwell Max-Q, WRX90, driver 580.95.05, CUDA 13.0
-  (Level1Techs, Dec 2025). Matches our rented-cloudbox experience (RTX PRO 6000 Blackwell Server
-  Edition, P2P/GPUDirect working). the vendor launch materials advertise multi-GPU inference
+  (Level1Techs, Dec 2025). Matches our Sbox/hyperscaler experience (RTX PRO 6000 Blackwell Server
+  Edition, P2P/GPUDirect working). hyperscaler Sbox launch materials advertise multi-GPU inference
   on these parts.
 - Caveats even on pro silicon: that same L1T rig hit an NCCL 2.28.9 P2P hang (config/NCCL
   issue, not capability); and under ESXi passthrough the card doesn't advertise PCIe ATS,

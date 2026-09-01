@@ -15,7 +15,7 @@ MEMRA_SPEC_ADAPT=1 timeout 3600 "$BW/run-spec" "$HOME/models/Qwen3.6-35B-A3B-UD-
 grep -E "SELF-CONSISTENCY|self-consistency" "$OUT/gate-q35-adapt-k1-8.log" | tail -10
 
 echo "== q27 K=1..8 self-consistency, MEMRA_SPEC_ADAPT=1 =="
-MEMRA_SPEC_ADAPT=1 timeout 3600 "$BW/run-spec" /opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf \
+MEMRA_SPEC_ADAPT=1 timeout 3600 "$BW/run-spec" /opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf \
   >"$OUT/gate-q27-adapt-k1-8.log" 2>&1
 grep -E "SELF-CONSISTENCY|self-consistency" "$OUT/gate-q27-adapt-k1-8.log" | tail -10
 echo "GATES DONE"

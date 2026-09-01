@@ -5,7 +5,7 @@ set -uo pipefail
 export PATH="$HOME/.cargo/bin:/usr/local/cuda/bin:$PATH"
 REPO=${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}
 BIN=${BIN:-$REPO/target/release/memra-server}
-MODEL_ROOT=${MODEL_ROOT:-/opt/scratch/nvme/models/step-3.7-flash}
+MODEL_ROOT=${MODEL_ROOT:-/opt/dl-image/nvme/models/step-3.7-flash}
 MODEL=${MODEL:-$MODEL_ROOT/IQ4_XS/Step-3.7-flash-IQ4_XS-00001-of-00003.gguf}
 DRAFT=${DRAFT:-$MODEL_ROOT/Step3.7-flash-mtp-Q8_0.gguf}
 PORT=${PORT:-18242}

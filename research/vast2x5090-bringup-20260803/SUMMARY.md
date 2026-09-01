@@ -107,7 +107,7 @@ tg128 @ pp512, N=3 interleaved A/B pairs:
 | B: `MEMRA_ST_E4M3=1` (e4m3-direct) | 76.19 / 76.16 / 76.18 | **76.18 (+1.5%)** |
 
 argmax MATCH maxdiff 0.0 both arms, all reps. **The desktop 5090 reads box-side**:
-e4m3-direct decode is +1.5% (laptop 171 W was −7%, cloudbox 600 W +7.1%) — the J/token
+e4m3-direct decode is +1.5% (laptop 171 W was −7%, Sbox 600 W +7.1%) — the J/token
 law holds direction; decode runs at ~66–94 W, far under the 575 W wall, so the
 magnitude is small and the big FP8 win stays prefill-side. Program verdict: no
 decode-side penalty on the deployment card — FP8-ST pursuit loses nothing at decode.

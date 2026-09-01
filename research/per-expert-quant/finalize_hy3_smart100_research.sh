@@ -14,7 +14,7 @@ MODE=${1:---dry-run}
 REMOTE=${REMOTE:?set REMOTE to the ssh alias of the research box}
 INSTANCE_ID=${INSTANCE_ID:?set INSTANCE_ID to the instance this run owns — it gets terminated}
 EXPECTED_ACCOUNT=${EXPECTED_ACCOUNT:?set EXPECTED_ACCOUNT to the account id the box must belong to}
-REGION=${REGION:-ohio}
+REGION=${REGION:-Ohio}
 CLOUD_COMPUTE_API=${CLOUD_COMPUTE_API:-$(printf 'e%s2' c)}
 EXPECTED_FINAL_CHAIN_COMMIT=${EXPECTED_FINAL_CHAIN_COMMIT:-4c96413bbae7dbc7fe4c92bb87cb169518f96de8}
 EXPECTED_SERVER_SHA256=${EXPECTED_SERVER_SHA256:-13a7ac6a15a5de17f0eb736ecb393a50ab9bf03145e86a878e66c86b2086f195}
@@ -88,15 +88,15 @@ EVIDENCE_ROOTS=(
 )
 
 die() { echo "smart100 finalizer: $*" >&2; exit 1; }
-command -v cloudcli >/dev/null || die "cloudcli is required"
+command -v hyperscaler >/dev/null || die "hyperscaler CLI is required"
 command -v rsync >/dev/null || die "rsync is required"
 mkdir -p "$LOCAL_ROOT"
 exec 9>"$LOCAL_ROOT/finalizer.lock"
 flock -n 9 || die "another finalizer owns $LOCAL_ROOT/finalizer.lock"
 
-account=$(cloudcli sts get-caller-identity --query Account --output text)
-[[ "$account" == "$EXPECTED_ACCOUNT" ]] || die "cloud account mismatch: $account"
-state=$(cloudcli "$CLOUD_COMPUTE_API" describe-instances --region "$REGION" --instance-ids "$INSTANCE_ID" \
+account=$(hyperscaler sts get-caller-identity --query Account --output text)
+[[ "$account" == "$EXPECTED_ACCOUNT" ]] || die "hyperscaler account mismatch: $account"
+state=$(hyperscaler "$CLOUD_COMPUTE_API" describe-instances --region "$REGION" --instance-ids "$INSTANCE_ID" \
   --query 'Reservations[0].Instances[0].State.Name' --output text)
 [[ "$state" == running ]] || die "instance state is $state, expected running"
 ssh "$REMOTE" "test -f '$REMOTE_FULL_READY'" \
@@ -226,7 +226,7 @@ case "$finalist" in
 esac
 remote_artifact=$(ssh "$REMOTE" "realpath -e -- '$remote_artifact'") \
   || die "cannot resolve finalist artifact"
-[[ "$remote_artifact" == /opt/scratch/nvme/* ]] \
+[[ "$remote_artifact" == /opt/dl-image/nvme/* ]] \
   || die "finalist artifact resolved outside the NVMe artifact root"
 
 ssh "$REMOTE" 'set -eu
@@ -361,10 +361,10 @@ pathlib.Path(out).write_text(json.dumps({
 },indent=2,sort_keys=True)+"\n")
 PY
 
-cloudcli "$CLOUD_COMPUTE_API" terminate-instances --region "$REGION" --instance-ids "$INSTANCE_ID" \
+hyperscaler "$CLOUD_COMPUTE_API" terminate-instances --region "$REGION" --instance-ids "$INSTANCE_ID" \
   >"$dest/terminate-response.json"
-cloudcli "$CLOUD_COMPUTE_API" wait instance-terminated --region "$REGION" --instance-ids "$INSTANCE_ID"
-final_state=$(cloudcli "$CLOUD_COMPUTE_API" describe-instances --region "$REGION" --instance-ids "$INSTANCE_ID" \
+hyperscaler "$CLOUD_COMPUTE_API" wait instance-terminated --region "$REGION" --instance-ids "$INSTANCE_ID"
+final_state=$(hyperscaler "$CLOUD_COMPUTE_API" describe-instances --region "$REGION" --instance-ids "$INSTANCE_ID" \
   --query 'Reservations[0].Instances[0].State.Name' --output text)
 [[ "$final_state" == terminated ]] || die "final instance state is $final_state"
 printf '%s\n' "$final_state" >"$dest/instance-final-state.txt"

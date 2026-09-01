@@ -63,9 +63,7 @@ pub mod model;
 pub mod sigrouter_contract;
 pub mod vision;
 pub mod vision_gemma;
-pub mod vision_glm5;
 pub mod vision_pre;
-pub mod vision_step;
 /// The dual cache lives in the shared `memra-kv` crate (Phase D extraction); this
 /// re-export keeps every `crate::cache::` / `memra_engine::cache::` path unchanged.
 pub mod cache {
@@ -75,40 +73,21 @@ pub mod decode;
 pub mod decode_batch;
 pub mod dflash;
 pub mod eagle;
-/// Measured expert-placement map (`MEMRA_EP_MAP`; glm5 alias honored) — the fail-closed
-/// `memra-ep-map-v1` reader every family's EP shard builders consume (fleet-shared by
-/// design; glm5 is the first consumer). (LAW:coactivation-expert-placement; maps are
-/// minted by the shared fleet tool from `MEMRA_MOE_WEIGHT_TRACE` traces). No CUDA deps.
-pub mod ep_map;
 pub mod gemma_spec;
-pub mod glm5_tp;
-/// glm5_next T-parallel speculative verify: the rows-walk verify, per-step KDA state-column
-/// rollback, latent/kpool truncation, and the MEMRA_GLM5_SPEC-gated draft->verify->rollback
-/// loop over the native MTP head (lane/glm5-tparallel-verify).
-pub mod glm_spec;
 pub mod graph_update;
-pub mod kda;
 /// MLA (multi-head latent attention) CPU f32 reference — GLM-5.2 bring-up lane increment 1.
 /// Naive vs absorbed decode forms + NORM/NEOX rope permutation, unit-tested; the permanent
 /// oracle for the MLA kernel family (`research/mla-bringup-20260801/DESIGN.md`). No CUDA deps.
+pub mod kda;
 pub mod mla;
 pub mod mla_ffi;
 pub mod moesd;
 pub mod parallel;
 pub mod plan_backend;
 pub mod pp;
-/// qwen4_exp (Qwen3.8-Flash-Next) GPU eager forward — onboarding phase 7, correctness arm
-/// gated against memra-reference (research/qwen4exp-bringup-20260829/GPU-EAGER.md).
-pub mod qwen4exp_gpu;
 pub mod round_stream;
 pub mod spec;
-/// Per-burst spec-round phase attribution (`MEMRA_SPEC_TRACE`; glm5 alias honored) —
-/// the draft/verify/accept/rollback/maintenance split every spec family owns, with
-/// caller-tagged emit lines so banked receipts keep their grep shape. No CUDA deps
-/// beyond the stream drains at phase boundaries.
-pub mod spec_phase;
 pub mod tp;
-pub mod tp_transport;
 pub use memra_sampling as sampler;
 
 /// In-house MoE router GEMV on the spec-verify small-t path (DEFAULT ON since 2026-07-10:
@@ -615,7 +594,7 @@ pub(crate) fn mmv_block() -> u32 {
 /// MEMRA_STEP_TP_W8=1: q8_0 mirror of the step TP attention projections for DECODE.
 ///
 /// NUMERIC-CLASS door, same class and acceptance as `MEMRA_STEP_TP_QKV_FUSED` /
-/// `MEMRA_BF16_MMV`: the per-row arithmetic becomes an int8 dp4a dot
+/// `MEMRA_BF16_MMV` / `MEMRA_SEL_GU_WPR`: the per-row arithmetic becomes an int8 dp4a dot
 /// with per-32 scales instead of a bf16xf32 fma chain, so a bit-tape cannot apply and the
 /// acceptance is the argmax gate plus the boot battery. Motivation is measured, not assumed
 /// (`decode-kernel-census`, 2026-08-25): the fused qkv shape runs 23.0 us in bf16 at
@@ -1047,96 +1026,7 @@ pub struct Engine {
     /// fused-router sel/w readback — one async DtoH pair + ONE sync instead of two synced dtohs.
     /// Grown lazily; reused every MoE layer (single-threaded decode serializes on the sync).
     router_stage: Mutex<Option<PinnedStage>>,
-    /// Persistent hc-glue decode workspace (MEMRA_HC_DECODE_WS, lane/glm5-decode-diet lever 2).
-    /// Pooled per engine like `fa_part_pool`: the buffers are pure per-step scratch (every
-    /// element fully overwritten before read each step), so one slot per engine is correct
-    /// even across sessions; the walk TAKES it for the step and puts it back, and a second
-    /// concurrent walk on the same engine simply falls back to fresh allocations.
-    hyper_decode_ws: Mutex<Option<crate::hyper::HyperDecodeWs>>,
-    /// Verify-walk allocation workspace (MEMRA_VERIFY_WS — glm5-alias
-    /// MEMRA_GLM5_VERIFY_WS honored, OFF-wins; lane/glm5-matvec door W, generalized
-    /// lane/glm5-extract-general — the pool is family-agnostic by content): the
-    /// `MEMRA_HC_DECODE_WS` pattern extended to the spec verify walk, whose ~1380
-    /// `cuMemAllocAsync`+Free pairs/token the t=1 workspace door structurally never reaches
-    /// (spec decodes through the t=K+1 walk — diet-battery WINDOW.md). Size-keyed free-lists;
-    /// verify-only call sites (the rows-exact matmul class, the KDA rows arm, the MoE vrows
-    /// staging) draw from and recycle into it. Reuse is byte-identical by the same contract
-    /// that makes `uninit` legal at those sites: every element is fully overwritten before
-    /// any read, by the SAME unchanged kernels. Per-engine = per-stream, so stream ordering
-    /// makes recycle-then-reuse safe exactly like free-then-alloc on the async pool.
-    verify_ws: Mutex<VerifyWs>,
-    /// Resident device mirrors of the per-expert NVFP4 `weight_scale_2` macro planes, keyed by
-    /// `(layer, plane)` with plane 0/1/2 = gate/up/down (MEMRA_MOE_VROWS_DEV_TABLES, door D).
-    /// The device table build needs `macro_scale(ex)` where the selection lives; the host plane
-    /// is an immutable `Vec<f32>` of n_expert entries for the process lifetime, so ONE upload
-    /// per (layer, plane) serves every subsequent layer-call — 3 x n_expert x 4 B (3.5 KB at
-    /// 288 experts), 126 buffers = ~145 KB for a 42-MoE-layer model. Uploading per call instead
-    /// would ADD three HtoD to a door whose whole purpose is removing two.
-    vrows_macro_dev: Mutex<std::collections::HashMap<(u16, u8), CudaSlice<f32>>>,
-    /// Resident all-ones f32 vector for the UNGATED shared-expert add (`MEMRA_HTOD_DIET`,
-    /// door H). A family whose plan carries no `ffn_gate_inp_shexp` (GLM-5.3-Flash is the
-    /// first) makes `moe_shexp_add` take the `g = 1.0` arm, which re-uploaded a freshly
-    /// allocated `vec![1.0f32; t]` on EVERY MoE layer-call — 42 pageable HtoD per ship round
-    /// to move a constant on the glm5 serving geometry. Grown to the largest t
-    /// seen; the buffer may be LONGER than t because `add_scaled_rows_f32` reads only
-    /// `scale[0..nrows]`.
-    shexp_ones: Mutex<Option<CudaSlice<f32>>>,
 }
-
-/// Size-keyed device-buffer free-lists for the verify walk (door W — see the field doc on
-/// [`Engine::verify_ws`]). Exact-length keying: the walk's shapes quantize to a few
-/// classes per round (t in 2..=8 times fixed widths), so hit rates are structural, and an
-/// exact-size buffer keeps every `debug_assert_eq!(len, ...)` at the launchers intact.
-#[derive(Default)]
-pub struct VerifyWs {
-    f32_pool: std::collections::HashMap<usize, Vec<CudaSlice<f32>>>,
-    i8_pool: std::collections::HashMap<usize, Vec<CudaSlice<i8>>>,
-    u64_pool: std::collections::HashMap<usize, Vec<CudaSlice<u64>>>,
-    held_bytes: usize,
-}
-
-/// Per-size-class retention cap: enough for every live shape class of one round plus the
-/// stash generation, small enough that a shape drift cannot hoard VRAM.
-const VWS_PER_CLASS_CAP: usize = 16;
-/// Total retention cap (bytes). The round's recurring buffers are t*8192-f32-class and MoE
-/// staging (<= ~1 MiB each); 256 MiB holds every class with an order of magnitude of slack.
-const VWS_HELD_BYTES_CAP: usize = 256 << 20;
-
-impl VerifyWs {
-    fn take<T>(
-        pool: &mut std::collections::HashMap<usize, Vec<CudaSlice<T>>>,
-        held: &mut usize,
-        n: usize,
-    ) -> Option<CudaSlice<T>> {
-        let s = pool.get_mut(&n)?.pop()?;
-        *held -= n * std::mem::size_of::<T>();
-        Some(s)
-    }
-    fn put<T>(
-        pool: &mut std::collections::HashMap<usize, Vec<CudaSlice<T>>>,
-        held: &mut usize,
-        s: CudaSlice<T>,
-    ) {
-        let n = s.len();
-        let bytes = n * std::mem::size_of::<T>();
-        if *held + bytes > VWS_HELD_BYTES_CAP {
-            return; // drop: falls to the ordinary async free
-        }
-        let v = pool.entry(n).or_default();
-        if v.len() >= VWS_PER_CLASS_CAP {
-            return;
-        }
-        v.push(s);
-        *held += bytes;
-    }
-}
-
-/// Device-scratch allocation census (lane/glm5-decode-diet): bumped by every `alloc_uninit`
-/// and `zeros` call — the class the launch-diet census measured at 2,358
-/// `cuMemAllocAsync+Free` calls/token. The decode-workspace gate reads deltas per step; the
-/// cost axis is the CALL COUNT (the box's measured ~1.06 us/driver call), which is exactly
-/// what this counts. Relaxed atomic: one increment per allocation, noise-level.
-pub static SCRATCH_ALLOC_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// FAVENDOR lane env gate (2026-07-08): MEMRA_FA_V2=1 dispatches the llama-fattn-vec-mechanism
 /// decode kernels (fa_decode_vec_q_v2 / fa_decode_vec_q_rows_v2 / fa_decode_vec_q_v2_dc):
@@ -1290,45 +1180,6 @@ impl PinnedStage {
     }
 }
 impl Drop for PinnedStage {
-    fn drop(&mut self) {
-        let _ = unsafe { cudarc::driver::result::free_host(self.ptr as _) };
-    }
-}
-
-/// Owned page-locked CACHEABLE host buffer (flags=0, deliberately NOT write-combined) for the
-/// prefix-cache host tier (lane/kv-host-spill-20260830). Same allocation class as `PinnedStage`
-/// above and for the same reason: `ctx().alloc_pinned` is CU_MEMHOSTALLOC_WRITECOMBINED, which
-/// is right for H2D-only staging but pathologically slow for host READS (see the HostBuf CAVEAT
-/// in model.rs), and these bytes are CPU-read by the MEMRA_KV_HOST_VERIFY digest arm. Public
-/// because the server's host-tier cache owns these buffers across requests.
-pub struct PinnedHostBuf {
-    ptr: *mut u8,
-    len: usize,
-}
-// Safety: the allocation is process-wide page-locked host memory; the raw pointer is owned by
-// this struct alone and freed exactly once in Drop (identical justification to PinnedStage).
-unsafe impl Send for PinnedHostBuf {}
-impl PinnedHostBuf {
-    /// Allocate `len` pinned cacheable bytes (a zero-length request still pins one byte so the
-    /// pointer stays valid, mirroring the device planes' `alloc_u8(kb.max(1))` convention).
-    pub fn new(len: usize) -> Result<Self, Box<dyn std::error::Error>> {
-        let ptr = unsafe { cudarc::driver::result::malloc_host(len.max(1), 0)? } as *mut u8;
-        Ok(PinnedHostBuf { ptr, len })
-    }
-    pub fn len(&self) -> usize {
-        self.len
-    }
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-    pub fn as_slice(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
-    }
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
-    }
-}
-impl Drop for PinnedHostBuf {
     fn drop(&mut self) {
         let _ = unsafe { cudarc::driver::result::free_host(self.ptr as _) };
     }
@@ -1547,574 +1398,6 @@ pub fn moe_fused_epilogue_dispatches() -> u64 {
     MOE_FUSED_EPI_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Verify-rows batched MoE dispatches taken since process start (lane/glm5-vrest): incremented
-/// once per (layer, verify-call) that runs the pairs-shaped routed-expert program
-/// (`moe_gate_up_preclamp8_q8_rows` + `moe_down8_fma_q8_rows`) instead of the per-(token,expert)
-/// sequential loop. Rides `MEMRA_GLM5_VERIFY_BATCH`'s arm — no flag of its own. Same rationale
-/// as [`MOE_FUSED_EPI_DISPATCHES`]: the observation envs divert dispatch, so gates anchor on the
-/// arm's own invocation (LAW:wiring-assertions-match-prose).
-pub static MOE_VROWS_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_DISPATCHES`] — gates take a before/after delta around a workload.
-pub fn moe_vrows_dispatches() -> u64 {
-    MOE_VROWS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// `MEMRA_BF16_TCOLS_WIDE` (lane/glm5-matvec door T, default ON since the 2026-08-31 mv-battery
-/// flip; `=0` is the rollback seam): FloatBf16 rows calls at
-/// t=2..=16 ride the weight-once t-column twins (`matvec_bf16_f32acc_x4_tcols` for t<=8, the
-/// NEW `..._tcols16` for 9..=16) instead of the grid.y=t weight-rereading `_rows` kernel. The
-/// motivating call is the DFlash2 drafter's block head: `eh.matmul(head, rows, 15)` re-read
-/// the 1.269 GB lm head 15x per spec round (diet-battery c8-ship census, 5.31 ms/round —
-/// 13% of decode GPU). Bit-identical per (row, token) by the tcols class's standing
-/// construction; gated by `glm5_matvec_doors_gpu`. Read per call — the rollback seam.
-fn bf16_tcols_wide_on() -> bool {
-    std::env::var("MEMRA_BF16_TCOLS_WIDE").as_deref() != Ok("0")
-}
-
-/// Engagement counter for the wide-t tcols door (`MEMRA_BF16_TCOLS_WIDE`), incremented at the
-/// door's own dispatch (LAW:wiring-assertions-match-prose). Read via
-/// [`bf16_tcols_wide_dispatches`].
-pub static BF16_TCOLS_WIDE_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`BF16_TCOLS_WIDE_DISPATCHES`] — gates take a before/after delta.
-pub fn bf16_tcols_wide_dispatches() -> u64 {
-    BF16_TCOLS_WIDE_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// `MEMRA_BF16_TCOLS_X1` (lane/glm5-matvec door X, default ON since the 2026-08-31 mv-battery
-/// flip; `=0` is the rollback seam): the tcols dispatch takes
-/// the one-row-per-block grid twin (`matvec_bf16_f32acc_x1_tcols`, grid.x = out_f) instead of
-/// the 4-rows-per-block form. WHY: the trunk kda shapes (out_f 4096/8192) launch 1024/2048
-/// blocks — ~one resident wave, and the census pins them at 1.05 TB/s (59% of peak) while the
-/// SAME kernel at the lm head's 38720-block grid runs 1.43 TB/s (80%). Per-row program and
-/// tree verbatim — bit-identical. Gated by `glm5_matvec_doors_gpu`. Read per call.
-fn bf16_tcols_x1_on() -> bool {
-    std::env::var("MEMRA_BF16_TCOLS_X1").as_deref() != Ok("0")
-}
-
-/// Engagement counter for the x1-grid tcols door (`MEMRA_BF16_TCOLS_X1`).
-pub static BF16_TCOLS_X1_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`BF16_TCOLS_X1_DISPATCHES`] — gates take a before/after delta.
-pub fn bf16_tcols_x1_dispatches() -> u64 {
-    BF16_TCOLS_X1_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// `MEMRA_BF16_TCOLS_RED_FUSED=1` (lane/glm5-door-r door R, default OFF): the tcols
-/// dispatches take the `_rf` fused-reduce-tail twins (`matvec_bf16_f32acc_x1_tcols_rf` /
-/// `..._x4_tcols_rf` / `..._x4_tcols16_rf`). WHY (moe-loc LANE.md §2.2): after door X the
-/// kda trunk's tcols calls sit at 67.0% of peak because the reduce tail runs t SEPARATE
-/// strided trees — ~30 block-wide barriers at t=3.34 (135 at the drafter head's t=15)
-/// against a 4-iteration main loop; the kernel is barrier/tail-bound. The twins share ONE
-/// barrier sequence across the t columns (`red[t*blockDim]`, dynamic shared) and run levels
-/// s<=16 as a `__shfl_down_sync` chain at the IDENTICAL pairing and operand order — 9t -> 3
-/// barriers per block, bit-identical by pairing preservation (gated with a shifted-pairing
-/// red in `glm5_matvec_doors_gpu`). Engages only when `MEMRA_MMV_BLOCK` is a power of two
-/// (the fused tail's block-wide loop must pass exactly through s=32; the default 128 is).
-/// Read per call — unset or `=0` is byte-for-byte the standing tcols program.
-fn bf16_tcols_red_fused_on() -> bool {
-    std::env::var("MEMRA_BF16_TCOLS_RED_FUSED").as_deref() == Ok("1")
-}
-
-/// Engagement counter for the fused-reduce-tail tcols door (`MEMRA_BF16_TCOLS_RED_FUSED`),
-/// incremented at the door's own dispatch (LAW:wiring-assertions-match-prose).
-pub static BF16_TCOLS_RED_FUSED_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`BF16_TCOLS_RED_FUSED_DISPATCHES`] — gates take a before/after delta.
-pub fn bf16_tcols_red_fused_dispatches() -> u64 {
-    BF16_TCOLS_RED_FUSED_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// `MEMRA_MOE_VROWS_PACK=1` (lane/glm5-matvec door M, default OFF): the verify-rows MoE pair
-/// launches its `_w4` warp-packed twins — MEMRA_MMVQ_ROWS = 4 warps per block on threadIdx.y
-/// (the qmatvec mmvq family's standing shape) instead of one warp per block. The unpacked
-/// launch caps residency at the blocks/SM limit (<=67% of warp slots) and schedules ~65k
-/// one-warp blocks per launch; per-warp body verbatim, bit-identical per (row, pair). Gated
-/// by `glm5_matvec_doors_gpu`. Read per call.
-fn moe_vrows_pack_on() -> bool {
-    std::env::var("MEMRA_MOE_VROWS_PACK").as_deref() == Ok("1")
-}
-
-/// Engagement counter for the warp-packed verify-rows MoE door (`MEMRA_MOE_VROWS_PACK`).
-pub static MOE_VROWS_PACK_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_PACK_DISPATCHES`] — gates take a before/after delta.
-pub fn moe_vrows_pack_dispatches() -> u64 {
-    MOE_VROWS_PACK_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// `MEMRA_MOE_VROWS_DEV_TABLES=1` (lane/glm5-moe-loc door D, default OFF): the verify-rows MoE
-/// pair builds its `ptrs`/`scl` tables ON DEVICE from the router's own `sel`/`w` device output
-/// (`moe_vrows_tables_from_sel`) instead of on the host, and the layer routes through the
-/// readback-free `moe_router_sigmoid_topk` rather than `..._host`. WHY: the host table build is
-/// the ONLY consumer of the selection on the serving shape, and it costs a full
-/// `cuStreamSynchronize` + 2 DtoH + 2 pageable HtoD + 2 host Vec allocations per MoE layer-call
-/// = 42 device-wide drains + 84 DtoH + 84 HtoD per ship round. Bit-identical: same integer
-/// `base + ex*stride`, same macro-plane lookups, same single `w * macro_down` product. Read per
-/// call; fails closed to the host path whenever any host-visible route consumer is armed.
-fn moe_vrows_dev_tables_on() -> bool {
-    std::env::var("MEMRA_MOE_VROWS_DEV_TABLES").as_deref() == Ok("1")
-}
-
-/// Engagement counter for the device-side vrows table build (`MEMRA_MOE_VROWS_DEV_TABLES`).
-pub static MOE_VROWS_DEV_TABLES_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_DEV_TABLES_DISPATCHES`] — gates take a before/after delta.
-pub fn moe_vrows_dev_tables_dispatches() -> u64 {
-    MOE_VROWS_DEV_TABLES_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Router readbacks (one full `cuStreamSynchronize` + 2 DtoH each) that door D skipped. The
-/// count receipt for the host seam: a gate asserts it moves 1:1 with
-/// [`MOE_VROWS_DEV_TABLES_DISPATCHES`] on the ON arm and stays flat on the OFF arm.
-pub static MOE_VROWS_ROUTER_SYNCS_AVOIDED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_ROUTER_SYNCS_AVOIDED`].
-pub fn moe_vrows_router_syncs_avoided() -> u64 {
-    MOE_VROWS_ROUTER_SYNCS_AVOIDED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// `MEMRA_MOE_VROWS_DEDUP_STAT=1` (lane/glm5-moe-loc, default OFF — a MEASUREMENT instrument,
-/// not a serving door): on the host table-build arm, count the pair union's expert VISITS and
-/// DISTINCT experts per layer-call into [`MOE_VROWS_PAIR_VISITS`] /
-/// [`MOE_VROWS_PAIR_DISTINCT`]. WHY IT EXISTS: the pair runs at ~90% of this card class's
-/// theoretical DRAM peak (moe-loc LANE.md §1), so cross-row expert-slab dedup is the ONLY
-/// remaining byte lever, and its size is exactly `1 - distinct/visits` — an unmeasured routing
-/// property whose independent-routing bound is 3.2% but whose structural ceiling is 70%. This
-/// counter turns a speculative kernel campaign into a priced decision for the cost of a host
-/// bitset. Requires `MEMRA_MOE_VROWS_DEV_TABLES=0` (door D removes the host selection).
-fn moe_vrows_dedup_stat_on() -> bool {
-    std::env::var("MEMRA_MOE_VROWS_DEDUP_STAT").as_deref() == Ok("1")
-}
-
-/// Expert VISITS (t x n_used) summed over vrows layer-calls under `MEMRA_MOE_VROWS_DEDUP_STAT`.
-pub static MOE_VROWS_PAIR_VISITS: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// DISTINCT experts in the pair union, summed over the same layer-calls. The dedup lever is
-/// `1 - distinct/visits`; equal counters mean routing is disjoint across the verify rows and
-/// there is no byte to save.
-pub static MOE_VROWS_PAIR_DISTINCT: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// `(visits, distinct)` for one layer-call's pair union — the dedup lever's whole arithmetic.
-/// `visits` is `t * n_used`, the slab reads the pair performs today; `distinct` is how many of
-/// them are to a DIFFERENT expert. `1 - distinct/visits` is the share of the pair's 9.86 ms/round
-/// that a dedup kernel could remove, and nothing else about the pair is removable (it already
-/// runs at ~90% of theoretical DRAM peak). Split out from the call site so the counting itself is
-/// unit-testable on planted overlaps rather than inferred from a live routing tape.
-pub(crate) fn vrows_overlap_counts(sel_all: &[u32]) -> (u64, u64) {
-    let mut seen = std::collections::HashSet::with_capacity(sel_all.len());
-    for &ex in sel_all {
-        seen.insert(ex);
-    }
-    (sel_all.len() as u64, seen.len() as u64)
-}
-
-/// vrows layer-calls the dedup instrument has observed — the reporting cadence's clock.
-static MOE_VROWS_DEDUP_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// AN INSTRUMENT HAS TO SPEAK. A box window greps a server log; it cannot read a Rust atomic, so
-/// the dedup counters emit their cumulative ratio on the first vrows layer-call and every 42
-/// after (42 = the MoE layer count, i.e. about one line per decode round). The reported
-/// `repeat` IS the dedup lever's ceiling: the share of the pair's 9.86 ms/round that reading a
-/// shared expert slab once could remove, and the only removable share that exists (LANE.md §1 —
-/// the pair already runs at ~90% of theoretical DRAM peak).
-fn moe_vrows_dedup_report() {
-    let n = MOE_VROWS_DEDUP_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    if n != 0 && !n.is_multiple_of(42) {
-        return;
-    }
-    let (visits, distinct) = moe_vrows_pair_overlap();
-    if visits == 0 {
-        return;
-    }
-    let repeat = 100.0 * (1.0 - distinct as f64 / visits as f64);
-    eprintln!(
-        "[moe-vrows-dedup] layer-calls={} visits={visits} distinct={distinct} \
-         repeat={repeat:.2}% = the cross-row expert-slab dedup ceiling on the vrows pair \
-         (MEMRA_MOE_VROWS_DEDUP_STAT=1)",
-        n + 1
-    );
-}
-
-/// Gate hook for [`vrows_overlap_counts`] — the counting is the whole instrument, so it is gated
-/// on planted overlaps (disjoint / partial / identical) rather than inferred from a live tape.
-pub fn vrows_overlap_counts_for_test(sel_all: &[u32]) -> (u64, u64) {
-    vrows_overlap_counts(sel_all)
-}
-
-/// Snapshot of the dedup instrument as `(visits, distinct)`.
-pub fn moe_vrows_pair_overlap() -> (u64, u64) {
-    (
-        MOE_VROWS_PAIR_VISITS.load(std::sync::atomic::Ordering::Relaxed),
-        MOE_VROWS_PAIR_DISTINCT.load(std::sync::atomic::Ordering::Relaxed),
-    )
-}
-
-/// `MEMRA_MOE_VROWS_DEDUP_ORDER=1` (lane/glm5-dedup door E, default OFF): the verify-rows
-/// gate/up launch takes the `_ord` twin — grid TRANSPOSED so the pair index is the fastest
-/// dimension, walking an EXPERT-MAJOR order plane appended to the pointer table. WHY: the
-/// struct-battery instrument measured a **21.96% repeat fraction** across the pair's expert
-/// visits (2.55M visits, 6.9x the 3.21% independent-routing bound), and the pair is already at
-/// 90.2% of theoretical DRAM peak, so the only lever left is not re-reading a slab a sibling
-/// verify row already read — which requires the repeat visit to be SCHEDULED inside the reuse
-/// window. Bit-identical by construction: every output is a pure function of its `(o, pr)`
-/// coordinate and no block communicates, so re-indexing which block computes which output moves
-/// no bits (`glm5_dedup_sched_gpu`). The WIN is a scheduling property, unpriceable on an
-/// exactness-only rig — hence default OFF with the box pricing the flip.
-///
-/// Refused by name, falling closed to the shipped schedule: door M (`MEMRA_MOE_VROWS_PACK`, the
-/// refuted 4-warp pack) takes precedence in the launcher, and the door engages only when the
-/// order plane is actually present (`ptrs.len() >= 4*n_pairs`), so a direct launcher call with a
-/// 3-plane table keeps the shipped program.
-fn moe_vrows_dedup_order_on() -> bool {
-    std::env::var("MEMRA_MOE_VROWS_DEDUP_ORDER").as_deref() == Ok("1")
-}
-
-/// `MEMRA_MOE_VROWS_DOWN_TMAJ=1` (lane/glm5-dedup door E-down, default OFF): the verify-rows down
-/// launch takes the `_tmaj` twin — grid transposed to `(t, out_f)` so the t verify rows at one
-/// output row are adjacent blocks and a repeated expert's down row is read once for every token
-/// sharing it. The down chain's slot-ordered `__fmaf_rn` accumulation is INSIDE the block and is
-/// untouched (it keeps its original slot order — the vrest gate-4 bit bar); only the grid moves.
-/// Split from [`moe_vrows_dedup_order_on`] as its own flag so the box can attribute the two
-/// halves of the lever separately (gate/up is 2/3 of the pair's bytes, down 1/3). Same refusals:
-/// door M wins, and `out_f > 65535` falls closed (a grid.y bound, not a serving shape).
-fn moe_vrows_down_tmaj_on() -> bool {
-    std::env::var("MEMRA_MOE_VROWS_DOWN_TMAJ").as_deref() == Ok("1")
-}
-
-/// Engagement counter for the expert-major gate/up schedule (`MEMRA_MOE_VROWS_DEDUP_ORDER`).
-pub static MOE_VROWS_DEDUP_ORDER_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_DEDUP_ORDER_DISPATCHES`] — gates take a before/after delta.
-pub fn moe_vrows_dedup_order_dispatches() -> u64 {
-    MOE_VROWS_DEDUP_ORDER_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Engagement counter for the token-major down schedule (`MEMRA_MOE_VROWS_DOWN_TMAJ`).
-pub static MOE_VROWS_DOWN_TMAJ_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_DOWN_TMAJ_DISPATCHES`] — gates take a before/after delta.
-pub fn moe_vrows_down_tmaj_dispatches() -> u64 {
-    MOE_VROWS_DOWN_TMAJ_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// AVOIDED SLAB READS — the box receipt for door E. Every layer-call adds `visits - distinct`,
-/// i.e. the expert-slab reads whose repeat visit the expert-major schedule places inside the
-/// reuse window. Multiply by the per-visit slab bytes (gate+up 9.4372 MB, down 4.7186 MB at the
-/// serving geometry) for the bytes the schedule makes avoidable; that product is the CEILING of
-/// the win, not the win (the realized share is a cache/scheduling property the box prices).
-///
-/// HOST-ARM ONLY, by construction: with door D on there is no host-side selection to count and a
-/// 4-byte readback would reintroduce the very `cuStreamSynchronize` door D removed. The counting
-/// boot is therefore `MEMRA_MOE_VROWS_DEV_TABLES=0`, exactly like the dedup instrument — while
-/// [`MOE_VROWS_DEDUP_ORDER_DISPATCHES`] moves in BOTH table arms.
-pub static MOE_VROWS_SLAB_READS_AVOIDED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_VROWS_SLAB_READS_AVOIDED`].
-pub fn moe_vrows_slab_reads_avoided() -> u64 {
-    MOE_VROWS_SLAB_READS_AVOIDED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// The EXPERT-MAJOR order plane, host build — the stable sort by `(expert id, pair index)` whose
-/// bit-for-bit twin is the `moe_vrows_order_from_sel` counting rank. Returned as the `[n_pairs]`
-/// tail plane the pointer table carries at `[3*n_pairs ..)`, and split out from the call site so
-/// the device kernel can be gated against it directly.
-pub(crate) fn vrows_expert_major_order(sel_all: &[u32]) -> Vec<u64> {
-    let mut ord: Vec<u64> = (0..sel_all.len() as u64).collect();
-    // Stable by construction: `sort_by_key` on the expert id keeps ascending pair order inside
-    // each expert's run, so per-token slot order survives within a shared expert.
-    ord.sort_by_key(|&p| sel_all[p as usize]);
-    ord
-}
-
-/// Gate hook for [`vrows_expert_major_order`] — the permutation is the whole door, so it is gated
-/// against the device build and on planted selections rather than inferred from a live tape.
-pub fn vrows_expert_major_order_for_test(sel_all: &[u32]) -> Vec<u64> {
-    vrows_expert_major_order(sel_all)
-}
-
-// ---- THE FLAG-ALIAS LAW for boolean doors (lane/glm5-extract2, phase 2) ------------------
-//
-// A door extracted from a family name to its general name keeps the FAMILY NAME HONORED:
-// every banked gate script, box battery and in-flight lane sets the old name today, so
-// refusing it would break receipts mid-bank for the price of one extra env read. Phase 1
-// established the pattern for the two default-ON doors it moved (`MEMRA_VERIFY_WS`
-// OFF-wins; `MEMRA_SPEC_TRACE` general-wins-loudly) and for the one VALUED door
-// (`MEMRA_EP_MAP`, [`ep_map::resolve_ep_map_env`], which refuses a disagreeing pair at load).
-// [`alias_door_from`] is the same law for a DEFAULT-OFF BOOLEAN door read PER CALL.
-
-/// Pure two-name resolution for a default-OFF boolean door (unit-tested without env
-/// mutation — the phase-1 co-refusal-test pattern). Returns `(armed, the name the operator
-/// actually set)` so every downstream refusal names the flag they typed, exactly as
-/// [`ep_map::resolve_ep_map_env`] does for the valued seam.
-///
-/// * either name `=1` arms the door; anything else (including `=0`) is a deliberate pin;
-/// * both set to the SAME value resolves to the general name;
-/// * both set to DISAGREEING values is an operator error and is refused — `Err` carries the
-///   message naming BOTH flags. The CALLER falls closed to the shipped program rather than
-///   picking a precedence winner.
-pub(crate) fn alias_door_from(
-    general: (&'static str, Option<&str>),
-    alias: (&'static str, Option<&str>),
-) -> Result<(bool, &'static str), String> {
-    match (general.1, alias.1) {
-        (Some(g), Some(a)) if g != a => Err(format!(
-            "{}={g:?} and {}={a:?} disagree — the alias and the general flag name ONE door \
-             (unset one); refused rather than silently picking a precedence winner, and the \
-             door falls closed to the shipped program",
-            general.0, alias.0
-        )),
-        (Some(g), _) => Ok((g == "1", general.0)),
-        (None, Some(a)) => Ok((a == "1", alias.0)),
-        (None, None) => Ok((false, general.0)),
-    }
-}
-
-/// Env-reading wrapper over [`alias_door_from`]. A disagreeing pair FALLS CLOSED (door not
-/// armed = the shipped program) and prints the refusal ONCE PER PROCESS through `latch`.
-///
-/// COST, stated because "read-site only" is true of the ARITHMETIC and not of the lookups:
-/// honoring two names doubles the `env::var` calls on a per-call door (door H goes from ~64 to
-/// ~128 lookups per ship round across `i32_mirror_store` and the shexp add), and `env::var`
-/// takes the process environ lock. That is the price of not breaking every banked script, it
-/// is paid only on doors whose call sites are already per-layer rather than per-token, and it
-/// is unmeasured on a rig that cannot time host effects (LAW:rig-exactness-only). If a door
-/// ever moves to a per-token site, resolve it once behind a `OnceLock` and give up the
-/// in-process arm flipping the gates use today — that is the trade, named in advance.
-///
-/// It does not panic and it does not return `Result`: this is read per call inside the round,
-/// and an abort in the GPU worker thread exits the process and kills every live session
-/// (engine panics are fleet-fatal). A per-call door refuses by NOT ARMING; the loud line is
-/// the operator's receipt that neither value won.
-fn alias_door(
-    general: &'static str,
-    alias: &'static str,
-    latch: &'static std::sync::atomic::AtomicBool,
-) -> (bool, &'static str) {
-    let g = std::env::var(general).ok();
-    let a = std::env::var(alias).ok();
-    match alias_door_from((general, g.as_deref()), (alias, a.as_deref())) {
-        Ok(resolved) => resolved,
-        Err(msg) => {
-            if !latch.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                eprintln!("[flag-alias] {msg}");
-            }
-            (false, general)
-        }
-    }
-}
-
-/// `MEMRA_HTOD_DIET=1` (default OFF; generalized from `MEMRA_GLM5_HTOD_DIET`, which stays
-/// honored per the flag-alias law above — door H, lane/glm5-moe-loc): ENGINE-GENERIC HtoD
-/// hygiene. Nothing in either class is family knowledge; both are "the host uploaded bytes
-/// the device already had".
-///
-/// 1. The UNGATED shared-expert add re-uploaded a fresh `vec![1.0f32; t]` per MoE layer-call
-///    (42 pageable HtoD/round to move a CONSTANT) — it now reads a resident ones buffer
-///    ([`Engine::shexp_ones`]). Applies to every MoE family whose plan carries no
-///    `ffn_gate_inp_shexp`.
-/// 2. The latent-plane `len_d` i32 mirror took `memcpy_htod(&[v], ..)`, a SYNCHRONIZING
-///    pageable copy, at 11 walk sites + 11 rollback sites per round. It now takes
-///    [`Engine::i32_set_k`], the existing async twin whose value rides the kernel argument —
-///    whose own doc already says the copy form is "fine at stream-idle boundaries, poison
-///    mid-round". Applies to every latent-KV consumer ([`Engine::i32_mirror_store`] is an
-///    Engine method, not a family method).
-///
-/// Both write identical values to identical buffers and both are stream-ordered, so the arms are
-/// bit-identical by construction. Default OFF because no box timing receipt exists (rig is
-/// exactness-only): 64 driver calls/round of measured count, UNPRICED wall. Read per call.
-pub fn htod_diet_on() -> bool {
-    htod_diet_armed().0
-}
-
-/// Once-per-process latch for door H's disagreeing-pair line.
-static HTOD_DIET_ALIAS_WARNED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Resolve door H, returning the armed flag name for refusals/announces.
-pub(crate) fn htod_diet_armed() -> (bool, &'static str) {
-    alias_door(
-        "MEMRA_HTOD_DIET",
-        "MEMRA_GLM5_HTOD_DIET",
-        &HTOD_DIET_ALIAS_WARNED,
-    )
-}
-
-/// HtoD calls avoided by door H (`MEMRA_HTOD_DIET`): the count receipt. A gate asserts it
-/// tracks the layer-call count on the ON arm and stays flat on the OFF arm.
-pub static HTOD_DIET_AVOIDED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`HTOD_DIET_AVOIDED`] — gates take a before/after delta.
-pub fn htod_diet_avoided() -> u64 {
-    HTOD_DIET_AVOIDED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// `MEMRA_EP_DIET=1` (default OFF; generalized from `MEMRA_GLM5_EP_DIET`, which stays honored
-/// per the flag-alias law — lane/glm5-ep-diet): the EP DISPATCH DIET door, general to any
-/// expert-parallel MoE walk. What the door names is a movement CLASS, not a family: one bulk
-/// peer activation fan-out per layer-call instead of per-token uploads, compact peer staging
-/// with one bulk return instead of a per-slot round-trip dribble, and one scatter launch
-/// instead of the `t*n_used` sequential axpy chain. The glm5 TP-2 walk is today's CONSUMER
-/// (its kernels, its combine order, its counters in `glm5_tp.rs`); hy3/step EP walks arm the
-/// same door for their own walks.
-///
-/// The glm5 consumer's contract, unchanged: same per-slot expert kernels, same slot-ordered combine chain, restructured
-/// data movement: ONE bulk peer z fan-out per layer-call (skipped entirely when no peer-owned
-/// expert routed), zero per-slot host round-trips (peer rows stage compact on the peer and
-/// return in ONE bulk DtoH+HtoD), and the t*n_used sequential `axpy_f32` combine launches
-/// collapse into ONE `moe_pairs_scatter` launch — whose kernel header carries the
-/// byte-identity contract vs the zeros+sequential-axpy chain. Decode stays BYTE-identical to
-/// the v1 walk (and therefore to plain) by construction; `glm5-tp-gate` re-proves it with the
-/// door pinned ON. Default OFF: the rig is exactness-only and the door changes the round's
-/// SYNC STRUCTURE (the class the diet window warned does not always transfer from counts to
-/// wall) — it ships with count receipts and the box window prices the wall. Read per call;
-/// `=0`/unset restores the v1 per-slot walk byte-for-byte.
-pub fn ep_diet_on() -> bool {
-    ep_diet_armed().0
-}
-
-/// Once-per-process latch for the EP-diet door's disagreeing-pair line.
-static EP_DIET_ALIAS_WARNED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Resolve the EP-diet door, returning the armed flag name — the co-refusal in `hybrid.rs`
-/// names the flag the operator actually set.
-pub(crate) fn ep_diet_armed() -> (bool, &'static str) {
-    alias_door("MEMRA_EP_DIET", "MEMRA_GLM5_EP_DIET", &EP_DIET_ALIAS_WARNED)
-}
-
-/// `MEMRA_EP_GROUPED_PRIME=1` (default OFF; generalized from `MEMRA_GLM5_EP_GROUPED_PRIME`,
-/// which stays honored per the flag-alias law — lane/glm5-ep-diet): the EP GROUPED-PRIME door,
-/// general to any expert-parallel MoE walk — "run the family's own chunked grouped MoE prefill
-/// program per rank over each rank's resident expert slab, then add the peer's bulk-returned
-/// partial". The glm5 TP-2 walk is today's consumer.
-///
-/// The glm5 consumer's contract, unchanged: port the chunked
-/// grouped MoE prefill (`MEMRA_MOE_GROUPED_PREFILL`, the plain walk's default-ON 85->616-639
-/// tok/s prefill program) through the glm5 TP-2 EP walk: the SAME sigmoid host-oracle
-/// routing, per-rank expert-major CSR restricted to each rank's owned experts, one grouped
-/// f16 GEMM per projection PER RANK over the rank's resident EP slab (pointer tables minted
-/// at arm time), per-rank slot-ordered scatter, then root adds the peer's bulk-returned
-/// partial. Fires only where the plain grouped arm would (f16g-eligible qtypes, PRE-clamp,
-/// n_used<=8); everything else — including the rig fixture's Q8_0 bank — falls closed to the
-/// (dieted) sequential EP walk. Numeric class: per-expert GEMMs are the plain grouped arm's;
-/// the ONE reassociation is the per-token root+peer partial add (band-gated, never claimed
-/// byte). Read per call.
-pub fn ep_grouped_prime_on() -> bool {
-    ep_grouped_prime_armed().0
-}
-
-/// Once-per-process latch for the EP grouped-prime door's disagreeing-pair line.
-static EP_GROUPED_PRIME_ALIAS_WARNED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-/// Resolve the EP grouped-prime door, returning the armed flag name for the co-refusal.
-pub(crate) fn ep_grouped_prime_armed() -> (bool, &'static str) {
-    alias_door(
-        "MEMRA_EP_GROUPED_PRIME",
-        "MEMRA_GLM5_EP_GROUPED_PRIME",
-        &EP_GROUPED_PRIME_ALIAS_WARNED,
-    )
-}
-
-/// `MEMRA_TOPK_SHARDS` (lane/glm5-matvec door K, default ON since the 2026-08-31 mv-battery
-/// flip; `=0` is the rollback seam): `topk_rows` runs the exact
-/// two-launch shard split (per-(row,shard) partial top-k + per-row shard merge) instead of the
-/// one-block-per-row kernel. The standing kernel puts n_rows blocks on the card (the DFlash2
-/// selector: 15 blocks on 188 SMs, 9.3 MB read in 1.31 ms = 7 GB/s). Top-k under the total
-/// order (value desc, column asc) is a discrete selection, so the shard split is
-/// OUTPUT-IDENTICAL by construction (same insertion comparisons, same tie rules in both
-/// stages); gated by `glm5_matvec_doors_gpu` incl. planted-tie fixtures. Read per call.
-fn topk_shards_on() -> bool {
-    std::env::var("MEMRA_TOPK_SHARDS").as_deref() != Ok("0")
-}
-
-/// Engagement counter for the sharded top-k door (`MEMRA_TOPK_SHARDS`).
-pub static TOPK_SHARDS_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`TOPK_SHARDS_DISPATCHES`] — gates take a before/after delta.
-pub fn topk_shards_dispatches() -> u64 {
-    TOPK_SHARDS_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// `MEMRA_VERIFY_WS` (lane/glm5-matvec door W, default ON since the 2026-08-31 mv-battery
-/// flip; `=0` is the rollback seam; generalized from `MEMRA_GLM5_VERIFY_WS`, which stays
-/// honored as the family alias — OFF-WINS composition: either name `=0` disables, so every
-/// banked gate arm and box script pinning the old name keeps its exact semantics, and the
-/// old name is never silently dead): the verify walk's
-/// recurring buffers draw from the engine's size-keyed free-lists and recycle back instead
-/// of one `cuMemAllocAsync`+Free pair per buffer (~1380+1370 driver calls/token on the ship
-/// shape — diet-battery apisum; `MEMRA_HC_DECODE_WS` owns only the t=1 walk and never
-/// reaches the spec serving shape). Byte-identical by the sites' own full-overwrite uninit
-/// contract; gated by `glm5_matvec_doors_gpu` (multi-call byte identity + the
-/// `SCRATCH_ALLOC_CALLS` delta receipt). Read per call — the rollback seam.
-fn verify_ws_on() -> bool {
-    verify_ws_on_from(
-        std::env::var("MEMRA_VERIFY_WS").ok().as_deref(),
-        std::env::var("MEMRA_GLM5_VERIFY_WS").ok().as_deref(),
-    )
-}
-
-/// The pure OFF-wins composition over the general name and the glm5 alias (unit-tested
-/// without env mutation; default ON, either name `=0` disables).
-fn verify_ws_on_from(general: Option<&str>, glm5_alias: Option<&str>) -> bool {
-    general != Some("0") && glm5_alias != Some("0")
-}
-
-/// Engagement counter for the verify-walk workspace (`MEMRA_VERIFY_WS`): incremented
-/// once per POOL HIT (a reused buffer = one avoided alloc + one avoided free). Gates anchor
-/// on the delta; `SCRATCH_ALLOC_CALLS` carries the complementary real-alloc count.
-pub static VERIFY_WS_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`VERIFY_WS_HITS`] — gates take a before/after delta.
-pub fn verify_ws_hits() -> u64 {
-    VERIFY_WS_HITS.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Engagement counter for the glm5_next tensor-core MLA prefill chain
-/// (`MEMRA_MLA_TC_PREFILL`), incremented once per (layer, chunk) dispatch at the chain's own
-/// invocation, AFTER the strided-batched GEMM decline check — a declined shape does not count.
-/// A gate that must prove "the TC arm ran N times for this workload" reads this delta; the
-/// once-per-boot announce line dedups and cannot carry a count
-/// (LAW:wiring-assertions-match-prose).
-pub static MLA_TC_PREFILL_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MLA_TC_PREFILL_DISPATCHES`]. Gates take a before/after pair around a workload
-/// and assert on the delta — including the DECODE byte-identity gate, whose assertion is that
-/// this stays FLAT across t=1 steps with the flag on.
-pub fn mla_tc_prefill_dispatches() -> u64 {
-    MLA_TC_PREFILL_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Engagement counter for the glm5_next expert-grouped MoE PREFILL arm
-/// (`MEMRA_MOE_GROUPED_PREFILL`), incremented once per (layer, chunk) dispatch at the arm's own
-/// call site. Same reason the fused-epilogue counter exists: the observation env vars divert
-/// dispatch, so a counter at the invocation is the only honest engagement receipt
-/// (LAW:wiring-assertions-match-prose). Read via [`moe_grouped_prefill_dispatches`].
-pub static MOE_GROUPED_PREFILL_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// Snapshot of [`MOE_GROUPED_PREFILL_DISPATCHES`]. Gates take a before/after pair around a
-/// workload and assert on the delta.
-pub fn moe_grouped_prefill_dispatches() -> u64 {
-    MOE_GROUPED_PREFILL_DISPATCHES.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// RAII guard from `Engine::exact_scope`: restores the pre-scope `verify_exact` value on
 /// drop, so error propagation (`?`) can never leave the engine latched in the
 /// decode-exact matmul program (hermes finding, fixed 2026-08-23). Holds the flag, not
@@ -2137,74 +1420,6 @@ impl Drop for ExactScope<'_> {
     fn drop(&mut self) {
         self.flag
             .store(self.prev, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
-#[cfg(test)]
-mod verify_ws_flag_tests {
-    use super::verify_ws_on_from;
-
-    #[test]
-    fn off_wins_across_general_and_alias() {
-        // default ON
-        assert!(verify_ws_on_from(None, None));
-        // either name =0 disables (the banked gate arms pin the ALIAS =0; the general
-        // name must be exactly as loud)
-        assert!(!verify_ws_on_from(Some("0"), None));
-        assert!(!verify_ws_on_from(None, Some("0")));
-        assert!(!verify_ws_on_from(Some("1"), Some("0")));
-        assert!(!verify_ws_on_from(Some("0"), Some("1")));
-        // explicit ON on either name keeps the default
-        assert!(verify_ws_on_from(Some("1"), None));
-        assert!(verify_ws_on_from(None, Some("1")));
-    }
-}
-
-#[cfg(test)]
-mod alias_door_tests {
-    use super::alias_door_from;
-
-    const G: &str = "MEMRA_EP_DIET";
-    const A: &str = "MEMRA_GLM5_EP_DIET";
-
-    fn r(g: Option<&str>, a: Option<&str>) -> Result<(bool, &'static str), String> {
-        alias_door_from((G, g), (A, a))
-    }
-
-    #[test]
-    fn default_off_and_either_name_arms() {
-        // unset/unset: the door is OFF and the general name is what a refusal would cite
-        assert_eq!(r(None, None).unwrap(), (false, G));
-        // either name =1 arms it, and the ARMED NAME is the one the operator set
-        assert_eq!(r(Some("1"), None).unwrap(), (true, G));
-        assert_eq!(r(None, Some("1")).unwrap(), (true, A));
-        // =0 is a deliberate pin on either name, never an arming
-        assert_eq!(r(Some("0"), None).unwrap(), (false, G));
-        assert_eq!(r(None, Some("0")).unwrap(), (false, A));
-        // anything that is not "1" is not an arming (no truthiness guessing)
-        assert_eq!(r(None, Some("on")).unwrap(), (false, A));
-        assert_eq!(r(Some(""), None).unwrap(), (false, G));
-    }
-
-    #[test]
-    fn agreeing_pair_resolves_to_the_general_name() {
-        assert_eq!(r(Some("1"), Some("1")).unwrap(), (true, G));
-        assert_eq!(r(Some("0"), Some("0")).unwrap(), (false, G));
-    }
-
-    #[test]
-    fn disagreeing_pair_refuses_and_names_both() {
-        for (g, a) in [("1", "0"), ("0", "1")] {
-            let err = r(Some(g), Some(a)).expect_err("a disagreeing pair must refuse");
-            assert!(
-                err.contains(G),
-                "the refusal must name the general flag: {err}"
-            );
-            assert!(err.contains(A), "the refusal must name the alias: {err}");
-            // and it must say which way it falls, so an operator reading the line knows the
-            // door is CLOSED rather than guessing a precedence winner
-            assert!(err.contains("falls closed"), "{err}");
-        }
     }
 }
 
@@ -2364,10 +1579,6 @@ impl Engine {
             argmax_partials: Mutex::new(None),
             prime_deqw_ws: Mutex::new(None),
             router_stage: Mutex::new(None),
-            hyper_decode_ws: Mutex::new(None),
-            verify_ws: Mutex::new(VerifyWs::default()),
-            vrows_macro_dev: Mutex::new(std::collections::HashMap::new()),
-            shexp_ones: Mutex::new(None),
             fp8_scratch: Mutex::new(None),
             fa_vf16_scratch: Mutex::new(None),
             fa_part_pool: Mutex::new(None),
@@ -2489,58 +1700,6 @@ impl Engine {
             {
                 return (0, 0);
             }
-            (reserved as usize, used as usize)
-        }
-    }
-
-    /// Async-pool HIGH-WATER pair since the last reset: (RESERVED_MEM_HIGH, USED_MEM_HIGH)
-    /// in bytes, then reset both watermarks to their CURRENT values
-    /// (lane/step37-vram-admission-20260830). This is the instrument the boot admission
-    /// calibration reads: engine transients are allocated and freed INSIDE one step, so any
-    /// tick-boundary sampling of `mem_get_info`/pool-current sees nothing of the peak — the
-    /// driver-kept watermark is the only honest record of how deep a burst actually dipped.
-    /// (0, 0) if the pool cannot be queried (never a false claim, matching
-    /// `pool_cached_bytes`).
-    pub fn pool_high_water_reset(&self) -> (usize, usize) {
-        use cudarc::driver::sys;
-        unsafe {
-            let mut pool: sys::CUmemoryPool = std::ptr::null_mut();
-            if sys::cuDeviceGetDefaultMemPool(&mut pool, self.gpu.ctx.ordinal() as sys::CUdevice)
-                != sys::CUresult::CUDA_SUCCESS
-            {
-                return (0, 0);
-            }
-            let (mut reserved, mut used) = (0u64, 0u64);
-            if sys::cuMemPoolGetAttribute(
-                pool,
-                sys::CUmemPool_attribute_enum::CU_MEMPOOL_ATTR_RESERVED_MEM_HIGH,
-                &mut reserved as *mut u64 as *mut core::ffi::c_void,
-            ) != sys::CUresult::CUDA_SUCCESS
-            {
-                return (0, 0);
-            }
-            if sys::cuMemPoolGetAttribute(
-                pool,
-                sys::CUmemPool_attribute_enum::CU_MEMPOOL_ATTR_USED_MEM_HIGH,
-                &mut used as *mut u64 as *mut core::ffi::c_void,
-            ) != sys::CUresult::CUDA_SUCCESS
-            {
-                return (0, 0);
-            }
-            // Setting a *_HIGH attribute resets the watermark to the pool's current value
-            // (the value argument must be 0 per the driver contract).
-            let mut zero: u64 = 0;
-            let _ = sys::cuMemPoolSetAttribute(
-                pool,
-                sys::CUmemPool_attribute_enum::CU_MEMPOOL_ATTR_RESERVED_MEM_HIGH,
-                &mut zero as *mut u64 as *mut core::ffi::c_void,
-            );
-            let mut zero2: u64 = 0;
-            let _ = sys::cuMemPoolSetAttribute(
-                pool,
-                sys::CUmemPool_attribute_enum::CU_MEMPOOL_ATTR_USED_MEM_HIGH,
-                &mut zero2 as *mut u64 as *mut core::ffi::c_void,
-            );
             (reserved as usize, used as usize)
         }
     }
@@ -3802,21 +2961,6 @@ impl Engine {
     ) -> Result<(CudaSlice<f32>, CudaSlice<u32>), Box<dyn std::error::Error>> {
         assert!((1..=32).contains(&k), "topk_rows supports 1..=32, got {k}");
         assert!(k <= n_cols, "topk_rows: k {k} > n_cols {n_cols}");
-        // MEMRA_TOPK_SHARDS (lane/glm5-matvec door K, default ON since 2026-08-31): the exact two-launch
-        // shard split — n_rows*16 partial blocks + a per-row merge — instead of n_rows
-        // blocks total (the DFlash2 selector: 15 blocks on the whole card, 7 GB/s). Top-k
-        // under (value desc, column asc) is discrete selection: output-identical by
-        // construction, gated by glm5_matvec_doors_gpu. Small columns fall through (the
-        // shard overhead would dominate and the standing grid is already wide enough).
-        if topk_shards_on() && n_cols >= 16 * 1024 && k <= n_cols / 16 {
-            if TOPK_SHARDS_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-                eprintln!(
-                    "[topk-shards] engaged: rows={n_rows} cols={n_cols} k={k} shards=16 \
-                     (MEMRA_TOPK_SHARDS=1)"
-                );
-            }
-            return self.topk_rows_sharded(logits, n_rows, n_cols, k, 16);
-        }
         let f = self.func("topk_rows_f32");
         let nth = 256usize;
         let mut vals = self.uninit(n_rows * k)?;
@@ -3837,67 +2981,6 @@ impl Engine {
             .arg(&mut idxs);
         unsafe {
             b.launch(cfg)?;
-        }
-        Ok((vals, idxs))
-    }
-
-    /// The exact two-launch shard split behind `MEMRA_TOPK_SHARDS` (see [`Self::topk_rows`]):
-    /// per-(row, shard) partial top-k with the standing kernel's insertion/tie rules on
-    /// global column indices, then a per-row k-way merge with the standing kernel's merge
-    /// rules. Output-identical to `topk_rows_f32` by construction (discrete selection under
-    /// the total order value-desc/index-asc); gated by `glm5_matvec_doors_gpu`.
-    fn topk_rows_sharded(
-        &self,
-        logits: &CudaSlice<f32>,
-        n_rows: usize,
-        n_cols: usize,
-        k: usize,
-        n_shards: usize,
-    ) -> Result<(CudaSlice<f32>, CudaSlice<u32>), Box<dyn std::error::Error>> {
-        assert!((1..=64).contains(&n_shards), "shard merge head cap is 64");
-        let nth = 256usize;
-        let mut pvals = self.uninit(n_rows * n_shards * k)?;
-        let mut pidxs = self.alloc_uninit::<u32>(n_rows * n_shards * k)?;
-        let f1 = self.func("topk_rows_shard_f32");
-        let cfg1 = LaunchConfig {
-            grid_dim: (n_rows as u32, n_shards as u32, 1),
-            block_dim: (nth as u32, 1, 1),
-            shared_mem_bytes: (nth * k * 8) as u32,
-        };
-        let (nr, nc, ki, ns) = (n_rows as i32, n_cols as i32, k as i32, n_shards as i32);
-        {
-            let __s_b = self.gpu.stream();
-            let mut b = __s_b.launch_builder(&f1);
-            b.arg(logits)
-                .arg(&nr)
-                .arg(&nc)
-                .arg(&ki)
-                .arg(&ns)
-                .arg(&mut pvals)
-                .arg(&mut pidxs);
-            unsafe {
-                b.launch(cfg1)?;
-            }
-        }
-        let mut vals = self.uninit(n_rows * k)?;
-        let mut idxs = self.alloc_uninit::<u32>(n_rows * k)?;
-        let f2 = self.func("topk_rows_shard_merge_f32");
-        let cfg2 = LaunchConfig {
-            grid_dim: (n_rows as u32, 1, 1),
-            block_dim: (32, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f2);
-        b.arg(&pvals)
-            .arg(&pidxs)
-            .arg(&nr)
-            .arg(&ns)
-            .arg(&ki)
-            .arg(&mut vals)
-            .arg(&mut idxs);
-        unsafe {
-            b.launch(cfg2)?;
         }
         Ok((vals, idxs))
     }
@@ -4994,49 +4077,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Graph-capturable `gumbel_perturb_filtered` (lane/step37-draft-graph-serving): the
-    /// sampling-event counter comes from DEVICE memory (`ctr[0]`) and the filter stats
-    /// (row_max, th) from DEVICE slots — the `filter_stats` outputs of the same captured
-    /// body. Identical math (same Philox call, same lane mapping, same e0 filter test) to
-    /// `gumbel_perturb_filtered` at stream_pos == ctr[0], row_max == mx[0], th == th_d[0]:
-    /// the eager and graph FILTERED sampled chains produce bit-identical perturbations for
-    /// the same (seed, counter, stats). Launch geometry mirrors the host-scalar wrapper.
-    #[allow(clippy::too_many_arguments)]
-    pub fn gumbel_perturb_filtered_ctr(
-        &self,
-        x: &CudaSlice<f32>,
-        y: &mut CudaSlice<f32>,
-        n: usize,
-        seed: u64,
-        ctr: &CudaSlice<u32>,
-        temp: f32,
-        stat_max: &CudaSlice<f32>,
-        stat_th: &CudaSlice<f32>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("gumbel_perturb_filtered_ctr_f32");
-        let (ni, slo, shi) = (n as i32, (seed & 0xFFFF_FFFF) as u32, (seed >> 32) as u32);
-        let cfg = LaunchConfig {
-            grid_dim: (n.div_ceil(256) as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(x)
-            .arg(&mut *y)
-            .arg(&ni)
-            .arg(&slo)
-            .arg(&shi)
-            .arg(ctr)
-            .arg(&temp)
-            .arg(stat_max)
-            .arg(stat_th);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// out[pair] = softmax_temp(x[rows[pair]])[ids[pair]] for npair (row, id) pairs; rows index
     /// into x with `row_stride` f32s per row. temp<=0: out = 1.0 iff id is the row argmax
     /// (smallest-index tie-break — matches the argmax-gate contract).
@@ -5322,16 +4362,7 @@ impl Engine {
         src: &CudaSlice<u8>,
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // try_slice_mut, not slice_mut: an out-of-bounds range here panics the GPU worker
-        // thread and takes the whole server with it (2026-08-29 warm-turn-at-40k incident).
-        // A bounds miss is a caller bug, but it must fail the request, not the fleet.
-        let cap = dst.len();
-        let mut view = dst.try_slice_mut(off..off + len).ok_or_else(|| {
-            format!(
-                "copy_u8_into dst range [{off},{}) exceeds capacity {cap}",
-                off + len,
-            )
-        })?;
+        let mut view = dst.slice_mut(off..off + len);
         self.gpu
             .stream()
             .memcpy_dtod(&src.slice(0..len), &mut view)?;
@@ -5347,15 +4378,7 @@ impl Engine {
         src_off: usize,
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // try_slice_mut for the same reason as copy_u8_into: bounds misses fail the request,
-        // never panic the worker.
-        let cap = dst.len();
-        let mut dst_view = dst.try_slice_mut(dst_off..dst_off + len).ok_or_else(|| {
-            format!(
-                "copy_u8_range_into dst range [{dst_off},{}) exceeds capacity {cap}",
-                dst_off + len,
-            )
-        })?;
+        let mut dst_view = dst.slice_mut(dst_off..dst_off + len);
         self.gpu
             .stream()
             .memcpy_dtod(&src.slice(src_off..src_off + len), &mut dst_view)?;
@@ -5423,12 +4446,6 @@ impl Engine {
                     );
                 }
                 kv.ring.as_mut().unwrap().apply_rebase(new_base);
-                // The dcw draft arm's device mirror of the ring base (see KvLayer::base_d).
-                // Rebase is the ONLY writer of `base`, and rebases run host-side outside any
-                // captured region, so this one line keeps the device view exact.
-                if let Some(base_d) = kv.base_d.as_mut() {
-                    self.set_i32_one(base_d, new_base as i32)?;
-                }
                 Ok(write_row)
             }
         }
@@ -5845,41 +4862,6 @@ impl Engine {
         Ok(())
     }
 
-    /// f32 twin of [`Self::htod_u64_into`] (the MoE vrows scale tables through the
-    /// verify-walk workspace, door W).
-    pub fn htod_f32_into(
-        &self,
-        v: &[f32],
-        dst: &mut CudaSlice<f32>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut view = dst.slice_mut(0..v.len());
-        self.gpu.stream().memcpy_htod(v, &mut view)?;
-        Ok(())
-    }
-
-    /// `htod_f32_into` landing at an element offset: `dst[off..off+v.len()] = v`. The EP
-    /// dispatch-diet's bulk peer-row return lands the peer's compact block directly into the
-    /// pair-slab tail with ONE upload instead of a per-row scatter.
-    pub fn htod_f32_into_at(
-        &self,
-        v: &[f32],
-        dst: &mut CudaSlice<f32>,
-        off: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if off + v.len() > dst.len() {
-            return Err(format!(
-                "htod_f32_into_at range {}..{} exceeds dst {}",
-                off,
-                off + v.len(),
-                dst.len()
-            )
-            .into());
-        }
-        let mut view = dst.slice_mut(off..off + v.len());
-        self.gpu.stream().memcpy_htod(v, &mut view)?;
-        Ok(())
-    }
-
     /// Indirect-source copy (engine-bundle slice 3): the src ADDRESS is loaded from a
     /// device pointer-table entry at run time, so a captured graph follows the gdn
     /// ping-pong through the same table its scan kernels read — a baked memcpy node
@@ -6216,7 +5198,7 @@ impl Engine {
         n: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if n == 0
-            || n > i32::MAX as usize
+            || n > 32
             || sel_src.len() < n
             || w_src.len() < n
             || sel_dst.len() < n
@@ -6225,131 +5207,15 @@ impl Engine {
             return Err(format!("moe_sel_w_mirror geometry n={n}").into());
         }
         let f = self.func("moe_sel_w_mirror");
-        let threads = if n <= 32 { 32 } else { 128 };
         let cfg = LaunchConfig {
-            grid_dim: ((n as u32).div_ceil(threads), 1, 1),
-            block_dim: (threads, 1, 1),
+            grid_dim: (1, 1, 1),
+            block_dim: (32, 1, 1),
             shared_mem_bytes: 0,
         };
         let ni = n as i32;
         let __s_b = self.gpu.stream();
         let mut b = __s_b.launch_builder(&f);
         b.arg(sel_src).arg(w_src).arg(sel_dst).arg(w_dst).arg(&ni);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// One-launch W4A16 EP staging: peer-read the active f32 input plus routed ids/weights from
-    /// the root device, round the input directly into the rank-local BF16 buffer, and mirror the
-    /// fixed route metadata. The caller orders root production with an entry event.
-    #[allow(clippy::too_many_arguments)]
-    pub fn nvfp4_ep_stage_inputs(
-        &self,
-        input_src: &CudaSlice<f32>,
-        sel_src: &CudaSlice<i32>,
-        w_src: &CudaSlice<f32>,
-        input_bf16_dst: &mut CudaSlice<u8>,
-        sel_dst: &mut CudaSlice<i32>,
-        w_dst: &mut CudaSlice<f32>,
-        input_values: usize,
-        pairs: usize,
-        copy_weights: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if input_values == 0
-            || pairs == 0
-            || input_src.len() < input_values
-            || sel_src.len() < pairs
-            || w_src.len() < pairs
-            || input_bf16_dst.len() < 2 * input_values
-            || sel_dst.len() < pairs
-            || w_dst.len() < pairs
-        {
-            return Err(format!(
-                "W4A16 EP stage geometry input={} sel={} weights={} input_bf16={} \
-                 sel_dst={} weights_dst={} active={input_values} pairs={pairs}",
-                input_src.len(),
-                sel_src.len(),
-                w_src.len(),
-                input_bf16_dst.len(),
-                sel_dst.len(),
-                w_dst.len(),
-            )
-            .into());
-        }
-        let f = self.func("nvfp4_ep_stage_inputs");
-        let n = input_values.max(pairs);
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        let (input_values, pairs, copy_weights) =
-            (input_values as i32, pairs as i32, i32::from(copy_weights));
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(input_src)
-            .arg(sel_src)
-            .arg(w_src)
-            .arg(input_bf16_dst)
-            .arg(sel_dst)
-            .arg(w_dst)
-            .arg(&input_values)
-            .arg(&pairs)
-            .arg(&copy_weights);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Capture-safe twin of `nvfp4_ep_stage_inputs`: the three sources are persistent raw
-    /// device addresses owned by the root engine. Destinations remain rank-local typed slices.
-    #[allow(clippy::too_many_arguments)]
-    pub fn nvfp4_ep_stage_inputs_raw(
-        &self,
-        input_src: u64,
-        sel_src: u64,
-        w_src: u64,
-        input_bf16_dst: &mut CudaSlice<u8>,
-        sel_dst: &mut CudaSlice<i32>,
-        w_dst: &mut CudaSlice<f32>,
-        input_values: usize,
-        pairs: usize,
-        copy_weights: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if input_src == 0
-            || sel_src == 0
-            || w_src == 0
-            || input_values == 0
-            || pairs == 0
-            || input_bf16_dst.len() < 2 * input_values
-            || sel_dst.len() < pairs
-            || w_dst.len() < pairs
-        {
-            return Err(format!(
-                "W4A16 EP raw stage geometry input={input_src:#x} sel={sel_src:#x} \
-                 weights={w_src:#x} input_bf16={} sel_dst={} weights_dst={} \
-                 active={input_values} pairs={pairs}",
-                input_bf16_dst.len(),
-                sel_dst.len(),
-                w_dst.len(),
-            )
-            .into());
-        }
-        let f = self.func("nvfp4_ep_stage_inputs");
-        let n = input_values.max(pairs);
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        let (input_values, pairs, copy_weights) =
-            (input_values as i32, pairs as i32, i32::from(copy_weights));
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(&input_src)
-            .arg(&sel_src)
-            .arg(&w_src)
-            .arg(input_bf16_dst)
-            .arg(sel_dst)
-            .arg(w_dst)
-            .arg(&input_values)
-            .arg(&pairs)
-            .arg(&copy_weights);
         unsafe {
             b.launch(cfg)?;
         }
@@ -6498,59 +5364,6 @@ impl Engine {
         qtype: i32,
         row_bytes: usize,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        self.qmatvec_view_inner(w, range, x, m, in_f, out_f, qtype, row_bytes)
-    }
-
-    /// W4A16 expert matvec: round the floating activation to checkpoint BF16 before the
-    /// existing f32-dequant weight dot. The output remains f32. This is selected per model by
-    /// `MoeWeights`; it is not a process-global NVFP4 policy.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_view_bf16_activation(
-        &self,
-        w: &CudaSlice<u8>,
-        range: std::ops::Range<usize>,
-        x: &cudarc::driver::CudaView<f32>,
-        m: usize,
-        in_f: usize,
-        out_f: usize,
-        qtype: i32,
-        row_bytes: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let n = m * in_f;
-        if x.len() != n {
-            return Err(format!(
-                "W4A16 BF16 activation input length {} != {m}x{in_f}",
-                x.len()
-            )
-            .into());
-        }
-        let mut x_bf16 = self.alloc_u8_uninit(n * 2)?;
-        self.f32_to_bf16_v(x, &mut x_bf16, n)?;
-        let x_f32 = self.bf16_to_f32(&x_bf16.slice(0..n * 2), n)?;
-        self.qmatvec_view_inner(
-            w,
-            range,
-            &x_f32.slice(0..n),
-            m,
-            in_f,
-            out_f,
-            qtype,
-            row_bytes,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn qmatvec_view_inner(
-        &self,
-        w: &CudaSlice<u8>,
-        range: std::ops::Range<usize>,
-        x: &cudarc::driver::CudaView<f32>,
-        m: usize,
-        in_f: usize,
-        out_f: usize,
-        qtype: i32,
-        row_bytes: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         let f = self.func("qmatvec_f32");
         let wv = w.slice(range); // CudaView<u8>, offset honored
         let mut y = self.alloc_uninit::<f32>(m * out_f)?; // full-overwrite output: skip memset
@@ -6628,9 +5441,7 @@ impl Engine {
         Ok(act)
     }
 
-    /// The PRE-clamped, macro-folding twin of [`Engine::moe_gate_up_silu8_q8`] — the kernel
-    /// class for any MoE family whose activation clamps the gate BEFORE the silu (glm5_next is
-    /// the first such family; the door names the arithmetic, not the family).
+    /// glm5_next's PRE-clamped, macro-folding twin of [`Engine::moe_gate_up_silu8_q8`].
     ///
     /// Same grid/block/dots/warp reduction; the epilogue is
     /// `silu(min(gate*gs, limit)) * clamp(up*us, ±limit)` — `swiglu_preclamped_mul_scaled_f32`'s
@@ -6723,337 +5534,6 @@ impl Engine {
             .arg(&inf)
             .arg(&outf)
             .arg(&nu)
-            .arg(&qt)
-            .arg(&rbi);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// DEVICE-SIDE build of the verify-rows pair's pointer/scale tables (door D,
-    /// `MEMRA_MOE_VROWS_DEV_TABLES`) from the router's own device selection. Replaces the host
-    /// loop plus its two pageable HtoD, and lets the caller skip the router's pinned readback
-    /// and its full `cuStreamSynchronize` entirely. Arithmetic is term-for-term the host loop's
-    /// (see the kernel comment in `qmatvec.cu`), so the tables — and therefore every downstream
-    /// byte — are identical.
-    ///
-    /// `macros` is the model's immutable `(gate, up, down)` `weight_scale_2` host planes, or
-    /// `None` for a non-macro bank (the kernel then takes 1.0f, `macro_scale`'s own answer).
-    /// The planes get a resident device mirror keyed by `(il, plane)` on first use — uploading
-    /// them per call would ADD three HtoD to a door whose purpose is removing two.
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors the kernel/FFI/call contract
-    pub fn moe_vrows_tables_from_sel(
-        &self,
-        sel: &CudaSlice<i32>,
-        selw: &CudaSlice<f32>,
-        il: u16,
-        macros: Option<(&[f32], &[f32], &[f32])>,
-        (pg, pu, pd): (u64, u64, u64),
-        (sg, su, sd): (usize, usize, usize),
-        n_pairs: usize,
-        ptrs: &mut CudaSlice<u64>,
-        scl: &mut CudaSlice<f32>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert!(sel.len() >= n_pairs && selw.len() >= n_pairs);
-        // `>=` not `==`: door E appends a fourth (expert-major order) plane to the same table.
-        debug_assert!(ptrs.len() >= 3 * n_pairs);
-        debug_assert_eq!(scl.len(), 3 * n_pairs);
-        // Resident macro mirrors, uploaded once per (layer, plane). The guard is held across the
-        // launch because `CudaSlice` is not clonable — the same shape as the w8-mirror sites.
-        let mut mac = self
-            .vrows_macro_dev
-            .lock()
-            .map_err(|_| "vrows macro mirror map is poisoned")?;
-        if let Some((hg, hu, hd)) = macros {
-            for (plane, host) in [(0u8, hg), (1u8, hu), (2u8, hd)] {
-                // `entry` rather than contains_key+insert: the upload is fallible, so it lands in
-                // the Vacant arm instead of an `or_insert_with` closure.
-                if let std::collections::hash_map::Entry::Vacant(slot) = mac.entry((il, plane)) {
-                    slot.insert(self.htod(host)?);
-                }
-            }
-        }
-        // Absent macro planes: the three kernel pointers must still be legal device addresses,
-        // so the call aliases the selection weights and never dereferences them (have_macros=0).
-        let (mg, mu, md, have) = match macros {
-            Some(_) => (
-                mac.get(&(il, 0)).expect("gate macro mirror built above"),
-                mac.get(&(il, 1)).expect("up macro mirror built above"),
-                mac.get(&(il, 2)).expect("down macro mirror built above"),
-                1i32,
-            ),
-            None => (selw, selw, selw, 0i32),
-        };
-        let f = self.func("moe_vrows_tables_from_sel");
-        let threads = 128u32;
-        let cfg = LaunchConfig {
-            grid_dim: ((n_pairs as u32).div_ceil(threads), 1, 1),
-            block_dim: (threads, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (sgi, sui, sdi) = (sg as i64, su as i64, sd as i64);
-        let (npi, havei) = (n_pairs as i32, have);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(sel)
-            .arg(selw)
-            .arg(mg)
-            .arg(mu)
-            .arg(md)
-            .arg(&mut *ptrs)
-            .arg(&mut *scl)
-            .arg(&pg)
-            .arg(&pu)
-            .arg(&pd)
-            .arg(&sgi)
-            .arg(&sui)
-            .arg(&sdi)
-            .arg(&npi)
-            .arg(&havei);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// DEVICE-SIDE build of the verify-rows pair's EXPERT-MAJOR order plane (door E,
-    /// `MEMRA_MOE_VROWS_DEDUP_ORDER`) from the router's own device selection, written into the
-    /// pointer table's fourth plane `ptrs[3*n_pairs ..)`. Bit-identical to
-    /// [`crate::vrows_expert_major_order`]: both are a stable order on `(expert id, pair index)`,
-    /// the kernel by counting rank (see its comment in `qmatvec.cu`), the host by a stable sort.
-    ///
-    /// This launch exists ONLY in the door-D (device tables) arm — the host arm appends the plane
-    /// to the vector it already uploads, so it costs zero extra transfers there. Cost in the
-    /// device arm: 42 launches/round = ~0.093 ms at the box's 2.216 us eager-launch constant,
-    /// against a predicted -2.17 ms/round; folding it into `moe_vrows_tables_from_sel` (same
-    /// inputs, same one-thread-per-pair grid) is the named follow-up that recovers it.
-    pub fn moe_vrows_order_from_sel(
-        &self,
-        sel: &CudaSlice<i32>,
-        n_pairs: usize,
-        ptrs: &mut CudaSlice<u64>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert!(sel.len() >= n_pairs);
-        debug_assert!(
-            ptrs.len() >= 4 * n_pairs,
-            "the order plane lives at ptrs[3*n_pairs .. 4*n_pairs)"
-        );
-        let f = self.func("moe_vrows_order_from_sel");
-        let threads = 128u32;
-        let cfg = LaunchConfig {
-            grid_dim: ((n_pairs as u32).div_ceil(threads), 1, 1),
-            block_dim: (threads, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let np = n_pairs as i32;
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(sel).arg(&mut *ptrs).arg(&np);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Verify-rows twin of [`Self::moe_gate_up_preclamp8_q8`] (lane/glm5-vrest): one launch
-    /// covers ALL `n_pairs = t * n_used` routed pairs of a spec-verify batch. `ptrs` /
-    /// `scl` are the `[3 * n_pairs]` plane-major (gate | up | down) expert-pointer and
-    /// scale tables (gs | us | w*macro_down); per pair the kernel body is the t=1 fused
-    /// epilogue's verbatim, bit-gated per row vs the sequential chain.
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors the kernel/FFI/call contract
-    pub fn moe_gate_up_preclamp8_q8_rows(
-        &self,
-        ptrs: &CudaSlice<u64>,
-        scl: &CudaSlice<f32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        limit: f32,
-        in_f: usize,
-        n_ff: usize,
-        n_used: usize,
-        n_pairs: usize,
-        qt_g: i32,
-        qt_u: i32,
-        rb_g: usize,
-        rb_u: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        debug_assert!(
-            limit > 1e-6,
-            "moe_gate_up_preclamp8_q8_rows needs a live limit; the kernel collapses every gate \
-             to silu(0) at limit 0"
-        );
-        debug_assert!(ptrs.len() >= 3 * n_pairs);
-        debug_assert_eq!(scl.len(), 3 * n_pairs);
-        // MEMRA_MOE_VROWS_DEDUP_ORDER (lane/glm5-dedup door E, default OFF): the `_ord` twin —
-        // pair index the FASTEST grid dimension, walked in expert-major order from the table's
-        // fourth plane, so two verify rows sharing an expert read the identical gate/up rows in
-        // adjacent blocks. `ptrs.len() >= 4*n_pairs` is a REQUIREMENT not a hint: the door engages
-        // only when the caller actually built the order plane, so a direct launcher call with the
-        // shipped 3-plane table (every standing gate) keeps the shipped program. Door M wins the
-        // tie by being tested first — the two are refused together rather than crossed.
-        let packed = moe_vrows_pack_on();
-        let ordered =
-            !packed && moe_vrows_dedup_order_on() && ptrs.len() >= 4 * n_pairs && n_ff <= 65535;
-        let (f, cfg) = if packed {
-            if MOE_VROWS_PACK_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-                eprintln!(
-                    "[moe-vrows-pack] engaged: 4-warp blocks on the verify-rows MoE pair \
-                     (MEMRA_MOE_VROWS_PACK=1)"
-                );
-            }
-            (
-                self.func("moe_gate_up_preclamp8_q8_rows_w4"),
-                LaunchConfig {
-                    grid_dim: ((n_ff as u32).div_ceil(4), n_pairs as u32, 1),
-                    block_dim: (32, 4, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        } else if ordered {
-            if MOE_VROWS_DEDUP_ORDER_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                == 0
-            {
-                eprintln!(
-                    "[moe-vrows-dedup-order] engaged: verify-rows gate/up walks the pair union \
-                     EXPERT-MAJOR with the pair index as the fastest grid dimension, so the \
-                     21.96%-measured repeat visits read a shared expert slab's rows in adjacent \
-                     blocks (MEMRA_MOE_VROWS_DEDUP_ORDER=1)"
-                );
-            }
-            (
-                self.func("moe_gate_up_preclamp8_q8_rows_ord"),
-                LaunchConfig {
-                    grid_dim: (n_pairs as u32, n_ff as u32, 1),
-                    block_dim: (32, 1, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        } else {
-            (
-                self.func("moe_gate_up_preclamp8_q8_rows"),
-                LaunchConfig {
-                    grid_dim: (n_ff as u32, n_pairs as u32, 1),
-                    block_dim: (32, 1, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        };
-        // Door W: the vrows launcher is verify-walk-only; act is a pooled draw.
-        let mut act = self.vws_uninit(n_pairs * n_ff)?;
-        let (inf, nff, nu, np) = (in_f as i32, n_ff as i32, n_used as i32, n_pairs as i32);
-        let (rbg, rbu) = (rb_g as i64, rb_u as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(ptrs)
-            .arg(scl)
-            .arg(aq)
-            .arg(ad)
-            .arg(&limit)
-            .arg(&mut act)
-            .arg(&inf)
-            .arg(&nff)
-            .arg(&nu)
-            .arg(&np)
-            .arg(&qt_g)
-            .arg(&qt_u)
-            .arg(&rbg)
-            .arg(&rbu);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(act)
-    }
-
-    /// Verify-rows twin of [`Self::moe_down8_fma_q8`] (lane/glm5-vrest): every verify row's
-    /// slot-ordered down+FMA chain in one launch. `dst` is `[t, out_f]`, fully overwritten;
-    /// `ptrs`/`scl` are the same tables the gate/up rows launch consumed (down plane).
-    #[allow(clippy::too_many_arguments)]
-    // allow: the parameter list mirrors the kernel/FFI/call contract
-    pub fn moe_down8_fma_q8_rows(
-        &self,
-        ptrs: &CudaSlice<u64>,
-        scl: &CudaSlice<f32>,
-        aq2: &CudaSlice<i8>,
-        ad2: &CudaSlice<f32>,
-        dst: &mut CudaSlice<f32>,
-        in_f: usize,
-        out_f: usize,
-        n_used: usize,
-        n_pairs: usize,
-        qt: i32,
-        rb: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        debug_assert!(ptrs.len() >= 3 * n_pairs);
-        debug_assert_eq!(scl.len(), 3 * n_pairs);
-        debug_assert_eq!(n_pairs % n_used, 0, "pairs are dense slot-major");
-        let t = n_pairs / n_used;
-        debug_assert!(dst.len() >= t * out_f);
-        // MEMRA_MOE_VROWS_PACK (door M): the _w4 twin, same packing as the gate/up launch.
-        let packed = moe_vrows_pack_on();
-        // MEMRA_MOE_VROWS_DOWN_TMAJ (door E-down): grid transposed to (t, out_f) — token fastest —
-        // so the t verify rows at one output row are adjacent blocks and a repeated expert's down
-        // row is read once for every token that shares it. The slot-ordered __fmaf_rn chain is
-        // inside the block and keeps its ORIGINAL slot order; only the grid moves. Needs no table
-        // plane (the down chain cannot be permuted), so it composes with either table provenance.
-        let tmaj = !packed && moe_vrows_down_tmaj_on() && out_f <= 65535;
-        let (f, cfg) = if packed {
-            (
-                self.func("moe_down8_fma_q8_rows_w4"),
-                LaunchConfig {
-                    grid_dim: ((out_f as u32).div_ceil(4), t as u32, 1),
-                    block_dim: (32, 4, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        } else if tmaj {
-            if MOE_VROWS_DOWN_TMAJ_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                == 0
-            {
-                eprintln!(
-                    "[moe-vrows-down-tmaj] engaged: verify-rows down/FMA grid transposed to \
-                     (t, out_f) so the verify rows at one output row are adjacent blocks; the \
-                     slot-ordered FMA chain is unchanged (MEMRA_MOE_VROWS_DOWN_TMAJ=1)"
-                );
-            }
-            (
-                self.func("moe_down8_fma_q8_rows_tmaj"),
-                LaunchConfig {
-                    grid_dim: (t as u32, out_f as u32, 1),
-                    block_dim: (32, 1, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        } else {
-            (
-                self.func("moe_down8_fma_q8_rows"),
-                LaunchConfig {
-                    grid_dim: (out_f as u32, t as u32, 1),
-                    block_dim: (32, 1, 1),
-                    shared_mem_bytes: 0,
-                },
-            )
-        };
-        let (inf, outf, nu, np, rbi) = (
-            in_f as i32,
-            out_f as i32,
-            n_used as i32,
-            n_pairs as i32,
-            rb as i64,
-        );
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(ptrs)
-            .arg(scl)
-            .arg(aq2)
-            .arg(ad2)
-            .arg(dst)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&nu)
-            .arg(&np)
             .arg(&qt)
             .arg(&rbi);
         unsafe {
@@ -9113,55 +7593,6 @@ impl Engine {
         Ok(())
     }
 
-    /// `add_scaled_rows` with an all-ones scale drawn from the resident ones buffer (door H,
-    /// `MEMRA_HTOD_DIET`) — the UNGATED shared-expert add, without re-uploading the
-    /// constant every MoE layer-call. Same kernel, same values: the buffer may be longer than
-    /// `nrows` because `add_scaled_rows_f32` reads only `scale[0..nrows]`.
-    pub fn add_scaled_rows_ones(
-        &self,
-        src: &CudaSlice<f32>,
-        dst: &mut CudaSlice<f32>,
-        ncols: usize,
-        nrows: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut guard = self
-            .shexp_ones
-            .lock()
-            .map_err(|_| "shexp ones buffer is poisoned")?;
-        if guard.as_ref().map(|b| b.len() < nrows).unwrap_or(true) {
-            // One upload per process (or per growth step): the serving shapes are t <= 8 for the
-            // verify walk and the prime's chunk width otherwise.
-            *guard = Some(self.htod(&vec![1.0f32; nrows.max(64)])?);
-        }
-        let ones = guard.as_ref().expect("just ensured");
-        let f = self.func("add_scaled_rows_f32");
-        let cfg = LaunchConfig::for_num_elems((ncols * nrows) as u32);
-        let (nc, nr) = (ncols as i32, nrows as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(src).arg(ones).arg(&mut *dst).arg(&nc).arg(&nr);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// The `len_d` i32 mirror store, door H aware (`MEMRA_HTOD_DIET`): the async
-    /// [`Self::i32_set_k`] launch when the door is on, else the shipped synchronizing pageable
-    /// `memcpy_htod`. Identical value into the identical slot, both stream-ordered.
-    pub fn i32_mirror_store(
-        &self,
-        dst: &mut CudaSlice<i32>,
-        v: i32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if crate::htod_diet_on() {
-            HTOD_DIET_AVOIDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            return self.i32_set_k(dst, v);
-        }
-        self.gpu.stream().memcpy_htod(&[v], dst)?;
-        Ok(())
-    }
-
     /// y[r, :] *= s[r] in place (per-CSR-row macro scale for the grouped prime's gate/up —
     /// silu is nonlinear, so per-expert NVFP4 macros must land before it).
     pub fn scale_rows(
@@ -9719,10 +8150,8 @@ impl Engine {
         );
         self.qmatvec_dp4a_named("qmatvec_nvfp4_dp4a", w, x, m, in_f, out_f, row_bytes)
     }
-    /// Slot-major-layout twin of `qmatvec_nvfp4_fast`: bit-identical per row, coalesced
-    /// reads. Since the 2026-08-29 `MEMRA_NVFP4_BANK_V2` door removal its only in-tree
-    /// producer of slot-major banks is the EP2 whole-expert bank build; this is EP2's
-    /// host-canonical oracle reader (plus offline harnesses like moe_tp2_repro).
+    /// v2-layout twin of `qmatvec_nvfp4_fast` for the slot-major expert banks
+    /// (MEMRA_NVFP4_BANK_V2) — bit-identical per row, coalesced reads.
     pub fn qmatvec_nvfp4_fast_v2(
         &self,
         w: &cudarc::driver::CudaView<'_, u8>,
@@ -9916,18 +8345,16 @@ impl Engine {
         Ok(())
     }
 
-    /// PROGRAM 2 (`MEMRA_NVFP4_SEL_GU`, default OFF): the routed gate and up sweeps in ONE
-    /// launch. The two sweeps share `sel`/`aq`/`ad` and have identical geometry, so blocks
-    /// `[0,out_f)` run the exact `_sel_v2` body on the GATE bank and `[out_f,2*out_f)` on the UP
-    /// bank — per-row BIT-IDENTICAL to two `qmatvec_nvfp4_sel_into` calls, with half the sweep
-    /// launches and double the grid fill.
-    ///
-    /// SLOT-MAJOR ONLY, and the caller proves it: the kernel reads the slot-major byte map, so
-    /// this refuses banks that do not carry it rather than trusting an env door. In the removed
-    /// implementation this fusion auto-armed on `nvfp4_bank_v2_on()` with NO door of its own,
-    /// which is one of the three programs that moved together behind one env var and made the
-    /// 2026-08-29 bisect unable to name a mechanism (DIAGNOSIS.md).
+    /// Selected-experts batched twin of `qmatvec_nvfp4_fast_prequant_into`: one launch covers
+    /// every selected expert, weights indexed `sel[t] * expert_stride` into a contiguous
+    /// per-rank bank, activations advancing `act_row_stride`/`ad_row_stride` elements per
+    /// selection (0 for a shared input). Per (expert, row) bit-identical to the per-expert
+    /// kernel — the batching only removes host launch latency.
     #[allow(clippy::too_many_arguments)]
+    /// FUSION #2a: gate+up sweeps in one launch (v2 banks only; identical geometry both
+    /// banks, caller-guarded). Per-row bit-identical to two qmatvec_nvfp4_sel_into calls.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn qmatvec_nvfp4_sel_gu_into(
         &self,
         gate_bank: &CudaSlice<u8>,
@@ -9942,7 +8369,6 @@ impl Engine {
         out_f: usize,
         row_bytes: usize,
         expert_stride: usize,
-        slot_major: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         assert!(
             in_f.is_multiple_of(64),
@@ -9951,32 +8377,21 @@ impl Engine {
         if yg.len() < n_sel * out_f || yu.len() < n_sel * out_f || sel.len() < n_sel {
             return Err("NVFP4 gu sel geometry".into());
         }
-        if !slot_major {
-            return Err(
-                "NVFP4 gu sel fusion reads slot-major rows: these banks are block_nvfp4 \
-                        v1 (arm MEMRA_NVFP4_BANK_SM to build slot-major TP banks)"
-                    .into(),
-            );
-        }
-        // MEMRA_NVFP4_SEL_GU_RPW=2|4 (sub-door, default OFF, UNPRICED): multirow twin — the
-        // activation group is read once and reused across RPW rows' gate+up dots. Per-row
-        // accumulation order and reduce tree are the base kernel's -> bit-identical.
+        // MEMRA_SEL_GU_RPW=2|4: multirow twin (activation group read once, reused across
+        // RPW rows' gate+up dots) — bit-identical per row, one block per RPW rows.
         static RPW: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
         let rpw = *RPW.get_or_init(|| {
-            std::env::var("MEMRA_NVFP4_SEL_GU_RPW")
+            std::env::var("MEMRA_SEL_GU_RPW")
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .filter(|r| *r == 2 || *r == 4)
                 .unwrap_or(1)
         });
-        let rpw = if out_f.is_multiple_of(rpw) { rpw } else { 1 };
-        // MEMRA_NVFP4_SEL_GU_WPR=1 (sub-door, default OFF, UNPRICED): warp-per-row.
-        // NUMERIC-CLASS — the per-row REDUCTION ORDER changes, so a bit tape cannot apply and
-        // acceptance is the argmax gate plus the boot battery (the QKV_FUSED/BF16_MMV class).
-        // It is deliberately NOT part of this lane's priced arms, which are all bit-gateable.
+        let rpw = if out_f % rpw == 0 { rpw } else { 1 };
+        // MEMRA_SEL_GU_WPR=1: warp-per-row (NUMERIC-CLASS — per-row reduction order changes;
+        // acceptance is the argmax gate + battery, the QKV_FUSED/BF16_MMV class).
         static WPR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let wpr =
-            *WPR.get_or_init(|| std::env::var("MEMRA_NVFP4_SEL_GU_WPR").as_deref() == Ok("1"));
+        let wpr = *WPR.get_or_init(|| std::env::var("MEMRA_SEL_GU_WPR").as_deref() == Ok("1"));
         let f = self.func(match (wpr, rpw) {
             (true, _) => "qmatvec_nvfp4_dp4a_sel_v2_gu_wpr",
             (_, 4) => "qmatvec_nvfp4_dp4a_sel_v2_gu_r4",
@@ -10019,17 +8434,13 @@ impl Engine {
         Ok(())
     }
 
-    /// PROGRAM 3 (`MEMRA_NVFP4_SEL_DOWN8`, **default ON since 2026-09-01**): the DOWN sweep and
-    /// the route-weight
-    /// combine in ONE launch (`qmatvec_nvfp4_dp4a_sel_v2_down8`, the q8 `down8 w8` occupancy arm
-    /// ported to the NVFP4 banks). Block = `(32, n_sel)`: one warp per slot instead of one warp
-    /// per (row, slot), and the `n_sel x out_f` partial buffer disappears. BIT-IDENTICAL to
-    /// `qmatvec_nvfp4_sel_into` + `axpy_rows_seq_md_into` — same dot program, same reduce tree,
-    /// same slot-ordered combine chain.
-    ///
-    /// Requires slot-major rows and `nsb <= 32` (the fit-block class the reduce identity is
-    /// argued at). The removed implementation refused on `!nvfp4_bank_v2_on()`; it now refuses on
-    /// the LAYOUT THE CALLER READ OFF THE BANK, so the guard cannot disagree with the bytes.
+    /// MEMRA_SEL_DOWN8=1: the DOWN sweep and the route-weight combine in ONE launch
+    /// (`qmatvec_nvfp4_dp4a_sel_v2_down8`, the q8 `down8 w8` occupancy arm ported to the
+    /// NVFP4 banks). Block = (32, n_sel): one warp per slot instead of one warp per
+    /// (row, slot), and the n_sel x out_f partial buffer disappears. Bit-identical to
+    /// `qmatvec_nvfp4_sel_into` + `axpy_rows_seq_md_into` — same dot program, same reduce
+    /// tree, same slot-ordered chain. Requires the v2 banks and nsb <= 32 (the fit-block
+    /// class the reduce identity is argued at).
     #[allow(clippy::too_many_arguments)]
     pub fn qmatvec_nvfp4_sel_down8_into(
         &self,
@@ -10047,7 +8458,6 @@ impl Engine {
         expert_stride: usize,
         act_row_stride: usize,
         ad_row_stride: usize,
-        slot_major: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if !in_f.is_multiple_of(64)
             || n_sel == 0
@@ -10063,12 +8473,8 @@ impl Engine {
             )
             .into());
         }
-        if !slot_major {
-            return Err(
-                "NVFP4 sel down8 reads slot-major rows: this shard is block_nvfp4 v1 \
-                        (arm MEMRA_NVFP4_BANK_SM to build slot-major TP banks)"
-                    .into(),
-            );
+        if !crate::tp::nvfp4_bank_v2_on() {
+            return Err("NVFP4 sel down8 requires the v2 banks (MEMRA_NVFP4_BANK_V2=1)".into());
         }
         let f = self.func("qmatvec_nvfp4_dp4a_sel_v2_down8");
         let cfg = LaunchConfig {
@@ -10091,6 +8497,81 @@ impl Engine {
             .arg(&inf)
             .arg(&outf)
             .arg(&ns)
+            .arg(&rb)
+            .arg(&es)
+            .arg(&ars)
+            .arg(&adrs);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// T-ROW twin of the down8 fusion (spec verify + batched serving MoE): one block per
+    /// (output row, token row) = the exact t=1 down8 program per token — bit-identical
+    /// per row to its own down8/axpy pair at any t.
+    #[allow(clippy::too_many_arguments)]
+    pub fn qmatvec_nvfp4_sel_down8_rows_into(
+        &self,
+        bank: &CudaSlice<u8>,
+        sel: &CudaSlice<i32>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        route_w: &CudaSlice<f32>,
+        md: &CudaSlice<f32>,
+        dst: &mut CudaSlice<f32>,
+        t: usize,
+        n_sel_col: usize,
+        in_f: usize,
+        out_f: usize,
+        row_bytes: usize,
+        expert_stride: usize,
+        act_row_stride: usize,
+        ad_row_stride: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let n_sel = t * n_sel_col;
+        if !in_f.is_multiple_of(64)
+            || n_sel_col == 0
+            || n_sel_col > 8
+            || t == 0
+            || t > 64
+            || (in_f >> 5) > 32
+            || dst.len() < t * out_f
+            || sel.len() < n_sel
+            || route_w.len() < n_sel
+        {
+            return Err(format!(
+                "NVFP4 sel down8 rows geometry in_f={in_f} out_f={out_f} t={t} dst={}",
+                dst.len()
+            )
+            .into());
+        }
+        if !crate::tp::nvfp4_bank_v2_on() {
+            return Err(
+                "NVFP4 sel down8 rows requires the v2 banks (MEMRA_NVFP4_BANK_V2=1)".into(),
+            );
+        }
+        let f = self.func("qmatvec_nvfp4_dp4a_sel_v2_down8_rows");
+        let cfg = LaunchConfig {
+            grid_dim: (out_f as u32, t as u32, 1),
+            block_dim: (32, n_sel_col as u32, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, outf, nsc) = (in_f as i32, out_f as i32, n_sel_col as i32);
+        let (rb, es) = (row_bytes as i64, expert_stride as i64);
+        let (ars, adrs) = (act_row_stride as i64, ad_row_stride as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(bank)
+            .arg(sel)
+            .arg(aq)
+            .arg(ad)
+            .arg(route_w)
+            .arg(md)
+            .arg(dst)
+            .arg(&inf)
+            .arg(&outf)
+            .arg(&nsc)
             .arg(&rb)
             .arg(&es)
             .arg(&ars)
@@ -10273,19 +8754,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Selected-experts batched twin of `qmatvec_nvfp4_fast_prequant_into`: one launch covers
-    /// every selected expert, weights indexed `sel[t] * expert_stride` into a contiguous
-    /// per-rank bank, activations advancing `act_row_stride`/`ad_row_stride` elements per
-    /// selection (0 for a shared input). Per (expert, row) bit-identical to the per-expert
-    /// kernel — the batching only removes host launch latency.
-    ///
-    /// `slot_major` names the LAYOUT OF THE BYTES AT `bank` and is REQUIRED, never defaulted:
-    /// true routes the `_sel_v2` reader (slot g's 16 qs bytes at `g*16`, scale tail at
-    /// `nslots*16`), false the block_nvfp4 v1 reader. The caller reads it off the resident bank
-    /// (`ResidentNvfp4{Column,Row}BankRank::slot_major`) — never off an env door, and never with
-    /// a default. A defaulted layout scalar in exactly this position is what produced the
-    /// 2026-08-29 step37 corruption (`kq_fetch(..., int in_f = 0)`,
-    /// research/step37-bankv3-20260901/DIAGNOSIS.md).
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn qmatvec_nvfp4_sel_into(
         &self,
@@ -10301,7 +8769,6 @@ impl Engine {
         expert_stride: usize,
         act_row_stride: usize,
         ad_row_stride: usize,
-        slot_major: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         assert!(
             in_f.is_multiple_of(64),
@@ -10323,7 +8790,9 @@ impl Engine {
         // prefetch (bit-identical per row; one group per thread, so in_f <= 4096 only).
         static MR: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
         let mode = *MR.get_or_init(|| {
-            if std::env::var("MEMRA_SEL_STREAM").as_deref() == Ok("1") {
+            if crate::tp::nvfp4_bank_v2_on() {
+                3
+            } else if std::env::var("MEMRA_SEL_STREAM").as_deref() == Ok("1") {
                 2
             } else if std::env::var("MEMRA_SEL_MR").as_deref() == Ok("1") {
                 1
@@ -10332,52 +8801,27 @@ impl Engine {
             }
         });
         let mode = if mode == 2 && in_f > 4096 { 0 } else { mode };
-        // Mode 3 is the SLOT-MAJOR reader, and it is chosen by the BANK's layout, not by an env
-        // door: `MEMRA_SEL_MR`/`MEMRA_SEL_STREAM` are v1-layout probes and cannot read these
-        // bytes at all, so the layout overrides them rather than racing them.
-        let mode = if slot_major { 3 } else { mode };
-        // MEMRA_NVFP4_SEL_SM_STREAM=1 (sub-door of MEMRA_NVFP4_BANK_SM, default OFF, UNPRICED):
-        // 8 contiguous rows per block with next-row int4 prefetch. Needs 16B-aligned rows
-        // (step37 gate/up 2304B yes, down 360B no -> single-row) and one slot per thread.
-        static SM_STREAM: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let sm_stream = mode == 3
-            && *SM_STREAM
-                .get_or_init(|| std::env::var("MEMRA_NVFP4_SEL_SM_STREAM").as_deref() == Ok("1"))
+        // v2s streaming twin (MEMRA_SEL_V2S=1 on top of the v2 bank): 8 contiguous rows per
+        // block with next-row int4 prefetch; needs 16B-aligned rows (gate/up 2304B yes, down
+        // 360B no -> single-row v2) and one slot per thread (in_f <= 4096).
+        static V2S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let v2s = mode == 3
+            && *V2S.get_or_init(|| std::env::var("MEMRA_SEL_V2S").as_deref() == Ok("1"))
             && row_bytes.is_multiple_of(16)
             && in_f <= 4096;
-        let kname = match (mode, sm_stream) {
-            (3, true) => "qmatvec_nvfp4_dp4a_sel_v2s",
-            (3, false) => "qmatvec_nvfp4_dp4a_sel_v2",
-            (2, _) => "qmatvec_nvfp4_dp4a_sel_stream",
-            (1, _) => "qmatvec_nvfp4_dp4a_sel_mr4",
-            _ => "qmatvec_nvfp4_dp4a_sel",
+        let f = match (mode, v2s) {
+            (3, true) => self.func("qmatvec_nvfp4_dp4a_sel_v2s"),
+            (3, false) => self.func("qmatvec_nvfp4_dp4a_sel_v2"),
+            (2, _) => self.func("qmatvec_nvfp4_dp4a_sel_stream"),
+            (1, _) => self.func("qmatvec_nvfp4_dp4a_sel_mr4"),
+            _ => self.func("qmatvec_nvfp4_dp4a_sel"),
         };
-        // ENGAGEMENT RECEIPT for PROGRAM 1, one line per distinct (kernel, geometry) pair. The
-        // door being SET in the environment does not prove the slot-major READER ran; only the
-        // selected kernel name does. Without this, a pricing cell that reports a flat delta
-        // cannot distinguish "the program is worth nothing" from "the program never ran" — the
-        // defect the MEMRA_BF16_MMV lane hit when its engagement grep returned 0 in both arms.
-        {
-            static SEEN_SEL: std::sync::Mutex<Vec<(&'static str, usize, usize)>> =
-                std::sync::Mutex::new(Vec::new());
-            let combo = (kname, in_f, out_f);
-            let mut seen = SEEN_SEL.lock().unwrap();
-            if !seen.contains(&combo) {
-                seen.push(combo);
-                eprintln!(
-                    "[nvfp4-sel] kernel={kname} slot_major={slot_major} in_f={in_f} \
-                     out_f={out_f} nsb={} row_bytes={row_bytes}",
-                    in_f >> 5
-                );
-            }
-        }
-        let f = self.func(kname);
         // Thread-fit block for narrow rows (the DOWN sweep: in_f=640 -> nsb=20 slots left
         // 108 of 128 threads idle AND thread-capped resident blocks). blockDim >= nsb keeps
         // thread g on slot g; the dropped threads contributed exact 0.0 partials to the
         // reduce, so the result bits are unchanged. Applies to the single-row forms only.
         let nsb = in_f >> 5;
-        let fit_block: u32 = if (mode == 0 || mode == 3) && !sm_stream && nsb <= 32 {
+        let fit_block: u32 = if (mode == 0 || mode == 3) && !v2s && nsb <= 32 {
             32
         } else if mode == 1 {
             512
@@ -10386,7 +8830,7 @@ impl Engine {
         };
         let cfg = LaunchConfig {
             grid_dim: (
-                if sm_stream {
+                if v2s {
                     (out_f as u32).div_ceil(8)
                 } else {
                     match mode {
@@ -10422,1019 +8866,6 @@ impl Engine {
             .arg(&es)
             .arg(&ars)
             .arg(&adrs);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// W4A16 selected-expert gate+up pair. `x_bf16` contains checkpoint-rounded BF16
-    /// activations; selected ids are local to the rank's contiguous expert bank.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_sel_dual_rows_into(
-        &self,
-        gate_bank: &CudaSlice<u8>,
-        up_bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        token_rows: &CudaSlice<i32>,
-        x_bf16: &CudaSlice<u8>,
-        gate_out: &mut CudaSlice<f32>,
-        up_out: &mut CudaSlice<f32>,
-        n_sel: usize,
-        in_f: usize,
-        out_f: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-        tokens: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if !in_f.is_multiple_of(64)
-            || sel.len() < n_sel
-            || token_rows.len() < n_sel
-            || gate_out.len() < n_sel * out_f
-            || up_out.len() < n_sel * out_f
-            || x_bf16.len() < 2 * in_f * tokens
-        {
-            return Err(format!(
-                "W4A16 NVFP4 dual selected rows geometry sel={} token_rows={} x={} gate={} up={} \
-                 n_sel={n_sel} tokens={tokens} in={in_f} out={out_f}",
-                sel.len(),
-                token_rows.len(),
-                x_bf16.len(),
-                gate_out.len(),
-                up_out.len(),
-            )
-            .into());
-        }
-        let adjacent_rows = tokens > 1;
-        let f = if adjacent_rows {
-            self.func("qmatvec_nvfp4_bf16_sel_quad_rows")
-        } else {
-            self.func("qmatvec_nvfp4_bf16_sel_dual_rows")
-        };
-        let cfg = LaunchConfig {
-            grid_dim: (
-                if adjacent_rows {
-                    out_f.div_ceil(2) as u32
-                } else {
-                    (2 * out_f) as u32
-                },
-                n_sel as u32,
-                1,
-            ),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, ns) = (in_f as i32, out_f as i32, n_sel as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate_bank)
-            .arg(up_bank)
-            .arg(sel)
-            .arg(token_rows)
-            .arg(x_bf16)
-            .arg(gate_out)
-            .arg(up_out)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&ns)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Device-routed W4A16 gate+up over fixed token/slot rows. Selection ids remain global;
-    /// each rank rejects non-owned slots and translates owned ids into its local expert bank.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_ep_dual_slots_into(
-        &self,
-        gate_bank: &CudaSlice<u8>,
-        up_bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        x_bf16: &CudaSlice<u8>,
-        gate_out: &mut CudaSlice<f32>,
-        up_out: &mut CudaSlice<f32>,
-        n_pairs: usize,
-        top_k: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let tokens = n_pairs.div_ceil(top_k);
-        if top_k == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || gate_out.len() < n_pairs * out_f
-            || up_out.len() < n_pairs * out_f
-            || x_bf16.len() < 2 * in_f * tokens
-        {
-            return Err(format!(
-                "W4A16 NVFP4 device EP dual-slot geometry sel={} x={} gate={} up={} \
-                 pairs={n_pairs} top_k={top_k} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                x_bf16.len(),
-                gate_out.len(),
-                up_out.len(),
-            )
-            .into());
-        }
-        let pair_parallel = tokens > 1;
-        let f = if pair_parallel {
-            self.func("qmatvec_nvfp4_bf16_ep_quad_pairs")
-        } else {
-            self.func("qmatvec_nvfp4_bf16_ep_dual_slots")
-        };
-        let cfg = LaunchConfig {
-            grid_dim: (
-                if pair_parallel {
-                    out_f.div_ceil(2) as u32
-                } else {
-                    (2 * out_f) as u32
-                },
-                if pair_parallel { n_pairs as u32 } else { 1 },
-                1,
-            ),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np, tk) = (in_f as i32, out_f as i32, n_pairs as i32, top_k as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate_bank)
-            .arg(up_bank)
-            .arg(sel)
-            .arg(x_bf16)
-            .arg(gate_out)
-            .arg(up_out)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&tk)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Optional A8 t=1 gate+up program over global fixed slots.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_q8_ep_dual_slots_into(
-        &self,
-        gate_bank: &CudaSlice<u8>,
-        up_bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        gate_out: &mut CudaSlice<f32>,
-        up_out: &mut CudaSlice<f32>,
-        n_pairs: usize,
-        top_k: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let tokens = n_pairs.div_ceil(top_k);
-        if top_k == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || aq.len() < tokens * in_f
-            || ad.len() < tokens * (in_f / 32)
-            || gate_out.len() < n_pairs * out_f
-            || up_out.len() < n_pairs * out_f
-        {
-            return Err(format!(
-                "W4A8 NVFP4 device EP gate/up geometry sel={} aq={} ad={} gate={} up={} \
-                 pairs={n_pairs} top_k={top_k} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                aq.len(),
-                ad.len(),
-                gate_out.len(),
-                up_out.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_q8_ep_dual_slots");
-        let threads = ((in_f / 32).div_ceil(32) * 32).clamp(32, 256) as u32;
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (threads, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np, tk) = (in_f as i32, out_f as i32, n_pairs as i32, top_k as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate_bank)
-            .arg(up_bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(gate_out)
-            .arg(up_out)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&tk)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Known-good paired gate+up Q8 schedule: one CTA owns the same output row in both banks,
-    /// shares the activation bytes, and retains one independent accumulator/reduction per bank.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_q8_ep_paired_slots_into(
-        &self,
-        gate_bank: &CudaSlice<u8>,
-        up_bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        gate_out: &mut CudaSlice<f32>,
-        up_out: &mut CudaSlice<f32>,
-        n_pairs: usize,
-        top_k: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let tokens = n_pairs.div_ceil(top_k);
-        if top_k == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || aq.len() < tokens * in_f
-            || ad.len() < tokens * (in_f / 32)
-            || gate_out.len() < n_pairs * out_f
-            || up_out.len() < n_pairs * out_f
-        {
-            return Err(format!(
-                "W4A8 NVFP4 paired gate/up geometry sel={} aq={} ad={} gate={} up={} \
-                 pairs={n_pairs} top_k={top_k} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                aq.len(),
-                ad.len(),
-                gate_out.len(),
-                up_out.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_q8_ep_paired_slots");
-        let threads = ((in_f / 32).div_ceil(32) * 32).clamp(32, 256) as u32;
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (threads, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np, tk) = (in_f as i32, out_f as i32, n_pairs as i32, top_k as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate_bank)
-            .arg(up_bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(gate_out)
-            .arg(up_out)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&tk)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// W4A16 selected down rows scattered into canonical global pair positions on the root.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_sel_down_rows_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        global_pairs: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_sel: usize,
-        in_f: usize,
-        out_f: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-        total_pairs: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if !in_f.is_multiple_of(64)
-            || sel.len() < n_sel
-            || global_pairs.len() < n_sel
-            || activation_bf16.len() < 2 * n_sel * in_f
-            || dst_raw == 0
-        {
-            return Err(format!(
-                "W4A16 NVFP4 down rows geometry sel={} pairs={} act={} dst_raw={dst_raw:#x} \
-                 n_sel={n_sel} total_pairs={total_pairs} in={in_f} out={out_f}",
-                sel.len(),
-                global_pairs.len(),
-                activation_bf16.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_sel_down_rows");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f.div_ceil(2) as u32, n_sel as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, ns) = (in_f as i32, out_f as i32, n_sel as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(global_pairs)
-            .arg(activation_bf16)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&ns)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Device-routed W4A16 down rows. Exactly one owner rank writes each global token/slot row
-    /// into the root device's peer-accessible slab.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_ep_down_slots_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || activation_bf16.len() < 2 * n_pairs * in_f
-            || dst_raw == 0
-        {
-            return Err(format!(
-                "W4A16 NVFP4 device EP down-slot geometry sel={} act={} dst_raw={dst_raw:#x} \
-                 pairs={n_pairs} in={in_f} out={out_f} owner={owner_start}..{owner_end}",
-                sel.len(),
-                activation_bf16.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_ep_down_slots");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f.div_ceil(2) as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Pair-parallel multi-token twin of `qmatvec_nvfp4_bf16_ep_down_slots_raw`.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_ep_down_pairs_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || activation_bf16.len() < 2 * n_pairs * in_f
-            || dst_raw == 0
-        {
-            return Err(format!(
-                "W4A16 NVFP4 device EP down-pair geometry sel={} act={} dst_raw={dst_raw:#x} \
-                 pairs={n_pairs} in={in_f} out={out_f} owner={owner_start}..{owner_end}",
-                sel.len(),
-                activation_bf16.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_ep_down_pairs");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f.div_ceil(2) as u32, n_pairs as u32, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Host-expf W4A16 SwiGLU selected rows, rounded directly to BF16 for the down projection.
-    #[allow(clippy::too_many_arguments)]
-    pub fn silu_mul_scaled_host_expf_bf16_sel_into(
-        &self,
-        gate: &CudaSlice<f32>,
-        up: &CudaSlice<f32>,
-        gate_macros: &CudaSlice<f32>,
-        up_macros: &CudaSlice<f32>,
-        sel: &CudaSlice<i32>,
-        limit: Option<f32>,
-        output_bf16: &mut CudaSlice<u8>,
-        n_per: usize,
-        n_sel: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let n = n_per * n_sel;
-        if sel.len() < n_sel || gate.len() < n || up.len() < n || output_bf16.len() < 2 * n {
-            return Err(format!(
-                "W4A16 selected activation geometry sel={} gate={} up={} out={} \
-                 n_per={n_per} n_sel={n_sel}",
-                sel.len(),
-                gate.len(),
-                up.len(),
-                output_bf16.len(),
-            )
-            .into());
-        }
-        let (limit, has_limit) = match limit {
-            Some(limit) if limit.is_finite() && limit > 1e-6 => (limit, 1i32),
-            Some(limit) => {
-                return Err(format!("W4A16 selected activation limit {limit} is invalid").into());
-            }
-            None => (0.0f32, 0i32),
-        };
-        let f = self.func("silu_mul_scaled_host_expf_bf16_sel");
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        let (np, ns) = (n_per as i32, n_sel as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate)
-            .arg(up)
-            .arg(gate_macros)
-            .arg(up_macros)
-            .arg(sel)
-            .arg(&limit)
-            .arg(&has_limit)
-            .arg(output_bf16)
-            .arg(&np)
-            .arg(&ns);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Device-routed fixed token/slot W4A16 activation. Global expert ids are translated into
-    /// rank-local macro rows only on the owning rank.
-    #[allow(clippy::too_many_arguments)]
-    pub fn silu_mul_scaled_host_expf_bf16_ep_slots_into(
-        &self,
-        gate: &CudaSlice<f32>,
-        up: &CudaSlice<f32>,
-        gate_macros: &CudaSlice<f32>,
-        up_macros: &CudaSlice<f32>,
-        sel: &CudaSlice<i32>,
-        owner_start: usize,
-        owner_end: usize,
-        limit: Option<f32>,
-        output_bf16: &mut CudaSlice<u8>,
-        n_per: usize,
-        n_pairs: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let n = n_per * n_pairs;
-        if owner_start >= owner_end
-            || sel.len() < n_pairs
-            || gate.len() < n
-            || up.len() < n
-            || output_bf16.len() < 2 * n
-        {
-            return Err(format!(
-                "W4A16 device EP activation geometry sel={} gate={} up={} out={} \
-                 n_per={n_per} pairs={n_pairs} owner={owner_start}..{owner_end}",
-                sel.len(),
-                gate.len(),
-                up.len(),
-                output_bf16.len(),
-            )
-            .into());
-        }
-        let (limit, has_limit) = match limit {
-            Some(limit) if limit.is_finite() && limit > 1e-6 => (limit, 1i32),
-            Some(limit) => {
-                return Err(format!("W4A16 selected activation limit {limit} is invalid").into());
-            }
-            None => (0.0f32, 0i32),
-        };
-        let f = self.func("silu_mul_scaled_host_expf_bf16_ep_slots");
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        let (np, pairs) = (n_per as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate)
-            .arg(up)
-            .arg(gate_macros)
-            .arg(up_macros)
-            .arg(sel)
-            .arg(&limit)
-            .arg(&has_limit)
-            .arg(output_bf16)
-            .arg(&np)
-            .arg(&pairs)
-            .arg(&os)
-            .arg(&oe);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Optional A8 host-expf SwiGLU over global fixed slots.
-    #[allow(clippy::too_many_arguments)]
-    pub fn silu_mul_scaled_host_expf_q8_ep_slots_into(
-        &self,
-        gate: &CudaSlice<f32>,
-        up: &CudaSlice<f32>,
-        gate_macros: &CudaSlice<f32>,
-        up_macros: &CudaSlice<f32>,
-        sel: &CudaSlice<i32>,
-        owner_start: usize,
-        owner_end: usize,
-        limit: Option<f32>,
-        output_q8: &mut CudaSlice<i8>,
-        output_scales: &mut CudaSlice<f32>,
-        n_per: usize,
-        n_pairs: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let n = n_per * n_pairs;
-        if owner_start >= owner_end
-            || !n_per.is_multiple_of(32)
-            || sel.len() < n_pairs
-            || gate.len() < n
-            || up.len() < n
-            || output_q8.len() < n
-            || output_scales.len() < n / 32
-        {
-            return Err(format!(
-                "W4A8 device EP activation geometry sel={} gate={} up={} q8={} scales={} \
-                 n_per={n_per} pairs={n_pairs} owner={owner_start}..{owner_end}",
-                sel.len(),
-                gate.len(),
-                up.len(),
-                output_q8.len(),
-                output_scales.len(),
-            )
-            .into());
-        }
-        let (limit, has_limit) = match limit {
-            Some(limit) if limit.is_finite() && limit > 1e-6 => (limit, 1i32),
-            Some(limit) => {
-                return Err(format!("W4A8 selected activation limit {limit} is invalid").into());
-            }
-            None => (0.0f32, 0i32),
-        };
-        let f = self.func("silu_mul_scaled_host_expf_q8_ep_slots");
-        let warps = n / 32;
-        let cfg = LaunchConfig {
-            grid_dim: ((warps as u32).div_ceil(4), 1, 1),
-            block_dim: (128, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (np, pairs) = (n_per as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate)
-            .arg(up)
-            .arg(gate_macros)
-            .arg(up_macros)
-            .arg(sel)
-            .arg(&limit)
-            .arg(&has_limit)
-            .arg(output_q8)
-            .arg(output_scales)
-            .arg(&np)
-            .arg(&pairs)
-            .arg(&os)
-            .arg(&oe);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// W4A16 selected-expert down projection plus owner-local route combine. The destination may
-    /// reside in the model engine's peer-accessible root pool.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_sel_down_fma_into(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst: &mut cudarc::driver::CudaViewMut<f32>,
-        n_sel: usize,
-        in_f: usize,
-        out_f: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if !in_f.is_multiple_of(64)
-            || sel.len() < n_sel
-            || route_weights.len() < n_sel
-            || activation_bf16.len() < 2 * n_sel * in_f
-            || dst.len() < out_f
-        {
-            return Err(format!(
-                "W4A16 NVFP4 down selected geometry sel={} act={} weights={} dst={} \
-                 n_sel={n_sel} in={in_f} out={out_f}",
-                sel.len(),
-                activation_bf16.len(),
-                route_weights.len(),
-                dst.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_sel_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, ns) = (in_f as i32, out_f as i32, n_sel as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(dst)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&ns)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Device-routed t=1 W4A16 down projection plus owner-local weighted combine.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_ep_down_fma_into(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst: &mut cudarc::driver::CudaViewMut<f32>,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || route_weights.len() < n_pairs
-            || activation_bf16.len() < 2 * n_pairs * in_f
-            || dst.len() < out_f
-        {
-            return Err(format!(
-                "W4A16 device EP down-FMA geometry sel={} act={} weights={} dst={} \
-                 pairs={n_pairs} in={in_f} out={out_f} owner={owner_start}..{owner_end}",
-                sel.len(),
-                activation_bf16.len(),
-                route_weights.len(),
-                dst.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_ep_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(dst)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Capture-safe twin of `qmatvec_nvfp4_bf16_ep_down_fma_into`. The destination is one
-    /// rank-owned row inside a persistent root-device slab.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_bf16_ep_down_fma_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        activation_bf16: &CudaSlice<u8>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if dst_raw == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || route_weights.len() < n_pairs
-            || activation_bf16.len() < 2 * n_pairs * in_f
-        {
-            return Err(format!(
-                "W4A16 device EP raw down-FMA geometry sel={} act={} weights={} \
-                 dst={dst_raw:#x} pairs={n_pairs} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                activation_bf16.len(),
-                route_weights.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_bf16_ep_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(activation_bf16)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Optional A8 fixed-slot down rows. Each owner rank writes its selected pair rows directly
-    /// into the root slot slab; the root applies route weights in canonical token/slot order.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_q8_ep_down_slots_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if dst_raw == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || aq.len() < n_pairs * in_f
-            || ad.len() < n_pairs * (in_f / 32)
-        {
-            return Err(format!(
-                "W4A8 device EP raw down-slot geometry sel={} aq={} ad={} \
-                 dst={dst_raw:#x} pairs={n_pairs} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                aq.len(),
-                ad.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_q8_ep_down_slots");
-        let threads = ((in_f / 32).div_ceil(32) * 32).clamp(32, 256) as u32;
-        let cfg = LaunchConfig {
-            grid_dim: (out_f.div_ceil(2) as u32, 1, 1),
-            block_dim: (threads, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Historical A8 t=1 down + owner-local route combine into a persistent root row.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_q8_ep_down_fma_raw(
-        &self,
-        bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        route_weights: &CudaSlice<f32>,
-        macros_down: &CudaSlice<f32>,
-        dst_raw: u64,
-        n_pairs: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if dst_raw == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || aq.len() < n_pairs * in_f
-            || ad.len() < n_pairs * (in_f / 32)
-            || route_weights.len() < n_pairs
-        {
-            return Err(format!(
-                "W4A8 device EP raw down-FMA geometry sel={} aq={} ad={} weights={} \
-                 dst={dst_raw:#x} pairs={n_pairs} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                aq.len(),
-                ad.len(),
-                route_weights.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_q8_ep_down_fma");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (256, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np) = (in_f as i32, out_f as i32, n_pairs as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(route_weights)
-            .arg(macros_down)
-            .arg(&dst_raw)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
         unsafe {
             b.launch(cfg)?;
         }
@@ -11587,139 +9018,10 @@ impl Engine {
         self.gpu.stream().synchronize()?;
         Ok(v)
     }
-    /// D2H copy of the first `n` bytes of `d` into a pinned CACHEABLE host buffer: the
-    /// prefix-cache host-tier demote primitive (lane/kv-host-spill-20260830). Queued on the
-    /// worker stream and synchronized before returning, exactly like `dtoh_u8`: v1 keeps every
-    /// host-tier copy on the CUDA owner thread (the HY3 spill law). SEAM (named, not built): an
-    /// overlapped copy-stream variant would queue this on a dedicated D2H stream with an event
-    /// handshake against the compute stream; build it only with a tick-stall receipt that says
-    /// the sync copy is the bottleneck.
-    pub fn dtoh_u8_into_pinned(
-        &self,
-        d: &CudaSlice<u8>,
-        dst: &mut PinnedHostBuf,
-        n: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if n > d.len() || n > dst.len() {
-            return Err(format!(
-                "dtoh_u8_into_pinned range {n} exceeds src {} or pinned dst {}",
-                d.len(),
-                dst.len(),
-            )
-            .into());
-        }
-        if n == 0 {
-            return Ok(());
-        }
-        let host = &mut dst.as_mut_slice()[..n];
-        self.gpu.stream().memcpy_dtoh(&d.slice(0..n), host)?;
-        self.gpu.stream().synchronize()?;
-        Ok(())
-    }
     pub fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        SCRATCH_ALLOC_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let s = self.gpu.stream().alloc_zeros::<f32>(n)?;
         self.keep_if_capturing(&s);
         Ok(s)
-    }
-
-    /// Take the pooled hc-glue decode workspace (MEMRA_HC_DECODE_WS) for one step's walk; put
-    /// it back with [`Self::hyper_ws_put`]. A `None` here means another walk holds it (or it
-    /// was never built) — the caller allocates fresh, which is always correct.
-    pub(crate) fn hyper_ws_take(&self) -> Option<crate::hyper::HyperDecodeWs> {
-        self.hyper_decode_ws.lock().unwrap().take()
-    }
-
-    pub(crate) fn hyper_ws_put(&self, ws: crate::hyper::HyperDecodeWs) {
-        *self.hyper_decode_ws.lock().unwrap() = Some(ws);
-    }
-
-    // ---- Verify-walk workspace (MEMRA_VERIFY_WS, door W — see VerifyWs). ----
-    // take/recycle are no-ops with the door off, so every OFF-arm call site is byte-for-byte
-    // the shipped program (fresh alloc, ordinary async free). All pooled sites are
-    // verify-walk-only by construction (rows-exact matmuls, the KDA Rows stash arm, the MoE
-    // vrows staging), and the pool is per-engine = per-stream: recycle-then-reuse carries the
-    // same stream-ordering guarantee the async allocator's free-then-alloc does.
-
-    /// Pool-or-alloc f32 scratch for a verify-walk site (uninit contract unchanged).
-    pub(crate) fn vws_uninit(
-        &self,
-        n: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if verify_ws_on() {
-            let mut ws = self.verify_ws.lock().unwrap();
-            let ws = &mut *ws;
-            if let Some(s) = VerifyWs::take(&mut ws.f32_pool, &mut ws.held_bytes, n) {
-                if VERIFY_WS_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-                    eprintln!(
-                        "[glm5-verify-ws] engaged: verify-walk buffers recycling through \
-                         the size-keyed pool (MEMRA_GLM5_VERIFY_WS=1)"
-                    );
-                }
-                return Ok(s);
-            }
-        }
-        self.alloc_uninit::<f32>(n)
-    }
-
-    /// Pool-or-alloc i8 scratch (q8_1 activation planes).
-    pub(crate) fn vws_uninit_i8(
-        &self,
-        n: usize,
-    ) -> Result<CudaSlice<i8>, Box<dyn std::error::Error>> {
-        if verify_ws_on() {
-            let mut ws = self.verify_ws.lock().unwrap();
-            let ws = &mut *ws;
-            if let Some(s) = VerifyWs::take(&mut ws.i8_pool, &mut ws.held_bytes, n) {
-                VERIFY_WS_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                return Ok(s);
-            }
-        }
-        self.alloc_uninit::<i8>(n)
-    }
-
-    /// Pool-or-alloc u64 scratch (the MoE vrows pointer tables).
-    pub(crate) fn vws_uninit_u64(
-        &self,
-        n: usize,
-    ) -> Result<CudaSlice<u64>, Box<dyn std::error::Error>> {
-        if verify_ws_on() {
-            let mut ws = self.verify_ws.lock().unwrap();
-            let ws = &mut *ws;
-            if let Some(s) = VerifyWs::take(&mut ws.u64_pool, &mut ws.held_bytes, n) {
-                VERIFY_WS_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                return Ok(s);
-            }
-        }
-        self.alloc_uninit::<u64>(n)
-    }
-
-    /// Return a dead verify-walk buffer to the pool (no-op with the door off: the buffer
-    /// drops to the ordinary async free, the shipped program).
-    pub(crate) fn vws_recycle(&self, s: CudaSlice<f32>) {
-        if verify_ws_on() {
-            let mut ws = self.verify_ws.lock().unwrap();
-            let ws = &mut *ws;
-            VerifyWs::put(&mut ws.f32_pool, &mut ws.held_bytes, s);
-        }
-    }
-
-    /// i8 twin of [`Self::vws_recycle`].
-    pub(crate) fn vws_recycle_i8(&self, s: CudaSlice<i8>) {
-        if verify_ws_on() {
-            let mut ws = self.verify_ws.lock().unwrap();
-            let ws = &mut *ws;
-            VerifyWs::put(&mut ws.i8_pool, &mut ws.held_bytes, s);
-        }
-    }
-
-    /// u64 twin of [`Self::vws_recycle`].
-    pub(crate) fn vws_recycle_u64(&self, s: CudaSlice<u64>) {
-        if verify_ws_on() {
-            let mut ws = self.verify_ws.lock().unwrap();
-            let ws = &mut *ws;
-            VerifyWs::put(&mut ws.u64_pool, &mut ws.held_bytes, s);
-        }
     }
 
     /// GPU-resident greedy argmax (CUDA-GRAPH-PLAN Phase 1): logits[n_vocab] -> token id in a
@@ -12291,7 +9593,6 @@ impl Engine {
         &self,
         n: usize,
     ) -> Result<CudaSlice<T>, Box<dyn std::error::Error>> {
-        SCRATCH_ALLOC_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut s = unsafe { self.gpu.stream().alloc::<T>(n)? };
         // MEMRA_DEBUG_ZERO_ALLOCS=1 (task #14 defect hunt): memset EVERY engine allocation —
         // the global uninit-read discriminator (the prime-fn-scoped zeroing experiment could
@@ -14693,49 +11994,6 @@ impl Engine {
             .arg(&theta_scale)
             .arg(&freq_scale)
             .arg(ff);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// RoPE NEOX with per-dim freq factors AND the YaRN attention factor on cos/sin
-    /// (qwen4_exp yarn lane — `rope_neox_ffm_f32`; ff = yarn_frequency_divisors, mscale =
-    /// yarn_attention_factor). Identity inputs (ones, 1.0) reproduce `rope_neox` bit-for-bit.
-    #[allow(clippy::too_many_arguments)]
-    pub fn rope_neox_ffm(
-        &self,
-        x: &mut CudaSlice<f32>,
-        pos: &CudaSlice<i32>,
-        head_dim: usize,
-        n_dims: usize,
-        n_heads: usize,
-        n_tokens: usize,
-        freq_base: f32,
-        freq_scale: f32,
-        ff: &CudaSlice<f32>,
-        mscale: f32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let f = self.func("rope_neox_ffm_f32");
-        let theta_scale = (freq_base).powf(-2.0 / n_dims as f32);
-        let grid = (n_heads * n_tokens) as u32;
-        let cfg = LaunchConfig {
-            grid_dim: (grid, 1, 1),
-            block_dim: ((head_dim / 2) as u32, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (hd, nd, nh) = (head_dim as i32, n_dims as i32, n_heads as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(x)
-            .arg(pos)
-            .arg(&hd)
-            .arg(&nd)
-            .arg(&nh)
-            .arg(&theta_scale)
-            .arg(&freq_scale)
-            .arg(ff)
-            .arg(&mscale);
         unsafe {
             b.launch(cfg)?;
         }
@@ -20009,23 +17267,10 @@ impl Engine {
         if cfg!(memra_portable_cuda) {
             return Ok(None);
         }
-        // MEMRA_FP4 reaches qmatvec_gemm_nvfp4_fp4, which ONLY the sm_120a fatbin contains:
-        // cu/qmatvec_gemm.cu omits it on portable builds (MEMRA_PORTABLE_CUDA) AND on sm_100a
-        // (build.rs passes -DMEMRA_DISABLE_NATIVE_FP4=1 there — the mxf4 block-scale MMA is an
-        // sm_120a instruction encoding). Refuse at the door on EVERY build that lacks it. The
-        // portable refusal alone was an enumeration, not a property: a 100a build is not
-        // portable, so `MEMRA_FP4=1` sailed past it into Engine::func's "kernel not in any
-        // fatbin" panic — found by the 100a fatbin-lookup census, lane/glm5-b200-prep-20260901
-        // (same enumeration-vs-property class as the 2026-08-23 stub-polarity fixes in build.rs).
+        // MEMRA_FP4 reaches qmatvec_gemm_nvfp4_fp4, which cu/qmatvec_gemm.cu:1234 omits on a
+        // portable build (the mxf4 block-scale MMA is sm_120a-only). Refuse at the door.
         if std::env::var("MEMRA_FP4").is_ok() {
             refuse_portable_force("MEMRA_FP4", "the sm_120a mxf4 block-scale MMA");
-            assert!(
-                konst_eq(env!("MEMRA_BUILT_CUDA_ARCH"), "120a"),
-                "MEMRA_FP4 forces the native mxf4 block-scale GEMM (qmatvec_gemm_nvfp4_fp4), \
-                 which only the sm_120a fatbin contains — this is an sm_{} build. Unset \
-                 MEMRA_FP4; the W4A8 int8 path is the correct default for NVFP4 weights.",
-                env!("MEMRA_BUILT_CUDA_ARCH")
-            );
         }
         if std::env::var("MEMRA_FP4").is_err() {
             return Ok(None);
@@ -21059,47 +18304,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Token-major sequential weighted row sums. Each token reduces exactly `slots` rows in
-    /// canonical route order.
-    pub fn axpy_rows_seq_tokens_into(
-        &self,
-        x: &CudaSlice<f32>,
-        w: &CudaSlice<f32>,
-        y: &mut CudaSlice<f32>,
-        width: usize,
-        slots: usize,
-        tokens: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let rows = slots
-            .checked_mul(tokens)
-            .ok_or("axpy_rows_seq_tokens row count overflow")?;
-        if x.len() < rows * width || w.len() < rows || y.len() < tokens * width {
-            return Err(format!(
-                "axpy_rows_seq_tokens geometry x={} w={} y={} width={width} \
-                 slots={slots} tokens={tokens}",
-                x.len(),
-                w.len(),
-                y.len()
-            )
-            .into());
-        }
-        let f = self.func("axpy_rows_seq_tokens_f32");
-        let block = 256u32;
-        let cfg = LaunchConfig {
-            grid_dim: ((width as u32).div_ceil(block), tokens as u32, 1),
-            block_dim: (block, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (wi, sl, tk) = (width as i32, slots as i32, tokens as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(x).arg(w).arg(y).arg(&wi).arg(&sl).arg(&tk);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// Row-offset twin of `axpy_rows_seq_md_into` (spec verify t-column combine): the
     /// accumulation runs over rows [row0, row0+n_rows) of a taller partial slab — the
     /// exact sequential FP chain of the base kernel over that window.
@@ -21143,6 +18347,74 @@ impl Engine {
             .arg(&wi)
             .arg(&nr)
             .arg(&r0);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
+    /// T-COLUMN twin of `qmatvec_nvfp4_sel_gu_into` (spec verify, MEMRA_TCOL_FFN):
+    /// 2*n_sel_col selection pairs over TWO activation rows (pair t reads row
+    /// t/n_sel_col). Per-(pair,row) FP program == the t=1 gu kernel: each column's
+    /// outputs are bit-equal to its own t=1 launch.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
+    pub fn qmatvec_nvfp4_sel_gu_tcol_into(
+        &self,
+        gate_bank: &CudaSlice<u8>,
+        up_bank: &CudaSlice<u8>,
+        sel: &CudaSlice<i32>,
+        aq: &CudaSlice<i8>,
+        ad: &CudaSlice<f32>,
+        yg: &mut CudaSlice<f32>,
+        yu: &mut CudaSlice<f32>,
+        n_sel: usize,
+        n_sel_col: usize,
+        in_f: usize,
+        out_f: usize,
+        row_bytes: usize,
+        expert_stride: usize,
+        act_row_stride: usize,
+        ad_row_stride: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        assert!(
+            in_f.is_multiple_of(64),
+            "NVFP4 dp4a requires in_f % 64 == 0"
+        );
+        if yg.len() < n_sel * out_f
+            || yu.len() < n_sel * out_f
+            || sel.len() < n_sel
+            || n_sel_col == 0
+            || n_sel % n_sel_col != 0
+        {
+            return Err("NVFP4 gu tcol geometry".into());
+        }
+        let f = self.func("qmatvec_nvfp4_dp4a_sel_v2_gu_tcol");
+        let cfg = LaunchConfig {
+            grid_dim: ((2 * out_f) as u32, n_sel as u32, 1),
+            block_dim: (128, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (inf, outf, ns, nsc) = (in_f as i32, out_f as i32, n_sel as i32, n_sel_col as i32);
+        let (rb, es) = (row_bytes as i64, expert_stride as i64);
+        let (ars, adrs) = (act_row_stride as i64, ad_row_stride as i64);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(gate_bank)
+            .arg(up_bank)
+            .arg(sel)
+            .arg(aq)
+            .arg(ad)
+            .arg(yg)
+            .arg(yu)
+            .arg(&inf)
+            .arg(&outf)
+            .arg(&ns)
+            .arg(&rb)
+            .arg(&es)
+            .arg(&ars)
+            .arg(&adrs)
+            .arg(&nsc);
         unsafe {
             b.launch(cfg)?;
         }
@@ -22131,47 +19403,6 @@ impl Engine {
         Ok(())
     }
 
-    /// BF16 matvec over activation/output views. Automatic TP4 attention keeps each rank's
-    /// O-projection input and canonical partial inside persistent slabs, so copying either view
-    /// into a temporary allocation would give back the bandwidth and allocator win that TP is
-    /// meant to provide.
-    pub fn matvec_bf16_views_into(
-        &self,
-        data: &CudaSlice<u8>,
-        x: &cudarc::driver::CudaView<'_, f32>,
-        y: &mut cudarc::driver::CudaViewMut<'_, f32>,
-        in_f: usize,
-        out_f: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if data.len() != in_f * out_f * 2
-            || x.len() < in_f
-            || !in_f.is_multiple_of(8)
-            || y.len() < out_f
-        {
-            return Err(format!(
-                "matvec_bf16_views_into geometry bytes={} x={} y={} in={in_f} out={out_f}",
-                data.len(),
-                x.len(),
-                y.len()
-            )
-            .into());
-        }
-        let f = self.func("matvec_bf16_f32acc");
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (mmv_block(), 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let ini = in_f as i32;
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(data).arg(x).arg(y).arg(&ini);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// `matvec_bf16_into` over a WEIGHT VIEW (row-range slice of a bf16 tensor): the head-split
     /// door feeds each device its half of the lm-head rows. Same kernel, same per-row program.
     pub fn matvec_bf16_view_into(
@@ -22402,25 +19633,6 @@ impl Engine {
         {
             return Ok(());
         }
-        // MEMRA_BF16_TCOLS_WIDE (lane/glm5-matvec door T, default ON since 2026-08-31): t=2..=16 rides the
-        // weight-once t-column class instead of the grid.y=t per-token weight re-read below.
-        // Placed AFTER the W8-mirror intercepts (their precedence unchanged). Bit-identical
-        // per (row, token) to the _rows kernel by the tcols class's standing construction
-        // (order-pinned per-token chains + the identical red[256] tree); the motivating call
-        // is the DFlash2 drafter's t=15 block-head matmul, which re-read the 1.269 GB lm
-        // head 15x per spec round. Rollback seam: unset or =0 falls through unchanged.
-        if (2..=16).contains(&t) && bf16_tcols_wide_on() {
-            if BF16_TCOLS_WIDE_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-                eprintln!(
-                    "[bf16-tcols-wide] engaged: t={t} in_f={in_f} out_f={out_f} rides the \
-                     weight-once tcols class (MEMRA_BF16_TCOLS_WIDE=1)"
-                );
-            }
-            if t <= 8 {
-                return self.matvec_bf16_tcols_into(w, x, y, in_f, out_f, t);
-            }
-            return self.matvec_bf16_tcols16_into(w, x, y, in_f, out_f, t);
-        }
         let f = self.func("matvec_bf16_f32acc_x4_rows");
         let cfg = LaunchConfig {
             grid_dim: (out_f.div_ceil(4) as u32, t as u32, 1),
@@ -22435,212 +19647,6 @@ impl Engine {
             b.launch(cfg)?;
         }
         Ok(())
-    }
-
-    /// T-COLUMN twin of the bf16 rows matvec (lane/glm5-verify-batch, the
-    /// varlen-batched-cores pattern): one block owns 4 output rows for ALL t tokens, so the
-    /// weight pack is read ONCE and reused across tokens — vs the `_rows` twin's grid.y=t
-    /// per-token weight re-read. Per-(row,token) BIT-IDENTICAL to the t=1 program by
-    /// construction (order-pinned single-chain accumulators, identical shared-tree reduce
-    /// per token — LAW:vl-bit-identity-order-pinning); the `glm5_verify_batch_gpu` tcols
-    /// bit-gate holds it. t is bounded by the kernel's MEMRA_BF16_TCOLS_MAX = 8.
-    pub fn matvec_bf16_tcols_into(
-        &self,
-        w: &CudaSlice<u8>,
-        x: &CudaSlice<f32>,
-        y: &mut CudaSlice<f32>,
-        in_f: usize,
-        out_f: usize,
-        t: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if x.len() < t * in_f
-            || y.len() < t * out_f
-            || !(2..=8).contains(&t)
-            || !in_f.is_multiple_of(8)
-        {
-            return Err("matvec_bf16_tcols geometry".into());
-        }
-        // MEMRA_BF16_TCOLS_X1 (lane/glm5-matvec door X, default ON since 2026-08-31): one row per block
-        // (grid.x = out_f) — 4x the wave count on the ~one-wave trunk grids (census: same
-        // kernel runs 59% of peak at 512..2048 blocks, 80% at 38720). Per-row body and
-        // reduce tree verbatim — bit-identical per (row, token). Rollback: unset or =0.
-        // MEMRA_BF16_TCOLS_RED_FUSED (lane/glm5-door-r door R, default OFF): the chosen grid
-        // form takes its `_rf` fused-reduce-tail twin — one barrier sequence shared by the t
-        // columns plus intra-warp shuffles at the identical pairing (9t -> 3 barriers per
-        // block). Composes with door X (grid choice first, tail twin second). Requires a
-        // power-of-two block (the fused tail must pass exactly through s=32); any other
-        // MEMRA_MMV_BLOCK falls through to the standing tree. Rollback: unset or =0.
-        let rf = bf16_tcols_red_fused_on() && mmv_block().is_power_of_two();
-        if rf
-            && BF16_TCOLS_RED_FUSED_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                == 0
-        {
-            eprintln!(
-                "[bf16-tcols-red-fused] engaged: fused-t reduce tail, one barrier sequence \
-                 shared across the t token columns + intra-warp shuffles at the identical \
-                 pairing (MEMRA_BF16_TCOLS_RED_FUSED=1)"
-            );
-        }
-        let x1 = bf16_tcols_x1_on();
-        let (fname, grid_x) = match (x1, rf) {
-            (true, true) => ("matvec_bf16_f32acc_x1_tcols_rf", out_f as u32),
-            (true, false) => ("matvec_bf16_f32acc_x1_tcols", out_f as u32),
-            (false, true) => ("matvec_bf16_f32acc_x4_tcols_rf", out_f.div_ceil(4) as u32),
-            (false, false) => ("matvec_bf16_f32acc_x4_tcols", out_f.div_ceil(4) as u32),
-        };
-        if x1 && BF16_TCOLS_X1_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-            eprintln!(
-                "[bf16-tcols-x1] engaged: one-row-per-block tcols grid \
-                 (MEMRA_BF16_TCOLS_X1=1)"
-            );
-        }
-        let f = self.func(fname);
-        let cfg = LaunchConfig {
-            grid_dim: (grid_x, 1, 1),
-            block_dim: (mmv_block(), 1, 1),
-            shared_mem_bytes: if rf { (t as u32) * mmv_block() * 4 } else { 0 },
-        };
-        let (ini, outi, ti) = (in_f as i32, out_f as i32, t as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w).arg(x).arg(&mut *y).arg(&ini).arg(&outi).arg(&ti);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// WIDE-T twin of [`Self::matvec_bf16_tcols_into`] (lane/glm5-matvec door T,
-    /// `MEMRA_BF16_TCOLS_WIDE`): t = 9..=16 through the SEPARATE `..._tcols16` kernel — its
-    /// acc[16] register footprint never touches the priced t<=8 class (the qmatvec `_tw32`
-    /// acc-sizing lesson). Bit-identical per (row, token) to the t=1 program by the same
-    /// order-pinned construction; gated by `glm5_matvec_doors_gpu`.
-    pub fn matvec_bf16_tcols16_into(
-        &self,
-        w: &CudaSlice<u8>,
-        x: &CudaSlice<f32>,
-        y: &mut CudaSlice<f32>,
-        in_f: usize,
-        out_f: usize,
-        t: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if x.len() < t * in_f
-            || y.len() < t * out_f
-            || !(9..=16).contains(&t)
-            || !in_f.is_multiple_of(8)
-        {
-            return Err("matvec_bf16_tcols16 geometry".into());
-        }
-        // MEMRA_BF16_TCOLS_RED_FUSED (lane/glm5-door-r door R, default OFF): the wide-t twin
-        // takes its `_rf` fused tail too — the drafter head's t=15 is the extreme case (135
-        // barriers -> 6 per block). Same power-of-two block guard as the t<=8 dispatch.
-        let rf = bf16_tcols_red_fused_on() && mmv_block().is_power_of_two();
-        if rf
-            && BF16_TCOLS_RED_FUSED_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                == 0
-        {
-            eprintln!(
-                "[bf16-tcols-red-fused] engaged: fused-t reduce tail, one barrier sequence \
-                 shared across the t token columns + intra-warp shuffles at the identical \
-                 pairing (MEMRA_BF16_TCOLS_RED_FUSED=1)"
-            );
-        }
-        let f = self.func(if rf {
-            "matvec_bf16_f32acc_x4_tcols16_rf"
-        } else {
-            "matvec_bf16_f32acc_x4_tcols16"
-        });
-        let cfg = LaunchConfig {
-            grid_dim: (out_f.div_ceil(4) as u32, 1, 1),
-            block_dim: (mmv_block(), 1, 1),
-            shared_mem_bytes: if rf { (t as u32) * mmv_block() * 4 } else { 0 },
-        };
-        let (ini, outi, ti) = (in_f as i32, out_f as i32, t as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w).arg(x).arg(&mut *y).arg(&ini).arg(&outi).arg(&ti);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// GATE-ONLY launcher for door R arms no route dispatches (`glm5_matvec_doors_gpu`):
-    /// the shifted-pairing RED twin (`matvec_bf16_f32acc_x1_tcols_rf_redshift`, the arm that
-    /// proves the bit bar can see an association change) and the `_rf` twins at t=1 (the
-    /// routed launchers refuse t<2; the door-R bar covers t=1..=16, so the degenerate
-    /// column-loop bounds are gated here). `kernel` is an ALLOWLIST, not a name proxy.
-    #[allow(clippy::too_many_arguments)]
-    pub fn matvec_bf16_tcols_gate_kernel_into(
-        &self,
-        kernel: &str,
-        w: &CudaSlice<u8>,
-        x: &CudaSlice<f32>,
-        y: &mut CudaSlice<f32>,
-        in_f: usize,
-        out_f: usize,
-        t: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let (grid_x, t_max) = match kernel {
-            "matvec_bf16_f32acc_x1_tcols_rf" | "matvec_bf16_f32acc_x1_tcols_rf_redshift" => {
-                (out_f as u32, 8usize)
-            }
-            "matvec_bf16_f32acc_x4_tcols_rf" => (out_f.div_ceil(4) as u32, 8usize),
-            "matvec_bf16_f32acc_x4_tcols16_rf" => (out_f.div_ceil(4) as u32, 16usize),
-            _ => return Err("matvec_bf16_tcols_gate_kernel_into: unknown kernel".into()),
-        };
-        if x.len() < t * in_f
-            || y.len() < t * out_f
-            || !(1..=t_max).contains(&t)
-            || !in_f.is_multiple_of(8)
-            || !mmv_block().is_power_of_two()
-        {
-            return Err("matvec_bf16_tcols_gate_kernel geometry".into());
-        }
-        let f = self.func(kernel);
-        let cfg = LaunchConfig {
-            grid_dim: (grid_x, 1, 1),
-            block_dim: (mmv_block(), 1, 1),
-            shared_mem_bytes: (t as u32) * mmv_block() * 4,
-        };
-        let (ini, outi, ti) = (in_f as i32, out_f as i32, t as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(w).arg(x).arg(&mut *y).arg(&ini).arg(&outi).arg(&ti);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// DECODE-EXACT matmul for the glm5 verify-batch walk (lane/glm5-verify-batch): the
-    /// exact `matmul_decode_exact` dispatch with ONE addition — FloatBf16 weights at
-    /// t=2..=8 under `MEMRA_BF16_MMV` ride the tcols twin above (weight read once for all
-    /// t rows). Refused back to `matmul_decode_exact` whenever the t=1 decode chain would
-    /// ride the W8 q8-mirror class instead of the bf16 rows kernel (the decode-parity law:
-    /// the m>1 class must equal the m=1 class). Every class stays per-row bit-exact vs
-    /// the t=1 chain; only the verify-batch walk calls this.
-    pub fn matmul_rows_exact(
-        &self,
-        w: &crate::model::GpuTensor,
-        x: &CudaSlice<f32>,
-        m: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        use crate::model::GpuTensor;
-        if let GpuTensor::FloatBf16 { data, .. } = w
-            && (2..=8).contains(&m)
-            && Self::bf16_mmv_on()
-            && w.in_features().is_multiple_of(8)
-            && !(step_tp_w8_on() && w8_hybrid_on())
-        {
-            let (in_f, out_f) = (w.in_features(), w.out_features());
-            // Door W: rows-exact is verify-walk-only by contract, so its y is a pooled
-            // draw (vws_uninit == alloc_uninit with the door off).
-            let mut y = self.vws_uninit(m * out_f)?;
-            self.matvec_bf16_tcols_into(data, x, &mut y, in_f, out_f, m)?;
-            return Ok(y);
-        }
-        self.matmul_decode_exact(w, x, m)
     }
 
     #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
@@ -24629,69 +21635,6 @@ impl Engine {
             .arg(&tkvi)
             .arg(&scale)
             .arg(&cz);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// Absorbed-form MLA prefill attention over a DSA-GATHERED index list, on tensor cores —
-    /// the MEMRA_MLA_TC_PREFILL kernel (`fa_mla_gathered_bf16`, cu/flash_attn.cu). One CTA per
-    /// (query, 16-head band); the query's index list is shared across heads (the DSA indexer
-    /// mixes heads BEFORE top-k), which is exactly what gives the MMA its m axis. V is K
-    /// (NoPE latent rows), so the kernel is `kv_rank == 512, d_rope == 0` ONLY and this
-    /// launcher refuses anything else rather than approximate.
-    #[allow(clippy::too_many_arguments)]
-    pub fn mla_attn_gathered_tc(
-        &self,
-        q_lat_bf: &CudaSlice<u8>,   // [t_q, n_head, 512] bf16
-        cache_bf: &CudaSlice<u8>,   // [t_kv, 512] bf16 latent rows
-        idx: &CudaSlice<i32>,       // [t_q, width], ascending, -1 trailing
-        o_lat: &mut CudaSlice<f32>, // [t_q, n_head, 512] f32
-        n_head: usize,
-        kv_rank: usize,
-        t_q: usize,
-        width: usize,
-        scale: f32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if kv_rank != 512 {
-            return Err(format!(
-                "mla_attn_gathered_tc is stamped at kv_rank 512 (the glm5_next latent width); \
-                 got {kv_rank} — the caller's door must fall back to the f32 gathered kernel"
-            )
-            .into());
-        }
-        if t_q == 0 || n_head == 0 {
-            return Ok(());
-        }
-        const SP_M: usize = 16;
-        const BKS: usize = 32;
-        const HD: usize = 512;
-        let f = self.func("fa_mla_gathered_bf16");
-        // sQ + sK (V aliases K) + sP bf16, sS + sL f32, sIdx i32.
-        let shmem =
-            (2 * (SP_M * HD + BKS * HD + SP_M * BKS) + 4 * (SP_M * BKS + SP_M) + 4 * BKS) as u32;
-        use cudarc::driver::sys::CUfunction_attribute_enum as A;
-        f.set_attribute(
-            A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-            shmem as i32,
-        )?;
-        let cfg = LaunchConfig {
-            grid_dim: (t_q as u32, (n_head as u32).div_ceil(SP_M as u32), 1),
-            block_dim: (32, 2, 1),
-            shared_mem_bytes: shmem,
-        };
-        let (nh, tq, w) = (n_head as i32, t_q as i32, width as i32);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(q_lat_bf)
-            .arg(cache_bf)
-            .arg(idx)
-            .arg(o_lat)
-            .arg(&nh)
-            .arg(&tq)
-            .arg(&w)
-            .arg(&scale);
         unsafe {
             b.launch(cfg)?;
         }
@@ -31608,16 +28551,6 @@ impl memra_kv::KvDev for Engine {
         len: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Engine::copy_into(self, dst, off, src, len)
-    }
-    fn copy_range_into(
-        &self,
-        dst: &mut CudaSlice<f32>,
-        dst_off: usize,
-        src: &CudaSlice<f32>,
-        src_off: usize,
-        len: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        Engine::copy_range_into(self, dst, dst_off, src, src_off, len)
     }
     fn set_i32_one(
         &self,

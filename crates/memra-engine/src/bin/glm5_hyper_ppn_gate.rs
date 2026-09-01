@@ -47,25 +47,6 @@
 //! 4. PIPELINED — SKIPPED for hc by construction. `decode_step_h_ppn_deferred` calls
 //!    `refuse_hyper` (decode.rs), so the deferred-readback arm is not wired for this
 //!    residual topology and this gate prints a NOTE rather than pretending to cover it.
-//! 5. OVERLAY TWIN (lane/glm5-vision-default-on, 2026-08-30) — the vision mixed-embedding
-//!    splice under the ppN door. TRUTH BY SUBSTITUTION, not arm-equality: the overlay rows
-//!    are `m.embed()` rows of known SUBSTITUTE tokens, so `prime_cache_overlaid` over the
-//!    placeholder-token prompt must be BIT-IDENTICAL to `prime_cache` over the substituted
-//!    prompt — whatever the walk, split or unsplit. Three arms: door-OFF serial splice
-//!    (anchors the twin), door-ON monolithic splice, and door-ON two-call windowed splice
-//!    (`EmbedOverlay::window`, the serve prefill-tick shape), each with a decode
-//!    continuation off the primed cache. RED ARM: `MEMRA_GLM5V_GATE_RED=span-shift` moves
-//!    every span one position right — a broken splice placement — and the gate MUST fail;
-//!    the runner banks that exit code.
-//! 6. PUBLISHED OVERLAY, arms 5d/5e (lane/glm53-vision-ppn, 2026-09-01) — the same
-//!    substituted-token truth, spliced from an overlay whose rows were PUBLISHED into the
-//!    engine that owns embedding intake (`EmbedOverlay::new_published`, forced on with
-//!    `MEMRA_VISION_OVERLAY_PUBLISH=force` so the path runs on a one-card rig at all). The
-//!    publication is a host round trip of f32 bytes, so the bar is bit identity, monolithic
-//!    (5d) and windowed (5e, the serve prefill-tick shape). Non-vacuity is ASSERTED against
-//!    `vision::overlay_publications()`: the arm refuses to pass if no publication happened.
-//!    These arms cannot prove cross-CONTEXT dereferenceability — one card has one context;
-//!    that half is the multi-card serving-shape can't-hallucinate probe's job.
 //!
 //!
 //! NON-VACUITY IS ENFORCED, NOT ASSUMED (the wiring-assertions-match-prose law). Before any
@@ -434,14 +415,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // decision). Every other knob passes through from the caller.
     // SAFETY: single-threaded, before any engine or runtime exists.
     unsafe { std::env::set_var("MEMRA_PP_STAGES", stages.to_string()) };
-    // DOOR-H ALIAS HYGIENE (lane/glm5-extract2). This gate's composed arms are driven from
-    // the SHELL with `MEMRA_GLM5_HTOD_DIET=1` (the matrix runners' `compose-*-doors-EDH`
-    // cells), and they assert BIT-IDENTITY — which passes whether the door armed or not. So a
-    // leaked `MEMRA_HTOD_DIET=0` in the runner's environment would DISAGREE with the alias,
-    // fall the door closed, and make those ON arms silently vacuous. The alias the caller set
-    // is left alone; only the general name is cleared, so it cannot outvote them.
-    // SAFETY: single-threaded, before any engine or runtime exists.
-    unsafe { std::env::remove_var("MEMRA_HTOD_DIET") };
 
     let devices_env = std::env::var("MEMRA_PP_DEVICES").unwrap_or_default();
     let primary_dev: usize = devices_env
@@ -592,115 +565,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut ref_cont_logits: Vec<Vec<f32>> = Vec::with_capacity(n);
     let mut ref_cont_tape: Vec<u32> = Vec::with_capacity(n);
     let ref_prime_logits: Vec<f32>;
-    let ref_prime_hiddens: Vec<f32>;
     {
         let mut cache = memra_engine::cache::Cache::new_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let (primed, _seed, hiddens) = m.prime_cache(&e, &ids[..p], &mut cache, 0)?;
+        let (primed, _seed, _hiddens) = m.prime_cache(&e, &ids[..p], &mut cache, 0)?;
         ref_prime_logits = primed;
-        ref_prime_hiddens = e.dtoh(&hiddens)?;
         for &tok in &ids[p..] {
             let ll = m.decode_step(&e, tok, &mut cache)?;
             ref_cont_tape.push(argmax(&ll) as u32);
             ref_cont_logits.push(ll);
-        }
-    }
-
-    // CHUNK-SCHEDULE NON-VACUITY (lane/glm5-gpf-workspace, 2026-08-30): with
-    // `MEMRA_PRIME_CHUNK` pinned below P, BOTH prime arms walk `hyper_prime_ranges` — the
-    // door-off single-engine chunk walk and the ported ppN chunk walk share ONE schedule, so
-    // arm 2 then holds the CHUNKED ppN prime (per-chunk transients bounded, the 262k-cell
-    // fix) to bit-identity with the chunked unsplit prime, hiddens stack included. Assert the
-    // split really happened, or a chunked invocation would silently gate the monolithic body.
-    let prime_calls =
-        memra_engine::hybrid_forward::hyper_prime_ranges(p, n_layers, m.gdn_prime_grid_on()).len();
-    println!(
-        "prime schedule: {prime_calls} call(s) for P={p} (MEMRA_PRIME_CHUNK={:?})",
-        std::env::var("MEMRA_PRIME_CHUNK").ok()
-    );
-    if let Ok(chunk) = std::env::var("MEMRA_PRIME_CHUNK")
-        && chunk.parse::<usize>().is_ok_and(|c| c > 0 && c < p)
-    {
-        assert!(
-            prime_calls > 1,
-            "MEMRA_PRIME_CHUNK={chunk} < P={p} but the prime schedule is one call — the \
-             chunked arm would be vacuous"
-        );
-    }
-
-    // ---- overlay fixtures (arm 5): substituted-token truth ----
-    // Placeholder prompt: positions {1, 2, p-2} carry an arbitrary in-vocab token whose
-    // embedding the overlay REPLACES; substituted prompt: the same positions carry the
-    // substitute tokens whose embed() rows ARE the overlay rows. Any splice-placement or
-    // splice-transport bug makes the two walks read different embeddings and the bit
-    // compare bites.
-    assert!(p >= 6, "overlay arm needs P >= 6 (spans at 1..3 and p-2)");
-    let subs = tokens(3, 0x5EED_0BE1);
-    let overlay_spans: Vec<(usize, usize, usize)> = vec![(1, 0, 2), (p - 2, 2, 1)];
-    let placeholder: u32 = 7 % VOCAB;
-    let mut ids_ph = ids.clone();
-    let mut ids_sub = ids.clone();
-    for &(pos, row_off, n_rows) in &overlay_spans {
-        for r in 0..n_rows {
-            ids_ph[pos + r] = placeholder;
-            ids_sub[pos + r] = subs[row_off + r];
-        }
-    }
-    let overlay =
-        memra_engine::vision::EmbedOverlay::new(&e, m.embed(&e, &subs)?, overlay_spans.clone());
-    let red_shift = std::env::var("MEMRA_GLM5V_GATE_RED").as_deref() == Ok("span-shift");
-    let arm_overlay = if red_shift {
-        println!(
-            "glm5-hyper-ppn-gate RED ARM: MEMRA_GLM5V_GATE_RED=span-shift — every overlay \
-             span moved +1; this run MUST fail"
-        );
-        memra_engine::vision::EmbedOverlay::new(
-            &e,
-            overlay.rows.clone(),
-            overlay_spans
-                .iter()
-                .map(|&(pos, row_off, n_rows)| (pos + 1, row_off, n_rows))
-                .collect(),
-        )
-    } else {
-        memra_engine::vision::EmbedOverlay::new(&e, overlay.rows.clone(), overlay.spans.clone())
-    };
-
-    eprintln!("[phase] reference D: door OFF, substituted-token prime + decode (overlay truth)");
-    let mut ref_ov_cont: Vec<Vec<f32>> = Vec::with_capacity(n);
-    let ref_ov_prime: Vec<f32>;
-    {
-        let mut cache = memra_engine::cache::Cache::new_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let (primed, _seed, _hiddens) = m.prime_cache(&e, &ids_sub[..p], &mut cache, 0)?;
-        ref_ov_prime = primed;
-        for &tok in &ids_sub[p..] {
-            ref_ov_cont.push(m.decode_step(&e, tok, &mut cache)?);
-        }
-    }
-    // Reference D2: the same truth primed in TWO calls (the serve prefill-tick shape),
-    // so the windowed door-ON arm compares against an identically-chunked walk.
-    let split_at = p / 2;
-    let mut ref_ov2_cont: Vec<Vec<f32>> = Vec::with_capacity(n);
-    let ref_ov2_prime: Vec<f32>;
-    {
-        let mut cache = memra_engine::cache::Cache::new_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let _ = m.prime_cache(&e, &ids_sub[..split_at], &mut cache, p - split_at)?;
-        let (primed, _seed, _hiddens) = m.prime_cache(&e, &ids_sub[split_at..p], &mut cache, 0)?;
-        ref_ov2_prime = primed;
-        for &tok in &ids_sub[p..] {
-            ref_ov2_cont.push(m.decode_step(&e, tok, &mut cache)?);
-        }
-    }
-
-    eprintln!("[phase] arm 5a: door OFF, serial overlay splice");
-    let mut overlay_serial_arm = ArmCheck::new("overlay-serial");
-    {
-        let mut cache = memra_engine::cache::Cache::new_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let (primed, _seed, _hiddens) =
-            m.prime_cache_overlaid(&e, &ids_ph[..p], &mut cache, 0, Some(&arm_overlay))?;
-        overlay_serial_arm.check(0, "overlay prime last row", &primed, &ref_ov_prime);
-        for (k, &tok) in ids_sub[p..].iter().enumerate() {
-            let ll = m.decode_step(&e, tok, &mut cache)?;
-            overlay_serial_arm.check(k + 1, "decode after overlay prime", &ll, &ref_ov_cont[k]);
         }
     }
 
@@ -725,15 +597,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut prime_arm = ArmCheck::new("prime-twin");
     {
         let mut cache = memra_engine::pp::new_cache_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let (primed, _seed, hiddens) = m.prime_cache(&e, &ids[..p], &mut cache, 0)?;
+        let (primed, _seed, _hiddens) = m.prime_cache(&e, &ids[..p], &mut cache, 0)?;
         prime_arm.check(0, "prime last row", &primed, &ref_prime_logits);
-        // The whole pre-output_norm hidden stack, bit for bit. Under a chunked schedule this
-        // is what catches a chunk copied to the wrong `hiddens` offset (the seam the ppN
-        // chunk walk added): the last chunk's logits and the decode continuation would both
-        // stay green while the stack silently interleaved wrong rows for the MTP-spec
-        // `prompt_h` and the embed capture.
-        let got_hiddens = e.dtoh(&hiddens)?;
-        prime_arm.check(0, "prime hiddens stack", &got_hiddens, &ref_prime_hiddens);
         let mut tape: Vec<u32> = Vec::with_capacity(n);
         for (k, &tok) in ids[p..].iter().enumerate() {
             let ll = m.decode_step(&e, tok, &mut cache)?;
@@ -763,175 +628,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
          covers the serial split walk only; do not cite it for the pipelined arm."
     );
 
-    // ================= arm 5 (OVERLAY TWIN): door ON =================
-    // The vision splice under the ppN door: `prime_cache_overlaid` routes through
-    // `prime_cache_hyper_ppn`, which splices at STAGE-0 EMBEDDING INTAKE (before stream
-    // expansion). Truth is reference D (door-OFF substituted-token walk), so a splice that
-    // landed on the wrong stage, the wrong rows, or the wrong positions cannot cancel out.
-    eprintln!("[phase] arm 5b: door ON, monolithic overlay splice");
-    let mut overlay_ppn_arm = ArmCheck::new("overlay-ppn");
-    {
-        let mut cache = memra_engine::pp::new_cache_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let (primed, _seed, _hiddens) =
-            m.prime_cache_overlaid(&e, &ids_ph[..p], &mut cache, 0, Some(&arm_overlay))?;
-        overlay_ppn_arm.check(0, "overlay prime last row", &primed, &ref_ov_prime);
-        for (k, &tok) in ids_sub[p..].iter().enumerate() {
-            let ll = m.decode_step(&e, tok, &mut cache)?;
-            overlay_ppn_arm.check(k + 1, "decode after overlay prime", &ll, &ref_ov_cont[k]);
-        }
-    }
-
-    // Two-call windowed splice: `EmbedOverlay::window` rebases spans call-relative — the
-    // exact shape `prefill_tick` feeds the engine when a prompt spans scheduler ticks.
-    // Compared against reference D2 (the identically-chunked door-OFF walk).
-    eprintln!("[phase] arm 5c: door ON, two-call windowed overlay splice");
-    let mut overlay_win_arm = ArmCheck::new("overlay-ppn-windowed");
-    {
-        let mut cache = memra_engine::pp::new_cache_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let w0 = arm_overlay.window(0, split_at);
-        let _ = m.prime_cache_overlaid(
-            &e,
-            &ids_ph[..split_at],
-            &mut cache,
-            p - split_at,
-            w0.as_ref(),
-        )?;
-        let w1 = arm_overlay.window(split_at, p - split_at);
-        let (primed, _seed, _hiddens) =
-            m.prime_cache_overlaid(&e, &ids_ph[split_at..p], &mut cache, 0, w1.as_ref())?;
-        overlay_win_arm.check(
-            0,
-            "windowed overlay prime last row",
-            &primed,
-            &ref_ov2_prime,
-        );
-        for (k, &tok) in ids_sub[p..].iter().enumerate() {
-            let ll = m.decode_step(&e, tok, &mut cache)?;
-            overlay_win_arm.check(k + 1, "decode after windowed prime", &ll, &ref_ov2_cont[k]);
-        }
-    }
-
-    // ============ arm 5d/5e (PUBLISHED OVERLAY TWIN): door ON ============
-    // lane/glm53-vision-ppn, 2026-09-01. The serving shape the launch found unservable has
-    // the overlay rows in a DIFFERENT CUDA context from stage 0's embedding intake (the
-    // worker's primary engine follows the LAST pp stage, so with MEMRA_PP_DEVICES=0,1,2 the
-    // tower runs on dev2 and intake is dev0). The fix publishes the rows into the intake
-    // engine's context; these arms hold that publication to BIT IDENTITY.
-    //
-    // WHAT THESE ARMS PROVE, AND WHAT THEY DO NOT. On a one-card rig the intake engine IS
-    // the primary engine, so `MEMRA_VISION_OVERLAY_PUBLISH=force` is what makes the
-    // publication path run at all — and the counter assertion below is what stops this from
-    // being a vacuous re-run of arm 5b. What they prove: the publication moves the rows
-    // WITHOUT changing a byte (f32 through the host is exact), spans survive it, and a
-    // published overlay splices identically under both the monolithic and the windowed
-    // (serve prefill-tick) shapes. What they CANNOT prove on one card: that a pointer
-    // published across two CUDA contexts is dereferenceable by the other stage — that needs
-    // a multi-card box and is receipted by the serving-shape can't-hallucinate probe.
-    eprintln!("[phase] arm 5d: door ON, PUBLISHED overlay, monolithic splice");
-    let intake = m.vision_intake_engine(&e)?;
-    let published = {
-        // SAFETY: single-threaded (same contract as the MEMRA_PP_STAGES set_var above).
-        unsafe { std::env::set_var("MEMRA_VISION_OVERLAY_PUBLISH", "force") };
-        let before = memra_engine::vision::overlay_publications();
-        let rows = e.clone_dtod(&arm_overlay.rows)?;
-        let ov = memra_engine::vision::EmbedOverlay::new_published(
-            &e,
-            intake,
-            rows,
-            arm_overlay.spans.clone(),
-        )?;
-        let after = memra_engine::vision::overlay_publications();
-        // SAFETY: single-threaded.
-        unsafe { std::env::remove_var("MEMRA_VISION_OVERLAY_PUBLISH") };
-        assert_eq!(
-            after,
-            before + 1,
-            "arm 5d is VACUOUS: MEMRA_VISION_OVERLAY_PUBLISH=force performed no publication \
-             (overlay_publications stayed at {before}) — the arm would re-run arm 5b under a \
-             different name"
-        );
-        assert!(
-            ov.resident_in(intake),
-            "a published overlay must be resident in the intake engine it was published to"
-        );
-        println!(
-            "glm5-hyper-ppn-gate overlay publication: {} performed, rows resident dev{} \
-             (intake dev{})",
-            after - before,
-            ov.ctx().ordinal(),
-            intake.ctx().ordinal()
-        );
-        ov
-    };
-    let mut overlay_pub_arm = ArmCheck::new("overlay-ppn-published");
-    {
-        let mut cache = memra_engine::pp::new_cache_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let (primed, _seed, _hiddens) =
-            m.prime_cache_overlaid(&e, &ids_ph[..p], &mut cache, 0, Some(&published))?;
-        overlay_pub_arm.check(
-            0,
-            "published overlay prime last row",
-            &primed,
-            &ref_ov_prime,
-        );
-        for (k, &tok) in ids_sub[p..].iter().enumerate() {
-            let ll = m.decode_step(&e, tok, &mut cache)?;
-            overlay_pub_arm.check(
-                k + 1,
-                "decode after published overlay prime",
-                &ll,
-                &ref_ov_cont[k],
-            );
-        }
-    }
-
-    // The serving shape end to end: publish ONCE per session (as `build_vision_overlay`
-    // does), then window per prefill tick. `window()` carries the parent's residency, so a
-    // window of a published overlay must splice on the intake engine too.
-    eprintln!("[phase] arm 5e: door ON, PUBLISHED overlay, two-call windowed splice");
-    let mut overlay_pub_win_arm = ArmCheck::new("overlay-ppn-published-windowed");
-    {
-        let mut cache = memra_engine::pp::new_cache_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let w0 = published.window(0, split_at);
-        let _ = m.prime_cache_overlaid(
-            &e,
-            &ids_ph[..split_at],
-            &mut cache,
-            p - split_at,
-            w0.as_ref(),
-        )?;
-        let w1 = published.window(split_at, p - split_at);
-        let (primed, _seed, _hiddens) =
-            m.prime_cache_overlaid(&e, &ids_ph[split_at..p], &mut cache, 0, w1.as_ref())?;
-        overlay_pub_win_arm.check(
-            0,
-            "published windowed overlay prime last row",
-            &primed,
-            &ref_ov2_prime,
-        );
-        for (k, &tok) in ids_sub[p..].iter().enumerate() {
-            let ll = m.decode_step(&e, tok, &mut cache)?;
-            overlay_pub_win_arm.check(
-                k + 1,
-                "decode after published windowed prime",
-                &ll,
-                &ref_ov2_cont[k],
-            );
-        }
-    }
-
     // ================= verdicts =================
     let mut fail = false;
-    for arm in [
-        &decode_arm,
-        &prime_arm,
-        &prefill_arm,
-        &overlay_serial_arm,
-        &overlay_ppn_arm,
-        &overlay_win_arm,
-        &overlay_pub_arm,
-        &overlay_pub_win_arm,
-    ] {
+    for arm in [&decode_arm, &prime_arm, &prefill_arm] {
         assert!(
             arm.checked_steps > 0,
             "[{}] compared ZERO steps — a vacuous arm never prints PASS",

@@ -3,9 +3,9 @@
 set -euo pipefail
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
-ROOT=${LCPRESTORE_ROOT:-/opt/scratch/nvme/cx-lcprestore}
+ROOT=${LCPRESTORE_ROOT:-/opt/dl-image/nvme/cx-lcprestore}
 REPO=${LCPRESTORE_REPO:-$ROOT/memra}
-MODELS=${LCPRESTORE_MODELS:-/opt/scratch/nvme/cx-requal/models}
+MODELS=${LCPRESTORE_MODELS:-/opt/dl-image/nvme/cx-requal/models}
 EXPECTED_SOURCE=${LCPRESTORE_EXPECTED_SOURCE:?set LCPRESTORE_EXPECTED_SOURCE}
 STAMP=${LCPRESTORE_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}
 OUT=${LCPRESTORE_OUT:-$ROOT/raw/run-$STAMP}

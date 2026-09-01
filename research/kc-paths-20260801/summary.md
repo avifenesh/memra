@@ -11,7 +11,7 @@ miss loud and actionable.
 `kc_model(section, fname, legacy, gguf_arg)` — first existing path wins:
 1. `$MEMRA_KC_MODELS_DIR/<file>` (explicit env)
 2. the CLI gguf arg when its basename matches (model under test doubles as oracle)
-3. `$HOME/models/<file>`, `/opt/scratch/nvme/models/<file>` (bench-box conventions)
+3. `$HOME/models/<file>`, `/opt/dl-image/nvme/models/<file>` (bench-box conventions)
 4. the legacy rig paths (`/home/avifenesh/...`, `/data/...`) — the 5090 rig keeps working naked
 On a miss: ONE `KC-SKIP [section] <file>: absent on this box (N candidates tried) — set
 MEMRA_KC_MODELS_DIR=...` line. A skip is never silent.

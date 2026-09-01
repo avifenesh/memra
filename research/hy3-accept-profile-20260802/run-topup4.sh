@@ -2,7 +2,7 @@
 # chat-qa-short r4+r5: floor ratio at 25-tok ctx swung 0.73x..1.56x across fresh processes
 # (plain arm bimodal with storage state); two more reps to report a distribution, not a coin flip.
 set -u
-BASE=/opt/scratch/nvme/hy3-accept-profile
+BASE=/opt/dl-image/nvme/hy3-accept-profile
 MLOG=$BASE/logs/master.log
 echo "$(date -u +%FT%TZ) TOPUP4-QUEUED (waits on gpu flock)" >> "$MLOG"
 for tag in r4 r5; do

@@ -2,9 +2,9 @@
 # Build the measurement-only stage-owned-cache harness against the pinned clean runtime.
 set -euo pipefail
 
-REPO=${NCUSPIKE_REPO:-/opt/scratch/nvme/memra-cx-ncuspike-src}
-HARNESS=${NCUSPIKE_HARNESS:-/opt/scratch/nvme/ncuspike-20260811/profile-harness}
-TARGET=${NCUSPIKE_PROFILE_TARGET:-/opt/scratch/nvme/ncuspike-20260811/profile-target}
+REPO=${NCUSPIKE_REPO:-/opt/dl-image/nvme/memra-cx-ncuspike-src}
+HARNESS=${NCUSPIKE_HARNESS:-/opt/dl-image/nvme/ncuspike-20260811/profile-harness}
+TARGET=${NCUSPIKE_PROFILE_TARGET:-/opt/dl-image/nvme/ncuspike-20260811/profile-target}
 EXPECTED_SHA=1808220ead39d515a0854df49d1bb6452b558209
 CARGO=${CARGO:-/home/ubuntu/.cargo/bin/cargo}
 

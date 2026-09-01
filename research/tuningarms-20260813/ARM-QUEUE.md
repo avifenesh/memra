@@ -94,7 +94,7 @@ The genuinely stale axis is **cache-on traffic**, already funded as lane L8 `cx-
 (`research/tune-data/gpu-lane-queue-20260813.md:218-220`). Sold Q27 also pins `MEMRA_SERVE_SPEC=0`.
 
 **L2-aware CTA rasterization swizzle on the NVFP4 W4A8 prefill MMQ.** Refuted on pod A's own die:
-the kernel header receipt (`crates/memra-engine/cu/mmq_nvfp4_w4a8.cu:36-40`, ncu on cloudbox = RTX PRO 6000
+the kernel header receipt (`crates/memra-engine/cu/mmq_nvfp4_w4a8.cu:36-40`, ncu on sbox = RTX PRO 6000
 Server, pp1845, 27B NVFP4) reads tensor(INT) pipe 59%, 2.00 active warps/scheduler, dominant stall
 `math_pipe_throttle`, and **DRAM 6.8%**. A rasterization remap can only move DRAM/L2 traffic, so the
 whole axis is <=7% and off the stall critical path. Structurally the mechanism is also absent: the
@@ -104,7 +104,7 @@ CLC is dead here (SM120's warp-level `mma.sync` forces the unsupported CTA-clust
 `MEMRA_MMQ_CLC`'s FLAT-negative verdict with 54/54 bit-identity.
 
 **Re-sweep `MEMRA_MMQ_Y_W4A8` / `MEMRA_MMQ_X_W4A8` tile geometry at 188 SM.** Closed on the target
-silicon: `research/tune-data/cloud-rtx6000.jsonl` row 28 (188 SM, ncu warps_active 16.66) closes "the
+silicon: `research/tune-data/sbox-rtx6000.jsonl` row 28 (188 SM, ncu warps_active 16.66) closes "the
 exact-class prefill direction ENTIRELY (every axis now measured: X sweep, Y sweep, sync halving,
 y cp.async, W4A4, x cp.async stage)" with "188 only scales CTA count, not the per-SM issue structure".
 The named seam is also stale: the "Y=64 -> 2 CTA/SM" comment describes pmode 0, but the default since

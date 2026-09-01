@@ -480,14 +480,6 @@ fn run_arm(regime: Regime, mutation: Mutation) -> Arm {
                 std::env::set_var("MEMRA_MOE_SLOTS", SLOTS.to_string());
             }
         }
-        // MEMRA_MOE_GROUPED_PREFILL went DEFAULT ON on 2026-08-29. It is slab-only and fails
-        // closed on the SLRU placement, so with it live the two regimes here would run
-        // DIFFERENT dispatch classes at t > 16 (grouped f16 GEMM vs the staged loop) and the
-        // §B.3 bit-identity this gate exists to pin would be comparing programs, not
-        // placements. The gate measures placement provenance in ISOLATION; pin the grouped
-        // seam off in both regimes (`glm5_moe_grouped_prefill_gpu.rs` owns the grouped arm's
-        // own placement gates, including the SLRU fail-closed one).
-        std::env::set_var("MEMRA_MOE_GROUPED_PREFILL", "0");
     }
 
     let config = mini_config();

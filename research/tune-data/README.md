@@ -26,7 +26,7 @@ must never be survivorship-biased toward wins.
 - Record REVERTED attempts with `label: negative` and the mechanism — they are the most
   valuable training rows (the model must learn what NOT to do and why).
 - Per-rig files (all loaded together by `research/train/dataset.py`, which globs
-  `*.jsonl`): `rig5090.jsonl` (RTX 5090 laptop, this box, 62), `cloud-rtx6000.jsonl`
+  `*.jsonl`): `rig5090.jsonl` (RTX 5090 laptop, this box, 62), `sbox-rtx6000.jsonl`
   (RTX PRO 6000 Blackwell, 2), `l40s-sm89.jsonl` (4x L40S sm_89, 1; the
   bring-up row was normalized from the closed sm89 branch into this schema).
 - `model-meta.jsonl` is NOT training data: it holds `corpus-meta` rows written by

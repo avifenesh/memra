@@ -2,7 +2,7 @@
 // IQ3_S / IQ4_XS expert weights vs the current GGUF block layout, at the EXACT 35B expert decode
 // shapes and launch geometries, BEFORE any engine integration.
 //
-// CONTEXT (research/tune-data/cloud-rtx6000.jsonl 2026-07-06 18:00 row): expert decode kernels sit
+// CONTEXT (research/tune-data/sbox-rtx6000.jsonl 2026-07-06 18:00 row): expert decode kernels sit
 // at 43-51% of the 1537 GB/s box wall (gate_up IQ3_S 790 GB/s, down IQ4_XS 660 GB/s) and every
 // cheap lever measured flat (variant sweeps x2, sg/j8sg smem-grid, wider loads, k-split/gs4).
 // The remaining structural lever: expert_dot_iq3s_g reads FIVE scattered streams per 32-elem

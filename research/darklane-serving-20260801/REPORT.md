@@ -262,7 +262,7 @@ CUDA_VISIBLE_DEVICES=5 nvidia-cuda-mps-control -d    # daemon scope = GPU 5 only
 # teardown: echo quit | nvidia-cuda-mps-control   (same pipe env)
 ```
 
-Worked first try on this stock GPU image (driver-default compute mode is fine); verified via
+Worked first try on this DL-image (driver-default compute mode is fine); verified via
 `nvidia-cuda-mps-server` in compute-apps and both clients at 16,648 MiB on GPU 5.
 
 Tenant note (evidence discipline): a VLLM::EngineCore (30.7 GB, another lane)

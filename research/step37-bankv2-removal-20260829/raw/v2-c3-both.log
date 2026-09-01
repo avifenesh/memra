@@ -1,6 +1,0 @@
-[server] starting; models config = [("step37", "/root/models/step37-flash-nvfp4", None)]
-[gpu-watch] Xid source: /dev/kmsg
-[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
-[worker] Engine ready (device=0, MEMRA_FAST=true)
-[spec-k] operator pin K=3: automatic placement/concurrency/prompt policy and automatic demotion disabled
-[server] FATAL: worker init failed: MEMRA_NVFP4_BANK_V2=1 and MEMRA_SEL_DOWN8=1 are set, but these flags were REMOVED from the engine on 2026-08-29: the slot-major v2 TP bank layout changed generated text in serving (bisected in research/step37-reasoning-effort-20260829; removal receipts in research/step37-bankv2-removal-20260829) and MEMRA_SEL_DOWN8 required it. The binary no longer contains the code paths these flags armed. Remove them from the launch recipe to boot; the default path already serves the correct text.
