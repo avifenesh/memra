@@ -118,9 +118,14 @@ fn validate_eagle_attention_geometry(
     n_head_kv: usize,
     head_dim: usize,
 ) -> Result<(), String> {
-    if n_head == 0 || n_head_kv == 0 || head_dim == 0 || !n_head.is_multiple_of(n_head_kv) {
+    if n_head == 0
+        || n_head_kv == 0
+        || head_dim == 0
+        || !n_head.is_multiple_of(n_head_kv)
+        || !head_dim.is_multiple_of(32)
+    {
         return Err(format!(
-            "EAGLE3 attention geometry requires nonzero n_head divisible by n_head_kv; got n_head={n_head}, n_head_kv={n_head_kv}, head_dim={head_dim}"
+            "EAGLE3 attention geometry requires nonzero n_head divisible by n_head_kv and head_dim divisible by 32; got n_head={n_head}, n_head_kv={n_head_kv}, head_dim={head_dim}"
         ));
     }
     n_head
@@ -788,6 +793,7 @@ mod tensor_contract_tests {
         assert!(validate_eagle_attention_geometry(32, 8, 128).is_ok());
         assert!(validate_eagle_attention_geometry(7, 8, 128).is_err());
         assert!(validate_eagle_attention_geometry(8, 0, 128).is_err());
+        assert!(validate_eagle_attention_geometry(8, 8, 33).is_err());
         assert!(validate_eagle_attention_geometry(usize::MAX, 1, 2).is_err());
     }
 }
