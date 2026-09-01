@@ -3614,8 +3614,53 @@ fn content_to_text(v: &serde_json::Value) -> Result<String, String> {
     }
 }
 
+/// Vision PLACEMENT admissibility, published by the worker at boot for EVERY vision family
+/// (worker.rs `vision_placement_admissible`) and read at every MEDIA PART below
+/// (`vision_placement_admits`), never by the family switches: those route the content
+/// walkers, and step37's text-separator law lives only in its walker, so folding the
+/// placement into a switch would move prompt bytes on text-only traffic (revuto, #46).
+///
+/// A loaded tower is not sufficient to serve images: the overlay's rows have to be resident
+/// in the CUDA context of the engine that embeds (pp stage 0 under a per-stage-stream ppN
+/// split), and `MEMRA_VISION_OVERLAY_PUBLISH=0` forbids putting them there. Deciding that
+/// ONCE at boot and refusing at the waist is what lane/glm53-vision-ppn shipped for glm5 —
+/// but the door it reads is the first line of `EmbedOverlay::new_published` for all four
+/// families, so a gemma4 / qwen-VL / step37 deployment with the same pin (or a mistyped door
+/// value) booted clean and 500'd MID-PREFILL on a live request, the exact failure removed for
+/// glm5. step37 serves vision in production, which made that a live exposure (memra #25).
+///
+/// `true` until the worker publishes: readiness gates customer traffic behind the worker's
+/// spawn, and a unit test that never spawns a worker must see the pre-lane program.
+pub(crate) static VISION_PLACEMENT_SERVING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
+fn vision_placement_serving() -> bool {
+    VISION_PLACEMENT_SERVING.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// The one placement gate every media-accepting arm passes BEFORE it plans anything: an
+/// `image_url`/`video_url` part on a placement that cannot deliver an overlay to embedding
+/// intake refuses with a named 400 here, at the waist, instead of 500ing mid-prefill. Pure so
+/// its contract is unit-tested without touching process state; `vision_placement_admits` is
+/// the live wrapper that feeds the worker's decision in. `kind` is `"image"` or `"video"`.
+fn vision_media_admissible(placement: bool, kind: &str) -> Result<(), String> {
+    if placement {
+        Ok(())
+    } else {
+        Err(format!(
+            "{kind} input is not enabled on this deployment (vision overlay placement \
+             inadmissible at boot: see the worker's IMAGE INPUT DISABLED line)"
+        ))
+    }
+}
+
+fn vision_placement_admits(kind: &str) -> Result<(), String> {
+    vision_media_admissible(vision_placement_serving(), kind)
+}
+
 /// Vision enablement (lane/vision): the worker loads the tower iff MEMRA_VISION_DIR is
-/// set, so the HTTP layer accepts image parts under exactly the same condition.
+/// set, so the HTTP layer accepts image parts under exactly the same condition. Armed-only
+/// by design: the placement half is applied per media part (`vision_placement_admits`).
 fn vision_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
@@ -3642,7 +3687,9 @@ fn gemma_vision_enabled() -> bool {
 /// glm5_next artifact's own `model.visual.*` tensors by default, from
 /// MEMRA_GLM5_VISION_DIR when set; false when the artifact carries no tower or
 /// MEMRA_GLM5_VISION=0 (the rollback seam). Not an env read: the intake must route image
-/// parts to the glm5 planner exactly when the worker can prime them.
+/// parts to the glm5 planner exactly when the worker can prime them. Already folds in the
+/// placement decision (`VISION_PLACEMENT_SERVING`): the worker stores
+/// `tower loaded && placement admissible`.
 pub(crate) static GLM5_VISION_SERVING: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -3657,6 +3704,8 @@ fn glm5_vision_enabled() -> bool {
 /// artifact's own directory iff MEMRA_STEP_VISION_DIR is set (the vision tensors live
 /// unquantized inside the checkpoint), so the HTTP layer accepts image parts under
 /// exactly the same condition; MEMRA_STEP_VISION=0 is the kill switch (both sides).
+/// Armed-only by design: this switch selects the step content walker, whose TEXT separator
+/// law must not move with the placement; image parts pass `vision_placement_admits` inside.
 fn step_vision_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
@@ -3868,6 +3917,7 @@ fn content_to_text_vision_step(
                 None => return Err("content part has no text field".into()),
             },
             Some("image_url") => {
+                vision_placement_admits("image")?;
                 let url = p
                     .get("image_url")
                     .and_then(|u| {
@@ -3999,6 +4049,7 @@ fn content_to_text_vision(
                 );
             }
             Some("image_url") if gemma_vision_enabled() => {
+                vision_placement_admits("image")?;
                 let url = p
                     .get("image_url")
                     .and_then(|u| {
@@ -4036,6 +4087,7 @@ fn content_to_text_vision(
                 if !vision_enabled() {
                     return Err("image input is not enabled on this deployment".into());
                 }
+                vision_placement_admits("image")?;
                 let url = p
                     .get("image_url")
                     .and_then(|u| {
@@ -4081,6 +4133,7 @@ fn content_to_text_vision(
                 if !vision_enabled() {
                     return Err("video input is not enabled on this deployment".into());
                 }
+                vision_placement_admits("video")?;
                 let url = p
                     .get("video_url")
                     .and_then(|u| {
@@ -20675,5 +20728,139 @@ mod build_identity_tests {
         let second = build_id::content_id(&root).expect("second scan");
         assert_eq!(first.id, second.id);
         assert_eq!(first.files.len(), second.files.len());
+    }
+}
+
+/// memra #25: the vision PLACEMENT decision applies to every family whose overlay path reads
+/// `MEMRA_VISION_OVERLAY_PUBLISH`, not glm5 alone. step37 serves vision in production; with
+/// a glm5-only guard it could boot clean and 500 mid-prefill. The decision gates MEDIA PARTS
+/// only: the family switches route the content walkers (step37's text-separator law lives in
+/// its walker alone), so text-only prompt bytes never move with the placement.
+#[cfg(test)]
+mod vision_placement_gate_tests {
+    use super::vision_media_admissible;
+
+    #[test]
+    fn a_media_part_is_admitted_only_when_the_placement_admits() {
+        assert_eq!(vision_media_admissible(true, "image"), Ok(()));
+        assert_eq!(vision_media_admissible(true, "video"), Ok(()));
+        let err = vision_media_admissible(false, "image").unwrap_err();
+        assert!(
+            err.starts_with("image input is not enabled on this deployment"),
+            "same named refusal the armed-off path gives, so clients see one contract: {err}"
+        );
+        assert!(
+            err.contains("placement"),
+            "the refusal names its cause: {err}"
+        );
+        let err = vision_media_admissible(false, "video").unwrap_err();
+        assert!(
+            err.starts_with("video input is not enabled on this deployment"),
+            "{err}"
+        );
+    }
+
+    fn live_src() -> String {
+        let src: String = include_str!("lib.rs")
+            .lines()
+            .map(|l| match l.find("//") {
+                Some(i) => &l[..i],
+                None => l,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let end = src
+            .find("\nmod vision_placement_gate_tests")
+            .expect("this test module exists");
+        src[..end].to_string()
+    }
+
+    /// The comment-stripped body of one top-level item, from `head` to the first column-0 `}`.
+    fn item_body<'a>(live: &'a str, head: &str) -> &'a str {
+        let start = live
+            .find(head)
+            .unwrap_or_else(|| panic!("{head} not found — did it get renamed?"));
+        let body = &live[start..];
+        let end = body.find("\n}\n").expect("item body closes");
+        &body[..end]
+    }
+
+    /// A char-boundary-safe prefix of at most `n` chars.
+    fn head_of(s: &str, n: usize) -> &str {
+        match s.char_indices().nth(n) {
+            Some((i, _)) => &s[..i],
+            None => s,
+        }
+    }
+
+    /// The family switches select the content walker, and step37's TEXT separator law exists
+    /// only in its walker; a switch that folds the placement in changes rendered prompt bytes
+    /// for text-only requests whenever the placement is inadmissible (revuto finding on #46).
+    /// Anchored on comment-stripped source (wiring-assertions law).
+    #[test]
+    fn no_family_switch_reads_the_placement_decision() {
+        let live = live_src();
+        for switch in [
+            "fn vision_enabled()",
+            "fn gemma_vision_enabled()",
+            "fn step_vision_enabled()",
+        ] {
+            let body = item_body(&live, switch);
+            assert!(
+                !body.contains("vision_placement_serving")
+                    && !body.contains("vision_placement_admits"),
+                "{switch} routes text rendering; it must stay keyed on the operator knobs alone"
+            );
+        }
+        let walker = item_body(&live, "fn content_to_text_vision(");
+        assert!(
+            walker.contains(
+                "if step_vision_enabled() {\n        return content_to_text_vision_step(v, step_images);"
+            ),
+            "the step walker dispatch is keyed on the armed switch alone"
+        );
+    }
+
+    /// Every arm that ACCEPTS a media part passes the placement gate before it plans anything,
+    /// so an inadmissible placement refuses at the waist for every family, never mid-prefill.
+    #[test]
+    fn every_media_accepting_arm_passes_the_placement_gate() {
+        let live = live_src();
+        let step = item_body(&live, "fn content_to_text_vision_step(");
+        let arm = step
+            .split("Some(\"image_url\") => {")
+            .nth(1)
+            .expect("the step walker has an image arm");
+        assert!(
+            head_of(arm, 120).contains("vision_placement_admits(\"image\")?;"),
+            "the step image arm must pass the placement gate first: {}",
+            head_of(arm, 120)
+        );
+        let walker = item_body(&live, "fn content_to_text_vision(");
+        for (head, kind) in [
+            (
+                "Some(\"image_url\") if gemma_vision_enabled() => {",
+                "image",
+            ),
+            ("Some(\"image_url\") => {", "image"),
+            ("Some(\"video_url\") => {", "video"),
+        ] {
+            let arm = walker
+                .split(head)
+                .nth(1)
+                .unwrap_or_else(|| panic!("{head} is not an arm of the walker"));
+            let window = head_of(arm, 400);
+            assert!(
+                window.contains(&format!("vision_placement_admits(\"{kind}\")?;")),
+                "{head} must pass the placement gate before planning anything: {window}"
+            );
+        }
+        // glm5 needs no arm-level gate: its switch reads GLM5_VISION_SERVING, which the worker
+        // stores as `tower loaded && placement admissible`, so on an inadmissible placement the
+        // glm5 arm never fires and the part falls through to the generic named refusal.
+        assert!(live.contains("GLM5_VISION_SERVING.load(std::sync::atomic::Ordering::Acquire)"));
+        // The live wrapper feeds the worker's published decision to the pure gate.
+        let gate = item_body(&live, "fn vision_placement_admits(");
+        assert!(gate.contains("vision_media_admissible(vision_placement_serving(), kind)"));
     }
 }
