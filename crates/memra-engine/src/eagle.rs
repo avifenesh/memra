@@ -100,6 +100,40 @@ fn validate_eagle_tensor(
     Ok(ne)
 }
 
+fn validate_aux_layers(aux_layers: &[usize]) -> Result<(), String> {
+    if aux_layers.len() != 3 {
+        return Err(format!(
+            "EAGLE3 fc.weight consumes exactly three auxiliary hidden states; config declares {}",
+            aux_layers.len()
+        ));
+    }
+    if aux_layers.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err("EAGLE3 auxiliary layer ids must be strictly increasing".into());
+    }
+    Ok(())
+}
+
+fn validate_d2t_map(d2t: &[i64], draft_vocab: usize) -> Result<(), String> {
+    if d2t.len() != draft_vocab {
+        return Err(format!(
+            "EAGLE3 d2t has {} entries, expected draft_vocab_size {draft_vocab}",
+            d2t.len()
+        ));
+    }
+    for (draft_id, delta) in d2t.iter().copied().enumerate() {
+        let target = i64::try_from(draft_id)
+            .ok()
+            .and_then(|id| id.checked_add(delta))
+            .filter(|target| (0..=i64::from(u32::MAX)).contains(target));
+        if target.is_none() {
+            return Err(format!(
+                "EAGLE3 d2t[{draft_id}]={delta} maps outside the target u32 vocabulary"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Load a single bf16 (or f32) tensor from the draft safetensors into a GpuTensor::Float.
 /// `name` is the raw HF/EAGLE name in the file (e.g. "fc.weight", "midlayer.self_attn.q_proj.weight").
 fn load_float(
@@ -135,17 +169,11 @@ impl Eagle3Draft {
             path
         };
         let cfg = EagleConfig::from_json(&dir.join("config.json"))?;
+        validate_aux_layers(&cfg.aux_layers)?;
         let m = StModel::open(path)?;
 
         let d2t = read_i64(&m, "d2t")?;
-        if d2t.len() != cfg.draft_vocab {
-            return Err(format!(
-                "EAGLE3 d2t has {} entries, expected draft_vocab_size {}",
-                d2t.len(),
-                cfg.draft_vocab
-            )
-            .into());
-        }
+        validate_d2t_map(&d2t, cfg.draft_vocab)?;
 
         let n = cfg.hidden_size as u64;
         let two_n = n.checked_mul(2).ok_or("EAGLE3 hidden geometry overflow")?;
@@ -209,7 +237,14 @@ impl Eagle3Draft {
         e: &Engine,
         aux: &[CudaSlice<f32>],
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        assert_eq!(aux.len(), self.aux_layers.len(), "aux count != #aux layers");
+        if aux.len() != self.aux_layers.len() {
+            return Err(format!(
+                "EAGLE3 encode received {} auxiliary states, expected {}",
+                aux.len(),
+                self.aux_layers.len()
+            )
+            .into());
+        }
         let n = self.n_embd;
         let mut cat = e.zeros(self.aux_layers.len() * n)?;
         for (i, a) in aux.iter().enumerate() {
@@ -639,8 +674,20 @@ fn read_i64(m: &StModel, name: &str) -> Result<Vec<i64>, Box<dyn std::error::Err
     let (info, bytes) = m
         .raw(name)
         .ok_or_else(|| format!("EAGLE3 draft missing {name}"))?;
-    assert_eq!(info.dtype, "I64", "{name} dtype != I64");
-    let n = bytes.len() / 8;
+    if info.dtype != "I64" {
+        return Err(format!("{name} dtype must be I64, found {}", info.dtype).into());
+    }
+    let ne = info.ne();
+    if ne.len() != 1 {
+        return Err(format!("{name} must be rank-1, found shape {ne:?}").into());
+    }
+    let n = usize::try_from(ne[0]).map_err(|_| format!("{name} length does not fit usize"))?;
+    let expected = n
+        .checked_mul(8)
+        .ok_or_else(|| format!("{name} byte length overflow"))?;
+    if bytes.len() != expected {
+        return Err(format!("{name} has {} bytes, expected {expected}", bytes.len()).into());
+    }
     let mut v = Vec::with_capacity(n);
     for i in 0..n {
         v.push(i64::from_le_bytes(
@@ -662,7 +709,7 @@ fn read_i64(m: &StModel, name: &str) -> Result<Vec<i64>, Box<dyn std::error::Err
 /// a drifted fixture fails loudly instead of testing a config that no longer exists.
 #[cfg(test)]
 mod tensor_contract_tests {
-    use super::validate_eagle_tensor;
+    use super::{validate_aux_layers, validate_d2t_map, validate_eagle_tensor};
     use memra_gguf::safetensors::StInfo;
 
     #[test]
@@ -687,6 +734,21 @@ mod tensor_contract_tests {
                 .unwrap_err()
                 .contains("shape")
         );
+    }
+
+    #[test]
+    fn auxiliary_and_vocabulary_maps_are_closed_before_cuda() {
+        assert!(validate_aux_layers(&[1, 15, 28]).is_ok());
+        for invalid in [&[1, 2][..], &[1, 1, 2], &[2, 1, 3], &[1, 2, 3, 4]] {
+            assert!(
+                validate_aux_layers(invalid).is_err(),
+                "accepted {invalid:?}"
+            );
+        }
+        assert!(validate_d2t_map(&[0, 1, -1], 3).is_ok());
+        assert!(validate_d2t_map(&[0], 2).is_err());
+        assert!(validate_d2t_map(&[-1], 1).is_err());
+        assert!(validate_d2t_map(&[i64::MAX], 1).is_err());
     }
 }
 

@@ -106,13 +106,13 @@ mod worker;
 
 use std::collections::HashMap;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::Arc;
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
 
 use axum::{
     Extension, Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, Query, Request as AxumRequest, State},
+    extract::{DefaultBodyLimit, FromRequest, Query, Request as AxumRequest, State},
     http::{
         HeaderMap, StatusCode,
         header::{CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING},
@@ -125,6 +125,7 @@ use axum::{
     routing::{get, post},
 };
 use futures_core::Stream as _;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceExt as _;
@@ -181,6 +182,7 @@ const MAX_CLIENT_IDENTIFIER_BYTES: usize = 256;
 const MAX_HTTP_CONNECTIONS: usize = 1_024;
 const MAX_HTTP2_STREAMS_PER_CONNECTION: u32 = 128;
 const HTTP1_HEADER_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const HTTP_CONNECTION_MAX_LIFETIME: std::time::Duration = std::time::Duration::from_secs(300);
 
 fn body_admission_semaphore() -> Arc<tokio::sync::Semaphore> {
     static SEMAPHORE: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
@@ -194,6 +196,45 @@ fn small_body_admission_semaphore() -> Arc<tokio::sync::Semaphore> {
     SEMAPHORE
         .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(MAX_SMALL_BODY_ADMISSIONS)))
         .clone()
+}
+
+#[derive(Clone)]
+pub(crate) struct BodyAdmissionGuard {
+    permit: Arc<Mutex<Option<tokio::sync::OwnedSemaphorePermit>>>,
+}
+
+impl BodyAdmissionGuard {
+    fn new(permit: tokio::sync::OwnedSemaphorePermit) -> Self {
+        Self {
+            permit: Arc::new(Mutex::new(Some(permit))),
+        }
+    }
+
+    pub(crate) fn release(&self) {
+        if let Ok(mut permit) = self.permit.lock() {
+            permit.take();
+        }
+    }
+}
+
+pub(crate) struct AdmittedJson<T>(pub(crate) T);
+
+#[axum::async_trait]
+impl<S, T> FromRequest<S> for AdmittedJson<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned,
+{
+    type Rejection = axum::extract::rejection::JsonRejection;
+
+    async fn from_request(req: AxumRequest, state: &S) -> Result<Self, Self::Rejection> {
+        let admission = req.extensions().get::<BodyAdmissionGuard>().cloned();
+        let parsed = Json::<T>::from_request(req, state).await;
+        if let Some(admission) = admission {
+            admission.release();
+        }
+        parsed.map(|Json(value)| Self(value))
+    }
 }
 
 fn declared_body_length(req: &AxumRequest) -> Option<usize> {
@@ -345,7 +386,7 @@ async fn authenticate_inference_before_body(
         small_body_admission_semaphore()
     };
     let body_permit = match body_admission.try_acquire_owned() {
-        Ok(permit) => Some(permit),
+        Ok(permit) => permit,
         Err(tokio::sync::TryAcquireError::Closed) => {
             let response = retry_contract_response(
                 error_response_coded(
@@ -373,11 +414,11 @@ async fn authenticate_inference_before_body(
             return shape_inference_early_response(&path, response).await;
         }
     };
-    // The permit stays owned by this middleware until the inner handler has completed request
-    // extraction, JSON deserialization, semantic validation, and response construction. Releasing
-    // at body EOF is too early: a fast sender can recycle four permits while many 192 MiB JSON
-    // parses remain live. Streaming responses return after construction, so slow readers and token
-    // generation do not retain this body-parser permit.
+    // The extractor releases this shared guard immediately after typed JSON deserialization.
+    // Raw translation surfaces release it after their second typed conversion. The middleware
+    // retains a fallback clone so extractor rejection and non-body routes cannot leak a permit.
+    let body_admission_guard = BodyAdmissionGuard::new(body_permit);
+    req.extensions_mut().insert(body_admission_guard.clone());
     let body = std::mem::replace(req.body_mut(), Body::empty());
     let mut body = Box::pin(body.into_data_stream());
     let body_timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -417,7 +458,7 @@ async fn authenticate_inference_before_body(
     };
     *req.body_mut() = Body::from_stream(guarded_body);
     let response = next.run(req).await;
-    drop(body_permit);
+    body_admission_guard.release();
     if body_timed_out.load(std::sync::atomic::Ordering::Acquire) {
         let request_id = Envelope::new(path != "/v1/completions");
         let timeout = error_response_coded(
@@ -463,9 +504,11 @@ mod body_limit_tests {
             )
             .route(
                 "/json",
-                post(|Json(v): Json<serde_json::Value>| async move {
-                    v["pad"].as_str().unwrap_or("").len().to_string()
-                }),
+                post(
+                    |AdmittedJson(v): AdmittedJson<serde_json::Value>| async move {
+                        v["pad"].as_str().unwrap_or("").len().to_string()
+                    },
+                ),
             );
         apply_body_limit(app)
     }
@@ -716,6 +759,52 @@ mod body_limit_tests {
     }
 
     #[tokio::test]
+    async fn typed_json_releases_body_admission_before_handler_work() {
+        #[derive(Clone)]
+        struct Signals {
+            parsed: Arc<tokio::sync::Notify>,
+            finish: Arc<tokio::sync::Notify>,
+        }
+
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let guard = BodyAdmissionGuard::new(semaphore.clone().try_acquire_owned().unwrap());
+        let signals = Signals {
+            parsed: Arc::new(tokio::sync::Notify::new()),
+            finish: Arc::new(tokio::sync::Notify::new()),
+        };
+        let app = Router::new()
+            .route(
+                "/",
+                post(
+                    |Extension(signals): Extension<Signals>,
+                     AdmittedJson(_): AdmittedJson<serde_json::Value>| async move {
+                        signals.parsed.notify_one();
+                        signals.finish.notified().await;
+                        "ok"
+                    },
+                ),
+            )
+            .layer(Extension(signals.clone()))
+            .layer(Extension(guard));
+        let response = tokio::spawn(
+            app.oneshot(
+                axum::http::Request::post("/")
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"value":1}"#))
+                    .unwrap(),
+            ),
+        );
+        signals.parsed.notified().await;
+        assert_eq!(
+            semaphore.available_permits(),
+            1,
+            "generation/handler work must not retain a parser admission slot"
+        );
+        signals.finish.notify_one();
+        assert_eq!(response.await.unwrap().unwrap().status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn transport_closes_stalled_headers_and_caps_connections() {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
@@ -730,6 +819,7 @@ mod body_limit_tests {
             },
             std::time::Duration::from_millis(30),
             1,
+            std::time::Duration::from_millis(80),
         ));
 
         let mut stalled = tokio::net::TcpStream::connect(address).await.unwrap();
@@ -753,6 +843,20 @@ mod body_limit_tests {
         .await
         .expect("stalled request headers must hit the configured deadline")
         .unwrap();
+
+        let mut idle = tokio::net::TcpStream::connect(address).await.unwrap();
+        idle.write_all(b"GET / HTTP/1.1\r\nHost: local\r\n\r\n")
+            .await
+            .unwrap();
+        bytes.clear();
+        tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            idle.read_to_end(&mut bytes),
+        )
+        .await
+        .expect("an idle keep-alive connection must hit the maximum lifetime")
+        .unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains("200 OK"));
         let _ = shutdown_tx.send(());
         server.await.unwrap().unwrap();
     }
@@ -4543,6 +4647,7 @@ async fn serve_bounded_http_with_limits<F>(
     shutdown: F,
     header_read_timeout: std::time::Duration,
     max_connections: usize,
+    connection_max_lifetime: std::time::Duration,
 ) -> std::io::Result<()>
 where
     F: std::future::Future<Output = ()> + Send,
@@ -4585,14 +4690,16 @@ where
                     .max_headers(64);
                 builder
                     .http2()
-                    .max_concurrent_streams(MAX_HTTP2_STREAMS_PER_CONNECTION);
+                    .max_concurrent_streams(MAX_HTTP2_STREAMS_PER_CONNECTION)
+                    .keep_alive_interval(Some(std::time::Duration::from_secs(30)))
+                    .keep_alive_timeout(std::time::Duration::from_secs(10));
                 let connection = builder
                     .serve_connection_with_upgrades(io, service)
                     .into_owned();
                 let connection = graceful.watch(connection);
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let _ = connection.await;
+                    let _ = tokio::time::timeout(connection_max_lifetime, connection).await;
                 });
             }
         }
@@ -4621,6 +4728,7 @@ where
         shutdown,
         HTTP1_HEADER_READ_TIMEOUT,
         MAX_HTTP_CONNECTIONS,
+        HTTP_CONNECTION_MAX_LIFETIME,
     )
     .await
 }
@@ -5051,15 +5159,15 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         .route("/models", get(list_models))
         .route("/v1/models", get(list_models_v1))
         .route("/v1/auth/check", get(auth_check))
-        .route("/v1/completions", post(completions))
-        .route("/v1/embeddings", post(embed_api::embeddings))
-        .route("/v1/rerank", post(embed_api::rerank))
-        .route("/v1/chat/completions", post(chat_completions))
+        .route("/v1/completions", post(completions_admitted))
+        .route("/v1/embeddings", post(embed_api::embeddings_admitted))
+        .route("/v1/rerank", post(embed_api::rerank_admitted))
+        .route("/v1/chat/completions", post(chat_completions_admitted))
         // Translation surfaces (lane/api-surfaces): Anthropic Messages + OpenAI
         // Responses over the same core. Axum matches the PATH only, so the
         // `?beta=true` query some clients append arrives here too.
-        .route("/v1/messages", post(anthropic::messages))
-        .route("/v1/responses", post(responses_api::responses))
+        .route("/v1/messages", post(anthropic::messages_admitted))
+        .route("/v1/responses", post(responses_api::responses_admitted))
         .route("/metrics", get(get_metrics))
         .route("/yield/metrics", get(yield_metrics))
         .with_state(state.clone());
@@ -8084,6 +8192,15 @@ fn canonical_model_id(models: &[String], requested: &str) -> Option<String> {
     }
 }
 
+async fn completions_admitted(
+    state: State<AppState>,
+    headers: axum::http::HeaderMap,
+    trace: Option<Extension<TtftRequestTrace>>,
+    AdmittedJson(req): AdmittedJson<CompletionReq>,
+) -> Response {
+    completions(state, headers, trace, Json(req)).await
+}
+
 async fn completions(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -8362,6 +8479,15 @@ async fn completions(
         resp.into_response()
     };
     rl.attach(with_request_id(&env.id, resp))
+}
+
+async fn chat_completions_admitted(
+    state: State<AppState>,
+    headers: axum::http::HeaderMap,
+    trace: Option<Extension<TtftRequestTrace>>,
+    AdmittedJson(req): AdmittedJson<ChatCompletionReq>,
+) -> Response {
+    chat_completions(state, headers, trace, Json(req)).await
 }
 
 async fn chat_completions(

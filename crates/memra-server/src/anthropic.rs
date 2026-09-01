@@ -635,10 +635,31 @@ fn frame(data: Value) -> SseEvent {
 /// POST /v1/messages. `anthropic-version` is accepted and not enforced (this surface has
 /// exactly one wire dialect); auth accepts BOTH `x-api-key` and `Authorization: Bearer`
 /// against the same tenant keyring as every other surface.
+#[cfg(test)]
 pub(crate) async fn messages(
+    state: State<AppState>,
+    headers: HeaderMap,
+    trace: Option<Extension<TtftRequestTrace>>,
+    body: Bytes,
+) -> Response {
+    messages_with_admission(state, headers, trace, None, body).await
+}
+
+pub(crate) async fn messages_admitted(
+    state: State<AppState>,
+    headers: HeaderMap,
+    trace: Option<Extension<TtftRequestTrace>>,
+    body_admission: Option<Extension<crate::BodyAdmissionGuard>>,
+    body: Bytes,
+) -> Response {
+    messages_with_admission(state, headers, trace, body_admission, body).await
+}
+
+async fn messages_with_admission(
     State(st): State<AppState>,
     headers: HeaderMap,
     trace: Option<Extension<TtftRequestTrace>>,
+    body_admission: Option<Extension<crate::BodyAdmissionGuard>>,
     body: Bytes,
 ) -> Response {
     let env = Envelope {
@@ -670,6 +691,9 @@ pub(crate) async fn messages(
             );
         }
     };
+    if let Some(Extension(admission)) = body_admission {
+        admission.release();
+    }
     match crate::canonical_model_id(&st.models, &req.model) {
         Some(canonical) => req.model = canonical,
         None => {

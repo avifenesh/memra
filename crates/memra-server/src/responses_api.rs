@@ -566,10 +566,31 @@ fn frame(mut data: Value, seq: &mut u64) -> SseEvent {
 
 /// POST /v1/responses. Auth is the standard `Authorization: Bearer` against the same
 /// tenant keyring as every other surface; errors use the OpenAI error body throughout.
+#[cfg(test)]
 pub(crate) async fn responses(
+    state: State<AppState>,
+    headers: axum::http::HeaderMap,
+    trace: Option<Extension<TtftRequestTrace>>,
+    body: Bytes,
+) -> Response {
+    responses_with_admission(state, headers, trace, None, body).await
+}
+
+pub(crate) async fn responses_admitted(
+    state: State<AppState>,
+    headers: axum::http::HeaderMap,
+    trace: Option<Extension<TtftRequestTrace>>,
+    body_admission: Option<Extension<crate::BodyAdmissionGuard>>,
+    body: Bytes,
+) -> Response {
+    responses_with_admission(state, headers, trace, body_admission, body).await
+}
+
+async fn responses_with_admission(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     trace: Option<Extension<TtftRequestTrace>>,
+    body_admission: Option<Extension<crate::BodyAdmissionGuard>>,
     body: Bytes,
 ) -> Response {
     let env = Envelope {
@@ -603,6 +624,9 @@ pub(crate) async fn responses(
             );
         }
     };
+    if let Some(Extension(admission)) = body_admission {
+        admission.release();
+    }
     match crate::canonical_model_id(&st.models, &req.model) {
         Some(canonical) => req.model = canonical,
         None => {

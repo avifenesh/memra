@@ -53,6 +53,7 @@ const MAX_SPLIT_SHARDS: usize = 1_024;
 const MAX_GGUF_METADATA_BYTES: usize = 256 * 1024 * 1024;
 const MAX_GGUF_STRING_BYTES: usize = 16 * 1024 * 1024;
 const MAX_GGUF_ARRAY_ELEMENTS: usize = 2_000_000;
+const MAX_GGUF_METADATA_DEPTH: usize = 64;
 const MAX_GGUF_KV_ENTRIES: usize = 1_000_000;
 const MAX_GGUF_TENSORS: usize = 1_000_000;
 const MAX_GGUF_TENSOR_RANK: usize = 128;
@@ -401,6 +402,20 @@ impl<'a> Cursor<'a> {
     }
 
     fn value(&mut self, type_id: u32) -> io::Result<MetaValue> {
+        self.value_with_depth(type_id, 0)
+    }
+
+    fn value_with_depth(&mut self, type_id: u32, depth: usize) -> io::Result<MetaValue> {
+        if depth > MAX_GGUF_METADATA_DEPTH {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "GGUF metadata nesting exceeds {MAX_GGUF_METADATA_DEPTH} levels at byte offset {} in {}",
+                    self.pos,
+                    self.path.display()
+                ),
+            ));
+        }
         Ok(match type_id {
             0 => MetaValue::U8(self.read::<1>()?[0]),
             1 => MetaValue::I8(self.read::<1>()?[0] as i8),
@@ -468,7 +483,7 @@ impl<'a> Cursor<'a> {
                     )
                 })?;
                 for _ in 0..n {
-                    v.push(self.value(elem_type)?);
+                    v.push(self.value_with_depth(elem_type, depth + 1)?);
                 }
                 MetaValue::Array(v)
             }
@@ -1504,6 +1519,21 @@ mod split_tests {
         let (dir, path) = write_raw_fixture("oversized-tensors", &h);
         let msg = open_error_without_panic(&path);
         assert_error_mentions(&msg, &["n_tensors=9223372036854775807", "limits are"]);
+        std::fs::remove_dir_all(dir).ok();
+
+        let mut h = raw_header(0, 1);
+        put_test_string(&mut h, "deep");
+        h.extend_from_slice(&9u32.to_le_bytes());
+        for _ in 0..=MAX_GGUF_METADATA_DEPTH {
+            h.extend_from_slice(&9u32.to_le_bytes());
+            h.extend_from_slice(&1u64.to_le_bytes());
+        }
+        h.extend_from_slice(&0u32.to_le_bytes());
+        h.extend_from_slice(&1u64.to_le_bytes());
+        h.push(1);
+        let (dir, path) = write_raw_fixture("deep-metadata", &h);
+        let msg = open_error_without_panic(&path);
+        assert_error_mentions(&msg, &["metadata nesting exceeds", "64 levels"]);
         std::fs::remove_dir_all(dir).ok();
 
         let h = raw_header(0, -1);

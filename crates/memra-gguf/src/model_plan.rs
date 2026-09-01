@@ -771,6 +771,7 @@ impl ModelPlan {
     pub fn compile(cfg: &ModelConfig) -> Result<Self, PlanCompileError> {
         const MAX_MODEL_LAYERS: u32 = 1_024;
         const MAX_MTP_LAYERS: u32 = 128;
+        const MAX_VISION_LAYERS: u32 = 1_024;
         if cfg.n_layer > MAX_MODEL_LAYERS {
             return Err(PlanCompileError::TopologyLimit {
                 field: "n_layer",
@@ -783,6 +784,36 @@ impl ModelPlan {
                 field: "nextn_predict_layers",
                 value: cfg.nextn_predict_layers,
                 max: MAX_MTP_LAYERS,
+            });
+        }
+        if let Some(vision) = cfg.vision.as_ref()
+            && vision.layer_count > MAX_VISION_LAYERS
+        {
+            return Err(PlanCompileError::TopologyLimit {
+                field: "vision.layer_count",
+                value: vision.layer_count,
+                max: MAX_VISION_LAYERS,
+            });
+        }
+        if let Some(vision) = cfg.vision_glm5.as_ref()
+            && vision.depth > MAX_VISION_LAYERS
+        {
+            return Err(PlanCompileError::TopologyLimit {
+                field: "vision_glm5.depth",
+                value: vision.depth,
+                max: MAX_VISION_LAYERS,
+            });
+        }
+        if let Some(vision) = cfg
+            .qwen4exp
+            .as_ref()
+            .and_then(|qwen4exp| qwen4exp.vision.as_ref())
+            && vision.depth > MAX_VISION_LAYERS
+        {
+            return Err(PlanCompileError::TopologyLimit {
+                field: "qwen4exp.vision.depth",
+                value: vision.depth,
+                max: MAX_VISION_LAYERS,
             });
         }
         let trunk_layers = cfg.n_layer.saturating_sub(cfg.nextn_predict_layers);
@@ -2798,6 +2829,34 @@ mod tests {
                 field: "nextn_predict_layers",
                 value: 129,
                 max: 128,
+            })
+        );
+        cfg.n_layer = 1;
+        cfg.nextn_predict_layers = 0;
+        cfg.vision = Some(crate::config::VisionConfig {
+            hidden_size: 64,
+            intermediate_size: 128,
+            layer_count: 1_025,
+            attention_heads: 2,
+            kv_heads: 1,
+            head_dim: 32,
+            context_length: 128,
+            patch_size: 16,
+            position_embedding_size: 128,
+            position_axes: 2,
+            pooling_kernel_size: 3,
+            rms_eps: 1e-6,
+            rope_theta: 100.0,
+            activation: "gelu_tanh".into(),
+            standardize: false,
+            clipped_linears: false,
+        });
+        assert_eq!(
+            ModelPlan::compile(&cfg),
+            Err(PlanCompileError::TopologyLimit {
+                field: "vision.layer_count",
+                value: 1_025,
+                max: 1_024,
             })
         );
     }

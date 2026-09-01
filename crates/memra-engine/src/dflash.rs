@@ -1148,6 +1148,33 @@ fn validate_dflash_tensor(
     Ok(())
 }
 
+fn validate_dflash_attention_geometry(
+    n_head: usize,
+    n_kv: usize,
+    head_dim: usize,
+) -> Result<(), String> {
+    if n_head == 0 || n_kv == 0 || head_dim == 0 || !n_head.is_multiple_of(n_kv) {
+        return Err(format!(
+            "DFlash attention geometry requires nonzero n_head divisible by n_kv; got n_head={n_head}, n_kv={n_kv}, head_dim={head_dim}"
+        ));
+    }
+    n_head
+        .checked_mul(head_dim)
+        .ok_or("DFlash query-head geometry overflow")?;
+    n_kv.checked_mul(head_dim)
+        .ok_or("DFlash key/value-head geometry overflow")?;
+    Ok(())
+}
+
+fn validate_selector_top_k(top_k: usize, vocab: usize) -> Result<(), String> {
+    if top_k == 0 || top_k > vocab {
+        return Err(format!(
+            "DFlash2 selector_top_k {top_k} is outside codebook vocabulary 1..={vocab}"
+        ));
+    }
+    Ok(())
+}
+
 /// Host q8_0 encode (ggml block layout: [d f16][32 x i8] = 34B/32 vals). The drafter's
 /// weights ride the dp4a fast path at 1.6GB resident (bf16 3.1GB + the 31B trunk OOM'd
 /// 24GB; f32 6.2GB worse). Drafter quantization moves ACCEPTANCE only — verify exactness
@@ -1417,6 +1444,7 @@ impl DflashDraft {
         {
             return Err("DFlash config carries zero or non-finite model geometry".into());
         }
+        validate_dflash_attention_geometry(cfg.n_head, cfg.n_kv, cfg.head_dim)?;
         if is_dflash2 {
             // The windowed round arm implements the reference's NON-causal symmetric
             // window only (config `is_causal: false` on the q38 DFlash2 export). A
@@ -1705,6 +1733,7 @@ impl DflashDraft {
             if v1 != v2 {
                 return Err(format!("DFlash2 codebook vocab mismatch: {v1} != {v2}").into());
             }
+            validate_selector_top_k(top_k, v1)?;
             let hp_name = "candidate_selector.hidden_projection.weight";
             let (hi, _hb) = st
                 .raw(hp_name)
@@ -2043,11 +2072,22 @@ impl DflashDraft {
             .dflash2
             .as_ref()
             .expect("dflash2_propose on a non-dflash2 draft");
-        assert!(
-            n_vocab <= d2.vocab,
-            "target head vocab {n_vocab} exceeds the selector codebooks ({})",
-            d2.vocab
-        );
+        if n_vocab > d2.vocab || d2.top_k > n_vocab {
+            return Err(format!(
+                "DFlash2 proposal geometry invalid: target vocab {n_vocab}, selector vocab {}, top_k {}",
+                d2.vocab, d2.top_k
+            )
+            .into());
+        }
+        if let Some(map) = d2t
+            && map.len() < n_vocab
+        {
+            return Err(format!(
+                "DFlash2 d2t has {} entries, fewer than proposal vocab {n_vocab}",
+                map.len()
+            )
+            .into());
+        }
         let (vals_d, idx_d) = e.topk_rows(dl, nd, n_vocab, d2.top_k)?;
         let hproj_d = e.matmul(&d2.hidden_proj, rows, nd)?;
         let unary = e.dtoh(&vals_d)?;
@@ -2088,11 +2128,22 @@ impl DflashDraft {
             .dflash2
             .as_ref()
             .expect("dflash2_propose on a non-dflash2 draft");
-        assert!(
-            n_vocab <= d2.vocab,
-            "target head vocab {n_vocab} exceeds the selector codebooks ({})",
-            d2.vocab
-        );
+        if n_vocab > d2.vocab || d2.top_k > n_vocab {
+            return Err(format!(
+                "DFlash2 proposal geometry invalid: target vocab {n_vocab}, selector vocab {}, top_k {}",
+                d2.vocab, d2.top_k
+            )
+            .into());
+        }
+        if let Some(map) = d2t
+            && map.len() < n_vocab
+        {
+            return Err(format!(
+                "DFlash2 d2t has {} entries, fewer than proposal vocab {n_vocab}",
+                map.len()
+            )
+            .into());
+        }
         let (vals_d, idx_d) = e.topk_rows(dl, nd, n_vocab, d2.top_k)?;
         let hproj_d = e.matmul(&d2.hidden_proj, rows, nd)?;
         let unary = e.dtoh(&vals_d)?;
@@ -6500,7 +6551,9 @@ mod dflash_precision_tests {
 
 #[cfg(test)]
 mod dflash_tensor_contract_tests {
-    use super::validate_dflash_tensor;
+    use super::{
+        validate_dflash_attention_geometry, validate_dflash_tensor, validate_selector_top_k,
+    };
     use memra_gguf::safetensors::StInfo;
 
     #[test]
@@ -6531,5 +6584,16 @@ mod dflash_tensor_contract_tests {
                 .unwrap_err()
                 .contains("expected")
         );
+    }
+
+    #[test]
+    fn attention_and_selector_geometry_refuse_before_cuda() {
+        assert!(validate_dflash_attention_geometry(64, 8, 128).is_ok());
+        assert!(validate_dflash_attention_geometry(63, 8, 128).is_err());
+        assert!(validate_dflash_attention_geometry(64, 0, 128).is_err());
+        assert!(validate_dflash_attention_geometry(usize::MAX, 1, 2).is_err());
+        assert!(validate_selector_top_k(16, 128).is_ok());
+        assert!(validate_selector_top_k(0, 128).is_err());
+        assert!(validate_selector_top_k(129, 128).is_err());
     }
 }

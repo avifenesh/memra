@@ -403,6 +403,14 @@ fn l2_normalize(v: &mut [f32]) {
     }
 }
 
+pub(crate) async fn embeddings_admitted(
+    state: State<AppState>,
+    headers: HeaderMap,
+    crate::AdmittedJson(req): crate::AdmittedJson<EmbeddingsReq>,
+) -> Response {
+    embeddings(state, headers, Json(req)).await
+}
+
 pub(crate) async fn embeddings(
     State(st): State<AppState>,
     headers: HeaderMap,
@@ -519,6 +527,14 @@ pub(crate) async fn embeddings(
         "usage": { "prompt_tokens": prompt_tokens, "total_tokens": prompt_tokens },
     });
     crate::with_request_id(&env.id, Json(body).into_response())
+}
+
+pub(crate) async fn rerank_admitted(
+    state: State<AppState>,
+    headers: HeaderMap,
+    crate::AdmittedJson(req): crate::AdmittedJson<RerankReq>,
+) -> Response {
+    rerank(state, headers, Json(req)).await
 }
 
 pub(crate) async fn rerank(
