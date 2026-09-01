@@ -115,9 +115,19 @@ fi
 # Arm C: the vision-armed and text-only greedy completions must be byte-identical.
 A=$(ls -1 "$OUT/probe-fix/text-greedy.txt" 2>/dev/null | head -1)
 B=$(ls -1 "$OUT"/armD/probe-text-only-*/text-greedy.txt 2>/dev/null | head -1)
-if [ -n "$A" ] && [ -n "$B" ]; then
+# NON-EMPTY FIRST, THEN EQUAL. Two EMPTY files compare equal, so a pair of failed requests — the
+# slot is key-authed and a keyless call 401s — would render as "byte identity" and pass this arm
+# on nothing. Same shape as the e3b0c442… empty-input sha near-miss banked in darklanes#11: a
+# comparison over piped/absent bytes asserts the byte count, or it asserts nothing.
+if [ -n "$A" ] && [ -n "$B" ] && [ ! -s "$A" ]; then
+  note "ARM C: FAIL — the vision-armed greedy completion is EMPTY ($A). Two empty files compare equal, so this is a refusal, not identity (check auth: the slot is key-authed)"
+  fail=1
+elif [ -n "$A" ] && [ -n "$B" ] && [ ! -s "$B" ]; then
+  note "ARM C: FAIL — the text-only greedy completion is EMPTY ($B); see above"
+  fail=1
+elif [ -n "$A" ] && [ -n "$B" ]; then
   if cmp -s "$A" "$B"; then
-    note "ARM C (text-only byte identity with vision armed): PASS — identical bytes ($(wc -c <"$A") bytes, sha $(sha256sum "$A" | cut -c1-16))"
+    note "ARM C (text-only byte identity with vision armed): PASS — identical NON-EMPTY bytes ($(wc -c <"$A") bytes, sha $(sha256sum "$A" | cut -c1-16))"
   else
     note "ARM C: FAIL — a vision feature moved a text token; diff banked as armC.diff"
     diff "$A" "$B" > "$OUT/armC.diff" || true; fail=1
