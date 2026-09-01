@@ -10,7 +10,7 @@
 //! fluent output with wrong token ids and nothing downstream can see it.
 
 pub mod chat;
-pub mod json;
+mod json;
 mod unicode;
 mod unicode_data;
 
@@ -66,30 +66,6 @@ pub const ALLOW_UNKNOWN_PRETOKENIZER_ENV: &str = "MEMRA_ALLOW_UNKNOWN_PRETOKENIZ
 
 fn allow_unknown_pretokenizer() -> bool {
     std::env::var(ALLOW_UNKNOWN_PRETOKENIZER_ENV).as_deref() == Ok("1")
-}
-
-/// Serializes every TEST that touches `MEMRA_ALLOW_UNKNOWN_PRETOKENIZER`. The variable is
-/// PROCESS-wide and `cargo test` runs the suite in parallel threads of ONE process, so
-/// `pretokenizer_tests::opt_out_env_gate`'s `set_var("1")` was visible to
-/// `hf_tests::hf_dir_refuses_unidentifiable_pretokenizer` while it ran: that test calls
-/// `from_hf_dir`, which reads this same variable through `allow_unknown_pretokenizer` above, so
-/// it LOADED instead of refusing and the suite failed with the qwen35-fallback WARN in its
-/// stdout. It reddened at whatever interleaving the scheduler happened to pick and passed every
-/// time it was run alone, which is why it read as noise. `opt_out_env_gate`'s old SAFETY note
-/// asserted "no other test reads this variable", which was simply untrue: the prose was the
-/// entire justification and nothing checked it against an actual reader. It lives at the crate
-/// root because the two racing tests are in two different `#[cfg(test)]` modules.
-/// (Found by lane/real-system-fingerprint-20260901, whose `cargo test --workspace` it reddened.)
-#[cfg(test)]
-static PRETOKENIZER_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Take the env lock, tolerating poisoning: a panic inside one of these tests must not convert
-/// the others into a second, misleading failure that hides the first.
-#[cfg(test)]
-fn pretokenizer_env_lock() -> std::sync::MutexGuard<'static, ()> {
-    PRETOKENIZER_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// A model declared a pre-tokenizer memra has no exact split for.
@@ -1074,14 +1050,6 @@ impl Tokenizer {
         )
     }
 
-    /// True iff `id` is in the special set `st_partition` splits out of raw text (control /
-    /// user-defined / unknown) — i.e. an id a plain-text LITERAL can produce during encode.
-    /// The vision special-id intake guard (memra-server) keys on this: an ordinary vocab
-    /// entry that merely looks like a marker is honest text and must not be policed.
-    pub fn token_is_special(&self, id: u32) -> bool {
-        self.special_tokens.contains(&id)
-    }
-
     pub fn decode_special(&self, ids: &[u32], special: bool) -> String {
         String::from_utf8_lossy(&self.decode_bytes_special(ids, special)).into_owned()
     }
@@ -1448,9 +1416,8 @@ mod pretokenizer_tests {
     /// `=0`/`=false` in a launcher does not silently turn wrong ids back on).
     #[test]
     fn opt_out_env_gate() {
-        let _env = pretokenizer_env_lock();
-        // SAFETY: the lock above makes this thread the only one touching this variable, and
-        // the resolve paths every other test uses take the decision as a parameter.
+        // SAFETY: single-threaded within this test; no other test reads this variable, and the
+        // resolve paths every other test uses take the decision as a parameter.
         unsafe { std::env::remove_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV) };
         assert!(!allow_unknown_pretokenizer());
         unsafe { std::env::set_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV, "0") };
@@ -1995,12 +1962,6 @@ mod hf_tests {
     /// names both observations so the next porter knows what to implement.
     #[test]
     fn hf_dir_refuses_unidentifiable_pretokenizer() {
-        // This test's whole point is the REFUSAL path, which the opt-out env var disables, so
-        // it holds the same lock as `opt_out_env_gate` and clears the variable first: a panic
-        // partway through that test can otherwise leave the opt-out set.
-        let _env = pretokenizer_env_lock();
-        // SAFETY: the lock above makes this thread the only one touching this variable.
-        unsafe { std::env::remove_var(ALLOW_UNKNOWN_PRETOKENIZER_ENV) };
         let json = TOKENIZER_JSON.replace(r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|", "SOMETHING-ELSE|");
         assert_ne!(json, TOKENIZER_JSON);
         let dir = std::env::temp_dir().join(format!("memra-tok-hf-unk-{}", std::process::id()));

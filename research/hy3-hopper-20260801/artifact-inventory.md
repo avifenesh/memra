@@ -59,4 +59,4 @@ on 80GB H100 the plain SLRU defaults apply (no CPU expert companion).
 - CLAUDE.md rule: record the staged manifest hash; do not report persistent-EBS 4 KiB fault
   throughput as memra spill speed. Staged (NVMe) runtime manifest sha256 verified equal to
   the pinned runtime hash above (see transfer-receipt.md). All weights staged on Mumbai
-  local NVMe (`/opt/scratch/nvme`), NOT the 94%-full root EBS.
+  local NVMe (`/opt/dl-image/nvme`), NOT the 94%-full root EBS.

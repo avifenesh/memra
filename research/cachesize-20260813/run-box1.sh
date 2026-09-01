@@ -9,10 +9,10 @@ case "$MODE" in
 esac
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
-ROOT=${CACHESIZE_ROOT:-/opt/scratch/nvme/cx-cachesize}
+ROOT=${CACHESIZE_ROOT:-/opt/dl-image/nvme/cx-cachesize}
 REPO=${CACHESIZE_REPO:-$ROOT/memra}
 HARNESS=${CACHESIZE_HARNESS:-$ROOT/harness}
-MODELS=${CACHESIZE_MODELS:-/opt/scratch/nvme/cx-requal/models}
+MODELS=${CACHESIZE_MODELS:-/opt/dl-image/nvme/cx-requal/models}
 EXPECTED_SOURCE=18885ec479d897a3e8c42b0d408a71fa3edaa708
 EXPECTED_Q27=d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517
 EXPECTED_Q35=df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf

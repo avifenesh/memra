@@ -4,7 +4,7 @@ Campaign: beat vLLM on the realistic cells; standing decode walls after v0.100.0
 
 ## Box4 decode-only nsys anatomy (the instrument this lane exists for)
 
-nsys 2026.1.3 works on the cloudbox driver (595.91) — box3's 2025.6.1 could not capture CUDA.
+nsys 2026.1.3 works on the Sbox driver (595.91) — box3's 2025.6.1 could not capture CUDA.
 Decode-only window (delay past load+prime), B=8 ctx4700 filtered sampling, 910 ticks:
 
 | kernel | share | per tick |
@@ -64,7 +64,7 @@ gate must run ON THE MoE MODEL for any future expert-kernel change.
 CLOSED (box5, 2026-08-21): the pre-existing IQ4_XS/IQ3_S CSR kernel passes
 decode-batch-gate B=4 and B=8 ALL GREEN on an IQ-MoE artifact (AgentWorld-35B UD-IQ4_XS)
 — the composition defect was specific to the NVFP4 twin; production IQ-MoE serving is
-unaffected. Boxes note: box4 (ohio spot) was reclaimed ~5h in, mid-battery; box5
+unaffected. Boxes note: box4 (Ohio spot) was reclaimed ~5h in, mid-battery; box5
 (same class) relaunched and re-ran the full ornith battery at the lane tip (incl.
 fused3-b8): batch-gate B=8, kernel-check, sample-check, run-gen argmax, run-spec — ALL
 GREEN. 5090: sample-check GREEN (coop), q38 run-gen MATCH + run-spec PASS; the 27B/35B

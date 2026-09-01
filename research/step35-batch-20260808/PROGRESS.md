@@ -7,7 +7,7 @@ batched PP-N stage split + the #87 fences), `research/gemma4-serve-20260807/` (t
 fail-closed floor shape).
 
 Boxes: box1 `<rented-box-ip>` (2x PRO 6000, PP-2, flock `/tmp/memra-gpu.lock`, shared with
-v072battery + leverb — windows only), box2 `<box2-ip>` (2x PRO 6000, ohio, memra @
+v072battery + leverb — windows only), box2 `<box2-ip>` (2x PRO 6000, Ohio, memra @
 a131e8c7 in `~/memra`, Step shards landing at `/data/models/step37`) — batteries go to box2.
 
 ---

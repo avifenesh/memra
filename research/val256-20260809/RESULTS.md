@@ -125,7 +125,7 @@ scan, and GPU samples are under
 ## Run identity and evidence discipline
 
 - The IQ4_XS three-shard model and Q8_0 MTP draft were staged byte-identically on box1 local NVMe
-  under `/opt/scratch/nvme/models/step-3.7-flash`. The artifact-manifest SHA-256 is
+  under `/opt/dl-image/nvme/models/step-3.7-flash`. The artifact-manifest SHA-256 is
   `4c22bdce378de2c365cdcbf3ce6dcf94d9dd690b0058e5fb01e3fb71a5b29312`; individual hashes are in
   [artifact-sha256.txt](raw/block1-affinity-20260809T150220Z/artifact-sha256.txt).
 - Blocks 2 and 3 used server binary SHA-256

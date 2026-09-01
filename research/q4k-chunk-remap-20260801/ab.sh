@@ -5,7 +5,7 @@
 cd $HOME/arc2
 LOGD=$HOME/arc2/research/q4k-chunk-remap-20260801/ab-logs
 mkdir -p $LOGD
-M=/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
+M=/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
 for r in 1 2 3; do
   for bin in base new; do
     B=./target/release/run-spec

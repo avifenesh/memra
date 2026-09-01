@@ -302,22 +302,6 @@ pub struct HcMix {
     pub comb: CudaSlice<f32>,
 }
 
-/// Engagement counter for the fused pre-chain door (`MEMRA_HC_FUSED_PRE=1`): incremented at
-/// the arm's own call site, announced once per boot — the spec-engagement receipt the gate
-/// and any box A/B arm must show ([bf16-mmv] RESIDENT lesson: engagement lines are receipts,
-/// never inferred).
-pub static HC_FUSED_PRE_DISPATCHES: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
-/// `MEMRA_HC_FUSED_PRE=1` (default OFF): the three-kernel site pre-chain (rowsq_scale +
-/// Sinkhorn + collapse) runs as ONE `memra_dsv4_hc_pre_fused` launch per site — bit-identical
-/// to the unfused chain by construction (verbatim bodies, asserted bytewise in
-/// `hc_fused_pre_gpu.rs`). Read PER CALL (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent),
-/// so both arms alternate inside one process and the flag is a live rollback seam.
-fn hc_fused_pre_on() -> bool {
-    std::env::var("MEMRA_HC_FUSED_PRE").as_deref() == Ok("1")
-}
-
 /// Model entry (`hc_expand`): `[tokens, hidden]` embeddings -> `[tokens, streams, hidden]`.
 pub fn expand(
     e: &Engine,
@@ -355,134 +339,17 @@ pub fn pre(
     t: usize,
     hidden: usize,
 ) -> Res<(CudaSlice<f32>, HcMix)> {
-    let width = topology.streams * hidden;
-    let mixes = e.linear(x, &site.fn_w, t, width, topology.rows())?;
-    pre_finish(e, topology, site, x, mixes, t, hidden)
-}
-
-/// `pre` with the DECODE-EXACT mixing GEMM: each token's mix coefficients come from the
-/// SAME m=1 cuBLASLt program the serial T=1 decode step runs (`linear_t1_into` is `linear`
-/// at m == 1 on a row view — same config, same weight pointer, same input bytes), instead
-/// of one m=t call whose n-dependent reduction split changes every output bit (the lt_ndep
-/// probe documented on `Engine::linear_decode_exact`). Everything after the GEMM is the
-/// per-token kernel set `pre` already runs — block-per-token programs whose per-token bytes
-/// do not depend on t. This is the entry the BATCHED hyper decode walk uses so that row b
-/// of a B-row tick is bit-identical to that session's solo `decode_step_hyper` step.
-pub fn pre_exact(
-    e: &Engine,
-    topology: &HyperTopology,
-    site: &HyperSite,
-    x: &CudaSlice<f32>,
-    t: usize,
-    hidden: usize,
-) -> Res<(CudaSlice<f32>, HcMix)> {
-    let rows = topology.rows();
-    let width = topology.streams * hidden;
-    let mut mixes = e.uninit(t * rows)?;
-    for r in 0..t {
-        let xr = x.slice(r * width..(r + 1) * width);
-        let wv = site.fn_w.slice(0..site.fn_w.len());
-        let mut yr = mixes.slice_mut(r * rows..(r + 1) * rows);
-        e.linear_t1_into(&xr, &wv, &mut yr, width, rows)
-            .map_err(|err| format!("hc pre_exact row {r}: {err}"))?;
-    }
-    pre_finish(e, topology, site, x, mixes, t, hidden)
-}
-
-/// The per-token half `pre` and `pre_exact` share: RMS rescale of the mix coefficients,
-/// Sinkhorn, stream collapse. Every kernel here is a block-per-token program (grid over t),
-/// so per-token output bytes are invariant to t — the two entries differ ONLY in how the
-/// mixes GEMM reduces.
-fn pre_finish(
-    e: &Engine,
-    topology: &HyperTopology,
-    site: &HyperSite,
-    x: &CudaSlice<f32>,
-    mut mixes: CudaSlice<f32>,
-    t: usize,
-    hidden: usize,
-) -> Res<(CudaSlice<f32>, HcMix)> {
-    let streams = topology.streams;
-    let mut pre_gates = e.uninit(t * streams)?;
-    let mut post = e.uninit(t * streams)?;
-    let mut comb = e.uninit(t * streams * streams)?;
-    let mut y = e.uninit(t * hidden)?;
-    pre_finish_into(
-        e,
-        topology,
-        site,
-        x,
-        &mut mixes,
-        &mut pre_gates,
-        &mut post,
-        &mut comb,
-        &mut y,
-        t,
-        hidden,
-    )?;
-    Ok((y, HcMix { post, comb }))
-}
-
-/// `pre_finish`'s kernel arms on caller-owned outputs — shared by the allocating entry above
-/// and the persistent-workspace decode walk (`pre_t1_ws`), so the two cannot drift. Both arms
-/// fully overwrite every output element, which is what makes workspace reuse byte-identical.
-#[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI contract; the workspace caller passes disjoint field borrows
-fn pre_finish_into(
-    e: &Engine,
-    topology: &HyperTopology,
-    site: &HyperSite,
-    x: &CudaSlice<f32>,
-    mixes: &mut CudaSlice<f32>,
-    pre_gates: &mut CudaSlice<f32>,
-    post: &mut CudaSlice<f32>,
-    comb: &mut CudaSlice<f32>,
-    y: &mut CudaSlice<f32>,
-    t: usize,
-    hidden: usize,
-) -> Res<()> {
     let streams = topology.streams;
     let rows = topology.rows();
     let width = streams * hidden;
     let eps = topology.epsilon;
     let stream = e.stream();
 
-    // FUSED PRE-CHAIN DOOR (lane/glm5-decode-diet). Engages at any t (the kernel is
-    // block-per-token, per-token bytes t-invariant like the unfused chain) whenever the
-    // stream count fits the kernel's static shared arrays; every other shape falls through
-    // to the unchanged three-kernel program below. The kernel reads the RAW mixes and
-    // applies the rowsq rescale internally, so the in-place scale write below is subsumed
-    // (nothing reads the scaled mixes after this function either way).
-    if hc_fused_pre_on() && streams <= 8 {
-        unsafe {
-            ck(
-                "hc_pre_fused",
-                k::memra_dsv4_hc_pre_fused(
-                    dpf!(x, &stream),
-                    dpf!(mixes, &stream),
-                    dpf!(site.scale, &stream),
-                    dpf!(site.base, &stream),
-                    dpm!(pre_gates, &stream),
-                    dpm!(post, &stream),
-                    dpm!(comb, &stream),
-                    dpm!(y, &stream),
-                    t as i32,
-                    streams as i32,
-                    hidden as i32,
-                    topology.sinkhorn_iterations as i32,
-                    eps,
-                    std::ptr::null_mut(),
-                    sp(&stream),
-                ),
-            )?;
-        }
-        if HC_FUSED_PRE_DISPATCHES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
-            eprintln!(
-                "[hc-fused-pre] engaged streams={streams} hidden={hidden} t={t} (one launch \
-                 replaces rowsq_scale + sinkhorn + collapse per site; MEMRA_HC_FUSED_PRE=1)"
-            );
-        }
-        return Ok(());
-    }
+    let mut mixes = e.linear(x, &site.fn_w, t, width, rows)?;
+    let mut pre_gates = e.uninit(t * streams)?;
+    let mut post = e.uninit(t * streams)?;
+    let mut comb = e.uninit(t * streams * streams)?;
+    let mut y = e.uninit(t * hidden)?;
     unsafe {
         ck(
             "hc rowsq_scale",
@@ -525,131 +392,7 @@ fn pre_finish_into(
             ),
         )?;
     }
-    Ok(())
-}
-
-/// Persistent T=1 decode workspace for the hc glue (lane/glm5-decode-diet lever 2,
-/// `MEMRA_HC_DECODE_WS`). One per engine (pp stage), pooled on the `Engine` like
-/// `fa_part_pool`/`router_stage`: the launch-diet census measured 2,358
-/// `cuMemAllocAsync+Free` calls/token (~2.5 ms of host time feeding the sync-serialized
-/// drain cycles), and the hc glue chain — mixes, gates, comb, collapse y, the two norm
-/// scratches and the two per-site post outputs — re-allocated all of it every token. Every
-/// buffer here is FULLY OVERWRITTEN before any read on every step (GEMV beta=0, block-per-
-/// token kernels, rms_norm, hc_post), which is what makes reuse byte-identical: the same
-/// kernels read and write the same values, only the allocator calls disappear.
-///
-/// The stream-state ping-pong deliberately has ONE slot (`xb`): the walk swaps the owned
-/// in-flight state `x` with `xb` after each site's `hc_post`, so the pair rotates without a
-/// copy and the walk still returns an owned buffer to the caller (no signature churn at the
-/// stage boundary — the ppN transport consumes it exactly as before).
-pub struct HyperDecodeWs {
-    pub mixes: CudaSlice<f32>,
-    pub pre: CudaSlice<f32>,
-    pub post: CudaSlice<f32>,
-    pub comb: CudaSlice<f32>,
-    pub y: CudaSlice<f32>,
-    /// Attention-site rms_norm scratch (the walk's `h`).
-    pub h: CudaSlice<f32>,
-    /// MLP-site rms_norm scratch (the walk's `z`).
-    pub z: CudaSlice<f32>,
-    /// The `hc_post` output slot the walk ping-pongs with the in-flight stream state.
-    pub xb: CudaSlice<f32>,
-    streams: usize,
-    hidden: usize,
-}
-
-impl HyperDecodeWs {
-    pub fn new(e: &Engine, topology: &HyperTopology, hidden: usize) -> Res<Self> {
-        let streams = topology.streams;
-        Ok(Self {
-            mixes: e.uninit(topology.rows())?,
-            pre: e.uninit(streams)?,
-            post: e.uninit(streams)?,
-            comb: e.uninit(streams * streams)?,
-            y: e.uninit(hidden)?,
-            h: e.uninit(hidden)?,
-            z: e.uninit(hidden)?,
-            xb: e.uninit(streams * hidden)?,
-            streams,
-            hidden,
-        })
-    }
-
-    /// A pooled workspace is only reusable for the same trunk geometry; anything else is
-    /// rebuilt (one engine serves one loaded model in practice, this is a guard, not a path).
-    pub fn matches(&self, topology: &HyperTopology, hidden: usize) -> bool {
-        self.streams == topology.streams && self.hidden == hidden
-    }
-}
-
-/// `pre` at T=1 into the workspace: the SAME m=1 mixes program the allocating entry runs
-/// (`linear_t1_into` is `linear` at m == 1 — same cuBLASLt config, same weight pointer, same
-/// input bytes; the `pre_exact` note), then the shared `pre_finish_into` arms. Byte-identical
-/// to `pre(e, topology, site, x, 1, hidden)` with the outputs landing in `ws` instead of
-/// fresh allocations.
-pub fn pre_t1_ws(
-    e: &Engine,
-    topology: &HyperTopology,
-    site: &HyperSite,
-    x: &CudaSlice<f32>,
-    ws: &mut HyperDecodeWs,
-    hidden: usize,
-) -> Res<()> {
-    let rows = topology.rows();
-    let width = topology.streams * hidden;
-    {
-        let xr = x.slice(0..width);
-        let wv = site.fn_w.slice(0..site.fn_w.len());
-        let mut yr = ws.mixes.slice_mut(0..rows);
-        e.linear_t1_into(&xr, &wv, &mut yr, width, rows)
-            .map_err(|err| format!("hc pre_t1_ws mixes: {err}"))?;
-    }
-    let ws = &mut *ws;
-    pre_finish_into(
-        e,
-        topology,
-        site,
-        x,
-        &mut ws.mixes,
-        &mut ws.pre,
-        &mut ws.post,
-        &mut ws.comb,
-        &mut ws.y,
-        1,
-        hidden,
-    )
-}
-
-/// `post` at T=1 into the workspace's `xb` slot (the caller swaps `xb` with its in-flight
-/// state). Reads the gates `pre_t1_ws` left in `ws.post`/`ws.comb` — the same kernel, the
-/// same operand bytes as the allocating `post`.
-pub fn post_t1_ws(
-    e: &Engine,
-    topology: &HyperTopology,
-    f: &CudaSlice<f32>,
-    residual: &CudaSlice<f32>,
-    ws: &mut HyperDecodeWs,
-    hidden: usize,
-) -> Res<()> {
-    let stream = e.stream();
-    let ws = &mut *ws;
-    unsafe {
-        ck(
-            "hc_post",
-            k::memra_dsv4_hc_post(
-                dpf!(f, &stream),
-                dpf!(residual, &stream),
-                dpf!(ws.post, &stream),
-                dpf!(ws.comb, &stream),
-                dpm!(ws.xb, &stream),
-                1,
-                topology.streams as i32,
-                hidden as i32,
-                sp(&stream),
-            ),
-        )?;
-    }
-    Ok(())
+    Ok((y, HcMix { post, comb }))
 }
 
 /// One site's post-branch half (`hc_post`): `out[t, k, :] = post[t, k]·f[t, :] + Σ_j
@@ -675,38 +418,6 @@ pub fn post(
                 dpf!(residual, &stream),
                 dpf!(mix.post, &stream),
                 dpf!(mix.comb, &stream),
-                dpm!(out, &stream),
-                t as i32,
-                streams as i32,
-                hidden as i32,
-                sp(&stream),
-            ),
-        )?;
-    }
-    Ok(out)
-}
-
-/// UNWEIGHTED stream-mean contraction `[tokens, streams, hidden]` -> `[tokens, hidden]` —
-/// the `hc_contract` the glm5 DFlash2 drafter's aux-hidden features are defined by (the
-/// probe's capture seam: mean over the hc_mult stream blocks of the completed layer output,
-/// == the SGLang glm5_next integration's pinned definition). Deliberately NOT keyed on
-/// `topology.collapse`: the drafter contract is the mean by definition, whatever the trunk
-/// exit does (for glm5_next the exit IS `Mean`, so this is also the collapse kernel).
-pub fn contract_mean(
-    e: &Engine,
-    topology: &HyperTopology,
-    x: &CudaSlice<f32>,
-    t: usize,
-    hidden: usize,
-) -> Res<CudaSlice<f32>> {
-    let streams = topology.streams;
-    let stream = e.stream();
-    let mut out = e.uninit(t * hidden)?;
-    unsafe {
-        ck(
-            "hc_mean",
-            k::memra_dsv4_hc_mean(
-                dpf!(x, &stream),
                 dpm!(out, &stream),
                 t as i32,
                 streams as i32,
@@ -834,8 +545,6 @@ mod tests {
                 conv_kernel: 4,
                 state_width: 16384,
             },
-            ple: None,
-            sparse_overlay: None,
         }
     }
 
@@ -853,7 +562,6 @@ mod tests {
             logits: Vec::new(),
             mtp_blocks: Vec::new(),
             drafter: None,
-            exit_mixer: None,
             draft_source: DraftSourcePlan::Embedded,
             sampling_defaults: None,
             partition_boundaries: Vec::new(),

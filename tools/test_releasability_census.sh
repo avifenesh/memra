@@ -144,15 +144,8 @@ echo "$out" | grep -q 'panics at Engine::func' \
 
 # Arm 13 — the other direction: an advisory arch nobody compiles is a dead entry measuring
 #          nothing, so it must also refuse.
-# The uncompiled arch has to come from a FIXTURE ci.yml: this arm used to lean on the real
-# ci.yml never compiling 100a, and the b200-prep lane (2026-09-01) added a 100a compile cell,
-# which flipped the arm's premise and failed CI for the right thing happening — the exact
-# fixture-pinned-to-transient-content trap arm 14's comment warns about. Same idiom as arms
-# 9/10: derive the fixture from the live file and assert the sed actually bit.
-sed 's/"100a", //' "$ci" > "$tmp/ci-no-100a.yml"
-if grep -q '"100a"' "$tmp/ci-no-100a.yml"; then fail "arm 13 setup: sed did not bite"; fi
 printf '100a  # advisory but uncompiled\n' > "$tmp/adv-dead.txt"
-if out=$("$census_arch" "$tmp/ci-no-100a.yml" "$rel_wf" "$build_rs" "$tmp/adv-dead.txt" 2>&1); then
+if out=$("$census_arch" "$ci" "$rel_wf" "$build_rs" "$tmp/adv-dead.txt" 2>&1); then
   fail "arm 13: census allowed an advisory arch that ci never compiles: $out"
 fi
 echo "$out" | grep -q 'measures nothing' || fail "arm 13: wrong refusal: $out"

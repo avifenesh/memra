@@ -462,9 +462,7 @@ impl StModel {
                 .collect::<Result<Vec<_>, _>>()?;
             for (tensor, file) in &weight_map {
                 let si = pos[file];
-                // Index validation is metadata-only. Do not form a payload slice merely to prove
-                // the owning shard header contains the indexed name.
-                if !shards[si].infos.contains_key(tensor) {
+                if shards[si].raw(tensor).is_none() {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
                         format!(
@@ -517,16 +515,6 @@ impl StModel {
     pub fn raw(&self, name: &str) -> Option<(&StInfo, &[u8])> {
         let &si = self.map.get(name)?;
         self.shards[si].raw(name)
-    }
-
-    /// Header-only metadata for a tensor, routed to the owning shard.
-    ///
-    /// Unlike [`Self::raw`], this never forms a view into the tensor payload. Placement and
-    /// inspection code use it to census exact physical byte ranges without faulting weight pages
-    /// or invoking any source transform.
-    pub fn info(&self, name: &str) -> Option<&StInfo> {
-        let &si = self.map.get(name)?;
-        self.shards[si].infos.get(name)
     }
 
     /// Owned extent for the same tensor selected by `raw`.

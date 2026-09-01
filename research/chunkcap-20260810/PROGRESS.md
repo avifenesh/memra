@@ -4,7 +4,7 @@
 
 - Branch/worktree: `lane/cx-chunkcap` in `/home/avifenesh/projects/wt-cx-chunkcap`
 - Base: `fda2d970`
-- Rig: box1 cloud pair, two RTX PRO 6000 Server Edition GPUs
+- Rig: box1 hyperscaler pair, two RTX PRO 6000 Server Edition GPUs
 - Question: does lifting the Step35 decode chunk cap above 8 raise the c>=16 ceiling, and where does it break?
 - Stop condition: if cap 8 is correctness-motivated for this Step35 IQ4_XS + MTP PP2 path, document the receipt and stop without running wider chunks.
 - Discipline: bounded lock holds, N=3 interleaved, no origin push, no rustup, no nsys; raw logs and `research/chunkcap-20260810/RESULTS.md` are the deliverable.

@@ -10,24 +10,16 @@
 //! repeat mean channel `c == h*head_dim + i` IS the (head, dim) pair, so every per-token tensor
 //! stays token-major end to end — there is no analogue of GDN's qkv_to_gdn_repack scatter here.
 //!
-//! PREFILL DISPATCH — SEQUENTIAL SCAN, not the chunked UT transform (deliberate).
-//! `memra_kda_scan_s128` runs prefill and decode alike, which is exactly the shipped
+//! PREFILL DISPATCH — SEQUENTIAL SCAN, not the chunked UT transform (deliberate, this
+//! increment). `memra_kda_scan_s128` runs prefill and decode alike, which is exactly the shipped
 //! GDN arrangement next door: `gdn_scan_s128` IS the default prefill path and the chunked WY
 //! kernels sit behind `MEMRA_GDN_CHUNKED`. One kernel for both also keeps the decode==verify
-//! dispatch identity that cu/hybrid.cu's headers require. A chunked twin exists but is
-//! SHELVED, ATTRIBUTED-NEGATIVE — it is not a pending tuning follow-up. It was built as L3
-//! of the prefill-gap plan (`MEMRA_KDA_CHUNKED`, unmerged branch lane/glm5-kda-chunk-scan),
-//! and the box prefill census then attributed the wall elsewhere: on a cold 4626-token prime
-//! the whole kda family is 221.6 GPU ms of 6598 (3.4%, "confirms L3's ATTRIBUTED-NEGATIVE:
-//! scan ~2.4%") while mla-prefill-attn owns 75.8% — receipts
-//! `research/glm53-flash-bringup-20260827/launch-diet-20260830/WINDOW-20260830.md` §4 and
-//! `box-receipts-20260830/census-analysis.txt`. No A/B is owed on the scan; a revival needs
-//! a new attribution first. The algebra stays banked for that day: it is NOT a transcription
-//! of the GDN K1-K5 chain — KDA's decay is per channel, so the chunk form needs a per-channel
-//! cumulative log gate `Gcum[t][i]` with `k` scaled by `exp(-Gcum)` and `q` by `exp(+Gcum)`
-//! (banked `chunk_kimi_delta_attention` in
-//! research/glm53-flash-bringup-20260827/modular_glm5_next-ref.py), where GDN gets away with
-//! one scalar `G` per (token, head).
+//! dispatch identity that cu/hybrid.cu's headers require. The chunked twin is a tuning-phase
+//! follow-up and is NOT a transcription of the GDN K1-K5 chain: KDA's decay is per channel, so
+//! the chunk algebra needs a per-channel cumulative log gate `Gcum[t][i]` with `k` scaled by
+//! `exp(-Gcum)` and `q` by `exp(+Gcum)` (banked `chunk_kimi_delta_attention` in
+//! research/glm53-flash-bringup-20260827/modular_glm5_next-ref.py), where GDN gets away with one
+//! scalar `G` per (token, head).
 //!
 //! CONV FUSION — fused WEIGHTS and a fused RING, per-plane launches. The checkpoint ships three
 //! per-plane conv weights; they are concatenated once at load into one `[3*qkv, kernel]` f32
@@ -44,17 +36,6 @@ use crate::model::GpuTensor;
 use cudarc::driver::{CudaSlice, LaunchConfig, PushKernelArg};
 use memra_gguf::model_plan::KimiDeltaNetPlan;
 use memra_gguf::source::TensorSource;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-/// Engagement counter for the fused 6-way projection door (`MEMRA_KDA_FUSED_PROJ`), the
-/// grouped-prefill `moe_grouped_prefill_dispatches` precedent: gates and box A/B arms count
-/// dispatches at the arm's own call site instead of inferring engagement from a 200.
-pub static KDA_FUSED6_DISPATCHES: AtomicU64 = AtomicU64::new(0);
-
-/// Same door, BF16 operand arm (`qmatvec_kda6_bf16f32`, lane/glm5-decode-diet lever 3).
-/// Counted separately so a box A/B on the serving recipe (MEMRA_BF16_MMV=1, where the q8 arm
-/// refuses by design) can attribute engagement to the arm that actually ran.
-pub static KDA_FUSED6_BF16_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
 /// The only head width `memra_kda_scan_s128` is instantiated for, and the only one glm5_next
 /// ships (`linear_attn_config.head_dim = 128`).
@@ -90,11 +71,6 @@ pub struct KdaAttnLayer {
     pub a_log: GpuTensor,
     pub dt_bias: GpuTensor,
     pub o_norm: GpuTensor,
-    /// glm5 TP-2 sidecar (`MEMRA_GLM5_TP`, lane/glm5-tp2). `Some` means THIS layer struct is
-    /// the ROOT-RANK HEAD SHARD (heads/2) and the sidecar carries the peer shard + runtime.
-    /// Every plain entry point REFUSES a sharded layer by name — only the TP walk
-    /// (`glm5_tp::kda_tp_*`) may execute it. `None` everywhere else (zero cost, zero change).
-    pub tp: Option<Box<crate::glm5_tp::Glm5TpKda>>,
 }
 
 impl KdaAttnLayer {
@@ -192,7 +168,6 @@ impl KdaAttnLayer {
             a_log: load(p("kda_a_log"))?,
             dt_bias: load(p("kda_dt.bias"))?,
             o_norm: load(p("kda_o_norm.weight"))?,
-            tp: None,
         })
     }
 }
@@ -202,62 +177,9 @@ impl KdaAttnLayer {
 /// values at T=1 (same ascending tap order over the same window) — the split exists so decode
 /// and the spec verify keep one dispatch class, per the cu/hybrid.cu decode==verify law.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ConvArm {
+enum ConvArm {
     Prefill,
     Decode,
-}
-
-/// The scan-input buffers of one KDA step, STOLEN from the step instead of dropped
-/// (lane/glm5-loop-port, port 3 — the module doc's named GdnStash/ReplaySSM diet): the
-/// glm5 verify walk's rollback checkpoint keeps these ~160 KB of already-allocated
-/// buffers per row per layer and retires the per-row 4 MiB recurrent-state clones
-/// (~0.95 GiB transient at K=7). Replaying `kda_scan` over them from a pre-round state
-/// snapshot rebuilds the post-row state EXACTLY: each replay is the ORIGINAL t=1 launch
-/// re-issued — same kernel, same inputs, same shape — so the rebuilt state is
-/// byte-identical to the clone it replaces by construction, not by a numeric argument.
-pub struct KdaScanInputs {
-    pub q: CudaSlice<f32>,
-    pub k: CudaSlice<f32>,
-    pub v: CudaSlice<f32>,
-    pub g: CudaSlice<f32>,
-    pub beta: CudaSlice<f32>,
-}
-
-/// The rollback stash of one BATCHED verify-rows KDA call (lane/glm5-verify-batch): the
-/// per-layer t=K+1 twin of the per-row [`KdaScanInputs`] steal. Everything here is either
-/// stolen from buffers the call allocated anyway (`raws`, `scan` — zero copies) or one
-/// small clone per layer per round (`ring_snap`, `3*qkv*(kernel-1)` floats ~ 96 KiB).
-///
-/// Rollback to `keep` rows rebuilds both state planes EXACTLY:
-///   * conv ring: restore `ring_snap`, then re-issue `kda_conv_ring_roll` per plane over
-///     `raws` at T=keep — the roll is pure placement (no arithmetic), so the rebuilt ring
-///     is the sequential chain's ring after row keep-1 byte-for-byte.
-///   * ssm state: ONE `kda_scan` replay at T=keep from the caller's pre-round snapshot
-///     over the batched `scan` inputs (the kernel walks rows 0..keep of the [t, ..]
-///     buffers) — the in-kernel T-loop IS the chained t=1 program (register-resident
-///     state, identical per-step order), held by the scan-chain bit-gate.
-pub struct KdaRowsStash {
-    /// The fused conv ring BEFORE this call's rolls (one clone per layer per round).
-    pub ring_snap: CudaSlice<f32>,
-    /// RAW (pre-conv) q/k/v projection rows `[t, qkv]`, stolen post-roll (plane order).
-    pub raws: [CudaSlice<f32>; 3],
-    /// Batched scan inputs `[t, ..]`, stolen post-scan.
-    pub scan: KdaScanInputs,
-    /// Row count of the call that filled this stash; rollback validates `keep` against it.
-    pub rows: usize,
-}
-
-/// What a `kda_core` call is asked to leave behind for rollback — and, for `Rows`, which
-/// matmul class the call rides (the decode-exact rows classes, `matmul_rows_exact`).
-pub(crate) enum KdaStash<'a> {
-    /// No rollback stash (prefill / plain decode).
-    None,
-    /// Per-row t=1 steal (loop-port 3, the per-row verify walk).
-    Decode(&'a mut Option<KdaScanInputs>),
-    /// BATCHED verify-rows steal (lane/glm5-verify-batch): scan inputs + raw conv rows +
-    /// a pre-call ring snapshot; every matmul rides `matmul_rows_exact` so each row is
-    /// bit-identical to the t=1 decode program per the decode-exact class contracts.
-    Rows(&'a mut Option<KdaRowsStash>),
 }
 
 /// The whole mixer, stage for stage against `memra_reference::kimi_delta_net`.
@@ -276,78 +198,11 @@ fn kda_core(
     state_in: &CudaSlice<f32>,
     state_out: &mut CudaSlice<f32>,
     arm: ConvArm,
-    stash: KdaStash<'_>,
-    scan_clock: Option<&mut u64>,
-) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    // glm5 TP fail-closed choke point: every plain KDA entry (stateless, prime, decode,
-    // stash — INCLUDING the batched verify-rows walk, `kda_verify_rows_cached`) funnels
-    // through here. A TP-sharded layer holds heads/2 — running it on the plain path would
-    // compute a silently-halved mixer, so it refuses by name instead.
-    if la.tp.is_some() {
-        return Err(format!(
-            "KDA layer is glm5-TP-sharded (MEMRA_GLM5_TP): the plain mixer path is unwired \
-             for a head shard — only the TP decode/prime walk may execute it (t={t}, arm \
-             {})",
-            if arm == ConvArm::Decode {
-                "decode"
-            } else {
-                "prefill"
-            }
-        )
-        .into());
-    }
-    // Verify-batch wo seam (lane/glm5-verify-batch): the rows arm routes the output
-    // projection through the decode-exact classes, exactly like every projection inside
-    // the core — the wo dispatch moved into this wrapper with the TP split, its routing
-    // did not change.
-    let rows_exact = matches!(stash, KdaStash::Rows(_));
-    let gated = kda_core_gated(
-        e, la, x, t, eps, ring, state_in, state_out, arm, stash, scan_clock,
-    )?;
-    if rows_exact {
-        let y = e.matmul_rows_exact(&la.wo, &gated, t);
-        // Door W: gated's last reader was the wo matmul above.
-        e.vws_recycle(gated);
-        y
-    } else {
-        e.matmul(&la.wo, &gated, t)
-    }
-}
-
-/// [`kda_core`] up to (and excluding) the output projection: returns the gated `[t, qkv]`
-/// mixer output. Split out for the glm5 TP-2 seam, whose column-parallel `wo` runs over the
-/// cross-rank GATHERED gated tensor rather than this shard's slice — the plain path is
-/// `kda_core` above, byte-for-byte the pre-split body (the wo matmul and its rows-exact
-/// routing moved, nothing else). This body is the CURRENT doored/batched core: it carries
-/// the `MEMRA_KDA_FUSED_PROJ` door and the verify-batch rows arm; the TP decode/prime walk
-/// calls it with `KdaStash::None`, the spec x TP verify walk (lane/glm5-composition) with
-/// `KdaStash::Rows` per rank, and the TP load preflight refuses the fused-proj door by
-/// name (unproven composition on head shards — see the FLAGS.md composition matrix).
-#[allow(clippy::too_many_arguments)] // mirrors kda_core's own contract-shaped list
-pub(crate) fn kda_core_gated(
-    e: &Engine,
-    la: &KdaAttnLayer,
-    x: &CudaSlice<f32>,
-    t: usize,
-    eps: f32,
-    ring: &mut CudaSlice<f32>,
-    state_in: &CudaSlice<f32>,
-    state_out: &mut CudaSlice<f32>,
-    arm: ConvArm,
-    stash: KdaStash<'_>,
-    mut scan_clock: Option<&mut u64>,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
     let heads = la.heads();
     let head_dim = la.head_dim();
     let qkv = la.qkv();
     let kernel = la.conv_kernel();
-    // The BATCHED verify-rows arm (lane/glm5-verify-batch): prefill conv dispatch (per-row
-    // bit-identical to the decode arm — same ascending taps over the same window values,
-    // held by the conv-arm bit-gate) + decode-exact matmul classes + the rows stash.
-    let rows_exact = matches!(stash, KdaStash::Rows(_));
-    if rows_exact && arm != ConvArm::Prefill {
-        return Err("KDA rows stash requires the prefill conv arm".into());
-    }
     if arm == ConvArm::Decode && t != 1 {
         return Err(format!("KDA decode arm requires t == 1, got {t}").into());
     }
@@ -371,29 +226,11 @@ pub(crate) fn kda_core_gated(
 
     // Stage 1 — the six projections that read x directly. f_b/g_b are chained off their own
     // down-projections below, exactly as the reference nests them.
-    //
-    // MEMRA_KDA_FUSED_PROJ=1 (default OFF): the six matvec calls collapse to one quantize +
-    // one `qmatvec_kda6_q8f32_mmvq` launch — the program shape both vLLM and SGLang ship for
-    // this trunk (ENGINE-SURVEY.md C1) and the step37 QKV_FUSED transfer (TRANSFER-MAP lever 1).
-    // `kda_proj_fused6` refuses (returns None) on any operand/env shape where its bit-identity
-    // claim would not hold, so the fall-through arm is always the unchanged program.
-    let mut g6 = match e.kda_proj_fused6(la, x, t)? {
-        Some(outs) => outs,
-        None if rows_exact => {
-            // Verify-rows matmul class: per-weight decode-exact dispatch (the tcols /
-            // batched-MMVQ / per-token-linear classes — each row bit-identical to the
-            // t=1 program by the matmul_rows_exact contract).
-            [&la.wq, &la.wk, &la.wv, &la.f_a, &la.g_a, &la.b_proj]
-                .into_iter()
-                .map(|w| e.matmul_rows_exact(w, x, t))
-                .collect::<Result<Vec<_>, _>>()?
-        }
-        None => e.matmul_group(
-            &[&la.wq, &la.wk, &la.wv, &la.f_a, &la.g_a, &la.b_proj],
-            x,
-            t,
-        )?,
-    };
+    let mut g6 = e.matmul_group(
+        &[&la.wq, &la.wk, &la.wv, &la.f_a, &la.g_a, &la.b_proj],
+        x,
+        t,
+    )?;
     let beta_raw = g6.pop().unwrap(); // [T, heads]
     let gate_down = g6.pop().unwrap(); // [T, head_dim]
     let forget_down = g6.pop().unwrap(); // [T, head_dim]
@@ -401,36 +238,11 @@ pub(crate) fn kda_core_gated(
     let k_raw = g6.pop().unwrap();
     let q_raw = g6.pop().unwrap();
 
-    // Rows stash: snapshot the ring BEFORE the rolls mutate it (one ~96 KiB clone per
-    // layer per round — the rollback's re-roll base). Door W: on the rows arm the snapshot
-    // (and every scratch below) is a pooled draw — vws_uninit == alloc_uninit with the
-    // door off, and the non-rows arms keep the plain allocs untouched.
-    let ring_snap = match &stash {
-        KdaStash::Rows(_) => {
-            let mut snap = e.vws_uninit(ring.len())?;
-            e.dtod_copy_into(ring, &mut snap, 0)?;
-            Some(snap)
-        }
-        _ => None,
-    };
-
     // Stage 2 — per-plane causal short conv + SiLU. Planes are ordered q, k, v in both the fused
     // weight buffer and the fused ring, which is the order the reference stores conv_state in.
-    let mut q_conv = if rows_exact {
-        e.vws_uninit(t * qkv)?
-    } else {
-        e.uninit(t * qkv)?
-    };
-    let mut k_conv = if rows_exact {
-        e.vws_uninit(t * qkv)?
-    } else {
-        e.uninit(t * qkv)?
-    };
-    let mut v_conv = if rows_exact {
-        e.vws_uninit(t * qkv)?
-    } else {
-        e.uninit(t * qkv)?
-    };
+    let mut q_conv = e.uninit(t * qkv)?;
+    let mut k_conv = e.uninit(t * qkv)?;
+    let mut v_conv = e.uninit(t * qkv)?;
     for (plane, (raw, out)) in [
         (&q_raw, &mut q_conv),
         (&k_raw, &mut k_conv),
@@ -456,36 +268,15 @@ pub(crate) fn kda_core_gated(
 
     // Stage 3 — q/k L2 norm over head_dim (eps INSIDE the sqrt, fixed 1e-6). Rows of the
     // token-major layout are contiguous head_dim runs, so no repack is needed.
-    let mut q_l2 = if rows_exact {
-        e.vws_uninit(t * qkv)?
-    } else {
-        e.uninit(t * qkv)?
-    };
-    let mut k_l2 = if rows_exact {
-        e.vws_uninit(t * qkv)?
-    } else {
-        e.uninit(t * qkv)?
-    };
+    let mut q_l2 = e.uninit(t * qkv)?;
+    let mut k_l2 = e.uninit(t * qkv)?;
     e.l2_norm(&q_conv, &mut q_l2, head_dim, t * heads, KDA_L2_EPS)?;
     e.l2_norm(&k_conv, &mut k_l2, head_dim, t * heads, KDA_L2_EPS)?;
-    // Door W: the convs' last readers were the l2 norms (the ring rolls read the raws).
-    if rows_exact {
-        e.vws_recycle(q_conv);
-        e.vws_recycle(k_conv);
-    }
 
     // Stage 4 — gates. forget: g = lower_bound * sigmoid(exp(A_log[h]) * (f_b(f_a(x)) + dt_bias)),
     // emitted RAW (the scan applies expf). beta: per-head sigmoid of its own projection.
-    let forget = if rows_exact {
-        e.matmul_rows_exact(&la.f_b, &forget_down, t)?
-    } else {
-        e.matmul(&la.f_b, &forget_down, t)?
-    };
-    let mut g_log = if rows_exact {
-        e.vws_uninit(t * qkv)?
-    } else {
-        e.uninit(t * qkv)?
-    };
+    let forget = e.matmul(&la.f_b, &forget_down, t)?;
+    let mut g_log = e.uninit(t * qkv)?;
     e.kda_gate(
         &forget,
         la.dt_bias.float_data(),
@@ -496,57 +287,21 @@ pub(crate) fn kda_core_gated(
         head_dim,
         la.plan.gate_lower_bound,
     )?;
-    let mut beta = if rows_exact {
-        e.vws_uninit(t * heads)?
-    } else {
-        e.uninit(t * heads)?
-    };
+    let mut beta = e.uninit(t * heads)?;
     e.sigmoid(&beta_raw, &mut beta, t * heads)?;
-    // Door W: forget_down's last reader was the f_b matmul, forget's the gate kernel,
-    // beta_raw's the sigmoid.
-    if rows_exact {
-        e.vws_recycle(forget_down);
-        e.vws_recycle(forget);
-        e.vws_recycle(beta_raw);
-    }
 
     // Stage 5 — the delta-rule recurrence. `scale` carries the reference's head_dim^-0.5 query
     // scale: q feeds only the readout, never the state, so scaling the readout is exact.
-    // At t > 1 the kernel walks the T steps IN-KERNEL over register-resident state — the
-    // sequential chain preserved inside ONE launch (chained-t=1 identity by construction,
-    // held by the scan-chain bit-gate). `scan_clock` is the trace-level-2 instrument: it
-    // drains the stream around the launch so the sequential-class share lands in its own
-    // bucket (shares, never walls).
     let scale = 1.0 / (head_dim as f32).sqrt();
-    let mut core = if rows_exact {
-        e.vws_uninit(t * qkv)?
-    } else {
-        e.uninit(t * qkv)?
-    };
-    let scan_t0 = scan_clock.as_ref().map(|_| {
-        let _ = e.stream().synchronize();
-        std::time::Instant::now()
-    });
+    let mut core = e.uninit(t * qkv)?;
     e.kda_scan(
         &q_l2, &k_l2, &v_conv, &g_log, &beta, state_in, state_out, &mut core, heads, t, scale,
     )?;
-    if let (Some(ns), Some(t0)) = (scan_clock.take(), scan_t0) {
-        let _ = e.stream().synchronize();
-        *ns += t0.elapsed().as_nanos() as u64;
-    }
 
     // Stage 6 — sigmoid-gated RMSNorm over head_dim (layer rms eps here, NOT the l2 eps), then
     // the output projection.
-    let gate = if rows_exact {
-        e.matmul_rows_exact(&la.g_b, &gate_down, t)?
-    } else {
-        e.matmul(&la.g_b, &gate_down, t)?
-    };
-    let mut gated = if rows_exact {
-        e.vws_uninit(t * qkv)?
-    } else {
-        e.uninit(t * qkv)?
-    };
+    let gate = e.matmul(&la.g_b, &gate_down, t)?;
+    let mut gated = e.uninit(t * qkv)?;
     e.kda_gated_rmsnorm(
         &core,
         la.o_norm.float_data(),
@@ -556,56 +311,7 @@ pub(crate) fn kda_core_gated(
         t * heads,
         eps,
     )?;
-    // Door W: gate_down's last reader was the g_b matmul; core's and gate's the
-    // gated-rmsnorm above.
-    if rows_exact {
-        e.vws_recycle(gate_down);
-        e.vws_recycle(gate);
-        e.vws_recycle(core);
-    }
-    // Steal the scan/conv inputs for the caller's rollback stash: stage 5 has consumed
-    // the scan inputs and the rolls were the raws' last readers — moving them out is
-    // free (no copy, no launch; the buffers were allocated this call either way).
-    match stash {
-        KdaStash::None => {}
-        KdaStash::Decode(s) => {
-            *s = Some(KdaScanInputs {
-                q: q_l2,
-                k: k_l2,
-                v: v_conv,
-                g: g_log,
-                beta,
-            });
-        }
-        KdaStash::Rows(s) => {
-            // Door W: the PREVIOUS round's stash dies here — its nine buffers restock
-            // the pool instead of falling to nine async frees (per layer per round).
-            if let Some(old) = s.take() {
-                e.vws_recycle(old.ring_snap);
-                for r in old.raws {
-                    e.vws_recycle(r);
-                }
-                e.vws_recycle(old.scan.q);
-                e.vws_recycle(old.scan.k);
-                e.vws_recycle(old.scan.v);
-                e.vws_recycle(old.scan.g);
-                e.vws_recycle(old.scan.beta);
-            }
-            *s = Some(KdaRowsStash {
-                ring_snap: ring_snap.expect("rows arm snapshotted the ring above"),
-                raws: [q_raw, k_raw, v_raw],
-                scan: KdaScanInputs {
-                    q: q_l2,
-                    k: k_l2,
-                    v: v_conv,
-                    g: g_log,
-                    beta,
-                },
-                rows: t,
-            });
-        }
-    }
-    Ok(gated)
+    e.matmul(&la.wo, &gated, t)
 }
 
 /// STATELESS prefill from a zero conv ring and a zero recurrent state — the arm the logits-only
@@ -630,8 +336,6 @@ pub fn kda_attn(
         &state_in,
         &mut state_out,
         ConvArm::Prefill,
-        KdaStash::None,
-        None,
     )
 }
 
@@ -658,8 +362,6 @@ pub fn kda_attn_prime(
         state_in,
         state_out,
         ConvArm::Prefill,
-        KdaStash::None,
-        None,
     )
 }
 
@@ -674,19 +376,7 @@ pub fn kda_attn_decode(
     state_in: &CudaSlice<f32>,
     state_out: &mut CudaSlice<f32>,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    kda_core(
-        e,
-        la,
-        x,
-        1,
-        eps,
-        ring,
-        state_in,
-        state_out,
-        ConvArm::Decode,
-        KdaStash::None,
-        None,
-    )
+    kda_core(e, la, x, 1, eps, ring, state_in, state_out, ConvArm::Decode)
 }
 
 /// Stateful KDA against the shared recurrent-state carrier, in the eager GDN discipline: the
@@ -705,8 +395,6 @@ fn kda_cached(
     cache: &mut Cache,
     il: usize,
     arm: ConvArm,
-    stash: KdaStash<'_>,
-    scan_clock: Option<&mut u64>,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
     let rl = cache.recur[il].as_mut().ok_or_else(|| {
         format!(
@@ -720,19 +408,7 @@ fn kda_cached(
             ssm_state,
             ssm_state_alt,
         } = rl;
-        kda_core(
-            e,
-            la,
-            x,
-            t,
-            eps,
-            conv_state,
-            ssm_state,
-            ssm_state_alt,
-            arm,
-            stash,
-            scan_clock,
-        )?
+        kda_core(e, la, x, t, eps, conv_state, ssm_state, ssm_state_alt, arm)?
     };
     std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
     Ok(out)
@@ -748,18 +424,7 @@ pub fn kda_prime_cached(
     cache: &mut Cache,
     il: usize,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    kda_cached(
-        e,
-        la,
-        x,
-        t,
-        eps,
-        cache,
-        il,
-        ConvArm::Prefill,
-        KdaStash::None,
-        None,
-    )
+    kda_cached(e, la, x, t, eps, cache, il, ConvArm::Prefill)
 }
 
 /// One decode step through the cache's KDA state for layer `il`.
@@ -771,242 +436,7 @@ pub fn kda_decode_cached(
     cache: &mut Cache,
     il: usize,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    kda_cached(
-        e,
-        la,
-        x,
-        1,
-        eps,
-        cache,
-        il,
-        ConvArm::Decode,
-        KdaStash::None,
-        None,
-    )
-}
-
-/// [`kda_decode_cached`] with the step's scan inputs STOLEN for a rollback stash
-/// (loop-port 3; doc on [`KdaScanInputs`]). Identical launches — the steal is a move of
-/// buffers the step allocated either way.
-pub fn kda_decode_cached_stash(
-    e: &Engine,
-    la: &KdaAttnLayer,
-    x: &CudaSlice<f32>,
-    eps: f32,
-    cache: &mut Cache,
-    il: usize,
-) -> Result<(CudaSlice<f32>, KdaScanInputs), Box<dyn std::error::Error>> {
-    let mut stash: Option<KdaScanInputs> = None;
-    let out = kda_cached(
-        e,
-        la,
-        x,
-        1,
-        eps,
-        cache,
-        il,
-        ConvArm::Decode,
-        KdaStash::Decode(&mut stash),
-        None,
-    )?;
-    let stash = stash.ok_or("kda_core returned without filling the requested scan stash")?;
-    Ok((out, stash))
-}
-
-/// THE BATCHED VERIFY-ROWS KDA CALL (lane/glm5-verify-batch): one t=K+1 `kda_core` pass
-/// per layer per round, replacing t per-row [`kda_decode_cached_stash`] calls. Projections,
-/// gates and norms batch m=t through the decode-exact matmul classes (`matmul_rows_exact`);
-/// the conv takes the prefill dispatch (per-token bit-identical to the decode arm's taps);
-/// the recurrence stays SEQUENTIAL inside one `memra_kda_scan_s128` launch (the in-kernel
-/// T-loop over register-resident state == the chained t=1 program). Per-row bit-identity
-/// vs the t=1 chain is held by the walk gates (`glm5_tparallel_verify_gpu`) and the
-/// kernel bit-gates (`glm5_verify_batch_gpu`).
-///
-/// The caller owns the pre-round ssm snapshot (`Glm5VerifyCkpt::kda_ssm_snap`, cloned
-/// BEFORE this call); the returned [`KdaRowsStash`] carries everything else rollback
-/// needs. `scan_clock`: the trace-level-2 sequential-class bucket (ns accumulated around
-/// the scan launch with stream drains — an instrument, never a serving mode).
-#[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kda_cached call contract plus the trace clock
-pub fn kda_verify_rows_cached(
-    e: &Engine,
-    la: &KdaAttnLayer,
-    x: &CudaSlice<f32>,
-    t: usize,
-    eps: f32,
-    cache: &mut Cache,
-    il: usize,
-    scan_clock: Option<&mut u64>,
-) -> Result<(CudaSlice<f32>, KdaRowsStash), Box<dyn std::error::Error>> {
-    let mut stash: Option<KdaRowsStash> = None;
-    let out = kda_cached(
-        e,
-        la,
-        x,
-        t,
-        eps,
-        cache,
-        il,
-        ConvArm::Prefill,
-        KdaStash::Rows(&mut stash),
-        scan_clock,
-    )?;
-    let stash = stash.ok_or("kda_core returned without filling the requested rows stash")?;
-    Ok((out, stash))
-}
-
-/// Roll layer `il` back to "after row `keep-1`" from a BATCHED verify-rows round
-/// (lane/glm5-verify-batch; the [`KdaRowsStash`] doc states the two-plane contract):
-/// restore the pre-round conv ring and re-roll `keep` raw rows (pure placement), then
-/// replay the scan ONCE at T=keep from the pre-round ssm snapshot over the batched
-/// inputs. Full accept (`keep == rows`) never calls this — the resident state IS the
-/// state after the last kept row.
-pub fn kda_verify_rollback_rows(
-    e: &Engine,
-    la: &KdaAttnLayer,
-    snap: &CudaSlice<f32>,
-    stash: &KdaRowsStash,
-    keep: usize,
-    cache: &mut Cache,
-    il: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let rl = cache.recur[il]
-        .as_mut()
-        .ok_or_else(|| format!("blk.{il}: KDA rows rollback on a layer with no recurrent state"))?;
-    kda_verify_rollback_rows_on(e, la, snap, stash, keep, rl, il)
-}
-
-/// [`kda_verify_rollback_rows`] over a CALLER-OWNED state plane — the glm5 spec x TP seam
-/// (lane/glm5-composition): under `MEMRA_GLM5_TP` each rank's shard-geometry conv ring +
-/// ssm ping-pong lives in `cache.glm5_tp_recur[il][rank]` on that rank's engine, so the
-/// rollback restores per rank through this entry with the rank's own `(engine, shard,
-/// snapshot, stash)` tuple. The cache wrapper above delegates here — one body, byte-for-byte
-/// the pre-refactor walk on the plain path.
-pub fn kda_verify_rollback_rows_on(
-    e: &Engine,
-    la: &KdaAttnLayer,
-    snap: &CudaSlice<f32>,
-    stash: &KdaRowsStash,
-    keep: usize,
-    rl: &mut RecurLayer,
-    il: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if keep == 0 || keep >= stash.rows {
-        return Err(format!(
-            "blk.{il}: KDA rows rollback keep={keep} outside 1..{} (full accept keeps the \
-             resident state and never replays)",
-            stash.rows
-        )
-        .into());
-    }
-    let qkv = la.qkv();
-    let kernel = la.conv_kernel();
-    let heads = la.heads();
-    let scale = 1.0 / (la.head_dim() as f32).sqrt();
-    // Conv ring: pre-round snapshot back, then re-roll the kept raw rows per plane. The
-    // roll kernel reads every old slot into registers before any store, so T=keep < pad
-    // mixes snapshot slots and kept rows exactly as the sequential chain's rolls did.
-    e.copy_into(
-        &mut rl.conv_state,
-        0,
-        &stash.ring_snap,
-        stash.ring_snap.len(),
-    )?;
-    for (plane, raw) in stash.raws.iter().enumerate() {
-        e.kda_conv_ring_roll(raw, &mut rl.conv_state, qkv, keep, kernel, plane)?;
-    }
-    // Recurrent state: ONE T=keep replay from the snapshot over the batched scan inputs
-    // (the kernel walks rows 0..keep of the [t, ..] buffers); readout discarded. The
-    // ping-pong ends with the rebuilt state under the `ssm_state` name, matching
-    // `kda_cached`'s swap discipline.
-    let mut o = e.uninit(keep * qkv)?;
-    {
-        let RecurLayer {
-            ssm_state: _,
-            ssm_state_alt,
-            ..
-        } = rl;
-        e.kda_scan(
-            &stash.scan.q,
-            &stash.scan.k,
-            &stash.scan.v,
-            &stash.scan.g,
-            &stash.scan.beta,
-            snap,
-            ssm_state_alt,
-            &mut o,
-            heads,
-            keep,
-            scale,
-        )?;
-    }
-    std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
-    Ok(())
-}
-
-/// Rebuild layer `il`'s recurrent state to "after row `inputs.len()-1`" by REPLAYING the
-/// stashed scan inputs from the pre-round snapshot `snap` (loop-port 3, the module-doc
-/// diet made concrete): each replay is the original t=1 `memra_kda_scan_s128` launch
-/// re-issued over the very buffers that step consumed, so the rebuilt state is
-/// byte-identical to the per-row clone it replaces BY CONSTRUCTION. The readout is
-/// discarded; the conv ring is not touched (the walk still clones it per row — 288 KiB
-/// against the 4 MiB ssm plane this retires). The ping-pong rides the resident pair and
-/// ends with the rebuilt state under the `ssm_state` name, matching `kda_cached`'s own
-/// swap discipline.
-pub fn kda_scan_replay(
-    e: &Engine,
-    la: &KdaAttnLayer,
-    snap: &CudaSlice<f32>,
-    inputs: &[KdaScanInputs],
-    cache: &mut Cache,
-    il: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if inputs.is_empty() {
-        return Err(format!(
-            "blk.{il}: KDA replay needs at least one stashed row (rollback keep >= 1; a \
-             restore TO the snapshot itself is a different contract)"
-        )
-        .into());
-    }
-    if la.tp.is_some() {
-        return Err(format!(
-            "blk.{il}: KDA scan replay (the PER-ROW rollback seam) is unwired for a \
-             glm5-TP-sharded layer — the spec x TP composition requires the BATCHED \
-             verify walk, whose rollback rides kda_verify_rollback_rows_on per rank"
-        )
-        .into());
-    }
-    let heads = la.heads();
-    let scale = 1.0 / (la.head_dim() as f32).sqrt();
-    let qkv = la.qkv();
-    let rl = cache.recur[il]
-        .as_mut()
-        .ok_or_else(|| format!("blk.{il}: KDA replay on a layer with no recurrent state"))?;
-    let mut o = e.uninit(qkv)?; // discarded readout scratch, reused across rows
-    for (r, inp) in inputs.iter().enumerate() {
-        {
-            let RecurLayer {
-                ssm_state,
-                ssm_state_alt,
-                ..
-            } = rl;
-            let state_in: &CudaSlice<f32> = if r == 0 { snap } else { ssm_state };
-            e.kda_scan(
-                &inp.q,
-                &inp.k,
-                &inp.v,
-                &inp.g,
-                &inp.beta,
-                state_in,
-                ssm_state_alt,
-                &mut o,
-                heads,
-                1,
-                scale,
-            )?;
-        }
-        std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
-    }
-    Ok(())
+    kda_cached(e, la, x, 1, eps, cache, il, ConvArm::Decode)
 }
 
 impl Engine {
@@ -1209,418 +639,6 @@ impl Engine {
             .arg(&mut *dst)
             .arg(&nc)
             .arg(&ep);
-        unsafe { b.launch(cfg)? };
-        Ok(())
-    }
-
-    /// The `MEMRA_KDA_FUSED_PROJ` door: run the KDA stage-1 six-projection group as ONE
-    /// `quantize_q8_1` + ONE `qmatvec_kda6_q8f32_mmvq` launch, or return `None` and let the
-    /// caller take the unchanged `matmul_group` arm.
-    ///
-    /// ENGAGEMENT IS DELIBERATELY NARROW — every condition below exists so the door's numeric
-    /// claim stays exactly what the gate proves (`tests/kda_fused_proj_gpu.rs`):
-    ///  * wq/wk/wv must be plain-layout Q8_0 (`rp: false`, no `rp4` mirror, `scale == 1.0`) —
-    ///    the fused kernel's per-(token,row) body is `qmatvec_q8_0_mmvq` VERBATIM, so those
-    ///    rows are BIT-IDENTICAL to the unfused MMVQ/batched arm; a repacked layout would ride
-    ///    the `_rp` twins instead and the claim would be against the wrong kernel.
-    ///  * f_a/g_a/b_proj must be f32 `Float` — their fused rows replace cuBLASLt with a
-    ///    deterministic warp tree: a reduction-order class change (the step37 QKV_FUSED class),
-    ///    measured and pinned in the gate.
-    ///  * t in 1..=15 (the batch cap), and the env classes under which the UNFUSED arm rides
-    ///    the MMVQ-class per-row program: `MEMRA_FAST!=0`, `mmvq_supports(Q8_0)`,
-    ///    `MEMRA_NO_BATCHED` unset for t>=2, `MEMRA_B8!=0` for t>=5. Outside those envs the
-    ///    unfused arm is a different kernel class (dp4a / Stage-A), so the door refuses rather
-    ///    than weakening its identity claim.
-    ///
-    /// The flag is read PER CALL (the `MEMRA_MOE_FUSED_EPI` rollback-seam precedent), so both
-    /// arms alternate inside one process. Output order matches `matmul_group`'s:
-    /// `[q, k, v, forget_down, gate_down, beta_raw]`.
-    pub fn kda_proj_fused6(
-        &self,
-        la: &KdaAttnLayer,
-        x: &CudaSlice<f32>,
-        t: usize,
-    ) -> Result<Option<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
-        if std::env::var("MEMRA_KDA_FUSED_PROJ").as_deref() != Ok("1") {
-            return Ok(None);
-        }
-        // glm5 TP composition guard (#82 review): the load preflight refuses this door at
-        // ARM time, but the flag is read PER CALL — a post-load `set` would otherwise
-        // engage the fused six-projection group on head shards inside the TP walk, an
-        // unproven composition (the door's gate ran on full-width projections). A shard
-        // declines here and takes the caller's unchanged arm, announced once.
-        if la.tp.is_some() {
-            static TP_F6_DECLINE: std::sync::Once = std::sync::Once::new();
-            TP_F6_DECLINE.call_once(|| {
-                eprintln!(
-                    "[kda-fused-proj] DECLINED on a glm5-TP head shard: the door is gated \
-                     on full-width projections (the load preflight refuses the pair; this \
-                     is the per-call twin for a post-load flag set)"
-                );
-            });
-            return Ok(None);
-        }
-        if !(1..=15).contains(&t) {
-            return Ok(None);
-        }
-        // The f32 trio is common to both operand arms. Any mismatch = refuse; the caller's
-        // arm is the shipped program.
-        let f32w = |w: &GpuTensor| -> Option<usize> {
-            match w {
-                GpuTensor::Float { .. } => Some(w.in_features()),
-                _ => None,
-            }
-        };
-        let (Some(in_fa), Some(in_ga), Some(in_b)) =
-            (f32w(&la.f_a), f32w(&la.g_a), f32w(&la.b_proj))
-        else {
-            return Ok(None);
-        };
-        // BF16 operand arm (lever 3 of the decode diet): the serving recipe (MEMRA_BF16_MMV=1)
-        // admits wq/wk/wv to raw bf16 residency, where the Q8_0 arm below never binds. Its
-        // bit-identity bar is against `matvec_bf16_f32acc_x4_rows` (matmul's FloatBf16
-        // decode-tier arm), so it refuses wherever that arm would not be the unfused program:
-        // MEMRA_BF16_MMV off (the chunked cuBLASLt GEMM class), or the W8 mirror doors on
-        // (matvec_bf16_rows_into reroutes through the q8 mirror when BOTH are set).
-        let bf16 = |w: &GpuTensor| -> Option<usize> {
-            match w {
-                GpuTensor::FloatBf16 { .. } => Some(w.in_features()),
-                _ => None,
-            }
-        };
-        if let (Some(in_q), Some(in_k), Some(in_v)) = (bf16(&la.wq), bf16(&la.wk), bf16(&la.wv)) {
-            if !Self::bf16_mmv_on() || (crate::step_tp_w8_on() && crate::w8_hybrid_on()) {
-                return Ok(None);
-            }
-            let in_f = in_q;
-            if [in_k, in_v, in_fa, in_ga, in_b].iter().any(|&i| i != in_f)
-                || !in_f.is_multiple_of(128)
-                || x.len() < t * in_f
-            {
-                return Ok(None);
-            }
-            let dims = [
-                la.wq.out_features(),
-                la.wk.out_features(),
-                la.wv.out_features(),
-                la.f_a.out_features(),
-                la.g_a.out_features(),
-                la.b_proj.out_features(),
-            ];
-            let (
-                GpuTensor::FloatBf16 { data: bq, .. },
-                GpuTensor::FloatBf16 { data: bk, .. },
-                GpuTensor::FloatBf16 { data: bv, .. },
-            ) = (&la.wq, &la.wk, &la.wv)
-            else {
-                unreachable!("bf16() above only admits FloatBf16");
-            };
-            let (
-                GpuTensor::Float { data: wfa, .. },
-                GpuTensor::Float { data: wga, .. },
-                GpuTensor::Float { data: wb, .. },
-            ) = (&la.f_a, &la.g_a, &la.b_proj)
-            else {
-                unreachable!("f32w() above only admits Float");
-            };
-            let mut outs = [
-                self.uninit(t * dims[0])?,
-                self.uninit(t * dims[1])?,
-                self.uninit(t * dims[2])?,
-                self.uninit(t * dims[3])?,
-                self.uninit(t * dims[4])?,
-                self.uninit(t * dims[5])?,
-            ];
-            self.kda_proj_fused6_bf16_raw(bq, bk, bv, wfa, wga, wb, x, &mut outs, in_f, dims, t)?;
-            if KDA_FUSED6_BF16_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
-                eprintln!(
-                    "[kda-fused6] engaged arm=bf16 in_f={in_f} out={dims:?} t={t} (one launch \
-                     replaces the six-projection group on the bf16-resident serving recipe; \
-                     MEMRA_KDA_FUSED_PROJ=1)"
-                );
-            }
-            return Ok(Some(outs.into_iter().collect()));
-        }
-        // Dispatch-class envs: the bit-identity bar is against the MMVQ-class per-row program.
-        if std::env::var("MEMRA_FAST").as_deref() == Ok("0")
-            || !self.mmvq_supports(crate::QT_Q8_0)
-            || (t >= 2 && std::env::var("MEMRA_NO_BATCHED").is_ok())
-            || (t >= 5 && !Self::b8_enabled())
-        {
-            return Ok(None);
-        }
-        // Q8_0 operand classes (the non-BF16_MMV shapes).
-        let q8 = |w: &GpuTensor| -> Option<(usize, usize)> {
-            match w {
-                GpuTensor::Quant {
-                    qtype: crate::QT_Q8_0,
-                    row_bytes,
-                    scale,
-                    rp: false,
-                    rp4: None,
-                    ..
-                } if *scale == 1.0 => Some((w.in_features(), *row_bytes)),
-                _ => None,
-            }
-        };
-        let (Some((in_q, rb_q)), Some((in_k, rb_k)), Some((in_v, rb_v))) =
-            (q8(&la.wq), q8(&la.wk), q8(&la.wv))
-        else {
-            return Ok(None);
-        };
-        let in_f = in_q;
-        if [in_k, in_v, in_fa, in_ga, in_b].iter().any(|&i| i != in_f)
-            || rb_k != rb_q
-            || rb_v != rb_q
-            || !in_f.is_multiple_of(128)
-            || x.len() < t * in_f
-        {
-            return Ok(None);
-        }
-        let dims = [
-            la.wq.out_features(),
-            la.wk.out_features(),
-            la.wv.out_features(),
-            la.f_a.out_features(),
-            la.g_a.out_features(),
-            la.b_proj.out_features(),
-        ];
-        let (
-            GpuTensor::Quant { bytes: bq, .. },
-            GpuTensor::Quant { bytes: bk, .. },
-            GpuTensor::Quant { bytes: bv, .. },
-        ) = (&la.wq, &la.wk, &la.wv)
-        else {
-            unreachable!("q8() above only admits Quant");
-        };
-        let (
-            GpuTensor::Float { data: wfa, .. },
-            GpuTensor::Float { data: wga, .. },
-            GpuTensor::Float { data: wb, .. },
-        ) = (&la.f_a, &la.g_a, &la.b_proj)
-        else {
-            unreachable!("f32w() above only admits Float");
-        };
-
-        let (aq, ad) = self.quantize_q8_1(x, t, in_f)?;
-        let mut outs = [
-            self.uninit(t * dims[0])?,
-            self.uninit(t * dims[1])?,
-            self.uninit(t * dims[2])?,
-            self.uninit(t * dims[3])?,
-            self.uninit(t * dims[4])?,
-            self.uninit(t * dims[5])?,
-        ];
-        self.kda_proj_fused6_raw(
-            bq, bk, bv, wfa, wga, wb, &aq, &ad, x, &mut outs, in_f, dims, t, rb_q,
-        )?;
-
-        // Engagement receipt: counted at the arm's own call site, announced once per boot
-        // (the [bf16-mmv] RESIDENT lesson: engagement lines are receipts, never inferred).
-        if KDA_FUSED6_DISPATCHES.fetch_add(1, Ordering::Relaxed) == 0 {
-            eprintln!(
-                "[kda-fused6] engaged in_f={in_f} out={dims:?} t={t} (one launch replaces the \
-                 six-projection group; MEMRA_KDA_FUSED_PROJ=1)"
-            );
-        }
-        Ok(Some(outs.into_iter().collect()))
-    }
-
-    /// The raw fused-6 launch (`qmatvec_kda6_q8f32_mmvq`): three Q8_0 weights + three f32
-    /// weights, one q8_1 activation pair + the raw f32 activation, six outputs, t token rows.
-    /// Geometry-checked but POLICY-FREE: the gate's red arms drive mutations (transposed slice
-    /// data, dropped ranges via `dims[i] = 0`) through this entry, so the mutation reaches the
-    /// exact program the door serves.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    pub fn kda_proj_fused6_raw(
-        &self,
-        wq: &CudaSlice<u8>,
-        wk: &CudaSlice<u8>,
-        wv: &CudaSlice<u8>,
-        wfa: &CudaSlice<f32>,
-        wga: &CudaSlice<f32>,
-        wb: &CudaSlice<f32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        x: &CudaSlice<f32>,
-        outs: &mut [CudaSlice<f32>; 6],
-        in_f: usize,
-        dims: [usize; 6],
-        t: usize,
-        row_bytes: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        const ROWS_PER_BLOCK: usize = 4; // MEMRA_MMVQ_ROWS in qmatvec.cu
-        if t == 0
-            || !in_f.is_multiple_of(128)
-            || x.len() < t * in_f
-            || aq.len() < t * in_f
-            || ad.len() < t * (in_f / 32)
-        {
-            return Err("kda_proj_fused6 geometry".into());
-        }
-        for (i, (w, want_rows)) in [(wq, dims[0]), (wk, dims[1]), (wv, dims[2])]
-            .into_iter()
-            .enumerate()
-        {
-            if w.len() < want_rows * row_bytes {
-                return Err(format!(
-                    "kda_proj_fused6: q8 weight {i} holds {} bytes, needs {}",
-                    w.len(),
-                    want_rows * row_bytes
-                )
-                .into());
-            }
-        }
-        for (i, (w, want_rows)) in [(wfa, dims[3]), (wga, dims[4]), (wb, dims[5])]
-            .into_iter()
-            .enumerate()
-        {
-            if w.len() < want_rows * in_f {
-                return Err(format!(
-                    "kda_proj_fused6: f32 weight {} holds {} floats, needs {}",
-                    i + 3,
-                    w.len(),
-                    want_rows * in_f
-                )
-                .into());
-            }
-        }
-        for (i, (o, want)) in outs.iter().zip(dims).enumerate() {
-            if o.len() < t * want {
-                return Err(format!("kda_proj_fused6: output {i} too small").into());
-            }
-        }
-        let blocks: usize = dims.iter().map(|d| d.div_ceil(ROWS_PER_BLOCK)).sum();
-        let f = self.func("qmatvec_kda6_q8f32_mmvq");
-        let cfg = LaunchConfig {
-            grid_dim: (blocks as u32, t as u32, 1),
-            block_dim: (32, ROWS_PER_BLOCK as u32, 1),
-            shared_mem_bytes: 0,
-        };
-        let inf = in_f as i32;
-        let d = dims.map(|v| v as i32);
-        let (mi, rb) = (t as i32, row_bytes as i64);
-        let [o0, o1, o2, o3, o4, o5] = outs;
-        let stream = self.gpu.stream();
-        let mut b = stream.launch_builder(&f);
-        b.arg(wq)
-            .arg(wk)
-            .arg(wv)
-            .arg(wfa)
-            .arg(wga)
-            .arg(wb)
-            .arg(aq)
-            .arg(ad)
-            .arg(x)
-            .arg(&mut *o0)
-            .arg(&mut *o1)
-            .arg(&mut *o2)
-            .arg(&mut *o3)
-            .arg(&mut *o4)
-            .arg(&mut *o5)
-            .arg(&inf)
-            .arg(&d[0])
-            .arg(&d[1])
-            .arg(&d[2])
-            .arg(&d[3])
-            .arg(&d[4])
-            .arg(&d[5])
-            .arg(&mi)
-            .arg(&rb);
-        unsafe { b.launch(cfg)? };
-        Ok(())
-    }
-
-    /// The raw BF16-arm fused-6 launch (`qmatvec_kda6_bf16f32`): three bf16-resident weights
-    /// (raw checkpoint u16 bytes, the `admit=bf16_mmv` residency) + three f32 weights, one raw
-    /// f32 activation, six outputs, t token rows. Block = `mmv_block()` — the SAME blockDim
-    /// `matvec_bf16_rows_into` pins, because the bf16 body's shared-tree reduction shape (and
-    /// therefore its bits) is a function of blockDim. Geometry-checked but POLICY-FREE: the
-    /// gate's red arms drive mutations through this entry, exactly like the q8 raw above.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    pub fn kda_proj_fused6_bf16_raw(
-        &self,
-        wq: &CudaSlice<u8>,
-        wk: &CudaSlice<u8>,
-        wv: &CudaSlice<u8>,
-        wfa: &CudaSlice<f32>,
-        wga: &CudaSlice<f32>,
-        wb: &CudaSlice<f32>,
-        x: &CudaSlice<f32>,
-        outs: &mut [CudaSlice<f32>; 6],
-        in_f: usize,
-        dims: [usize; 6],
-        t: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if t == 0 || !in_f.is_multiple_of(128) || x.len() < t * in_f {
-            return Err("kda_proj_fused6_bf16 geometry".into());
-        }
-        for (i, (w, want_rows)) in [(wq, dims[0]), (wk, dims[1]), (wv, dims[2])]
-            .into_iter()
-            .enumerate()
-        {
-            if w.len() < want_rows * in_f * 2 {
-                return Err(format!(
-                    "kda_proj_fused6_bf16: bf16 weight {i} holds {} bytes, needs {}",
-                    w.len(),
-                    want_rows * in_f * 2
-                )
-                .into());
-            }
-        }
-        for (i, (w, want_rows)) in [(wfa, dims[3]), (wga, dims[4]), (wb, dims[5])]
-            .into_iter()
-            .enumerate()
-        {
-            if w.len() < want_rows * in_f {
-                return Err(format!(
-                    "kda_proj_fused6_bf16: f32 weight {} holds {} floats, needs {}",
-                    i + 3,
-                    w.len(),
-                    want_rows * in_f
-                )
-                .into());
-            }
-        }
-        for (i, (o, want)) in outs.iter().zip(dims).enumerate() {
-            if o.len() < t * want {
-                return Err(format!("kda_proj_fused6_bf16: output {i} too small").into());
-            }
-        }
-        let blocks: usize = dims.iter().map(|d| d.div_ceil(4)).sum();
-        let f = self.func("qmatvec_kda6_bf16f32");
-        let cfg = LaunchConfig {
-            grid_dim: (blocks as u32, t as u32, 1),
-            block_dim: (crate::mmv_block(), 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let inf = in_f as i32;
-        let d = dims.map(|v| v as i32);
-        let mi = t as i32;
-        let [o0, o1, o2, o3, o4, o5] = outs;
-        let stream = self.gpu.stream();
-        let mut b = stream.launch_builder(&f);
-        b.arg(wq)
-            .arg(wk)
-            .arg(wv)
-            .arg(wfa)
-            .arg(wga)
-            .arg(wb)
-            .arg(x)
-            .arg(&mut *o0)
-            .arg(&mut *o1)
-            .arg(&mut *o2)
-            .arg(&mut *o3)
-            .arg(&mut *o4)
-            .arg(&mut *o5)
-            .arg(&inf)
-            .arg(&d[0])
-            .arg(&d[1])
-            .arg(&d[2])
-            .arg(&d[3])
-            .arg(&d[4])
-            .arg(&d[5])
-            .arg(&mi);
         unsafe { b.launch(cfg)? };
         Ok(())
     }

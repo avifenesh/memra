@@ -17,7 +17,7 @@ footprints by it. That understates capacity by ~7% — which is immaterial for a
 ## Measured artifact (not estimated)
 
 `stepfun-ai/Step-3.7-Flash-GGUF` @ `0b69336d2fd2adfdef9c66e425f7778196c31482`, official StepFun GGUF,
-staged on box1 local NVMe at `/opt/scratch/nvme/models/step-3.7-flash/Q8_0/`:
+staged on box1 local NVMe at `/opt/dl-image/nvme/models/step-3.7-flash/Q8_0/`:
 
 | shard | bytes |
 |---|--:|

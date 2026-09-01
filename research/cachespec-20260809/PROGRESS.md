@@ -7,7 +7,7 @@
 ## Scope
 
 - Lane: `lane/cx-cachespec`
-- Remote rig: box1 cloud PRO 6000, Step-3.7-Flash PP-2
+- Remote rig: box1 Sbox, Step-3.7-Flash PP-2
 - Serving shape: `MEMRA_CTX=262144`, `MEMRA_PREFIX_CACHE_MB=2048`, default PP2 cross-device speculative placement
 - Client shape: growing same-session conversation with rewritten history, followed by a concurrency-4 burst
 - Comparison: default speculative policy versus `MEMRA_SERVE_SPEC=0`

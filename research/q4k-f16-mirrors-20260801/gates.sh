@@ -5,8 +5,8 @@ set -u
 cd $HOME/arc4
 D=$HOME/arc4/research/q4k-f16-mirrors-20260801
 mkdir -p $D
-Q27=/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
-Q35=/opt/scratch/nvme/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+Q27=/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
+Q35=/opt/dl-image/nvme/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
 export CUDA_VISIBLE_DEVICES=3
 
 echo "== kernel-check (q27 model arg) =="

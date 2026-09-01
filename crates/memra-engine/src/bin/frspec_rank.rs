@@ -3,8 +3,7 @@
 //! MEMRA_MTP_DRAFT consume. Needed because trim files are VOCAB artifacts — the published Qwen3.6
 //! rankings from another tokenizer cannot transfer to Hy3's vocabulary.
 //!
-//! usage: frspec-rank <model.gguf|hf_dir> <out.gguf> <topN>
-//!                    [--coverage-ranks ranks.txt] <corpus file/dir>...
+//! usage: frspec-rank <model.gguf|hf_dir> <out.gguf> <topN> <corpus file/dir>...
 //!
 //! Accepts EITHER a .gguf file (tokenizer from GGUF metadata) OR an HF safetensors directory
 //! containing tokenizer.json (the ST-native path — no GGUF dependency for ST checkpoints).
@@ -58,10 +57,7 @@ fn collect_files(path: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 5 {
-        eprintln!(
-            "usage: frspec-rank <model.gguf|hf_dir> <out.gguf> <topN> \
-             [--coverage-ranks ranks.txt] <corpus>..."
-        );
+        eprintln!("usage: frspec-rank <model.gguf|hf_dir> <out.gguf> <topN> <corpus>...");
         std::process::exit(1);
     }
     // DIRECTORY path = HF safetensors checkpoint (tokenizer.json); file = GGUF.
@@ -79,27 +75,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let top_n: usize = args[3].parse()?;
     let vocab = tok.vocab_size();
-    let mut coverage_ranks: Option<&str> = None;
-    let mut corpus_roots: Vec<&str> = Vec::new();
-    let mut index = 4;
-    while index < args.len() {
-        if args[index] == "--coverage-ranks" {
-            let path = args
-                .get(index + 1)
-                .ok_or("--coverage-ranks requires a path")?;
-            coverage_ranks = Some(path);
-            index += 2;
-        } else {
-            corpus_roots.push(&args[index]);
-            index += 1;
-        }
-    }
-    if corpus_roots.is_empty() {
-        return Err("at least one corpus file or directory is required".into());
-    }
 
     let mut files = Vec::new();
-    for a in corpus_roots {
+    for a in &args[4..] {
         collect_files(std::path::Path::new(a), &mut files);
     }
     eprintln!(
@@ -121,8 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    let distinct = counts.iter().filter(|&&count| count > 0).count();
-    eprintln!("[frspec-rank] {total} tokens counted ({distinct} distinct ids)");
+    eprintln!("[frspec-rank] {total} tokens counted");
 
     // rank by frequency desc, id asc tiebreak (deterministic). Zero-count ids are EXCLUDED from
     // preference but the list must still fill top_n — pad with ascending unseen ids (they cost
@@ -135,52 +112,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         d2t.len(),
         covered as f64 / total.max(1) as f64 * 100.0
     );
-    if let Some(path) = coverage_ranks {
-        let mut seen = vec![false; vocab];
-        let mut supplied = Vec::new();
-        for (line_number, line) in std::fs::read_to_string(path)?.lines().enumerate() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let token: usize = line
-                .trim()
-                .parse()
-                .map_err(|error| format!("{path}:{}: {error}", line_number + 1))?;
-            if token >= vocab {
-                return Err(
-                    format!("{path}:{}: token {token} >= vocab {vocab}", line_number + 1).into(),
-                );
-            }
-            if seen[token] {
-                return Err(format!("{path}:{}: duplicate token {token}", line_number + 1).into());
-            }
-            seen[token] = true;
-            supplied.push(token);
-        }
-        let supplied_covered: u64 = supplied.iter().map(|&token| counts[token]).sum();
-        eprintln!(
-            "[frspec-rank] supplied map {} ({} ids) covers {:.2}% of corpus tokens",
-            path,
-            supplied.len(),
-            supplied_covered as f64 / total.max(1) as f64 * 100.0
-        );
-        let mut missing: Vec<(usize, u64)> = counts
-            .iter()
-            .copied()
-            .enumerate()
-            .filter(|&(token, count)| count > 0 && !seen[token])
-            .collect();
-        missing.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
-        for (rank, (token, count)) in missing.into_iter().take(20).enumerate() {
-            eprintln!(
-                "[frspec-rank] uncovered#{:02} id={} count={} piece={:?}",
-                rank + 1,
-                token,
-                count,
-                tok.decode(&[token as u32])
-            );
-        }
-    }
     memra_gguf::d2t::write_d2t(&args[2], &d2t)?;
     eprintln!(
         "[frspec-rank] wrote {} ({} ids) + {}.txt",
