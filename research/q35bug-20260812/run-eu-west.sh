@@ -16,11 +16,11 @@ case "$COMPAT" in openai|native) ;; *) echo "invalid compat: $COMPAT" >&2; exit 
 case "$DECODE" in default|b1-batched|serial) ;; *) echo "invalid decode mode: $DECODE" >&2; exit 2 ;; esac
 case "$EXPECT_CLEAN" in 0|1) ;; *) echo "invalid EXPECT_CLEAN: $EXPECT_CLEAN" >&2; exit 2 ;; esac
 
-ROOT=${Q35BUG_ROOT:-/opt/scratch/nvme/cx-q35bug}
+ROOT=${Q35BUG_ROOT:-/opt/dl-image/nvme/cx-q35bug}
 HARNESS=$ROOT/harness
 RAW=$ROOT/raw
 OUT=$RAW/$LABEL
-MODEL=/opt/scratch/nvme/cx-percard/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+MODEL=/opt/dl-image/nvme/cx-percard/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
 PORT=${Q35BUG_PORT:-18535}
 BASE=http://127.0.0.1:$PORT
 REPETITIONS=${Q35BUG_REPETITIONS:-5}

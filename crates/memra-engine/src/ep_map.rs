@@ -1,9 +1,6 @@
-//! Measured expert-placement map consumption (`MEMRA_EP_MAP`, lane/glm5-ep-place
-//! 2026-08-31, generalized lane/glm5-extract-general) — the fail-closed
-//! `memra-ep-map-v1` reader the shard builders trust. FLEET-SHARED BY DESIGN: one flag,
-//! one parser, one validation law for every family that arms measured placement (glm5
-//! today; hy3/qwen adopt the same seam). Family loaders add only their own geometry
-//! laws (rank count, entry rank, layer cover) on top of the parsed map.
+//! Measured expert-placement map consumption for the glm5 EP walk (`MEMRA_GLM5_EP_MAP`,
+//! lane/glm5-ep-place, 2026-08-31) — the fail-closed `memra-ep-map-v1` reader the shard
+//! builders trust.
 //!
 //! LAW:coactivation-expert-placement (darklanes agent-knowledge/gpu/kernel-craft.md,
 //! owner directive 2026-08-31): expert placement is MEASURED, never even-split —
@@ -19,8 +16,7 @@
 //! coactivation/frequency/even; self-receipting per-layer stats vs the even control;
 //! spec + example receipts in `research/ep-placement-map-20260831/REPORT.md`) — from
 //! `MEMRA_MOE_TRACE` id lines (+ optional `MEMRA_MOE_WEIGHT_TRACE` hotness). This
-//! module is the ENGINE-SIDE reader: one parser, one validation law, plus the env seam
-//! ([`ep_map_env`]) that resolves the general flag and its family alias. First consumer:
+//! module is the ENGINE-SIDE reader: one parser, one validation law, consumed by
 //! `glm5_tp::prepare_glm5_tp_load` / `arm_moe_ep`.
 //!
 //! THE FROZEN FORMAT (`memra-ep-map-v1`, JSON — quoted from the tool's REPORT):
@@ -49,44 +45,6 @@
 
 use memra_gguf::config::JsonObj;
 use std::collections::BTreeMap;
-
-/// The general fleet flag: `MEMRA_EP_MAP=<path>` points a family's EP shard builders at
-/// a measured `memra-ep-map-v1` placement map.
-pub const EP_MAP_ENV: &str = "MEMRA_EP_MAP";
-/// The family alias the glm5 lanes shipped with (lane/glm5-ep-place). Still honored —
-/// banked gate arms, box batteries and the in-flight lanes set it — never silently dead.
-pub const EP_MAP_ENV_GLM5: &str = "MEMRA_GLM5_EP_MAP";
-
-/// Pure resolution over the two names (env in production; plain values in the unit
-/// tests — the env-mutation-free co-refusal-test pattern). Returns the ARMED name with
-/// its value so every downstream refusal names the flag the operator actually set.
-/// Both set to the SAME value resolves to the general name; both set to DIFFERENT
-/// values refuses loudly (fail-closed: two flags disagreeing about which map arms a
-/// load is an operator error, never a precedence coin-flip). A set-but-empty value is
-/// returned as-is — the loader refuses it downstream by name (never a silent default).
-pub fn resolve_ep_map_env(
-    general: Option<String>,
-    glm5_alias: Option<String>,
-) -> Result<Option<(&'static str, String)>, String> {
-    match (general, glm5_alias) {
-        (Some(g), Some(a)) if g != a => Err(format!(
-            "{EP_MAP_ENV}={g:?} and {EP_MAP_ENV_GLM5}={a:?} disagree — the alias and the \
-             general flag must name the SAME map (unset one; refused rather than \
-             silently picking a precedence winner)"
-        )),
-        (Some(g), _) => Ok(Some((EP_MAP_ENV, g))),
-        (None, Some(a)) => Ok(Some((EP_MAP_ENV_GLM5, a))),
-        (None, None) => Ok(None),
-    }
-}
-
-/// Env-reading wrapper over [`resolve_ep_map_env`].
-pub fn ep_map_env() -> Result<Option<(&'static str, String)>, String> {
-    resolve_ep_map_env(
-        std::env::var(EP_MAP_ENV).ok(),
-        std::env::var(EP_MAP_ENV_GLM5).ok(),
-    )
-}
 
 /// One parsed placement map: per layer, `owners[expert] = rank`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -422,33 +380,6 @@ mod tests {
             assert_eq!(owners.len(), 16);
             assert_eq!(owners.iter().filter(|&&r| r == 0).count(), 8);
         }
-    }
-
-    #[test]
-    fn env_resolution_names_the_armed_flag_and_refuses_disagreement() {
-        // unset = off
-        assert_eq!(resolve_ep_map_env(None, None).unwrap(), None);
-        // general name wins the label when both agree; alias alone is honored
-        assert_eq!(
-            resolve_ep_map_env(Some("m.json".into()), None).unwrap(),
-            Some((EP_MAP_ENV, "m.json".to_string()))
-        );
-        assert_eq!(
-            resolve_ep_map_env(None, Some("m.json".into())).unwrap(),
-            Some((EP_MAP_ENV_GLM5, "m.json".to_string()))
-        );
-        assert_eq!(
-            resolve_ep_map_env(Some("m.json".into()), Some("m.json".into())).unwrap(),
-            Some((EP_MAP_ENV, "m.json".to_string()))
-        );
-        // disagreement refuses loudly, naming both flags
-        let e = resolve_ep_map_env(Some("a.json".into()), Some("b.json".into())).unwrap_err();
-        assert!(e.contains(EP_MAP_ENV) && e.contains(EP_MAP_ENV_GLM5), "{e}");
-        // set-but-empty passes through — the LOADER refuses it by name downstream
-        assert_eq!(
-            resolve_ep_map_env(Some(String::new()), None).unwrap(),
-            Some((EP_MAP_ENV, String::new()))
-        );
     }
 
     #[test]

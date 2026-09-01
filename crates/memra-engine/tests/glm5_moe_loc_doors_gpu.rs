@@ -6,12 +6,9 @@
 //! pageable HtoD per ship round). The bar is table-level BITWISE identity plus pair-output
 //! bitwise identity, with reds proving each table term is actually exercised.
 //!
-//! Door H (`MEMRA_HTOD_DIET`, glm5 alias `MEMRA_GLM5_HTOD_DIET` honored — generalized
-//! lane/glm5-extract2): the shared-expert `g = 1.0` constant stops being re-uploaded per MoE
-//! layer-call (42/round) and the latent-plane `len_d` scalar takes the async `i32_set_k` instead
-//! of a synchronizing pageable copy (22/round). The door's arms here drive BOTH names plus a
-//! disagreeing pair, because the door is read per call and a rename nothing exercises through
-//! its general name is a rename that only works on paper.
+//! Door H (`MEMRA_GLM5_HTOD_DIET`): the shared-expert `g = 1.0` constant stops being re-uploaded
+//! per MoE layer-call (42/round) and the MLA `len_d` scalar takes the async `i32_set_k` instead
+//! of a synchronizing pageable copy (22/round).
 //!
 //! Instrument S (`MEMRA_MOE_VROWS_DEDUP_STAT`): the pair union's visits/distinct counting, whose
 //! ratio is the ONLY remaining byte lever on a pair already at ~90% of theoretical DRAM peak.
@@ -39,29 +36,6 @@ fn with_flag<T>(key: &str, f: impl FnOnce() -> T) -> T {
     let out = f();
     unsafe { std::env::remove_var(key) };
     out
-}
-
-/// Set several keys for one arm and ALWAYS clear them, even if the arm panics. The
-/// single-key helper above clears on the happy path only, which is fine while its body cannot
-/// fail; the disagreeing-pair arm below has an `.expect()` in it, and these suites run
-/// `--test-threads=1`, so a leaked `MEMRA_HTOD_DIET=1` + `MEMRA_GLM5_HTOD_DIET=0` would arm a
-/// fail-closed door for every later test in the file and turn one failure into a cascade.
-struct EnvArm(Vec<String>);
-impl Drop for EnvArm {
-    fn drop(&mut self) {
-        for k in &self.0 {
-            unsafe { std::env::remove_var(k) };
-        }
-    }
-}
-#[must_use = "the returned guard is what clears the keys — drop it explicitly, before any assertion that must see them cleared"]
-fn with_flags(pairs: &[(&str, &str)], f: impl FnOnce()) -> EnvArm {
-    let guard = EnvArm(pairs.iter().map(|(k, _)| (*k).to_string()).collect());
-    for (k, v) in pairs {
-        unsafe { std::env::set_var(k, v) };
-    }
-    f();
-    guard
 }
 
 fn varied(len: usize, seed: u64, spread: f32) -> Vec<f32> {
@@ -579,10 +553,10 @@ fn gpu_htod_diet_shexp_ones_and_len_mirror_are_bit_identical() {
         4321,
         "the shipped memcpy_htod mirror store did not land"
     );
-    let a0 = memra_engine::htod_diet_avoided();
+    let a0 = memra_engine::glm5_htod_diet_avoided();
     assert_eq!(
         a0,
-        memra_engine::htod_diet_avoided(),
+        memra_engine::glm5_htod_diet_avoided(),
         "the door-H counter moved with the door OFF"
     );
     let n1 = with_flag("MEMRA_GLM5_HTOD_DIET", || {
@@ -591,53 +565,10 @@ fn gpu_htod_diet_shexp_ones_and_len_mirror_are_bit_identical() {
     });
     assert_eq!(n1, 9876, "the door-H i32_set_k mirror store did not land");
     assert!(
-        memra_engine::htod_diet_avoided() > a0,
+        memra_engine::glm5_htod_diet_avoided() > a0,
         "door H did not engage on the mirror store — the counter is flat"
     );
     println!("door H len_d PASS: both arms land the value, counter anchored ON / flat OFF");
-
-    // THE FLAG-ALIAS LAW (lane/glm5-extract2): the arm above drives the glm5 ALIAS, which is
-    // what every banked moe-loc script sets. These two arms are the only proof that the
-    // GENERAL name works and that a disagreeing pair falls closed — a rename whose general
-    // name is never exercised is a rename that only works on paper.
-    let a1 = memra_engine::htod_diet_avoided();
-    let n2 = with_flag("MEMRA_HTOD_DIET", || {
-        e.i32_mirror_store(&mut mirror, 1234)
-            .expect("general store");
-        e.dtoh_i32(&mirror).expect("mirror readback")[0]
-    });
-    assert_eq!(n2, 1234, "the general-name mirror store did not land");
-    assert!(
-        memra_engine::htod_diet_avoided() > a1,
-        "MEMRA_HTOD_DIET did not engage door H — the general name is not wired"
-    );
-
-    // Disagreement: general=1 + alias=0. The door must NOT arm (counter flat) and the value
-    // must still land through the SHIPPED synchronizing form — fail-closed, not fail-broken.
-    let a2 = memra_engine::htod_diet_avoided();
-    let landed = with_flags(
-        &[("MEMRA_HTOD_DIET", "1"), ("MEMRA_GLM5_HTOD_DIET", "0")],
-        || {
-            e.i32_mirror_store(&mut mirror, 5678)
-                .expect("disagreeing-pair store");
-        },
-    );
-    drop(landed);
-    assert_eq!(
-        e.dtoh_i32(&mirror).expect("mirror readback")[0],
-        5678,
-        "the disagreeing pair must still land the value through the shipped form"
-    );
-    assert_eq!(
-        memra_engine::htod_diet_avoided(),
-        a2,
-        "a disagreeing MEMRA_HTOD_DIET / MEMRA_GLM5_HTOD_DIET pair ARMED the door — it must \
-         fall closed to the shipped program instead of picking a precedence winner"
-    );
-    println!(
-        "door H alias PASS: general name engages, disagreeing pair falls closed with the \
-         value still landing"
-    );
 }
 
 // -------------------------------------------------------------------------------------------

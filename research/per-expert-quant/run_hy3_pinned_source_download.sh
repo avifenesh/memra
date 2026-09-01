@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=${ROOT:-/data/experiments/hy3-110gb}
-SOURCE_DIR=${SOURCE_DIR:-/opt/scratch/nvme/models/hy3-source}
+SOURCE_DIR=${SOURCE_DIR:-/opt/dl-image/nvme/models/hy3-source}
 VENV=${VENV:-/data/venvs/hy3-110gb}
 MODEL_ID=${MODEL_ID:-tencent/Hy3}
 REVISION=${REVISION:-716aa7241bd6d95896be4ebfc761162a9c4d49ef}

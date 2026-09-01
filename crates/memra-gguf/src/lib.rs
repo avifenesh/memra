@@ -41,7 +41,6 @@ pub mod micro_gguf;
 pub mod model_packs;
 pub mod model_plan;
 pub mod nvfp4_repack;
-pub mod placement;
 pub mod safetensors;
 pub mod source;
 pub mod spec_oracle;

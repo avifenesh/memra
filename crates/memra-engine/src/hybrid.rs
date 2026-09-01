@@ -99,8 +99,6 @@ struct StepParallelLoadConfig {
     ep_device_arithmetic: bool,
     f32_mirror: bool,
     bulk_p2p: bool,
-    nvfp4_device_routes: bool,
-    auto_parallel: bool,
     expert_artifact: StepExpertArtifact,
 }
 
@@ -263,22 +261,6 @@ impl ResidentPlan {
             *device = crate::pp::layer_engine(e, n_trunk, il)?.ctx().ordinal();
         }
         Ok(Self::from_layout(src, primary, layer_devices, true))
-    }
-
-    /// Distributed expert layers no longer consume the owning stage's local expert slab. Remove
-    /// them from the fallback per-layer residency estimate so later local-only expert layers
-    /// (for example an embedded MTP block) are judged on their own remaining footprint.
-    fn exclude_distributed_expert_layers(&mut self, specs: impl IntoIterator<Item = usize>) {
-        for layer in specs {
-            let device = self
-                .layer_devices
-                .get(layer)
-                .copied()
-                .unwrap_or(self.primary_device);
-            if let Some(count) = self.layer_counts.get_mut(&device) {
-                *count = count.saturating_sub(1);
-            }
-        }
     }
 
     fn should_reside(&mut self, e: &Engine, il: usize, per_layer: usize) -> bool {
@@ -600,10 +582,6 @@ pub(crate) fn load_ffn(
             glm5_ep: None,
             dev_macros,
             has_macros,
-            w4a16_bf16_activations: matches!(
-                src.expert_activation_precision(),
-                memra_gguf::source::ExpertActivationPrecision::Bf16
-            ),
         })
     } else {
         Ffn::Dense {
@@ -679,226 +657,18 @@ fn validate_step_expert_activation_layout(
     Ok(())
 }
 
-fn parse_auto_w4a16_bf16_mmv(value: Option<&str>) -> Result<bool, String> {
-    match value {
-        None => Ok(true),
-        Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(value) => Err(format!(
-            "MEMRA_BF16_MMV={value:?} is invalid under MEMRA_PARALLEL=auto; expected 0 or 1"
-        )),
-    }
-}
-
-fn parse_auto_parallel_tp_attention(value: Option<&str>) -> Result<bool, String> {
-    match value {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_TP_ATTENTION={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-fn auto_parallel_tp_attention_enabled() -> Result<bool, String> {
-    parse_auto_parallel_tp_attention(std::env::var("MEMRA_PARALLEL_TP_ATTENTION").ok().as_deref())
-}
-
-/// Resolve one whole-model placement from the ModelPlan plus exact source census.
-///
-/// A selected pipeline is persisted into the existing process-level PP configuration before
-/// `pp_cuts`, cache allocation, or weight placement reads it. Expert placement is passed directly
-/// to the backend registry below. No architecture or layer list participates in this decision.
-fn prepare_auto_parallel(
-    src: &dyn TensorSource,
-    cfg: &ModelConfig,
-    plan: &memra_gguf::model_plan::ModelPlan,
-) -> Result<Option<crate::parallel::AutoParallelPlacement>, Box<dyn std::error::Error>> {
-    let Some(devices) = crate::tp::auto_parallel_devices()? else {
-        return Ok(None);
-    };
-    if std::env::var_os("MEMRA_PP_STAGES").is_some()
-        || std::env::var_os("MEMRA_PP_DEVICES").is_some()
-        || std::env::var_os("MEMRA_PP_SPLITS").is_some()
-    {
-        return Err(
-            "MEMRA_PARALLEL=auto cannot be combined with MEMRA_PP_STAGES, MEMRA_PP_DEVICES, or \
-             MEMRA_PP_SPLITS"
-                .into(),
-        );
-    }
-    let placement = crate::parallel::plan_auto_parallel(src, cfg, plan, &devices)?;
-    let auto_w4a16_bf16 = placement.backend == crate::parallel::AutoParallelBackend::ExpertParallel
-        && matches!(
-            src.expert_activation_precision(),
-            memra_gguf::source::ExpertActivationPrecision::Bf16
-        );
-    let bf16_nonexpert = if auto_w4a16_bf16 {
-        let explicit = match std::env::var("MEMRA_BF16_MMV") {
-            Ok(value) => Some(value),
-            Err(std::env::VarError::NotPresent) => None,
-            Err(error) => return Err(format!("cannot read MEMRA_BF16_MMV: {error}").into()),
-        };
-        let enabled = parse_auto_w4a16_bf16_mmv(explicit.as_deref())?;
-        if enabled && explicit.is_none() {
-            // SAFETY: automatic placement is resolved before any model tensor loads or
-            // `Engine::bf16_mmv_on()` reads the process-level numeric policy.
-            unsafe {
-                std::env::set_var("MEMRA_BF16_MMV", "1");
-            }
-        }
-        match (enabled, explicit.is_some()) {
-            (true, false) => "bf16-resident(auto)",
-            (true, true) => "bf16-resident(explicit)",
-            (false, true) => "f32-expanded(explicit-rollback)",
-            (false, false) => unreachable!("unset auto W4A16 defaults BF16 residency on"),
-        }
-    } else {
-        "placement-default"
-    };
-    if placement.backend == crate::parallel::AutoParallelBackend::Pipeline {
-        let stages = placement.devices.len();
-        let device_list = placement
-            .devices
-            .iter()
-            .map(usize::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        let splits = placement
-            .pipeline_splits
-            .iter()
-            .map(usize::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        // SAFETY: model loading owns this process-level policy before pp_cuts, transport, cache,
-        // or weight placement reads any of these variables.
-        unsafe {
-            std::env::set_var("MEMRA_PP_STAGES", stages.to_string());
-            std::env::set_var("MEMRA_PP_DEVICES", &device_list);
-            std::env::set_var("MEMRA_PP_SPLITS", &splits);
-        }
-    }
-    let family = if placement.routed_layers.is_empty() {
-        "dense-transformer"
-    } else {
-        "routed-moe"
-    };
-    eprintln!(
-        "[parallel-auto] family={family} variant={:?} devices={:?} placement={} \
-         checkpoint_peak={:.2}GB ep_root={:.2}GB ep_peer={:.2}GB reserve={:.2}GB \
-         capacity={:?} splits={:?} bf16_nonexpert={bf16_nonexpert} \
-         wavefront=off(default) performance_claim=false",
-        cfg.name,
-        placement.devices,
-        match placement.backend {
-            crate::parallel::AutoParallelBackend::Pipeline => "pipeline",
-            crate::parallel::AutoParallelBackend::ExpertParallel => "expert-parallel",
-        },
-        placement.checkpoint_peak_bytes as f64 / 1e9,
-        placement.expert_root_bytes as f64 / 1e9,
-        placement.expert_peer_bytes as f64 / 1e9,
-        placement.reserve_bytes as f64 / 1e9,
-        placement.device_capacity_bytes,
-        placement.pipeline_splits,
-    );
-    Ok(Some(placement))
-}
-
 fn prepare_step_parallel_load(
     e: &Engine,
     src: &dyn TensorSource,
     cfg: &ModelConfig,
     trunk_layers: usize,
-    auto_placement: Option<&crate::parallel::AutoParallelPlacement>,
 ) -> Result<StepParallelLoadConfig, Box<dyn std::error::Error>> {
-    let mut tp_specs = crate::tp::step_tp_layer_specs()?;
-    let mut ep_specs = crate::tp::step_ep_layer_specs()?;
+    let tp_specs = crate::tp::step_tp_layer_specs()?;
+    let ep_specs = crate::tp::step_ep_layer_specs()?;
     let device_arithmetic = crate::tp::step_ep_device_arithmetic_enabled()?;
     let f32_mirror = crate::tp::step_tp_f32_mirror_enabled()?;
     let bulk_p2p = crate::tp::step_tp_bulk_p2p_enabled()?;
-    let mut native_p2p = crate::tp::step_tp_native_p2p_enabled()?;
-    let mut nvfp4_device_routes = crate::tp::step_nvfp4_dev_routes_enabled()?;
-    let auto_tp_attention = auto_parallel_tp_attention_enabled()?;
-    let mut auto_parallel = false;
-    if auto_tp_attention && auto_placement.is_none() {
-        return Err(
-            "MEMRA_PARALLEL_TP_ATTENTION=1 requires MEMRA_PARALLEL=auto; explicit per-layer \
-             recipes remain under MEMRA_STEP_TP"
-                .into(),
-        );
-    }
-    if let Some(placement) = auto_placement {
-        if !tp_specs.is_empty() || !ep_specs.is_empty() {
-            return Err(
-                "MEMRA_PARALLEL=auto cannot be combined with MEMRA_STEP_EP or MEMRA_STEP_TP".into(),
-            );
-        }
-        if placement.backend == crate::parallel::AutoParallelBackend::Pipeline {
-            if auto_tp_attention {
-                return Err(
-                    "MEMRA_PARALLEL_TP_ATTENTION=1 requires automatic whole-expert EP; the \
-                     selected checkpoint fits only the pipeline backend"
-                        .into(),
-                );
-            }
-            return Ok(StepParallelLoadConfig::default());
-        }
-        if auto_tp_attention {
-            let contract = crate::parallel::ModelParallelContract::from_model(cfg)?;
-            if !contract.tensor_attention_supported {
-                return Err(format!(
-                    "MEMRA_PARALLEL_TP_ATTENTION=1 cannot shard attention for {:?}: the \
-                     compiled ModelPlan has no generic tensor-attention contract",
-                    cfg.name
-                )
-                .into());
-            }
-            tp_specs = (0..trunk_layers)
-                .map(|layer| crate::tp::StepTpLayerSpec {
-                    layer,
-                    devices: placement.devices.clone(),
-                })
-                .collect();
-            ep_specs.clear();
-        } else {
-            ep_specs = placement
-                .routed_layers
-                .iter()
-                .map(|&layer| crate::tp::StepEpLayerSpec {
-                    layer,
-                    devices: placement.devices.clone(),
-                })
-                .collect();
-        }
-        auto_parallel = true;
-        native_p2p = true;
-        nvfp4_device_routes = matches!(
-            src.expert_activation_precision(),
-            memra_gguf::source::ExpertActivationPrecision::Bf16
-        );
-        eprintln!(
-            "[parallel-auto-backend] devices={:?} routed_layers={} native_p2p=true \
-             artifact_activation={:?} attention_layout={} expert_layout=expert-parallel \
-             backend={} performance_claim=false",
-            placement.devices,
-            placement.routed_layers.len(),
-            src.expert_activation_precision(),
-            if auto_tp_attention {
-                "tensor-parallel"
-            } else {
-                "root-local"
-            },
-            if nvfp4_device_routes {
-                "nvfp4-w4a16"
-            } else {
-                "artifact-selected-host-oracle"
-            },
-        );
-    }
     if tp_specs.is_empty() {
-        if auto_tp_attention {
-            return Err("MEMRA_PARALLEL_TP_ATTENTION=1 produced no tensor-parallel layers".into());
-        }
         if device_arithmetic || f32_mirror || bulk_p2p {
             return Err(
                 "MEMRA_STEP_EP_DEVICE_ARITHMETIC=1, MEMRA_STEP_TP_F32_MIRROR=1, or \
@@ -907,76 +677,16 @@ fn prepare_step_parallel_load(
                     .into(),
             );
         }
-        if nvfp4_device_routes && ep_specs.is_empty() {
-            return Err(
-                "MEMRA_STEP_NVFP4_DEV_ROUTES=1 requires MEMRA_STEP_EP or MEMRA_STEP_TP".into(),
-            );
-        }
-        if nvfp4_device_routes && !native_p2p {
-            return Err("MEMRA_STEP_NVFP4_DEV_ROUTES=1 with explicit EP requires \
-                 MEMRA_STEP_TP_NATIVE_P2P=1"
-                .into());
-        }
         // Pure-EP configs still need the artifact census: the EP bank build dispatches on it,
         // and defaulting to E4M3 refuses an NVFP4 checkpoint at load ("got qtype 7").
         let expert_artifact = if ep_specs.is_empty() {
             StepExpertArtifact::default()
-        } else if nvfp4_device_routes
-            && matches!(
-                src.expert_activation_precision(),
-                memra_gguf::source::ExpertActivationPrecision::Bf16
-            )
-        {
-            // The physical checkpoint may store one tensor per expert or one stacked bank.
-            // HostExps normalizes both to the canonical block_nvfp4 layout. Automatic and
-            // explicit W4A16 device routes validate that normalized bank at layer load instead
-            // of assuming one physical source packing here.
-            StepExpertArtifact::Nvfp4
         } else {
             let contract = crate::parallel::ModelParallelContract::from_model(cfg)?;
-            validate_step_expert_specs(&contract, "MEMRA_STEP_EP", &ep_specs, false)?;
-            let layer_owners = (0..trunk_layers)
-                .map(|layer| {
-                    crate::pp::layer_engine(e, trunk_layers, layer)
-                        .map(|engine| engine.ctx().ordinal())
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let mut runtime_groups = Vec::<Vec<usize>>::new();
-            for spec in &ep_specs {
-                let owner = layer_owners[spec.layer];
-                if !spec.devices.contains(&owner) {
-                    return Err(format!(
-                        "MEMRA_STEP_EP layer {} owning device {owner} is absent from {:?}",
-                        spec.layer, spec.devices
-                    )
-                    .into());
-                }
-                if nvfp4_device_routes && spec.devices.first().copied() != Some(owner) {
-                    return Err(format!(
-                        "MEMRA_STEP_NVFP4_DEV_ROUTES=1 requires the owning device first; \
-                         layer {} owner={owner} devices={:?}",
-                        spec.layer, spec.devices
-                    )
-                    .into());
-                }
-                if !runtime_groups.contains(&spec.devices) {
-                    runtime_groups.push(spec.devices.clone());
-                }
-            }
-            for devices in &runtime_groups {
-                let hardware = crate::parallel::detect_uniform_hardware(devices)?;
-                if !contract.hardware_targets.contains(&hardware) {
-                    return Err(format!(
-                        "{} has no qualified {hardware:?} EP contract for devices {devices:?}",
-                        contract.variant
-                    )
-                    .into());
-                }
-            }
-            let artifact = match crate::parallel::validate_fp8_expert_checkpoint(src, &contract) {
+            match crate::parallel::validate_step_fp8_checkpoint(src, &contract) {
                 Ok(_) => StepExpertArtifact::E4m3,
                 Err(fp8_error) => {
-                    match crate::parallel::validate_nvfp4_expert_checkpoint(src, &contract) {
+                    match crate::parallel::validate_step_nvfp4_checkpoint(src, &contract) {
                         Ok(_) => StepExpertArtifact::Nvfp4,
                         Err(nvfp4_error) => {
                             return Err(format!(
@@ -987,21 +697,10 @@ fn prepare_step_parallel_load(
                         }
                     }
                 }
-            };
-            if nvfp4_device_routes && artifact != StepExpertArtifact::Nvfp4 {
-                return Err(
-                    "MEMRA_STEP_NVFP4_DEV_ROUTES=1 requires a native ModelOpt NVFP4 expert \
-                     artifact"
-                        .into(),
-                );
             }
-            artifact
         };
         return Ok(StepParallelLoadConfig {
             ep_specs,
-            native_p2p,
-            nvfp4_device_routes,
-            auto_parallel,
             expert_artifact,
             ..StepParallelLoadConfig::default()
         });
@@ -1038,6 +737,7 @@ fn prepare_step_parallel_load(
         }
     }
 
+    let native_p2p = crate::tp::step_tp_native_p2p_enabled()?;
     if bulk_p2p && !native_p2p {
         return Err("MEMRA_STEP_TP_BULK_P2P=1 requires MEMRA_STEP_TP_NATIVE_P2P=1".into());
     }
@@ -1057,20 +757,19 @@ fn prepare_step_parallel_load(
     // (the historical contract), NVFP4 as the fallback census; if neither qualifies, surface
     // BOTH refusals so the operator sees which contract each class failed.
     let (qualified_experts, expert_artifact) =
-        match crate::parallel::validate_fp8_expert_checkpoint(src, &contract) {
+        match crate::parallel::validate_step_fp8_checkpoint(src, &contract) {
             Ok(qualified) => (qualified, StepExpertArtifact::E4m3),
-            Err(fp8_error) => {
-                match crate::parallel::validate_nvfp4_expert_checkpoint(src, &contract) {
-                    Ok(qualified) => (qualified, StepExpertArtifact::Nvfp4),
-                    Err(nvfp4_error) => {
-                        return Err(format!(
-                            "Step checkpoint qualifies as neither native expert artifact class: \
+            Err(fp8_error) => match crate::parallel::validate_step_nvfp4_checkpoint(src, &contract)
+            {
+                Ok(qualified) => (qualified, StepExpertArtifact::Nvfp4),
+                Err(nvfp4_error) => {
+                    return Err(format!(
+                        "Step checkpoint qualifies as neither native expert artifact class: \
                          [E4M3] {fp8_error} [NVFP4] {nvfp4_error}"
-                        )
-                        .into());
-                    }
+                    )
+                    .into());
                 }
-            }
+            },
         };
     if expert_artifact == StepExpertArtifact::Nvfp4 {
         if device_arithmetic {
@@ -1139,25 +838,23 @@ fn prepare_step_parallel_load(
         ep_device_arithmetic: device_arithmetic,
         f32_mirror,
         bulk_p2p,
-        nvfp4_device_routes,
-        auto_parallel,
         expert_artifact,
     })
 }
 
 /// Resolve one routed projection's stacked NVFP4 native bank from the checkpoint source.
-fn nvfp4_native_expert_bank<'a>(
+fn step_nvfp4_native<'a>(
     src: &'a dyn TensorSource,
     layer: usize,
     proj: &str,
 ) -> Result<memra_gguf::source::Nvfp4StackedNative<'a>, Box<dyn std::error::Error>> {
     let name = format!("blk.{layer}.ffn_{proj}_exps.weight");
     src.find_nvfp4_stacked_native(&name)
-        .ok_or_else(|| format!("NVFP4 expert backend is missing native bank {name}").into())
+        .ok_or_else(|| format!("Step NVFP4 expert program is missing native bank {name}").into())
 }
 
 /// Borrow a `Nvfp4StackedNative` as the TP program's bank view.
-fn nvfp4_expert_bank_view<'a>(
+fn step_nvfp4_bank<'a>(
     native: &'a memra_gguf::source::Nvfp4StackedNative<'a>,
 ) -> crate::tp::Nvfp4ExpertBank<'a> {
     crate::tp::Nvfp4ExpertBank {
@@ -1267,52 +964,36 @@ fn build_step_distributed_exps(
                 .into(),
         );
     }
+    let runtime =
+        step_runtimes.runtime(&selection.spec.devices, native_p2p, ep_device_arithmetic)?;
     let expert_artifact = step_runtimes.config.expert_artifact;
     match selection.layout {
         StepExpertLayout::ExpertParallel => {
             if expert_artifact == StepExpertArtifact::Nvfp4 {
-                // TP4/TP8 plans use whole-expert ownership for routed MoE layers, so the
-                // W4A16 device-routed EP program is valid there too. `configured_by_tp` names
-                // the surrounding attention plan; it does not change the expert-bank layout.
-                let w4a16_device_routes = step_runtimes.config.nvfp4_device_routes;
-                if w4a16_device_routes
-                    && !matches!(
-                        src.expert_activation_precision(),
-                        memra_gguf::source::ExpertActivationPrecision::Bf16
-                    )
-                {
-                    return Err(
-                        "explicit-EP MEMRA_STEP_NVFP4_DEV_ROUTES=1 requires an artifact that \
-                         declares BF16 routed-expert activations; TP keeps its separately gated \
-                         quantized-activation path"
-                            .into(),
-                    );
-                }
-                // Request the runtime with the immutable config's transport choice. The default
-                // host-canonical program ignores native P2P, while the W4A16 decode door consumes
-                // it for device input/output. Sharing the same runtime also avoids the measured
-                // third-context flake when TP and EP coexist.
+                // The NVFP4 EP program is host-canonical — the native_p2p flag never enters its
+                // math. Requesting the runtime with the CONFIG's flag (not the EP-forced false)
+                // makes explicit-EP tail layers SHARE the TP layers' runtime instance instead of
+                // spawning a second one: a third CUDA context per device is the measured flake
+                // trigger when TP and EP coexist (TP-only 8/8 clean, EP-only 8/8 clean,
+                // TP+EP two-runtime 9/12 MISMATCH).
                 let runtime = step_runtimes.runtime(
                     &selection.spec.devices,
                     step_runtimes.config.native_p2p,
                     false,
                 )?;
-                let experts = runtime.upload_expert_parallel_nvfp4_normalized(gate, up, down)?;
-                let marker = if step_runtimes.config.auto_parallel {
-                    "parallel-ep"
-                } else {
-                    "step-ep"
-                };
+                let gate_native = step_nvfp4_native(src, layer, "gate")?;
+                let up_native = step_nvfp4_native(src, layer, "up")?;
+                let down_native = step_nvfp4_native(src, layer, "down")?;
+                let experts = runtime.upload_expert_parallel_nvfp4(
+                    step_nvfp4_bank(&gate_native),
+                    step_nvfp4_bank(&up_native),
+                    step_nvfp4_bank(&down_native),
+                )?;
                 eprintln!(
-                    "[{marker}] layer={layer} devices={:?} experts={} artifact=nvfp4 \
-                     expert_layout=expert-parallel expert_transport={} \
-                     macro_fold=post-kernel-once native_p2p={} w4a16_device_routes={} \
-                     performance_claim=false",
-                    selection.spec.devices,
-                    contract.expert_count,
-                    runtime.transport_label(),
-                    runtime.native_p2p(),
-                    w4a16_device_routes,
+                    "[step-ep] layer={layer} devices={:?} experts={} artifact=nvfp4 \
+                     expert_layout=expert-parallel expert_transport=host-bounce \
+                     macro_fold=post-kernel-once native_p2p=false performance_claim=false",
+                    selection.spec.devices, contract.expert_count
                 );
                 if let Some(limit) = activation_limit {
                     eprintln!(
@@ -1327,14 +1008,11 @@ fn build_step_distributed_exps(
                         devices: selection.spec.devices,
                         configured_by_tp: selection.configured_by_tp,
                         activation_limit,
-                        nvfp4_device_routes: w4a16_device_routes,
                         grouped_decode: None,
                     }),
                     None,
                 ));
             }
-            let runtime =
-                step_runtimes.runtime(&selection.spec.devices, native_p2p, ep_device_arithmetic)?;
             let experts = runtime.upload_expert_parallel(
                 host_e4m3_bank(gate)?,
                 host_e4m3_bank(up)?,
@@ -1402,15 +1080,12 @@ fn build_step_distributed_exps(
                     devices: selection.spec.devices,
                     configured_by_tp: selection.configured_by_tp,
                     activation_limit,
-                    nvfp4_device_routes: false,
                     grouped_decode,
                 }),
                 None,
             ))
         }
         StepExpertLayout::TensorParallel => {
-            let runtime =
-                step_runtimes.runtime(&selection.spec.devices, native_p2p, ep_device_arithmetic)?;
             if activation_limit.is_some() && expert_artifact == StepExpertArtifact::E4m3 {
                 return Err(format!(
                     "layer {layer} uses the routed SwiGLU clamp and the E4M3 TP expert \
@@ -1420,13 +1095,13 @@ fn build_step_distributed_exps(
                 .into());
             }
             let experts = if expert_artifact == StepExpertArtifact::Nvfp4 {
-                let gate_native = nvfp4_native_expert_bank(src, layer, "gate")?;
-                let up_native = nvfp4_native_expert_bank(src, layer, "up")?;
-                let down_native = nvfp4_native_expert_bank(src, layer, "down")?;
+                let gate_native = step_nvfp4_native(src, layer, "gate")?;
+                let up_native = step_nvfp4_native(src, layer, "up")?;
+                let down_native = step_nvfp4_native(src, layer, "down")?;
                 StepTpExpertBank::Nvfp4(runtime.upload_tensor_parallel_nvfp4(
-                    nvfp4_expert_bank_view(&gate_native),
-                    nvfp4_expert_bank_view(&up_native),
-                    nvfp4_expert_bank_view(&down_native),
+                    step_nvfp4_bank(&gate_native),
+                    step_nvfp4_bank(&up_native),
+                    step_nvfp4_bank(&down_native),
                 )?)
             } else {
                 StepTpExpertBank::E4m3(runtime.upload_tensor_parallel(
@@ -2178,18 +1853,11 @@ pub struct MlaAttnLayer {
     /// `Some` exactly when the layer's plan declares `SparseIndexPlan::Own { kpool: Some(..) }`.
     /// `None` means the layer attends DENSELY — correct only for a plan that asked for dense.
     pub index: Option<MlaIndexer>,
-    /// glm5 TP sidecar (`MEMRA_GLM5_TP`, lane/glm5-tp2). `Some` means THIS struct is the
-    /// ROOT-RANK HEAD SHARD (heads/ranks, replicated latent/indexer operands) and the
-    /// sidecar carries the peer shards + runtime. Every plain entry refuses a sharded layer
-    /// by name; only the TP walk may execute it. `None` everywhere else.
+    /// glm5 TP-2 sidecar (`MEMRA_GLM5_TP`, lane/glm5-tp2). `Some` means THIS struct is the
+    /// ROOT-RANK HEAD SHARD (heads/2, replicated latent/indexer operands) and the sidecar
+    /// carries the peer shard + runtime. Every plain entry refuses a sharded layer by name;
+    /// only the TP walk may execute it. `None` everywhere else.
     pub tp: Option<Box<crate::glm5_tp::Glm5TpMla>>,
-    /// True on EVERY rank's shard (root AND peers — the peers' `tp` is `None`, so this is
-    /// the only marker they carry). Composition guard (lane/glm5-composition): doored
-    /// kernels whose gates ran on the FULL-head geometry only (`MEMRA_MLA_TC_PREFILL`)
-    /// decline a shard by this flag and fall through to their ungated-composition-free
-    /// arms; the fixture gates cannot exercise those doors (kv_rank-stamped kernels), so
-    /// the decline is fail-closed by construction until a real-artifact box gate lands.
-    pub tp_shard: bool,
 }
 
 impl MlaAttnLayer {
@@ -2320,7 +1988,6 @@ impl MlaAttnLayer {
             geom,
             index,
             tp: None,
-            tp_shard: false,
         })
     }
 
@@ -2559,13 +2226,9 @@ pub struct MoeWeights {
     /// moe_w_scale_by_expert launch gated on `has_macros`.
     pub dev_macros: cudarc::driver::CudaSlice<f32>,
     pub has_macros: bool,
-    /// ModelOpt W4A16 uses BF16 expert activations. This lives on the model/layer weights rather
-    /// than in process-global state so a multi-model server can also host another NVFP4 program.
-    pub w4a16_bf16_activations: bool,
 }
 
 /// Expert-parallel residency, one variant per qualified checkpoint artifact class.
-#[allow(clippy::large_enum_variant)] // allow: variant size asymmetry is deliberate; these enums live in per-layer tables, not hot moves
 pub enum StepEpExpertBank {
     E4m3(crate::tp::ResidentExpertParallel),
     Nvfp4(crate::tp::ResidentNvfp4ExpertParallel),
@@ -2593,8 +2256,6 @@ pub struct StepEpExps {
     pub devices: Vec<usize>,
     pub configured_by_tp: bool,
     pub activation_limit: Option<f32>,
-    /// Immutable load-time selection of the W4A16 device-resident NVFP4 EP decode program.
-    pub nvfp4_device_routes: bool,
     /// Persistent one-token grouped projection/combine state for eager decode. Opt-in prefill
     /// uses the model-scoped executor instead of multiplying capacity workspaces per layer.
     pub grouped_decode: Option<std::sync::Mutex<StepEpGroupedDecode>>,
@@ -2645,26 +2306,6 @@ impl MoeWeights {
             .as_ref()
             .map(|mask| mask.iter().filter(|&&active| active).count())
             .unwrap_or(self.gate_exps.n_expert)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn qmatvec_view(
-        &self,
-        e: &Engine,
-        w: &CudaSlice<u8>,
-        range: std::ops::Range<usize>,
-        x: &cudarc::driver::CudaView<f32>,
-        m: usize,
-        in_f: usize,
-        out_f: usize,
-        qtype: i32,
-        row_bytes: usize,
-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if self.w4a16_bf16_activations && qtype == crate::QT_NVFP4 {
-            e.qmatvec_view_bf16_activation(w, range, x, m, in_f, out_f, qtype, row_bytes)
-        } else {
-            e.qmatvec_view(w, range, x, m, in_f, out_f, qtype, row_bytes)
-        }
     }
 }
 
@@ -2892,12 +2533,9 @@ fn load_mtp_head_maybe_nvfp4(
 /// rows for families whose nextn blocks do not tie to the trunk head. step-3.7-flash ships a
 /// DIFFERENT head matrix per nextn block, and gathering trunk rows there measured acceptance
 /// 0/248 across K=1..8 while self-consistency still PASSED, so no exactness gate catches it.
-/// First 8 hex of sha256 over a file's bytes — any drafter's boot-receipt identity pin
-/// (streamed, so a 2.3 GB safetensors never lands in memory twice). `pub(crate)` because the
-/// general draft-source seam (`dflash::load_drafter`) mints the pin for every family.
-pub(crate) fn sha256_file_hex8(
-    path: &std::path::Path,
-) -> Result<String, Box<dyn std::error::Error>> {
+/// First 8 hex of sha256 over a file's bytes — the glm5 DFlash2 drafter's boot-receipt
+/// identity pin (streamed, so a 2.3 GB safetensors never lands in memory twice).
+fn sha256_file_hex8(path: &std::path::Path) -> Result<String, Box<dyn std::error::Error>> {
     use sha2::{Digest, Sha256};
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
@@ -3791,20 +3429,10 @@ impl HybridModel {
             Some(pack) => pack.compile_plan(&cfg)?,
             None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
         };
-        let auto_parallel = prepare_auto_parallel(src, &cfg, &plan)?;
         let batch_program = crate::plan_backend::decode_batch_program(&plan);
         let gemma_program = batch_program == crate::plan_backend::DecodeBatchProgram::Gemma;
         let sliding_gated_moe_program =
             batch_program == crate::plan_backend::DecodeBatchProgram::SlidingGatedMoe;
-        if matches!(
-            src.expert_activation_precision(),
-            memra_gguf::source::ExpertActivationPrecision::Bf16
-        ) {
-            eprintln!(
-                "[w4a16] artifact contract accepted: expert_weights=nvfp4 \
-                 expert_activations=bf16-rounded q8_expert_program=disabled"
-            );
-        }
         // OWNER FLIP 2026-08-27: the gated step37 serving doors (t-row walk, W8 q8 mirrors, SWA
         // ring, NVFP4 draft heads, prejoin/head-rows/weight-once verify fixes) default ON for
         // this family. Armed HERE — before any tensor upload, cache sizing, or mirror build reads
@@ -3969,34 +3597,8 @@ impl HybridModel {
         } else {
             None
         };
-        if let Some(fence) = crate::pp::pp_cuts(n_trunk) {
-            let pipeline = crate::plan_backend::PIPELINE
-                .trunk_capabilities(&plan)
-                .pipeline;
-            // Gemma retains its separately gated PP2 program. Every generic PP-N load must be
-            // admitted by ModelPlan operations before the first shard is uploaded; a legacy env
-            // door is not evidence that an arbitrary dense/stateful architecture is splittable.
-            let qualified_gemma_pp2 = gemma_program && fence.len() == 3;
-            if !pipeline.supported && !qualified_gemma_pp2 {
-                return Err(format!(
-                    "pipeline placement is unsupported for plan operations {:?}; blockers={:?}",
-                    plan.trunk_operations(),
-                    pipeline.blockers,
-                )
-                .into());
-            }
-            let illegal = illegal_pipeline_cuts(&fence, &plan.partition_boundaries);
-            if !illegal.is_empty() {
-                return Err(format!(
-                    "pipeline placement cuts {illegal:?} split outside ModelPlan legal boundaries {:?}",
-                    plan.partition_boundaries,
-                )
-                .into());
-            }
-        }
         crate::pp::init_model_transport(e, &cfg, n_trunk)?;
-        let step_parallel =
-            prepare_step_parallel_load(e, src, &cfg, n_trunk, auto_parallel.as_ref())?;
+        let step_parallel = prepare_step_parallel_load(e, src, &cfg, n_trunk)?;
         // glm5 TP-2 door (MEMRA_GLM5_TP): structural preflight from the compiled plan, BEFORE
         // any TP CUDA state or shard exists. Illegal geometry, non-glm5 plans, and co-armed
         // parallel programs refuse here by name.
@@ -4057,27 +3659,21 @@ impl HybridModel {
                     memra_gguf::model_plan::AttentionPlan::KimiDeltaNet(_)
                 )
             });
-            let ep_map_armed = crate::ep_map::ep_map_env()?;
-            if let Some((flag, _)) = ep_map_armed
-                && glm5_class
-            {
-                return Err(format!(
-                    "{flag} is set but MEMRA_GLM5_TP is off: the map cannot \
+            if crate::glm5_tp::glm5_ep_map_env().is_some() && glm5_class {
+                return Err(
+                    "MEMRA_GLM5_EP_MAP is set but MEMRA_GLM5_TP is off: the map cannot \
                      engage, and a placement that silently reverts to the even split is \
                      refused by name (unset one of the two)"
-                )
-                .into());
+                        .into(),
+                );
             }
             // Same trap, same scope, for the EP dispatch-diet doors (lane/glm5-ep-diet):
             // an ENABLED diet flag on a glm5-class plan with the TP door cold would
             // silently run the plain walk while the operator believes the diet is live.
             // `=0` is a deliberate pin, not an arming, and never refuses.
-            // The doors resolve through the general name + its glm5 alias, and report the
-            // name the OPERATOR set — so this refusal's bytes are unchanged for every banked
-            // script (which sets the alias) and correct for the general name.
             if glm5_class {
-                for (armed, flag) in [crate::ep_diet_armed(), crate::ep_grouped_prime_armed()] {
-                    if armed {
+                for flag in ["MEMRA_GLM5_EP_DIET", "MEMRA_GLM5_EP_GROUPED_PRIME"] {
+                    if std::env::var(flag).as_deref() == Ok("1") {
                         return Err(format!(
                             "{flag}=1 is set but MEMRA_GLM5_TP is off: the EP dispatch \
                              diet only exists inside the TP-2 EP walk and cannot engage \
@@ -4102,13 +3698,6 @@ impl HybridModel {
             load_t(e_head, src, "token_embd.weight")?
         };
         let mut resident = ResidentPlan::pp(e, src, &cfg, n_trunk)?;
-        resident.exclude_distributed_expert_layers(
-            step_parallel
-                .ep_specs
-                .iter()
-                .map(|spec| spec.layer)
-                .chain(step_parallel.tp_specs.iter().map(|spec| spec.layer)),
-        );
         let mut step_runtimes = StepParallelRuntimeRegistry::with_config(step_parallel);
 
         // SPILLING-PLAN §2: build the tiered-spill context ONCE, before loading any experts, but
@@ -4312,8 +3901,8 @@ impl HybridModel {
                     }
                 };
                 if let Ffn::Moe(m) = &mut layer.ffn {
-                    // The measured placement row for this layer, when MEMRA_EP_MAP (or
-                    // its glm5 alias) armed one (validated at preflight: exact layer cover, so a
+                    // The measured placement row for this layer, when MEMRA_GLM5_EP_MAP
+                    // armed one (validated at preflight: exact layer cover, so a
                     // missing row here is a wiring bug, never a silent even split).
                     let placement = match &tp_plan.ep_map {
                         Some(map) => Some(
@@ -4784,27 +4373,51 @@ impl HybridModel {
         // the MTP-head placement law). The native MTP head is NOT needed and NOT loaded for
         // this source (the q38 pattern: layers.45 is a full MoE trunk layer of VRAM).
         // A set flag that cannot load is a LOUD boot failure, never a silent plain fallback.
-        //
-        // THE LOAD CONTRACT IS THE GENERAL SEAM (lane/glm5-extract2):
-        // `dflash::load_drafter` holds every drafter<->target validation (DFlash2 family,
-        // hidden == n_embd, taps inside the trunk, mask token inside the vocab) plus the
-        // sha256 identity pin. All four are properties of the PAIR, not of glm5 — the next
-        // spec family passes its own flag name and its own (n_trunk, n_embd, n_vocab). What
-        // stays here is glm5's own: the family flag name and the `is_glm5_next()` route.
-        // Error bytes unchanged (the general fn prefixes `{flag}={dir}`).
         let glm5_dflash = match std::env::var("MEMRA_GLM5_DFLASH") {
             Ok(spec) if !spec.is_empty() && cfg.arch.is_glm5_next() => {
                 let dpath = memra_gguf::hf::resolve_arg(&spec)
                     .map_err(|err| format!("MEMRA_GLM5_DFLASH={spec:?}: {err}"))?;
                 let de = crate::pp::layer_engine(e, n_trunk, n_trunk)?;
-                Some(crate::dflash::load_drafter(
-                    de,
-                    std::path::Path::new(&dpath),
-                    "MEMRA_GLM5_DFLASH",
-                    n_trunk,
-                    cfg.n_embd as usize,
-                    output.out_features(),
-                )?)
+                let dir = std::path::Path::new(&dpath);
+                let draft = crate::dflash::DflashDraft::load(de, dir).map_err(|err| {
+                    format!("MEMRA_GLM5_DFLASH={dpath}: drafter load failed: {err}")
+                })?;
+                if draft.dflash2.is_none() {
+                    return Err(format!(
+                        "MEMRA_GLM5_DFLASH={dpath}: checkpoint is not a DFlash2DraftModel \
+                         (the glm5 draft source is the selector family only)"
+                    )
+                    .into());
+                }
+                if draft.cfg.hidden != cfg.n_embd as usize {
+                    return Err(format!(
+                        "MEMRA_GLM5_DFLASH={dpath}: drafter hidden {} != target n_embd {} \
+                         (the drafter consumes target features and the target's embed/lm_head)",
+                        draft.cfg.hidden, cfg.n_embd
+                    )
+                    .into());
+                }
+                if draft.cfg.target_layer_ids.is_empty()
+                    || draft.cfg.target_layer_ids.iter().any(|&t| t >= n_trunk)
+                {
+                    return Err(format!(
+                        "MEMRA_GLM5_DFLASH={dpath}: target_layer_ids {:?} do not name valid \
+                         trunk layers (n_trunk {n_trunk})",
+                        draft.cfg.target_layer_ids
+                    )
+                    .into());
+                }
+                if draft.cfg.mask_token_id as usize >= output.out_features() {
+                    return Err(format!(
+                        "MEMRA_GLM5_DFLASH={dpath}: mask token {} outside the target vocab {}",
+                        draft.cfg.mask_token_id,
+                        output.out_features()
+                    )
+                    .into());
+                }
+                let sha8 = sha256_file_hex8(&dir.join("model.safetensors"))
+                    .map_err(|err| format!("MEMRA_GLM5_DFLASH={dpath}: sha256 pin: {err}"))?;
+                Some(crate::glm_spec::Glm5DflashDrafter { draft, sha8 })
             }
             _ => None,
         };
@@ -5713,55 +5326,6 @@ impl HybridModel {
     }
 }
 
-fn illegal_pipeline_cuts(fence: &[usize], legal_boundaries: &[usize]) -> Vec<usize> {
-    fence
-        .get(1..fence.len().saturating_sub(1))
-        .unwrap_or_default()
-        .iter()
-        .copied()
-        .filter(|cut| !legal_boundaries.contains(cut))
-        .collect()
-}
-
-#[cfg(test)]
-mod pipeline_cut_tests {
-    use super::illegal_pipeline_cuts;
-
-    #[test]
-    fn manual_pipeline_cuts_cannot_bypass_model_plan_boundaries() {
-        assert!(illegal_pipeline_cuts(&[0, 8, 16, 24], &[8, 16]).is_empty());
-        assert_eq!(illegal_pipeline_cuts(&[0, 7, 16, 24], &[8, 16]), vec![7]);
-        assert_eq!(
-            illegal_pipeline_cuts(&[0, 7, 15, 24], &[8, 16]),
-            vec![7, 15]
-        );
-    }
-}
-
-#[cfg(test)]
-mod auto_parallel_policy_tests {
-    use super::{parse_auto_parallel_tp_attention, parse_auto_w4a16_bf16_mmv};
-
-    #[test]
-    fn automatic_w4a16_bf16_residency_defaults_on_with_explicit_rollback() {
-        assert!(parse_auto_w4a16_bf16_mmv(None).unwrap());
-        assert!(!parse_auto_w4a16_bf16_mmv(Some("0")).unwrap());
-        assert!(parse_auto_w4a16_bf16_mmv(Some("1")).unwrap());
-        assert!(parse_auto_w4a16_bf16_mmv(Some("true")).is_err());
-        assert!(parse_auto_w4a16_bf16_mmv(Some("")).is_err());
-    }
-
-    #[test]
-    fn automatic_tp_attention_is_strict_and_defaults_off() {
-        assert!(!parse_auto_parallel_tp_attention(None).unwrap());
-        assert!(!parse_auto_parallel_tp_attention(Some("")).unwrap());
-        assert!(!parse_auto_parallel_tp_attention(Some("0")).unwrap());
-        assert!(parse_auto_parallel_tp_attention(Some("1")).unwrap());
-        assert!(parse_auto_parallel_tp_attention(Some("true")).is_err());
-        assert!(parse_auto_parallel_tp_attention(Some("2")).is_err());
-    }
-}
-
 #[cfg(test)]
 mod step_expert_selection_tests {
     use super::{
@@ -5823,8 +5387,6 @@ mod step_expert_selection_tests {
             ep_device_arithmetic: true,
             f32_mirror: true,
             bulk_p2p: true,
-            nvfp4_device_routes: true,
-            auto_parallel: true,
             expert_artifact: StepExpertArtifact::default(),
         });
         source_specs[0].devices.clear();
@@ -5835,8 +5397,6 @@ mod step_expert_selection_tests {
         assert!(registry.config.ep_device_arithmetic);
         assert!(registry.config.f32_mirror);
         assert!(registry.config.bulk_p2p);
-        assert!(registry.config.nvfp4_device_routes);
-        assert!(registry.config.auto_parallel);
         assert_eq!(
             registry.expert_selection(24).unwrap().unwrap().layout,
             StepExpertLayout::ExpertParallel
@@ -5873,9 +5433,8 @@ mod step_expert_selection_tests {
 
 #[cfg(test)]
 mod residency_tests {
-    use super::{DevExpertFp8ProjectionScales, ResidentPlan, residency_bytes_by_device};
+    use super::{DevExpertFp8ProjectionScales, residency_bytes_by_device};
     use crate::model::HostExpertFp8BlockScales;
-    use std::collections::HashMap;
 
     #[test]
     fn pp_residency_counts_only_each_devices_expert_slice() {
@@ -5906,21 +5465,6 @@ mod residency_tests {
         let bytes = residency_bytes_by_device(tensors, &[0, 0, 0, 0], 0);
         assert_eq!(bytes.experts.get(&0), Some(&100));
         assert_eq!(bytes.experts.len(), 1);
-    }
-
-    #[test]
-    fn distributed_trunk_layers_do_not_poison_local_mtp_residency_estimates() {
-        let mut plan = ResidentPlan {
-            primary_device: 0,
-            layer_devices: vec![0; 81],
-            layer_counts: HashMap::from([(0, 81)]),
-            exact_expert_bytes: None,
-            trunk_bytes: 0,
-            decisions: HashMap::new(),
-            pp: false,
-        };
-        plan.exclude_distributed_expert_layers(1..80);
-        assert_eq!(plan.layer_counts.get(&0), Some(&2));
     }
 
     #[test]

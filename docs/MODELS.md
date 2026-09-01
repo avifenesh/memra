@@ -258,13 +258,7 @@ tok/s vs the MTP head's 117/120/85; single-stream wall prose ~131-146, code ~208
 digit-heavy ~287-339 tok/s (acceptance rises with output predictability). Recipe in
 [COOKBOOK.md](COOKBOOK.md); receipts in the FLAGS `MEMRA_DSPARK_SPEC` row.
 
-**Current engine number: 250 tok/s** on one RTX PRO 6000. That is memra: DFlash2,
-512-token digits, wall clock with TTFT included. The digit-heavy ~287-339 tok/s
-band above is the decode window on the same route (TTFT excluded); 250 is that
-window after TTFT. Do not quote the 140 tok/s p50 row below as current; it is
-the 2026-08-15 MTP-era battery.
-
-Historical MTP-era battery, kept as measured (NVFP4+Q5_K artifact, real agentic prompts,
+The MTP-era battery below stands as measured (NVFP4+Q5_K artifact, real agentic prompts,
 3-rep medians, zero sheds or errors across every cell — 2026-08-15):
 
 | Metric | Measured |

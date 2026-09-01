@@ -187,7 +187,6 @@ use crate::dflash::{DflashDraft, DflashKv, DsparkDraftSample};
 use crate::forward::argmax;
 use crate::hybrid::{HybridModel, Mixer};
 use crate::spec::SpecSampling;
-use crate::spec_phase::SpecPhaseNs;
 use cudarc::driver::CudaSlice;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
@@ -201,10 +200,33 @@ pub fn glm5_spec_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_GLM5_SPEC").as_deref() == Ok("1"))
 }
 
-// Per-burst phase attribution moved to `crate::spec_phase` (lane/glm5-extract-general):
-// the draft/verify/accept/roll/maint split is spec-family-generic. This loop consumes
-// `MEMRA_SPEC_TRACE` (glm5 alias `MEMRA_GLM5_SPEC_TRACE` stays honored) and passes its
-// own `[glm5-phase]` / `[glm5-phase-v]` tags so every banked receipt keeps its shape.
+/// `MEMRA_GLM5_SPEC_TRACE=1`: per-burst phase attribution for the glm5 spec round (the 3way
+/// window's named gap — "the engine has NO per-phase timing at this head"; loop-port item 0,
+/// the dspark `MEMRA_SPEC_STATS` clock pattern). DEFAULT OFF BY DESIGN: each phase boundary
+/// SYNCHRONIZES the stream so device time lands in the right bucket, which serializes the
+/// round — a diagnostic instrument, never a serving mode, and its numbers are phase SHARES,
+/// not round walls (the un-traced round overlaps what the trace separates). Emits one
+/// `[glm5-phase]` line per burst: rounds, per-phase totals and per-round means for
+/// draft / verify / accept / rollback / source-maintenance.
+pub fn glm5_spec_trace_on() -> bool {
+    glm5_spec_trace_level() >= 1
+}
+
+/// Trace LEVEL (lane/glm5-verify-batch): `1` = the [`glm5_spec_trace_on`] phase lines,
+/// unchanged and comparable with the flip-battery cell-2 receipts; `2` = additionally the
+/// VERIFY sub-split — batched-class vs sequential-class time per burst
+/// (`[glm5-phase-v]`: vkda with its in-kernel scan share, vmla, vrest = glue+FFN+head).
+/// Level 2 adds per-layer stream drains on top of level 1's phase drains: shares, never
+/// walls, never a perf row (the standing trace law).
+pub fn glm5_spec_trace_level() -> u8 {
+    use std::sync::OnceLock;
+    static L: OnceLock<u8> = OnceLock::new();
+    *L.get_or_init(|| match std::env::var("MEMRA_GLM5_SPEC_TRACE").as_deref() {
+        Ok("1") => 1,
+        Ok("2") => 2,
+        _ => 0,
+    })
+}
 
 /// `MEMRA_GLM5_VERIFY_BATCH` (default ON, lane/glm5-verify-batch): the per-LAYER batched
 /// mixer walk — one t=K+1 KDA call per layer (projections/conv/gates batched through the
@@ -220,47 +242,18 @@ pub fn glm5_verify_batch_on() -> bool {
     std::env::var("MEMRA_GLM5_VERIFY_BATCH").as_deref() != Ok("0")
 }
 
-/// `MEMRA_GLM5_SPEC_PREFIX` (default OFF, lane/glm5-prefix-latent2 2026-09-01): the glm5
-/// spec x prefix-cache interplay — BOTH sides, one flag (the `MEMRA_DSPARK_PREFIX_RESTORE`
-/// precedent): (capture) DFlash2-source sessions take a prompt-boundary capture at creation
-/// for the worker's deferred prefix publication, and (restore) the worker may convert a
-/// prefix hit into `glm5_spec_session_from_restored` instead of demoting it to the plain
-/// route. Requires `MEMRA_PREFIX_LATENT=1` too — a capture the worker's publisher would
-/// refuse (latent entries need the plane flag) is pure waste, so this predicate ANDs both
-/// env reads. DEFAULT OFF BY DESIGN (new-flags law): the restored-session program is
-/// unmeasured until the box battery banks restored-vs-cold byte identity on the
-/// continuation; unset restores the pre-lane posture exactly (spec sessions never capture,
-/// hits demote to plain). Read once per process.
-pub fn glm5_spec_prefix_on() -> bool {
-    use std::sync::OnceLock;
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| {
-        let sp = std::env::var("MEMRA_GLM5_SPEC_PREFIX").as_deref() == Ok("1");
-        let pl = std::env::var("MEMRA_PREFIX_LATENT").as_deref() == Ok("1");
-        if sp && !pl {
-            // A mis-built recipe would otherwise only surface through the battery's
-            // receipt gates (PR #96 review round 2, minor) — say it at first read.
-            eprintln!(
-                "[glm5-spec] MEMRA_GLM5_SPEC_PREFIX=1 is INERT: it requires \
-                 MEMRA_PREFIX_LATENT=1 (latent entries could never publish without it)"
-            );
-        }
-        sp && pl
-    })
-}
-
-/// `MEMRA_GLM5_SPEC_TP` (default OFF, lane/glm5-composition 2026-09-01): admit glm5 spec
-/// SESSIONS on a `MEMRA_GLM5_TP`-armed model. DEFAULT OFF BY DESIGN (new-flags law): the
-/// composition's verify/rollback wiring is rig-gated for correctness (per-rank KDA
-/// snapshot/replay, per-replica MLA latent truncation — `glm5-tp-gate` arms S*), but it has
-/// ZERO real-artifact receipts and the TP serving wiring is still the named box increment;
-/// an unmeasured composition does not default ON. `=1` lifts ONLY the session co-refusal —
-/// every other admission law holds (draft source required, batched verify walk required:
-/// the per-row rollback seam carries no TP arm and refuses by name). Read per session
-/// creation. Rollback seam: unset (the co-refusal is restored verbatim).
-pub fn glm5_spec_tp_on() -> bool {
-    std::env::var("MEMRA_GLM5_SPEC_TP").as_deref() == Ok("1")
-}
+/// Trace-level-2 verify sub-phase accumulators (ns), drained by [`Glm5PhaseNs::emit`].
+/// Module-level atomics so the walk needs no signature plumbing through the ppN twin
+/// (the KDA_FUSED6_DISPATCHES precedent); level 2 is a single-session instrument, so
+/// cross-session interleaving is out of scope by definition.
+static V_KDA_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static V_KDA_SCAN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static V_MLA_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// FFN-branch share of the verify walk (lane/glm5-vrest): MoE + dense + shexp time inside
+/// vrest, so the box window can split the vrest bucket without re-deriving it. Ticks only
+/// on the batched arm, like its siblings; vrest's own definition (verify - vkda - vmla)
+/// stays unchanged for cross-window comparability — the line prints vffn INSIDE vrest.
+static V_FFN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// `MEMRA_SPEC_PMIN`, honored by the glm5 loop (loop-port 2 — the step37 shipping family,
 /// `MEMRA_SPEC_PMIN=0.5 MEMRA_SPEC_PMIN0=1` is what step37 serves; NO new flag): stop the
@@ -294,20 +287,110 @@ pub(crate) fn glm5_pmin0() -> bool {
     *P.get_or_init(|| std::env::var("MEMRA_SPEC_PMIN0").as_deref() == Ok("1"))
 }
 
-/// MEMRA_SPEC_PMIN break semantics — hoisted to the shared K-policy surface
-/// ([`crate::spec::spec_conf_keep`], lane/glm5-extract-general); re-exported here so the
-/// glm5 gates and call sites keep their name.
-pub use crate::spec::spec_conf_keep as glm5_conf_keep;
+/// MEMRA_SPEC_PMIN break semantics over per-slot draft confidences (the spec.rs chain
+/// break, `p < p_min && (j > 0 || pmin0)`): keep the longest prefix whose every slot
+/// clears `p_min`; slot 0 survives a miss unless PMIN0 arms zero-draft rounds. Prefix
+/// truncation is forced by the accept rule anyway (a kept slot after a dropped one could
+/// never commit — the dspark confidence-slot argument). Pure so the rule is CPU-gateable.
+pub fn glm5_conf_keep(q: &[f32], p_min: f32, pmin0: bool) -> usize {
+    if p_min <= 0.0 {
+        return q.len();
+    }
+    let mut kept = 0usize;
+    for (j, &qj) in q.iter().enumerate() {
+        if qj < p_min && (j > 0 || pmin0) {
+            break;
+        }
+        kept += 1;
+    }
+    kept
+}
 
-/// The loaded DFlash2 drafter (module doc, DRAFT SOURCE SEAM): the model-level half of the
-/// `Dflash2` draft source — weights loaded ONCE per model on the head engine (`hybrid.rs`,
-/// `MEMRA_GLM5_DFLASH`); per-session state lives in [`Glm5DraftState`].
-///
-/// HOISTED to the general seam ([`crate::dflash::DflashDrafter`], lane/glm5-extract2): the
-/// holder is `{ drafter weights, byte-identity pin }` with nothing glm5 in it. Re-exported
-/// here under its old name so glm5's call sites and gates keep the name they were written
-/// against, exactly as `glm5_conf_keep` does above.
-pub use crate::dflash::DflashDrafter as Glm5DflashDrafter;
+/// Per-burst phase counters (ns) for `MEMRA_GLM5_SPEC_TRACE` — the verify-toll dataset the
+/// dspark loop banks under its `stats` clocks (`ns_draft/ns_verify/...`, dflash.rs).
+#[derive(Default)]
+struct Glm5PhaseNs {
+    draft: u64,
+    verify: u64,
+    accept: u64,
+    roll: u64,
+    maint: u64,
+    rounds: u64,
+}
+
+impl Glm5PhaseNs {
+    /// Phase-boundary clock: drain the engines' streams so the elapsed time since the last
+    /// clock is attributable to the phase that just ran (the dspark `clock(stats, e)`
+    /// contract). `eh` == `e` when the ppN door is shut; under a split the verify walk's own
+    /// terminal drain already covers the stage streams transitively, so syncing the primary
+    /// and head streams here bounds every phase that runs on them.
+    fn clock(e: &Engine, eh: &Engine) -> std::time::Instant {
+        let _ = e.stream().synchronize();
+        if !std::ptr::eq(e, eh) {
+            let _ = eh.stream().synchronize();
+        }
+        std::time::Instant::now()
+    }
+
+    fn emit(&self, k: usize) {
+        if self.rounds == 0 {
+            return;
+        }
+        let ms = |ns: u64| ns as f64 / 1e6;
+        let per = |ns: u64| ns as f64 / 1e6 / self.rounds as f64;
+        let total = self.draft + self.verify + self.accept + self.roll + self.maint;
+        eprintln!(
+            "[glm5-phase] rounds={} k={k} total={:.2}ms | draft={:.2} verify={:.2} \
+             accept={:.2} roll={:.2} maint={:.2} | per-round ms: draft={:.3} verify={:.3} \
+             accept={:.3} roll={:.3} maint={:.3} total={:.3}",
+            self.rounds,
+            ms(total),
+            ms(self.draft),
+            ms(self.verify),
+            ms(self.accept),
+            ms(self.roll),
+            ms(self.maint),
+            per(self.draft),
+            per(self.verify),
+            per(self.accept),
+            per(self.roll),
+            per(self.maint),
+            per(total),
+        );
+        // Level-2 verify sub-split (lane/glm5-verify-batch): batched-class vs
+        // sequential-class shares. vrest = the verify phase minus the mixer buckets
+        // (hc glue + FFN/MoE + head); scan = the sequential KDA chain inside the
+        // batched call. Drained per burst so consecutive bursts stay comparable.
+        if glm5_spec_trace_level() >= 2 {
+            use std::sync::atomic::Ordering;
+            let vkda = V_KDA_NS.swap(0, Ordering::Relaxed);
+            let scan = V_KDA_SCAN_NS.swap(0, Ordering::Relaxed);
+            let vmla = V_MLA_NS.swap(0, Ordering::Relaxed);
+            let vffn = V_FFN_NS.swap(0, Ordering::Relaxed);
+            let vrest = self.verify.saturating_sub(vkda + vmla);
+            eprintln!(
+                "[glm5-phase-v] rounds={} k={k} | per-round ms: vkda={:.3} (scan={:.3}) \
+                 vmla={:.3} vrest={:.3} (vffn={:.3})",
+                self.rounds,
+                per(vkda),
+                per(scan),
+                per(vmla),
+                per(vrest),
+                per(vffn),
+            );
+        }
+    }
+}
+
+/// The loaded glm5 DFlash2 drafter (module doc, DRAFT SOURCE SEAM): the model-level half of
+/// the `Dflash2` draft source — weights loaded ONCE per model on the head engine
+/// (`hybrid.rs`, `MEMRA_GLM5_DFLASH`); per-session state lives in [`Glm5DraftState`].
+pub struct Glm5DflashDrafter {
+    pub draft: DflashDraft,
+    /// First 8 hex of sha256(model.safetensors) — the boot-receipt identity pin
+    /// (`b33c0347` for the probe-pinned incoai/GLM-5.3-Flash-DFlash2 @ dc77ff1c bytes).
+    pub sha8: String,
+}
 
 /// Per-session draft-source state (module doc, DRAFT SOURCE SEAM). Selected at session
 /// creation from the model's loaded sources and pinned for the session's lifetime.
@@ -355,34 +438,35 @@ enum Glm5DraftQ {
 /// `MEMRA_GLM5_DFLASH_GATE_RED=tap-shift` is the RED-ARM INSTRUMENT: every tap moves +1
 /// layer — deliberately wrong features whose acceptance collapse the gate asserts while
 /// the output tape stays byte-identical. Unknown values refuse loudly.
-///
-/// The resolution itself is the general seam ([`crate::dflash::resolve_tap_layers`],
-/// lane/glm5-extract2); what stays here is glm5's OWN red arm — the gate instrument reads its
-/// env, prints its `[glm5-spec]` tag, and hands the shift in as a parameter. Error bytes are
-/// unchanged ("glm5 DFlash2" is the `what` label).
 fn glm5_dflash_tap_layers(draft: &DflashDraft, n_trunk: usize) -> Res<Vec<usize>> {
-    let shift = match std::env::var("MEMRA_GLM5_DFLASH_GATE_RED").ok().as_deref() {
+    let mut taps = draft.cfg.target_layer_ids.clone();
+    if taps.is_empty() {
+        return Err("glm5 DFlash2 drafter config carries no target_layer_ids".into());
+    }
+    match std::env::var("MEMRA_GLM5_DFLASH_GATE_RED").ok().as_deref() {
         Some("tap-shift") => {
             eprintln!(
                 "[glm5-spec] RED-ARM tap-shift: drafter tap layers shifted +1 (gate \
                  instrument, never a serving flag)"
             );
-            1
+            for t in taps.iter_mut() {
+                *t += 1;
+            }
         }
-        Some("") | None => 0,
+        Some("") | None => {}
         Some(other) => {
             return Err(format!(
                 "MEMRA_GLM5_DFLASH_GATE_RED={other:?}: unknown red arm (want tap-shift)"
             )
             .into());
         }
-    };
-    Ok(crate::dflash::resolve_tap_layers(
-        &draft.cfg.target_layer_ids,
-        n_trunk,
-        shift,
-        "glm5 DFlash2",
-    )?)
+    }
+    if let Some(&bad) = taps.iter().find(|&&t| t >= n_trunk) {
+        return Err(
+            format!("glm5 DFlash2 tap layer {bad} is outside the {n_trunk}-layer trunk").into(),
+        );
+    }
+    Ok(taps)
 }
 
 /// Pre-round state checkpoint for one glm5 verify round. Captured by `glm5_verify_rows`
@@ -427,11 +511,6 @@ pub struct Glm5VerifyCkpt {
     /// layer per round — ring snapshot + stolen raw conv rows + stolen batched scan
     /// inputs; rollback re-rolls the ring and replays the scan ONCE at T=keep.
     kda_rows: Vec<Option<crate::kda::KdaRowsStash>>,
-    /// glm5 TP composition (lane/glm5-composition): per-rank rollback material of each
-    /// SHARDED KDA layer's batched verify call — the rank-indexed twin of
-    /// (`kda_ssm_snap`, `kda_rows`), restored through each rank's own engine. `None` on
-    /// every unsharded layer.
-    kda_tp: Vec<Option<crate::glm5_tp::Glm5TpKdaVerifyStash>>,
     /// Row count of the walk that filled this ckpt; rollback validates `keep` against it.
     rows: usize,
 }
@@ -512,32 +591,15 @@ impl HybridModel {
             )
             .into());
         }
-        let mut any_sharded = false;
         for (il, layer) in self.layers.iter().enumerate() {
-            match &layer.mixer {
-                Mixer::Kda(la) => any_sharded |= la.tp.is_some(),
-                Mixer::Mla(mla) => any_sharded |= mla.tp.is_some(),
-                _ => {
-                    return Err(format!(
-                        "glm5_verify_rows: trunk layer {il} is not a KDA or MLA mixer — the \
-                         rollback contract below is built and gated for glm5_next's two state \
-                         classes only; a Full/Linear arm needs its own ckpt plane and gate"
-                    )
-                    .into());
-                }
+            if !matches!(layer.mixer, Mixer::Kda(_) | Mixer::Mla(_)) {
+                return Err(format!(
+                    "glm5_verify_rows: trunk layer {il} is not a KDA or MLA mixer — the \
+                     rollback contract below is built and gated for glm5_next's two state \
+                     classes only; a Full/Linear arm needs its own ckpt plane and gate"
+                )
+                .into());
             }
-        }
-        // spec x TP composition (lane/glm5-composition): the per-row walk carries no TP
-        // rollback arm — a sharded trunk demands the BATCHED walk at t > 1 (t = 1 rounds
-        // ride the TP decode walk below; full accept is the only legal outcome there).
-        if any_sharded && t > 1 && !glm5_verify_batch_on() {
-            return Err(
-                "glm5_verify_rows: the trunk is glm5-TP-SHARDED and MEMRA_GLM5_VERIFY_BATCH=0 — \
-                 the per-row rollback seam carries no TP arm; the spec x TP composition \
-                 requires the batched verify walk (unset MEMRA_GLM5_VERIFY_BATCH or run \
-                 without the TP door)"
-                    .into(),
-            );
         }
 
         let n_embd = self.cfg.n_embd as usize;
@@ -556,7 +618,6 @@ impl HybridModel {
             kda_ssm_snap: (0..self.layers.len()).map(|_| None).collect(),
             kda_scan_stash: (0..self.layers.len()).map(|_| None).collect(),
             kda_rows: (0..self.layers.len()).map(|_| None).collect(),
-            kda_tp: (0..self.layers.len()).map(|_| None).collect(),
             rows: t,
         };
 
@@ -637,7 +698,7 @@ impl HybridModel {
                 }
             });
         }
-        let trace_v = crate::spec_phase::spec_trace_level() >= 2;
+        let trace_v = glm5_spec_trace_level() >= 2;
         // Sub-phase clock (trace level 2 only): drain the walking stream so the elapsed
         // ns lands in the mixer-class bucket — shares, never walls.
         let vclock = |on: bool| -> Option<std::time::Instant> {
@@ -667,44 +728,6 @@ impl HybridModel {
                 };
             let mixed = if layer_batched {
                 match &layer.mixer {
-                    // spec x TP composition: sharded mixers ride the TP verify walks —
-                    // per-rank batched rows calls, column-parallel-over-gather joins on
-                    // the rows-exact classes, per-rank rollback stash into the ckpt.
-                    Mixer::Kda(la) if la.tp.is_some() => {
-                        let t0 = vclock(trace_v);
-                        let mut scan_ns = 0u64;
-                        let (out, stash) = crate::glm5_tp::kda_tp_verify_rows(
-                            e,
-                            la,
-                            &h,
-                            t,
-                            eps,
-                            cache,
-                            il,
-                            trace_v.then_some(&mut scan_ns),
-                        )?;
-                        ckpt.kda_tp[il] = Some(stash);
-                        if let Some(t0) = t0 {
-                            let _ = e.stream().synchronize();
-                            use std::sync::atomic::Ordering;
-                            crate::spec_phase::V_KDA_NS
-                                .fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
-                            crate::spec_phase::V_KDA_SCAN_NS.fetch_add(scan_ns, Ordering::Relaxed);
-                        }
-                        out
-                    }
-                    Mixer::Mla(mla) if mla.tp.is_some() => {
-                        let t0 = vclock(trace_v);
-                        let out =
-                            self.mla_tp_attn_cached(e, mla, &h, &pos.all, t, il, cache, true)?;
-                        if let Some(t0) = t0 {
-                            let _ = e.stream().synchronize();
-                            use std::sync::atomic::Ordering;
-                            crate::spec_phase::V_MLA_NS
-                                .fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
-                        }
-                        out
-                    }
                     Mixer::Kda(la) => {
                         // Pre-round snapshot: ONE ssm clone per layer per round, BEFORE
                         // the batched call advances the resident state (ckpt doc; also
@@ -731,9 +754,8 @@ impl HybridModel {
                         if let Some(t0) = t0 {
                             let _ = e.stream().synchronize();
                             use std::sync::atomic::Ordering;
-                            crate::spec_phase::V_KDA_NS
-                                .fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
-                            crate::spec_phase::V_KDA_SCAN_NS.fetch_add(scan_ns, Ordering::Relaxed);
+                            V_KDA_NS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                            V_KDA_SCAN_NS.fetch_add(scan_ns, Ordering::Relaxed);
                         }
                         out
                     }
@@ -744,8 +766,7 @@ impl HybridModel {
                         if let Some(t0) = t0 {
                             let _ = e.stream().synchronize();
                             use std::sync::atomic::Ordering;
-                            crate::spec_phase::V_MLA_NS
-                                .fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                            V_MLA_NS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
                         }
                         out
                     }
@@ -776,38 +797,6 @@ impl HybridModel {
                         &pos_row
                     };
                     let out_row = match &layer.mixer {
-                        // spec x TP composition on the per-row arm. KDA shards reach
-                        // here at t == 1 ONLY, asserted locally: the walk-entry guard is
-                        // a FLAG check two frames up (MEMRA_GLM5_VERIFY_BATCH=0 at t>1
-                        // refuses), and under the batched flag layer_batched is
-                        // unconditionally true for KDA — but neither is a structural
-                        // invariant of THIS arm (#80 review's latent-trap finding). A
-                        // sharded NO-INDEXER MLA layer legally lands here at any t
-                        // (append + truncate rollback covers every keep; foreign
-                        // geometry, never a live glm5_next path).
-                        Mixer::Kda(la) if la.tp.is_some() => {
-                            if t > 1 {
-                                return Err(format!(
-                                    "glm5 verify per-row arm reached a sharded KDA \
-                                     layer {il} at t={t}: no per-rank rollback stash \
-                                     exists on this arm (walk-entry guard bypassed?)"
-                                )
-                                .into());
-                            }
-                            crate::glm5_tp::kda_tp_cached(
-                                e,
-                                la,
-                                &h_row,
-                                1,
-                                eps,
-                                cache,
-                                il,
-                                crate::kda::ConvArm::Decode,
-                            )?
-                        }
-                        Mixer::Mla(mla) if mla.tp.is_some() => {
-                            self.mla_tp_attn_cached(e, mla, &h_row, pos_r, 1, il, cache, false)?
-                        }
                         Mixer::Kda(la) => {
                             // Pre-round snapshot: ONE ssm clone per layer per round taken
                             // before row 0 mutates the resident state (loop-port 3).
@@ -868,8 +857,7 @@ impl HybridModel {
             if let Some(t0) = t0 {
                 let _ = e.stream().synchronize();
                 use std::sync::atomic::Ordering;
-                crate::spec_phase::V_FFN_NS
-                    .fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                V_FFN_NS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
             }
             x = crate::hyper::post(e, topology, &ffn_out, &x, &mix, t, n_embd)?;
             // glm5 DFlash2 feature tap (module doc, DRAFT SOURCE SEAM): the verify rows'
@@ -909,16 +897,7 @@ impl HybridModel {
         };
         let h = sink.hidden;
         let n_taps = sink.layer_ids.len();
-        // Sink-relative row of this walk's row 0 (doc on `HcTapSink::origin`): fresh-prompt
-        // sinks have origin 0 and this is exactly the pre-field arithmetic; a suffix-prime
-        // sink is anchored at the restored boundary. A base below the origin is a caller
-        // bug (a walk over rows the sink does not cover) — refuse, never wrap.
-        let base = sink.base.checked_sub(sink.origin).ok_or_else(|| {
-            format!(
-                "hc tap base {} below sink origin {} (walk outside the sink's window)",
-                sink.base, sink.origin,
-            )
-        })?;
+        let base = sink.base;
         debug_assert!(
             base + t <= sink.t,
             "hc tap window {base}+{t} exceeds sink {}",
@@ -1144,14 +1123,6 @@ impl HybridModel {
         // el.stream() under the enter-guard IS the stage stream (memra_runtime ambient
         // override) — this drain settles the whole walk transitively.
         el.stream().synchronize()?;
-        drop(_stl);
-        // EXIT PUBLICATION (lane/glm5-accrace): the drain above settles the LAST stage, and
-        // the TX-wait chain covers every earlier stage's work only UP TO its `ev_tx`. Each
-        // earlier stage's stream still holds the stage-scope tail its locals enqueue when
-        // they drop under the override (`pos`, the boundary residual, the per-layer
-        // transients, this round's ckpt clones). The caller resumes and allocates for the
-        // accept walk and the MTP re-seed, so it must be ordered behind ALL stages.
-        self.glm5_publish_stages(e)?;
         Ok((logits, collapsed, ckpt))
     }
 
@@ -1187,27 +1158,8 @@ impl HybridModel {
     /// Under a live ppN split each stage's layers restore THROUGH that stage's engine ON
     /// its stream: the state planes and the ckpt columns live on the owning stage's device
     /// (per-stage `KvDev` allocation; per-stage clones in the walk), and enqueuing the
-    /// restores on the same stage streams the walk writes on orders them relative to the
-    /// walk without any extra fence.
-    ///
-    /// THE EXIT PUBLICATION IS NOT OPTIONAL (lane/glm5-accrace 2026-09-01). This body used
-    /// to return with the restores merely ENQUEUED on the stage streams, on the reasoning
-    /// that "the next walk's own entry fence covers the primary-stream seam". It does not:
-    /// `fence_stages_behind` orders the STAGE streams behind the CALLER, and everything the
-    /// round does after this point — the MTP plane reset, the h_seed rows, the next round's
-    /// whole draft chain, the next SESSION's cache allocation and prime — runs on the
-    /// CALLER's stream and ALLOCATES. cudarc's drops carry no read guard, so the pool could
-    /// hand the caller a block whose stage-stream lifetime had not retired and the caller's
-    /// writes landed under queued rollback work.
-    ///
-    /// MEASURED CONSEQUENCE, and why a "rollback ordering" bug showed up as a PRIME bug:
-    /// with per-stage streams on one device the hc ppN prime over a fixed 24-token prompt
-    /// returned three distinct logit fingerprints inside one process (a third of all primes
-    /// non-canonical); downstream, one glm5 spec round lost an acceptance silently
-    /// (14/42 -> 13/42) and the e2e tape diverged. Publishing here took non-canonical primes
-    /// from 20/110 to 2/110 in an interleaved A/B, and the walk's own exit publication
-    /// closed the remainder. Receipts:
-    /// `research/glm53-flash-bringup-20260827/accrace-20260901/LANE.md`.
+    /// restores on the same stage streams the walk writes on orders them without any extra
+    /// fence — the next walk's own entry fence covers the primary-stream seam.
     pub fn glm5_verify_rollback(
         &self,
         e: &Engine,
@@ -1233,8 +1185,6 @@ impl HybridModel {
                         self.glm5_rollback_layer(es, cache, ckpt, keep, il)?;
                     }
                 }
-                // EXIT PUBLICATION (doc above): every stage stream, to the caller's.
-                self.glm5_publish_stages(e)?;
             }
             _ => {
                 for il in 0..self.layers.len() {
@@ -1259,14 +1209,6 @@ impl HybridModel {
     ) -> Res<()> {
         match &self.layers[il].mixer {
             Mixer::Mla(mla) => {
-                if keep == ckpt.rows {
-                    // Full accept: the walk already advanced len AND the len_d device
-                    // mirror to saved + rows on the canonical plane and every replica
-                    // (append-time stores), so the restore below would rewrite unchanged
-                    // values — ~11 synchronizing pageable 4-byte copies per round on the
-                    // HOT outcome (the KDA arms' early-out twin; #82 review).
-                    return Ok(());
-                }
                 let saved = ckpt.latent_len[il].ok_or_else(|| {
                     format!("glm5_verify_rollback: MLA layer {il} missing from the ckpt")
                 })?;
@@ -1283,44 +1225,6 @@ impl HybridModel {
                 if let Some(indexer) = mla.index.as_ref() {
                     plane.truncate_index_pool_keys(indexer.geom.pool);
                 }
-                // spec x TP composition: the PEER latent replicas append in lock-step with
-                // the canonical plane (the TP walk's construction), so the same truncation
-                // restores each of them — through its own rank's engine for the device
-                // `len_d` mirror. Full accept skips the loop (lens already read
-                // saved + rows — the KDA arm's early-out twin; each skipped store is a
-                // synchronizing pageable copy per rank per layer on the HOT outcome).
-                // Missing replicas after a verify walk are a wiring bug and refuse by
-                // name, never a silent canonical-only restore (#80 review hardening).
-                if let Some(tp) = mla.tp.as_ref() {
-                    let replicas = cache.glm5_tp_latent_peer[il].as_mut().ok_or_else(|| {
-                        format!(
-                            "glm5_verify_rollback: sharded MLA layer {il} has no peer \
-                             latent replicas (the TP verify walk hydrates them; a \
-                             rollback without them would silently restore the canonical \
-                             plane only)"
-                        )
-                    })?;
-                    for (i, replica) in replicas.iter_mut().enumerate() {
-                        replica.len = saved + keep;
-                        tp.rt.peers[i].i32_mirror_store(&mut replica.len_d, len_i32)?;
-                        if let Some(indexer) = mla.index.as_ref() {
-                            replica.truncate_index_pool_keys(indexer.geom.pool);
-                        }
-                    }
-                }
-            }
-            Mixer::Kda(la) if la.tp.is_some() => {
-                if keep == ckpt.rows {
-                    return Ok(()); // resident per-rank states ARE the post-keep states
-                }
-                let stash = ckpt.kda_tp[il].as_ref().ok_or_else(|| {
-                    format!(
-                        "glm5_verify_rollback: sharded KDA layer {il} has no per-rank stash \
-                         (the batched TP verify walk fills it; the per-row arm is refused \
-                         at walk entry)"
-                    )
-                })?;
-                crate::glm5_tp::kda_tp_verify_rollback(e, la, stash, keep, cache, il)?;
             }
             Mixer::Kda(la) => {
                 if keep == ckpt.rows {
@@ -1605,66 +1509,29 @@ impl HybridModel {
         if self.hyper.is_none() {
             return Err("generate_spec_glm5 requires a HyperConnections trunk".into());
         }
-        // Two parallel/spec programs on one model never silently coexist unless the
-        // composition is EXPLICITLY armed: the spec x TP verify/rollback wiring
-        // (lane/glm5-composition) exists and is rig-gated, but it has zero real-artifact
-        // receipts, so sessions on a SHARDED model stay co-refused unless
-        // MEMRA_GLM5_SPEC_TP=1 lifts the refusal (default OFF by design — the FLAGS row).
-        // The predicate is the MODEL's own sharding (the same per-layer truth the verify
-        // walk keys on), never the MEMRA_GLM5_TP env: sharding is a load-time property,
-        // and an env read here is bypassable after load (set/load/unset) and spuriously
-        // refuses an UNSHARDED model in a process that still carries the env (the #80
-        // review's confirmed finding).
-        let tp_sharded = self.layers.iter().any(|l| match &l.mixer {
-            Mixer::Kda(la) => la.tp.is_some(),
-            Mixer::Mla(mla) => mla.tp.is_some(),
-            _ => false,
-        });
-        if tp_sharded {
-            if !glm5_spec_tp_on() {
-                return Err(
-                    "glm5 spec is co-refused on a MEMRA_GLM5_TP-sharded model: set \
-                     MEMRA_GLM5_SPEC_TP=1 to run the gated spec x TP composition \
-                     (default OFF — zero real-artifact receipts; every other admission \
-                     law still holds)"
-                        .into(),
-                );
-            }
-            if !glm5_verify_batch_on() {
-                return Err("MEMRA_GLM5_SPEC_TP=1 requires the BATCHED verify walk \
-                     (MEMRA_GLM5_VERIFY_BATCH must not be 0): the per-row rollback seam \
-                     carries no TP arm"
-                    .into());
-            }
-            // The ARMED announce prints AFTER the last admission law below — a session
-            // refused later (draft source, ppN qualification, penalties, ctx) must never
-            // log the engagement receipt (the fleet's prints-ARMED-then-serves-plain
-            // trap class; rig-gates/03 caught SF3 logging it on a refused session).
+        // Two parallel/spec programs on one model never silently coexist: the glm5 TP-2
+        // walk has no verify/rollback wiring (per-rank state is outside CacheSnapshot),
+        // so spec sessions refuse while the TP door is armed.
+        if crate::glm5_tp::glm5_tp_armed() {
+            return Err(
+                "glm5 spec is co-refused while MEMRA_GLM5_TP is armed: the TP-2 walk \
+                 carries no verify/rollback wiring in v1"
+                    .into(),
+            );
         }
-        // DRAFT-SOURCE SELECTION — through the GENERAL law
-        // ([`crate::spec::resolve_draft_source_kind`], lane/glm5-extract2): DFlash2 when the
-        // drafter is loaded (MEMRA_GLM5_DFLASH — it wins over a co-loaded MTP head, the boot
-        // receipt states the selection), native MTP otherwise; neither = the loud refusal
-        // below, whose bytes name the glm5 flags because the FAMILY owns the how-to-arm text.
-        // The native MTP head is NOT required for the DFlash2 source (the q38 pattern).
+        // DRAFT-SOURCE SELECTION (module doc): DFlash2 when the drafter is loaded
+        // (MEMRA_GLM5_DFLASH — it wins over a co-loaded MTP head, the boot receipt states
+        // the selection), native MTP otherwise; neither = the loud refusal below. The
+        // native MTP head is NOT required for the DFlash2 source (the q38 pattern).
         let dflash_src = self.glm5_dflash.as_ref();
-        let source_kind = crate::spec::resolve_draft_source_kind(
-            self.plan.draft_source,
-            self.mtp.is_some(),
-            dflash_src.is_some(),
-        )
-        .map_err(|why| {
-            // The general law says WHY there is no usable source; the family owns the
-            // how-to-arm text. Composed so the sentence is true on BOTH of the law's refusal
-            // branches (nothing loaded / a head loaded under a plan that does not claim it),
-            // rather than asserting "requires a draft source" at an operator whom the bracket
-            // then tells a head IS loaded.
-            format!(
-                "generate_spec_glm5 cannot select a draft source ({why}). Arm one: the \
-                 embedded MTP head (MEMRA_GLM5_MTP=1; a full MoE layer, unloaded by default) \
-                 or the DFlash2 drafter (MEMRA_GLM5_DFLASH=<dir-or-hf-spec>)"
-            )
-        })?;
+        if dflash_src.is_none() && self.mtp.is_none() {
+            return Err(
+                "generate_spec_glm5 requires a draft source: the embedded MTP head \
+                 (MEMRA_GLM5_MTP=1; a full MoE layer, unloaded by default) or the DFlash2 \
+                 drafter (MEMRA_GLM5_DFLASH=<dir-or-hf-spec>)"
+                    .into(),
+            );
+        }
         if prompt.len() < 2 {
             return Err(
                 "generate_spec_glm5 needs a prompt of >= 2 tokens (the MTP plane warms on \
@@ -1780,17 +1647,6 @@ impl HybridModel {
         };
         let (logits0, _seed, hiddens) = self.prime_cache(e, prompt, &mut cache, 0)?;
         let eh = self.glm5_head_engine(e)?;
-        // Prompt-boundary capture (lane/glm5-prefix-latent2): taken NOW — after the prime
-        // filled every plane to the boundary, before the anchor/draft machinery below and
-        // before any burst mutates the conv/ssm state or laps the tail ring. DFlash2-only:
-        // the native arm's plane fill moves the MTP latent layer past the boundary before a
-        // capture could be taken, and restore refuses the native source anyway. A refusal
-        // drops the capture loudly and the session serves regardless.
-        let prefix_capture = if glm5_spec_prefix_on() && dflash_src.is_some() {
-            self.glm5_prefix_boundary_capture(e, eh, &cache, &logits0, &hiddens, plen)
-        } else {
-            None
-        };
         let mut sctr = 0u32;
         let anchor = match sampling.as_ref() {
             Some(sp) => {
@@ -1799,13 +1655,8 @@ impl HybridModel {
             None => argmax(&logits0) as u32,
         };
 
-        // Keyed on the KIND the general law returned, not on a second local re-derivation:
-        // a seam whose answer is recomputed by its consumer is decoration. (`tap_layers` is
-        // `Some` exactly when `dflash_src` is, and the law returns `Dflash2` exactly then, so
-        // this is the same program the pre-seam code ran — the `_` arm's refusal is the
-        // never-taken proof of that rather than a silent fallback.)
-        let (draft, pending) = match (source_kind, dflash_src, tap_layers) {
-            (crate::spec::DraftSourceKind::Dflash2, Some(dr), Some(taps)) => {
+        let (draft, pending) = match (dflash_src, tap_layers) {
+            (Some(dr), Some(taps)) => {
                 let sink = cache
                     .hc_taps
                     .take()
@@ -1823,16 +1674,7 @@ impl HybridModel {
                     Vec::new(),
                 )
             }
-            (crate::spec::DraftSourceKind::Dflash2, _, _) => {
-                return Err(
-                    "the draft-source law selected DFlash2 but this session resolved no tap \
-                     layers — a load-path bug, refused instead of silently drafting from the \
-                     MTP plane (a VANISHED tap sink is a different failure, caught by name in \
-                     the Dflash2 arm itself)"
-                        .into(),
-                );
-            }
-            (crate::spec::DraftSourceKind::NativeMtp, _, _) => {
+            _ => {
                 // BATCHED PLANE WARM (loop-port fold-in — the map's #4, the spec.rs
                 // `mtp_kv_fill_all` pattern re-aimed at the MLA plane): pairs
                 // (prompt[i+1], h_i) at plane pos i, i in 0..P-1, filled in CHUNKED
@@ -1852,18 +1694,6 @@ impl HybridModel {
                 (Glm5DraftState::NativeMtp, pending)
             }
         };
-        // Composition engagement receipt — printed immediately before the session is
-        // RETURNED (after every admission law, the d2t vocabulary check, the cache
-        // allocation and the prompt prime), so a grep for this line counts sessions that
-        // actually opened; a refusal or a failure anywhere above never logs it (the #82
-        // review moved it here after finding four fallible steps below its first home).
-        if tp_sharded {
-            eprintln!(
-                "[glm5-spec] spec x TP composition ARMED (MEMRA_GLM5_SPEC_TP=1): verify \
-                 rows ride the TP shards; rollback restores per-rank planes \
-                 performance_claim=false"
-            );
-        }
         Ok(Glm5SpecSession {
             cache,
             committed: prompt.to_vec(),
@@ -1878,305 +1708,6 @@ impl HybridModel {
             done: false,
             max_ctx: ctx_cap,
             mtp_il,
-            prefix_capture,
-        })
-    }
-
-    /// Boundary capture for the DEFERRED prefix publication (lane/glm5-prefix-latent2,
-    /// 2026-09-01): the generation-destroyed state at `pos == plen` — conv/ssm via
-    /// `Cache::snapshot` (D2D copies), per-layer latent tails via `snapshot_tail`, the
-    /// prime's boundary logits, the pre-output_norm boundary hidden. `None` (loud) on any
-    /// refusal — a capture is an optimization the session must never fail on. The
-    /// append-only planes (latent rows, final pool keys, full-attn KV) are NOT copied here:
-    /// the worker slices them from the live cache at publish (`snapshot_plane_at`), which is
-    /// legal because the glm5 verify rollback never truncates below the prime boundary.
-    fn glm5_prefix_boundary_capture(
-        &self,
-        e: &Engine,
-        eh: &Engine,
-        cache: &Cache,
-        logits0: &[f32],
-        hiddens: &CudaSlice<f32>,
-        plen: usize,
-    ) -> Option<crate::spec::SpecBoundaryCapture> {
-        debug_assert_eq!(
-            cache.pos, plen,
-            "boundary capture must sit at the prime boundary"
-        );
-        let snap = match cache.snapshot(e) {
-            Ok(s) => s,
-            Err(err) => {
-                eprintln!("[glm5-spec] prefix boundary capture SKIPPED (cache snapshot: {err})");
-                return None;
-            }
-        };
-        // The ONLY latent layer that may legitimately sit empty at the boundary is the
-        // MTP/NextN plane (allocated, never executed by the trunk on the DFlash2 arm).
-        // Identity-keyed, not length-keyed (PR #96 review round 2, finding 1): a TRUNK
-        // plane empty at the boundary is a regression that must refuse the capture, or
-        // three length-keyed layers downstream would each wave it through and reproduce
-        // the parent lane's fabrication shape per-layer.
-        let mtp_plane_il = self.plan.mtp_blocks.first().map(|b| b.layer.index as usize);
-        let mut latent_tails = Vec::with_capacity(cache.latent.len());
-        for (il, l) in cache.latent.iter().enumerate() {
-            match l {
-                Some(l) if l.len == 0 && cache.pos > 0 => {
-                    if Some(il) != mtp_plane_il {
-                        eprintln!(
-                            "[glm5-spec] prefix boundary capture SKIPPED (trunk latent \
-                             layer {il} is EMPTY at the boundary — not the MTP plane; a \
-                             capture would publish an absent history for a live layer)"
-                        );
-                        return None;
-                    }
-                    latent_tails.push(None)
-                }
-                Some(l) => {
-                    if l.len != plen {
-                        eprintln!(
-                            "[glm5-spec] prefix boundary capture SKIPPED (latent layer {il} \
-                             len {} != boundary {plen})",
-                            l.len,
-                        );
-                        return None;
-                    }
-                    match l.snapshot_tail(e) {
-                        Ok(t) => latent_tails.push(Some(t)),
-                        Err(err) => {
-                            eprintln!(
-                                "[glm5-spec] prefix boundary capture SKIPPED (latent layer \
-                                 {il}: {err})"
-                            );
-                            return None;
-                        }
-                    }
-                }
-                None => latent_tails.push(None),
-            }
-        }
-        let last_h =
-            crate::spec::capture_boundary_hidden(eh, hiddens, plen, self.cfg.n_embd as usize);
-        Some(crate::spec::SpecBoundaryCapture {
-            snap,
-            pos: plen,
-            logits: logits0.to_vec(),
-            last_h,
-            latent_tails,
-        })
-    }
-
-    /// Re-arm a glm5 spec session from a RESTORED trunk cache plus a published DFlash2
-    /// drafter tail — the glm5 twin of `dspark_spec_session_from_restored`, EXTENDED with
-    /// the suffix prime the multi-turn shape needs (lane/glm5-prefix-latent2, 2026-09-01).
-    ///
-    /// WHY IT IS EQUIVALENT TO A COLD PRIME, field by field:
-    /// * `cache` — the caller's whole-entry restored trunk cache at `fed.len()` (KDA
-    ///   conv/ssm + MLA latent rows + kpool keys + tail ring, the parent lane's restore),
-    ///   and the SUFFIX primes onto it through `prime_cache` — the same continuation
-    ///   program every chunk after the first of a cold prime runs.
-    /// * drafter — `dkv` is rebuilt from the entry's tail into the SAME absolute rows
-    ///   (`DflashKv::from_tail`, caller-side while the prefix cache is borrowable), and the
-    ///   suffix's tap rows ride `pending` exactly as a cold session's prompt rows do — the
-    ///   drafter's context is the committed tokens either way (a truncated tail below the
-    ///   window can only move ACCEPTANCE, never output: verify arbitrates).
-    /// * anchor — drawn from the SUFFIX prime's boundary logits with the request's own
-    ///   sampler, exactly the cold composition; Philox counters fresh (a restore is a NEW
-    ///   session — the frspec continuity law, the dspark restore's own convention).
-    /// * republish — with `glm5_spec_prefix_on()` the session takes a NEW boundary capture
-    ///   at `fed + suffix`, so the next turn hits a DEEPER prefix (the
-    ///   MEMRA_SPEC_RESTORE_REPUBLISH posture; the worker's has_key dedupe drops equals).
-    ///
-    /// Refuses (never asserts) whenever the restored halves disagree — a caller that gets
-    /// `Err` serves the plain hit (correct, slower).
-    #[allow(clippy::too_many_arguments)]
-    pub fn glm5_spec_session_from_restored(
-        &self,
-        e: &Engine,
-        mut cache: Cache,
-        fed: &[u32],
-        suffix: &[u32],
-        dkv: DflashKv,
-        ctx_cap: usize,
-        sampling: Option<SpecSampling>,
-    ) -> Res<Glm5SpecSession> {
-        if self.hyper.is_none() {
-            return Err("glm5_spec_session_from_restored requires a HyperConnections trunk".into());
-        }
-        // The composition laws a cold session enforces hold here too, fail-closed and by
-        // name — a restored session must never be the door around an admission law.
-        let tp_sharded = self.layers.iter().any(|l| match &l.mixer {
-            Mixer::Kda(la) => la.tp.is_some(),
-            Mixer::Mla(mla) => mla.tp.is_some(),
-            _ => false,
-        });
-        if tp_sharded {
-            return Err(
-                "restored glm5 spec sessions carry no TP arm (the spec x TP composition is \
-                 cold-session gated only); the plain hit serves"
-                    .into(),
-            );
-        }
-        if crate::pp::pp_cuts(self.layers.len()).is_some()
-            && !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline)
-        {
-            return Err("pipeline rewrite is not qualified for this ModelPlan".into());
-        }
-        // DFlash2 source ONLY: the native MTP plane fill consumes trunk hiddens the restored
-        // range does not have (re-running the trunk over it would be a second prime — the
-        // whole cost this restore exists to avoid).
-        let dr = self.glm5_dflash.as_ref().ok_or(
-            "restored glm5 spec sessions require the DFlash2 drafter (MEMRA_GLM5_DFLASH): \
-             the native MTP plane cannot be re-warmed from restored KV",
-        )?;
-        let source = crate::spec::resolve_draft_source_kind(
-            self.plan.draft_source,
-            self.mtp.is_some(),
-            true,
-        )
-        .map_err(|why| format!("restored glm5 spec session has no draft source ({why})"))?;
-        if !matches!(source, crate::spec::DraftSourceKind::Dflash2) {
-            return Err(
-                "restored glm5 spec sessions require the DFlash2 draft source; the plan \
-                 selected another"
-                    .into(),
-            );
-        }
-        let sampling = sampling.filter(|sp| sp.temp > 0.0);
-        if let Some(sp) = sampling.as_ref()
-            && sp.pen_on()
-        {
-            return Err(
-                "glm5 spec has no penalty arm: penalized requests serve on the plain path".into(),
-            );
-        }
-        if fed.is_empty() || suffix.is_empty() {
-            return Err(
-                "restored glm5 spec session needs a non-empty restored prefix AND a \
-                 non-empty suffix (empty-suffix full-cover hits keep the plain \
-                 boundary-logits resume)"
-                    .into(),
-            );
-        }
-        if cache.pos != fed.len() {
-            return Err(format!(
-                "restored glm5 spec session needs a whole-entry trunk cache: cache.pos {} \
-                 != restored prefix {}",
-                cache.pos,
-                fed.len(),
-            )
-            .into());
-        }
-        if dkv.len != fed.len() {
-            return Err(format!(
-                "restored draft KV len {} != restored prefix {}",
-                dkv.len,
-                fed.len(),
-            )
-            .into());
-        }
-        if dkv.cap != ctx_cap {
-            return Err(
-                format!("restored draft KV cap {} != session ctx {ctx_cap}", dkv.cap,).into(),
-            );
-        }
-        // Room for prefix + suffix, the anchor row and at least one verify round.
-        if fed.len() + suffix.len() + 4 > ctx_cap {
-            return Err(format!(
-                "restored glm5 spec session needs ctx for prefix {} + suffix {} + anchor + \
-                 one verify round, cap {ctx_cap}",
-                fed.len(),
-                suffix.len(),
-            )
-            .into());
-        }
-        let n_vocab = self.output.out_features();
-        if let Some(map) = self.glm5_d2t() {
-            if map.iter().any(|&t| t as usize >= n_vocab) {
-                return Err(format!(
-                    "glm5 FR-Spec d2t carries a token id >= n_vocab {n_vocab} — the ranks \
-                     artifact was minted for a different vocabulary"
-                )
-                .into());
-            }
-            eprintln!(
-                "[glm5-spec] draft head TRIMMED to {} rows (FR-Spec d2t engaged)",
-                map.len(),
-            );
-        }
-        if glm5_pmin() > 0.0 {
-            eprintln!(
-                "[glm5-spec] draft confidence gate armed: PMIN={:.3} PMIN0={} (native \
-                 chain p-of-pick; DFlash2 selector-q tau-slot truncation)",
-                glm5_pmin(),
-                glm5_pmin0() as u8,
-            );
-        }
-        // ---- suffix prime over the restored planes (the continuation program), taps armed
-        // for exactly the suffix rows (`HcTapSink::origin` anchors the sink at the restored
-        // boundary; the chunked walk's absolute bases rebase through it).
-        let n_embd = self.cfg.n_embd as usize;
-        let taps = glm5_dflash_tap_layers(&dr.draft, self.layers.len())?;
-        cache.hc_taps = Some(HcTapSink::new_at(
-            taps.clone(),
-            n_embd,
-            suffix.len(),
-            fed.len(),
-        ));
-        let (logits_s, _seed, hiddens) = self.prime_cache(e, suffix, &mut cache, 0)?;
-        let eh = self.glm5_head_engine(e)?;
-        // Republish capture at the NEW (deeper) boundary — pos == fed + suffix here.
-        let prefix_capture = if glm5_spec_prefix_on() {
-            self.glm5_prefix_boundary_capture(e, eh, &cache, &logits_s, &hiddens, cache.pos)
-        } else {
-            None
-        };
-        let mut sctr = 0u32;
-        let anchor = match sampling.as_ref() {
-            Some(sp) => crate::spec::sample_boundary_token(
-                eh,
-                &logits_s,
-                sp,
-                &[],
-                &mut sctr,
-                "glm5-restore",
-            )?,
-            None => argmax(&logits_s) as u32,
-        };
-        let sink = cache
-            .hc_taps
-            .take()
-            .ok_or("glm5 restored-session suffix tap sink vanished")?;
-        let mut committed = Vec::with_capacity(fed.len() + suffix.len());
-        committed.extend_from_slice(fed);
-        committed.extend_from_slice(suffix);
-        // Engagement receipt (the dspark restore's shape — the deploy gate greps this; a
-        // cached_tokens number alone cannot distinguish a spec restore from a plain hit).
-        eprintln!(
-            "[glm5-spec] RESTORED session: {} prefix tokens + {} suffix from cache — no \
-             cold prime (drafter tail rows {})",
-            fed.len(),
-            suffix.len(),
-            dkv.len,
-        );
-        Ok(Glm5SpecSession {
-            cache,
-            committed,
-            anchor,
-            anchor_emitted: false,
-            pending: Vec::new(),
-            draft: Glm5DraftState::Dflash2 {
-                kv: dkv,
-                pending: sink.rows,
-                taps,
-            },
-            sampling,
-            sctr,
-            uctr: 0,
-            rounds: 0,
-            done: false,
-            max_ctx: ctx_cap,
-            mtp_il: None,
-            prefix_capture,
         })
     }
 
@@ -2255,8 +1786,7 @@ impl HybridModel {
         let mut out: Vec<u32> = Vec::with_capacity(target + k);
         let mut drafted = 0usize;
         let mut accepted = 0usize;
-        let mut phase: Option<SpecPhaseNs> =
-            crate::spec_phase::spec_trace_on().then(SpecPhaseNs::default);
+        let mut phase: Option<Glm5PhaseNs> = glm5_spec_trace_on().then(Glm5PhaseNs::default);
         if !sess.anchor_emitted {
             // The prime's boundary token: emitted exactly once, by the first burst.
             out.push(sess.anchor);
@@ -2285,7 +1815,7 @@ impl HybridModel {
             sess.rounds += 1;
         }
         if let Some(ph) = phase.as_ref() {
-            ph.emit("glm5-phase", "glm5-phase-v", k);
+            ph.emit(k);
         }
         Ok((out, drafted, accepted))
     }
@@ -2305,7 +1835,7 @@ impl HybridModel {
         d2t: Option<&[u32]>,
         sp: Option<&SpecSampling>,
         knobs: &mut Glm5SpecKnobs<'_>,
-        mut phase: Option<&mut SpecPhaseNs>,
+        mut phase: Option<&mut Glm5PhaseNs>,
     ) -> Res<(Vec<u32>, usize)> {
         let n_vocab = self.output.out_features();
         let n_embd = self.cfg.n_embd as usize;
@@ -2313,13 +1843,13 @@ impl HybridModel {
         // rows all live on the LAST stage under a split — every draft-chain and accept-side
         // op below runs through the head engine (identity when the door is shut).
         let eh = self.glm5_head_engine(e)?;
-        let mut t_mark = phase.as_ref().map(|_| SpecPhaseNs::clock(e, eh));
+        let mut t_mark = phase.as_ref().map(|_| Glm5PhaseNs::clock(e, eh));
         // Phase-boundary bump: drain, bucket the elapsed ns, restart the clock. No-op with
         // the trace off (t_mark is None and no stream is ever synchronized).
         macro_rules! bump {
             ($field:ident) => {
                 if let (Some(ph), Some(t0)) = (phase.as_deref_mut(), t_mark.as_mut()) {
-                    let now = SpecPhaseNs::clock(e, eh);
+                    let now = Glm5PhaseNs::clock(e, eh);
                     ph.$field += now.duration_since(*t0).as_nanos() as u64;
                     *t0 = now;
                 }
@@ -2516,9 +2046,6 @@ impl HybridModel {
                     while j < drafts.len() && drafts[j] == vam[j] {
                         j += 1;
                     }
-                    if knobs.accept_probe {
-                        self.glm5_accept_probe(eh, sess.rounds, &vlogits, &drafts, &vam, j)?;
-                    }
                     (j, vam[j])
                 }
                 (
@@ -2634,67 +2161,6 @@ impl HybridModel {
             ph.rounds += 1;
         }
         Ok((round_tokens, drafts.len()))
-    }
-
-    /// THE ACCEPTANCE-RACE FIX (lane/glm5-accrace 2026-09-01): order the CALLER's stream
-    /// behind EVERY stage stream — the exit mirror of
-    /// [`crate::pp::PpNRt::fence_stages_behind`], built from
-    /// [`crate::pp::PpNRt::publish_all_to`] (event waits, never a device sync, so the stage
-    /// streams keep running).
-    ///
-    /// Call OUTSIDE any `rt.enter` scope: `e.stream()` must resolve to the caller's stream,
-    /// not a stage's. Door shut or the same-stream seam (`MEMRA_PP_STREAMS=0`): a no-op by
-    /// construction, so single-device and STREAMS=0 behaviour is untouched.
-    fn glm5_publish_stages(&self, e: &Engine) -> Res<()> {
-        if crate::pp::pp_cuts(self.layers.len()).is_some() && !crate::pp::pp2_streams_off() {
-            let rt = crate::pp::PpNRt::get(e)?;
-            let dst = e.stream();
-            rt.publish_all_to(&dst)?;
-        }
-        Ok(())
-    }
-
-    /// GATE INSTRUMENT (lane/glm5-accrace; contract in [`Glm5SpecKnobs::accept_probe`]):
-    /// one stderr line per greedy round pairing the DEVICE accept row against a HOST
-    /// argmax over the same buffer, plus a per-row (argmax, row hash) census so two runs
-    /// of the same deterministic fixture can be diffed round-for-round.
-    fn glm5_accept_probe(
-        &self,
-        eh: &Engine,
-        round: usize,
-        vlogits: &CudaSlice<f32>,
-        drafts: &[u32],
-        vam: &[u32],
-        j: usize,
-    ) -> Res<()> {
-        let n_vocab = self.output.out_features();
-        let t = vam.len();
-        let host = eh.dtoh(vlogits)?;
-        let mut hvam: Vec<u32> = Vec::with_capacity(t);
-        let mut rows_census: Vec<String> = Vec::with_capacity(t);
-        for r in 0..t {
-            let row = &host[r * n_vocab..(r + 1) * n_vocab];
-            let am = argmax(row) as u32;
-            hvam.push(am);
-            // FNV-1a over the row's f32 BITS: a bit-level fingerprint, so a run-to-run
-            // diff is exact rather than eyeballed at some print precision.
-            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-            for v in row {
-                for b in v.to_bits().to_le_bytes() {
-                    h ^= u64::from(b);
-                    h = h.wrapping_mul(0x100_0000_01b3);
-                }
-            }
-            rows_census.push(format!("{r}:{am}:{h:016x}"));
-        }
-        eprintln!(
-            "[glm5-accrace] round={round} t={t} j={j} keep={} drafts={drafts:?} \
-             dev_vam={vam:?} host_vam={hvam:?} agree={} rows=[{}]",
-            j + 1,
-            hvam == vam,
-            rows_census.join(" ")
-        );
-        Ok(())
     }
 
     /// ONE round's drafts from the DFlash2 source (module doc, DRAFT SOURCE SEAM) — the
@@ -3102,52 +2568,12 @@ pub struct Glm5SpecSession {
     max_ctx: usize,
     /// MTP draft-plane layer index — `Some` on the native-MTP arm only.
     mtp_il: Option<usize>,
-    /// Prompt-boundary capture for the DEFERRED prefix publication (lane/glm5-prefix-latent2,
-    /// 2026-09-01; the dspark `prefix_capture` pattern): taken at session creation before any
-    /// burst mutates the recurrent/tail state, drained by the worker's sweep. `None` when the
-    /// worker did not request capture or when any boundary invariant refused.
-    prefix_capture: Option<crate::spec::SpecBoundaryCapture>,
 }
 
 impl Glm5SpecSession {
     /// Context capacity of the session's cache (the server's ContextFull guard).
     pub fn cache_max_ctx(&self) -> usize {
         self.max_ctx
-    }
-    /// Drain the prompt-boundary capture (doc on the field; the dspark
-    /// `take_prefix_capture` twin — the worker publishes it against `cache_ref`).
-    pub fn take_prefix_capture(&mut self) -> Option<crate::spec::SpecBoundaryCapture> {
-        self.prefix_capture.take()
-    }
-    /// True when the deferred prefix capture can publish NOW: a capture exists AND the
-    /// DFlash2 drafter KV already covers the boundary. glm5 defers the prompt's feature
-    /// ingest to round 1 (unlike dspark's at-creation ingest), so a drain that fired before
-    /// the first burst would export an empty tail and waste the capture — the worker's
-    /// sweep polls this instead.
-    pub fn prefix_capture_ready(&self) -> bool {
-        self.prefix_capture
-            .as_ref()
-            .is_some_and(|c| match &self.draft {
-                Glm5DraftState::Dflash2 { kv, .. } => kv.len >= c.pos,
-                _ => false,
-            })
-    }
-    /// The drafter's readable KV tail at `upto` rows (the dspark `export_tail` seam) —
-    /// `None` on the native arm or when the tail cannot cover the drafter window.
-    pub fn export_draft_tail(
-        &self,
-        e: &Engine,
-        upto: usize,
-    ) -> Option<crate::dflash::DflashKvTail> {
-        match &self.draft {
-            Glm5DraftState::Dflash2 { kv, .. } => kv.export_tail(e, upto),
-            _ => None,
-        }
-    }
-    /// The session's trunk cache, for the worker's deferred prefix publication (the
-    /// append-only-below-boundary slices) — never for mutation.
-    pub fn cache_ref(&self) -> &Cache {
-        &self.cache
     }
     /// Trunk rows currently committed (== `committed.len()` at burst boundaries).
     pub fn pos(&self) -> usize {
@@ -3237,22 +2663,6 @@ pub struct Glm5SpecKnobs<'a> {
     /// env statics latch once per process, so the byte-identity gate drives its PMIN
     /// arms through here instead of the environment. `None` = the serving resolution.
     pub pmin_override: Option<(f32, bool)>,
-    /// GATE INSTRUMENT (lane/glm5-accrace): trace every GREEDY round's accept decision to
-    /// stderr as one `[glm5-accrace]` line — round, t, j, the drafts, the DEVICE argmax
-    /// row (`argmax_token_device_col` + the one u32 readback the accept walk consumes), a
-    /// HOST argmax over the same `vlogits` buffer, and a per-row (argmax, FNV-1a hash of
-    /// the row's f32 bits) census.
-    ///
-    /// TWO THINGS IT SEPARATES, which is why it exists: (a) `dev != host` means the device
-    /// accept path published a value the logits buffer does not justify (a readback/scratch
-    /// race); (b) `dev == host` with a row hash that moves between two runs of the same
-    /// deterministic fixture means the verify logits themselves were computed over
-    /// corrupted state (an upstream walk/rollback race). The host read is issued AFTER the
-    /// device path's own `dtoh_u32` has already synchronized the consuming stream, so the
-    /// probe can only observe the race, never mask it.
-    ///
-    /// Never a serving surface: no serving path constructs a non-default value.
-    pub accept_probe: bool,
 }
 
 #[cfg(test)]

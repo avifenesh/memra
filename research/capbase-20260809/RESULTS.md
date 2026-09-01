@@ -80,7 +80,7 @@ Complete raw receipt:
 ## Run identity and evidence
 
 - Lane: `lane/cx-capbase`; runtime source remained fixed at `d2d6e6d1`. No runtime code was changed.
-- Host: box1 cloud pair, two RTX PRO 6000 GPUs; `MEMRA_PP_STAGES=2`,
+- Host: box1 hyperscaler pair, two RTX PRO 6000 GPUs; `MEMRA_PP_STAGES=2`,
   `MEMRA_PP_DEVICES=0,1`, `MEMRA_CTX=262144`; PP placement selected `K=0`.
 - Release binary SHA-256:
   `a5f068a3ce8dd84800c26d9e50978f7fcfd8b8d758d873daa8d7ee73221c2352`.

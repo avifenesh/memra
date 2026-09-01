@@ -110,7 +110,7 @@ server logs, and per-arm thermal snapshots are alongside it under [`perf/`](raw/
 
 ## Provenance and closeout
 
-- Rig: box1 cloud pair, 2x NVIDIA RTX PRO 6000 Blackwell Server Edition, PP stages 2 on
+- Rig: box1 hyperscaler pair, 2x NVIDIA RTX PRO 6000 Blackwell Server Edition, PP stages 2 on
   devices 0,1.
 - Trunk artifact: `Step-3.7-flash-IQ4_XS-00001-of-00003.gguf`, 46,483,327,296 bytes.
 - MTP artifact: `Step3.7-flash-mtp-Q8_0.gguf`, 3,707,276,416 bytes.

@@ -157,9 +157,6 @@ async fn run_capture(
         step_images: Vec::new(),
         capture: Some(capture),
         vision_memory: None,
-        // Capture requests never enter the first-token deadline gate (their prime IS
-        // the product), so no wire deadline is carried.
-        wire_deadline: None,
         ttft: None,
         tx,
     };

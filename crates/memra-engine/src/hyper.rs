@@ -834,8 +834,6 @@ mod tests {
                 conv_kernel: 4,
                 state_width: 16384,
             },
-            ple: None,
-            sparse_overlay: None,
         }
     }
 
@@ -853,7 +851,6 @@ mod tests {
             logits: Vec::new(),
             mtp_blocks: Vec::new(),
             drafter: None,
-            exit_mixer: None,
             draft_source: DraftSourcePlan::Embedded,
             sampling_defaults: None,
             partition_boundaries: Vec::new(),

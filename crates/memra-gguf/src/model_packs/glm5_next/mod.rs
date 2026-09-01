@@ -53,8 +53,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         collapse: HcCollapse::Mean,
     };
     Ok(ModelPlan {
-        // glm5_next's mHC exit is its own program; the qwen4_exp exit-mixer field stays unset.
-        exit_mixer: None,
         arch: Arch::Glm5Next,
         hidden_size: 8,
         vocab_size: 32,
@@ -88,8 +86,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         }),
         layers: vec![
             LayerPlan {
-                ple: None,
-                sparse_overlay: None,
                 index: 0,
                 pre_attention_norm: norm,
                 attention: AttentionPlan::KimiDeltaNet(KimiDeltaNetPlan {
@@ -111,8 +107,6 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
                 },
             },
             LayerPlan {
-                ple: None,
-                sparse_overlay: None,
                 index: 1,
                 pre_attention_norm: norm,
                 attention: AttentionPlan::Mla(MlaAttentionPlan::LatentKv {

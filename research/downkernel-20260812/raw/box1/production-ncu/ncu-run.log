@@ -1,5 +1,5 @@
 ==WARNING== Note: Running with unmodified GPU clocks. If not controlled otherwise, profiling results may be inconsistent.
-==PROF== Connected to process 956577 (/opt/scratch/nvme/cx-downkernel-target/release/run-gen)
+==PROF== Connected to process 956577 (/opt/dl-image/nvme/cx-downkernel-target/release/run-gen)
 [pp] peer byte-integrity probe PASS: label=fixed-16KiB bytes=16384 copies=2 skipped=0 mismatches=0 elapsed_ms=0.984
 [pp] cross-device transport: stage0=dev0 stage1=dev1 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1]; weight home: per-stage (sharded loader))
 [pp] production-slot peer probe direction: boundary=0 dev0->dev1 copies=4 skipped=0 mismatches=0 largest_clean_payload_bytes=67108864
@@ -25,4 +25,4 @@ OUTPUT TEXT: "</think>"
 --- generated text ---
 </think>
 ==PROF== Disconnected from process 956577
-==PROF== Report: /opt/scratch/nvme/cx-downkernel-20260812/production-ncu/production.ncu-rep
+==PROF== Report: /opt/dl-image/nvme/cx-downkernel-20260812/production-ncu/production.ncu-rep

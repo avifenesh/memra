@@ -1,7 +1,0 @@
-# qwen4exp_real_gate	label=r2spec-262k-thinkon	binary_sha256=2eeda2dfb36e35d3f34c47c7410be7a0c230259ae67a47cb653a8fedce77f633	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
-# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
-# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=(unset)
-# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
-# load	147.3s
-# vram	post-load	0, 89971 MiB, 97887 MiB | 1, 9555 MiB, 97887 MiB
-# ABANDONED 2026-08-31T18:50Z after 28 min (147s load + ~26 min of a ~80 min prefill), ZERO rung rows and NOT ONE ladder-progress line. Two reasons: (1) it measured the PRE-FIX config, which the idxsel lane supersedes — the same cell costs ~3x less on the fast build; (2) instrument note: the spec ladder emits no per-16k progress line, so a spec rung is invisible until it completes, which combined with the flush-on-completion behaviour makes it the worst possible cell to run on a spot box. Re-run after the default flip.

@@ -37,7 +37,7 @@ which is shared by TWO kernels in the same file:
 
 So the share measurement targets: **gemma-4 26B-A4B** (expert kernel, local 5090),
 **KAT-Coder** (dense kernel, local 5090), **Step-3.7-Flash** (dense kernel share on THE SKU,
-cloud pair box). q35 naked default reaches neither kernel (verified by kernel presence in the
+hyperscaler pair box). q35 naked default reaches neither kernel (verified by kernel presence in the
 KAT/gemma captures — same engine build).
 
 Both kernels are prefill-only (t>=16 / m>=16; decode and spec-verify ride dp4a by the
@@ -77,7 +77,7 @@ s x (1 - 1/1.42) = 0.296 s e2e. gemma-bal 5.3%, gemma-pp 13.1%, kat-bal 4.9%, ka
 Above the 3% bar on BOTH dispatching kernel classes even at the balanced shapes → **GO**.
 q35's 0% is a dispatch fact (f16g mode-2), not a counter-signal; Step-3.7-Flash dispatches
 the same dense-kernel class as KAT (IQ4_XS trunk, sigmoid-router MoE never reaches the
-expert kernel), so KAT is the local proxy and the cloud-box Step measurement is precision,
+expert kernel), so KAT is the local proxy and the hyperscaler-box Step measurement is precision,
 not gate-deciding.
 
 ## 2. The k32 rewrite + the audit claim verified-and-corrected
@@ -161,7 +161,7 @@ dispatch-parity law). No `current-board.json` change, no regeneration needed.
 
 Step-3.7-Flash: gets k32 automatically through `mmq_iq4xs_dense_kernel` (its IQ4_XS trunk is
 the same dispatch class as KAT's; its expert path rides `moe_ffn_grouped`/`qmatvec_view` and
-never reaches these tiles). Cloud-box share measurement = precision on THE SKU, below.
+never reaches these tiles). hyperscaler-box share measurement = precision on THE SKU, below.
 
 ## 6. Evidence
 

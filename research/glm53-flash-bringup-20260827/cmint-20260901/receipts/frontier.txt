@@ -1,0 +1,19 @@
+WHY THE KNOB CANNOT REACH THE BAR - the touch decomposition, per map
+(top-k confirmed 8: a uniformly random 2-rank split of 8 picks has E[max]=5.094;
+ the even map measures 5.079)
+
+map                    single-rank f E[max|single]  E[max|split]  exp_max_touch  floor 4+4f
+coact-tol0.00.json            0.3509         8.000         6.126          6.784       5.404
+coact-tol0.01.json            0.3568         8.000         6.133          6.799       5.427
+coact-tol0.02.json            0.3627         8.000         6.141          6.815       5.451
+coact-tol0.05.json            0.3916         8.000         6.182          6.894       5.567
+coact-tol0.10.json            0.4312         8.000         6.240          6.999       5.725
+coact-tol0.25.json            0.5592         8.000         6.414          7.301       6.237
+even.json                     0.0071         8.000         5.058          5.079       4.028
+
+READ: every single-rank token contributes max-touch 8 (all 8 picks on one rank) against
+even's 5.079 average. Bundling and imbalance are the SAME EVENT counted twice, so the
+only bundling-free way to hold max-rank touch at even is f -> 0, i.e. the even map.
+The arithmetic floor for a given f is 4+4f (all non-single tokens perfectly 4/4); even's
+own split tokens average ~5.06, not 4.0, so the measured maps sit far above their floor -
+the greedy objective skews the split tokens too, on top of the single-rank ones.

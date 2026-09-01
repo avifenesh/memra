@@ -1,14 +1,14 @@
 LCPRESTORE_PREFLIGHT ts=2026-08-12T23:34:12Z host=<private-host-redacted> source=2581dd31c0814cb7d99e0872bc5e2c5d77af5fe5
-7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5  /opt/scratch/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf
-d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
-b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
-df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
-ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
-7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5  /opt/scratch/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf
-d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/scratch/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
-b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/scratch/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
-df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/scratch/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
-ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/scratch/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
+7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5  /opt/dl-image/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf
+d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/dl-image/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/dl-image/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/dl-image/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/dl-image/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
+7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5  /opt/dl-image/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf
+d8d71c7e8a01a1c964fd904a7b496eaef19bdd66827e0949e66c723da742d517  /opt/dl-image/nvme/cx-requal/models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf
+b445fbb139e72f9869df06f2f0f91bcaf57527ec34a24bec74d3febd719f3581  /opt/dl-image/nvme/cx-requal/models/draft-daily-owntrim-nvfp4head-q4blk.gguf
+df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf  /opt/dl-image/nvme/cx-requal/models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+ae5b7797cc10188bddd00d7e46394e6b8676c1d4e4c6768c8b7b3b10d8870b6a  /opt/dl-image/nvme/cx-requal/models/draft-35b-owntrim-nvfp4head-q4blk.gguf
 ## lane/cx-lcprestore...origin/lane/cx-lcprestore
 commit 2581dd31c0814cb7d99e0872bc5e2c5d77af5fe5
 Author:     Avi Fenesh <redacted@users.noreply.github.com>
@@ -21,9 +21,9 @@ RUN_START label=cargo-test ts=2026-08-12T23:35:01Z
    Compiling libc v0.2.186
    Compiling cfg-if v1.0.4
    Compiling cudarc v0.19.8
-   Compiling memra-validate v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-validate)
-   Compiling memra-engine v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-engine)
-   Compiling memra-sampling v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-sampling)
+   Compiling memra-validate v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-validate)
+   Compiling memra-engine v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-engine)
+   Compiling memra-sampling v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-sampling)
    Compiling proc-macro2 v1.0.106
    Compiling unicode-ident v1.0.24
    Compiling quote v1.0.46
@@ -74,14 +74,14 @@ RUN_START label=cargo-test ts=2026-08-12T23:35:01Z
    Compiling mime v0.3.17
    Compiling either v1.17.0
    Compiling winnow v0.7.15
-   Compiling memra-probe v0.0.0 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-probe)
+   Compiling memra-probe v0.0.0 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-probe)
    Compiling form_urlencoded v1.2.2
    Compiling tracing-core v0.1.36
    Compiling futures-util v0.3.32
    Compiling toml_write v0.1.2
    Compiling ryu v1.0.23
    Compiling matchit v0.7.3
-   Compiling memra-server v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-server)
+   Compiling memra-server v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-server)
    Compiling cpufeatures v0.2.17
    Compiling generic-array v0.14.7
    Compiling ahash v0.8.12
@@ -98,7 +98,7 @@ warning: memra-probe@0.0.0: nvcc CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
    Compiling signal-hook-registry v1.4.8
    Compiling block-buffer v0.10.4
    Compiling crypto-common v0.1.7
-   Compiling memra-gguf v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-gguf)
+   Compiling memra-gguf v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-gguf)
    Compiling parking_lot v0.12.5
    Compiling digest v0.10.7
    Compiling rayon v1.12.0
@@ -107,7 +107,7 @@ warning: memra-probe@0.0.0: nvcc CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
    Compiling http-body-util v0.1.3
    Compiling serde_path_to_error v0.1.20
    Compiling ref-cast-impl v1.0.26
-   Compiling memra-tokenizer v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-tokenizer)
+   Compiling memra-tokenizer v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-tokenizer)
    Compiling serde_derive v1.0.228
    Compiling tokio-macros v2.7.0
    Compiling strum_macros v0.28.0
@@ -117,13 +117,13 @@ warning: memra-probe@0.0.0: nvcc CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
    Compiling async-stream v0.3.6
    Compiling tokio v1.52.3
    Compiling axum-core v0.4.5
-   Compiling memra-runtime v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-runtime)
-   Compiling memra-kv v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-kv)
+   Compiling memra-runtime v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-runtime)
+   Compiling memra-kv v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-kv)
    Compiling strum v0.28.0
    Compiling fluent-uri v0.3.2
    Compiling toml_datetime v0.6.11
    Compiling serde_spanned v0.6.9
-   Compiling memra-lanes v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-lanes)
+   Compiling memra-lanes v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-lanes)
    Compiling serde_urlencoded v0.7.1
    Compiling toktrie v1.7.6
    Compiling toml_edit v0.22.27
@@ -137,7 +137,7 @@ warning: memra-probe@0.0.0: nvcc CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
 warning: memra-engine@0.81.3: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
 warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
     Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 22s
-     Running unittests src/lib.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_engine-a3231dbf1d857a6f)
+     Running unittests src/lib.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_engine-a3231dbf1d857a6f)
 
 running 83 tests
 test cpu_experts::tests::accepts_supported_native_qtypes_without_translation ... ok
@@ -226,91 +226,91 @@ test moe_cache::slru_intrusive_tests::same_eviction_decisions_randomized_soak ..
 
 test result: ok. 82 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.28s
 
-     Running unittests src/bin/accprobe_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/accprobe_bench-d3b7d144d3185007)
+     Running unittests src/bin/accprobe_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/accprobe_bench-d3b7d144d3185007)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/argmax_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/argmax_gate-840bbb8d04a31ec9)
+     Running unittests src/bin/argmax_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/argmax_gate-840bbb8d04a31ec9)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/argmax_margin_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/argmax_margin_probe-8ef1754c9fd24ff6)
+     Running unittests src/bin/argmax_margin_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/argmax_margin_probe-8ef1754c9fd24ff6)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/clc_mmq_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/clc_mmq_bench-b1273bef70828340)
+     Running unittests src/bin/clc_mmq_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/clc_mmq_bench-b1273bef70828340)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/concat_prime_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/concat_prime_probe-22898824f9eddf8a)
+     Running unittests src/bin/concat_prime_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/concat_prime_probe-22898824f9eddf8a)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/cpu_native_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/cpu_native_check-1ecd48a910108b20)
+     Running unittests src/bin/cpu_native_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/cpu_native_check-1ecd48a910108b20)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/cutlass_smoke.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/cutlass_smoke-02497cc776239172)
+     Running unittests src/bin/cutlass_smoke.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/cutlass_smoke-02497cc776239172)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/decode_batch_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/decode_batch_bench-a5e532bd5548f431)
+     Running unittests src/bin/decode_batch_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/decode_batch_bench-a5e532bd5548f431)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/decode_batch_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/decode_batch_gate-9f53503c670a611a)
+     Running unittests src/bin/decode_batch_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/decode_batch_gate-9f53503c670a611a)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/decode_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/decode_bench-fc4c4a54247a6b3b)
+     Running unittests src/bin/decode_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/decode_bench-fc4c4a54247a6b3b)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/decode_dc_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/decode_dc_gate-5317729ca11e7baa)
+     Running unittests src/bin/decode_dc_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/decode_dc_gate-5317729ca11e7baa)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/decode_window_profile.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/decode_window_profile-1693516318386719)
+     Running unittests src/bin/decode_window_profile.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/decode_window_profile-1693516318386719)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/depth_profile.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/depth_profile-cb41d97a05f706a6)
+     Running unittests src/bin/depth_profile.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/depth_profile-cb41d97a05f706a6)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/dflash_parity.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/dflash_parity-9d11fc8ae720689c)
+     Running unittests src/bin/dflash_parity.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/dflash_parity-9d11fc8ae720689c)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/dspark_export_shared.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/dspark_export_shared-e3c024d5b6a8ee18)
+     Running unittests src/bin/dspark_export_shared.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/dspark_export_shared-e3c024d5b6a8ee18)
 
 running 2 tests
 test tests::bf16_conversion_rounds_to_nearest_even ... ok
@@ -318,7 +318,7 @@ test tests::rank_parser_rejects_duplicates_and_out_of_range ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/dspark_extract.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/dspark_extract-16ee7920b6bbf35d)
+     Running unittests src/bin/dspark_extract.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/dspark_extract-16ee7920b6bbf35d)
 
 running 2 tests
 test tests::anchor_always_has_a_predecessor_hidden ... ok
@@ -326,157 +326,157 @@ test tests::anchors_are_deterministic_unique_and_response_bounded ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/dspark_generate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/dspark_generate-a923456888b29672)
+     Running unittests src/bin/dspark_generate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/dspark_generate-a923456888b29672)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/dtype_gpu_check5.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/dtype_gpu_check5-377a4d5e396699d8)
+     Running unittests src/bin/dtype_gpu_check5.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/dtype_gpu_check5-377a4d5e396699d8)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/f8f4_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/f8f4_check-997da03275fed030)
+     Running unittests src/bin/f8f4_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/f8f4_check-997da03275fed030)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/fa_ab_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/fa_ab_bench-42e74728247d9b0f)
+     Running unittests src/bin/fa_ab_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/fa_ab_bench-42e74728247d9b0f)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/fa_hd128_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/fa_hd128_check-bb227256ee8e4123)
+     Running unittests src/bin/fa_hd128_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/fa_hd128_check-bb227256ee8e4123)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/fa_sanitize.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/fa_sanitize-b9aea5314b50874b)
+     Running unittests src/bin/fa_sanitize.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/fa_sanitize-b9aea5314b50874b)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/fa_deep_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/fa_deep_bench-1dbefe91bee8671d)
+     Running unittests src/bin/fa_deep_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/fa_deep_bench-1dbefe91bee8671d)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/fa_v2_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/fa_v2_bench-00988a999f2e0d6b)
+     Running unittests src/bin/fa_v2_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/fa_v2_bench-00988a999f2e0d6b)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/fp8_mmq_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/fp8_mmq_bench-de3491c49b05bb2c)
+     Running unittests src/bin/fp8_mmq_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/fp8_mmq_bench-de3491c49b05bb2c)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/fp8_mmq_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/fp8_mmq_check-152a928ae2d67002)
+     Running unittests src/bin/fp8_mmq_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/fp8_mmq_check-152a928ae2d67002)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/fp8_mmq_stream.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/fp8_mmq_stream-98a25710e665acdf)
+     Running unittests src/bin/fp8_mmq_stream.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/fp8_mmq_stream-98a25710e665acdf)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/frspec_owngen.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/frspec_owngen-3c5c6ecc7e5a8b34)
+     Running unittests src/bin/frspec_owngen.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/frspec_owngen-3c5c6ecc7e5a8b34)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/frspec_rank.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/frspec_rank-f605c1ab2915dd59)
+     Running unittests src/bin/frspec_rank.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/frspec_rank-f605c1ab2915dd59)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/fused_actq_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/fused_actq_bench-71cf380eeeeccb00)
+     Running unittests src/bin/fused_actq_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/fused_actq_bench-71cf380eeeeccb00)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/gdn_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/gdn_bench-33d9dc74b2339226)
+     Running unittests src/bin/gdn_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/gdn_bench-33d9dc74b2339226)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/gemma_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/gemma_gate-c07f0bbeb45d5d7c)
+     Running unittests src/bin/gemma_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/gemma_gate-c07f0bbeb45d5d7c)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/gemv_e4m3_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/gemv_e4m3_bench-ee396be6225b47a7)
+     Running unittests src/bin/gemv_e4m3_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/gemv_e4m3_bench-ee396be6225b47a7)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/graph_allocfree_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/graph_allocfree_probe-4ec57770a823ae4e)
+     Running unittests src/bin/graph_allocfree_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/graph_allocfree_probe-4ec57770a823ae4e)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/graph_decode_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/graph_decode_gate-f810f44ab2771528)
+     Running unittests src/bin/graph_decode_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/graph_decode_gate-f810f44ab2771528)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/graph_session_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/graph_session_gate-ce56080d63861b41)
+     Running unittests src/bin/graph_session_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/graph_session_gate-ce56080d63861b41)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/graph_warmup_stress.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/graph_warmup_stress-bbf103e608d97120)
+     Running unittests src/bin/graph_warmup_stress.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/graph_warmup_stress-bbf103e608d97120)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/gu_wall_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/gu_wall_bench-9454921ccbcd654b)
+     Running unittests src/bin/gu_wall_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/gu_wall_bench-9454921ccbcd654b)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/hy3-layer0-oracle.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/hy3_layer0_oracle-6293cc3af5c94337)
+     Running unittests src/bin/hy3-layer0-oracle.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/hy3_layer0_oracle-6293cc3af5c94337)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/iso_gap_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/iso_gap_probe-f72117b70de93275)
+     Running unittests src/bin/iso_gap_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/iso_gap_probe-f72117b70de93275)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/k27div_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/k27div_probe-fbdb5d507696f27f)
+     Running unittests src/bin/k27div_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/k27div_probe-fbdb5d507696f27f)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/kernel_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/kernel_check-db370714a137cb50)
+     Running unittests src/bin/kernel_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/kernel_check-db370714a137cb50)
 
 running 4 tests
 test tests::derives_cell_names_only_from_verdict_lines ... ok
@@ -486,272 +486,272 @@ test tests::skipped_and_absent_required_cells_are_missing ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/kv_fmt_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/kv_fmt_bench-e6e446ee759bd31a)
+     Running unittests src/bin/kv_fmt_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/kv_fmt_bench-e6e446ee759bd31a)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/logit_sample_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/logit_sample_probe-53bf93793bf1a770)
+     Running unittests src/bin/logit_sample_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/logit_sample_probe-53bf93793bf1a770)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/lt_ndep.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/lt_ndep-5ce0fa17a9eaca7f)
+     Running unittests src/bin/lt_ndep.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/lt_ndep-5ce0fa17a9eaca7f)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/m3ref.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/m3ref-ff4d1b353d232d25)
+     Running unittests src/bin/m3ref.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/m3ref-ff4d1b353d232d25)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/mmvq_bisect.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/mmvq_bisect-e618020e4bc28569)
+     Running unittests src/bin/mmvq_bisect.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/mmvq_bisect-e618020e4bc28569)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/mmvq_pair_m3.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/mmvq_pair_m3-e0c97eb09a98106e)
+     Running unittests src/bin/mmvq_pair_m3.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/mmvq_pair_m3-e0c97eb09a98106e)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/moe_devq8_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/moe_devq8_check-d5f1c89bddcc72a4)
+     Running unittests src/bin/moe_devq8_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/moe_devq8_check-d5f1c89bddcc72a4)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/mvq_msweep.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/mvq_msweep-6f9e8b839e4368ab)
+     Running unittests src/bin/mvq_msweep.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/mvq_msweep-6f9e8b839e4368ab)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/normq_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/normq_check-4a37bedb7b2a7858)
+     Running unittests src/bin/normq_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/normq_check-4a37bedb7b2a7858)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/optipipe_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/optipipe_gate-0e5b7534eef433a0)
+     Running unittests src/bin/optipipe_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/optipipe_gate-0e5b7534eef433a0)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/plainbatch_margin_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/plainbatch_margin_probe-1507ee77a1a69593)
+     Running unittests src/bin/plainbatch_margin_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/plainbatch_margin_probe-1507ee77a1a69593)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/pp_transport_smoke.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/pp_transport_smoke-ea202d301d7f18ab)
+     Running unittests src/bin/pp_transport_smoke.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/pp_transport_smoke-ea202d301d7f18ab)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/pp2_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/pp2_gate-e932d427b994ad73)
+     Running unittests src/bin/pp2_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/pp2_gate-e932d427b994ad73)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/ppn_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/ppn_bench-9267713502218821)
+     Running unittests src/bin/ppn_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/ppn_bench-9267713502218821)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/ppn_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/ppn_gate-f60f491a72ed4d6a)
+     Running unittests src/bin/ppn_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/ppn_gate-f60f491a72ed4d6a)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/prime_batch_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/prime_batch_gate-49f34f0dc459f99f)
+     Running unittests src/bin/prime_batch_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/prime_batch_gate-49f34f0dc459f99f)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/prime_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/prime_gate-20d7d0060583ca83)
+     Running unittests src/bin/prime_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/prime_gate-20d7d0060583ca83)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/prime_graph_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/prime_graph_gate-31447bba75148a5f)
+     Running unittests src/bin/prime_graph_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/prime_graph_gate-31447bba75148a5f)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/prime_graph_smoke.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/prime_graph_smoke-65b152ece13a06b7)
+     Running unittests src/bin/prime_graph_smoke.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/prime_graph_smoke-65b152ece13a06b7)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/q5issue_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/q5issue_bench-84fc112d963e58f9)
+     Running unittests src/bin/q5issue_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/q5issue_bench-84fc112d963e58f9)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/quant_kv_f32_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/quant_kv_f32_check-adb9a9a9374c829c)
+     Running unittests src/bin/quant_kv_f32_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/quant_kv_f32_check-adb9a9a9374c829c)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/replay_acceptance.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/replay_acceptance-f2858fdd31d0b339)
+     Running unittests src/bin/replay_acceptance.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/replay_acceptance-f2858fdd31d0b339)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/router_batch_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/router_batch_bench-7a62d2b188fa036d)
+     Running unittests src/bin/router_batch_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/router_batch_bench-7a62d2b188fa036d)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/rp_q4_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/rp_q4_probe-261483ce5b3d554a)
+     Running unittests src/bin/rp_q4_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/rp_q4_probe-261483ce5b3d554a)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/run_dense.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/run_dense-5f5c063bbb258449)
+     Running unittests src/bin/run_dense.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/run_dense-5f5c063bbb258449)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/run_eagle.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/run_eagle-15d98d059fb75500)
+     Running unittests src/bin/run_eagle.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/run_eagle-15d98d059fb75500)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/run_gen.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/run_gen-c6f265dd8e57f174)
+     Running unittests src/bin/run_gen.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/run_gen-c6f265dd8e57f174)
 
 running 1 test
 test tests::maps_cpu_expert_stats_without_positional_drift ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/run_hybrid.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/run_hybrid-003110668309c69a)
+     Running unittests src/bin/run_hybrid.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/run_hybrid-003110668309c69a)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/run_safetensors.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/run_safetensors-d24466c9c01ce296)
+     Running unittests src/bin/run_safetensors.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/run_safetensors-d24466c9c01ce296)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/run_spec.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/run_spec-654aa27caab46a4c)
+     Running unittests src/bin/run_spec.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/run_spec-654aa27caab46a4c)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/run_lockstep.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/run_lockstep-2e8a4a45a33e6c2b)
+     Running unittests src/bin/run_lockstep.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/run_lockstep-2e8a4a45a33e6c2b)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/sample_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/sample_check-5a7b5066fc6dcf50)
+     Running unittests src/bin/sample_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/sample_check-5a7b5066fc6dcf50)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/session_bench.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/session_bench-4aeb647ac72dd5f9)
+     Running unittests src/bin/session_bench.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/session_bench-4aeb647ac72dd5f9)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/session_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/session_gate-b1060dcf2d4c7f6d)
+     Running unittests src/bin/session_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/session_gate-b1060dcf2d4c7f6d)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/spec_econ.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/spec_econ-4560822f91bb5975)
+     Running unittests src/bin/spec_econ.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/spec_econ-4560822f91bb5975)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/spec_st_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/spec_st_probe-aa40904bbf577497)
+     Running unittests src/bin/spec_st_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/spec_st_probe-aa40904bbf577497)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/spec_serve_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/spec_serve_gate-ca69ac5d140e22ad)
+     Running unittests src/bin/spec_serve_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/spec_serve_gate-ca69ac5d140e22ad)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/st_vs_gguf.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/st_vs_gguf-d173883034616990)
+     Running unittests src/bin/st_vs_gguf.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/st_vs_gguf-d173883034616990)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/synth_f8f4.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/synth_f8f4-32e4cb0a3cf8e701)
+     Running unittests src/bin/synth_f8f4.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/synth_f8f4-32e4cb0a3cf8e701)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/t2probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/t2probe-8b8de87a4665be04)
+     Running unittests src/bin/t2probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/t2probe-8b8de87a4665be04)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/target_efficiency.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/target_efficiency-0a3f71f4cab165dd)
+     Running unittests src/bin/target_efficiency.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/target_efficiency-0a3f71f4cab165dd)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/verify_mscale.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/verify_mscale-bbca638cda7045cb)
+     Running unittests src/bin/verify_mscale.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/verify_mscale-bbca638cda7045cb)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/verify_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/verify_probe-8a612f6e92249771)
+     Running unittests src/bin/verify_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/verify_probe-8a612f6e92249771)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/w4a4_gate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/w4a4_gate-e9ba2639c94e0aef)
+     Running unittests src/bin/w4a4_gate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/w4a4_gate-e9ba2639c94e0aef)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests/mla_fixture_forward.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/mla_fixture_forward-5196d6f974791e42)
+     Running tests/mla_fixture_forward.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/mla_fixture_forward-5196d6f974791e42)
 
 running 3 tests
 test cpu_block_forward_absorbed_equals_naive_chunked ... ok
@@ -760,14 +760,14 @@ test cpu_block_forward_absorbed_equals_naive_prefill ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
-     Running tests/mla_fixture_load_gpu.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/mla_fixture_load_gpu-7d8a9226b3869862)
+     Running tests/mla_fixture_load_gpu.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/mla_fixture_load_gpu-7d8a9226b3869862)
 
 running 1 test
 test gpu_load_glm_dsa_micro_fixture ... ignored, needs a CUDA device — run under flock /tmp/gpu5090.lock
 
 test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/lib.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_gguf-4231916064261265)
+     Running unittests src/lib.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_gguf-4231916064261265)
 
 running 86 tests
 test config::hf_tests::head_dim_fallback ... ok
@@ -859,19 +859,19 @@ test split_tests::every_prefix_truncation_of_a_valid_gguf_is_an_error_not_a_pani
 
 test result: ok. 86 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
 
-     Running unittests src/bin/inspect.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/gguf_inspect-72cc8b495bb2508e)
+     Running unittests src/bin/inspect.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/gguf_inspect-72cc8b495bb2508e)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/nvfp4_validate.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/nvfp4_validate-743ff32e4a328dfd)
+     Running unittests src/bin/nvfp4_validate.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/nvfp4_validate-743ff32e4a328dfd)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/lib.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_kv-1b9608ab7566b6e2)
+     Running unittests src/lib.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_kv-1b9608ab7566b6e2)
 
 running 4 tests
 test swa_ring_tests::allocation_rows_cover_window_max_prime_and_alignment_slack ... ok
@@ -881,38 +881,38 @@ test swa_ring_tests::wrap_rebases_the_exact_aligned_prime_view ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/lib.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_lanes-db0131544b7e1b29)
+     Running unittests src/lib.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_lanes-db0131544b7e1b29)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/main.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_probe-1fc910fbc27d183e)
+     Running unittests src/main.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_probe-1fc910fbc27d183e)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/pdl_probe.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/pdl_probe-13533a2f04ec2d07)
+     Running unittests src/bin/pdl_probe.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/pdl_probe-13533a2f04ec2d07)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/lib.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_runtime-ad0b06af86213290)
+     Running unittests src/lib.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_runtime-ad0b06af86213290)
 
 running 1 test
 test tests::cpu_linear_tiny ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/gemm_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/gemm_check-70502f1c1fb42d99)
+     Running unittests src/bin/gemm_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/gemm_check-70502f1c1fb42d99)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/lib.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_sampling-6247dc661021b764)
+     Running unittests src/lib.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_sampling-6247dc661021b764)
 
 running 5 tests
 test tests::greedy_is_argmax ... ok
@@ -923,7 +923,7 @@ test tests::top_k_one_is_argmax ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/main.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_server-9bd0b11dcb231d5e)
+     Running unittests src/main.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_server-9bd0b11dcb231d5e)
 
 running 224 tests
 test auth::tests::fixed_digest_secret_comparison_preserves_auth_semantics ... ok
@@ -1154,7 +1154,7 @@ test auth::tests::atomic_rewrite_survives_concurrent_hot_reload ... ok
 
 test result: ok. 224 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
 
-     Running unittests src/lib.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_tokenizer-83f750120d57590b)
+     Running unittests src/lib.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_tokenizer-83f750120d57590b)
 
 running 26 tests
 test chat::tests::assistant_content_plus_calls_and_consecutive_tool_turns_group ... ok
@@ -1186,43 +1186,43 @@ test hf_tests::hf_dir_encode_decode_roundtrip_and_specials ... ok
 
 test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running unittests src/bin/tok_check.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/tok_check-2ad21f9cc8ed0ff0)
+     Running unittests src/bin/tok_check.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/tok_check-2ad21f9cc8ed0ff0)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/tok_freq.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/tok_freq-3e4536d47b6c244a)
+     Running unittests src/bin/tok_freq.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/tok_freq-3e4536d47b6c244a)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/tok_parity.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/tok_parity-6c746652aa448ab8)
+     Running unittests src/bin/tok_parity.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/tok_parity-6c746652aa448ab8)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/tok_trim.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/tok_trim-1667dafe49da033d)
+     Running unittests src/bin/tok_trim.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/tok_trim-1667dafe49da033d)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/tok_chat_render.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/tok_chat_render-75404c697704b7f8)
+     Running unittests src/bin/tok_chat_render.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/tok_chat_render-75404c697704b7f8)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/bin/tok_span.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/tok_span-93d346a2932ca636)
+     Running unittests src/bin/tok_span.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/tok_span-93d346a2932ca636)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests/llama_parity.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/llama_parity-b92c0f1e757d59cb)
+     Running tests/llama_parity.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/llama_parity-b92c0f1e757d59cb)
 
 running 3 tests
 test golden_pairs ... ok
@@ -1231,7 +1231,7 @@ test round_trip ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src/lib.rs (/opt/scratch/nvme/cx-lcprestore/memra/target/debug/deps/memra_validate-12918bfa73f752e1)
+     Running unittests src/lib.rs (/opt/dl-image/nvme/cx-lcprestore/memra/target/debug/deps/memra_validate-12918bfa73f752e1)
 
 running 3 tests
 test tests::median_odd_even ... ok
@@ -1337,7 +1337,7 @@ RUN_START label=release-server ts=2026-08-12T23:38:30Z
    Compiling sync_wrapper v1.0.2
    Compiling ryu v1.0.23
    Compiling either v1.17.0
-   Compiling memra-engine v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-engine)
+   Compiling memra-engine v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-engine)
    Compiling libloading v0.9.0
    Compiling futures-channel v0.3.32
    Compiling winnow v0.7.15
@@ -1347,10 +1347,10 @@ RUN_START label=release-server ts=2026-08-12T23:38:30Z
    Compiling toml_write v0.1.2
    Compiling mime v0.3.17
    Compiling cpufeatures v0.2.17
-   Compiling memra-sampling v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-sampling)
-   Compiling memra-validate v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-validate)
+   Compiling memra-sampling v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-sampling)
+   Compiling memra-validate v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-validate)
    Compiling matchit v0.7.3
-   Compiling memra-server v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-server)
+   Compiling memra-server v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-server)
    Compiling form_urlencoded v1.2.2
    Compiling tracing-core v0.1.36
    Compiling futures-util v0.3.32
@@ -1366,7 +1366,7 @@ RUN_START label=release-server ts=2026-08-12T23:38:30Z
    Compiling mio v1.2.1
    Compiling socket2 v0.6.4
    Compiling signal-hook-registry v1.4.8
-   Compiling memra-gguf v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-gguf)
+   Compiling memra-gguf v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-gguf)
    Compiling parking_lot v0.12.5
    Compiling block-buffer v0.10.4
    Compiling crypto-common v0.1.7
@@ -1377,7 +1377,7 @@ RUN_START label=release-server ts=2026-08-12T23:38:30Z
    Compiling http-body-util v0.1.3
    Compiling ref-cast-impl v1.0.26
    Compiling serde_path_to_error v0.1.20
-   Compiling memra-tokenizer v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-tokenizer)
+   Compiling memra-tokenizer v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-tokenizer)
    Compiling serde_derive v1.0.228
    Compiling tokio-macros v2.7.0
    Compiling bytemuck_derive v1.11.0
@@ -1387,15 +1387,15 @@ RUN_START label=release-server ts=2026-08-12T23:38:30Z
    Compiling async-stream v0.3.6
    Compiling tokio v1.52.3
    Compiling axum-core v0.4.5
-   Compiling memra-runtime v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-runtime)
-   Compiling memra-kv v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-kv)
+   Compiling memra-runtime v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-runtime)
+   Compiling memra-kv v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-kv)
    Compiling strum v0.28.0
    Compiling serde_spanned v0.6.9
    Compiling fluent-uri v0.3.2
    Compiling toml_datetime v0.6.11
    Compiling serde_urlencoded v0.7.1
    Compiling toktrie v1.7.6
-   Compiling memra-lanes v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-lanes)
+   Compiling memra-lanes v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-lanes)
    Compiling toml_edit v0.22.27
    Compiling derivre v0.3.12
    Compiling referencing v0.29.1
@@ -1411,7 +1411,7 @@ RUN_DONE label=release-server rc=0 ts=2026-08-12T23:42:04Z
 RUN_START label=release-gates ts=2026-08-12T23:42:04Z
 warning: memra-engine@0.81.3: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc (newest of 4; also saw 13.0 @ /usr/local/cuda-13.0/bin/nvcc, 12.9 @ /usr/local/cuda-12.9/bin/nvcc, 12.8 @ /usr/local/cuda-12.8/bin/nvcc)
 warning: memra-engine@0.81.3: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
-   Compiling memra-engine v0.81.3 (/opt/scratch/nvme/cx-lcprestore/memra/crates/memra-engine)
+   Compiling memra-engine v0.81.3 (/opt/dl-image/nvme/cx-lcprestore/memra/crates/memra-engine)
     Finished `release` profile [optimized] target(s) in 12.05s
 RUN_DONE label=release-gates rc=0 ts=2026-08-12T23:42:16Z
 LCPRESTORE_LOCK_ACQUIRED ts=2026-08-12T23:42:16Z lock=/tmp/memra-gpu-1.lock physical_gpu=1 uuid=GPU-2b4cf166-fd33-f161-8536-ca04bc72280c
@@ -1420,13 +1420,13 @@ compute_apps=none
 label=before ts=2026-08-12T23:42:16Z
 1, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 595.71.05, P8, 27, 180 MHz, 405 MHz, 29.85 W, 600.00 W, 97887 MiB, 0 MiB, 97252 MiB, 0 %, 1, 16
 FAIL: server pid=1194946 died during boot
-[server] starting; models config = [("dense", "/opt/scratch/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf", None)]
+[server] starting; models config = [("dense", "/opt/dl-image/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf", None)]
 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
 [gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
 [worker] Engine ready (device=0, MEMRA_FAST=true)
 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2
-[worker] loading model "dense" <- /opt/scratch/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf
+[worker] loading model "dense" <- /opt/dl-image/nvme/cx-lcprestore/models/Qwen3-4B-Q4_K_M.gguf
 
 thread 'memra-gpu-worker' (1195005) panicked at crates/memra-engine/src/hybrid.rs:1266:9:
 not a hybrid arch

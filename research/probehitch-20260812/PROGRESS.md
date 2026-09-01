@@ -17,7 +17,7 @@
 - [x] Implement the scheduling and fallback changes.
 - [x] Update `docs/FLAGS.md`.
 - [x] Run focused tests, `cargo test`, and capped 5090 `local-ci`.
-- [x] Measure an interleaved x5 warm-hit TTFT A/B on the steered cloudbox PP-2 pair; retain the
+- [x] Measure an interleaved x5 warm-hit TTFT A/B on the steered Sbox PP-2 pair; retain the
       synthetic owner-thread stall receipt as supporting scheduler evidence.
 - [x] Write `RESULTS.md` and retain the complete raw evidence tree.
 - [x] Review the exact diff and commit the complete lane.

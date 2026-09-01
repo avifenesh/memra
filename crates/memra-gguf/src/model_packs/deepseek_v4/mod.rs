@@ -568,7 +568,6 @@ mod tests {
                     }),
                     other => panic!("unexpected DSV4 constraint {other:?}"),
                 },
-                physical_bytes: 1,
             })
             .collect();
         let bound = contract.bind(&census).unwrap();

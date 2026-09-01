@@ -1,0 +1,29 @@
+--- cmint cell 1 identity receipts ---
+tool: /root/memra-tpd/tools/build_expert_placement_map.py
+7d05a8d4d5cc0a5bf089774cd522715f63a690618b4d1a8d9f104e39021bb460  /root/memra-tpd/tools/build_expert_placement_map.py
+clone head: 6ef03d9ce probe-bin-only: print the five EP-diet engagement counters (tpd-battery window)
+tool selftest: 10/10 green (run this window)
+
+--- input trace (BANKED struct-battery decode-filtered twin) ---
+b744e48148313667e185f66a1dd3d022ebf6ac81db33d79b51bdbaf57d0c0219  traces/agentic-t1-dec.ids
+1c1a07ee517aa401d8f2b2cb6f81b81ff62c5cea97489e0f286a12cb61f6d421  traces/agentic-t1-dec.w
+expected (struct filtered-receipts.txt):
+  b744e48148313667e185f66a1dd3d022ebf6ac81db33d79b51bdbaf57d0c0219  agentic-t1-dec.ids
+  1c1a07ee517aa401d8f2b2cb6f81b81ff62c5cea97489e0f286a12cb61f6d421  agentic-t1-dec.w
+  MATCH: both
+
+--- control-arm identity: tol=0.05 == the REFUTED banked artifact ---
+assignment-identical layers: 42/42
+stats-identical layers:      42/42
+even assignment-identical:   42/42
+=> the ladder's control arm IS the artifact the tpd window refuted (56dea5ca), re-derived
+   from the banked decode-filtered twin. Whole-file sha differs ONLY in the embedded
+   trace path/line-count receipts (63714 full-tap lines vs 63462 filtered); the placement
+   and every stat are bit-identical.
+
+--- NO GPU USED THIS CELL ---
+0, 1 MiB
+1, 1 MiB
+2, 1 MiB
+3, 1 MiB
+ls: cannot access '/root/TIMING-IN-FLIGHT': No such file or directory
