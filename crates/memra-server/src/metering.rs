@@ -159,8 +159,8 @@ pub trait Receipt: Send {
     ) -> Result<(), String>;
     fn reject(&mut self, status: u16, error_code: &str) -> Result<(), String>;
     /// Terminal rows with a NAMED zero-debit outcome (`deadline_exceeded`,
-    /// `shed_deadline`, `shed_queue`) — `reject`'s twin for outcomes the census
-    /// distinguishes. Never bills.
+    /// `shed_deadline`, `shed_queue`, `shed_queue_wait`) — `reject`'s twin for
+    /// outcomes the census distinguishes. Never bills.
     fn settle_unbilled(
         &mut self,
         outcome: &'static str,
