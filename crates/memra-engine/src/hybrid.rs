@@ -778,90 +778,7 @@ fn prepare_auto_parallel(
                 .into(),
         );
     }
-    let mut placement = crate::parallel::plan_auto_parallel(src, cfg, plan, &devices)?;
-    if let Some(root_experts) = crate::tp::parallel_ep_root_experts()? {
-        if placement.backend != crate::parallel::AutoParallelBackend::ExpertParallel {
-            return Err(
-                "MEMRA_PARALLEL_EP_ROOT_EXPERTS requires automatic whole-expert EP; the \
-                 selected checkpoint fits only the pipeline backend"
-                    .into(),
-            );
-        }
-        let contract = crate::parallel::ModelParallelContract::from_model(cfg)?;
-        let ranges = crate::tp::parallel_ep_expert_ranges(
-            contract.expert_count,
-            placement.devices.len(),
-            Some(root_experts),
-        )?;
-        if !contract
-            .expert_count
-            .is_multiple_of(placement.devices.len())
-        {
-            return Err(
-                "automatic EP root-light placement requires the baseline even split to have \
-                 an integral expert count"
-                    .into(),
-            );
-        }
-        let even_count = contract.expert_count / placement.devices.len();
-        let bytes_per_expert = placement.expert_peer_bytes.div_ceil(even_count as u64);
-        let non_distributed = placement
-            .expert_root_bytes
-            .checked_sub(placement.expert_peer_bytes)
-            .ok_or("automatic EP root byte accounting underflow")?;
-        let root_bytes = non_distributed
-            .checked_add(
-                bytes_per_expert
-                    .checked_mul(root_experts as u64)
-                    .ok_or("automatic EP root-light root bytes overflow")?,
-            )
-            .ok_or("automatic EP root-light root bytes overflow")?;
-        let max_peer_experts = ranges
-            .iter()
-            .skip(1)
-            .map(std::ops::Range::len)
-            .max()
-            .ok_or("automatic EP root-light placement has no peer ranks")?;
-        let peer_bytes = bytes_per_expert
-            .checked_mul(max_peer_experts as u64)
-            .ok_or("automatic EP root-light peer bytes overflow")?;
-        for (rank, (&capacity, bytes)) in placement
-            .device_capacity_bytes
-            .iter()
-            .zip(
-                std::iter::once(root_bytes).chain(
-                    ranges
-                        .iter()
-                        .skip(1)
-                        .map(|range| bytes_per_expert * range.len() as u64),
-                ),
-            )
-            .enumerate()
-        {
-            if bytes
-                .checked_add(placement.reserve_bytes)
-                .is_none_or(|required| required > capacity)
-            {
-                return Err(format!(
-                    "MEMRA_PARALLEL_EP_ROOT_EXPERTS={root_experts} exceeds rank {rank} \
-                     capacity: bytes={bytes} reserve={} capacity={capacity} ranges={ranges:?}",
-                    placement.reserve_bytes,
-                )
-                .into());
-            }
-        }
-        placement.expert_root_bytes = root_bytes;
-        placement.expert_peer_bytes = peer_bytes;
-        placement.checkpoint_peak_bytes = root_bytes.max(peer_bytes);
-        eprintln!(
-            "[parallel-ep-root-light] root_experts={root_experts} ranges={ranges:?} \
-             estimated_root={:.2}GB estimated_max_peer={:.2}GB reserve={:.2}GB \
-             performance_claim=false",
-            root_bytes as f64 / 1e9,
-            peer_bytes as f64 / 1e9,
-            placement.reserve_bytes as f64 / 1e9,
-        );
-    }
+    let placement = crate::parallel::plan_auto_parallel(src, cfg, plan, &devices)?;
     let auto_w4a16_bf16 = placement.backend == crate::parallel::AutoParallelBackend::ExpertParallel
         && matches!(
             src.expert_activation_precision(),
@@ -1476,15 +1393,13 @@ fn build_step_distributed_exps(
                     false,
                 )?;
                 let experts = runtime.upload_expert_parallel_nvfp4_normalized(gate, up, down)?;
-                let expert_ranges = experts.expert_ranges();
                 let marker = if step_runtimes.config.auto_parallel {
                     "parallel-ep"
                 } else {
                     "step-ep"
                 };
                 eprintln!(
-                    "[{marker}] layer={layer} devices={:?} experts={} ranges={expert_ranges:?} \
-                     artifact=nvfp4 \
+                    "[{marker}] layer={layer} devices={:?} experts={} artifact=nvfp4 \
                      expert_layout=expert-parallel expert_transport={} \
                      macro_fold=post-kernel-once native_p2p={} w4a16_device_routes={} \
                      performance_claim=false",
