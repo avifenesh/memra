@@ -26293,7 +26293,7 @@ mod tests {
         assert!(
             !glm5_route_admits(true, true, 3, true, false, false, false, false, true),
             "a warm session that is NEITHER cold NOR the restored carrier must refuse — \
-             the last param is `cold_or_restored_carrier` (lane/glm5-prefix-latent2): the \
+             the `cold_or_restored_carrier` param (lane/glm5-prefix-latent2): the \
              call site passes `glm5_cold || glm5_restored_carrier`, and the carrier proof \
              (rebuilt drafter KV + restored cache + non-empty seed, every other spec-state \
              term still cold) lives at the call site, not here"
