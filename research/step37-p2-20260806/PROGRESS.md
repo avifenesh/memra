@@ -17,7 +17,7 @@ pp2-hardening lane sharing the box.
 ### Artifact: DONE, byte-verified
 
 StepFun official GGUF on the box at `~/step37/models/step-3.7-flash/` (persistent root, NOT the
-3.5T ephemeral NVMe at `/opt/scratch/nvme` — that is lost on a spot stop, and a re-download after
+3.5T ephemeral NVMe at `/opt/dl-image/nvme` — that is lost on a spot stop, and a re-download after
 interruption is the thing worth avoiding).
 
 | file | bytes | sha256 (head) |

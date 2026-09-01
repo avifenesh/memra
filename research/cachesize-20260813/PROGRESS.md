@@ -3,7 +3,7 @@
 Date: 2026-08-13
 Branch: `lane/cx-cachesize`
 Base: `v0.81.2` (`18885ec479d897a3e8c42b0d408a71fa3edaa708`)
-Rig: box1 only (`ubuntu@<rented-box-ip>`, `/opt/scratch/nvme`), one RTX PRO 6000
+Rig: box1 only (`ubuntu@<rented-box-ip>`, `/opt/dl-image/nvme`), one RTX PRO 6000
 
 ## Objective
 
@@ -44,7 +44,7 @@ Measure actual prefix-snapshot device bytes and the cache-budget capacity curve 
 - Capacity uses `N=96`, matching the requested production `MEMRA_MAX_SESSIONS`. The 96 logical prefixes are tenant-isolated cache keys carrying the exact qualified 4,860-token prompt identity; this preserves the frozen prompt content while exercising the real per-tenant residency cost.
 - Hot requests consume one deterministic shuffled permutation without replacement and wrap only after all 96 keys have been visited. Ten percent of each frozen cell remains unique cold churn. This retains the sell-gate's 9:1 intended mix while letting the measured hit rate fall honestly when the budget cannot retain the working set.
 - The minimum requested c=4, c=16, and model-knee cells are included. Intermediate widths are retained to locate the largest concurrency that still meets the sold hit-p95 class rather than merely bracketing it.
-- Box1 preflight at `2026-08-12T21:50:40Z`: both PRO 6000 GPUs reported 0 MiB used, no compute applications or target-port listeners were present, the GPU flock had no holder, `/opt/scratch/nvme` had 3.1 TiB free, and both model hashes matched the frozen receipts.
+- Box1 preflight at `2026-08-12T21:50:40Z`: both PRO 6000 GPUs reported 0 MiB used, no compute applications or target-port listeners were present, the GPU flock had no holder, `/opt/dl-image/nvme` had 3.1 TiB free, and both model hashes matched the frozen receipts.
 - Harness static checks and the pure control test pass: each cycle visits all 96 keys exactly once before reshuffle, and every concurrency cell preserves the frozen request-count and 9:1 role rules.
 
 ## 2026-08-13 — entry accounting and scored restart

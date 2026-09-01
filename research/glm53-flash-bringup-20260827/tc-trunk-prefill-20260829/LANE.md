@@ -1,10 +1,5 @@
 # L2: the glm5 trunk prefill rides tensor cores (lane/glm5-tc-trunk-prefill, 2026-08-29)
 
-STATUS 2026-08-30: the box A/B RAN and is banked (`BOX-AB-L2.md`): all five pre-registered
-conditions PASS, argmax gate 30/30 with no flips, door TTFD -8.1..-8.7% at fixed residency,
-MMV decode +18-22% and -10 GiB VRAM, and the 2-card full-residency boot SERVES (greedy
-byte-identical to 3-card). Awaiting the owner accept/hold; no defaults flipped.
-
 The prefill-gap plan's L2 lever (`../prefill-gap-20260829/PREFILL-GAP.md` section 1.2): after
 L1 (grouped MoE prefill, 85 to 616-639 tok/s), the residual ~9 s of the 10.25 s TTFD at 6,470
 tokens is the trunk, and the larger share of it is the BF16 trunk's f32, non-tensor-core

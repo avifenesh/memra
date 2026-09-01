@@ -1,4 +1,4 @@
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: dev1 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 16, 32] over 32 layers
@@ -7,7 +7,7 @@ stage fence: [0, 16, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 18615.63 us/tok (53.72 tok/s)  all=[18615.63]
 pipelined-pp: median 16001.68 us/tok (62.49 tok/s)  all=[16001.68]
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: dev1 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 16, 32] over 32 layers
@@ -16,7 +16,7 @@ stage fence: [0, 16, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 18546.69 us/tok (53.92 tok/s)  all=[18546.69]
 pipelined-pp: median 15965.35 us/tok (62.64 tok/s)  all=[15965.35]
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: dev1 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 16, 32] over 32 layers
@@ -25,7 +25,7 @@ stage fence: [0, 16, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 18533.34 us/tok (53.96 tok/s)  all=[18533.34]
 pipelined-pp: median 15955.58 us/tok (62.67 tok/s)  all=[15955.58]
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: dev1 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 16, 32] over 32 layers
@@ -34,7 +34,7 @@ stage fence: [0, 16, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 18562.38 us/tok (53.87 tok/s)  all=[18562.38]
 pipelined-pp: median 15973.64 us/tok (62.60 tok/s)  all=[15973.64]
-ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=2 devices=1,2 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev1 stage1=dev2 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [1, 2]; weight home: dev1 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 16, 32] over 32 layers

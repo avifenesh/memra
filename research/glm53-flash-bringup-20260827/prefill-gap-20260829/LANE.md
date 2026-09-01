@@ -22,7 +22,7 @@ do, and rank the levers.
 - Receipts: `../moe-epilogue-receipts/nsys-launch-counts.md` (49 launches/token-layer),
   `../decode-attribution-receipts/ATTRIBUTION.txt` (the 17.1 ms invariant launch term,
   4.76 GB/token expert VRAM traffic), `../ring-sizing-20260828/box-ctxprobe/`
-  (TTFD ladder), `../kpool-bench-frankfurt-crossover.txt` (MLA/DSA is ms-class),
+  (TTFD ladder), `../kpool-bench-Frankfurt-crossover.txt` (MLA/DSA is ms-class),
   `docs/FLAGS.md` rows `MEMRA_MOE_FUSED_EPI`, `MEMRA_PP_BF16`, `MEMRA_BF16_MMV`.
 - Engine literature survey with per-mechanism citations (PREFILL-GAP.md §2).
 - No box access this lane (the 4-card box runs the 1M cell). Where a receipt is

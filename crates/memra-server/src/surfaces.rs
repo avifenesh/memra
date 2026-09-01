@@ -24,7 +24,7 @@ use axum::response::Response;
 
 use crate::worker::{Cmd, Event};
 use crate::{
-    AppState, ChatCompletionReq, Envelope, InflightGuard, RateLimit, auth, constrained, metering,
+    AppState, ChatCompletionReq, Envelope, InflightGuard, RateLimit, auth, constrained, ledger,
     toolcall::{ParsedToolCall, Piece, ToolStreamParser},
     worker,
 };
@@ -34,7 +34,7 @@ use crate::{
 /// response (receipt discipline, in-flight slot, rate-limit headers).
 pub(crate) struct Admission {
     pub rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-    pub receipt: Option<Box<dyn crate::metering::Receipt>>,
+    pub receipt: Option<ledger::PendingReceipt>,
     pub guard: InflightGuard,
     pub rl: RateLimit,
     /// Some only when a `<tools>` block was rendered or the model has a think tail —
@@ -133,9 +133,9 @@ pub(crate) async fn admit_translated(
     // TRANSLATED messages array (the internal chat shape), documented in
     // docs/API-SURFACES.md.
     let capture_prompt = st
-        .metering
+        .capture
         .as_ref()
-        .filter(|m| m.captures(&tenant.tenant))
+        .filter(|store| store.is_armed(&tenant.tenant))
         .map(|_| crate::capture_chat_messages(&req.messages));
     let vision_preprocess_permit = if crate::request_has_vision(&req) {
         match crate::VISION_PREPROCESS_SEMAPHORE.acquire().await {
@@ -174,8 +174,6 @@ pub(crate) async fn admit_translated(
         Err(err) => return Err(crate::bad_request(&err, None)),
     };
     plan.request.cache_ns = cache_ns;
-    plan.request.request_id = env.id.clone();
-    plan.request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = crate::apply_model_request_limits(
         &mut plan.request,
         st.openrouter_metadata.get(&model),
@@ -213,18 +211,8 @@ pub(crate) async fn admit_translated(
         Err(err) => return Err(crate::vision_memory_error_response(err, Some("messages"))),
     };
     if crate::draining() {
-        let receipt = crate::start_request_receipt(
-            st,
-            env,
-            tenant,
-            &model,
-            route,
-            lane,
-            stream,
-            crate::effective_max_tokens(&plan.request),
-            None,
-            None,
-        );
+        let receipt =
+            crate::start_request_receipt(st, env, tenant, &model, route, lane, stream, None);
         return Err(crate::ledger_rejected(
             receipt,
             crate::drain_response(),
@@ -232,41 +220,21 @@ pub(crate) async fn admit_translated(
             &env.id,
         ));
     }
-    let budget = match crate::admit_tenant_budget(st, tenant, &mut plan.request) {
-        Ok(budget) => budget,
+    let budget_permit = match crate::admit_tenant_budget(st, tenant, &mut plan.request) {
+        Ok(permit) => permit,
         Err(rejection) => {
             let (response, error_code) = rejection.into_response();
-            let receipt = crate::start_request_receipt(
-                st,
-                env,
-                tenant,
-                &model,
-                route,
-                lane,
-                stream,
-                crate::effective_max_tokens(&plan.request),
-                None,
-                None,
-            );
+            let receipt =
+                crate::start_request_receipt(st, env, tenant, &model, route, lane, stream, None);
             return Err(crate::ledger_rejected(
                 receipt, response, error_code, &env.id,
             ));
         }
     };
-    let receipt = crate::start_request_receipt(
-        st,
-        env,
-        tenant,
-        &model,
-        route,
-        lane,
-        stream,
-        crate::effective_max_tokens(&plan.request),
-        budget.reserved_ctx,
-        budget.permit,
-    );
+    let receipt =
+        crate::start_request_receipt(st, env, tenant, &model, route, lane, stream, budget_permit);
     let receipt = if let Some(prompt) = capture_prompt {
-        crate::arm_capture(receipt, move || prompt)
+        crate::arm_capture(receipt, st, tenant, move || prompt)
     } else {
         receipt
     };
@@ -447,7 +415,7 @@ pub(crate) enum CollectError {
 /// terminal complete/reject synced before any HTTP body is produced.
 pub(crate) async fn collect_final(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>,
-    receipt: &mut Option<Box<dyn crate::metering::Receipt>>,
+    receipt: &mut Option<ledger::PendingReceipt>,
     mut parser: Option<ToolStreamParser>,
     stop_strings: &[String],
     env: &Envelope,
@@ -527,7 +495,7 @@ pub(crate) async fn collect_final(
                     });
                 if let Some(receipt) = receipt.as_mut()
                     && let Err(err) = receipt.complete(
-                        metering::UsageCounts {
+                        ledger::Usage {
                             prompt_tokens: n_prompt as u64,
                             cached_prompt_tokens: n_cached as u64,
                             completion_tokens: n_tokens as u64,

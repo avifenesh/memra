@@ -4,14 +4,14 @@ selected_physical_gpu_index=1
 0, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 595.71.05, P0, 67, 2422 MHz, 12481 MHz, 500.24 W, 600.00 W, 97887 MiB, 26707 MiB, 70546 MiB, 100 %, 5, 16
 1, NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2b4cf166-fd33-f161-8536-ca04bc72280c, 595.71.05, P0, 34, 2317 MHz, 12481 MHz, 122.78 W, 600.00 W, 97887 MiB, 0 MiB, 97252 MiB, 0 %, 5, 16
 compute_apps:
-GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 1136822, /opt/scratch/nvme/cx-cachesize/memra/target/release/memra-server, 26698 MiB
+GPU-54dd2b6f-9311-dd31-672b-60be2ed28a79, 1136822, /opt/dl-image/nvme/cx-cachesize/memra/target/release/memra-server, 26698 MiB
 locks:
 processes:
-ubuntu   1134655 Wed Aug 12 22:07:07 2026 bash /opt/scratch/nvme/cx-cachesize/harness/run-box1.sh run
-ubuntu   1134865 Wed Aug 12 22:07:29 2026 tee /opt/scratch/nvme/cx-cachesize/raw/scored/orchestrator.log
-ubuntu   1136685 Wed Aug 12 22:12:23 2026 bash /opt/scratch/nvme/cx-groupedregate/harness/run-box1-single.sh
-ubuntu   1136688 Wed Aug 12 22:12:23 2026 tee /opt/scratch/nvme/cx-groupedregate/raw/single-20260812T221224Z/orchestrator.log
-ubuntu   1136822 Wed Aug 12 22:12:31 2026 /opt/scratch/nvme/cx-cachesize/memra/target/release/memra-server
-ubuntu   1136914 Wed Aug 12 22:12:38 2026 timeout 28800 python3 /opt/scratch/nvme/cx-cachesize/harness/capacity_sweep.py --endpoint http://127.0.0.1:18427 --model q27 --budget-mb 4096 --repetition 1 --protocol /opt/scratch/nvme/cx-cachesize/harness/protocol.lock.json --frozen-replay /opt/scratch/nvme/cx-cachesize/memra/research/sellgate-20260812/sellgate_replay.py --workload-lock /opt/scratch/nvme/cx-cachesize/memra/research/sellgate-20260812/workload.lock.json --out /opt/scratch/nvme/cx-cachesize/raw/scored/campaign/r01-q27-b04096/sweep.jsonl --namespace cx-cachesize-q27-b4096-r1 --timeout 1800
-ubuntu   1136915 Wed Aug 12 22:12:38 2026 tee /opt/scratch/nvme/cx-cachesize/raw/scored/campaign/r01-q27-b04096/sweep.log
-ubuntu   1136916 Wed Aug 12 22:12:38 2026 python3 /opt/scratch/nvme/cx-cachesize/harness/capacity_sweep.py --endpoint http://127.0.0.1:18427 --model q27 --budget-mb 4096 --repetition 1 --protocol /opt/scratch/nvme/cx-cachesize/harness/protocol.lock.json --frozen-replay /opt/scratch/nvme/cx-cachesize/memra/research/sellgate-20260812/sellgate_replay.py --workload-lock /opt/scratch/nvme/cx-cachesize/memra/research/sellgate-20260812/workload.lock.json --out /opt/scratch/nvme/cx-cachesize/raw/scored/campaign/r01-q27-b04096/sweep.jsonl --namespace cx-cachesize-q27-b4096-r1 --timeout 1800
+ubuntu   1134655 Wed Aug 12 22:07:07 2026 bash /opt/dl-image/nvme/cx-cachesize/harness/run-box1.sh run
+ubuntu   1134865 Wed Aug 12 22:07:29 2026 tee /opt/dl-image/nvme/cx-cachesize/raw/scored/orchestrator.log
+ubuntu   1136685 Wed Aug 12 22:12:23 2026 bash /opt/dl-image/nvme/cx-groupedregate/harness/run-box1-single.sh
+ubuntu   1136688 Wed Aug 12 22:12:23 2026 tee /opt/dl-image/nvme/cx-groupedregate/raw/single-20260812T221224Z/orchestrator.log
+ubuntu   1136822 Wed Aug 12 22:12:31 2026 /opt/dl-image/nvme/cx-cachesize/memra/target/release/memra-server
+ubuntu   1136914 Wed Aug 12 22:12:38 2026 timeout 28800 python3 /opt/dl-image/nvme/cx-cachesize/harness/capacity_sweep.py --endpoint http://127.0.0.1:18427 --model q27 --budget-mb 4096 --repetition 1 --protocol /opt/dl-image/nvme/cx-cachesize/harness/protocol.lock.json --frozen-replay /opt/dl-image/nvme/cx-cachesize/memra/research/sellgate-20260812/sellgate_replay.py --workload-lock /opt/dl-image/nvme/cx-cachesize/memra/research/sellgate-20260812/workload.lock.json --out /opt/dl-image/nvme/cx-cachesize/raw/scored/campaign/r01-q27-b04096/sweep.jsonl --namespace cx-cachesize-q27-b4096-r1 --timeout 1800
+ubuntu   1136915 Wed Aug 12 22:12:38 2026 tee /opt/dl-image/nvme/cx-cachesize/raw/scored/campaign/r01-q27-b04096/sweep.log
+ubuntu   1136916 Wed Aug 12 22:12:38 2026 python3 /opt/dl-image/nvme/cx-cachesize/harness/capacity_sweep.py --endpoint http://127.0.0.1:18427 --model q27 --budget-mb 4096 --repetition 1 --protocol /opt/dl-image/nvme/cx-cachesize/harness/protocol.lock.json --frozen-replay /opt/dl-image/nvme/cx-cachesize/memra/research/sellgate-20260812/sellgate_replay.py --workload-lock /opt/dl-image/nvme/cx-cachesize/memra/research/sellgate-20260812/workload.lock.json --out /opt/dl-image/nvme/cx-cachesize/raw/scored/campaign/r01-q27-b04096/sweep.jsonl --namespace cx-cachesize-q27-b4096-r1 --timeout 1800

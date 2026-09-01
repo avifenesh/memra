@@ -26,7 +26,7 @@ restart.
 
 ## Real PP-2 hit-TTFT receipt
 
-The final measurement used the steered `cloud-2card` pair: 2 x NVIDIA RTX PRO 6000 Blackwell
+The final measurement used the steered `sbox-2card` pair: 2 x NVIDIA RTX PRO 6000 Blackwell
 Server Edition, PIX topology, CUDA 13.2 / sm_120a, and the three pinned Step-3.7-Flash IQ4_XS
 GGUF shards. The successful window held `flock /tmp/memra-gpu.lock` continuously and began with
 both GPUs idle at 0 MiB, P8, 180 MHz, and 26 C. Active snapshots stayed at 31--33 C; observed SM
@@ -38,7 +38,7 @@ Protocol: five whole-server pairs, order alternated by pair, spec off, PP-2 devi
 warm-up followed by one measured streaming request per arm. Every measured request had 519
 prompt tokens, 513 cached tokens, eight generated tokens, and the same output SHA-256
 `dbf29017ca508c93f8b4117b220141ab05fbe44109ae1c9da05526334fe90aab`.
-The measurement-only source patch, retained in `raw/cloudbox/source.diff`, arms only the maximum rung
+The measurement-only source patch, retained in `raw/sbox/source.diff`, arms only the maximum rung
 after a request is already queued. The `before` arm makes the old inline scheduling decision;
 the `after` arm makes the production busy-boundary decision and drains the still-pending rung
 after the request at idle. The trigger is not part of the committed runtime.
@@ -73,7 +73,7 @@ nine injected cycles it measured all-inline owner-boundary p95 431.364 ms, new b
   `MEMRA_MOESD_*` literals.
 - The real PP-2 A/B completed `rc=0`; all ten arm logs are free of panic, failure, and
   `SECURITY RED`. Raw model/prompt/binary hashes, clock/thermal snapshots, client rows, server
-  logs, metrics, and the exact source delta are under `raw/cloudbox/`.
+  logs, metrics, and the exact source delta are under `raw/sbox/`.
 - The first remote receipt shakeout stopped at a compile error in its temporary diagnostic string,
   before any model boot. Its raw driver/build logs are retained; the corrected final run is
   timestamped `20260812T123536Z`.

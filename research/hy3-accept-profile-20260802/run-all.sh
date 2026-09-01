@@ -4,7 +4,7 @@
 # arms interleave within each run-spec process. Aborts the whole batch on the first
 # nonzero exit (run-spec asserts SELF-CONSISTENCY, so a FAIL exits nonzero).
 set -u
-BASE=/opt/scratch/nvme/hy3-accept-profile
+BASE=/opt/dl-image/nvme/hy3-accept-profile
 MLOG=$BASE/logs/master.log
 PROMPTS="chat-qa-short chat-prose-medium code-gen-short code-review-medium agentic-tool summarize-medium"
 

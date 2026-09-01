@@ -1,4 +1,4 @@
-# Cloud 4x-L40S box handoff — vLLM/SGLang/llama.cpp three-way
+# Cloud g6box.12xl handoff — vLLM/SGLang/llama.cpp three-way
 
 ## What this box is FOR
 The head-to-head we've been blocked on 3 sessions: **vLLM vs SGLang vs llama.cpp** on one clean box.
@@ -12,7 +12,7 @@ never installed) all evaporate on a fresh cloud box.
 - **No native FP4.** Ada = FP8 tensor cores, not Blackwell FP4. The NVFP4 daily model runs **bf16/FP8**
   here, not native NVFP4. That's fine — the goal is engine-vs-engine + reading their kernels.
 
-## The rented box = 4x L40S (sm_89, 48GB ea, 192GB total)
+## g6box.12xl = 4x L40S (sm_89, 48GB ea, 192GB total)
 - Single-GPU parity vs laptop: `CUDA_VISIBLE_DEVICES=0`.
 - Multi-GPU story (TP=4): run separately — shows the 27B/MoE scaling vLLM/SGLang get that llama doesn't.
 
@@ -34,7 +34,7 @@ So even though bw24 can't run on Ada, we get a full ranking via the shared llama
 - **HF token** — `~/.cache/huggingface/token` is EMPTY on the laptop. vLLM/SGLang download from HF;
   gated Qwen repos need a token. Either `export HF_TOKEN=...` on the box, or scp the 19G HF dirs
   (`qwen35-9b-hf`, `qwen36-27b-text-nvfp4-mtp-hf`) from the laptop (slower uplink ~30min vs ~3min download).
-- Confirm the **AMI** (the stock GPU image ships CUDA 12.x + driver; if bare Ubuntu I install the driver too).
+- Confirm the **AMI** (g6box DL-image ships CUDA 12.x + driver; if bare Ubuntu I install the driver too).
 
 ## High-value extra (the copy-then-tune mechanism)
 Once engines run, **profile their kernels** with nsys/ncu on the L40S:

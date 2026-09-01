@@ -1,9 +1,0 @@
-[meter] admit id=chatcmpl-d05209458dc2961da065721b711968ab tenant=default lane=interactive model="zai/glm-5.3-flash"
-[admission] request cost: model="zai/glm-5.3-flash" ctx=1204 path=plain = 23936 B/token x ctx + 1202MB prefill-workspace + 0MB fixed = 1230MB
-[admission] fixed residual high-water: model="zai/glm-5.3-flash" 18MB (observed 45MB at ctx 1148 path=plain)
-[bf16-tc] flag=on (MEMRA_PP_BF16; engagement is the per-shape ENGAGED line + the dispatch counter)
-[bf16-tc] ENGAGED m=1108 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
-[bf16-tc] ENGAGED m=1108 n=4096 k=8192 (bf16 tensor-core GEMM on resident checkpoint bytes)
-[bf16-tc] ENGAGED m=1108 n=4096 k=1536 (bf16 tensor-core GEMM on resident checkpoint bytes)
-[mla-tc-prefill] engaged: absorb/decompress = strided-batched bf16 TC GEMMs, attention = fa_mla_gathered_bf16 (t=1108, t_kv=1108, nh=64, width=1111); dispatches counted in MLA_TC_PREFILL_DISPATCHES
-[moe-grouped-prefill] flag=on t=1108 il=3 (announce printed in both arms; engagement is the per-layer execute line + the dispatch counter)

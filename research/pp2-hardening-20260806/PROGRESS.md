@@ -1,7 +1,7 @@
-# pp2-hardening — PP-2 on 2x RTX PRO 6000 (cloud-2card, 2026-08-06)
+# pp2-hardening — PP-2 on 2x RTX PRO 6000 (sbox-2card, 2026-08-06)
 
 Lane `lane/pp2-hardening` off `restructure/public-split` @ **4b4dc7b1**.
-Box: cloud-2card SPOT `<rented-box-ip>`, frankfurt-az-a, 2x RTX PRO 6000 Blackwell **Server
+Box: sbox-2card SPOT `<rented-box-ip>`, Frankfurt-a, 2x RTX PRO 6000 Blackwell **Server
 Edition** 96GB (cc 12.0, 512-bit bus, 102.0 GB reported total), 48 vCPU, 499 GB RAM,
 387 GB root (339 free), 250 GB /dev/shm. Driver 595.71.05, CUDA 13.2.
 Box tree `~/memra` = BOX-COMMIT.txt `4b4dc7b1`, file-level rsync (box is not a git checkout).
@@ -16,9 +16,9 @@ Owner order 2026-08-06: *"p2p is a nececary lane"* — PP-2 serving bill in scop
 
 ### Provisioning notes (for the next box of this family)
 
-- The stock GPU image `the vendor stock deep-learning image, Ubuntu 24.04, dated 20260724` **does** ship
+- DL-image `Deep Learning Base OSS Nvidia Driver GPU AMI Ubuntu 24.04 20260724` **does** ship
   CUDA toolkits — 12.8, 12.9, 13.0, **13.2** (`/usr/local/cuda -> cuda-13.2`). The
-  "no toolkit" expectation from prior boxes of this family is stale for this image date.
+  "no toolkit" expectation from prior boxes of this family is stale for this AMI date.
 - **`crates/memra-engine/build.rs:61` hardcodes `/usr/local/cuda-13.1/bin/nvcc`** as the
   default. On this box that path does not exist and the build dies with
   `panicked at build.rs:126: spawn nvcc: Os { code: 2, kind: NotFound }` — *not* an obvious

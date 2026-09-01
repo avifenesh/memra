@@ -965,10 +965,8 @@ moe_f16g_sktail_kernel(
 // extract+mul.
 // QT_NVFP4_V2 MUST be listed here. kq_stage_codebook stages 16 words for BOTH NVFP4 layouts
 // (`QT == QT_NVFP4 || QT == QT_NVFP4_V2`), but this macro sized only the v1 constant, so the v2
-// instantiations -- at the time, every run with MEMRA_NVFP4_BANK_V2=1, a door REMOVED
-// 2026-08-29 (research/step37-bankv2-removal-20260829); QT_NVFP4_V2 now reaches this GEMM
-// only through the always-slot-major EP2 banks or the moe_tp2_repro harness --
-// declared `s_cb[1]` and threads
+// instantiations -- every run with MEMRA_NVFP4_BANK_V2=1, which is OFF by default in code and
+// ON in the step37 lane's serving env -- declared `s_cb[1]` and threads
 // 1..15 wrote 15 words past the end of the array on every launch. compute-sanitizer memcheck,
 // 2026-08-28: 6816 "Invalid __shared__ write of size 4 bytes" in moe_kq_sktail_kernel<107> at
 // t=576, 288 at t=4096, naming threads 4 and 5 writing s_cb[4]/s_cb[5]; qt=7 clean at both
@@ -1001,17 +999,9 @@ struct KqRaw {
                         // iq3_s: (dd*(1+2*nib), -)
     int sel;            // q4k/iq4_xs: hi-nibble half | q6k: q4 (2-bit shift selector)
 };
-// `in_f` is REQUIRED and has NO default. It used to default to 0, and exactly two of the ten
-// call sites (moe_kq_sktail_kernel's kb+1 prefetch pair) relied on that default. QT_NVFP4_V2 is
-// the only branch that reads in_f -- it locates the slot-major row's UE4M3 scale tail at
-// n_slots*16 -- so in_f=0 sent the scale fetch into the packed-codes region while the 4-bit
-// codes stayed correct: right weights, wrong per-16-element scale, on every k-block but kb=0.
-// Every other qtype branch ignores in_f, which is why the omission was a silent no-op for v1 and
-// a margin-sensitive logits corruption for v2 (research/step37-bankv3-20260901/DIAGNOSIS.md).
-// Keep it undefaulted: a defaultable geometry field that only one layout consumes is the hole.
 template<int QT>
 __device__ __forceinline__ KqRaw kq_fetch(const uint8_t* __restrict__ wrow, int k0v,
-                                          const uint32_t* __restrict__ s_cb, int in_f){
+                                          const uint32_t* __restrict__ s_cb, int in_f = 0){
     // k0v = 16-aligned value offset within the row (absolute k of the window start)
     constexpr int SBB = (QT == QT_Q4_K) ? 144 : (QT == QT_Q6_K) ? 210
                       : (QT == QT_IQ4_XS) ? 136 : 110;  // unused by the NVFP4 branches
@@ -1476,8 +1466,8 @@ moe_kq_sktail_kernel(
             kq_store<QT>(braw0, &Bs[brow][bc0], s_cb);
             kq_store<QT>(braw1, &Bs[brow][bc0 + 16], s_cb);
             if(kb + 1 < nkb){
-                braw0 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0, s_cb, in_f);
-                braw1 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb, in_f);
+                braw0 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0, s_cb);
+                braw1 = kq_fetch<QT>(wrow, (kb + 1) * SKT_BK + bc0 + 16, s_cb);
             }
             if(kb + 2 < nkb)      asm volatile("cp.async.wait_group 2;");
             else if(kb + 1 < nkb) asm volatile("cp.async.wait_group 1;");

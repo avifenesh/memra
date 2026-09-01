@@ -101,7 +101,7 @@ That made one cold-prime call part of cache-hit TTFT despite the hit needing no 
 
 ## Box1 N=5 requalification
 
-The scored run used one physical RTX PRO 6000 Blackwell Server Edition GPU on the provisioned cloud box
+The scored run used one physical RTX PRO 6000 Blackwell Server Edition GPU on provisioned Sbox
 box1, one model resident at a time, with odd boots ordered Q27/Q35 and even boots Q35/Q27. The
 single-GPU lock ran from 18:21:54Z to 19:15:28Z. The observed thermal regime peaked at 68 C,
 2,422 MHz, 525.13 W, and 77,845 MiB used. Every median below is N=5.
@@ -178,7 +178,7 @@ driver `de4442...6492`, and patch `59a0e5...9526`.
 - Frozen analysis SHA-256: `092c8e42489009984c363afe992482f4ef59799797ada00ed4d11a0eea41c2e3`.
 - Lane-wide raw manifest: `263d3db1f02b0efce19532936b6104a47841165c4f43083f36e847070d3e3153`.
 
-The cloud PRO 6000 evidence is research qualification, not the repository's pre-release shipping
+The Sbox/PRO 6000 evidence is research qualification, not the repository's pre-release shipping
 gate. Before merge or tag, run `kernel-check` ALL GREEN, affected-model `run-gen` argmax MATCH,
 and `run-spec` K=1..8 PASS on the designated Vast 2x RTX PRO 6000 verification box. The strict
 Q27 output comparison also remains an explicit orchestrator decision; no tag is authorized by

@@ -7,10 +7,7 @@
 //! memra-gguf, so `GpuTensor::load_from_source(&dyn TensorSource, ...)` introduces no new dep.
 
 use crate::config::{Arch, JsonObj, ModelConfig};
-use crate::safetensors::{StInfo, StModel};
-use crate::tensor_contract::{
-    CheckpointDialect, FloatType, IntegerType, QuantLayout, StorageLayout, TensorCensusEntry,
-};
+use crate::safetensors::StModel;
 use crate::{GgmlType, GgufFile};
 use memmap2::Mmap;
 use std::borrow::Cow;
@@ -316,268 +313,6 @@ pub struct DiskExtent {
     pub len: usize,
 }
 
-/// One header-only census row for a source tensor.
-///
-/// `entry.physical_bytes` is the exact number of checkpoint bytes represented by the semantic
-/// row. Safetensors quantization auxiliaries are folded into their owning weight row because the
-/// tensor contract models them as one storage layout; GGUF auxiliaries remain independent rows.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TensorCensusRecord {
-    pub physical_name: String,
-    pub dtype: String,
-    pub entry: TensorCensusEntry,
-}
-
-/// A complete source census and the naming dialect its semantic names use.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TensorCensus {
-    pub dialect: CheckpointDialect,
-    pub tensors: Vec<TensorCensusRecord>,
-}
-
-fn info_physical_bytes(name: &str, info: &StInfo) -> Result<u64, String> {
-    let bytes = info.data_offsets[1]
-        .checked_sub(info.data_offsets[0])
-        .ok_or_else(|| format!("safetensors tensor {name} has reversed data offsets"))?;
-    u64::try_from(bytes).map_err(|_| format!("safetensors tensor {name} byte length overflows u64"))
-}
-
-/// Normalize wrapper prefixes that do not change a tensor's semantic identity.
-pub fn canonical_hf_name(name: &str) -> String {
-    if let Some(suffix) = name.strip_prefix("model.language_model.") {
-        return format!("model.{suffix}");
-    }
-    if let Some(suffix) = name.strip_prefix("language_model.model.") {
-        return format!("model.{suffix}");
-    }
-    if let Some(suffix) = name.strip_prefix("language_model.lm_head.") {
-        return format!("lm_head.{suffix}");
-    }
-    name.to_string()
-}
-
-fn ggml_storage(kind: GgmlType) -> StorageLayout {
-    match kind {
-        GgmlType::F32 => StorageLayout::Float(FloatType::F32),
-        GgmlType::F16 => StorageLayout::Float(FloatType::F16),
-        GgmlType::BF16 => StorageLayout::Float(FloatType::Bf16),
-        GgmlType::I64 => StorageLayout::Integer(IntegerType::I64),
-        other => {
-            let (block, _) = other.block_and_type_size();
-            StorageLayout::Quantized(QuantLayout {
-                format: format!("{other:?}"),
-                block_shape: vec![block as u32],
-                auxiliaries: Vec::new(),
-            })
-        }
-    }
-}
-
-/// Build an exact-byte GGUF census from tensor-table metadata only.
-pub fn census_from_gguf(gguf: &GgufFile) -> TensorCensus {
-    TensorCensus {
-        dialect: CheckpointDialect::Gguf,
-        tensors: gguf
-            .tensors
-            .iter()
-            .map(|tensor| TensorCensusRecord {
-                physical_name: tensor.name.clone(),
-                dtype: format!("{:?}", tensor.ggml_type),
-                entry: TensorCensusEntry {
-                    name: tensor.name.clone(),
-                    shape: tensor.ne.clone(),
-                    storage: ggml_storage(tensor.ggml_type),
-                    physical_bytes: tensor.n_bytes,
-                },
-            })
-            .collect(),
-    }
-}
-
-fn is_quant_auxiliary(name: &str, headers: &BTreeMap<String, StInfo>) -> bool {
-    [
-        ".weight_scale",
-        ".weight_scale_inv",
-        ".weight_scale_2",
-        ".weight_global_scale",
-        ".input_scale",
-        ".scale",
-    ]
-    .into_iter()
-    .any(|suffix| {
-        name.strip_suffix(suffix).is_some_and(|stem| {
-            headers.contains_key(&format!("{stem}.weight"))
-                || headers.contains_key(&format!("{stem}.weight_packed"))
-        })
-    })
-}
-
-fn safetensors_storage(
-    info: &StInfo,
-    auxiliaries: &[String],
-) -> Result<(Vec<u64>, StorageLayout), String> {
-    let float = match info.dtype.as_str() {
-        "F32" => Some(FloatType::F32),
-        "F16" => Some(FloatType::F16),
-        "BF16" => Some(FloatType::Bf16),
-        "F8_E4M3" if auxiliaries.is_empty() => Some(FloatType::Fp8E4m3),
-        _ => None,
-    };
-    if let Some(float) = float {
-        return Ok((info.shape.clone(), StorageLayout::Float(float)));
-    }
-    if info.dtype == "I64" && auxiliaries.is_empty() {
-        return Ok((info.shape.clone(), StorageLayout::Integer(IntegerType::I64)));
-    }
-    if auxiliaries.is_empty() {
-        return Err(format!(
-            "unsupported standalone safetensors dtype {}",
-            info.dtype
-        ));
-    }
-    let mut shape = info.shape.clone();
-    let (format, block_shape) = match info.dtype.as_str() {
-        "U8" => {
-            let last = shape
-                .last_mut()
-                .ok_or("packed U8 weight has no dimensions")?;
-            *last = last
-                .checked_mul(2)
-                .ok_or("packed U8 logical shape overflows")?;
-            ("NVFP4", vec![16])
-        }
-        "I8" => {
-            let last = shape
-                .last_mut()
-                .ok_or("packed I8 weight has no dimensions")?;
-            *last = last
-                .checked_mul(2)
-                .ok_or("packed I8 logical shape overflows")?;
-            ("MXFP4", vec![32])
-        }
-        "F8_E4M3" => ("FP8_E4M3", vec![128, 128]),
-        other => return Err(format!("unsupported quantized weight dtype {other}")),
-    };
-    Ok((
-        shape,
-        StorageLayout::Quantized(QuantLayout {
-            format: format.to_string(),
-            block_shape,
-            auxiliaries: Vec::new(),
-        }),
-    ))
-}
-
-/// Build an exact-byte safetensors census from parsed headers only.
-///
-/// Quantization auxiliaries are represented by the owning weight's storage layout, matching the
-/// tensor contract, so their physical byte ranges are included in that weight's byte total.
-pub fn census_from_safetensors_headers(
-    headers: &BTreeMap<String, StInfo>,
-) -> Result<TensorCensus, String> {
-    let mut auxiliary_names = BTreeSet::new();
-    let mut rows = Vec::new();
-    for (physical_name, info) in headers {
-        if auxiliary_names.contains(physical_name) || is_quant_auxiliary(physical_name, headers) {
-            continue;
-        }
-        let (semantic_physical_name, stem) = match physical_name.strip_suffix(".weight_packed") {
-            Some(stem) => (format!("{stem}.weight"), Some(stem)),
-            None => (physical_name.clone(), physical_name.strip_suffix(".weight")),
-        };
-        let auxiliaries: Vec<String> = stem
-            .map(|stem| {
-                [
-                    format!("{stem}.weight_scale"),
-                    format!("{stem}.weight_scale_inv"),
-                    format!("{stem}.weight_scale_2"),
-                    format!("{stem}.weight_global_scale"),
-                    format!("{stem}.input_scale"),
-                    format!("{stem}.scale"),
-                ]
-                .into_iter()
-                .filter(|name| headers.contains_key(name))
-                .collect()
-            })
-            .unwrap_or_default();
-        auxiliary_names.extend(auxiliaries.iter().cloned());
-        let (shape, mut storage) = safetensors_storage(info, &auxiliaries)?;
-        if let StorageLayout::Quantized(layout) = &mut storage {
-            layout.auxiliaries = auxiliaries
-                .iter()
-                .map(|name| canonical_hf_name(name))
-                .collect();
-        }
-        let mut physical_bytes = info_physical_bytes(physical_name, info)?;
-        for auxiliary in &auxiliaries {
-            physical_bytes = physical_bytes
-                .checked_add(info_physical_bytes(auxiliary, &headers[auxiliary])?)
-                .ok_or_else(|| {
-                    format!("safetensors tensor {physical_name} byte total overflows")
-                })?;
-        }
-        rows.push(TensorCensusRecord {
-            physical_name: physical_name.clone(),
-            dtype: info.dtype.clone(),
-            entry: TensorCensusEntry {
-                name: canonical_hf_name(&semantic_physical_name),
-                shape,
-                storage,
-                physical_bytes,
-            },
-        });
-    }
-    rows.sort_by(|left, right| left.entry.name.cmp(&right.entry.name));
-    let mut names = BTreeSet::new();
-    for row in &rows {
-        if !names.insert(&row.entry.name) {
-            return Err(format!(
-                "multiple physical tensors normalize to {}",
-                row.entry.name
-            ));
-        }
-    }
-    Ok(TensorCensus {
-        dialect: CheckpointDialect::HfSafetensors,
-        tensors: rows,
-    })
-}
-
-fn census_from_safetensors_model(model: &StModel) -> Result<TensorCensus, String> {
-    let headers = model
-        .names()
-        .map(|name| {
-            model
-                .info(name)
-                .cloned()
-                .map(|info| (name.clone(), info))
-                .ok_or_else(|| format!("safetensors header disappeared for {name}"))
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
-    census_from_safetensors_headers(&headers)
-}
-
-/// Artifact-level activation precision for routed expert linears.
-///
-/// This is deliberately source metadata, not an architecture switch: two checkpoints with the
-/// same ModelPlan may carry different activation contracts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExpertActivationPrecision {
-    F32,
-    Bf16,
-    Quantized,
-}
-
-fn expert_activation_precision_from_quant_algo(
-    quant_algo: Option<&str>,
-) -> ExpertActivationPrecision {
-    match quant_algo {
-        Some("W4A16_NVFP4") => ExpertActivationPrecision::Bf16,
-        Some("NVFP4" | "W4A4_NVFP4") => ExpertActivationPrecision::Quantized,
-        _ => ExpertActivationPrecision::F32,
-    }
-}
-
 /// A weight source the engine can load from. GGUF and safetensors both implement it.
 pub trait TensorSource {
     /// The model configuration (from GGUF metadata or config.json).
@@ -595,16 +330,6 @@ pub trait TensorSource {
                     .unwrap_or_else(|| "model metadata parser panicked".into())
             },
         )
-    }
-    /// Enumerate tensor metadata and exact checkpoint byte ranges without reading or transforming
-    /// payload bytes. Real GGUF, safetensors, and manifest sources implement this; synthetic test
-    /// sources may leave it unavailable.
-    fn tensor_census(&self) -> Result<TensorCensus, String> {
-        Err("tensor source does not expose a metadata-only census".to_string())
-    }
-    /// Routed-expert activation precision declared by the artifact.
-    fn expert_activation_precision(&self) -> ExpertActivationPrecision {
-        ExpertActivationPrecision::F32
     }
     /// Find a tensor by its **ggml-style** name. Returns None if absent/unmapped.
     fn find(&self, ggml_name: &str) -> Option<TensorView<'_>>;
@@ -684,9 +409,6 @@ impl<'g> TensorSource for GgufSource<'g> {
     fn config(&self) -> ModelConfig {
         ModelConfig::from_gguf(self.0)
     }
-    fn tensor_census(&self) -> Result<TensorCensus, String> {
-        Ok(census_from_gguf(self.0))
-    }
     fn find(&self, name: &str) -> Option<TensorView<'_>> {
         let t = self.0.find(name)?;
         Some(TensorView {
@@ -738,20 +460,6 @@ impl RepackFallback {
         }
     }
 
-    fn tensor_census(&self) -> Result<TensorCensus, String> {
-        match self {
-            Self::Safetensors(source) => source.tensor_census(),
-            Self::Repack(source) => source.tensor_census(),
-        }
-    }
-
-    fn expert_activation_precision(&self) -> ExpertActivationPrecision {
-        match self {
-            Self::Safetensors(source) => source.expert_activation_precision(),
-            Self::Repack(source) => source.expert_activation_precision(),
-        }
-    }
-
     fn find_nvfp4_native(&self, name: &str) -> Option<Nvfp4Native<'_>> {
         match self {
             Self::Safetensors(source) => source.find_nvfp4_native(name),
@@ -799,7 +507,6 @@ impl RepackFallback {
 /// historical Hy3 name for compatibility with existing callers.
 pub struct Hy3RepackSource {
     cfg: ModelConfig,
-    expert_activation_precision: ExpertActivationPrecision,
     dir: PathBuf,
     source_dir: Option<PathBuf>,
     tensors: BTreeMap<String, RepackTensor>,
@@ -916,21 +623,6 @@ impl Hy3RepackSource {
         if fallback.is_none() {
             apply_stripped_mtp_override(&mut cfg, &tensors);
         }
-        let expert_activation_precision = fallback
-            .as_ref()
-            .map(RepackFallback::expert_activation_precision)
-            .unwrap_or_else(|| {
-                let cfg_path = source_dir
-                    .clone()
-                    .map(|path| path.join("config.json"))
-                    .filter(|path| path.exists())
-                    .unwrap_or_else(|| dir.join("config.json"));
-                let quant_algo = std::fs::read_to_string(cfg_path)
-                    .ok()
-                    .map(|json| crate::config::HfConfig::parse(&json))
-                    .and_then(|config| config.quant_algo);
-                expert_activation_precision_from_quant_algo(quant_algo.as_deref())
-            });
         let mut active_experts = BTreeMap::new();
         if let Some(pruned) = top.object("pruned_experts") {
             let moe = cfg.moe.as_ref().ok_or_else(|| {
@@ -1009,7 +701,6 @@ impl Hy3RepackSource {
 
         Ok(Self {
             cfg,
-            expert_activation_precision,
             dir,
             source_dir,
             tensors,
@@ -1045,77 +736,6 @@ impl Hy3RepackSource {
 impl TensorSource for Hy3RepackSource {
     fn config(&self) -> ModelConfig {
         self.cfg.clone()
-    }
-
-    fn tensor_census(&self) -> Result<TensorCensus, String> {
-        let (dialect, mut rows) = match self.fallback.as_ref() {
-            Some(fallback) => {
-                let census = fallback.tensor_census()?;
-                (census.dialect, census.tensors)
-            }
-            None => (CheckpointDialect::Gguf, Vec::new()),
-        };
-        let semantic_name = |name: &str| {
-            if dialect == CheckpointDialect::HfSafetensors {
-                use crate::hf_mapping::{HfTarget, resolve_ggml};
-                if let Some(target) = resolve_ggml(name, &self.cfg) {
-                    let hf = match target {
-                        HfTarget::Plain(hf) | HfTarget::Transform { hf, .. } => hf,
-                    };
-                    return canonical_hf_name(&hf);
-                }
-            }
-            name.to_string()
-        };
-
-        let mut by_name: BTreeMap<String, TensorCensusRecord> = rows
-            .drain(..)
-            .map(|row| (row.entry.name.clone(), row))
-            .collect();
-        if dialect == CheckpointDialect::Gguf {
-            // A per-expert overlay masks the fallback's uniform stacked bank exactly as `find`
-            // does. Exclude that unreachable fallback allocation from the effective census.
-            for name in self.tensors.keys() {
-                if let Some(prefix) = name.strip_suffix(".weight")
-                    && let Some((bank, expert)) = prefix.rsplit_once('.')
-                    && expert.parse::<usize>().is_ok()
-                    && bank.ends_with("_exps")
-                {
-                    by_name.remove(&format!("{bank}.weight"));
-                }
-            }
-        }
-        for (name, tensor) in &self.tensors {
-            let semantic = semantic_name(name);
-            let physical_bytes = u64::try_from(tensor.bytes)
-                .map_err(|_| format!("manifest tensor {name} byte length overflows u64"))?;
-            let shape = if dialect == CheckpointDialect::HfSafetensors {
-                tensor.ne.iter().rev().copied().collect()
-            } else {
-                tensor.ne.clone()
-            };
-            by_name.insert(
-                semantic.clone(),
-                TensorCensusRecord {
-                    physical_name: name.clone(),
-                    dtype: format!("{:?}", tensor.ggml_type),
-                    entry: TensorCensusEntry {
-                        name: semantic,
-                        shape,
-                        storage: ggml_storage(tensor.ggml_type),
-                        physical_bytes,
-                    },
-                },
-            );
-        }
-        Ok(TensorCensus {
-            dialect,
-            tensors: by_name.into_values().collect(),
-        })
-    }
-
-    fn expert_activation_precision(&self) -> ExpertActivationPrecision {
-        self.expert_activation_precision
     }
 
     fn find(&self, ggml_name: &str) -> Option<TensorView<'_>> {
@@ -1282,7 +902,6 @@ pub struct SafetensorsSource {
     dir: std::path::PathBuf,
     modules_to_not_convert: Vec<String>,
     preserve_checkpoint_bf16: bool,
-    quant_algo: Option<String>,
 }
 
 impl SafetensorsSource {
@@ -1318,7 +937,6 @@ impl SafetensorsSource {
             dir: dir.to_path_buf(),
             modules_to_not_convert: hf.modules_to_not_convert,
             preserve_checkpoint_bf16: hf.preserve_checkpoint_bf16,
-            quant_algo: hf.quant_algo,
         })
     }
 
@@ -1342,14 +960,12 @@ impl SafetensorsSource {
         let preserve_checkpoint_bf16 = hf
             .as_ref()
             .is_some_and(|config| config.preserve_checkpoint_bf16);
-        let quant_algo = hf.as_ref().and_then(|config| config.quant_algo.clone());
         Ok(Self {
             model,
             cfg,
             dir,
             modules_to_not_convert,
             preserve_checkpoint_bf16,
-            quant_algo,
         })
     }
 
@@ -1484,11 +1100,10 @@ impl SafetensorsSource {
         })
     }
 
-    /// Resolve one physical HF tensor spelling, trying it verbatim then with the qwen35
-    /// multimodal wrapper prefix inserted/removed (`model.` <-> `model.language_model.`). The
-    /// dense map and the SSM map share one `model.layers.{il}.` namespace this way
-    /// (ST-MOE-PLAN §2.0).
-    fn lookup_physical(&self, hf_name: &str) -> Option<(&crate::safetensors::StInfo, &[u8])> {
+    /// Resolve an HF tensor name, trying it verbatim then with the qwen35 multimodal wrapper prefix
+    /// inserted/removed (`model.` <-> `model.language_model.`). The dense map and the SSM map share
+    /// one `model.layers.{il}.` namespace this way (ST-MOE-PLAN §2.0).
+    fn lookup(&self, hf_name: &str) -> Option<(&crate::safetensors::StInfo, &[u8])> {
         if let Some(r) = self.model.raw(hf_name) {
             return Some(r);
         }
@@ -1524,26 +1139,9 @@ impl SafetensorsSource {
         None
     }
 
-    /// Resolve an HF tensor name while preserving Tencent's canonical Hy3 semantic map. NVIDIA
-    /// ModelOpt exports the same router, correction bias, and shared MLP under flattened names;
-    /// accept those physical aliases only for Hy3 and only after the canonical spelling misses.
-    fn lookup(&self, hf_name: &str) -> Option<(&crate::safetensors::StInfo, &[u8])> {
-        self.lookup_physical(hf_name).or_else(|| {
-            self.cfg
-                .arch
-                .is_hy3()
-                .then(|| hy3_modelopt_aliases(hf_name))?
-                .into_iter()
-                .find_map(|alias| self.lookup_physical(&alias))
-        })
-    }
-
     /// Ownership twin of `lookup`: return the exact same wrapper-prefix fallback as an owned
     /// whole-file mmap extent so a resident expert bank can outlive this source without copying.
-    fn lookup_extent_physical(
-        &self,
-        hf_name: &str,
-    ) -> Option<(Arc<Mmap>, Arc<File>, usize, usize)> {
+    fn lookup_extent(&self, hf_name: &str) -> Option<(Arc<Mmap>, Arc<File>, usize, usize)> {
         if let Some(extent) = self.model.raw_extent(hf_name) {
             return Some(extent);
         }
@@ -1574,17 +1172,6 @@ impl SafetensorsSource {
             return Some(extent);
         }
         None
-    }
-
-    fn lookup_extent(&self, hf_name: &str) -> Option<(Arc<Mmap>, Arc<File>, usize, usize)> {
-        self.lookup_extent_physical(hf_name).or_else(|| {
-            self.cfg
-                .arch
-                .is_hy3()
-                .then(|| hy3_modelopt_aliases(hf_name))?
-                .into_iter()
-                .find_map(|alias| self.lookup_extent_physical(&alias))
-        })
     }
 
     /// FP8 weight-scale sibling lookup: `<stem>.weight_scale` (modelopt / compressed-tensors)
@@ -1655,7 +1242,7 @@ impl SafetensorsSource {
     /// repack needs: `(out_f, in_f, packed_bytes, per16_fp8_scale_bytes, macro_scale)`. All encodings
     /// store the SAME e2m1 weights + per-16 FP8(e4m3) scales — only names + macro-scale differ:
     ///   * modelopt: `<name>.weight`(U8 packed) + `<name>.weight_scale`(F8_E4M3) +
-    ///     `<name>.weight_scale_2`(required scalar F32 per-tensor macro).
+    ///     `<name>.weight_scale_2`(F32 per-tensor macro, default 1.0).
     ///   * compressed-tensors (llm-compressor): `<name>.weight_packed`(U8) +
     ///     `<name>.weight_scale`(F8_E4M3 per-16) + `<name>.weight_global_scale`(F32 per-tensor macro).
     ///     The plain `<name>.weight` coexists as a BF16 tensor (unused by us when packed is present).
@@ -1676,24 +1263,10 @@ impl SafetensorsSource {
             {
                 let out_f = winfo.shape[0] as usize; // HF row-major [out, in/2]
                 let in_f = (winfo.shape[1] as usize) * 2; // U8 packs 2 codes/byte
-                if !in_f.is_multiple_of(16)
-                    || wbytes.len() != out_f.checked_mul(in_f / 2)?
-                    || sinfo.shape != [out_f as u64, (in_f / 16) as u64]
-                    || sbytes.len() != out_f.checked_mul(in_f / 16)?
-                {
-                    return None;
-                }
-                let (macro_info, macro_bytes) = self.lookup(&format!("{stem}.weight_scale_2"))?;
-                if macro_info.dtype != "F32"
-                    || !(macro_info.shape.is_empty() || macro_info.shape == [1])
-                    || macro_bytes.len() != 4
-                {
-                    return None;
-                }
-                let macro_s = f32::from_le_bytes(macro_bytes.try_into().ok()?);
-                if !macro_s.is_finite() || macro_s <= 0.0 {
-                    return None;
-                }
+                let macro_s = match self.lookup(&format!("{stem}.weight_scale_2")) {
+                    Some((_, b)) if b.len() >= 4 => f32::from_le_bytes(b[..4].try_into().unwrap()),
+                    _ => 1.0,
+                };
                 return Some((out_f, in_f, wbytes, sbytes, macro_s));
             }
         }
@@ -1718,25 +1291,17 @@ impl SafetensorsSource {
         {
             let out_f = winfo.shape[0] as usize;
             let in_f = (winfo.shape[1] as usize) * 2;
-            if !in_f.is_multiple_of(16)
-                || wbytes.len() != out_f.checked_mul(in_f / 2)?
-                || sinfo.shape != [out_f as u64, (in_f / 16) as u64]
-                || sbytes.len() != out_f.checked_mul(in_f / 16)?
-            {
-                return None;
-            }
-            let (macro_info, macro_bytes) = self.lookup(&format!("{stem}.weight_global_scale"))?;
-            if macro_info.dtype != "F32"
-                || !(macro_info.shape.is_empty() || macro_info.shape == [1])
-                || macro_bytes.len() != 4
-            {
-                return None;
-            }
-            let global = f32::from_le_bytes(macro_bytes.try_into().ok()?);
-            if !global.is_finite() || global <= 0.0 {
-                return None;
-            }
-            let macro_s = 1.0 / global;
+            let macro_s = match self.lookup(&format!("{stem}.weight_global_scale")) {
+                Some((_, b)) if b.len() >= 4 => {
+                    let gs = f32::from_le_bytes(b[..4].try_into().unwrap());
+                    if gs > 0.0 && gs.is_finite() {
+                        1.0 / gs
+                    } else {
+                        1.0
+                    }
+                }
+                _ => 1.0,
+            };
             return Some((out_f, in_f, wbytes, sbytes, macro_s));
         }
         // Reza custom: `<name>.weight.nvfp4_packed` (U8) + `<name>.weight.nvfp4_scale_e4m3`. No macro.
@@ -1852,30 +1417,9 @@ fn f8_scales(
     None
 }
 
-fn hy3_modelopt_aliases(hf_name: &str) -> Vec<String> {
-    let mut aliases = Vec::with_capacity(2);
-    if hf_name.contains(".mlp.router.gate.") {
-        aliases.push(hf_name.replace(".mlp.router.gate.", ".mlp.gate."));
-    }
-    if hf_name.ends_with(".mlp.expert_bias") {
-        aliases.push(hf_name.replace(".mlp.expert_bias", ".mlp.e_score_correction_bias"));
-        aliases.push(hf_name.replace(".mlp.expert_bias", ".mlp.router.expert_bias"));
-    }
-    if hf_name.contains(".mlp.shared_mlp.") {
-        aliases.push(hf_name.replace(".mlp.shared_mlp.", ".mlp.shared_experts."));
-    }
-    aliases
-}
-
 impl TensorSource for SafetensorsSource {
     fn config(&self) -> ModelConfig {
         self.cfg.clone()
-    }
-    fn tensor_census(&self) -> Result<TensorCensus, String> {
-        census_from_safetensors_model(&self.model)
-    }
-    fn expert_activation_precision(&self) -> ExpertActivationPrecision {
-        expert_activation_precision_from_quant_algo(self.quant_algo.as_deref())
     }
     fn st_dir(&self) -> Option<&std::path::Path> {
         Some(&self.dir)
@@ -2211,19 +1755,17 @@ impl TensorSource for SafetensorsSource {
             }
             // compressed-tensors `weight_global_scale`: DIVISOR semantics, must INVERT to match
             // the engine's multiplier convention (engine does: result *= macro_scale).
-            if let Some((info, bytes)) = self.lookup(&format!("{hf_stem}.weight_global_scale")) {
-                if info.dtype != "F32"
-                    || !(info.shape.is_empty() || info.shape == [1])
-                    || bytes.len() != 4
-                {
-                    return None;
-                }
-                let global = f32::from_le_bytes(bytes.try_into().ok()?);
-                if !global.is_finite() || global <= 0.0 {
-                    return None;
-                }
+            if let Some((_, bytes)) = self.lookup(&format!("{hf_stem}.weight_global_scale"))
+                && bytes.len() >= 4
+            {
+                let gs = f32::from_le_bytes(bytes[..4].try_into().unwrap());
+                let inv = if gs > 0.0 && gs.is_finite() {
+                    1.0 / gs
+                } else {
+                    1.0
+                };
                 return Some(TensorView {
-                    bytes: Cow::Owned((1.0 / global).to_le_bytes().to_vec()),
+                    bytes: Cow::Owned(inv.to_le_bytes().to_vec()),
                     ggml_type: GgmlType::F32,
                     ne: vec![1],
                 });
@@ -2468,143 +2010,6 @@ impl TensorSource for SafetensorsSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn expert_activation_precision_is_artifact_metadata_not_family_identity() {
-        assert_eq!(
-            expert_activation_precision_from_quant_algo(Some("W4A16_NVFP4")),
-            ExpertActivationPrecision::Bf16
-        );
-        assert_eq!(
-            expert_activation_precision_from_quant_algo(Some("NVFP4")),
-            ExpertActivationPrecision::Quantized
-        );
-        assert_eq!(
-            expert_activation_precision_from_quant_algo(None),
-            ExpertActivationPrecision::F32
-        );
-    }
-
-    #[test]
-    fn safetensors_census_is_header_only_and_counts_quant_auxiliaries() {
-        let headers = BTreeMap::from([
-            (
-                "model.language_model.layers.0.self_attn.q_proj.weight".to_string(),
-                StInfo {
-                    dtype: "U8".to_string(),
-                    shape: vec![2, 4],
-                    data_offsets: [0, 8],
-                },
-            ),
-            (
-                "model.language_model.layers.0.self_attn.q_proj.weight_scale".to_string(),
-                StInfo {
-                    dtype: "F8_E4M3".to_string(),
-                    shape: vec![2, 1],
-                    data_offsets: [8, 10],
-                },
-            ),
-            (
-                "model.language_model.layers.0.self_attn.q_proj.weight_scale_2".to_string(),
-                StInfo {
-                    dtype: "F32".to_string(),
-                    shape: vec![1],
-                    data_offsets: [10, 14],
-                },
-            ),
-            (
-                "model.norm.weight".to_string(),
-                StInfo {
-                    dtype: "BF16".to_string(),
-                    shape: vec![2],
-                    data_offsets: [14, 18],
-                },
-            ),
-            (
-                "model.layers.1.self_attn.q_proj.weight_packed".to_string(),
-                StInfo {
-                    dtype: "U8".to_string(),
-                    shape: vec![2, 4],
-                    data_offsets: [18, 26],
-                },
-            ),
-            (
-                "model.layers.1.self_attn.q_proj.weight_scale".to_string(),
-                StInfo {
-                    dtype: "F8_E4M3".to_string(),
-                    shape: vec![2, 1],
-                    data_offsets: [26, 28],
-                },
-            ),
-            (
-                "model.layers.1.self_attn.q_proj.weight_global_scale".to_string(),
-                StInfo {
-                    dtype: "F32".to_string(),
-                    shape: vec![1],
-                    data_offsets: [28, 32],
-                },
-            ),
-        ]);
-        let census = census_from_safetensors_headers(&headers).unwrap();
-        assert_eq!(census.dialect, CheckpointDialect::HfSafetensors);
-        assert_eq!(census.tensors.len(), 3);
-        let weight = census
-            .tensors
-            .iter()
-            .find(|row| row.entry.name == "model.layers.0.self_attn.q_proj.weight")
-            .unwrap();
-        assert_eq!(weight.entry.shape, vec![2, 8]);
-        assert_eq!(weight.entry.physical_bytes, 14);
-        let StorageLayout::Quantized(layout) = &weight.entry.storage else {
-            panic!("packed U8 weight must be quantized");
-        };
-        assert_eq!(layout.format, "NVFP4");
-        assert_eq!(layout.auxiliaries.len(), 2);
-        let norm = census
-            .tensors
-            .iter()
-            .find(|row| row.entry.name == "model.norm.weight")
-            .unwrap();
-        assert_eq!(norm.entry.physical_bytes, 4);
-        let packed = census
-            .tensors
-            .iter()
-            .find(|row| row.entry.name == "model.layers.1.self_attn.q_proj.weight")
-            .unwrap();
-        assert_eq!(
-            packed.physical_name,
-            "model.layers.1.self_attn.q_proj.weight_packed"
-        );
-        assert_eq!(packed.entry.physical_bytes, 14);
-    }
-
-    #[test]
-    fn repack_census_reads_manifest_lengths_without_tensor_views() {
-        let dir = std::env::temp_dir().join(format!("memra-repack-census-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("weights.bin"), [0u8; 16]).unwrap();
-        std::fs::write(
-            dir.join("config.json"),
-            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":4,
-                "num_attention_heads":1,"num_key_value_heads":1,"head_dim":4,
-                "intermediate_size":8,"vocab_size":4,"max_position_embeddings":16}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.join("manifest.json"),
-            r#"{"format":"memra-repack-v1","tensors":{
-                "blk.0.attn_q.weight":{"file":"weights.bin","qtype":"F32",
-                "ne":[4,1],"bytes":16}}}"#,
-        )
-        .unwrap();
-        let source = Hy3RepackSource::open(&dir).unwrap();
-        let census = source.tensor_census().unwrap();
-        assert_eq!(census.dialect, CheckpointDialect::Gguf);
-        assert_eq!(census.tensors.len(), 1);
-        assert_eq!(census.tensors[0].entry.name, "blk.0.attn_q.weight");
-        assert_eq!(census.tensors[0].entry.physical_bytes, 16);
-        std::fs::remove_dir_all(dir).ok();
-    }
 
     #[test]
     fn manifest_payload_paths_cannot_escape_artifact_root() {
@@ -2949,56 +2354,10 @@ mod tests {
     }
 
     #[test]
-    fn hy3_nvfp4_formats_preserve_deliberately_unquantized_bf16_linears() {
-        for quant_method in ["modelopt", "compressed-tensors"] {
-            let dir = std::env::temp_dir().join(format!(
-                "memra_hy3_{quant_method}_bf16_{}",
-                std::process::id()
-            ));
-            std::fs::create_dir_all(&dir).unwrap();
-            let bytes = 1024 * 1024 * 2;
-            let header = format!(
-                r#"{{"model.layers.0.self_attn.q_proj.weight":{{"dtype":"BF16","shape":[1024,1024],"data_offsets":[0,{bytes}]}}}}"#
-            );
-            let mut file = Vec::with_capacity(8 + header.len() + bytes);
-            file.extend_from_slice(&(header.len() as u64).to_le_bytes());
-            file.extend_from_slice(header.as_bytes());
-            file.resize(file.len() + bytes, 0);
-            std::fs::write(dir.join("model.safetensors"), file).unwrap();
-            std::fs::write(
-                dir.join("config.json"),
-                format!(
-                    r#"{{
-                      "model_type":"hy_v3","num_hidden_layers":1,"hidden_size":1024,
-                      "intermediate_size":2048,"num_attention_heads":8,"num_key_value_heads":2,
-                      "head_dim":128,"vocab_size":64,"max_position_embeddings":2048,
-                      "quantization_config":{{
-                        "quant_method":"{quant_method}","quant_algo":"MIXED_PRECISION"
-                      }}
-                    }}"#
-                ),
-            )
-            .unwrap();
-
-            let src = SafetensorsSource::open(&dir).unwrap();
-            assert!(src.preserve_checkpoint_bf16, "{quant_method}");
-            let q = src
-                .find("blk.0.attn_q.weight")
-                .unwrap_or_else(|| panic!("Hy3 {quant_method} BF16 Q projection must resolve"));
-            assert_eq!(q.ggml_type, GgmlType::BF16, "{quant_method}");
-            assert_eq!(q.ne, vec![1024, 1024], "{quant_method}");
-            assert_eq!(q.bytes.len(), bytes, "{quant_method}");
-
-            std::fs::remove_dir_all(&dir).ok();
-        }
-    }
-
-    #[test]
     fn hy3_expert_bias_resolves_current_and_preview_keys() {
         for (tag, hf_name) in [
             ("current", "model.layers.1.mlp.expert_bias"),
             ("preview", "model.layers.1.mlp.router.expert_bias"),
-            ("modelopt", "model.layers.1.mlp.e_score_correction_bias"),
         ] {
             let dir =
                 std::env::temp_dir().join(format!("memra_hy3_bias_{tag}_{}", std::process::id()));
@@ -3028,48 +2387,6 @@ mod tests {
 
             std::fs::remove_dir_all(&dir).ok();
         }
-    }
-
-    #[test]
-    fn hy3_modelopt_router_and_shared_expert_aliases_resolve() {
-        let dir =
-            std::env::temp_dir().join(format!("memra_hy3_modelopt_aliases_{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-
-        let router_bytes = 3 * 4 * 2;
-        let shared_bytes = 4 * 4 * 2;
-        let header = format!(
-            r#"{{
-              "model.layers.1.mlp.gate.weight":{{"dtype":"BF16","shape":[3,4],"data_offsets":[0,{router_bytes}]}},
-              "model.layers.1.mlp.shared_experts.gate_proj.weight":{{"dtype":"BF16","shape":[4,4],"data_offsets":[{router_bytes},{}]}}
-            }}"#,
-            router_bytes + shared_bytes,
-        );
-        let mut buf = Vec::with_capacity(8 + header.len() + router_bytes + shared_bytes);
-        buf.extend_from_slice(&(header.len() as u64).to_le_bytes());
-        buf.extend_from_slice(header.as_bytes());
-        buf.resize(buf.len() + router_bytes + shared_bytes, 0);
-        std::fs::write(dir.join("model.safetensors"), buf).unwrap();
-        std::fs::write(
-            dir.join("config.json"),
-            r#"{"model_type":"hy_v3","num_hidden_layers":2,"hidden_size":4,"num_attention_heads":1,"num_key_value_heads":1,"head_dim":4,"intermediate_size":8,"vocab_size":10,"max_position_embeddings":128,"num_experts":3,"num_experts_per_tok":1,"moe_intermediate_size":4,"num_shared_experts":1,"first_k_dense_replace":1,"moe_router_use_sigmoid":true,"moe_router_enable_expert_bias":true,"quantization_config":{"quant_method":"modelopt","quant_algo":"MIXED_PRECISION"}}"#,
-        )
-        .unwrap();
-
-        let src = SafetensorsSource::open(&dir).unwrap();
-        let router = src
-            .find("blk.1.ffn_gate_inp.weight")
-            .expect("ModelOpt-flattened Hy3 router must resolve");
-        assert_eq!(router.ggml_type, GgmlType::BF16);
-        assert_eq!(router.ne, vec![4, 3]);
-
-        let shared = src
-            .find("blk.1.ffn_gate_shexp.weight")
-            .expect("ModelOpt-renamed Hy3 shared expert must resolve");
-        assert_eq!(shared.ggml_type, GgmlType::BF16);
-        assert_eq!(shared.ne, vec![4, 4]);
-
-        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -3750,23 +3067,6 @@ mod compressed_tensors_roundtrip {
             ".scale for compressed-tensors must be Cow::Owned (inverted value)"
         );
 
-        drop(scale_view);
-        drop(src);
-        let bad_json = json.replace("weight_global_scale", "weight_global_scale_missing");
-        let mut bad = Vec::new();
-        bad.extend_from_slice(&(bad_json.len() as u64).to_le_bytes());
-        bad.extend_from_slice(bad_json.as_bytes());
-        bad.extend_from_slice(&bf16_weight);
-        bad.extend_from_slice(&weight_packed);
-        bad.extend_from_slice(&weight_scale);
-        bad.extend_from_slice(&gs_bytes);
-        std::fs::write(dir.join("model.safetensors"), bad).unwrap();
-        let bad_src = SafetensorsSource::open(&dir).unwrap();
-        assert!(
-            bad_src.nvfp4_quant(hf_name).is_none(),
-            "compressed-tensors NVFP4 without weight_global_scale must fail closed"
-        );
-
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -3843,23 +3143,6 @@ mod compressed_tensors_roundtrip {
         assert!(
             matches!(sv.bytes, std::borrow::Cow::Borrowed(_)),
             "modelopt .scale should be Cow::Borrowed (zero-copy)"
-        );
-
-        drop(src);
-        let bad_json = json.replace("weight_scale_2", "weight_scale_x");
-        let mut bad = Vec::new();
-        bad.extend_from_slice(&(bad_json.len() as u64).to_le_bytes());
-        bad.extend_from_slice(bad_json.as_bytes());
-        bad.extend_from_slice(&weight);
-        bad.extend_from_slice(&wscale);
-        bad.extend_from_slice(&s2_bytes);
-        std::fs::write(dir.join("model.safetensors"), bad).unwrap();
-        let bad_src = SafetensorsSource::open(&dir).unwrap();
-        assert!(
-            bad_src
-                .nvfp4_quant("model.layers.0.self_attn.q_proj.weight")
-                .is_none(),
-            "modelopt NVFP4 without weight_scale_2 must fail closed"
         );
 
         std::fs::remove_dir_all(&dir).ok();

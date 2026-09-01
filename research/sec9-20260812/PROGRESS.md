@@ -36,10 +36,10 @@ fail-closed panic/host-bounce behavior.
   policy, not the old fixed runtime payload. No manifest or kernel-check cell update was needed;
   rotation order and cadence are pinned by unit tests and exercised on the two-GPU transport.
 
-## cloudbox probe-cost receipt
+## Sbox probe-cost receipt
 
-Exact modified-source SHA-256 values in `raw/cloudbox/SHA256SUMS` match this worktree. Measurement ran
-under an exclusive GPU lock on the provisioned cloudbox pair: 2 x RTX PRO 6000 Blackwell Server
+Exact modified-source SHA-256 values in `raw/sbox/SHA256SUMS` match this worktree. Measurement ran
+under an exclusive GPU lock on the provisioned Sbox pair: 2 x RTX PRO 6000 Blackwell Server
 Edition, PIX topology, CUDA 13.2/sm_120a release build. The rig began idle in P8 and ended active
 in P0. These are single sequential observations (`N=1` per rung), not throughput medians. Each
 time is the complete existing integrity pass: pattern preparation, allocation, two directional
@@ -55,7 +55,7 @@ peer copies, device-to-host readback, and byte comparison.
 The cycle completed with `serviced=4/4`, zero runtime failures, and
 `pp-transport-smoke PASS`; total process wall time, including boot probes and cadence driving,
 was 1.99 seconds. The 431.188 ms maximum-rung cost is why that rung stays at the lower one-in-four
-frequency. Raw build, rig, source, and run evidence is under `raw/cloudbox/`.
+frequency. Raw build, rig, source, and run evidence is under `raw/sbox/`.
 
 ## Receipt
 
@@ -71,7 +71,7 @@ frequency. Raw build, rig, source, and run evidence is under `raw/cloudbox/`.
   batched-prime/tokenwise argmax `MATCH` (`raw/run-gen.log`).
 - Release binaries were rebuilt from the final source before the last kernel-check and run-gen
   pass (`raw/release-build.log`); local device snapshots bracket that locked pass.
-- `raw/SHA256SUMS` verifies all 21 raw receipt files, including the nested cloudbox source and binary
+- `raw/SHA256SUMS` verifies all 21 raw receipt files, including the nested Sbox source and binary
   manifest.
 - Reviewed scope contains the runtime rotation, its tests, the opt-in two-GPU receipt driver, and
   this evidence tree only. No merge, tag, push, board change, formatting sweep, or hook bypass.

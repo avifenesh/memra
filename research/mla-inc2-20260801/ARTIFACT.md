@@ -87,10 +87,10 @@ MtpHead already falls back; the micro fixture mirrors this exact set).
 hf download unsloth/GLM-5.2-GGUF \
   --revision abc55e72527792c6e77069c99b4cb7de16fa9f23 \
   --include "UD-Q4_K_XL/*.gguf" \
-  --local-dir /opt/scratch/nvme/models/GLM-5.2-GGUF
+  --local-dir /opt/dl-image/nvme/models/GLM-5.2-GGUF
 
 # post-download gate: verify EVERY part against the manifest table above
-cd /opt/scratch/nvme/models/GLM-5.2-GGUF/UD-Q4_K_XL && sha256sum *.gguf
+cd /opt/dl-image/nvme/models/GLM-5.2-GGUF/UD-Q4_K_XL && sha256sum *.gguf
 
 # load by pointing at part 00001 (multi-part GGUFs auto-join)
 ```
@@ -109,7 +109,7 @@ static (non-imatrix). Full per-file sha256s: tree endpoint at the pinned sha.
 hf download DevQuasar/zai-org.GLM-5.2-GGUF \
   --revision 823d10f1e11a5fff13a6b9e67f06b96476f7a605 \
   --include "zai-org.GLM-5.2.Q4_K_M-*.gguf" \
-  --local-dir /opt/scratch/nvme/models/zai-org.GLM-5.2-GGUF
+  --local-dir /opt/dl-image/nvme/models/zai-org.GLM-5.2-GGUF
 ```
 
 Other repos surveyed and excluded: REAP variants (0xSero, pipenetwork — owner-rejected),

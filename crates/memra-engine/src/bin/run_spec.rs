@@ -37,30 +37,12 @@ fn first_divergence(a: &[u32], b: &[u32]) -> Option<usize> {
     None
 }
 
-/// Match the serving worker's PP affinity: the last placement entry owns output_norm, lm_head,
-/// and the MTP draft chain. Single-device and placement-free runs remain on logical device 0.
-fn primary_device(pp_devices: Option<&str>) -> Result<usize, String> {
-    let Some(devices) = pp_devices.filter(|value| !value.trim().is_empty()) else {
-        return Ok(0);
-    };
-    devices
-        .split(',')
-        .next_back()
-        .expect("non-empty placement has a final entry")
-        .trim()
-        .parse::<usize>()
-        .map_err(|error| format!("invalid final MEMRA_PP_DEVICES entry: {error}"))
-}
-
 /// Greedy oracle for the target numeric class. Step35 and the qwen35 family serve B=1 on the
 /// batched program (concurrency cannot steer bytes), so comparing their speculative verifiers
 /// to the older eager `generate` class is a false red at near ties — MoE learned it 2026-08-14
 /// AM, the dense hybrid the same day on Qwen3.8 (an eager oracle here would fail the aligned
 /// serving-class verify on exactly the near-ties the fix removed). Reuse the production batch
-/// step, including stage-owned PP caches. A sharded PP target must likewise stay on a split
-/// target step: `generate` may select the unsplit device-counter loop, which correctly refuses
-/// remote weights rather than peer-reading them. Other single-device families keep the
-/// longstanding generate oracle.
+/// step, including stage-owned PP caches. Other families keep the longstanding generate oracle.
 fn plain_oracle(
     model: &HybridModel,
     e: &Engine,
@@ -69,8 +51,7 @@ fn plain_oracle(
 ) -> Result<Vec<u32>, Box<dyn std::error::Error>> {
     let batched_class = model.uses_sliding_gated_moe_program()
         || memra_engine::plan_backend::gdn_dspark_compatible(&model.plan);
-    let pp_class = memra_engine::pp::pp_cuts(model.layers.len()).is_some();
-    if !batched_class && !pp_class {
+    if !batched_class {
         return model.generate(e, prompt, max_new);
     }
     let mut cache = memra_engine::pp::new_cache(e, &model.cfg, prompt.len() + max_new + 8)?;
@@ -83,12 +64,8 @@ fn plain_oracle(
     } else {
         let mut row = Vec::new();
         for &token in prompt {
-            row = if batched_class {
-                let mut caches = [&mut cache];
-                model.decode_step_batch(e, &[token], &mut caches)?.remove(0)
-            } else {
-                model.decode_step_h(e, token, &mut cache)?.0
-            };
+            let mut caches = [&mut cache];
+            row = model.decode_step_batch(e, &[token], &mut caches)?.remove(0);
         }
         row
     };
@@ -101,12 +78,8 @@ fn plain_oracle(
     for _ in 0..max_new {
         let token = argmax(&logits) as u32;
         out.push(token);
-        logits = if batched_class {
-            let mut caches = [&mut cache];
-            model.decode_step_batch(e, &[token], &mut caches)?.remove(0)
-        } else {
-            model.decode_step_h(e, token, &mut cache)?.0
-        };
+        let mut caches = [&mut cache];
+        logits = model.decode_step_batch(e, &[token], &mut caches)?.remove(0);
     }
     Ok(out)
 }
@@ -116,8 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .expect("usage: run-spec <model.gguf|hf_dir|hf:owner/repo[:file]> [tok ids...]");
     let path = memra_gguf::hf::resolve_arg(&path)?;
-    let primary = primary_device(std::env::var("MEMRA_PP_DEVICES").ok().as_deref())?;
-    let e = Engine::new(primary)?;
+    let e = Engine::new(0)?;
     // DIRECTORY path = safetensors HF checkpoint or manifest-backed memra repack/overlay; file = GGUF.
     let is_dir = std::path::Path::new(&path).is_dir();
     let g: Option<GgufFile> = if is_dir {
@@ -536,26 +508,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("rewrite receipt: {}", std::path::Path::new(&path).display());
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::primary_device;
-
-    #[test]
-    fn primary_device_defaults_to_zero_without_pp_placement() {
-        assert_eq!(primary_device(None).unwrap(), 0);
-        assert_eq!(primary_device(Some("  ")).unwrap(), 0);
-    }
-
-    #[test]
-    fn primary_device_follows_the_pp_head_stage() {
-        assert_eq!(primary_device(Some("0,1,2,3")).unwrap(), 3);
-        assert_eq!(primary_device(Some("3,2,1,0")).unwrap(), 0);
-    }
-
-    #[test]
-    fn primary_device_rejects_an_invalid_head_entry() {
-        assert!(primary_device(Some("0,1,nope")).is_err());
-    }
 }

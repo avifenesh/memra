@@ -1,7 +1,7 @@
 # Hy3 on Hopper (sm_90a) — first light, 2026-08-01
 
 Box: Mumbai <bench-instance> H100 80GB (shared; every GPU run under `flock /tmp/gpu-h100.lock`).
-Build: lane/hy3-hopper tree at `/opt/scratch/nvme/hy3-hopper/memra`, `MEMRA_CUDA_ARCH
+Build: lane/hy3-hopper tree at `/opt/dl-image/nvme/hy3-hopper/memra`, `MEMRA_CUDA_ARCH
 auto-detected 90a`, release build 3m57s (`logs/build.log`). Includes the one-line
 bw24-overlay-format fix (see gaps.md G1) — without it the artifact does not load as an overlay.
 
@@ -16,7 +16,7 @@ MoE router tie-handling, MoE cache-HIT bit-identity, async-prefetch victim prote
 Command (verbatim, `logs/firstlight-rungen.log`):
 
     MEMRA_CHAT=1 MEMRA_NGEN=32 MEMRA_PROMPT="Explain in two sentences why the sky is blue." \
-      ./target/release/run-gen /opt/scratch/nvme/models/hy3-layer103p5-bw24-runtime
+      ./target/release/run-gen /opt/dl-image/nvme/models/hy3-layer103p5-bw24-runtime
 
 Result: **PASS.**
 

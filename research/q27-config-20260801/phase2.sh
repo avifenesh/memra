@@ -3,7 +3,7 @@
 set -u
 cd $HOME/arc4
 D=$HOME/arc4/research/q27-config-20260801
-M=/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
+M=/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
 export CUDA_VISIBLE_DEVICES=3
 run_cfg() {
   local name=$1 r=$2; shift 2
