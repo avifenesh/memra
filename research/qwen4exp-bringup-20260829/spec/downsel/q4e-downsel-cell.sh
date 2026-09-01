@@ -176,7 +176,7 @@ cell_spec_ab(){
   log "cell $label rc=$?"
   for arm in off auto; do
     receipt_head "$OUT/spec-ab-rep$rep-$arm.log" "$label-$arm" \
-      "$BASE_SEAMS$([ $arm = auto ] && echo ,selgroup)" "$arm"
+      "$BASE_SEAMS,kvq,idxq$([ $arm = auto ] && echo ,selgroup)" "$arm"
     printf '# bin_sha256\t%s\n' "$(bin_sha "$BIN")" >> "$OUT/spec-ab-rep$rep-$arm.log"
   done
 }
