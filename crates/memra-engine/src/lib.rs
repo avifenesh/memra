@@ -22454,6 +22454,70 @@ impl Engine {
         Ok(())
     }
 
+    /// One aligned K-range partial of the t=1 BF16 row matvec. This is the row-parallel TP
+    /// building block: every rank computes all output rows over a disjoint K range from its
+    /// compact local activation shard, then the persistent replicated-row collective sums the
+    /// partials. The kernel preserves the unsplit program inside each range; the cross-rank
+    /// association is separately gated.
+    #[allow(clippy::too_many_arguments)]
+    pub fn matvec_bf16_col_range_into(
+        &self,
+        w: &CudaSlice<u8>,
+        x: &CudaSlice<f32>,
+        y: &mut CudaSlice<f32>,
+        in_f: usize,
+        out_f: usize,
+        k_start: usize,
+        k_len: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let weight_bytes = in_f
+            .checked_mul(out_f)
+            .and_then(|elements| elements.checked_mul(2))
+            .ok_or("BF16 column-range matvec geometry")?;
+        let k_end = k_start
+            .checked_add(k_len)
+            .ok_or("BF16 column-range matvec geometry")?;
+        if w.len() < weight_bytes
+            || x.len() < k_len
+            || y.len() < out_f
+            || in_f > i32::MAX as usize
+            || out_f > i32::MAX as usize
+            || k_start > i32::MAX as usize
+            || k_len > i32::MAX as usize
+            || in_f == 0
+            || out_f == 0
+            || k_len == 0
+            || !in_f.is_multiple_of(8)
+            || !k_start.is_multiple_of(8)
+            || !k_len.is_multiple_of(8)
+            || k_end > in_f
+        {
+            return Err("BF16 column-range matvec geometry".into());
+        }
+        let function = self.func("matvec_bf16_f32acc_x4_range");
+        let config = LaunchConfig {
+            grid_dim: (out_f.div_ceil(4) as u32, 1, 1),
+            block_dim: (mmv_block(), 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let (in_f, out_f, k_start, k_len) =
+            (in_f as i32, out_f as i32, k_start as i32, k_len as i32);
+        let stream = self.gpu.stream();
+        let mut launch = stream.launch_builder(&function);
+        launch
+            .arg(w)
+            .arg(x)
+            .arg(y)
+            .arg(&in_f)
+            .arg(&out_f)
+            .arg(&k_start)
+            .arg(&k_len);
+        unsafe {
+            launch.launch(config)?;
+        }
+        Ok(())
+    }
+
     /// T-COLUMN twin of the bf16 rows matvec (lane/glm5-verify-batch, the
     /// varlen-batched-cores pattern): one block owns 4 output rows for ALL t tokens, so the
     /// weight pack is read ONCE and reused across tokens — vs the `_rows` twin's grid.y=t
