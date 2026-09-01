@@ -9075,6 +9075,12 @@ impl HybridModel {
                 let shexp_d1 = *SHEXP_D1
                     .get_or_init(|| std::env::var("MEMRA_SHEXP_DEV1").as_deref() == Ok("1"))
                     && tp.runtime.rank_engine(1).is_some();
+                if crate::parallel_tp_shexp_on()? && (shexp_ov || shexp_d1) {
+                    return Err("MEMRA_PARALLEL_TP_SHEXP=1 cannot be combined with \
+                         MEMRA_SHEXP_OVERLAP=1 or MEMRA_SHEXP_DEV1=1; each owns the \
+                         shared-expert schedule"
+                        .into());
+                }
                 // MOE TAIL FUSION M1 (MEMRA_TAIL_ADD3=0 reverts): pre-arm the
                 // overlap ws + ones row and hand their RAW pointers to the routed
                 // run — the join add folds the shexp apply into one launch.
@@ -9263,9 +9269,15 @@ impl HybridModel {
                 )?;
                 crate::moesd::record_device_routes(e, il, n_expert, n_used, sel_d)?;
                 static SHEXP_OV_AUTO: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-                let shexp_ov = t == 1
-                    && *SHEXP_OV_AUTO
-                        .get_or_init(|| std::env::var("MEMRA_SHEXP_OVERLAP").as_deref() == Ok("1"));
+                let shexp_overlap = *SHEXP_OV_AUTO
+                    .get_or_init(|| std::env::var("MEMRA_SHEXP_OVERLAP").as_deref() == Ok("1"));
+                let shexp_row_tp2 = crate::parallel_tp_shexp_on()?;
+                if shexp_overlap && shexp_row_tp2 {
+                    return Err("MEMRA_PARALLEL_TP_SHEXP=1 cannot be combined with \
+                         MEMRA_SHEXP_OVERLAP=1; both own the shared-expert schedule"
+                        .into());
+                }
+                let shexp_ov = t == 1 && shexp_overlap;
                 let mut ov_issued = false;
                 let mut output = if shexp_ov {
                     ep.runtime
@@ -15211,6 +15223,288 @@ impl HybridModel {
         Ok(moe_out)
     }
 
+    /// Coarse TP2 shared-expert decode: gate/up output rows stay sharded, each rank evaluates
+    /// the full down output over its local activation half, and rank1 publishes one 16 KiB
+    /// partial for the canonical `(rank0 + rank1)` root add. Unlike `MEMRA_SHEXP_SPLIT`, no
+    /// activation half crosses PCIe and the down projection is not split by output rows.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::map_entry)] // allow: replica initialization is fallible
+    fn shexp_row_tp2_add(
+        e: &Engine,
+        rank1: &Engine,
+        wg: &CudaSlice<u8>,
+        wu: &CudaSlice<u8>,
+        wd: &CudaSlice<u8>,
+        z: &CudaSlice<f32>,
+        lim: Option<SwigluClamp>,
+        cfg: &ModelConfig,
+        il: u16,
+        n_embd: usize,
+        n_ff_sh: usize,
+        moe_out: &mut CudaSlice<f32>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use cudarc::driver::DevicePtr;
+        if !n_ff_sh.is_multiple_of(2)
+            || !n_ff_sh.is_multiple_of(8)
+            || !n_embd.is_multiple_of(8)
+            || e.ctx().ordinal() == rank1.ctx().ordinal()
+        {
+            return Err(format!(
+                "MEMRA_PARALLEL_TP_SHEXP=1 requires distinct rank devices and aligned geometry, \
+                 got devices={}/{} hidden={n_embd} intermediate={n_ff_sh}",
+                e.ctx().ordinal(),
+                rank1.ctx().ordinal(),
+            )
+            .into());
+        }
+        let half = n_ff_sh / 2;
+        let weight_bytes = n_embd
+            .checked_mul(n_ff_sh)
+            .and_then(|elements| elements.checked_mul(2))
+            .ok_or("MEMRA_PARALLEL_TP_SHEXP weight byte count overflow")?;
+        if wg.len() < weight_bytes || wu.len() < weight_bytes || wd.len() < weight_bytes {
+            return Err(format!(
+                "MEMRA_PARALLEL_TP_SHEXP BF16 weight bytes gate/up/down={}/{}/{} \
+                 are smaller than required {weight_bytes}",
+                wg.len(),
+                wu.len(),
+                wd.len(),
+            )
+            .into());
+        }
+        struct Replica {
+            gate: CudaSlice<u8>,
+            up: CudaSlice<u8>,
+            down: CudaSlice<u8>,
+        }
+        struct Workspace {
+            pin: (usize, usize, usize, usize),
+            gate0: CudaSlice<f32>,
+            up0: CudaSlice<f32>,
+            act0: CudaSlice<f32>,
+            partial0: CudaSlice<f32>,
+            stage0: CudaSlice<f32>,
+            shared0: CudaSlice<f32>,
+            z1: CudaSlice<f32>,
+            gate1: CudaSlice<f32>,
+            up1: CudaSlice<f32>,
+            act1: CudaSlice<f32>,
+            partial1: CudaSlice<f32>,
+            z_ready: cudarc::driver::CudaEvent,
+            partial1_ready: cudarc::driver::CudaEvent,
+            raw_z1: u64,
+            raw_stage0: u64,
+            raw_partial1: u64,
+        }
+        static WORKSPACE: std::sync::Mutex<Option<Workspace>> = std::sync::Mutex::new(None);
+        static REPLICAS: std::sync::Mutex<Option<std::collections::HashMap<u64, Replica>>> =
+            std::sync::Mutex::new(None);
+
+        let mut workspace = WORKSPACE
+            .lock()
+            .map_err(|_| "TP2 shared-expert workspace lock is poisoned")?;
+        let pin = (e.ctx().ordinal(), rank1.ctx().ordinal(), n_embd, n_ff_sh);
+        if workspace.as_ref().is_none_or(|state| state.pin != pin) {
+            let (gate0, up0, act0, partial0, stage0, shared0, z_ready) = {
+                let _root = e.gpu.enter_main()?;
+                (
+                    e.uninit(half)?,
+                    e.uninit(half)?,
+                    e.uninit(half)?,
+                    e.uninit(n_embd)?,
+                    e.uninit(n_embd)?,
+                    e.uninit(n_embd)?,
+                    e.ctx().new_event(None)?,
+                )
+            };
+            let (z1, gate1, up1, act1, partial1, partial1_ready) = {
+                let _peer = rank1.gpu.enter_main()?;
+                (
+                    rank1.uninit(n_embd)?,
+                    rank1.uninit(half)?,
+                    rank1.uninit(half)?,
+                    rank1.uninit(half)?,
+                    rank1.uninit(n_embd)?,
+                    rank1.ctx().new_event(None)?,
+                )
+            };
+            let raw_stage0 = {
+                let _root = e.gpu.enter_main()?;
+                let stream = e.stream();
+                let (pointer, _guard) = stage0.device_ptr(&stream);
+                pointer
+            };
+            let (raw_z1, raw_partial1) = {
+                let _peer = rank1.gpu.enter_main()?;
+                let stream = rank1.stream();
+                let (z_pointer, _z_guard) = z1.device_ptr(&stream);
+                let (partial_pointer, _partial_guard) = partial1.device_ptr(&stream);
+                (z_pointer, partial_pointer)
+            };
+            *workspace = Some(Workspace {
+                pin,
+                gate0,
+                up0,
+                act0,
+                partial0,
+                stage0,
+                shared0,
+                z1,
+                gate1,
+                up1,
+                act1,
+                partial1,
+                z_ready,
+                partial1_ready,
+                raw_z1,
+                raw_stage0,
+                raw_partial1,
+            });
+        }
+        let state = workspace.as_mut().expect("initialized above");
+        let gate_key = {
+            let _root = e.gpu.enter_main()?;
+            let stream = e.stream();
+            let (pointer, _guard) = wg.device_ptr(&stream);
+            pointer
+        };
+        let mut replicas = REPLICAS
+            .lock()
+            .map_err(|_| "TP2 shared-expert replica lock is poisoned")?;
+        let replicas = replicas.get_or_insert_with(Default::default);
+        if !replicas.contains_key(&gate_key) {
+            let upload = |source: &CudaSlice<u8>,
+                          offset: usize,
+                          bytes: usize|
+             -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+                let source_pointer = {
+                    let _root = e.gpu.enter_main()?;
+                    let stream = e.stream();
+                    let (pointer, _guard) = source.device_ptr(&stream);
+                    pointer + offset as u64
+                };
+                let destination = {
+                    let _peer = rank1.gpu.enter_main()?;
+                    rank1.alloc_u8_uninit(bytes)?
+                };
+                let destination_pointer = {
+                    let _peer = rank1.gpu.enter_main()?;
+                    let stream = rank1.stream();
+                    let (pointer, _guard) = destination.device_ptr(&stream);
+                    pointer
+                };
+                let _peer = rank1.gpu.enter_main()?;
+                crate::tp::raw_copy_bytes(destination_pointer, source_pointer, bytes, rank1)?;
+                Ok(destination)
+            };
+            let gate = upload(wg, half * n_embd * 2, half * n_embd * 2)?;
+            let up = upload(wu, half * n_embd * 2, half * n_embd * 2)?;
+            let down = upload(wd, 0, weight_bytes)?;
+            {
+                let _peer = rank1.gpu.enter_main()?;
+                rank1.stream().synchronize()?;
+            }
+            replicas.insert(gate_key, Replica { gate, up, down });
+        }
+        let replica = replicas.get(&gate_key).expect("uploaded above");
+
+        let raw_z = {
+            let _root = e.gpu.enter_main()?;
+            let stream = e.stream();
+            let (pointer, _guard) = z.device_ptr(&stream);
+            state.z_ready.record(&stream)?;
+            pointer
+        };
+        {
+            let _root = e.gpu.enter_main()?;
+            let gate0 = wg.slice(0..half * n_embd * 2);
+            let up0 = wu.slice(0..half * n_embd * 2);
+            e.matvec_bf16_dual_view_into(
+                &gate0,
+                &up0,
+                z,
+                &mut state.gate0,
+                &mut state.up0,
+                n_embd,
+                half,
+            )?;
+            Self::ffn_act_lim(
+                e,
+                cfg,
+                &state.gate0,
+                &state.up0,
+                1.0,
+                1.0,
+                lim,
+                &mut state.act0,
+                half,
+            )?;
+            e.matvec_bf16_col_range_into(
+                wd,
+                &state.act0,
+                &mut state.partial0,
+                n_ff_sh,
+                n_embd,
+                0,
+                half,
+            )?;
+        }
+        {
+            let _peer = rank1.gpu.enter_main()?;
+            rank1.stream().wait(&state.z_ready)?;
+            crate::tp::raw_copy_bytes(state.raw_z1, raw_z, n_embd * 4, rank1)?;
+            rank1.matvec_bf16_dual_into(
+                &replica.gate,
+                &replica.up,
+                &state.z1,
+                &mut state.gate1,
+                &mut state.up1,
+                n_embd,
+                half,
+            )?;
+            Self::ffn_act_lim(
+                rank1,
+                cfg,
+                &state.gate1,
+                &state.up1,
+                1.0,
+                1.0,
+                lim,
+                &mut state.act1,
+                half,
+            )?;
+            rank1.matvec_bf16_col_range_into(
+                &replica.down,
+                &state.act1,
+                &mut state.partial1,
+                n_ff_sh,
+                n_embd,
+                half,
+                half,
+            )?;
+            crate::tp::raw_copy_bytes(state.raw_stage0, state.raw_partial1, n_embd * 4, rank1)?;
+            state.partial1_ready.record(&rank1.stream())?;
+        }
+        {
+            let _root = e.gpu.enter_main()?;
+            e.stream().wait(&state.partial1_ready)?;
+            e.add(&state.partial0, &state.stage0, &mut state.shared0, n_embd)?;
+            e.add_scaled_rows_ones(&state.shared0, moe_out, n_embd, 1)?;
+        }
+        static LOGGED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let layer_bit = 1u64 << (u64::from(il) % 64);
+        if LOGGED.fetch_or(layer_bit, std::sync::atomic::Ordering::Relaxed) & layer_bit == 0 {
+            eprintln!(
+                "[parallel-tp-shexp] execute layer={il} devices=[{},{}] hidden={n_embd} \
+                 intermediate={n_ff_sh} gate_up=column-sharded down=row-parallel \
+                 join=rank0-plus-rank1-16KiB output=root-device performance_claim=false",
+                e.ctx().ordinal(),
+                rank1.ctx().ordinal(),
+            );
+        }
+        Ok(())
+    }
+
     /// MEMRA_SHEXP_SPLIT worker: the shared expert's gate/up/down rows split across both
     /// devices (dev1 idles during E3), act halves exchanged both ways, downs row-split —
     /// per-element/per-row programs identical, so `sh` is BIT-IDENTICAL to the single-device
@@ -15803,6 +16097,52 @@ impl HybridModel {
         {
             let n_ff_sh = gate_shexp.out_features();
             let lim = cfg.clamp_shexp_at(il as u32);
+            if t == 1 && crate::parallel_tp_shexp_on()? {
+                static LEGACY_SPLIT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+                if *LEGACY_SPLIT
+                    .get_or_init(|| std::env::var("MEMRA_SHEXP_SPLIT").as_deref() == Ok("1"))
+                {
+                    return Err("MEMRA_PARALLEL_TP_SHEXP=1 cannot be combined with \
+                         MEMRA_SHEXP_SPLIT=1; both own the shared-expert split"
+                        .into());
+                }
+                if m.gate_inp_shexp.is_some() {
+                    return Err("MEMRA_PARALLEL_TP_SHEXP=1 has no shared-expert gate arm; \
+                         disable it for this model"
+                        .into());
+                }
+                let (
+                    crate::model::GpuTensor::FloatBf16 { data: wg, .. },
+                    crate::model::GpuTensor::FloatBf16 { data: wu, .. },
+                    crate::model::GpuTensor::FloatBf16 { data: wd, .. },
+                ) = (gate_shexp, up_shexp, down_shexp)
+                else {
+                    return Err(
+                        "MEMRA_PARALLEL_TP_SHEXP=1 requires BF16-resident shared-expert \
+                         gate/up/down weights"
+                            .into(),
+                    );
+                };
+                let runtime = m
+                    .step_ep
+                    .as_ref()
+                    .map(|parallel| &parallel.runtime)
+                    .or_else(|| m.step_tp.as_ref().map(|parallel| &parallel.runtime))
+                    .ok_or(
+                        "MEMRA_PARALLEL_TP_SHEXP=1 requires an existing native parallel \
+                         runtime for the layer",
+                    )?;
+                if !runtime.native_p2p() {
+                    return Err("MEMRA_PARALLEL_TP_SHEXP=1 requires native P2P transport".into());
+                }
+                let rank1 = runtime
+                    .rank_engine(1)
+                    .ok_or("MEMRA_PARALLEL_TP_SHEXP=1 requires an owner-first rank1")?;
+                Self::shexp_row_tp2_add(
+                    e, rank1, wg, wu, wd, z, lim, cfg, il, n_embd, n_ff_sh, moe_out,
+                )?;
+                return Ok(());
+            }
             // T=1 DECODE FUSION (2026-08-20): the ffn_swiglu_decode fast-path program, ported
             // — one shared quantize feeds gate+up (matmul at m=1 quantizes internally per
             // call with identical bytes, so sharing it is bit-identical), the dual NVFP4/Q8
