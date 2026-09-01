@@ -32,11 +32,17 @@
 #     plus its cache arm (`# cache kv_quant= idxq= golden_pin= seams_env=`) - this lane
 #     shipped a silently f32-only instrument once (PROFILE-10 section 4).
 #
-# TWO-CARD CELLS NEED BOTH CARDS, so the capacity guard here is a PAIR guard. And the arm
-# identity rule (LAW:ab-arm-identity) bites harder than usual: `--tp2` changes which BINARY
-# PATH runs, not a flag inside one, so every two-card receipt must carry the
+# WHICH CELLS NEED WHICH CARDS, because holding a pair you do not need is a stolen turn:
+# B/B-mapped/C take a PAIR guard (they run the TP2 forwards); A and D take a SINGLE-card guard.
+# D is single-card DELIBERATELY, see its header: `--spec-gate` never reaches the shard, so
+# `--tp2` there would have held both cards for a program that cannot cross one.
+#
+# And the arm identity rule (LAW:ab-arm-identity) bites harder than usual: `--tp2` changes which
+# BINARY PATH runs, not a flag inside one, so every two-card receipt must carry the
 # `# expert-split ... engaged=true` line. A TP2 arm whose peer_slots delta is 0 measured a
-# program that did not cross a card, and health-200 style "it ran" is not evidence.
+# program that did not cross a card, and health-200 style "it ran" is not evidence. Corollary
+# learned in review on this very file: a flag that LOOKS like it selects the two-card program
+# does not necessarily reach it, so check the call site, not the flag name.
 set -uo pipefail
 BIN=${BIN:-$HOME/realgate/bin/qwen4exp_real_gate}
 CK=${CK:-$HOME/data/q48fn-yarn1m}
@@ -317,17 +323,32 @@ cell_decode_ab(){
 # CELL D -- mint the placement map. THIS IS A PREREQUISITE FOR B(mapped) AND C, and it is
 # still owed from round 2 ("work item 5, router traces: not collected").
 #
-# The gap that silently blanks this input, found while pricing the expert-speculation lever
-# and worth restating because it makes an empty traces/ dir look like a config mistake:
-# `trace_moe_routes` is called ONLY from the TP2 paths. The single-card device-routed default
-# emits NOTHING - `route_topk_device` does the ROUTER_AUDIT readback and never calls the
-# tracer - and the single-card host-routed `moe_forward` has no call either. So traces must be
-# collected under --tp2, or with the tap wired onto the audit readback first.
+# SINGLE CARD, and the reason is a correction to a receipt this file first quoted as current.
+# PROFILE-C0 section 4 records that `trace_moe_routes` was called ONLY from the TP2 paths, so
+# the single-card default emitted nothing and traces had to be collected under --tp2. THAT WAS
+# FIXED. The tap is wired onto the device-router audit readback today
+# (`qwen4exp_gpu.rs:3778`, inside `route_topk_device`, whose own comment narrates the history),
+# so `MEMRA_Q4E_ROUTER_AUDIT=1 MEMRA_MOE_TRACE=<path>` collects on ONE card. Quoting the old
+# state as present tense is the prose-vs-wiring trap this lane documents twice; caught in
+# review before the cell ran.
+#
+# And --tp2 would have bought this cell NOTHING even so: `--spec-gate` runs the single-card
+# program (`model.prefill` / `model.decode_step` / `model.spec_generate_ext`), none of which
+# take the shard. The TP2 forwards are reached only through --decode-timing / --tp2-gate / the
+# ladder, none of which this cell passes. So --tp2 here would have held BOTH cards exclusively
+# for a program that never crosses a card, and then attributed its trace lines to an arm that
+# did not run. Dropped, along with the pair guard.
+#
+# WHAT THIS CELL STILL DOES NOT COLLECT, stated so nobody reads a partial trace as a full one:
+# PREFILL-chunk lines. The host-routed per-expert prefill executor has no trace call, and the
+# TP2 prefill tap (`qwen4exp_gpu.rs:18353`) fires only under `prefill_extend_tp2`, which this
+# invocation never reaches. Decode and verify lines are collected; prefill co-activation would
+# need --tp2 PLUS an instrument that actually routes prefill through the TP2 path.
 #
 # Collect all three shapes: the co-activation structure is a property of the traffic, and
 # thinking-mode routing is not raw-mode routing. --spec-k 5 so the t=6 lines (60 ids,
-# token-major) are present: spec/moeu/moe-union.py reads exactly that half of the trace and it
-# is the union input the moeu lane never got.
+# token-major) are present via the merged verify path's device route: spec/moeu/moe-union.py
+# reads exactly that half of the trace and it is the union input the moeu lane never got.
 #
 # BALANCE IS A HARD CONSTRAINT, NOT A PREFERENCE: the card-1 bank halves are equal-size device
 # allocations, so the engine REFUSES any layer where card 1 does not own exactly experts/2
@@ -340,25 +361,26 @@ cell_mint_map(){
   local label="D-mint-ep-map"
   local log_f="$OUT/$label.tsv"
   : > "$log_f"
-  receipt_head "$log_f" "$label" "$BASE_SEAMS" "0,1" \
-    "collects MEMRA_MOE_TRACE under --tp2 (the single-card default emits nothing) and mints the map"
-  log "cell $label acquiring -x (both cards)"
+  receipt_head "$log_f" "$label" "$BASE_SEAMS" "0" \
+    "SINGLE card: the trace tap is wired onto the device-router audit readback (qwen4exp_gpu.rs:3778), so --tp2 is not needed and would not engage under --spec-gate. Decode+verify lines only, NO prefill lines"
+  log "cell $label acquiring -x (single card)"
   flock -x "$LOCK" bash -c '
     set -uo pipefail
     bin=$1; ck=$2; go=$3; pd=$4; seams=$5; td=$6
-    if ! w=$(need_cards 95000 0 1); then
-      echo "# CAPACITY-GUARD: the PAIR was never free+idle within 900s in-hold" >&2; exit 90
+    if ! w=$(need_cards 91000 0); then
+      echo "# CAPACITY-GUARD: card 0 never free+idle within the wait budget in-hold" >&2; exit 90
     fi
     printf "# capacity_guard\twaited_s=%s\n" "$w"
     for shape in thinkon thinkoff efflow; do
       tf="$td/moe-$shape.trace"
       printf "\n# trace-shape\t%s\n# trace_file\t%s\n" "$shape" "$tf"
-      env MEMRA_Q4E_SEAMS="$seams" MEMRA_Q4E_ROUTER_AUDIT=1 MEMRA_MOE_TRACE="$tf" \
+      env CUDA_VISIBLE_DEVICES=0 MEMRA_Q4E_SEAMS="$seams" \
+          MEMRA_Q4E_ROUTER_AUDIT=1 MEMRA_MOE_TRACE="$tf" \
         "$bin" "$ck" "$go" --label "ep2D-$shape" --prompts "$pd/$shape-prompts.tsv" \
-          --tp2 --spec-gate 256 --spec-k 5 || printf "# arm-rc\t%s\n" "$?"
-      # A trace tap that emitted NOTHING is the failure this counter exists to catch: the
-      # single-card default never calls trace_moe_routes, so an empty file here means the
-      # --tp2 arm did not run, not that the model routed nothing.
+          --spec-gate 256 --spec-k 5 || printf "# arm-rc\t%s\n" "$?"
+      # An EMPTY trace is what this counter exists to catch, and with the tap on the audit
+      # readback the only way it can be empty is that ROUTER_AUDIT did not arm (or the run
+      # failed). It is NOT evidence about routing, and it is not the old "wrong arm" failure.
       printf "# trace_lines\t%s\n" "$(wc -l < "$tf" 2>/dev/null || echo 0)"
     done
   ' _ "$BIN" "$CK" "$GATE_OUT" "$PROMPTS_DIR" "$BASE_SEAMS" "$TRACE_DIR" >> "$log_f" 2>&1
@@ -424,7 +446,7 @@ usage: q4e-ep2-cell.sh <cell>
   B            two-card exactness gate, EVEN split (control)
   B-mapped     two-card exactness gate, measured map (needs D)
   C            t=1 plain decode A/B x3 reps, rotated arm order (needs D)
-  D            collect router traces under --tp2 and mint the placement maps
+  D            collect router traces (SINGLE card, audit-readback tap) and mint the maps
   E            262k rung -- BLOCKED BY DESIGN, prints why
 
 Read EP2-DESIGN.md first: two-card EP2 cannot reach the 200 tok/s target (needs 63.8% of the
