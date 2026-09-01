@@ -1072,6 +1072,7 @@ once in four places in `ledger.rs`, each time the billable set grew.)
 | `deadline_exceeded` | `timeout_ms` elapsed before we responded | **zero** |
 | `shed_deadline` | admission shed: estimated wait exceeded the deadline | **zero** |
 | `shed_queue` | admission shed: absolute queue bound reached | **zero** |
+| `shed_queue_wait` | admission shed: estimated wait exceeded the deployment's opt-in queue-wait ceiling (`MEMRA_QUEUE_WAIT_CEILING_S`) | **zero** |
 | `drain_killed` | WE killed it at the drain deadline (SIGTERM) | **zero** |
 | `crashed` | the handler panicked while holding the receipt | **zero** |
 
@@ -1092,7 +1093,7 @@ same error object the blocking path returns instead of a stream that simply stop
 
 The interactive lane queues beyond `MEMRA_MAX_SESSIONS` and never used to shed, so a
 saturated box just got slower — nothing a client or a router could act on. At submission
-time (never after: **an admitted request is never shed**) two gates now apply, both only
+time (never after: **an admitted request is never shed**) two gates always apply and a third is opt-in, all only
 while the lane is at capacity:
 
 1. **Deadline test** — if the estimated queue wait exceeds this request's remaining
@@ -1102,8 +1103,14 @@ while the lane is at capacity:
    promise**, and the shed message says so.
 2. **Absolute bound** — `MEMRA_MAX_QUEUE_DEPTH` (default 4 × the session cap), outcome
    `shed_queue`, same headers. The load-shape-independent backstop.
+3. **Queue-wait ceiling** (opt-in: `MEMRA_QUEUE_WAIT_CEILING_S` = N > 0, default 0 = off) —
+   if that same wait estimate exceeds N seconds, `429` with the same headers, outcome
+   `shed_queue_wait`, not billed. Independent of the caller's deadline: gate 1 never fires
+   for a patient caller, which is how a burst past the session cap queued 133-137 s in
+   silence on prod (2026-09-01). Judged after gates 1 and 2, so those answer first and
+   unchanged. Flag row: docs/FLAGS.md.
 
-Both carry the `X-RateLimit` trio, and both are what the router's circuit breaker and
+All three carry the `X-RateLimit` trio, and all three are what the router's circuit breaker and
 load spill consume. **Circuit breaking stays at the router**; the engine's contribution is
 honest, prompt 429s. Dark lanes (`judge`/`harvest`) are untouched here — they already shed
 at cap inside the worker.
@@ -1515,6 +1522,7 @@ class now comes from the producer:
 | non-streaming request that cannot fit its deadline (refused at admission) | 400 | `invalid_request_error` | `nonstream_deadline_infeasible` | `x-should-retry: false` — retrying unchanged cannot fit either; the message names the `max_tokens` that would |
 | interactive shed: estimated queue wait exceeds the request's deadline | 429 | `rate_limit_error` | `shed_deadline` | `Retry-After` = the wait estimate + matching `retry-after-ms` |
 | interactive shed: absolute queue bound (`MEMRA_MAX_QUEUE_DEPTH`) reached | 429 | `rate_limit_error` | `shed_queue` | `Retry-After` = the wait estimate + matching `retry-after-ms` |
+| interactive shed: estimated queue wait exceeds the deployment's opt-in ceiling (`MEMRA_QUEUE_WAIT_CEILING_S`, default off) | 429 | `rate_limit_error` | `shed_queue_wait` | `Retry-After` = the wait estimate + matching `retry-after-ms` |
 | out of VRAM / step-OOM past its park budget / worker restarting | 503 | `server_error` | `overloaded` | `Retry-After: 5` + `retry-after-ms: 5000` |
 | step, prefill, graph or constraint fault | 500 | `server_error` | `engine_error` | none (not time-bounded) |
 | new request arriving during a drain | 503 | `server_error` | `draining` | `Retry-After: MEMRA_DRAIN_S` (≤60) + matching `retry-after-ms` |
