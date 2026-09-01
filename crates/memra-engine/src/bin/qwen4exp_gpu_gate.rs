@@ -915,6 +915,14 @@ fn main() -> Res<()> {
     // scale — this synthetic arm gates the kernel directly (perf lane, PROFILE-0).
     summaries.push(memra_engine::qwen4exp_gpu::gate_nvfp4_sel_matvec(&engine)?);
 
+    // Arm 0a2: the SUB-WARP pair-group sel kernels (`selgroup`, downsel lane) at the REAL
+    // MoE geometry. Arm 0 above runs tiny shapes where `pairs` is 1 or 2; the defect this
+    // seam fixes only exists at pairs=20 (down, lanes 20-31 idle) and pairs=80 (gate/up
+    // tail), so the arm has to carry the real widths. Also pins the degenerate
+    // (g=32, rows=4) shape BIT-IDENTICAL to the shipped v3 / gufuse kernels, which is what
+    // makes the seam a rollback.
+    summaries.push(memra_engine::qwen4exp_gpu::gate_nvfp4_sel_group(&engine)?);
+
     // Arm 0b: the bf16 trunk matvec kernel oracle (kernel vs host f32 matvec over
     // identical bf16-widened weights). The fixture arm's random f32 weights fail the
     // representability guard (bf16 twins skipped there by value, and the tiny

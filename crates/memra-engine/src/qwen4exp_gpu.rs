@@ -1433,6 +1433,189 @@ fn sel_v3_on() -> bool {
     SEL_V3.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+// ---- sel matvec SUB-WARP pair groups (`selgroup`, downsel lane mtp14) ------------------
+//
+// THE DEFECT, and why it is the priced-next lever in this section. v3/gufuse partition the
+// pair loop over all 32 lanes (`for p = lane; p < pairs; p += 32`, `pairs = in_f/32`). At
+// this artifact's geometry that does not fill a warp:
+//
+// | launch  | in_f            | pairs | lane occupancy                            |
+// |---------|-----------------|-------|-------------------------------------------|
+// | down    | expert ff 640   |    20 | 20/32 = **62.5%** (lanes 20-31 idle, ONE iteration each) |
+// | gate+up | hidden 2560     |    80 | 80/96 = **83.3%** (3 warp iterations for 2.5 iterations of work) |
+//
+// KNEE:q4e-sel-slots-not-bytes measured that this section is per-SLOT-WORK bound, not
+// weight-traffic bound (10 -> 60 slots costs 4.13x at fixed bytes; a 6x distinct-byte cut
+// buys 1.101x, inside the instrument's own 8.6-11.7% spread). Idle lanes are exactly
+// wasted per-slot work, so occupancy is where the section's time is.
+//
+// THE SHAPE. `qmatvec_nvfp4_modelopt_sel_g_f32` / `..._gu_silu_g_f32` make the pair loop a
+// SUB-WARP of `g` lanes: the warp carries `32/g` groups, group `gi` owns `rows` consecutive
+// output rows, and the reduce is log2(g) shfl steps inside the group. Rows per warp is
+// `(32/g) * rows`, which is what the grid is tiled by. `(g=32, rows=4)` is the shipped v3 /
+// gufuse program EXACTLY — byte-compared in `gate_nvfp4_sel_matvec`.
+//
+// **DEFAULT OFF at introduction, by design (new-flags law).** The ceiling is priced
+// (research/qwen4exp-bringup-20260829/spec/downsel/DOWNSEL.md: recovering both kernels'
+// idle lanes is worth ~5-7% of the K=5 round, 136.2 -> ~144-146 tok/s) and the exactness
+// arms are green on the rig, but this lane had NO timing hardware — the rig is
+// exactness-only (LAW:rig-gpu-exactness-only) and no cloud box was approved. A default
+// flip needs the interleaved A/B rows the three banked cells in
+// `spec/downsel/` produce; until those exist, ON would be an unmeasured default.
+//
+// Arm: `MEMRA_Q4E_SEAMS=selgroup` (both families AUTO). Per-family shapes for the A/B
+// ladder: `selgroup=dn:4:1+gu:16:2`, `selgroup=dn:8:1+gu:off`, ... Roll back: omit it, or
+// `selgroup=0`.
+//
+// AUTO derives the shape from the geometry rather than pinning a number, because the two
+// families have different `pairs` and a single global shape would starve one of them:
+// `g` = the largest power of two dividing `pairs` (100% lane occupancy), `rows` = the
+// largest of {1,2,4} that keeps `rows_per_warp` near the shipped 4. At the serving
+// geometry that resolves to **gu (g=16, rows=2)** — 100% lanes at the SAME grid as today —
+// and **down (g=4, rows=1)** — 100% lanes at HALF the grid, since `pairs=20` admits no
+// power-of-two group above 4. The halved grid is the one thing the A/B has to check: it
+// costs warp-level parallelism at t=1, where the down launch already runs only
+// out_f/4 * selected warps.
+const SEL_GROUP_OFF: u32 = 0;
+const SEL_GROUP_AUTO: u32 = 1;
+/// Down-projection family (`launch_nvfp4_sel_matvec`).
+static SEL_GROUP_DN: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(SEL_GROUP_OFF);
+/// Fused gate+up+silu family (`launch_nvfp4_sel_gu_silu`).
+static SEL_GROUP_GU: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(SEL_GROUP_OFF);
+
+fn sel_group_dn() -> u32 {
+    SEL_GROUP_DN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn sel_group_gu() -> u32 {
+    SEL_GROUP_GU.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The seam's current spec, in the grammar `set_sel_group` accepts — for exact
+/// save/restore around an A/B that flips it (`seam_state` cannot carry it: this seam is not
+/// boolean, like `idxq`).
+pub fn sel_group_spec() -> String {
+    let one = |c: u32| -> String {
+        match c {
+            SEL_GROUP_OFF => "off".to_string(),
+            SEL_GROUP_AUTO => "auto".to_string(),
+            v => format!("{}:{}", (v >> 8) & 0xff, v & 0xff),
+        }
+    };
+    format!("dn:{}+gu:{}", one(sel_group_dn()), one(sel_group_gu()))
+}
+
+/// Parse and apply the `selgroup` seam value. Grammar (no commas — `MEMRA_Q4E_SEAMS`
+/// splits on them):
+///
+/// - `0` / `off` — both families OFF (the shipped v3 / gufuse kernels).
+/// - `` (bare) / `auto` / `1` — both families AUTO.
+/// - `dn:<spec>` / `gu:<spec>` joined by `+`, where `<spec>` is `off`, `auto`, or
+///   `<g>:<rows>` with `g` a power of two in [1,32] and `rows` in {1,2,4}.
+///
+/// Returns false (applying nothing) on a malformed spec, so a typo in a cell script fails
+/// the seam-name check instead of silently measuring the default arm.
+pub fn set_sel_group(spec: &str) -> bool {
+    let parse_one = |s: &str| -> Option<u32> {
+        match s {
+            "off" | "0" => Some(SEL_GROUP_OFF),
+            "auto" | "1" | "" => Some(SEL_GROUP_AUTO),
+            other => {
+                let (g, rows) = other.split_once(':')?;
+                let g: u32 = g.parse().ok()?;
+                let rows: u32 = rows.parse().ok()?;
+                if !matches!(g, 1 | 2 | 4 | 8 | 16 | 32) || !matches!(rows, 1 | 2 | 4) {
+                    return None;
+                }
+                Some((g << 8) | rows)
+            }
+        }
+    };
+    if let Some(both) = parse_one(spec) {
+        SEL_GROUP_DN.store(both, std::sync::atomic::Ordering::Relaxed);
+        SEL_GROUP_GU.store(both, std::sync::atomic::Ordering::Relaxed);
+        return true;
+    }
+    let mut dn = None;
+    let mut gu = None;
+    for part in spec.split('+').filter(|p| !p.is_empty()) {
+        let Some((family, rest)) = part.split_once(':') else {
+            return false;
+        };
+        let Some(code) = parse_one(rest) else {
+            return false;
+        };
+        match family {
+            "dn" | "down" => dn = Some(code),
+            "gu" | "gateup" => gu = Some(code),
+            _ => return false,
+        }
+    }
+    if dn.is_none() && gu.is_none() {
+        return false;
+    }
+    if let Some(c) = dn {
+        SEL_GROUP_DN.store(c, std::sync::atomic::Ordering::Relaxed);
+    }
+    if let Some(c) = gu {
+        SEL_GROUP_GU.store(c, std::sync::atomic::Ordering::Relaxed);
+    }
+    true
+}
+
+/// Resolve a family's seam code to a concrete `(g, rows)` for THIS launch's geometry, or
+/// `None` to take the shipped kernel. Every geometry that the sub-warp form cannot tile
+/// exactly falls back rather than clamping: groups inside one warp have different `o0`, so
+/// a ragged tile would put lanes with live and dead rows in the same `__shfl_down_sync`.
+fn sel_group_resolve(code: u32, in_f: usize, out_f: usize) -> Option<(usize, usize)> {
+    if code == SEL_GROUP_OFF || in_f % 32 != 0 {
+        return None;
+    }
+    let pairs = in_f / 32;
+    if code != SEL_GROUP_AUTO {
+        let (g, rows) = (((code >> 8) & 0xff) as usize, (code & 0xff) as usize);
+        if !matches!(g, 1 | 2 | 4 | 8 | 16 | 32) || !matches!(rows, 1 | 2 | 4) {
+            return None;
+        }
+        if out_f % ((32 / g) * rows) != 0 {
+            return None;
+        }
+        return Some((g, rows));
+    }
+    // AUTO. Largest power-of-two lane group that divides `pairs` exactly (100% lane
+    // occupancy); the chain is monotone (2^k | pairs implies 2^(k-1) | pairs), so the first
+    // miss ends it.
+    let mut g = 1usize;
+    for cand in [2usize, 4, 8, 16, 32] {
+        if pairs % cand != 0 {
+            break;
+        }
+        g = cand;
+    }
+    // `rows` (rows per LANE) is held at 4, and that is the measured shape rule rather than
+    // an arbitrary pick — an earlier AUTO derived `rows` from `g` so that `rows_per_warp`
+    // stayed at the shipped 4, and the ladder says that rule is BACKWARDS. Rows per LANE is
+    // what pays, not lane occupancy alone: v3's body exists to share one pair's 8 activation
+    // float4 loads across 4 rows and keep 4 independent uint4 code loads in flight, and an
+    // arm that reaches 100% lane occupancy by SPENDING rows-per-lane loses that and measures
+    // WORSE than the shipped kernel (gate+up g=16 rows=2 -> 100% lanes but ~12% slower;
+    // down g=8 rows=1 -> flat). Filling the lanes is only worth doing at rows=4.
+    // Rows per warp therefore GROWS to (32/g)*4, which costs warp count — the thing the
+    // box cell has to confirm, since these rows were taken on the rig for DIRECTION only
+    // (research/qwen4exp-bringup-20260829/spec/downsel/DOWNSEL.md §4).
+    let mut rows = 4usize;
+    while rows > 1 && out_f % ((32 / g) * rows) != 0 {
+        rows /= 2;
+    }
+    let rows_per_warp = (32 / g) * rows;
+    if out_f % rows_per_warp != 0 {
+        return None;
+    }
+    Some((g, rows))
+}
+
 /// Read/write-gate micro bundle (perf lane, after items 1-3 the residue is EXECUTION):
 /// batched per-stream gate norms (384 one-block launches → 96 stream-batched), the
 /// two-stage inject (the single-stage kernel ran 4 blocks on a 188-SM card), slab gate
@@ -2558,6 +2741,15 @@ pub fn seam_state(name: &str) -> Option<bool> {
         "kvq" => kv_quant_on(),
         "kvhoist" => kv_hoist_on(),
         "poolT" => pool_t_on(),
+        // Shape-valued, but it DOES carry a boolean state and must report it: the shared
+        // `--ab-seam` / `--ladder-ab-seam` harness restores the entry arm only when
+        // `seam_state` answers, and returning None there would leave the ON arm armed for
+        // every number after the A/B block — the silent arm flip that harness's own comment
+        // warns about. OFF <-> AUTO (the two arms a seam A/B runs) round-trips exactly.
+        // Restoring a PINNED shape does not: it comes back as AUTO, so a cell that pins
+        // `dn:8:1` must carry it in `MEMRA_Q4E_SEAMS` per invocation (which is how the
+        // banked downsel cells run their ladder) or save/restore `sel_group_spec()`.
+        "selgroup" => sel_group_dn() != SEL_GROUP_OFF || sel_group_gu() != SEL_GROUP_OFF,
         _ => return None,
     })
 }
@@ -2606,6 +2798,7 @@ pub fn seam_names() -> &'static [&'static str] {
         "idxq",
         "kvhoist",
         "poolT",
+        "selgroup",
     ]
 }
 
@@ -2653,6 +2846,17 @@ fn seam_dispatch(name: &str, on: bool, value: Option<&str>, apply: bool) -> bool
         // Three-valued: `idxq=q8`, `idxq=bf16`, `idxq=0`/`idxq=f32` (rollback);
         // bare `idxq` arms the q8 target.
         "idxq" => seam!(set_idxq(value.unwrap_or("q8"))),
+        // SHAPE-valued (see set_sel_group): bare `selgroup` = both families AUTO,
+        // `selgroup=dn:4:1+gu:16:2` pins the A/B ladder's arms, `selgroup=0` rolls back.
+        // A malformed spec must not read as "seam applied": it returns false here so the
+        // caller reports an unknown/bad seam instead of measuring the default arm.
+        "selgroup" => {
+            if apply {
+                set_sel_group(if on { value.unwrap_or("auto") } else { "off" })
+            } else {
+                true
+            }
+        }
         _ => {
             debug_assert!(
                 !seam_names().contains(&name),
@@ -5711,9 +5915,14 @@ fn launch_nvfp4_sel_matvec(
     if y.len() < n_sel * out_f {
         return Err("qmatvec_nvfp4_modelopt_sel_f32: output shorter than n_sel*out_f".into());
     }
-    let v3 = sel_v3_on() && in_f % 32 == 0 && out_f % 4 == 0;
-    let v2 = !v3 && sel_v2_on() && in_f % 32 == 0 && out_f % 2 == 0;
-    let f = e.func(if v3 {
+    // Sub-warp pair groups (`selgroup`, default OFF) take precedence over the v3/v2/v1
+    // chain when the geometry tiles exactly; `(g=32, rows=4)` reproduces v3's bits.
+    let grp = sel_group_resolve(sel_group_dn(), in_f, out_f);
+    let v3 = grp.is_none() && sel_v3_on() && in_f % 32 == 0 && out_f % 4 == 0;
+    let v2 = grp.is_none() && !v3 && sel_v2_on() && in_f % 32 == 0 && out_f % 2 == 0;
+    let f = e.func(if grp.is_some() {
+        "qmatvec_nvfp4_modelopt_sel_g_f32"
+    } else if v3 {
         "qmatvec_nvfp4_modelopt_sel_f32_v3"
     } else if v2 {
         "qmatvec_nvfp4_modelopt_sel_f32_v2"
@@ -5723,13 +5932,15 @@ fn launch_nvfp4_sel_matvec(
     // Warp packing (4 warps/block) was tried here and REVERTED: measured NEGATIVE on
     // decode (plain arm 14.38 -> 15.13 ms) and flat on verify sel (mtp6 battery,
     // spec/mtp6) — the sel slice is not SM-block-slot-limited. The kernels keep the
-    // lane-based indexing (identical at block 32); launch stays one warp per block.
-    let grid_x = if v3 {
-        out_f / 4
-    } else if v2 {
-        out_f / 2
-    } else {
-        out_f
+    // lane-based indexing (identical at block 32); launch stays one warp per block. The
+    // `selgroup` kernels honour `blockDim.x >> 5` too, but this lane deliberately leaves
+    // block 32 alone so the A/B attributes ONE change (the lane partition) — a warps-per-
+    // block knob would re-open the reverted measurement as a second free variable.
+    let grid_x = match grp {
+        Some((g, rows)) => out_f / ((32 / g) * rows),
+        None if v3 => out_f / 4,
+        None if v2 => out_f / 2,
+        None => out_f,
     };
     let cfg = LaunchConfig {
         grid_dim: (grid_x as u32, n_sel as u32, 1),
@@ -5738,6 +5949,7 @@ fn launch_nvfp4_sel_matvec(
     };
     let (inf, outf) = (in_f as i32, out_f as i32);
     let xs = x_stride as i64;
+    let (gi, ri) = grp.map_or((0i32, 0i32), |(g, rows)| (g as i32, rows as i32));
     let stream = e.gpu.stream();
     let mut b = stream.launch_builder(&f);
     b.arg(codes)
@@ -5749,6 +5961,9 @@ fn launch_nvfp4_sel_matvec(
         .arg(&inf)
         .arg(&outf)
         .arg(&xs);
+    if grp.is_some() {
+        b.arg(&gi).arg(&ri);
+    }
     unsafe {
         b.launch(cfg)?;
     }
@@ -5785,14 +6000,26 @@ fn launch_nvfp4_sel_gu_silu(
     if sel.is_none() == (pack_raw == 0) {
         return Err("qmatvec_nvfp4_modelopt_sel_gu_silu_f32: exactly one of sel/pack".into());
     }
-    let f = e.func("qmatvec_nvfp4_modelopt_sel_gu_silu_f32");
+    // Sub-warp pair groups (`selgroup`, default OFF); `(g=32, rows=4)` reproduces the
+    // shipped kernel's bits, pack and tok_map modes included.
+    let grp = sel_group_resolve(sel_group_gu(), in_f, ff);
+    let f = e.func(if grp.is_some() {
+        "qmatvec_nvfp4_modelopt_sel_gu_silu_g_f32"
+    } else {
+        "qmatvec_nvfp4_modelopt_sel_gu_silu_f32"
+    });
     // Warp packing reverted (see launch_nvfp4_sel_matvec): one warp per block.
+    let grid_x = match grp {
+        Some((g, rows)) => ff / ((32 / g) * rows),
+        None => ff / 4,
+    };
     let cfg = LaunchConfig {
-        grid_dim: ((ff / 4) as u32, n_sel as u32, 1),
+        grid_dim: (grid_x as u32, n_sel as u32, 1),
         block_dim: (32, 1, 1),
         shared_mem_bytes: 0,
     };
     let (inf, ffi, ms) = (in_f as i32, ff as i32, n_sel as i32);
+    let (gi, ri) = grp.map_or((0i32, 0i32), |(g, rows)| (g as i32, rows as i32));
     let stream = e.gpu.stream();
     let mut b = stream.launch_builder(&f);
     b.arg(gate.0)
@@ -5823,6 +6050,9 @@ fn launch_nvfp4_sel_gu_silu(
         .arg(&ffi)
         .arg(&tok_raw)
         .arg(&x_tstride);
+    if grp.is_some() {
+        b.arg(&gi).arg(&ri);
+    }
     unsafe {
         b.launch(cfg)?;
     }
@@ -6087,6 +6317,250 @@ pub fn moe_union_cost_probe(
         });
     }
     Ok(rows)
+}
+
+/// One row of the sel-kernel SHAPE cost probe (`downsel` lane, mtp14).
+#[derive(Debug, Clone)]
+pub struct SelShapeRow {
+    /// Verify columns fed (t). 1 = the plain-decode shape.
+    pub t: usize,
+    /// (token, expert) slots = grid.y of both launches.
+    pub slots: usize,
+    /// The `selgroup` spec this arm ran (`off` = the shipped v3 / gufuse kernels).
+    pub arm: String,
+    /// Resolved (g, rows) per family, and the grid.x each launch used — the whole point of
+    /// the table is that a shape trades lane occupancy against warp count, so both have to
+    /// be readable next to the time.
+    pub gu_shape: String,
+    pub dn_shape: String,
+    pub gu_grid_x: usize,
+    pub dn_grid_x: usize,
+    pub gu_us: f64,
+    pub down_us: f64,
+    pub gu_spread_rel: f64,
+    pub down_spread_rel: f64,
+}
+
+/// Cost probe for the sel matvecs' SUB-WARP pair-group shapes (`downsel` lane, mtp14),
+/// on synthetic banks of the serving geometry with NO checkpoint (~1.3 GiB, ~30 s) — so it
+/// interleaves between any other lane's cells the way the `moeu` probe does.
+///
+/// WHAT IT MEASURES. `moe_union_probe` established that this section is per-slot-work bound
+/// (KNEE:q4e-sel-slots-not-bytes). Per-slot work is what an idle lane wastes, and at this
+/// artifact's geometry the pair loop leaves 37.5% of the down launch's lanes and 16.7% of
+/// the gate+up launch's lane-slots empty. This probe runs the SAME slots, the SAME distinct
+/// experts and the SAME banks through each candidate lane partition, so the only thing
+/// varying between arms is the shape.
+///
+/// TWO CONTROLS BUILT IN, because a shape table without them is unreadable:
+///
+/// 1. **`off` vs `dn:32:4+gu:32:4`.** The second arm is the sub-warp kernel at the shape
+///    where it degenerates to the shipped program — bit-identical output (gated by
+///    `gate_nvfp4_sel_group`). It went in as a noise floor (LAW:ab-arm-identity applied to a
+///    perf table: an arm running the same program must measure the same) and it EARNED its
+///    place by not being one — it reproducibly measures a few percent faster than `off`,
+///    because the source restructure changes nvcc's scheduling for identical bits. So
+///    `arm / off` mixes two effects and only `arm / control` is the shape's. Anyone reading
+///    this table for a shape claim reads the control-relative column.
+/// 2. **Per-arm spread**, reported per arm, never averaged away.
+///
+/// Arms are interleaved REP BY REP (LAW:interleaved-ab / TRAP:monotone-sweep-inflates-the-
+/// lever): a shape ladder run as contiguous blocks would let clock/thermal drift over the
+/// run read as a shape effect, and the natural order (baseline first) inflates the payoff.
+/// Rep 0 of every arm is a warmed throwaway (the `scan_warm` lesson).
+///
+/// TIMING ARM: hold `flock -x` around the WHOLE invocation, and never quote a row measured
+/// on the rig (LAW:rig-gpu-exactness-only — the rig is for the exactness arms above).
+#[allow(clippy::too_many_arguments)]
+pub fn sel_shape_cost_probe(
+    e: &Engine,
+    experts: usize,
+    hidden: usize,
+    ff: usize,
+    selected: usize,
+    t: usize,
+    reps: usize,
+    arms: &[String],
+) -> Res<Vec<SelShapeRow>> {
+    if hidden % 32 != 0 || ff % 4 != 0 {
+        return Err("sel_shape_cost_probe: needs the gufuse geometry (hidden%32, ff%4)".into());
+    }
+    if selected == 0 || t == 0 || reps == 0 || arms.is_empty() {
+        return Err("sel_shape_cost_probe: selected/t/reps/arms must be non-empty".into());
+    }
+    let saved = sel_group_spec();
+    let out = sel_shape_cost_probe_inner(e, experts, hidden, ff, selected, t, reps, arms);
+    set_sel_group(&saved);
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sel_shape_cost_probe_inner(
+    e: &Engine,
+    experts: usize,
+    hidden: usize,
+    ff: usize,
+    selected: usize,
+    t: usize,
+    reps: usize,
+    arms: &[String],
+) -> Res<Vec<SelShapeRow>> {
+    // Bank fill and the honesty notes are `moe_union_cost_probe`'s, deliberately: codes
+    // index a 16-entry LUT so every byte is legal, scale bytes sit in a mid ue4m3 range so
+    // no product leaves normal f32 range, and gate/up get SEPARATE allocations (aliasing
+    // them would halve the distinct bytes). No output is compared to an oracle here — that
+    // is `gate_nvfp4_sel_group`'s job; this is a latency arm only.
+    let code_byte = |i: usize| -> u8 { (i.wrapping_mul(2_654_435_761) >> 13) as u8 };
+    let scale_byte = |i: usize| -> u8 { 0x38 | ((i.wrapping_mul(40_503) >> 7) & 0x07) as u8 };
+    let mk = |n: usize, f: &dyn Fn(usize) -> u8| -> Res<CudaSlice<u8>> {
+        let host: Vec<u8> = (0..n).map(f).collect();
+        let d = e.htod_bytes(&host)?;
+        drop(host);
+        Ok(d)
+    };
+    let gc = mk(experts * ff * (hidden / 2), &code_byte)?;
+    let gs = mk(experts * ff * (hidden / 16), &scale_byte)?;
+    let uc = mk(experts * ff * (hidden / 2), &|i| code_byte(i ^ 0x5A5A_5A5A))?;
+    let us = mk(experts * ff * (hidden / 16), &|i| {
+        scale_byte(i ^ 0x3C3C_3C3C)
+    })?;
+    let dc = mk(experts * hidden * (ff / 2), &|i| code_byte(i ^ 0x0F0F_0F0F))?;
+    let ds = mk(experts * hidden * (ff / 16), &|i| {
+        scale_byte(i ^ 0x1111_1111)
+    })?;
+    let gm = e.htod(&vec![1.0f32; experts])?;
+    let um = e.htod(&vec![1.0f32; experts])?;
+    let dm = e.htod(&vec![1.0f32; experts])?;
+    let mixed_h: Vec<f32> = (0..t * hidden)
+        .map(|i| ((i.wrapping_mul(40_503) % 1000) as f32) / 4000.0 - 0.125)
+        .collect();
+    let mixed = e.htod(&mixed_h)?;
+
+    // ONE routing shape for every arm: `slots` distinct experts spread across the bank by a
+    // fixed stride. Distinct, because a shape change must not be read through a cache-hit
+    // difference — the union axis is `moe_union_probe`'s and it is already priced dead.
+    let slots = t * selected;
+    let stride = (experts / slots.max(1)).max(1);
+    let sel_h: Vec<i32> = (0..slots)
+        .map(|i| ((i * stride) % experts) as i32)
+        .collect();
+    let tok_h: Vec<i32> = (0..slots).map(|i| (i / selected) as i32).collect();
+    let sel = e.htod_i32(&sel_h)?;
+    let tokm = e.htod_i32(&tok_h)?;
+    let mut act = e.zeros(slots * ff)?;
+    let mut partial = e.zeros(slots * hidden)?;
+
+    struct Arm {
+        spec: String,
+        gu_shape: String,
+        dn_shape: String,
+        gu_grid_x: usize,
+        dn_grid_x: usize,
+        gu: Vec<f64>,
+        dn: Vec<f64>,
+    }
+    let describe = |code: u32, in_f: usize, out_f: usize| -> (String, usize) {
+        match sel_group_resolve(code, in_f, out_f) {
+            Some((g, rows)) => {
+                let rpw = (32 / g) * rows;
+                (format!("g{g}r{rows}/rpw{rpw}"), out_f / rpw)
+            }
+            None => ("shipped".to_string(), out_f / 4),
+        }
+    };
+    let mut built: Vec<Arm> = Vec::with_capacity(arms.len());
+    for spec in arms {
+        if !set_sel_group(spec) {
+            return Err(format!("sel_shape_cost_probe: bad arm spec {spec:?}").into());
+        }
+        let (gu_shape, gu_grid_x) = describe(sel_group_gu(), hidden, ff);
+        let (dn_shape, dn_grid_x) = describe(sel_group_dn(), ff, hidden);
+        built.push(Arm {
+            spec: spec.clone(),
+            gu_shape,
+            dn_shape,
+            gu_grid_x,
+            dn_grid_x,
+            gu: Vec::with_capacity(reps),
+            dn: Vec::with_capacity(reps),
+        });
+    }
+    let tok_arg = if t > 1 { Some((&tokm, hidden)) } else { None };
+    for rep in 0..(reps + 1) {
+        for a in built.iter_mut() {
+            // Arm identity is re-asserted every rep, not set once outside the loop: the
+            // interleave is the whole point, and a seam left over from the previous arm
+            // would silently measure it twice.
+            set_sel_group(&a.spec);
+            e.stream().synchronize()?;
+            let t0 = std::time::Instant::now();
+            launch_nvfp4_sel_gu_silu(
+                e,
+                (&gc, &gs, &gm),
+                (&uc, &us, &um),
+                Some(&sel),
+                0,
+                slots,
+                &mixed,
+                &mut act,
+                hidden,
+                ff,
+                tok_arg,
+            )?;
+            e.stream().synchronize()?;
+            let t1 = std::time::Instant::now();
+            launch_nvfp4_sel_matvec(
+                e,
+                &dc,
+                &ds,
+                &dm,
+                &sel,
+                &act,
+                &mut partial,
+                slots,
+                ff,
+                hidden,
+                ff,
+            )?;
+            e.stream().synchronize()?;
+            let t2 = std::time::Instant::now();
+            if rep > 0 {
+                a.gu.push(t1.duration_since(t0).as_secs_f64() * 1e6);
+                a.dn.push(t2.duration_since(t1).as_secs_f64() * 1e6);
+            }
+        }
+    }
+    let stat = |v: &[f64]| -> (f64, f64) {
+        let mut s = v.to_vec();
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let med = s[s.len() / 2];
+        let spread = if med > 0.0 {
+            (s[s.len() - 1] - s[0]) / med
+        } else {
+            0.0
+        };
+        (med, spread)
+    };
+    Ok(built
+        .iter()
+        .map(|a| {
+            let (gu_us, gu_spread_rel) = stat(&a.gu);
+            let (down_us, down_spread_rel) = stat(&a.dn);
+            SelShapeRow {
+                t,
+                slots,
+                arm: a.spec.clone(),
+                gu_shape: a.gu_shape.clone(),
+                dn_shape: a.dn_shape.clone(),
+                gu_grid_x: a.gu_grid_x,
+                dn_grid_x: a.dn_grid_x,
+                gu_us,
+                down_us,
+                gu_spread_rel,
+                down_spread_rel,
+            }
+        })
+        .collect())
 }
 
 /// Sequential slot-combine over a WINDOW of a taller partial slab (mtp-spec verify):
@@ -6428,6 +6902,487 @@ pub fn gate_nvfp4_sel_matvec(e: &Engine) -> Res<String> {
          BIT-IDENTICAL to the v3+silu chain incl. the count-gated pack twin + the \
          tok_map verify merge",
         worst.0, worst.1
+    ))
+}
+
+/// Kernel oracle for the SUB-WARP pair-group sel matvecs (`selgroup`, downsel lane mtp14),
+/// at the artifact's REAL MoE geometry — which is the whole point of the arm: the defect
+/// being fixed is a property of `pairs = in_f/32` against a 32-lane loop, so it only exists
+/// at `in_f = 640` (pairs 20, lanes 20-31 idle) and `in_f = 2560` (pairs 80, 3-vs-2 tail).
+/// A tiny fixture has `pairs` 1 or 2 and cannot reach either shape; both are gated here.
+///
+/// Three claims, in ascending strength:
+///
+/// 1. **`(g=32, rows=4)` is BIT-IDENTICAL to the shipped v3 / gufuse kernels.** The
+///    sub-warp form degenerates to their exact program at that shape (same per-lane pair
+///    set, same 5-step tree, same write lane), so this is a byte compare, not a tolerance.
+///    It is what makes the seam a rollback rather than a rewrite, and it is the arm that
+///    would catch a per-row expression drift introduced while restructuring.
+/// 2. **Every other shape is within the sel oracle's accumulation-class tolerance
+///    (1e-5 rel) of the HOST DECODER CHAIN** (`dsv4::dequant_nvfp4_expert` + host f32
+///    matvec), the same reference and the same bound `gate_nvfp4_sel_matvec` holds v1/v2/v3
+///    to. Those shapes DO change the order the pairs are summed in — a lane chains several
+///    pairs and the tree is shallower — so bit-identity is not the right claim and asserting
+///    it would be a lie that happened to pass at some shapes.
+/// 3. **The fusion property survives the reshape:** `gu_g` is bit-identical to
+///    `sel_g` gate + `sel_g` up + `silu_mul` at the SAME `(g, rows)`, with the count-gated
+///    pack twin and the slot->token verify merge included.
+///
+/// Same hostile inputs as the shipped arm: planted modelopt NaN scale bytes (0x7F/0xFF ->
+/// 0.0), mixed pow2 / non-pow2 (the real mint's amax class) macros, a DUPLICATE expert in
+/// `sel`, and both `x_stride` modes (shared gate/up row, per-slot down rows).
+pub fn gate_nvfp4_sel_group(e: &Engine) -> Res<String> {
+    let saved = sel_group_spec();
+    let out = gate_nvfp4_sel_group_inner(e);
+    // Restore on BOTH paths: a gate arm that leaks a seam leaves every later arm measuring
+    // a shape nobody asked for (the seam_state save/restore lesson).
+    set_sel_group(&saved);
+    set_sel_v3(SEL_V3_DEFAULT);
+    out
+}
+
+fn gate_nvfp4_sel_group_inner(e: &Engine) -> Res<String> {
+    let mut lcg = 0x2545_f491_u64; // the shipped sel arm's seed, deliberately
+    let mut next_u32 = move || -> u32 {
+        lcg = lcg
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (lcg >> 33) as u32
+    };
+    let macros = [
+        1.0f32,
+        0.5,
+        5.9945243e-5, // the measured non-pow2 mint class
+        2.0,
+        0.25,
+        3.7e-3,
+        1.0,
+        8.0,
+    ];
+    let n_expert = macros.len();
+    let sel_host: Vec<i32> = vec![3, 5, 3, 0]; // duplicate slot on purpose
+    let n_sel = sel_host.len();
+    let mut worst = (0.0f32, 0.0f32);
+    let mut shapes_checked = 0usize;
+    let mut bits_checked = 0usize;
+    let mut calib: Vec<String> = Vec::new();
+
+    // ---- single-bank family (down projection AND the unfused gate/up shape) -------------
+    // (label, out_f, in_f, per-slot x rows). The two REAL rows are the launches the verify
+    // chunk actually dispatches: down out_f=hidden 2560 / in_f=ff 640, and the gate/up
+    // shape out_f=ff 640 / in_f=hidden 2560 (SEMANTICS.md "MoE (L510-527)": experts fused
+    // gate_up [512,1280,2560], down [512,2560,640]).
+    for (geom, out_f, in_f, per_slot_x) in [
+        ("down_real", 2560usize, 640usize, true),
+        ("gateup_real", 640, 2560, false),
+        ("down_tiny", 32, 32, true),
+        ("gateup_tiny", 16, 64, false),
+    ] {
+        let mut codes = vec![0u8; n_expert * out_f * in_f / 2];
+        for byte in &mut codes {
+            *byte = next_u32() as u8;
+        }
+        let mut scales = vec![0u8; n_expert * out_f * in_f / 16];
+        for byte in &mut scales {
+            *byte = (next_u32() as u8) & 0xBF; // mag < 0x40 keeps magnitudes tame
+        }
+        scales[0] = 0x7F; // modelopt NaN code -> 0.0
+        scales[3] = 0xFF; // signed NaN code -> 0.0 too
+        let x_stride = if per_slot_x { in_f } else { 0 };
+        let x_rows = if per_slot_x { n_sel } else { 1 };
+        let x_host: Vec<f32> = (0..x_rows * in_f)
+            .map(|_| (next_u32() % 2000) as f32 / 1000.0 - 1.0)
+            .collect();
+        let codes_dev = e.htod_bytes(&codes)?;
+        let scales_dev = e.htod_bytes(&scales)?;
+        let macros_dev = e.htod(&macros)?;
+        let sel_dev = e.htod_i32(&sel_host)?;
+        let x_dev = e.htod(&x_host)?;
+        let run = |spec: &str| -> Res<Vec<f32>> {
+            set_sel_group(spec);
+            let mut y = e.uninit(n_sel * out_f)?;
+            launch_nvfp4_sel_matvec(
+                e,
+                &codes_dev,
+                &scales_dev,
+                &macros_dev,
+                &sel_dev,
+                &x_dev,
+                &mut y,
+                n_sel,
+                in_f,
+                out_f,
+                x_stride,
+            )?;
+            e.dtoh(&y)
+        };
+        // The shipped arm (seam OFF) and the host reference, built once per geometry. The
+        // shipped arm is not just a bit-identity control: its OWN deviation from the host
+        // chain is this geometry's calibration (see `class_tol` below).
+        let shipped = run("off")?;
+        let wbytes = out_f * in_f / 2;
+        let sbytes = out_f * in_f / 16;
+        let mut want = vec![0.0f32; n_sel * out_f];
+        for (slot, &expert) in sel_host.iter().enumerate() {
+            let expert = expert as usize;
+            let w = memra_gguf::dsv4::dequant_nvfp4_expert(
+                &codes[expert * wbytes..(expert + 1) * wbytes],
+                &scales[expert * sbytes..(expert + 1) * sbytes],
+                macros[expert],
+                out_f,
+                in_f,
+            );
+            let xrow = &x_host[slot * x_stride..slot * x_stride + in_f];
+            for o in 0..out_f {
+                let mut acc = 0.0f32;
+                for i in 0..in_f {
+                    acc += w[o * in_f + i] * xrow[i];
+                }
+                want[slot * out_f + o] = acc;
+            }
+        }
+        // The SHIPPED kernel's own worst deviation from the host chain, at THIS width. This
+        // is the arm's calibration, and measuring it is load-bearing rather than tidy:
+        // `gate_nvfp4_sel_matvec`'s 1e-5 rel bound was set on TINY shapes (in_f 16-64) and
+        // does NOT transfer to the real MoE widths — a length-`in_f` f32 reduction has an
+        // order-dependent error that grows with the sum, and at in_f=640 the SHIPPED v3
+        // kernel already measures ~2.7e-5 against the exact host chain. Holding a reshaped
+        // twin to 1e-5 there would fail it for being a different (equally valid) summation
+        // order of a sum the shipped kernel cannot hold to 1e-5 either.
+        let ship_vs_host = want
+            .iter()
+            .zip(&shipped)
+            .map(|(&w, &s)| (w - s).abs() / w.abs().max(1.0))
+            .fold(0.0f32, f32::max);
+        // Same-accumulation-class bound: no worse than 4x what the kernel we ship already
+        // deviates by, with a floor so the tiny geometries (where the shipped kernel can be
+        // near-exact) do not set an unreachable bar.
+        let class_tol = (4.0 * ship_vs_host).max(1e-5);
+        calib.push(format!(
+            "{geom} ship_vs_host={ship_vs_host:.3e} tol={class_tol:.3e}"
+        ));
+        // Every shape the ladder can pin at this geometry, plus AUTO and the control.
+        // `dn:1:1` is the extreme: one output row per LANE, no shfl reduce at all — kept in
+        // the oracle because it is the arm most likely to expose an indexing error, even
+        // though its coalescing makes it a poor perf candidate.
+        for spec in [
+            "dn:32:4", "dn:auto", "dn:16:4", "dn:16:2", "dn:8:4", "dn:8:2", "dn:8:1", "dn:4:4",
+            "dn:4:2", "dn:4:1", "dn:2:4", "dn:2:2", "dn:2:1", "dn:1:1",
+        ] {
+            let Some((g, rows)) = sel_group_resolve(
+                match spec {
+                    "dn:auto" => SEL_GROUP_AUTO,
+                    _ => {
+                        let (gs, rs) = spec.trim_start_matches("dn:").split_once(':').unwrap();
+                        (gs.parse::<u32>().unwrap() << 8) | rs.parse::<u32>().unwrap()
+                    }
+                },
+                in_f,
+                out_f,
+            ) else {
+                continue; // geometry cannot tile this shape — the launcher takes v3
+            };
+            let got = run(spec)?;
+            shapes_checked += 1;
+            if (g, rows) == (32, 4) {
+                // Claim 1: the degenerate shape IS v3.
+                for (i, (&a, &b)) in shipped.iter().zip(&got).enumerate() {
+                    if a.to_bits() != b.to_bits() {
+                        return Err(format!(
+                            "sel-group oracle: {geom} g=32 rows=4 idx {i} NOT bit-identical to \
+                             the shipped v3 kernel (v3 {a} group {b}) — the sub-warp form must \
+                             degenerate to v3 exactly"
+                        )
+                        .into());
+                    }
+                }
+                bits_checked += shipped.len();
+            }
+            // Claim 2: same accumulation class as the kernel we ship. Checked BOTH ways —
+            // against the exact host chain, and against the shipped kernel's own output.
+            // The second is the one that would catch a reshape that drifted while staying
+            // coincidentally close to the reference.
+            for (i, (&w, &got)) in want.iter().zip(&got).enumerate() {
+                let abs = (w - got).abs();
+                let rel = abs / w.abs().max(1.0);
+                worst.0 = worst.0.max(abs);
+                worst.1 = worst.1.max(rel);
+                if rel > class_tol {
+                    return Err(format!(
+                        "sel-group oracle: {geom} {spec} (g={g} rows={rows}) idx {i} vs HOST \
+                         chain: want {w} got {got} (rel {rel:.3e} > tol {class_tol:.3e}, \
+                         shipped v3 itself is {ship_vs_host:.3e})"
+                    )
+                    .into());
+                }
+            }
+            for (i, (&s, &got)) in shipped.iter().zip(&got).enumerate() {
+                let rel = (s - got).abs() / s.abs().max(1.0);
+                if rel > class_tol {
+                    return Err(format!(
+                        "sel-group oracle: {geom} {spec} (g={g} rows={rows}) idx {i} vs SHIPPED \
+                         v3: v3 {s} group {got} (rel {rel:.3e} > tol {class_tol:.3e})"
+                    )
+                    .into());
+                }
+            }
+        }
+        set_sel_group("off");
+    }
+
+    // ---- fused gate+up+silu family -----------------------------------------------------
+    // Claim 3: the fusion survives the reshape. The chain arm runs the SAME (g, rows) on
+    // the single-bank kernel, so a mismatch is the fusion breaking, not the shape.
+    for (geom, ff, in_f) in [("gu_real", 640usize, 2560usize), ("gu_tiny", 16, 64)] {
+        let mut mk = |seed: u8| -> (Vec<u8>, Vec<u8>) {
+            let mut codes = vec![0u8; n_expert * ff * in_f / 2];
+            for byte in &mut codes {
+                *byte = (next_u32() as u8) ^ seed;
+            }
+            let mut scales = vec![0u8; n_expert * ff * in_f / 16];
+            for byte in &mut scales {
+                *byte = (next_u32() as u8) & 0xBF;
+            }
+            scales[1] = 0x7F; // NaN scale byte -> 0.0
+            (codes, scales)
+        };
+        let (g_codes, g_scales) = mk(0x00);
+        let (u_codes, u_scales) = mk(0x5A);
+        let gmac: Vec<f32> = macros.to_vec();
+        let umac: Vec<f32> = macros.iter().map(|m| m * 0.5).collect();
+        let x_host: Vec<f32> = (0..in_f)
+            .map(|_| (next_u32() % 2000) as f32 / 1000.0 - 1.0)
+            .collect();
+        let gc = e.htod_bytes(&g_codes)?;
+        let gs = e.htod_bytes(&g_scales)?;
+        let gm = e.htod(&gmac)?;
+        let uc = e.htod_bytes(&u_codes)?;
+        let us = e.htod_bytes(&u_scales)?;
+        let um = e.htod(&umac)?;
+        let sel_dev = e.htod_i32(&sel_host)?;
+        let x_dev = e.htod(&x_host)?;
+        set_sel_group("off");
+        set_sel_v3(true);
+        let shipped_fused = {
+            let mut act = e.zeros(n_sel * ff)?;
+            launch_nvfp4_sel_gu_silu(
+                e,
+                (&gc, &gs, &gm),
+                (&uc, &us, &um),
+                Some(&sel_dev),
+                0,
+                n_sel,
+                &x_dev,
+                &mut act,
+                in_f,
+                ff,
+                None,
+            )?;
+            e.dtoh(&act)?
+        };
+        for spec in ["32:4", "auto", "16:4", "16:2", "8:4", "8:1", "4:4"] {
+            let Some((g, rows)) = sel_group_resolve(
+                match spec {
+                    "auto" => SEL_GROUP_AUTO,
+                    _ => {
+                        let (gs, rs) = spec.split_once(':').unwrap();
+                        (gs.parse::<u32>().unwrap() << 8) | rs.parse::<u32>().unwrap()
+                    }
+                },
+                in_f,
+                ff,
+            ) else {
+                continue;
+            };
+            // Chain arm at the same shape: sel_g(gate) + sel_g(up) + silu_mul.
+            set_sel_group(&format!("dn:{spec}+gu:off"));
+            let mut yg = e.uninit(n_sel * ff)?;
+            let mut yu = e.uninit(n_sel * ff)?;
+            launch_nvfp4_sel_matvec(
+                e, &gc, &gs, &gm, &sel_dev, &x_dev, &mut yg, n_sel, in_f, ff, 0,
+            )?;
+            launch_nvfp4_sel_matvec(
+                e, &uc, &us, &um, &sel_dev, &x_dev, &mut yu, n_sel, in_f, ff, 0,
+            )?;
+            let mut act_chain = e.zeros(n_sel * ff)?;
+            e.silu_mul(&yg, &yu, &mut act_chain, n_sel * ff)?;
+            let chain = e.dtoh(&act_chain)?;
+            // Fused arm at the same shape.
+            set_sel_group(&format!("dn:off+gu:{spec}"));
+            let mut act_fused = e.zeros(n_sel * ff)?;
+            launch_nvfp4_sel_gu_silu(
+                e,
+                (&gc, &gs, &gm),
+                (&uc, &us, &um),
+                Some(&sel_dev),
+                0,
+                n_sel,
+                &x_dev,
+                &mut act_fused,
+                in_f,
+                ff,
+                None,
+            )?;
+            let fused = e.dtoh(&act_fused)?;
+            for (i, (&a, &b)) in chain.iter().zip(&fused).enumerate() {
+                if a.to_bits() != b.to_bits() {
+                    return Err(format!(
+                        "sel-group oracle: {geom} gu {spec} (g={g} rows={rows}) idx {i} fused \
+                         NOT bit-identical to the same-shape chain (chain {a} fused {b})"
+                    )
+                    .into());
+                }
+            }
+            bits_checked += chain.len();
+            shapes_checked += 1;
+            if (g, rows) == (32, 4) {
+                for (i, (&a, &b)) in shipped_fused.iter().zip(&fused).enumerate() {
+                    if a.to_bits() != b.to_bits() {
+                        return Err(format!(
+                            "sel-group oracle: {geom} gu g=32 rows=4 idx {i} NOT bit-identical \
+                             to the shipped gufuse kernel (gufuse {a} group {b})"
+                        )
+                        .into());
+                    }
+                }
+                bits_checked += shipped_fused.len();
+            }
+        }
+        // Count-gated pack twin and the slot->token verify merge, under AUTO — the two
+        // addressing modes the serving path uses that the plain arm above does not reach.
+        set_sel_group("dn:off+gu:auto");
+        if sel_group_resolve(SEL_GROUP_AUTO, in_f, ff).is_some() {
+            let auto_plain = {
+                let mut act = e.zeros(n_sel * ff)?;
+                launch_nvfp4_sel_gu_silu(
+                    e,
+                    (&gc, &gs, &gm),
+                    (&uc, &us, &um),
+                    Some(&sel_dev),
+                    0,
+                    n_sel,
+                    &x_dev,
+                    &mut act,
+                    in_f,
+                    ff,
+                    None,
+                )?;
+                e.dtoh(&act)?
+            };
+            let pack_bytes = tp2_pack_bytes(&sel_host[..2], &[0.5, 0.25], n_sel);
+            let pack = e.htod_bytes(&pack_bytes)?;
+            let pack_raw = {
+                let stream = e.gpu.stream();
+                pack.device_ptr(&stream).0
+            };
+            let sentinel = vec![-777.0f32; n_sel * ff];
+            let mut act_pack = e.htod(&sentinel)?;
+            launch_nvfp4_sel_gu_silu(
+                e,
+                (&gc, &gs, &gm),
+                (&uc, &us, &um),
+                None,
+                pack_raw,
+                n_sel,
+                &x_dev,
+                &mut act_pack,
+                in_f,
+                ff,
+                None,
+            )?;
+            let packed = e.dtoh(&act_pack)?;
+            for slot in 0..n_sel {
+                for o in 0..ff {
+                    let got = packed[slot * ff + o];
+                    if slot < 2 {
+                        if got.to_bits() != auto_plain[slot * ff + o].to_bits() {
+                            return Err(format!(
+                                "sel-group oracle: {geom} gu auto pack slot {slot} o {o} not \
+                                 bit-identical to the sel-array arm"
+                            )
+                            .into());
+                        }
+                    } else if got != -777.0 {
+                        return Err(format!(
+                            "sel-group oracle: {geom} gu auto pack dead slot {slot} written"
+                        )
+                        .into());
+                    }
+                }
+            }
+            // tok_map: two tokens' slots in ONE launch must bit-match per-token launches.
+            let t2 = 2usize;
+            let x2_host: Vec<f32> = (0..t2 * in_f)
+                .map(|_| (next_u32() % 2000) as f32 / 1000.0 - 1.0)
+                .collect();
+            let x2 = e.htod(&x2_host)?;
+            let tok_host: Vec<i32> = (0..n_sel).map(|s| (s % t2) as i32).collect();
+            let tokm = e.htod_i32(&tok_host)?;
+            let mut act_map = e.zeros(n_sel * ff)?;
+            launch_nvfp4_sel_gu_silu(
+                e,
+                (&gc, &gs, &gm),
+                (&uc, &us, &um),
+                Some(&sel_dev),
+                0,
+                n_sel,
+                &x2,
+                &mut act_map,
+                in_f,
+                ff,
+                Some((&tokm, in_f)),
+            )?;
+            let mapped = e.dtoh(&act_map)?;
+            for tok in 0..t2 {
+                let slots: Vec<usize> = (0..n_sel).filter(|s| s % t2 == tok).collect();
+                let sel_tok: Vec<i32> = slots.iter().map(|&s| sel_host[s]).collect();
+                let sel_tok_dev = e.htod_i32(&sel_tok)?;
+                let xrow = e.htod(&x2_host[tok * in_f..(tok + 1) * in_f])?;
+                let mut act_tok = e.zeros(sel_tok.len() * ff)?;
+                launch_nvfp4_sel_gu_silu(
+                    e,
+                    (&gc, &gs, &gm),
+                    (&uc, &us, &um),
+                    Some(&sel_tok_dev),
+                    0,
+                    sel_tok.len(),
+                    &xrow,
+                    &mut act_tok,
+                    in_f,
+                    ff,
+                    None,
+                )?;
+                let want = e.dtoh(&act_tok)?;
+                for (local, &slot) in slots.iter().enumerate() {
+                    for o in 0..ff {
+                        let a = mapped[slot * ff + o];
+                        let b = want[local * ff + o];
+                        if a.to_bits() != b.to_bits() {
+                            return Err(format!(
+                                "sel-group oracle: {geom} gu auto tok_map slot {slot} o {o} not \
+                                 bit-identical (map {a} per-token {b})"
+                            )
+                            .into());
+                        }
+                    }
+                }
+            }
+            bits_checked += auto_plain.len() + mapped.len();
+        }
+        set_sel_group("off");
+    }
+
+    Ok(format!(
+        "nvfp4-sel-GROUP kernel oracle: {shapes_checked} (geometry, shape) cells over REAL \
+         MoE geometry (down 2560x640 pairs=20, gate_up 640x2560 pairs=80) + tiny, worst abs \
+         {:.3e} rel {:.3e} vs the host decoder chain; (g=32,rows=4) BIT-IDENTICAL to the \
+         shipped v3 and gufuse kernels and every shape's fused arm BIT-IDENTICAL to its \
+         same-shape chain ({bits_checked} f32 byte-compared), incl. the count-gated pack \
+         twin + the tok_map verify merge; NaN scales + non-pow2 macros + duplicate slots; \
+         per-geometry class calibration [{}]",
+        worst.0,
+        worst.1,
+        calib.join("; ")
     ))
 }
 
@@ -19083,5 +20038,125 @@ impl Qwen4ExpGpu {
         ws.put_f32("join.out", mo);
         put_inject(ws, injm);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod sel_group_tests {
+    use super::*;
+
+    /// The seam lives in process-global atomics and `cargo test` runs these in parallel
+    /// THREADS of one process, so every test that mutates it takes this lock. Without it the
+    /// mutating tests race and the suite fails intermittently on whichever one loses.
+    static SEAM: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The AUTO rule at the SERVING geometry, pinned as a test because it is the shape the
+    /// seam ships and it was WRONG once: an earlier rule derived `rows` from `g` to hold
+    /// rows-per-warp at 4, and the measured ladder showed rows-per-LANE is what pays
+    /// (DOWNSEL.md section 4). A regression here is a silent shape change.
+    #[test]
+    fn auto_resolves_the_measured_serving_shapes() {
+        // down: out_f = hidden 2560, in_f = expert ff 640 -> pairs 20 -> g 4 (largest power
+        // of two dividing 20), rows 4 -> rows_per_warp 32, grid.x 80.
+        assert_eq!(sel_group_resolve(SEL_GROUP_AUTO, 640, 2560), Some((4, 4)));
+        // gate+up: out_f = ff 640, in_f = hidden 2560 -> pairs 80 -> g 16, rows 4 ->
+        // rows_per_warp 8, grid.x 80.
+        assert_eq!(sel_group_resolve(SEL_GROUP_AUTO, 2560, 640), Some((16, 4)));
+    }
+
+    #[test]
+    fn off_and_odd_in_f_take_the_shipped_kernel() {
+        assert_eq!(sel_group_resolve(SEL_GROUP_OFF, 640, 2560), None);
+        // in_f % 32 != 0 is the v3 guard too; the group form must not claim it.
+        assert_eq!(sel_group_resolve(SEL_GROUP_AUTO, 48, 2560), None);
+    }
+
+    /// AUTO must never hand back a shape the launcher cannot tile exactly: a ragged tile puts
+    /// live and dead lanes in the same `__shfl_down_sync`. It steps `rows` down before giving
+    /// up, and gives up rather than clamping.
+    #[test]
+    fn auto_backs_off_rows_then_refuses_rather_than_tiling_raggedly() {
+        // pairs 2 -> g 2 -> 16 groups. out_f 32 admits rows 2 (rpw 32); rows 4 (rpw 64) does
+        // not divide 32, so AUTO must step down instead of returning an untileable shape.
+        assert_eq!(sel_group_resolve(SEL_GROUP_AUTO, 64, 32), Some((2, 2)));
+        // out_f 24 divides by neither 64, 32 nor 16 (rows 4/2/1 at g=2) -> refuse.
+        assert_eq!(sel_group_resolve(SEL_GROUP_AUTO, 64, 24), None);
+        for &(in_f, out_f) in &[(640usize, 2560usize), (2560, 640), (32, 32), (64, 16)] {
+            let (g, rows) = sel_group_resolve(SEL_GROUP_AUTO, in_f, out_f)
+                .unwrap_or_else(|| panic!("auto refused {in_f}x{out_f}"));
+            assert_eq!(
+                out_f % ((32 / g) * rows),
+                0,
+                "{in_f}x{out_f} -> g{g} rows{rows}"
+            );
+        }
+    }
+
+    /// An explicit pin is honoured verbatim (the A/B ladder depends on it) but still refuses a
+    /// geometry it cannot tile, so a mis-set cell falls back to the shipped kernel loudly
+    /// rather than launching a ragged grid.
+    #[test]
+    fn explicit_pins_are_verbatim_and_still_tile_checked() {
+        let _g = SEAM.lock().unwrap();
+        assert!(set_sel_group("dn:8:1+gu:16:4"));
+        assert_eq!(sel_group_resolve(sel_group_dn(), 640, 2560), Some((8, 1)));
+        assert_eq!(sel_group_resolve(sel_group_gu(), 2560, 640), Some((16, 4)));
+        // g=1 rows=4 -> rows_per_warp 128. Both serving widths are multiples of 128 and
+        // tile fine (2560 = 20x128, 640 = 5x128); an out_f that is NOT must refuse.
+        assert!(set_sel_group("dn:1:4"));
+        assert_eq!(sel_group_resolve(sel_group_dn(), 2560, 640), Some((1, 4)));
+        assert_eq!(sel_group_resolve(sel_group_dn(), 2560, 96), None);
+        set_sel_group("off");
+    }
+
+    /// A malformed spec must APPLY NOTHING and report false. If it half-applied or reported
+    /// true, a typo in a cell script would silently measure the wrong arm — the failure the
+    /// seam grammar exists to make impossible.
+    #[test]
+    fn malformed_specs_apply_nothing_and_refuse() {
+        let _g = SEAM.lock().unwrap();
+        assert!(set_sel_group("dn:4:4+gu:16:4"));
+        let before = sel_group_spec();
+        for bad in [
+            "dn:3:4",      // g not a power of two
+            "dn:4:3",      // rows not in {1,2,4}
+            "dn:64:4",     // g > 32
+            "dn:4",        // no rows
+            "xx:4:4",      // unknown family
+            "dn:4:4+xx:1", // one good half, one bad -> still nothing applied
+            "+",
+        ] {
+            assert!(!set_sel_group(bad), "{bad:?} was accepted");
+            assert_eq!(
+                sel_group_spec(),
+                before,
+                "{bad:?} mutated state while refusing"
+            );
+        }
+        set_sel_group("off");
+    }
+
+    /// `seam_state` has to answer for this seam even though it is shape-valued: the shared
+    /// `--ladder-ab-seam` harness restores the entry arm ONLY when it answers, and a `None`
+    /// there leaves the ON arm armed for every number after the A/B block.
+    #[test]
+    fn seam_round_trips_through_the_boolean_harness() {
+        let _g = SEAM.lock().unwrap();
+        set_sel_group("off");
+        assert_eq!(seam_state("selgroup"), Some(false));
+        assert!(set_seam("selgroup", true, None));
+        assert_eq!(seam_state("selgroup"), Some(true));
+        assert_eq!(sel_group_spec(), "dn:auto+gu:auto");
+        assert!(set_seam("selgroup", false, None));
+        assert_eq!(seam_state("selgroup"), Some(false));
+        assert_eq!(sel_group_spec(), "dn:off+gu:off");
+        // One family armed is still "armed", or an A/B that moved only the down half would
+        // restore to OFF and lose the entry state.
+        assert!(set_sel_group("dn:4:4+gu:off"));
+        assert_eq!(seam_state("selgroup"), Some(true));
+        set_sel_group("off");
+        // Listed name and dispatch arm agree (the drift `seam_names` cannot detect alone).
+        assert!(seam_names().contains(&"selgroup"));
+        assert!(seam_exists("selgroup"));
     }
 }
