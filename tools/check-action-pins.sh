@@ -4,6 +4,13 @@
 set -euo pipefail
 
 bad=0
+scan_uses() {
+  if command -v rg >/dev/null 2>&1; then
+    rg -n '^[[:space:]]*- uses:' .github/workflows
+  else
+    grep -RnHE '^[[:space:]]*- uses:' .github/workflows
+  fi
+}
 while IFS=: read -r file line rest; do
   ref=${rest#*uses: }
   ref=${ref%% *}
@@ -14,5 +21,5 @@ while IFS=: read -r file line rest; do
     printf '%s:%s: external action is not pinned to a full commit SHA: %s\n' "$file" "$line" "$ref" >&2
     bad=1
   fi
-done < <(rg -n '^[[:space:]]*- uses:' .github/workflows)
+done < <(scan_uses)
 exit "$bad"
