@@ -13,6 +13,15 @@ fn bf16_bytes(values: impl IntoIterator<Item = f32>) -> Vec<u8> {
     bytes
 }
 
+fn signed_unit(seed: u64) -> f32 {
+    let mut mixed = seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    mixed ^= mixed >> 31;
+    let unit = (mixed >> 40) as f32 / (1u32 << 24) as f32;
+    unit - 0.5
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let width = std::env::args()
         .nth(1)
@@ -89,14 +98,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // program; TP changes only the cross-half association, so this is a tolerance gate.
     let (in_f, out_f) = (1536usize, 4096usize);
     let half = in_f / 2;
-    let weight_bytes = bf16_bytes((0..out_f).flat_map(|row| {
-        (0..in_f).map(move |col| {
-            let code = ((row * 17 + col * 13) % 29) as f32 - 14.0;
-            code / 64.0
-        })
-    }));
+    let weight_bytes =
+        bf16_bytes((0..out_f).flat_map(|row| {
+            (0..in_f).map(move |col| signed_unit((row * in_f + col) as u64) * 0.5)
+        }));
     let input = (0..in_f)
-        .map(|index| (((index * 11) % 31) as f32 - 15.0) / 32.0)
+        .map(|index| signed_unit(index as u64 ^ 0xd1b5_4a32_d192_ed03))
         .collect::<Vec<_>>();
     let weight0 = rank0.htod_bytes(&weight_bytes)?;
     let weight1 = rank1.htod_bytes(&weight_bytes)?;
