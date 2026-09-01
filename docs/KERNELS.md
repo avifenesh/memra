@@ -1,7 +1,7 @@
 # Kernel inventory
 
-Derived from code (build.rs, cu/, FFI shims) 2026-09-01 **at commit 65becac7a5** — line
-references resolve against that commit (`git show 65becac7a5:<path>`), not necessarily HEAD.
+Derived from code (build.rs, cu/, FFI shims) 2026-09-01 **at commit b1a4b5965f** — line
+references resolve against that commit (`git show b1a4b5965f:<path>`), not necessarily HEAD.
 Every row comes from a grep or a read; UNKNOWN means not determinable from the code without
 deeper tracing — never guessed. Known drift at merge time (v0.100.0 train, 1e292853de):
 kernels.cu 71→73 entry symbols, qmatvec.cu 251→252; other per-file counts unchanged.
@@ -139,8 +139,8 @@ DeltaNet scan; all f32" (hybrid.cu:1-3).
 ### cu/qmatvec.cu — 345 symbols (fatbin `MEMRA_QMATVEC_FATBIN`)
 
 Count basis, stated because BOTH merge parents moved it and neither number survives the union:
-345 is a MEASURED `grep -c 'extern "C" __global__'` on this file at commit 65becac7a5 —
-343 at e208899d plus
+345 is a MEASURED `grep -c 'extern "C" __global__'` on this file in the
+lane/hy3-device-token-20260901 working tree — 343 at e208899d plus
 `matvec_bf16_f32acc_x4_range` and `quantize_q8_1_mirror_routes` below. The prior
 321 count was itself measured after the
 glm5 door-r/dedup merge, but later merged kernels moved the file again. This file is now measured;
