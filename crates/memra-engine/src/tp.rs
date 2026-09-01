@@ -926,6 +926,75 @@ pub fn auto_parallel_devices() -> Result<Option<Vec<usize>>, String> {
     )
 }
 
+fn parse_parallel_ep_root_experts(value: Option<&str>) -> Result<Option<usize>, String> {
+    match value {
+        None | Some("") | Some("0") => Ok(None),
+        Some(value) => value
+            .parse::<usize>()
+            .ok()
+            .filter(|count| *count > 0)
+            .map(Some)
+            .ok_or_else(|| {
+                format!(
+                    "MEMRA_PARALLEL_EP_ROOT_EXPERTS={value:?} is invalid; expected a positive \
+                     integer"
+                )
+            }),
+    }
+}
+
+pub(crate) fn parallel_ep_root_experts() -> Result<Option<usize>, String> {
+    parse_parallel_ep_root_experts(
+        std::env::var("MEMRA_PARALLEL_EP_ROOT_EXPERTS")
+            .ok()
+            .as_deref(),
+    )
+}
+
+pub(crate) fn parallel_ep_expert_ranges(
+    expert_count: usize,
+    world: usize,
+    root_experts: Option<usize>,
+) -> Result<Vec<Range<usize>>, String> {
+    if world < 2 || expert_count < world {
+        return Err(format!(
+            "parallel EP ranges require at least one expert on each of {world} ranks, got \
+             {expert_count} experts"
+        ));
+    }
+    let Some(root_experts) = root_experts else {
+        if !expert_count.is_multiple_of(world) {
+            return Err(format!(
+                "parallel EP even split requires {expert_count} experts divisible by {world}"
+            ));
+        }
+        let per_rank = expert_count / world;
+        return Ok((0..world)
+            .map(|rank| rank * per_rank..(rank + 1) * per_rank)
+            .collect());
+    };
+    if root_experts >= expert_count || expert_count - root_experts < world - 1 {
+        return Err(format!(
+            "MEMRA_PARALLEL_EP_ROOT_EXPERTS={root_experts} leaves fewer than one expert on \
+             each of {} peer ranks for {expert_count} total experts",
+            world - 1,
+        ));
+    }
+    let peer_total = expert_count - root_experts;
+    let peer_base = peer_total / (world - 1);
+    let peer_extra = peer_total % (world - 1);
+    let mut ranges = Vec::with_capacity(world);
+    ranges.push(0..root_experts);
+    let mut start = root_experts;
+    for peer in 0..world - 1 {
+        let count = peer_base + usize::from(peer < peer_extra);
+        ranges.push(start..start + count);
+        start += count;
+    }
+    debug_assert_eq!(start, expert_count);
+    Ok(ranges)
+}
+
 fn parse_parallel_ep_device_router(value: Option<&str>) -> Result<bool, String> {
     match value {
         None | Some("") | Some("0") => Ok(false),
@@ -10096,6 +10165,15 @@ pub struct ResidentNvfp4ExpertParallel {
     device_workspace: std::sync::Mutex<Option<Nvfp4EpDeviceWorkspace>>,
 }
 
+impl ResidentNvfp4ExpertParallel {
+    pub fn expert_ranges(&self) -> Vec<Range<usize>> {
+        self.ranks
+            .iter()
+            .map(|rank| rank.expert_range.clone())
+            .collect()
+    }
+}
+
 fn nvfp4_repack_matrix(matrix: Nvfp4BlockMatrix<'_>) -> Vec<u8> {
     memra_gguf::nvfp4_repack::repack_modelopt_to_gguf(
         matrix.codes,
@@ -10994,21 +11072,15 @@ impl TpE4m3HostBounce {
         let macros_up = macros(up)?;
         let macros_down = macros(down)?;
         let world = self.ranks.len();
-        if !gate.n_expert.is_multiple_of(world) {
-            return Err(format!(
-                "NVFP4 EP normalized expert count {} is not divisible by {world} ranks",
-                gate.n_expert
-            )
-            .into());
-        }
-        let experts_per_rank = gate.n_expert / world;
+        let expert_ranges =
+            parallel_ep_expert_ranges(gate.n_expert, world, parallel_ep_root_experts()?)?;
         let mut ranks = Vec::with_capacity(world);
-        for (rank_index, engine) in self.ranks.iter().enumerate() {
+        for (engine, expert_range) in self.ranks.iter().zip(expert_ranges) {
             let _main = engine.gpu.enter_main()?;
-            let expert_range = rank_index * experts_per_rank..(rank_index + 1) * experts_per_rank;
-            let mut gate_host = Vec::with_capacity(experts_per_rank * gate.expert_stride);
-            let mut up_host = Vec::with_capacity(experts_per_rank * up.expert_stride);
-            let mut down_host = Vec::with_capacity(experts_per_rank * down.expert_stride);
+            let local_experts = expert_range.len();
+            let mut gate_host = Vec::with_capacity(local_experts * gate.expert_stride);
+            let mut up_host = Vec::with_capacity(local_experts * up.expert_stride);
+            let mut down_host = Vec::with_capacity(local_experts * down.expert_stride);
             for expert in expert_range.clone() {
                 gate_host.extend_from_slice(gate.expert_bytes(expert));
                 up_host.extend_from_slice(up.expert_bytes(expert));
@@ -15865,6 +15937,35 @@ mod tests {
         assert!(!parse_parallel_ep_device_router(Some("0")).unwrap());
         assert!(parse_parallel_ep_device_router(Some("1")).unwrap());
         assert!(parse_parallel_ep_device_router(Some("true")).is_err());
+    }
+
+    #[test]
+    fn automatic_ep_root_expert_ranges_are_contiguous_and_fail_closed() {
+        assert_eq!(super::parse_parallel_ep_root_experts(None).unwrap(), None);
+        assert_eq!(
+            super::parse_parallel_ep_root_experts(Some("1")).unwrap(),
+            Some(1)
+        );
+        for invalid in ["", "0", "-1", "all"] {
+            if invalid.is_empty() || invalid == "0" {
+                assert_eq!(
+                    super::parse_parallel_ep_root_experts(Some(invalid)).unwrap(),
+                    None
+                );
+            } else {
+                assert!(super::parse_parallel_ep_root_experts(Some(invalid)).is_err());
+            }
+        }
+        assert_eq!(
+            super::parallel_ep_expert_ranges(192, 4, None).unwrap(),
+            vec![0..48, 48..96, 96..144, 144..192]
+        );
+        assert_eq!(
+            super::parallel_ep_expert_ranges(192, 4, Some(1)).unwrap(),
+            vec![0..1, 1..65, 65..129, 129..192]
+        );
+        assert!(super::parallel_ep_expert_ranges(3, 4, Some(1)).is_err());
+        assert!(super::parallel_ep_expert_ranges(192, 4, Some(190)).is_err());
     }
 
     #[test]
