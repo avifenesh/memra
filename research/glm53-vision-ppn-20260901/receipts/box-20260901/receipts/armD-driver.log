@@ -1,0 +1,48 @@
+arm D: boot-level interleave, 3 reps per arm, one contiguous window
+[boot] arm=fix rep=1 nonce=fix-r1-163310-617345 pid=617690
+[fixtures] /data/glm53/vision-battery/fixtures (explicit) — 5 pinned, shapes asserted, codes=['ZK5465', 'QV4655', 'XR0818']
+10-cant-hallucinate-greedy: 200 codes=3/3 PASS head='ZK5465\n\nQV4655\n\nXR0818'
+11-cant-hallucinate-sampled-vendor-default: 200 codes=3/3 PASS head='The text in the image reads:\n\n**ZK5465**\n\n**QV4655**\n\n**XR0818**\n\nThes'
+20-neg-literal-placeholder: 200 plain_text=True
+21-neg-video-url: 400 named_refusal=True err={"message": "user message: glm5 video input is not served (tensor census only; image input is the supported su
+23-neg-fakedpad-with-image: 400 named_refusal=True err={"message": "prompt carries 2 glm5 image run(s) but the request has 1 unit(s) \u2014 literal <|image|> tokens 
+40-text-greedy: 200 chars=1983 sha256=80e1184c61f977be
+41-decode-rows[fix nonce=fix-r1-163310-617345]: [49.6] median=49.6 spec_engaged=True
+VISION-PPN-FIX PASS
+[boot] arm=text-only rep=1 nonce=text-only-r1-163420-617345 pid=618423
+40-text-greedy: 200 chars=1983 sha256=80e1184c61f977be
+41-decode-rows[text-only nonce=text-only-r1-163420-617345]: [53.25] median=53.25 spec_engaged=True
+VISION-PPN-TEXT-ONLY PASS
+[boot] arm=fix rep=2 nonce=fix-r2-163518-617345 pid=619150
+40-text-greedy: 200 chars=1983 sha256=80e1184c61f977be
+41-decode-rows[text-only nonce=fix-r2-163518-617345]: [49.09] median=49.09 spec_engaged=True
+VISION-PPN-TEXT-ONLY PASS
+[boot] arm=text-only rep=2 nonce=text-only-r2-163620-617345 pid=619891
+40-text-greedy: 200 chars=1983 sha256=80e1184c61f977be
+41-decode-rows[text-only nonce=text-only-r2-163620-617345]: [51.49] median=51.49 spec_engaged=True
+VISION-PPN-TEXT-ONLY PASS
+[boot] arm=fix rep=3 nonce=fix-r3-163722-617345 pid=620636
+40-text-greedy: 200 chars=1983 sha256=80e1184c61f977be
+41-decode-rows[text-only nonce=fix-r3-163722-617345]: [51.16] median=51.16 spec_engaged=True
+VISION-PPN-TEXT-ONLY PASS
+[boot] arm=text-only rep=3 nonce=text-only-r3-163823-617345 pid=621376
+40-text-greedy: 200 chars=1983 sha256=80e1184c61f977be
+41-decode-rows[text-only nonce=text-only-r3-163823-617345]: [50.05] median=50.05 spec_engaged=True
+VISION-PPN-TEXT-ONLY PASS
+arm D — no decode tax, boot-level interleaved (vendor-default sampled, tok/s from the
+server's own usage.elapsed_s). Rows in decode-rows.jsonl carry arm + rep + boot nonce.
+
+system_fingerprint across all rows: {'memra-0.123.0-efb0b421211c'}
+fix        n=3 rows=[49.6, 49.09, 51.16] median=49.60 min=49.09 max=51.16 spec_engaged=True
+text-only  n=3 rows=[53.25, 51.49, 50.05] median=51.49 min=50.05 max=53.25 spec_engaged=True
+
+vision-armed median 49.60 vs text-only median 51.49 -> -3.67%
+within-arm spread: vision 4.17%, text-only 6.21%
+
+VERDICT: NO TAX — the between-arm gap sits inside the arms' own spread. Read this as
+'no measurable tax at this rep count', never as a performance claim: there is also no
+MECHANISM for one (publication is a single host round trip per SESSION, in prefill; a
+text request never builds an overlay and decode never touches one).
+
+banked: receipts/armD (boot logs, per-boot probe receipts, decode-rows.jsonl, ARM-D-VERDICT.txt)
+ARMD_EXIT=0

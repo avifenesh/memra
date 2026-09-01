@@ -1,0 +1,77 @@
+{
+ "arm": "text-only",
+ "base": "http://127.0.0.1:18893",
+ "model": "zai/glm-5.3-flash",
+ "boot_nonce": "text-only-r3-163823-617345",
+ "fixtures": null,
+ "text_greedy_sha256": "80e1184c61f977be9d204aa09e5d3955424fe3ce271c4ebcbaa683b1dc35f8b2",
+ "checks": {
+  "40-text-greedy-200": true,
+  "41-decode-rows-served": true,
+  "41-spec-engaged": true
+ },
+ "receipts": {
+  "40-text-greedy": {
+   "status": 200,
+   "response": {
+    "object": "chat.completion",
+    "model": "zai/glm-5.3-flash",
+    "choices": [
+     {
+      "index": 0,
+      "message": {
+       "role": "assistant",
+       "content": "## Why Publication Across a Stage Boundary Is Necessary\n\nIn a pipeline-parallel server, work is split into stages that typically execute on different threads, and often on different CPU cores. When stage A finishes filling a buffer and stage B begins consuming it, the handoff is not just a logical transfer of ownership \u2014 it is a *memory visibility* event. Stage A must explicitly **publish** the buffer (via a memory barrier, atomic store with release semantics, or a lock) before stage B reads it, because without that synchronization, stage B has no guarantee it will see the data stage A wrote.\n\n### The hardware reason\n\nModern CPUs and compilers reorder and cache memory operations. A store issued by stage A's core may sit in that core's private store buffer or cache, invisible to stage B's core, even though stage A's code appears to have completed the write. Similarly, stage B's core may have prefetched the buffer into cache earlier and serve stale values from it. Only a properly ordered release/acquire pair (or equivalent) forces the hardware to make stage A's writes globally visible before stage B observes the \"ready\" flag.\n\n### A concrete example\n\nConsider a two-stage image pipeline:\n\n- **Stage A (thread 1):** decodes a JPEG into a shared buffer `buf[4096]`, then sets `ready = true`.\n- **Stage B (thread 2):** spins until `ready == true`, then reads `buf` to apply a filter.\n\nNaive code looks like this:\n\n```c\n// Stage A\nfill(buf);\nready = true;          // plain store\n\n// Stage B\nwhile (!ready) {}      // plain load\nprocess(buf);\n```\n\nThis is broken. The compiler may reorder `ready = true` before the `fill(buf)` loop, or the CPU may commit the flag store while `buf`'s writes are still buffered. Stage B can then observe `ready == true` while reading *partially filled or entirely stale* buffer contents \u2014 producing corrupted output pixels that are maddeningly intermittent, since the race depends on timing, cache state, and compiler optimization level.\n\n",
+       "reasoning": "Explain memory visibility/consistency: pipeline stages may run on different threads/cores/processors; writes must be made visible (memory barrier, flush, publish) before downstream reads. Concrete example: two-stage pipeline, stage A computes into buffer, stage B reads. Without publication, reordering/caching means B sees stale or partial data. ~400 words.",
+       "reasoning_details": [
+        {
+         "type": "reasoning.text",
+         "text": "Explain memory visibility/consistency: pipeline stages may run on different threads/cores/processors; writes must be made visible (memory barrier, flush, publish) before downstream reads. Concrete example: two-stage pipeline, stage A computes into buffer, stage B reads. Without publication, reordering/caching means B sees stale or partial data. ~400 words."
+        }
+       ]
+      },
+      "finish_reason": "length"
+     }
+    ],
+    "usage": {
+     "prompt_tokens": 47,
+     "completion_tokens": 512,
+     "total_tokens": 559,
+     "prompt_tokens_details": {
+      "cached_tokens": 0
+     },
+     "elapsed_s": 9.850334718,
+     "spec": {
+      "rounds": 220,
+      "drafted": 472,
+      "accepted": 293,
+      "acceptance_rate": 0.6207627118644068
+     }
+    },
+    "id": "chatcmpl-2616c3f4a8002ee46d45cbf49c07488f",
+    "created": 1788280742,
+    "system_fingerprint": "memra-0.123.0-efb0b421211c"
+   }
+  },
+  "41-decode-rows": [
+   {
+    "arm": "text-only",
+    "rep": 0,
+    "boot_nonce": "text-only-r3-163823-617345",
+    "utc": "2026-09-01T16:39:22Z",
+    "status": 200,
+    "completion_tokens": 512,
+    "elapsed_s": 10.230342745,
+    "tok_s": 50.05,
+    "spec": {
+     "rounds": 247,
+     "drafted": 461,
+     "accepted": 264,
+     "acceptance_rate": 0.5726681127982647
+    },
+    "finish_reason": "length",
+    "fingerprint": "memra-0.123.0-efb0b421211c"
+   }
+  ]
+ }
+}
