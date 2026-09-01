@@ -2480,9 +2480,10 @@ impl HcTapSink {
 ///   buffers are mutated IN PLACE by the verify pass and have no position index to truncate. C.2.
 ///   (We alloc fresh + memcpy_dtod. NOTE, corrected memra-next#23: the parenthetical here used
 ///   to justify that with "CudaSlice::clone is an Arc refcount, NOT a buffer copy", which is
-///   false in cudarc 0.19.9 — `Clone` is `try_clone().unwrap()` = alloc + D2D copy, whose only
-///   real difference is that it PANICS instead of returning Err. The explicit copy is still the
-///   right call here; the reason is fallibility, not aliasing. Genuine aliasing needs an Arc.)
+///   false in cudarc 0.19.9 — `Clone` is `try_clone().unwrap()` = alloc + D2D copy. The explicit
+///   copy is still the right call here, for two reasons that are NOT aliasing: it is fallible
+///   rather than panicking, and it places the copy on the calling engine's current stream instead
+///   of the source slice's. Genuine aliasing needs an `Arc<CudaSlice<T>>`.)
 ///
 /// IT COVERS TWO OF THE CACHE'S FOUR STATE PLANES, AND THAT IS A KNOWN HOLE
 /// (lane/prefix-restore-toolcall, 2026-08-28). `Cache` also has `tp_kv` (recorded here as

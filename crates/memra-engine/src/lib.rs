@@ -5756,11 +5756,20 @@ impl Engine {
     /// CORRECTION (memra-next#23, verified against cudarc 0.19.9): this comment used to say
     /// "`CudaSlice::clone()` only bumps a refcount and would alias the live buffer". That is
     /// FALSE and it propagated — `impl Clone for CudaSlice` is `try_clone().unwrap()`, and
-    /// `try_clone` is `self.stream.clone_dtod(self)`, so a plain `.clone()` already performs
-    /// exactly this allocation and copy, differing only in that its `unwrap` PANICS on failure
-    /// instead of returning an Err (fatal in the GPU worker thread). Prefer this method, or
-    /// `try_clone()`, over `.clone()` for that reason — not because `.clone()` aliases. Code
-    /// that wants real aliasing needs an `Arc<CudaSlice<T>>` (see `vision::EmbedOverlay::rows`).
+    /// `try_clone` is `self.stream.clone_dtod(self)`, so a plain `.clone()` already allocates and
+    /// copies. Code that wants real aliasing needs an `Arc<CudaSlice<T>>` (see
+    /// `vision::EmbedOverlay::rows`).
+    ///
+    /// THE TWO ARE NOT INTERCHANGEABLE, AND THE DIFFERENCE IS NOT ONLY FALLIBILITY — a second
+    /// correction, from the peer review of that first one, because getting this backwards is how
+    /// a residency bug gets written. `CudaSlice::clone()` allocates on the SLICE's own stream, so
+    /// the copy lands in the SOURCE's context. This method allocates on `self.gpu.stream()`,
+    /// which is the thread-local pp stage stream whenever a stage scope is active — so under a
+    /// stage scope THIS method is the one that lands in a foreign context. Choose by what you
+    /// need: `try_clone()` for a fallible copy that stays with the source, this method for a copy
+    /// deliberately placed on the calling engine's current stream (and check the landing context
+    /// if residency matters). Minor: cudarc's path uses an uninitialized alloc, this one
+    /// `alloc_zeros`, i.e. an extra full memset.
     pub fn clone_dtod(
         &self,
         src: &CudaSlice<f32>,

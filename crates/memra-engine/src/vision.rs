@@ -101,10 +101,15 @@ pub struct EmbedOverlay {
     /// in two comments here and one on `Engine::clone_dtod` — that `CudaSlice::clone()` bumps a
     /// refcount. It does not: cudarc 0.19.9 `impl Clone for CudaSlice` is
     /// `try_clone().unwrap()` -> `stream.clone_dtod(self)`, i.e. a full device allocation plus
-    /// D2D copy of every row, and an `unwrap` that PANICS in the GPU worker thread — which exits
-    /// the process and takes every in-flight session on the box with it. `window()` runs once
-    /// per prefill tick AND once per chunk of a chunked ppN prime, so the old code also paid
-    /// several whole-buffer copies per multi-chunk image prompt while the docs claimed zero.
+    /// D2D copy of every row, and an `unwrap` that PANICS in the GPU worker thread. Stated
+    /// precisely, because the first version of this comment overstated it: the panic is CAUGHT
+    /// (`worker.rs` wraps `run` in `catch_unwind`, marks the worker dead and respawns, reaching
+    /// `exit(EXIT_WORKER_UNRECOVERABLE)` only once respawns are exhausted), so the cost is every
+    /// IN-FLIGHT SESSION on the box plus a respawn, not necessarily immediate process death —
+    /// still an unacceptable outcome for an allocation failure that the caller is already shaped
+    /// to propagate. `window()` runs once per prefill tick AND once per chunk of a chunked ppN
+    /// prime, so the old code also paid several whole-buffer copies per multi-chunk image prompt
+    /// while the docs claimed zero.
     /// With an `Arc`, a window is a refcount bump for real, and the buffer is freed once when
     /// the last window drops.
     pub rows: Arc<CudaSlice<f32>>,
@@ -133,24 +138,43 @@ impl EmbedOverlay {
         rows: CudaSlice<f32>,
         spans: Vec<(usize, usize, usize)>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let ctx = rows.context().clone();
-        if ctx.cu_ctx() != e.ctx().cu_ctx() {
-            return Err(format!(
-                "vision embedding overlay refused at construction: the rows were allocated in \
-                 the CUDA context of dev{} but the caller believes it used dev{}. An ambient pp \
-                 stage-stream override redirects allocation to the stage's stream (and its \
-                 context) regardless of which engine is called, so build the overlay OUTSIDE \
-                 any stage scope",
-                ctx.ordinal(),
-                e.ctx().ordinal(),
-            )
-            .into());
-        }
+        let ctx = Self::alloc_context_of(e, &rows, "construction")?;
         Ok(Self {
             rows: Arc::new(rows),
             spans,
             ctx,
         })
+    }
+
+    /// The context `rows` were really allocated in, refusing if that is not `e`'s.
+    ///
+    /// Shared by `new` and by `new_published`'s SOURCE-side check. The message names the context
+    /// HANDLES as well as the device ordinals, because the same-device/different-context case is
+    /// real (`CudaContext::new_non_primary`, which the residency gate test uses) and an
+    /// ordinal-only message renders as "context of dev0 but the caller believes it used dev0".
+    /// It also states the ambient stage-stream override as the LIKELY cause rather than the
+    /// certain one — a second context on one device is reached other ways.
+    fn alloc_context_of(
+        e: &Engine,
+        rows: &CudaSlice<f32>,
+        site: &str,
+    ) -> Result<Arc<CudaContext>, Box<dyn std::error::Error>> {
+        let ctx = rows.context().clone();
+        if ctx.cu_ctx() != e.ctx().cu_ctx() {
+            return Err(format!(
+                "vision embedding overlay refused at {site}: the rows live in CUDA context \
+                 {:?} (dev{}) but the engine the caller passed runs in context {:?} (dev{}). \
+                 The usual cause is an ambient pp stage-stream override, which redirects \
+                 allocation to the stage's stream — and its context — regardless of which \
+                 engine is called, so build the overlay OUTSIDE any stage scope",
+                ctx.cu_ctx(),
+                ctx.ordinal(),
+                e.ctx().cu_ctx(),
+                e.ctx().ordinal(),
+            )
+            .into());
+        }
+        Ok(ctx)
     }
 
     /// The context `rows` live in.
@@ -214,8 +238,10 @@ impl EmbedOverlay {
     ///
     /// THE FREE IS ORDERED TOO — but not by what an earlier version of this comment claimed,
     /// and this is the sentence a future lane will lean on, so it is worth stating exactly.
-    /// Published rows are freed with `free_async` ON THEIR ALLOCATION STREAM (the intake
-    /// engine's ambient stream), while the splice reads them on pp stage 0's STAGE stream:
+    /// Published rows are freed on THEIR ALLOCATION STREAM (the intake engine's ambient stream)
+    /// — `free_async` on cudarc's async-alloc branch, and `synchronize` + `free_sync` on the
+    /// other, which likewise touches only the allocation stream — while the splice reads them on
+    /// pp stage 0's STAGE stream:
     /// two streams, one context. What orders the reads before the free is (a) the pipeline
     /// chain itself — stage 0 feeds stage 1 feeds ... feeds the last stage — and (b) the
     /// host-synchronizing `dtoh` every prime call ends with in `hyper_prime_tail`, which
@@ -228,6 +254,7 @@ impl EmbedOverlay {
     /// guard — the manual argument above is all there is. (Corrected by the memra-next peer
     /// review; the accrace lane, `MEMRA_PP_EXIT_PUBLISH`, is what happens when an ordering
     /// claim in a comment is merely assumed.)
+    ///
     /// `mode` is PASSED IN, not read from the environment here (memra-next#25). The door is a
     /// FAMILY-AGNOSTIC correctness input — every vision family's overlay comes through this
     /// function — so an unrecognized value has to refuse at BOOT, once, for all of them. When
@@ -242,7 +269,15 @@ impl EmbedOverlay {
         rows: CudaSlice<f32>,
         spans: Vec<(usize, usize, usize)>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let same_ctx = tower.ctx().cu_ctx() == intake.ctx().cu_ctx();
+        // THE SOURCE SIDE IS CHECKED BEFORE THE ROWS ARE READ, not only where they land (peer
+        // review of the merged PR caught this asymmetry). `tower.dtoh` issues its D2H on the
+        // TOWER's ambient stream, so if `rows` had actually been produced in another context —
+        // verbatim the hazard `new` exists to refuse — the copy would be unordered against the
+        // kernels that wrote them and, under UVA, would likely SUCCEED rather than error:
+        // a partially written buffer, published, passing the landing-side check. The whole
+        // thesis here is "check, don't assume", so the read is guarded like every other.
+        let src_ctx = Self::alloc_context_of(tower, &rows, "publication (source side)")?;
+        let same_ctx = src_ctx.cu_ctx() == intake.ctx().cu_ctx();
         if mode == OverlayPublish::Never || (mode == OverlayPublish::Auto && same_ctx) {
             return Self::new(tower, rows, spans);
         }
@@ -835,7 +870,7 @@ mod tests {
         // reach the consumers behind it. Two layers, both executed: a caller cannot build the
         // mislabelled overlay, and if one ever existed the splice would still refuse it.
         let refused = match EmbedOverlay::new(&e, rows, vec![(0, 0, 2)]) {
-            Err(e) => e.to_string(),
+            Err(err) => err.to_string(),
             Ok(_) => panic!("new() must refuse rows allocated in another context"),
         };
         assert!(refused.contains("refused at construction"), "{refused}");
@@ -868,6 +903,29 @@ mod tests {
             .splice_into(&e, &mut embedded, 0, 8, 4)
             .expect_err("splice_into must refuse a foreign-context overlay");
         assert!(err.to_string().contains("another address space"), "{err}");
+
+        // AND THE PUBLISH PATH REFUSES ON THE SOURCE SIDE, before it reads a byte. This is the
+        // asymmetry the peer review found: `new_published` used to dtoh `rows` through `tower`
+        // and only check where the bytes LANDED, so a foreign-context source would have been
+        // read unordered (and, under UVA, probably successfully) and then published as if valid.
+        // Force is used so the arm cannot take the zero-copy early return.
+        let rows = stream
+            .alloc_zeros::<f32>(8 * 4)
+            .expect("rows in the foreign context");
+        let refused = match EmbedOverlay::new_published(
+            &e,
+            &e,
+            super::OverlayPublish::Force,
+            rows,
+            vec![(0, 0, 2)],
+        ) {
+            Err(err) => err.to_string(),
+            Ok(_) => panic!("new_published must refuse a foreign-context SOURCE before reading it"),
+        };
+        assert!(
+            refused.contains("publication (source side)"),
+            "the refusal must name the source side, not the landing side: {refused}"
+        );
 
         // The primary-context twin of the same shape is accepted, so the assertion above is
         // about RESIDENCY and not about the arguments.
