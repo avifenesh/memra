@@ -327,7 +327,7 @@ cell_decode_ab(){
 # PROFILE-C0 section 4 records that `trace_moe_routes` was called ONLY from the TP2 paths, so
 # the single-card default emitted nothing and traces had to be collected under --tp2. THAT WAS
 # FIXED. The tap is wired onto the device-router audit readback today
-# (`qwen4exp_gpu.rs:3778`, inside `route_topk_device`, whose own comment narrates the history),
+# (the `trace_moe_routes` call in `route_topk_device`'s ROUTER_AUDIT readback, `qwen4exp_gpu.rs`, whose own comment narrates the history — anchored by function, not line: the rebase onto selgroup-main moved every line number in this file),
 # so `MEMRA_Q4E_ROUTER_AUDIT=1 MEMRA_MOE_TRACE=<path>` collects on ONE card. Quoting the old
 # state as present tense is the prose-vs-wiring trap this lane documents twice; caught in
 # review before the cell ran.
@@ -341,7 +341,7 @@ cell_decode_ab(){
 #
 # WHAT THIS CELL STILL DOES NOT COLLECT, stated so nobody reads a partial trace as a full one:
 # PREFILL-chunk lines. The host-routed per-expert prefill executor has no trace call, and the
-# TP2 prefill tap (`qwen4exp_gpu.rs:18353`) fires only under `prefill_extend_tp2`, which this
+# TP2 prefill tap (the `trace_moe_routes` call inside `prefill_extend_tp2`) fires only under that path, which this
 # invocation never reaches. Decode and verify lines are collected; prefill co-activation would
 # need --tp2 PLUS an instrument that actually routes prefill through the TP2 path.
 #
@@ -362,7 +362,7 @@ cell_mint_map(){
   local log_f="$OUT/$label.tsv"
   : > "$log_f"
   receipt_head "$log_f" "$label" "$BASE_SEAMS" "0" \
-    "SINGLE card: the trace tap is wired onto the device-router audit readback (qwen4exp_gpu.rs:3778), so --tp2 is not needed and would not engage under --spec-gate. Decode+verify lines only, NO prefill lines"
+    "SINGLE card: the trace tap is wired onto the device-router audit readback (route_topk_device, qwen4exp_gpu.rs), so --tp2 is not needed and would not engage under --spec-gate. Decode+verify lines only, NO prefill lines"
   log "cell $label acquiring -x (single card)"
   flock -x "$LOCK" bash -c '
     set -uo pipefail
