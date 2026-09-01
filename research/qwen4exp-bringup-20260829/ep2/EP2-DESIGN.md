@@ -235,17 +235,30 @@ the already-shipped placement plumbing:
    fail-closed clause (format, ranks != 2, expert-count, entry_rank, missing/empty `layers`,
    assignment length, rank id, unbalanced layer + its rebalance knob, uncovered MoE layer,
    layer/map geometry disagreement, unreadable path).
-2. **A latent out-of-bounds refused.** The even split is `rank = expert / (experts/2)`, which
-   on an ODD routed bank silently hands card 1 one expert MORE than its equal-size
-   allocation, an out-of-bounds placement, not a slow one. The loaded path refused it only
-   through the balance clause, which named the wrong problem (it read as a rebalance request
-   against an unbalanceable bank). Both paths now refuse the geometry by name. Executed
-   rather than asserted, per `LAW:loud-failures-fail-quietly`: with the check neutered the
-   test fails with `card1: [2, 3, 4], rank_of: [0, 0, 1, 1, 1]`, three experts into a
-   two-slot allocation.
+2. **An odd-bank geometry refused by name, scoped correctly.** The first version of this entry
+   claimed a latent out-of-bounds, and review showed the tree does not have one. The correction
+   is recorded rather than quietly edited, because a design doc's section 4 gets quoted back as
+   fact:
+   - **Production could not reach it.** `build_tp2_shard` already refuses `experts % 2 != 0`
+     eleven lines before it asks for a `LayerPlacement`, and has since before this branch.
+   - **There was no allocation to overflow.** The card-1 bank upload sizes on
+     `place.card1.len()`, so an odd split would have produced an UNBALANCED 3-of-5 card-1 half,
+     not an overflowing one.
+   - **But `load()` did have a real hole**, and this is what the check is worth: `half =
+     expert_count / 2` FLOORS, so a map placing exactly **2 of 5** experts on card 1 satisfied
+     the balance clause and loaded clean. The balance clause caught only the *unbalanced* odd
+     maps, and for those it named the wrong problem.
 
-qwen4_exp has 512 experts so (2) does not bite today. It is landed because the refusal is
-free and the failure mode it prevents would read as a model bug.
+   So: `layer()` and `load()` are `pub`, an odd bank has no two-card answer, and the refusal now
+   comes from the function whose contract it breaks instead of from an upstream check a future
+   caller may not have. **Executed rather than asserted** per `LAW:loud-failures-fail-quietly`,
+   and the test arm was rewritten to the case that actually bites: with the `load()` check
+   neutered the balanced 2-of-5 map **loads clean** and the test fails with `odd-balanced:
+   expected a refusal naming "ODD", but the map loaded`. Testing only the 3-of-5 map would have
+   been nearly vacuous, since the balance clause already refused it.
+
+qwen4_exp has 512 experts so (2) does not bite today. It is landed because the refusal is free
+and because it closes the `load()` hole above on the public API.
 
 **No new `MEMRA_*` env read, so no `docs/FLAGS.md` row is owed.** The one door this lane
 touches, `MEMRA_Q4E_EP_MAP`, already has its row and already defaults OFF with its reason

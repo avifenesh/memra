@@ -2458,11 +2458,14 @@ impl Tp2Placement {
                 "expert_count={map_experts} but this plan has {expert_count} experts"
             ));
         }
-        // An ODD routed bank has no equal halves, so the "card 1 owns exactly experts/2"
-        // clause below could never be satisfied and the refusal would name the WRONG
-        // clause (it would read as a rebalance request against an unbalanceable bank).
-        // Refuse the geometry by name instead. Checked here AND in `layer()` because the
-        // built-in even split never passes through this parser.
+        // An ODD routed bank has no equal halves. Note precisely what the balance clause below
+        // does and does not do here, because "it was already covered" is the easy wrong reading:
+        // `half = expert_count / 2` FLOORS, so on 5 experts a map placing exactly 2 on card 1
+        // SATISFIES `on1 == half` and loaded clean before this check existed. The balance clause
+        // caught only the unbalanced odd maps, and for those it named the wrong problem (it read
+        // as a rebalance request against a bank that cannot be balanced). Refuse the geometry by
+        // name instead. Checked here AND in `layer()` because the built-in even split never
+        // passes through this parser.
         if expert_count % 2 != 0 {
             return want(&format!(
                 "this plan has {expert_count} routed experts, which is ODD: the TP2 route \
@@ -2542,10 +2545,19 @@ impl Tp2Placement {
             )
             .into());
         }
-        // The even split below is `rank = expert / (experts/2)`, which SILENTLY hands card 1
-        // one extra expert when `expert_count` is odd — an out-of-bounds placement against
-        // equal-size bank halves, not a slower one, and it would surface as a model bug far
-        // from here. Refuse the geometry loudly at the first MoE layer instead.
+        // DEFENSE IN DEPTH ON A `pub` API, and scoped honestly: production cannot reach this
+        // with an odd bank, because the only caller (`build_tp2_shard`) already refuses
+        // `experts % 2 != 0` eleven lines before it asks for a `LayerPlacement`. So this is not
+        // a latent out-of-bounds and nothing was silently wrong: the card-1 bank upload sizes
+        // its allocation on `place.card1.len()`, so an odd split would have produced an
+        // UNBALANCED (3-of-5) card-1 half, not an overflowing one.
+        //
+        // What it does buy: `layer()` and `load()` are `pub`, and on an odd bank the even split
+        // `rank = expert / (experts/2)` has no two-card answer at all. Naming that geometry here
+        // means a future caller gets the refusal from the function whose contract it breaks
+        // instead of relying on an upstream check it may not have. It also closes a real hole in
+        // `load()`: `half` FLOORS, so a map placing exactly 2 of 5 experts on card 1 satisfied
+        // the balance clause and loaded clean before this check existed.
         if expert_count % 2 != 0 {
             return Err(format!(
                 "qwen4exp_gpu tp2 placement: layer {index} has {expert_count} routed \
@@ -20462,9 +20474,18 @@ mod tp2_placement_tests {
         assert!(msg.contains("MEMRA_Q4E_EP_MAP"), "got: {msg}");
     }
 
-    /// An ODD routed bank has no equal halves. Before this lane the LOADED path refused it
-    /// only through the balance clause (naming the wrong problem) and the BUILT-IN even
-    /// split accepted it silently, handing card 1 one expert more than its allocation.
+    /// An ODD routed bank has no equal halves, on either path.
+    ///
+    /// Scoped honestly, because the guard's first justification overclaimed and review caught
+    /// it: production cannot reach this, since `build_tp2_shard` refuses `experts % 2 != 0`
+    /// before it asks for a `LayerPlacement`. These are `pub` entry points and the refusal
+    /// belongs on the contract it breaks.
+    ///
+    /// The loaded arm below is the one that closes a REAL hole, and it is deliberately the
+    /// BALANCED odd map: `half = expert_count / 2` floors, so 2-of-5 on card 1 satisfies
+    /// `on1 == half` and loaded clean before this check. An unbalanced odd map (3-of-5) would
+    /// have been refused by the balance clause already, so testing only that would have made
+    /// this arm nearly vacuous.
     #[test]
     fn refuses_an_odd_routed_bank_on_both_paths() {
         // built-in even split
@@ -20474,10 +20495,18 @@ mod tp2_placement_tests {
             .to_string();
         assert!(msg.contains("ODD"), "got: {msg}");
         assert!(msg.contains("EQUAL-size"), "got: {msg}");
-        // loaded map
-        let text = "{\"format\": \"memra-ep-map-v1\", \"ranks\": 2, \"expert_count\": 5, \
-                    \"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 1, 1]}]}";
-        assert_refuses("odd", text, 5, "ODD");
+        // loaded map, BALANCED under the floored half (on1 == 5/2 == 2): this one passed the
+        // balance clause before the geometry check existed.
+        let balanced_odd = "{\"format\": \"memra-ep-map-v1\", \"ranks\": 2, \
+                            \"expert_count\": 5, \
+                            \"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 0, 1, 1]}]}";
+        assert_refuses("odd-balanced", balanced_odd, 5, "ODD");
+        // and the unbalanced odd map, which the balance clause would also have caught, so this
+        // asserts the geometry clause wins the race and names the real problem.
+        let unbalanced_odd = "{\"format\": \"memra-ep-map-v1\", \"ranks\": 2, \
+                              \"expert_count\": 5, \
+                              \"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 1, 1]}]}";
+        assert_refuses("odd-unbalanced", unbalanced_odd, 5, "ODD");
     }
 
     // ---------------------------------------------------------------- bank-split arithmetic
