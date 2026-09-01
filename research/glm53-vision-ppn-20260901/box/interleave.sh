@@ -43,15 +43,31 @@ ROWS=$OUT/decode-rows.jsonl
 mkdir -p "$OUT"
 : > "$ROWS"
 
+# Count live servers by /proc/<pid>/exe, NOT by cmdline. Two reasons, both from the slot handoff:
+# `pgrep -f <binary path>` matches the FLOCK WRAPPER before the server itself, and it also matches
+# any shell whose command line contains the path — including the ssh invocation running this
+# script, which would make the wait below never finish and refuse a healthy window.
+servers_live() {
+  local n=0 p e
+  for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    e=$(readlink "/proc/$p/exe" 2>/dev/null) || continue
+    case "$e" in *memra-server*) n=$((n + 1)) ;; esac
+  done
+  echo "$n"
+}
+
 pgrep_clear() {
   local waited=0
   $STOP_CMD >>"$OUT/stop.log" 2>&1 || true
-  while pgrep -f "$SERVER_BIN" >/dev/null 2>&1; do
+  while [ "$(servers_live)" -gt 0 ]; do
     sleep 2; waited=$((waited+2))
     if [ $waited -ge 120 ]; then
-      echo "REFUSE: a server on $SERVER_BIN survived 120s of STOP_CMD — an arm cannot be" \
-           "attributed while the previous boot is alive" >&2
-      pgrep -af "$SERVER_BIN" >&2 || true
+      echo "REFUSE: $(servers_live) memra-server process(es) survived 120s of STOP_CMD — an arm" \
+           "cannot be attributed while a previous boot is alive" >&2
+      for p in $(ls /proc | grep -E '^[0-9]+$'); do
+        e=$(readlink "/proc/$p/exe" 2>/dev/null) || continue
+        case "$e" in *memra-server*) echo "  pid=$p exe=$e" >&2 ;; esac
+      done
       exit 1
     fi
   done
@@ -75,7 +91,11 @@ boot() {
       tail -40 "$log" >&2; exit 1
     fi
   done
-  local pid; pid=$(pgrep -f "$SERVER_BIN" | head -1)
+  local pid=""; local q e
+  for q in $(ls /proc | grep -E '^[0-9]+$'); do
+    e=$(readlink "/proc/$q/exe" 2>/dev/null) || continue
+    case "$e" in *memra-server*) pid=$q; break ;; esac
+  done
   [ -n "$pid" ] || { echo "REFUSE: readyz answered but no $SERVER_BIN process exists — the" \
                           "listener is not the server this battery thinks it is" >&2; exit 1; }
   # Started AFTER the boot command: a stale process that happens to answer readyz is the exact
