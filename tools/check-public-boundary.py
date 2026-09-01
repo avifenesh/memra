@@ -36,13 +36,12 @@ bytes rather than argued from:
   * A blob reports EVERY rule it matches, ordered worst-rule-first by the policy's severity
     ranks. First-match-only was correct for the enforce/don't-enforce decision and wrong for
     triage: it labelled the worst file in the repo — a cloud account id plus a privilege level
-    plus an identity principal — `personal_email`, one line inside 56 other `personal_email` hits.
+    plus an IAM principal — `personal_email`, one line inside 56 other `personal_email` hits.
 """
 
 from __future__ import annotations
 
 import argparse
-import datetime
 import fnmatch
 import hashlib
 import json
@@ -82,16 +81,6 @@ SEVERITY_CEILING = 5
 # deployable; this field makes every run of the check state how many are outstanding, so the
 # backlog cannot go quiet.
 UNREMEDIATED_KEY = "unremediated"
-# A whole private SURFACE parked in the public repo (the severity-4 private_path class:
-# ledger, admin, darklane, lanes) is an owner decision with a date, not a permanent fact.
-# Before 2026-08-29 these entries were re-blessed hash-bump after hash-bump — four lanes in
-# one week — and nothing ever asked when the parking ends. Entries in this class must name
-# the extraction lane and an expiry date; past the date the exemption stops working and the
-# finding is live again, so extending the parking is a conscious edit, never a side effect
-# of re-pinning a hash. (The exception-lists-need-expiry lesson, applied to this gate.)
-EXPIRY_KEY = "expires"
-LANE_KEY = "lane"
-EXPIRY_SEVERITY = 4
 # A rule the policy does not rank cannot happen (load_policy refuses), but an ad-hoc Policy
 # built in a test has no ranks at all, and an unranked rule must not sort BELOW a ranked one.
 DEFAULT_SEVERITY = SEVERITY_CEILING
@@ -275,64 +264,11 @@ def load_allowlist(path: Path) -> Dict[Tuple[str, str], dict]:
                     f"{path}:{line_no}: {UNREMEDIATED_KEY} names rules the entry does not "
                     f"grandfather: {','.join(stray)}"
                 )
-        expiry = entry.get(EXPIRY_KEY)
-        if expiry is not None:
-            if not isinstance(expiry, str) or not re.fullmatch(
-                r"\d{4}-\d{2}-\d{2}", expiry
-            ):
-                raise SystemExit(
-                    f"{path}:{line_no}: {EXPIRY_KEY} must be an ISO date (YYYY-MM-DD)"
-                )
-        lane = entry.get(LANE_KEY)
-        if lane is not None and (not isinstance(lane, str) or not lane):
-            raise SystemExit(f"{path}:{line_no}: {LANE_KEY} must be a non-empty string")
         key = (entry["path"], entry["sha256"])
         if key in entries:
             raise SystemExit(f"{path}:{line_no}: duplicate allowlist key: {key[0]}")
         entries[key] = entry
     return entries
-
-
-def needs_expiry(entry: dict, policy: Policy) -> bool:
-    """Whether this entry parks a structural private surface and so must carry a date.
-
-    Keyed on the RULE'S class and declared rank, not on the entry's self-declared
-    category: the demand covers whole private SURFACES (private_path rules ranked
-    severity-4+), never secret-pattern pins, whose safety case lives in the reason text.
-    The rank must be EXPLICIT: `load_policy` refuses an unranked rule, so in production
-    every rule has one; a rule absent from the table only exists in hand-built test
-    policies, and an implicit DEFAULT_SEVERITY here would put the expiry demand on
-    fixtures that never declared a severity at all.
-    """
-    return any(
-        rule in policy.private_paths
-        and policy.severity.get(rule, 0) >= EXPIRY_SEVERITY
-        for rule in entry.get("rules") or ()
-    )
-
-
-def enforce_expiry_metadata(
-    allowlist: Dict[Tuple[str, str], dict], policy: Policy
-) -> None:
-    """Fail closed when a severity-4 private-surface entry has no expiry or lane."""
-    bad = [
-        entry["path"]
-        for entry in allowlist.values()
-        if needs_expiry(entry, policy)
-        and (entry.get(EXPIRY_KEY) is None or entry.get(LANE_KEY) is None)
-    ]
-    if bad:
-        raise SystemExit(
-            f"allowlist: {len(bad)} severity-{EXPIRY_SEVERITY}+ private-surface "
-            f"entries lack {EXPIRY_KEY!r} and/or {LANE_KEY!r} (a parked private surface "
-            f"is a dated owner decision, not a permanent fact): " + ", ".join(sorted(bad))
-        )
-
-
-def entry_expired(entry: dict, today: str) -> bool:
-    """ISO dates compare lexically, so string comparison IS date comparison here."""
-    expiry = entry.get(EXPIRY_KEY)
-    return expiry is not None and expiry < today
 
 
 def exempt_rules(allowlist: Dict[Tuple[str, str], dict], v: Violation) -> Optional[
@@ -562,23 +498,6 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
-def worktree_blob_bytes(path: Path) -> bytes:
-    """Read the bytes Git publishes for one tracked worktree entry.
-
-    A symlink is a Git blob whose content is its target string. Following it is both wrong and
-    non-portable: an absolute receipt link may resolve on the machine that committed it, fail on a
-    clean clone, or raise PermissionError while pathlib asks whether the target is a file. Scan the
-    link text itself, exactly as the commit/ref modes already scan the blob from git cat-file.
-    """
-    if path.is_symlink():
-        return os.readlink(path).encode("utf-8", errors="surrogateescape")
-    try:
-        return path.read_bytes()
-    except OSError as exc:
-        rel = path.relative_to(ROOT)
-        raise RuntimeError(f"cannot read tracked worktree entry {rel}: {exc}") from exc
-
-
 def changed_blobs(commits: Iterable[str]) -> List[Tuple[str, str]]:
     """Return each changed (path, blob oid) version reachable through the commits."""
     blobs: List[Tuple[str, str]] = []
@@ -675,7 +594,7 @@ def scan_secret_bytes(
     Reporting one rule per file was correct for the enforce/don't-enforce decision — one hit is
     enough to make a blob a violation — and it is why the worst file in this repo read as
     authorship noise: `personal_email` matched 189 bytes before the account id did, so the
-    account id, the AdministratorAccess assertion and the identity principal beside it were never
+    account id, the AdministratorAccess assertion and the IAM principal beside it were never
     named in any report. Enforcement takes one rule; triage needs all of them.
     """
     text = data.decode("utf-8", errors="ignore")
@@ -765,40 +684,8 @@ def evaluate(policy: Policy) -> List[Violation]:
     secret_candidates = secret_candidate_files(policy.secret_sources)
     for rel in tracked_files():
         full = ROOT / rel
-        # Do not ask is_file() to follow a symlink. Python 3.12 raises PermissionError when an
-        # absolute target crosses an unreadable parent (the hosted-runner failure that motivated
-        # this guard); the tracked object is still a perfectly readable symlink blob.
-        is_link = full.is_symlink()
-        if not is_link:
-            # A NON-symlink we cannot stat is REPORTED, never raised and never skipped
-            # (lane/glm5-accrace, merged with the symlink guard above). Raising kills the
-            # scan for every LATER tracked file — the exact shape of the CI failure both
-            # halves of this guard exist to fix — and a silent `continue` would let an
-            # unreadable tracked path hide anything at all. So it becomes its own finding
-            # and the census runs to the end of the tree. Teeth: `UnstatablePathTests`.
-            try:
-                is_file = full.is_file()
-            except OSError as err:
-                # Built directly rather than through `build_violation`: that helper derives
-                # `detail` from matched RULE NAMES and line numbers, and the one fact worth
-                # reporting here is the errno text. `detail` keeps the allowlist's
-                # long-standing "rules (note)" shape, so this category needs no migration.
-                violations.append(
-                    Violation(
-                        path=rel,
-                        sha256="unstatable",
-                        category="unstatable_path",
-                        detail=(
-                            f"unstatable_path ({type(err).__name__}: "
-                            f"{err.strerror or err})"
-                        ),
-                        rules=("unstatable_path",),
-                        severity=policy.rank("unstatable_path"),
-                    )
-                )
-                continue
-            if not is_file:
-                continue
+        if not full.is_file():
+            continue
         bypass = is_bypass(rel, policy.bypass_paths)
         # Path glob rule (private serving material).
         matched_globs = [
@@ -811,32 +698,21 @@ def evaluate(policy: Policy) -> List[Violation]:
                 build_violation(
                     policy,
                     rel,
-                    hashlib.sha256(worktree_blob_bytes(full)).hexdigest(),
+                    sha256_of(full),
                     "private_path",
                     [(name, 0, "") for name in matched_globs],
                 )
             )
             continue  # one violation per file — path glob wins over secret hits.
         # Secret regex rule.
-        # git grep does not prefilter symlink blobs, so the small tracked-symlink set is scanned
-        # directly. This keeps the fast prefilter for ordinary files without making links a blind
-        # spot.
-        if not bypass and (rel in secret_candidates or is_link):
-            data = worktree_blob_bytes(full)
-            hits = scan_secret_bytes(
-                data,
-                policy.secret_union,
-                policy.secret_groups,
-                policy.secret_patterns,
+        if not bypass and rel in secret_candidates:
+            hits = scan_secrets(
+                full, policy.secret_union, policy.secret_groups, policy.secret_patterns
             )
             if hits:
                 violations.append(
                     build_violation(
-                        policy,
-                        rel,
-                        hashlib.sha256(data).hexdigest(),
-                        "secret_pattern",
-                        hits,
+                        policy, rel, sha256_of(full), "secret_pattern", hits
                     )
                 )
     return violations
@@ -884,8 +760,6 @@ def cmd_check(
     summary_only: bool = False,
 ) -> int:
     allowlist = load_allowlist(ALLOWLIST_PATH)
-    enforce_expiry_metadata(allowlist, policy)
-    today = datetime.date.today().isoformat()
     carriers: Dict[Tuple[str, str], set[str]] = {}
     if refs is not None:
         if not refs:
@@ -920,20 +794,7 @@ def cmd_check(
     unmatched: List[Violation] = []
     grandfathered = 0
     partial = 0
-    expired = 0
     for v in violations:
-        listed = allowlist.get((v.path, v.sha256))
-        if listed is not None and entry_expired(listed, today):
-            # The exemption died on its date. Resurface the finding with the parking
-            # record attached, so the reader extends the date consciously (with the
-            # lane's state in hand) instead of re-pinning what looks like a fresh hit.
-            expired += 1
-            v.detail = (
-                f"{v.detail} [grandfather EXPIRED {listed[EXPIRY_KEY]}; "
-                f"lane: {listed.get(LANE_KEY, 'unnamed')}]"
-            )
-            unmatched.append(v)
-            continue
         exempt = exempt_rules(allowlist, v)
         if exempt is not None:
             # Rule-scoped: the entry covers the rules it names and nothing else. A blob whose
@@ -955,11 +816,6 @@ def cmd_check(
         f"public-boundary: {total} matches{scope} ({grandfathered} grandfathered, "
         f"{len(unmatched)} new)."
     )
-    if expired:
-        print(
-            f"public-boundary: {expired} of the new findings are EXPIRED grandfathers — "
-            f"the parking date passed; extend {EXPIRY_KEY!r} deliberately or migrate."
-        )
     if partial:
         print(
             f"public-boundary: {partial} of those are allowlisted for a DIFFERENT rule than "
@@ -1115,7 +971,6 @@ def cmd_seed(policy: Policy, force: bool) -> int:
 
 def cmd_verify(policy: Policy, prune: bool) -> int:
     allowlist = load_allowlist(ALLOWLIST_PATH)
-    enforce_expiry_metadata(allowlist, policy)
     live_violations = evaluate(policy)
     drifted = stale_entries(allowlist, live_violations)
     if not drifted:

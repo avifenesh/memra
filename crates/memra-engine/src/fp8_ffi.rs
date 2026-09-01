@@ -385,7 +385,7 @@ impl crate::Engine {
             let key = {
                 let stream = self.gpu.stream();
                 let (p, _g) = f8_bytes.device_ptr(&stream);
-                p
+                p as u64
             };
             let mut guard = FP8_MMQ_NAN_OK.lock().unwrap();
             let map = guard.get_or_insert_with(std::collections::HashMap::new);

@@ -143,7 +143,6 @@ struct Ctx {
 
 impl Ctx {
     /// prime A solo; greedy-decode `steps`; return (streams, per-step margins, prefill logits)
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn solo_stream(
         &self,
         toks: &[u32],
@@ -190,7 +189,6 @@ fn load(path: &str) -> Result<Ctx, Box<dyn std::error::Error>> {
     })
 }
 
-#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let path = args
@@ -364,7 +362,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         1,
                         eps,
                     )?;
-                    cx.e.dtoh(&cx.e.matmul(&cx.model.output, &hn, 1)?)
+                    Ok(cx.e.dtoh(&cx.e.matmul(&cx.model.output, &hn, 1)?)?)
                 };
             println!("pos | hid_maxdiff | hid_relrms | argmax s/b | margin_solo | logit_maxdiff");
             let mut flips = 0usize;
@@ -459,7 +457,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|l| l.trim().to_string())
                 .filter(|l| !l.is_empty())
                 .collect();
-            let mut out = jsonl.as_ref().map(std::fs::File::create).transpose()?;
+            let mut out = jsonl
+                .as_ref()
+                .map(|p| std::fs::File::create(p))
+                .transpose()?;
             let mut all: Vec<f32> = Vec::new();
             for (i, p) in prompts.iter().enumerate() {
                 let toks = encode_prompt(&cx.tok, p, chat);
@@ -649,7 +650,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 v1.extend(cu.iter().copied());
                 let mut v2: Vec<&[u32]> = vec![&ta];
                 v2.extend(cu.iter().rev().copied());
-                let mut v3: Vec<&[u32]> = cu.to_vec();
+                let mut v3: Vec<&[u32]> = cu.iter().copied().collect();
                 v3.push(&ta);
                 let o1 = batch(&v1, 0)?;
                 let o2 = batch(&v2, 0)?;
@@ -822,12 +823,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "shexp" => {
                     let mut found = None;
                     for (i, layer) in cx.model.layers.iter().enumerate() {
-                        if let memra_engine::hybrid::Ffn::Moe(mm) = &layer.ffn
-                            && let Some(g) = mm.gate_shexp.as_ref()
-                        {
-                            found = Some(g);
-                            il_probe = i;
-                            break;
+                        if let memra_engine::hybrid::Ffn::Moe(mm) = &layer.ffn {
+                            if let Some(g) = mm.gate_shexp.as_ref() {
+                                found = Some(g);
+                                il_probe = i;
+                                break;
+                            }
                         }
                     }
                     found.expect("no shared-expert gate")
@@ -855,9 +856,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let run = |m: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
                 if gemv {
                     let y = cx.e.router_gemv(w.float_data(), &xd, n_embd, out_f, m)?;
-                    cx.e.dtoh(&y)
+                    cx.e.dtoh(&y).map_err(Into::into)
                 } else {
-                    cx.e.dtoh(&cx.e.matmul(w, &xd, m)?)
+                    cx.e.dtoh(&cx.e.matmul(w, &xd, m)?).map_err(Into::into)
                 }
             };
             let base = run(ta)?;
@@ -988,56 +989,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     f @ memra_engine::hybrid::Ffn::Moe(_) => Some(f),
                     _ => None,
                 })
-                && let Some(gi) = mm.gate_inp_shexp.as_ref()
             {
-                let in_f = cx.model.cfg.n_embd as usize;
-                let mut xs = Vec::with_capacity(m1 * in_f);
-                let mut r2 = 0xD1B54A32D192ED03u64;
-                for _ in 0..m1 * in_f {
-                    r2 ^= r2 << 13;
-                    r2 ^= r2 >> 7;
-                    r2 ^= r2 << 17;
-                    xs.push(((r2 >> 40) as f32 / 8192.0) - 1.5);
+                if let Some(gi) = mm.gate_inp_shexp.as_ref() {
+                    let in_f = cx.model.cfg.n_embd as usize;
+                    let mut xs = Vec::with_capacity(m1 * in_f);
+                    let mut r2 = 0xD1B54A32D192ED03u64;
+                    for _ in 0..m1 * in_f {
+                        r2 ^= r2 << 13;
+                        r2 ^= r2 >> 7;
+                        r2 ^= r2 << 17;
+                        xs.push(((r2 >> 40) as f32 / 8192.0) - 1.5);
+                    }
+                    let xd = cx.e.htod(&xs)?;
+                    let a =
+                        cx.e.dtoh(&cx.e.linear(&xd, gi.float_data(), m0, in_f, 1)?)?;
+                    let b =
+                        cx.e.dtoh(&cx.e.linear(&xd, gi.float_data(), m1, in_f, 1)?)?;
+                    let same = a[..base_rows]
+                        .iter()
+                        .zip(&b[..base_rows])
+                        .all(|(x, y)| x.to_bits() == y.to_bits());
+                    println!(
+                        "{:<28} in={in_f:6} out={:7} {} maxdiff={:.6e}",
+                        "shexp_gate linear(cuBLASLt)",
+                        1,
+                        if same {
+                            "m-INVARIANT"
+                        } else {
+                            "*** m-DEPENDENT ***"
+                        },
+                        maxdiff(&a[..base_rows], &b[..base_rows])
+                    );
+                    let a2 =
+                        cx.e.dtoh(&cx.e.sigmoid_dot_rows(&xd, gi.float_data(), in_f, m0)?)?;
+                    let b2 =
+                        cx.e.dtoh(&cx.e.sigmoid_dot_rows(&xd, gi.float_data(), in_f, m1)?)?;
+                    let same2 = a2[..base_rows]
+                        .iter()
+                        .zip(&b2[..base_rows])
+                        .all(|(x, y)| x.to_bits() == y.to_bits());
+                    println!(
+                        "{:<28} in={in_f:6} out={:7} {} maxdiff={:.6e}",
+                        "shexp_gate sigmoid_dot_rows",
+                        1,
+                        if same2 {
+                            "m-INVARIANT"
+                        } else {
+                            "*** m-DEPENDENT ***"
+                        },
+                        maxdiff(&a2[..base_rows], &b2[..base_rows])
+                    );
                 }
-                let xd = cx.e.htod(&xs)?;
-                let a =
-                    cx.e.dtoh(&cx.e.linear(&xd, gi.float_data(), m0, in_f, 1)?)?;
-                let b =
-                    cx.e.dtoh(&cx.e.linear(&xd, gi.float_data(), m1, in_f, 1)?)?;
-                let same = a[..base_rows]
-                    .iter()
-                    .zip(&b[..base_rows])
-                    .all(|(x, y)| x.to_bits() == y.to_bits());
-                println!(
-                    "{:<28} in={in_f:6} out={:7} {} maxdiff={:.6e}",
-                    "shexp_gate linear(cuBLASLt)",
-                    1,
-                    if same {
-                        "m-INVARIANT"
-                    } else {
-                        "*** m-DEPENDENT ***"
-                    },
-                    maxdiff(&a[..base_rows], &b[..base_rows])
-                );
-                let a2 =
-                    cx.e.dtoh(&cx.e.sigmoid_dot_rows(&xd, gi.float_data(), in_f, m0)?)?;
-                let b2 =
-                    cx.e.dtoh(&cx.e.sigmoid_dot_rows(&xd, gi.float_data(), in_f, m1)?)?;
-                let same2 = a2[..base_rows]
-                    .iter()
-                    .zip(&b2[..base_rows])
-                    .all(|(x, y)| x.to_bits() == y.to_bits());
-                println!(
-                    "{:<28} in={in_f:6} out={:7} {} maxdiff={:.6e}",
-                    "shexp_gate sigmoid_dot_rows",
-                    1,
-                    if same2 {
-                        "m-INVARIANT"
-                    } else {
-                        "*** m-DEPENDENT ***"
-                    },
-                    maxdiff(&a2[..base_rows], &b2[..base_rows])
-                );
             }
             for (i, layer) in cx.model.layers.iter().enumerate().take(nl) {
                 match &layer.mixer {
@@ -1055,7 +1057,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         probe(&format!("l{i}.gdn.ssm_out"), &la.ssm_out)?;
                     }
                     memra_engine::hybrid::Mixer::Mla(_) => {}
-                    memra_engine::hybrid::Mixer::Kda(_) => {}
                 }
                 match &layer.ffn {
                     memra_engine::hybrid::Ffn::Dense {
@@ -1121,7 +1122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         1,
                         eps,
                     )?;
-                    cx.e.dtoh(&cx.e.matmul(&cx.model.output, &hn, 1)?)
+                    Ok(cx.e.dtoh(&cx.e.matmul(&cx.model.output, &hn, 1)?)?)
                 };
 
             // tokenwise loop, comparing on the fly (position p = logits after token p)
@@ -1190,7 +1191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let prime_hid = |toks: &[u32]| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
                 let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(toks.len() + 8))?;
                 let (_, _, hid) = cx.model.prime_cache(&cx.e, toks, &mut c, 0)?;
-                cx.e.dtoh(&hid)
+                Ok(cx.e.dtoh(&hid)?)
             };
             let logits_row =
                 |host: &[f32], p: usize| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
@@ -1204,7 +1205,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         1,
                         eps,
                     )?;
-                    cx.e.dtoh(&cx.e.matmul(&cx.model.output, &hn, 1)?)
+                    Ok(cx.e.dtoh(&cx.e.matmul(&cx.model.output, &hn, 1)?)?)
                 };
             let bits = |a: &[f32]| -> Vec<u32> { a.iter().map(|v| v.to_bits()).collect() };
             let mut defect = 0usize;
@@ -1455,8 +1456,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // min(queue, budget) per call, and if the remainder would fall below PRIME_MIN_T
             // take the whole rest instead (the tail merge). Each `take` is ONE prime_cache call
             // on the SAME cache, so cache.pos advances across calls exactly as it does in serve.
-            #[allow(clippy::type_complexity)]
-            // allow: one-shot composite type; naming it would hide the shape that matters at the call site
             let arm = |seg: &Seg| -> Result<
                 (Vec<f32>, Vec<f32>, Vec<u32>, usize),
                 Box<dyn std::error::Error>,
@@ -1904,7 +1903,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cx.model.cfg.rms_eps,
                 )?;
                 let logits = cx.e.matmul(&cx.model.output, &hn, t)?;
-                cx.e.dtoh(&logits)
+                Ok(cx.e.dtoh(&logits)?)
             };
             let l_new = run_arm("0")?; // grain-free default
             let l_old = run_arm("1")?; // legacy f32-chunk0 arithmetic

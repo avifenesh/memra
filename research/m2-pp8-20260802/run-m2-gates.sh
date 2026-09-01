@@ -6,8 +6,8 @@ set -uo pipefail
 cd ~/memra
 OUT=~/receipts/m2-pp8
 mkdir -p "$OUT"
-Q9=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
-G12=/opt/scratch/nvme/models/gemma-4-12b-it-qat-q4_0.gguf
+Q9=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
+G12=/opt/dl-image/nvme/models/gemma-4-12b-it-qat-q4_0.gguf
 LOCK="flock /tmp/gpu-box.lock"
 BIN=target/release
 FAILS=0

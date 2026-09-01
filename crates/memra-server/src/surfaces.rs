@@ -24,7 +24,7 @@ use axum::response::Response;
 
 use crate::worker::{Cmd, Event};
 use crate::{
-    AppState, ChatCompletionReq, Envelope, InflightGuard, RateLimit, auth, constrained, metering,
+    AppState, ChatCompletionReq, Envelope, InflightGuard, RateLimit, auth, constrained, ledger,
     toolcall::{ParsedToolCall, Piece, ToolStreamParser},
     worker,
 };
@@ -34,7 +34,7 @@ use crate::{
 /// response (receipt discipline, in-flight slot, rate-limit headers).
 pub(crate) struct Admission {
     pub rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-    pub receipt: Option<Box<dyn crate::metering::Receipt>>,
+    pub receipt: Option<ledger::PendingReceipt>,
     pub guard: InflightGuard,
     pub rl: RateLimit,
     /// Some only when a `<tools>` block was rendered or the model has a think tail —
@@ -133,25 +133,10 @@ pub(crate) async fn admit_translated(
     // TRANSLATED messages array (the internal chat shape), documented in
     // docs/API-SURFACES.md.
     let capture_prompt = st
-        .metering
+        .capture
         .as_ref()
-        .filter(|m| m.captures(&tenant.tenant))
+        .filter(|store| store.is_armed(&tenant.tenant))
         .map(|_| crate::capture_chat_messages(&req.messages));
-    let vision_preprocess_permit = if crate::request_has_vision(&req) {
-        match crate::VISION_PREPROCESS_SEMAPHORE.acquire().await {
-            Ok(permit) => Some(permit),
-            Err(_) => {
-                return Err(crate::error_response(
-                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                    "vision preprocessing is unavailable",
-                    "server_error",
-                    None,
-                ));
-            }
-        }
-    } else {
-        None
-    };
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
     let affinity = crate::affinity_key(&req.session_id, &req.user, headers);
     let mut plan = match crate::build_chat_request_with_trace(
@@ -174,8 +159,6 @@ pub(crate) async fn admit_translated(
         Err(err) => return Err(crate::bad_request(&err, None)),
     };
     plan.request.cache_ns = cache_ns;
-    plan.request.request_id = env.id.clone();
-    plan.request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = crate::apply_model_request_limits(
         &mut plan.request,
         st.openrouter_metadata.get(&model),
@@ -208,23 +191,9 @@ pub(crate) async fn admit_translated(
             Some("nonstream_deadline_infeasible"),
         ));
     }
-    plan.vision_memory = match crate::reserve_vision_memory(&plan) {
-        Ok(permit) => permit,
-        Err(err) => return Err(crate::vision_memory_error_response(err, Some("messages"))),
-    };
     if crate::draining() {
-        let receipt = crate::start_request_receipt(
-            st,
-            env,
-            tenant,
-            &model,
-            route,
-            lane,
-            stream,
-            crate::effective_max_tokens(&plan.request),
-            None,
-            None,
-        );
+        let receipt =
+            crate::start_request_receipt(st, env, tenant, &model, route, lane, stream, None);
         return Err(crate::ledger_rejected(
             receipt,
             crate::drain_response(),
@@ -232,46 +201,41 @@ pub(crate) async fn admit_translated(
             &env.id,
         ));
     }
-    let budget = match crate::admit_tenant_budget(st, tenant, &mut plan.request) {
-        Ok(budget) => budget,
+    let budget_permit = match crate::admit_tenant_budget(st, tenant, &mut plan.request) {
+        Ok(permit) => permit,
         Err(rejection) => {
             let (response, error_code) = rejection.into_response();
-            let receipt = crate::start_request_receipt(
-                st,
-                env,
-                tenant,
-                &model,
-                route,
-                lane,
-                stream,
-                crate::effective_max_tokens(&plan.request),
-                None,
-                None,
-            );
+            let receipt =
+                crate::start_request_receipt(st, env, tenant, &model, route, lane, stream, None);
             return Err(crate::ledger_rejected(
                 receipt, response, error_code, &env.id,
             ));
         }
     };
-    let receipt = crate::start_request_receipt(
-        st,
-        env,
-        tenant,
-        &model,
-        route,
-        lane,
-        stream,
-        crate::effective_max_tokens(&plan.request),
-        budget.reserved_ctx,
-        budget.permit,
-    );
+    let receipt =
+        crate::start_request_receipt(st, env, tenant, &model, route, lane, stream, budget_permit);
     let receipt = if let Some(prompt) = capture_prompt {
-        crate::arm_capture(receipt, move || prompt)
+        crate::arm_capture(receipt, st, tenant, move || prompt)
     } else {
         receipt
     };
-    // Take the HTTP slot BEFORE vision decode. A rate-limited request must not expand a canvas,
-    // while the separate preprocessing permit above keeps GIF/base64 planning bounded.
+    // Vision phase 2 (hermes decode-bomb finding, fixed 2026-08-23): canvases expand
+    // only after budget admission — same law as the chat surface.
+    if let Err(err) = crate::decode_pending_vision(&mut plan) {
+        return Err(crate::ledger_rejected(
+            receipt,
+            crate::bad_request(&err, Some("messages")),
+            "invalid_request_error",
+            &env.id,
+        ));
+    }
+    let constraint_ready = if plan.request.grammar.is_some() {
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        plan.request.constraint_ready = Some(ready_tx);
+        Some(ready_rx)
+    } else {
+        None
+    };
     let (guard, rl) = match crate::acquire_request_slot(st, lane, tenant, env) {
         Ok(slot) => slot,
         Err(resp) => {
@@ -285,47 +249,25 @@ pub(crate) async fn admit_translated(
     };
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let pending_admit = match crate::reserve_pending_admit(st, lane, &rl, deadline) {
-        Ok(guard) => guard,
-        Err((resp, outcome)) => {
-            return Err(crate::ledger_unbilled(
-                receipt,
-                rl.attach(resp),
-                outcome,
-                outcome,
-                &env.id,
-            ));
-        }
-    };
-    // Vision phase 2 (hermes decode-bomb finding, fixed 2026-08-23): canvases expand only after
-    // budget and slot admission priced the header-planned pad runs. The process-wide memory
-    // permit moves into the worker request and survives streaming until completion/cancellation.
-    if let Err(err) = crate::decode_pending_vision(&mut plan) {
-        return Err(crate::ledger_rejected(
+    if let Err((resp, outcome)) = crate::admission_backpressure(st, lane, &rl, deadline) {
+        return Err(crate::ledger_unbilled(
             receipt,
-            rl.attach(crate::bad_request(&err, Some("messages"))),
-            "invalid_request_error",
+            rl.attach(resp),
+            outcome,
+            outcome,
             &env.id,
         ));
     }
-    plan.request.vision_memory = plan.vision_memory.take();
-    drop(vision_preprocess_permit);
-    let constraint_ready = if plan.request.grammar.is_some() {
-        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-        plan.request.constraint_ready = Some(ready_tx);
-        Some(ready_rx)
-    } else {
-        None
-    };
     crate::meter_admit(env, tenant, &model, lane);
     let stop_strings = plan.request.stop_strings.clone();
     let parser = plan.parser;
+    worker::PENDING_ADMITS.fetch_add(1, std::sync::atomic::Ordering::Release);
     if st
         .cmd_tx
         .send(Cmd::Generate(Box::new(plan.request)))
         .is_err()
     {
-        drop(pending_admit);
+        worker::PENDING_ADMITS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
         return Err(crate::ledger_rejected(
             receipt,
             rl.attach(crate::worker_unavailable_response()),
@@ -333,7 +275,6 @@ pub(crate) async fn admit_translated(
             &env.id,
         ));
     }
-    pending_admit.commit();
     if let Some(ready) = constraint_ready {
         // Bounded by the request's own deadline too — a sub-5s timeout_ms must not be
         // overshot by the compile window (same law as the chat surface).
@@ -447,7 +388,7 @@ pub(crate) enum CollectError {
 /// terminal complete/reject synced before any HTTP body is produced.
 pub(crate) async fn collect_final(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>,
-    receipt: &mut Option<Box<dyn crate::metering::Receipt>>,
+    receipt: &mut Option<ledger::PendingReceipt>,
     mut parser: Option<ToolStreamParser>,
     stop_strings: &[String],
     env: &Envelope,
@@ -469,7 +410,6 @@ pub(crate) async fn collect_final(
     };
     while let Some(ev) = rx.recv().await {
         match ev {
-            Event::PromptCapture { .. } => {} // embeddings/rerank surface only
             Event::PromptUsage { n_prompt, n_cached } => {
                 if let Some(receipt) = receipt.as_mut()
                     && let Err(err) = receipt.record_prompt_usage(n_prompt as u64, n_cached as u64)
@@ -527,7 +467,7 @@ pub(crate) async fn collect_final(
                     });
                 if let Some(receipt) = receipt.as_mut()
                     && let Err(err) = receipt.complete(
-                        metering::UsageCounts {
+                        ledger::Usage {
                             prompt_tokens: n_prompt as u64,
                             cached_prompt_tokens: n_cached as u64,
                             completion_tokens: n_tokens as u64,

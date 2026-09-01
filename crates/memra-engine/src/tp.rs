@@ -11,13 +11,6 @@ use crate::parallel::{PRODUCT_MAX_CARDS, STEP37_TRUNK_LAYERS};
 use cudarc::driver::{CudaEvent, CudaSlice, DeviceSlice};
 use std::ops::Range;
 
-/// Previous gate output per (rank, t), so the determ probe can report the SHAPE of a divergence
-/// (dense-ULP vs sparse-huge) and not merely that a checksum moved. Probe-only state.
-#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
-static DETERM_PREV: std::sync::OnceLock<
-    std::sync::Mutex<std::collections::HashMap<(usize, usize), Vec<f32>>>,
-> = std::sync::OnceLock::new();
-
 const FP8_BLOCK: usize = 128;
 const NATIVE_P2P_PROBE_WORDS: &[usize] = &[4096, 16_384, 262_144, 16_777_216];
 const STEP_GROUPED_FP8_EXPERTS: usize = 288;
@@ -25,12 +18,12 @@ const STEP_GROUPED_FP8_TOP_K: usize = 8;
 const STEP_GROUPED_FP8_WIDTH: usize = 1280;
 
 fn validate_step_expert_activation_limit(limit: Option<f32>) -> Result<(), String> {
-    if let Some(limit) = limit
-        && (!limit.is_finite() || limit <= 0.0)
-    {
-        return Err(format!(
-            "Step routed-expert activation limit must be positive and finite, got {limit}"
-        ));
+    if let Some(limit) = limit {
+        if !limit.is_finite() || limit <= 0.0 {
+            return Err(format!(
+                "Step routed-expert activation limit must be positive and finite, got {limit}"
+            ));
+        }
     }
     Ok(())
 }
@@ -179,6 +172,9 @@ pub(crate) fn moe_direct_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_MOE_DIRECT").as_deref() == Ok("1"))
 }
 
+/// MEMRA_SEL_DOWN8=1: fuse the NVFP4 down sweep with the route-weight combine and run one
+/// warp per routed slot (the q8 `down8 w8` occupancy arm). Bit-identical; default OFF until
+/// receipted on this bank family.
 /// MEMRA_SEL_MIRROR=1: the per-rank routed-selection pull runs as ONE `moe_sel_w_mirror`
 /// launch instead of two 32-byte D2D copies, and when every consuming rank shares e's device
 /// the intermediate e-context staging pair is skipped entirely (the caller's sel/route_w rows
@@ -200,90 +196,9 @@ pub(crate) fn fence_rank1_on() -> bool {
 /// gate rows, then ONE fa_decode_dcw2 per rank walks the KV stream once for both columns
 /// (per-row causal bounds; bit-identical per row under the equal-partition guard), the
 /// per-row combine writes both gated rows, and the o_proj join runs on the TCOL slabs.
-/// ROW-TABLE RESTAGE (`MEMRA_ROWS_TAB_RESTAGE`, DEFAULT ON since this lane).
-///
-/// ON: `decode_v2_rope_fa_rows` builds the 6-word-per-row pointer table from the caller's
-/// freshly-read live cache pointers and stages it into a persistent per-rank slab before
-/// every launch. OFF (`=0`): the retired process-lifetime `rows_tabs` memo, keyed by a hash
-/// of (k pointer, base pointer, layer, t) that could not see the V or LEN pointers the
-/// entry also carried, and that nothing invalidated when a session's KV cache was dropped.
-///
-/// Default ON because the OFF arm is a proven use-after-free, not a slower correct path:
-/// on step37-flash with MEMRA_FUSE_ROPE_APPEND=1 it made speculative decoding unservable
-/// (whole non-finite verify rows, then CUDA_ERROR_ILLEGAL_ADDRESS). ON is value-neutral on
-/// every fresh lookup by construction: identical bytes reach the same kernels. Rollback
-/// seam: `MEMRA_ROWS_TAB_RESTAGE=0`.
-/// The 6-word-per-row launch table `{k, v, len, base, ctr, back}` the fused rope/append/fa
-/// kernels dereference. Pure so it can be tested: the words come from the caller's live
-/// per-row `[k, v, len, base]` pointers, `ctr` is this rank's counter slab (one shared cell
-/// for same-session rows, one cell per row otherwise) and `back` is the same-session causal
-/// step-back `t-1-r` (0 across sessions, where each row owns its own len).
-pub(crate) fn rows_tab_host(
-    parts_rank: &[[u64; 4]],
-    ctr_base: u64,
-    same_session: bool,
-    t: usize,
-) -> Vec<u64> {
-    let mut host = Vec::with_capacity(t * 6);
-    for (r, parts) in parts_rank.iter().enumerate().take(t) {
-        host.extend_from_slice(&[
-            parts[0],
-            parts[1],
-            parts[2],
-            parts[3],
-            if same_session {
-                ctr_base
-            } else {
-                ctr_base + (r as u64) * 4
-            },
-            if same_session {
-                (t - 1 - r) as u64
-            } else {
-                0u64
-            },
-        ]);
-    }
-    host
-}
-
-/// The RETIRED memo key, kept ONLY so a test can assert what it cannot see. Both historical
-/// call sites hashed a SUBSET of the pointers the table carries; this reproduces the verify
-/// site's formula verbatim.
-#[cfg(test)]
-pub(crate) fn retired_rows_tab_key(kp: u64, bp: u64, il: usize, t: usize) -> u64 {
-    kp.rotate_left(17)
-        .wrapping_add(bp)
-        .wrapping_add((il as u64) << 32)
-        .wrapping_add(t as u64)
-        .wrapping_add(1 << 63)
-}
-
-pub(crate) fn rows_tab_restage_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_ROWS_TAB_RESTAGE").as_deref() != Ok("0"))
-}
-
-/// STALE-HIT RECEIPT (`MEMRA_ROWS_TAB_STALE_SCAN`, DEFAULT OFF, diagnostic only).
-///
-/// Keeps a HOST shadow of the last table staged under each retired memo key and prints one
-/// line whenever the key repeats with different contents, naming the words that moved. It
-/// costs a host hash lookup and a small clone per rank per layer per verify round, so it is
-/// off in serving. `[rows-tab] engaged=` on the counter proves the path executes at all,
-/// which is what separates "the memo was innocent" from "the memo never ran".
-/// Rollback seam: unset it (or `=0`).
-pub(crate) fn rows_tab_stale_scan() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_ROWS_TAB_STALE_SCAN").as_deref() == Ok("1"))
-}
-
-pub(crate) static ROWS_TAB_ENGAGED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-pub(crate) static ROWS_TAB_STALE: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
 pub(crate) fn spec_fa2_on() -> bool {
-    static ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-    crate::step37_door(&ENV, "MEMRA_SPEC_FA2")
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_SPEC_FA2").as_deref() == Ok("1"))
 }
 thread_local! {
     /// The verify driver arms the column before each per-column attention call; the dcw
@@ -320,146 +235,14 @@ pub(crate) fn step_nvfp4_ep2_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_STEP_NVFP4_EP2").as_deref() == Ok("1"))
 }
 
+pub(crate) fn sel_down8_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_SEL_DOWN8").as_deref() == Ok("1"))
+}
+
 pub(crate) fn oproj_direct_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_OPROJ_DIRECT").as_deref() == Ok("1"))
-}
-
-// ─── Slot-major NVFP4 expert-bank programs: THREE independent doors ───────────────────────────
-//
-// These restore, under separate flags, the three programs that the 2026-08-29 removal
-// (`fd0a175ab`) deleted behind ONE env var (`MEMRA_NVFP4_BANK_V2`). That coupling is why the
-// incident's bisect could not name a mechanism: toggling one var moved the bank layout, the
-// gate+up fusion (which auto-armed on the same predicate with no door of its own) and the fused
-// down+combine (which hard-refused without the layout) all at once, so the priced -21.5% wall /
-// -23.7% decode (research/perf-chain-20260831 cell 1) was an unattributable bundle.
-//
-// The corruption they were removed for was NOT any of them: it was a defaulted `in_f = 0`
-// argument at two `kq_fetch` call sites in the PREFILL grouped-GEMM tail
-// (research/step37-bankv3-20260901/DIAGNOSIS.md), fixed compiler-enforced at `1b18a61e8` and
-// gated device-side by the `nvfp4-bank-oracle` bin. Each door below is strict `0`/`1` and
-// admitted separately so its contribution is a number; BANK_SM and SEL_DOWN8 default ON since
-// 2026-09-01 (one coupled decision, PR #76 battery), SEL_GU and the sub-doors default OFF.
-//
-// LAYOUT IS A PROPERTY OF THE BANK. `bank_slot_major_on()` is read ONCE, at bank BUILD, and
-// recorded on the resident bank (`ResidentNvfp4{Column,Row}BankRank::slot_major`). Every reader
-// branches on that stored field, never on the env door. The removed implementation read
-// `nvfp4_bank_v2_on()` at each reader site instead, which is the same class of hole as the
-// defaulted `in_f`: a piece of layout geometry that a caller can fail to supply or can supply
-// inconsistently with the bytes actually resident.
-
-/// Read a DEFAULT-ON door strictly, and report the SOURCE of the answer rather than only the
-/// answer. `0` disables (the rollback seam), `1` re-states the default, unset takes the default.
-///
-/// Two properties this buys, both learned the hard way in this lane's own archaeology:
-///
-/// * **A typo cannot silently disarm a rollback seam.** The default-OFF doors here parse as
-///   `== Ok("1")`, which is safe when the default is OFF (a typo reads as the default) and
-///   DANGEROUS when the default is ON: `MEMRA_NVFP4_BANK_SM=false` under a `!= Ok("0")` rule
-///   would keep the program armed while the operator believed it was rolled back. So an
-///   unrecognized value is reported as such and the default is kept, loudly.
-/// * **The engagement receipt can name the source.** `default-on` and `MEMRA_..=1` are
-///   different facts about the same boot: one says the flip is doing the work, the other says
-///   a recipe is. A pricing or post-deploy receipt that cannot tell them apart cannot prove a
-///   DEFAULT was measured (TRAP:corrupt-arm-inflates-its-own-perf-price's sibling: an arm that
-///   cannot name what armed it is not an arm).
-fn door_default_on(name: &'static str) -> (bool, &'static str) {
-    let raw = std::env::var(name).ok();
-    door_default_on_value(name, raw.as_deref())
-}
-
-/// The parse, separated from the environment so it can be TESTED. `std::env` is process-global
-/// state and these doors are `OnceLock`-cached, so an env-var test would be both racy under
-/// `cargo test`'s thread pool and unrepeatable within one process — i.e. exactly the kind of
-/// gate that passes because it never really ran.
-fn door_default_on_value(name: &str, value: Option<&str>) -> (bool, &'static str) {
-    match value {
-        Some("0") => (false, "env=0 (rollback seam)"),
-        Some("1") => (true, "env=1"),
-        None => (true, "default-on"),
-        Some(_) => {
-            eprintln!(
-                "[nvfp4-door] WARN {name} has an unrecognized value; only `0` and `1` are \
-                 accepted and the DEFAULT-ON answer is kept. To roll back, set {name}=0."
-            );
-            (true, "default-on (unrecognized value ignored)")
-        }
-    }
-}
-
-/// MEMRA_NVFP4_BANK_SM (PROGRAM 1, **default ON since 2026-09-01**): build the step TP
-/// contiguous NVFP4 expert banks (gate/up/down) in the SLOT-MAJOR row layout — slot g's 16 qs
-/// bytes contiguous at `g*16` (one coalesced 512B warp wave) and the two UE4M3 scale bytes at
-/// `nslots*16 + g*2` — and dispatch the `_sel_v2` decode readers over them. Pure byte
-/// permutation, so BIT-IDENTICAL per row; the claim is gated by `nvfp4-bank-oracle`
-/// (device-side, prefill GEMM included) and by end-to-end greedy byte identity, never by a
-/// comment.
-///
-/// **WHY A BIT-IDENTICAL, MEASURABLY-FREE PROGRAM DEFAULTS ON.** On its own this layout earns
-/// nothing: x5 interleaved, 105.35 vs 106.78 decode tok/s, per-boot range `[104.66, 107.95]`
-/// overlapping the OFF arm's `[105.11, 107.09]`. It defaults ON for exactly one reason —
-/// `MEMRA_NVFP4_SEL_DOWN8` (PROGRAM 3), the one program that DOES separate (+5.48% decode), is
-/// gated at its call site on `shard.slot_major`, so with this door off PROGRAM 3's default-ON
-/// is a SILENT NO-OP: `down8=false door=true`, no refusal, no warning, and the win simply does
-/// not happen. The deployable unit is the two together, which makes this one coupled default
-/// decision and not two independent ones. Receipts:
-/// `research/step37-bankv3-20260901/RESULTS.md` (the down8 default-ON qualification battery).
-///
-/// ROLLBACK SEAM: `MEMRA_NVFP4_BANK_SM=0`, which also disarms PROGRAM 3 by construction.
-pub(crate) fn bank_slot_major_on() -> bool {
-    bank_slot_major_source().0
-}
-
-/// `bank_slot_major_on()` plus the SOURCE of the answer, for the engagement receipt.
-pub(crate) fn bank_slot_major_source() -> (bool, &'static str) {
-    static ON: std::sync::OnceLock<(bool, &'static str)> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| door_default_on("MEMRA_NVFP4_BANK_SM"))
-}
-
-/// MEMRA_NVFP4_SEL_GU=1 (PROGRAM 2, default OFF): run the routed gate and up sweeps as ONE
-/// launch (`qmatvec_nvfp4_dp4a_sel_v2_gu`) instead of two — the two sweeps share sel/aq/ad and
-/// have identical geometry, so blocks `[0,out_f)` take the gate bank and `[out_f,2*out_f)` the
-/// up bank. Per-row bit-identical; halves the sweep launch count and doubles grid fill.
-/// Subordinate to PROGRAM 1 by construction: it reads slot-major rows, so the caller arms it
-/// only when both banks report `slot_major`. In the removed implementation this fusion had NO
-/// door of its own and auto-armed on the bank predicate, which is one third of why the bundle
-/// was unattributable.
-pub(crate) fn sel_gu_fused_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_NVFP4_SEL_GU").as_deref() == Ok("1"))
-}
-
-/// MEMRA_NVFP4_SEL_DOWN8 (PROGRAM 3, default ON since 2026-09-01; `=0` is the rollback seam): fuse the routed DOWN sweep with the
-/// route-weight combine into one launch (`qmatvec_nvfp4_dp4a_sel_v2_down8`, the q8 `down8 w8`
-/// occupancy arm ported to the NVFP4 banks) — one warp per routed slot instead of one warp per
-/// (row, slot), and the `n_sel x out_f` partial-buffer round trip disappears. Bit-identical
-/// (same dot program, same reduce tree, same slot-ordered combine chain). Also subordinate to
-/// PROGRAM 1: the caller arms it only when the down shard reports `slot_major`, and only on the
-/// device-routed arm at `nsb <= 32` (the fit-block class the reduce identity is argued at).
-/// Rides LAST per the lane mandate: it is priced only on green gates for the layers beneath it.
-///
-/// **DEFAULT ON since 2026-09-01**, and it is the reason PROGRAM 1 defaults ON too. This is the
-/// only one of the three restored programs that separates from noise: +5.48% decode / +5.09%
-/// wall, x5 interleaved vendor-default sampled, per-boot range `[112.59, 114.82]` with NO
-/// overlap against either the OFF arm or the arm directly beneath it, re-qualified at deploy
-/// grade in `research/step37-bankv3-20260901/RESULTS.md`.
-///
-/// ELIGIBILITY IS NARROWER THAN THE DEFAULT, and the engagement receipt below prints every
-/// condition: the arm needs `device_routed`, `shard.slot_major` (i.e. PROGRAM 1) and
-/// `nsb <= 32`. On any other geometry or route the default is INERT, which is correct-by-
-/// refusal and NOT a regression — but it does mean "default ON" and "engaged" are two facts,
-/// and only the `[nvfp4-sweep]` line settles the second.
-///
-/// ROLLBACK SEAM: `MEMRA_NVFP4_SEL_DOWN8=0` (or `MEMRA_NVFP4_BANK_SM=0`, which disarms it by
-/// construction).
-pub(crate) fn sel_down8_on() -> bool {
-    sel_down8_source().0
-}
-
-/// `sel_down8_on()` plus the SOURCE of the answer, for the engagement receipt.
-pub(crate) fn sel_down8_source() -> (bool, &'static str) {
-    static ON: std::sync::OnceLock<(bool, &'static str)> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| door_default_on("MEMRA_NVFP4_SEL_DOWN8"))
 }
 
 pub(crate) fn raw_copy_bytes(
@@ -508,7 +291,6 @@ struct ExpertOwnerRoutes {
     global_pairs: Vec<usize>,
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn partition_expert_owner_routes(
     expert_count: usize,
     ranks: usize,
@@ -846,19 +628,6 @@ pub fn step_tp_graph_enabled() -> Result<bool, String> {
     parse_step_tp_graph(std::env::var("MEMRA_STEP_TP_GRAPH").ok().as_deref())
 }
 
-/// GRAPH-LAUNCH HEADROOM GUARD for the routed-prejoin graph door (see
-/// `spec::GRAPH_LAUNCH_MIN_FREE`): checked on the launching engine only when the door
-/// is armed (short-circuit after `step_tp_graph_enabled`), noting once per process with
-/// the sweep's grep-stable `graph replay suspended:` key.
-fn step_tp_graph_headroom_ok(e: &Engine) -> bool {
-    let ok = crate::spec::graph_launch_headroom_ok(e);
-    if !ok {
-        static NOTED: std::sync::Once = std::sync::Once::new();
-        NOTED.call_once(|| crate::spec::graph_replay_suspended_note("step-tp-routes"));
-    }
-    ok
-}
-
 /// Fused single-launch QKV projection inside the v2 decode driver — a NUMERIC-CLASS door
 /// (per-row deterministic tree reduce instead of the chunked cuBLASLt program), default OFF,
 /// gated by the run-gen argmax gate + boot battery like MEMRA_STEP_NVFP4_DEV_ROUTES.
@@ -874,233 +643,10 @@ pub struct StepEpLayerSpec {
 
 pub type StepTpLayerSpec = StepEpLayerSpec;
 
-/// ModelPlan-driven whole-model parallel policy. `auto` removes per-layer family recipes; the
-/// loader derives its scope from dense/MoE operations and selects a registered numeric backend
-/// from the artifact tensor/activation contract.
-fn parse_auto_parallel_devices(
-    mode: Option<&str>,
-    raw_devices: Option<&str>,
-) -> Result<Option<Vec<usize>>, String> {
-    let mode = match mode {
-        None | Some("") | Some("0") | Some("off") => return Ok(None),
-        Some("auto") => "auto",
-        Some(value) => {
-            return Err(format!(
-                "MEMRA_PARALLEL={value:?} is invalid; expected off or auto"
-            ));
-        }
-    };
-    let raw = raw_devices.ok_or_else(|| {
-        format!("{mode} parallel placement requires MEMRA_PARALLEL_DEVICES=DEVICE,DEVICE[...]")
-    })?;
-    let devices =
-        raw.split(',')
-            .map(|device| {
-                device.trim().parse::<usize>().map_err(|_| {
-                    format!("MEMRA_PARALLEL_DEVICES entry {device:?} is not an integer")
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-    if !(2..=crate::parallel::AUTO_PARALLEL_MAX_CARDS).contains(&devices.len()) {
-        return Err(format!(
-            "MEMRA_PARALLEL=auto requires 2..={} devices, got {}",
-            crate::parallel::AUTO_PARALLEL_MAX_CARDS,
-            devices.len()
-        ));
-    }
-    let mut unique = devices.clone();
-    unique.sort_unstable();
-    unique.dedup();
-    if unique.len() != devices.len() {
-        return Err(format!(
-            "MEMRA_PARALLEL_DEVICES must be distinct, got {devices:?}"
-        ));
-    }
-    Ok(Some(devices))
-}
-
-pub fn auto_parallel_devices() -> Result<Option<Vec<usize>>, String> {
-    parse_auto_parallel_devices(
-        std::env::var("MEMRA_PARALLEL").ok().as_deref(),
-        std::env::var("MEMRA_PARALLEL_DEVICES").ok().as_deref(),
-    )
-}
-
-fn parse_parallel_ep_device_router(value: Option<&str>) -> Result<bool, String> {
-    match value {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_DEVICE_ROUTER={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-pub fn parallel_ep_device_router_enabled() -> Result<bool, String> {
-    parse_parallel_ep_device_router(
-        std::env::var("MEMRA_PARALLEL_EP_DEVICE_ROUTER")
-            .ok()
-            .as_deref(),
-    )
-}
-
-fn parse_parallel_ep_graph(value: Option<&str>) -> Result<bool, String> {
-    match value {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_GRAPH={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-pub fn parallel_ep_graph_enabled() -> Result<bool, String> {
-    parse_parallel_ep_graph(std::env::var("MEMRA_PARALLEL_EP_GRAPH").ok().as_deref())
-}
-
-fn parse_parallel_ep_pair_down(value: Option<&str>) -> Result<bool, String> {
-    match value {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_PAIR_DOWN={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-pub fn parallel_ep_pair_down_enabled() -> Result<bool, String> {
-    parse_parallel_ep_pair_down(std::env::var("MEMRA_PARALLEL_EP_PAIR_DOWN").ok().as_deref())
-}
-
-fn parse_parallel_ep_q8_act(value: Option<&str>) -> Result<bool, String> {
-    match value {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_Q8_ACT={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-pub fn parallel_ep_q8_act_enabled() -> Result<bool, String> {
-    parse_parallel_ep_q8_act(std::env::var("MEMRA_PARALLEL_EP_Q8_ACT").ok().as_deref())
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ParallelEpQ8Scope {
-    All,
-    GateUp,
-    Down,
-}
-
-impl ParallelEpQ8Scope {
-    fn label(self) -> &'static str {
-        match self {
-            Self::All => "all",
-            Self::GateUp => "gate-up",
-            Self::Down => "down",
-        }
-    }
-}
-
-fn parse_parallel_ep_q8_scope(value: Option<&str>) -> Result<Option<ParallelEpQ8Scope>, String> {
-    match value {
-        None | Some("") => Ok(None),
-        Some("all") => Ok(Some(ParallelEpQ8Scope::All)),
-        Some("gate-up") => Ok(Some(ParallelEpQ8Scope::GateUp)),
-        Some("down") => Ok(Some(ParallelEpQ8Scope::Down)),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_Q8_SCOPE={value:?} is invalid; expected all, gate-up, or down"
-        )),
-    }
-}
-
-pub(crate) fn parallel_ep_q8_scope() -> Result<Option<ParallelEpQ8Scope>, String> {
-    parse_parallel_ep_q8_scope(std::env::var("MEMRA_PARALLEL_EP_Q8_SCOPE").ok().as_deref())
-}
-
-fn parse_parallel_ep_q8_gu_paired(value: Option<&str>) -> Result<Option<bool>, String> {
-    match value {
-        None | Some("") => Ok(None),
-        Some("0") => Ok(Some(false)),
-        Some("1") => Ok(Some(true)),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_Q8_GU_PAIRED={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-fn resolve_parallel_ep_q8_gu_paired(
-    value: Option<&str>,
-    q8_active: bool,
-    scope: Option<ParallelEpQ8Scope>,
-) -> Result<bool, String> {
-    let configured = parse_parallel_ep_q8_gu_paired(value)?;
-    if configured == Some(true) && !q8_active {
-        return Err("MEMRA_PARALLEL_EP_Q8_GU_PAIRED=1 requires MEMRA_PARALLEL_EP_Q8_ACT=1".into());
-    }
-    if configured == Some(true) && scope == Some(ParallelEpQ8Scope::Down) {
-        return Err(
-            "MEMRA_PARALLEL_EP_Q8_GU_PAIRED=1 requires Q8 gate/up arithmetic; \
-             MEMRA_PARALLEL_EP_Q8_SCOPE=down keeps gate/up BF16"
-                .into(),
-        );
-    }
-    Ok(q8_active && scope != Some(ParallelEpQ8Scope::Down) && configured.unwrap_or(true))
-}
-
-pub(crate) fn parallel_ep_q8_gu_paired_enabled(
-    q8_active: bool,
-    scope: Option<ParallelEpQ8Scope>,
-) -> Result<bool, String> {
-    resolve_parallel_ep_q8_gu_paired(
-        std::env::var("MEMRA_PARALLEL_EP_Q8_GU_PAIRED")
-            .ok()
-            .as_deref(),
-        q8_active,
-        scope,
-    )
-}
-
 fn parse_step_layer_specs(
     flag: &str,
     value: Option<&str>,
     allow_full_model: bool,
-) -> Result<Vec<StepEpLayerSpec>, String> {
-    let trunk = allow_full_model.then_some(STEP37_TRUNK_LAYERS);
-    parse_layer_specs_for_trunk(flag, value, trunk)
-}
-
-/// The pure composition-refusal law behind every parallel door's UNPROVEN-pair matrix
-/// (hoisted from the glm5 TP door, lane/glm5-extract-general): the first armed flag in
-/// `table` refuses by name, BEFORE any parallel CUDA state exists. Each family owns its
-/// own TABLE of `(flag, why)` rows — the reasons are gate receipts, part of the law; a
-/// pair unlocks only with its own composition gate (the primary flag's FLAGS.md row
-/// carries the matrix). `armed` reports whether a flag is set to `"1"` (env in
-/// production; a plain set in unit tests — the pattern keeps tests env-mutation-free).
-pub(crate) fn refuse_door_composition(
-    primary: &str,
-    table: &[(&str, &str)],
-    armed: impl Fn(&str) -> bool,
-) -> Result<(), String> {
-    for (flag, why) in table {
-        if armed(flag) {
-            return Err(format!(
-                "{primary} + {flag}: unproven composition, refused ({why})"
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// The shared `LAYER[-LAYER]@DEVICE,DEVICE[;...]` grammar behind every per-layer parallel
-/// door. `full_model_trunk` enables the `all` shorthand and names the trunk it expands to —
-/// the caller's model contract owns that constant, never this parser (the step door passes
-/// `STEP37_TRUNK_LAYERS`; the glm5 door passes its own trunk length at load time).
-pub(crate) fn parse_layer_specs_for_trunk(
-    flag: &str,
-    value: Option<&str>,
-    full_model_trunk: Option<usize>,
 ) -> Result<Vec<StepEpLayerSpec>, String> {
     let Some(value) = value else {
         return Ok(Vec::new());
@@ -1112,7 +658,7 @@ pub(crate) fn parse_layer_specs_for_trunk(
     let mut specs = Vec::new();
     for item in value.split(';') {
         let (layers, devices) = item.split_once('@').ok_or_else(|| {
-            let layers = if full_model_trunk.is_some() {
+            let layers = if allow_full_model {
                 "LAYER[-LAYER] or all"
             } else {
                 "LAYER[-LAYER]"
@@ -1120,13 +666,13 @@ pub(crate) fn parse_layer_specs_for_trunk(
             format!("{flag} must be {layers}@DEVICE,DEVICE[;...]")
         })?;
         let (first, last) = if layers == "all" {
-            let Some(trunk) = full_model_trunk else {
+            if !allow_full_model {
                 return Err(format!(
                     "{flag} does not support the full-model shorthand; assign routed layers \
                      explicitly"
                 ));
-            };
-            (0, trunk - 1)
+            }
+            (0, STEP37_TRUNK_LAYERS - 1)
         } else {
             match layers.split_once('-') {
                 Some((first, last)) => {
@@ -1805,16 +1351,6 @@ pub struct StepTpDecodeV2Ws {
     w8o_aq: Vec<CudaSlice<i8>>,
     w8o_ad: Vec<CudaSlice<f32>>,
     w8o_in: usize,
-    /// VERIFY-WALK q8_1 activation scratch, t columns wide (the decode scratch above is one
-    /// row). Two sets because the QKV input and the gated attention output are different
-    /// vectors of different widths.
-    w8t_aq: Vec<CudaSlice<i8>>,
-    w8t_ad: Vec<CudaSlice<f32>>,
-    w8t_in: usize,
-    w8t_oaq: Vec<CudaSlice<i8>>,
-    w8t_oad: Vec<CudaSlice<f32>>,
-    w8t_oin: usize,
-    w8t_cap: usize,
     /// MEMRA_TCOL_OPROJ slabs: per-rank stashed `gated` rows ([8, local_q_dim]), per-rank
     /// b4_tcol partials ([8, o_out]), a root-side peer pull of rank1's partial slab, and
     /// the root-side joined `mixed` slab. Armed lazily by the first stash.
@@ -1832,23 +1368,8 @@ pub struct StepTpDecodeV2Ws {
     rope_ctr_t: Vec<CudaSlice<u32>>,
     rope_pos_t: Vec<CudaSlice<i32>>,
     /// Per-rank combined 6-word row tables, keyed by the caller's (layer, session-set,
-    /// base-arming) signature. LEGACY: only the `MEMRA_ROWS_TAB_RESTAGE=0` rollback arm
-    /// reads this. See `rows_tab_t` for why the key cannot be made safe.
+    /// base-arming) signature.
     rows_tabs: Vec<std::collections::HashMap<u64, CudaSlice<u64>>>,
-    /// Per-rank PERSISTENT 6-word row-table slab ([32, 6] u64), RESTAGED from the live
-    /// distributed cache before every launch. Replaces the `rows_tabs` memo, whose key was
-    /// a hash of (k pointer, base pointer, layer, t) while the table it returned also
-    /// carried the V and LEN pointers: a session whose K buffer address was recycled hit
-    /// another session's table and the append kernel wrote its K/V through the FREED
-    /// pointers the entry still held. Same defect and same cure as the row-table twin in
-    /// `step35_verify_fa_rows_join` (8c8397e0b2, Hermes `11339f5cd3c132a3`), which this
-    /// path was left out of. One 32-word htod per rank per layer replaces the map lookup;
-    /// no allocation, and the staging is stream-ordered exactly like `rope_pos_t`.
-    rows_tab_t: Vec<CudaSlice<u64>>,
-    /// HOST shadow of the last table staged under each retired memo key, used ONLY by
-    /// `MEMRA_ROWS_TAB_STALE_SCAN=1` to prove that the retired key would have handed a live
-    /// launch another allocation's pointers. Never read by a kernel.
-    rows_tab_shadow: Vec<std::collections::HashMap<u64, Vec<u64>>>,
     tcol_gated: Vec<CudaSlice<f32>>,
     tcol_opart: Vec<CudaSlice<f32>>,
     tcol_opeer: Option<CudaSlice<f32>>,
@@ -1869,12 +1390,6 @@ pub struct StepTpDecodeV2Ws {
     pub(crate) gated: Vec<CudaSlice<f32>>,
     /// [rank][block] O partials, each `o_out` wide, in the owning rank's context.
     o_partials: Vec<Vec<CudaSlice<f32>>>,
-    /// Stable workspace pointers for the rank-done-fenced raw P2P gather. Safe
-    /// `memcpy_dtod` creates a fresh source event for every cross-context copy; the v2
-    /// driver already records one persistent `ev_rank` after all three source families.
-    raw_o_partials: Vec<Vec<u64>>,
-    raw_k: Vec<u64>,
-    raw_v_raw: Vec<u64>,
     /// Recorded on each rank's stream after its per-call work; root waits before peer reads.
     ev_rank: Vec<CudaEvent>,
     // root-context buffers
@@ -2575,7 +2090,6 @@ impl TpE4m3HostBounce {
     /// Column-parallel projection. Weight output rows and their scale rows are partitioned across
     /// ranks. The input is host-broadcast, rank-local projections execute independently, and the
     /// output is host-gathered in rank order.
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn column_parallel(
         &self,
         matrix: E4m3BlockMatrix<'_>,
@@ -2593,7 +2107,7 @@ impl TpE4m3HostBounce {
             .into());
         }
         let local_out = matrix.out_features / tp;
-        if !local_out.is_multiple_of(FP8_BLOCK) {
+        if local_out % FP8_BLOCK != 0 {
             return Err(format!(
                 "column-parallel output shard {local_out} cuts through a {FP8_BLOCK}-row \
                  E4M3 scale block"
@@ -2668,7 +2182,6 @@ impl TpE4m3HostBounce {
     /// Row-parallel projection. Weight/input columns and their scale columns are partitioned
     /// across ranks. Rank-local partials return through host memory and are reduced in stable
     /// rank order.
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn row_parallel(
         &self,
         matrix: E4m3BlockMatrix<'_>,
@@ -2686,7 +2199,7 @@ impl TpE4m3HostBounce {
             .into());
         }
         let local_in = matrix.in_features / tp;
-        if !local_in.is_multiple_of(FP8_BLOCK) {
+        if local_in % FP8_BLOCK != 0 {
             return Err(format!(
                 "row-parallel input shard {local_in} cuts through a {FP8_BLOCK}-column \
                  E4M3 scale block"
@@ -2808,7 +2321,6 @@ impl TpE4m3HostBounce {
         self.upload_bf16_column_parallel_inner(matrix, Some(canonical_chunk_rows), f32_mirror)
     }
 
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     fn upload_bf16_column_parallel_inner(
         &self,
         matrix: Bf16Matrix<'_>,
@@ -2893,7 +2405,7 @@ impl TpE4m3HostBounce {
     /// Does the serving engine live in the SAME CUDA context as this runtime's root rank?
     /// The device-resident input/output seams below hand raw device buffers across the
     /// Engine boundary, which is only addressable when both sides share the root device's
-    /// primary context — the generic full-attention TP seam keys its residency dispatch on.
+    /// primary context — the seam `step35_tp_qkv` keys its residency dispatch on.
     pub fn root_shares_ctx(&self, e: &Engine) -> bool {
         self.ranks
             .first()
@@ -2985,8 +2497,6 @@ impl TpE4m3HostBounce {
         }
 
         let mut rank_outputs = Vec::with_capacity(self.ranks.len());
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for rank in 0..self.ranks.len() {
             rank_outputs.push(run_resident_bf16_rank_device(
                 &self.ranks[rank],
@@ -3048,8 +2558,6 @@ impl TpE4m3HostBounce {
         }
 
         let mut rank_outputs = Vec::with_capacity(self.ranks.len());
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for rank in 0..self.ranks.len() {
             rank_outputs.push(run_resident_bf16_rank_device(
                 &self.ranks[rank],
@@ -3550,7 +3058,6 @@ impl TpE4m3HostBounce {
         Ok(outputs)
     }
 
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn upload_bf16_row_parallel(
         &self,
         matrix: Bf16Matrix<'_>,
@@ -3816,7 +3323,7 @@ impl TpE4m3HostBounce {
                         let _main = root.gpu.enter_main()?;
                         let mut root_packed = root.uninit(block_len)?;
                         root.copy_rows_strided(
-                            root_input,
+                            &root_input,
                             &mut root_packed,
                             matrix.canonical_chunk_cols,
                             tokens,
@@ -4095,7 +3602,6 @@ impl TpE4m3HostBounce {
             .reduced)
     }
 
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn upload_expert_parallel(
         &self,
         gate: E4m3ExpertBank<'_>,
@@ -4481,7 +3987,6 @@ impl TpE4m3HostBounce {
         Ok(plan)
     }
 
-    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
     fn prepare_step_grouped_expert_parallel_refresh(
         &self,
         experts: &ResidentExpertParallel,
@@ -5621,8 +5126,6 @@ impl TpE4m3HostBounce {
 
         let mut gate_shards = Vec::with_capacity(self.ranks.len());
         let mut up_shards = Vec::with_capacity(self.ranks.len());
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for rank in 0..self.ranks.len() {
             gate_shards.push(run_resident_bank_expert_device(
                 &self.ranks[rank],
@@ -5681,8 +5184,6 @@ impl TpE4m3HostBounce {
             root.htod(&vec![0.0f32; out_features])?
         };
         let mut remote_partial_keepalive = Vec::new();
-        #[allow(clippy::needless_range_loop)]
-        // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
         for rank in 0..self.ranks.len() {
             let down = &bank.down[rank];
             let blocks = down
@@ -5817,7 +5318,6 @@ impl TpE4m3HostBounce {
     /// Refuses non-F32-resident projections: the v2 driver's bit-exactness claim against v1
     /// holds per residency class, and only the mirror class has no per-call weight expansion
     /// to hide allocation churn behind.
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub(crate) fn decode_v2_ensure(
         &self,
         e: &Engine,
@@ -5941,34 +5441,6 @@ impl TpE4m3HostBounce {
             o_partials.push(rank_partials);
             ev_rank.push(engine.ctx().new_event(None)?);
         }
-        use cudarc::driver::DevicePtr;
-        let mut raw_o_partials = Vec::with_capacity(ranks);
-        let mut raw_k = Vec::with_capacity(ranks);
-        let mut raw_v_raw = Vec::with_capacity(ranks);
-        for rank in 0..ranks {
-            let engine = &self.ranks[rank];
-            {
-                let _main = engine.gpu.enter_main()?;
-                let stream = engine.stream();
-                let (k_ptr, _k_guard) = k[rank].device_ptr(&stream);
-                let (v_ptr, _v_guard) = v_raw[rank].device_ptr(&stream);
-                raw_k.push(k_ptr);
-                raw_v_raw.push(v_ptr);
-            }
-            let partial_engine = if direct_join && rank != 0 {
-                &self.ranks[0]
-            } else {
-                engine
-            };
-            let _main = partial_engine.gpu.enter_main()?;
-            let stream = partial_engine.stream();
-            let mut rank_raw = Vec::with_capacity(blocks_per_rank);
-            for partial in &o_partials[rank] {
-                let (ptr, _guard) = partial.device_ptr(&stream);
-                rank_raw.push(ptr);
-            }
-            raw_o_partials.push(rank_raw);
-        }
         let root = &self.ranks[0];
         let (peer_partial, reduce_a, reduce_b, zeros, k_shadow, v_shadow, ev_refresh, ev_oproj) = {
             let _main = root.gpu.enter_main()?;
@@ -5982,14 +5454,6 @@ impl TpE4m3HostBounce {
                 root.ctx().new_event(None)?,
                 root.ctx().new_event(None)?,
             )
-        };
-        let (raw_peer_partial, raw_k_shadow, raw_v_shadow) = {
-            let _main = root.gpu.enter_main()?;
-            let stream = root.stream();
-            let (peer, _peer_guard) = peer_partial.device_ptr(&stream);
-            let (k, _k_guard) = k_shadow.device_ptr(&stream);
-            let (v, _v_guard) = v_shadow.device_ptr(&stream);
-            (peer, k, v)
         };
         let (gate_e, ev_entry) = {
             let _main = e.gpu.enter_main()?;
@@ -6010,13 +5474,6 @@ impl TpE4m3HostBounce {
             w8o_aq: Vec::new(),
             w8o_ad: Vec::new(),
             w8o_in: 0,
-            w8t_aq: Vec::new(),
-            w8t_ad: Vec::new(),
-            w8t_in: 0,
-            w8t_oaq: Vec::new(),
-            w8t_oad: Vec::new(),
-            w8t_oin: 0,
-            w8t_cap: 0,
             fa2_q: Vec::new(),
             fa2_gate: Vec::new(),
             fa2_gated: Vec::new(),
@@ -6025,8 +5482,6 @@ impl TpE4m3HostBounce {
             rope_ctr_t: Vec::new(),
             rope_pos_t: Vec::new(),
             rows_tabs: Vec::new(),
-            rows_tab_t: Vec::new(),
-            rows_tab_shadow: Vec::new(),
             tcol_gated: Vec::new(),
             tcol_opart: Vec::new(),
             tcol_opeer: None,
@@ -6043,9 +5498,6 @@ impl TpE4m3HostBounce {
             attn_out,
             gated,
             o_partials,
-            raw_o_partials,
-            raw_k,
-            raw_v_raw,
             ev_rank,
             peer_partial,
             reduce_a,
@@ -6064,11 +5516,11 @@ impl TpE4m3HostBounce {
             raw_attn_in,
             raw_pos,
             raw_o_partial1: 0,
-            raw_peer_partial,
+            raw_peer_partial: 0,
             raw_k1: 0,
             raw_v1: 0,
-            raw_k_shadow,
-            raw_v_shadow,
+            raw_k_shadow: 0,
+            raw_v_shadow: 0,
             raw_mixed_stage_e: 0,
             raw_reduce_a: 0,
             raw_shadow_stage_e: (0, 0),
@@ -6150,7 +5602,7 @@ impl TpE4m3HostBounce {
             let stream = e.stream();
             let (p, _g) = h_t.device_ptr(&stream);
             ws.ev_entry.record(&stream)?;
-            p
+            p as u64
         };
         for rank in 0..ranks {
             let engine = &self.ranks[rank];
@@ -6159,7 +5611,7 @@ impl TpE4m3HostBounce {
             let raw_dst = {
                 let stream = engine.stream();
                 let (p, _g) = ws.tcol_in[rank].device_ptr(&stream);
-                p
+                p as u64
             };
             raw_copy_bytes(raw_dst, raw_src, t * in_f * 4, engine)?;
             let out_g = match &gate_shards {
@@ -6193,10 +5645,6 @@ impl TpE4m3HostBounce {
                         tcol_in,
                         local_q_dim,
                         local_kv_dim,
-                        w8t_aq,
-                        w8t_ad,
-                        w8t_in,
-                        w8t_cap,
                         ..
                     } = &mut *ws;
                     // MEMRA_TCOL_REFKERN=1 (bisect): fill the slabs via the t=1 kernel per
@@ -6241,59 +5689,6 @@ impl TpE4m3HostBounce {
                                 let mut dst = tcol_g[rank].slice_mut(c * out_g..(c + 1) * out_g);
                                 stream.memcpy_dtod(&gr.slice(0..out_g), &mut dst)?;
                             }
-                        }
-                    } else if crate::step_tp_w8_on()
-                        && q_m.ranks[rank].q8.is_some()
-                        && k_m.ranks[rank].q8.is_some()
-                        && v_m.ranks[rank].q8.is_some()
-                        && in_f.is_multiple_of(32)
-                    {
-                        // MEMRA_STEP_TP_W8 on the VERIFY walk. nsys put the bf16 tcol QKV at
-                        // 12.3% of spec GPU time and the bf16 tcol o_proj at 24.8% — the door
-                        // had only ever replaced the DECODE kernels, so 37% of the verify still
-                        // streamed bf16 weights. One q8 launch over all t columns; the gate rows
-                        // stay bf16 as on the decode side.
-                        if *w8t_in != in_f || *w8t_cap < t || w8t_aq.len() != ranks {
-                            w8t_aq.clear();
-                            w8t_ad.clear();
-                            for e_rank in &self.ranks {
-                                let _m = e_rank.gpu.enter_main()?;
-                                w8t_aq.push(e_rank.alloc_i8_uninit(32 * in_f)?);
-                                w8t_ad.push(e_rank.alloc_uninit::<f32>(32 * (in_f / 32))?);
-                            }
-                            *w8t_in = in_f;
-                            *w8t_cap = 32;
-                        }
-                        engine.quantize_q8_1_into(
-                            &tcol_in[rank],
-                            t,
-                            in_f,
-                            &mut w8t_aq[rank],
-                            &mut w8t_ad[rank],
-                        )?;
-                        engine.qmatvec_q8_0_qkv_rp_t_into(
-                            q_m.ranks[rank].q8.as_ref().unwrap(),
-                            k_m.ranks[rank].q8.as_ref().unwrap(),
-                            v_m.ranks[rank].q8.as_ref().unwrap(),
-                            &w8t_aq[rank],
-                            &w8t_ad[rank],
-                            &mut tcol_q[rank],
-                            &mut tcol_k[rank],
-                            &mut tcol_v[rank],
-                            in_f,
-                            *local_q_dim,
-                            *local_kv_dim,
-                            t,
-                        )?;
-                        if out_g > 0 {
-                            engine.matvec_bf16_rows_into(
-                                wg,
-                                &tcol_in[rank],
-                                &mut tcol_g[rank],
-                                in_f,
-                                out_g,
-                                t,
-                            )?;
                         }
                     } else {
                         engine.matvec_bf16_qkvg_tcol_into(
@@ -6356,14 +5751,13 @@ impl TpE4m3HostBounce {
         }
         let lq = ws.local_q_dim;
         let lg = (ws.heads / ranks).max(1);
-        if ws.fa2_cap < 32 || ws.fa2_q.len() != ranks || ws.rows_tab_t.len() != ranks {
+        if ws.fa2_cap < 32 || ws.fa2_q.len() != ranks {
             ws.fa2_q.clear();
             ws.fa2_gate.clear();
             ws.fa2_gated.clear();
             ws.rope_k_t.clear();
             ws.rope_ctr_t.clear();
             ws.rope_pos_t.clear();
-            ws.rows_tab_t.clear();
             for engine in &self.ranks {
                 let _m = engine.gpu.enter_main()?;
                 ws.fa2_q.push(engine.uninit(32 * lq)?);
@@ -6372,8 +5766,6 @@ impl TpE4m3HostBounce {
                 ws.rope_k_t.push(engine.uninit(32 * ws.local_kv_dim)?);
                 ws.rope_ctr_t.push(engine.stream().clone_htod(&[0u32; 32])?);
                 ws.rope_pos_t.push(engine.htod_i32(&[0i32; 32])?);
-                ws.rows_tab_t
-                    .push(engine.stream().clone_htod(&[0u64; 32 * 6])?);
             }
             ws.rows_tabs = (0..ranks).map(|_| Default::default()).collect();
             ws.fa2_cap = 32;
@@ -6411,7 +5803,6 @@ impl TpE4m3HostBounce {
     /// Returns the [2, o_out] `mixed` slab on `e`. The caller's precheck enforced the
     /// equal-partition guard (boundary rounds never arm the defer).
     #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)] // allow: banked MEMRA_SPEC_FA2 arm; kept as the named seam its precheck twin documents
     pub(crate) fn decode_v2_spec_fa2_join(
         &self,
         ws_index: usize,
@@ -6563,14 +5954,13 @@ impl TpE4m3HostBounce {
             let local_heads = (ws.heads / ranks).max(1);
             let local_kv_heads = (lkv / head_dim).max(1);
             // Arm the fa2/rope slabs (shared with the stash path).
-            if ws.fa2_cap < 32 || ws.fa2_q.len() != ranks || ws.rows_tab_t.len() != ranks {
+            if ws.fa2_cap < 32 || ws.fa2_q.len() != ranks {
                 ws.fa2_q.clear();
                 ws.fa2_gate.clear();
                 ws.fa2_gated.clear();
                 ws.rope_k_t.clear();
                 ws.rope_ctr_t.clear();
                 ws.rope_pos_t.clear();
-                ws.rows_tab_t.clear();
                 for engine in &self.ranks {
                     let _m = engine.gpu.enter_main()?;
                     ws.fa2_q.push(engine.uninit(32 * lq)?);
@@ -6579,8 +5969,6 @@ impl TpE4m3HostBounce {
                     ws.rope_k_t.push(engine.uninit(32 * lkv)?);
                     ws.rope_ctr_t.push(engine.stream().clone_htod(&[0u32; 32])?);
                     ws.rope_pos_t.push(engine.htod_i32(&[0i32; 32])?);
-                    ws.rows_tab_t
-                        .push(engine.stream().clone_htod(&[0u64; 32 * 6])?);
                 }
                 ws.rows_tabs = (0..ranks).map(|_| Default::default()).collect();
                 ws.fa2_cap = 32;
@@ -6607,66 +5995,35 @@ impl TpE4m3HostBounce {
                     let mut view = ws.rope_pos_t[rank].slice_mut(0..t);
                     engine.stream().memcpy_htod(&host, &mut view)?;
                 }
-                // Combined 6-word table {k, v, len, base, ctr, back}; ctr = this rank's
-                // per-row counter slab. Built from the pointers the CALLER just read off
-                // the live distributed cache, and RESTAGED into a persistent slab before
-                // every launch (MEMRA_ROWS_TAB_RESTAGE, default ON).
-                //
-                // The `rows_tabs` memo this replaces was keyed by a hash of
-                // (k pointer, base pointer, layer, t) but the table it handed back ALSO
-                // carried the V and LEN pointers, and nothing invalidated it when a
-                // session's KV cache was dropped. A later session whose K buffer landed on
-                // a recycled address therefore hit a dead entry, and
-                // `qk_norm_rope_append_inc_dcw_rows` WROTE this session's K/V rows through
-                // the freed V/len pointers it still held while `fa_decode_dcw_rows` read
-                // them back: a whole non-finite row when the freed pages were re-mapped,
-                // CUDA_ERROR_ILLEGAL_ADDRESS when they were not. The row-table twin in
-                // `step35_verify_fa_rows_join` was cured of exactly this in 8c8397e0b2
-                // ("a process-lifetime map cannot prove allocation generation", Hermes
-                // `11339f5cd3c132a3`); this fused rope+append+fa path was left out of it,
-                // and MEMRA_FUSE_ROPE_APPEND=1 makes it the arm that actually runs.
-                let ctr_base = {
-                    let s = engine.stream();
-                    let (p, _g) = ws.rope_ctr_t[rank].device_ptr(&s);
-                    p
-                };
-                let host = rows_tab_host(&session_parts[rank], ctr_base, same_session, t);
-                // STALE-HIT RECEIPT (MEMRA_ROWS_TAB_STALE_SCAN=1, default OFF): replay the
-                // retired key against the contents we are about to stage. `engaged` proves
-                // this path executes at all; `STALE` proves the retired memo would have
-                // handed a live launch another allocation's pointers, and names which word
-                // moved. Diagnostic only: it never feeds a kernel.
-                if rows_tab_stale_scan() {
-                    if ws.rows_tab_shadow.len() != ranks {
-                        ws.rows_tab_shadow = (0..ranks).map(|_| Default::default()).collect();
+                // Combined 6-word table {k, v, len, base, ctr, back=0}; ctr = this
+                // rank's per-row counter slab.
+                if !ws.rows_tabs[rank].contains_key(&tab_keys[rank]) {
+                    let ctr_base = {
+                        let s = engine.stream();
+                        let (p, _g) = ws.rope_ctr_t[rank].device_ptr(&s);
+                        p as u64
+                    };
+                    let mut host = Vec::with_capacity(t * 6);
+                    for (r, parts) in session_parts[rank].iter().enumerate().take(t) {
+                        host.extend_from_slice(&[
+                            parts[0],
+                            parts[1],
+                            parts[2],
+                            parts[3],
+                            if same_session {
+                                ctr_base
+                            } else {
+                                ctr_base + (r as u64) * 4
+                            },
+                            if same_session {
+                                (t - 1 - r) as u64
+                            } else {
+                                0u64
+                            },
+                        ]);
                     }
-                    let n = ROWS_TAB_ENGAGED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if let Some(prev) = ws.rows_tab_shadow[rank].get(&tab_keys[rank])
-                        && prev != &host
-                    {
-                        let words = ["k", "v", "len", "base", "ctr", "back"];
-                        let moved: Vec<String> = (0..host.len())
-                            .filter(|&i| prev.get(i) != Some(&host[i]))
-                            .map(|i| format!("{}[row{}]", words[i % 6], i / 6))
-                            .collect();
-                        let stale =
-                            ROWS_TAB_STALE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        eprintln!(
-                            "[rows-tab] STALE #{stale} lookup #{n} rank={rank} t={t} key={:#018x} moved={}: the retired memo would have launched this row on another allocation's pointers",
-                            tab_keys[rank],
-                            moved.join(",")
-                        );
-                    }
-                    ws.rows_tab_shadow[rank].insert(tab_keys[rank], host.clone());
-                }
-                let legacy_memo = !rows_tab_restage_on();
-                if legacy_memo && !ws.rows_tabs[rank].contains_key(&tab_keys[rank]) {
                     let tab = engine.stream().clone_htod(&host)?;
                     ws.rows_tabs[rank].insert(tab_keys[rank], tab);
-                }
-                if !legacy_memo {
-                    let mut view = ws.rows_tab_t[rank].slice_mut(0..t * 6);
-                    engine.stream().memcpy_htod(&host, &mut view)?;
                 }
                 let StepTpDecodeV2Ws {
                     tcol_q,
@@ -6678,16 +6035,11 @@ impl TpE4m3HostBounce {
                     rope_k_t,
                     rope_pos_t,
                     rows_tabs,
-                    rows_tab_t,
                     ..
                 } = &mut *ws;
-                let tab = if legacy_memo {
-                    rows_tabs[rank]
-                        .get(&tab_keys[rank])
-                        .ok_or("rows tab memo lost its entry")?
-                } else {
-                    &rows_tab_t[rank]
-                };
+                let tab = rows_tabs[rank]
+                    .get(&tab_keys[rank])
+                    .expect("inserted above");
                 engine.qk_norm_rope_append_inc_dcw_rows(
                     &tcol_q[rank],
                     &tcol_k[rank],
@@ -6846,10 +6198,7 @@ impl TpE4m3HostBounce {
         col: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let ranks = self.ranks.len();
-        // 32, not 8: the slabs below have been 32 rows since the slab-width fix, and the walk now
-        // runs chunks up to t=32 (the w=16 arm died here on a guard three widths staler than its
-        // own allocation, 2026-08-27).
-        if col >= 32 {
+        if col >= 8 {
             return Err("decode_v2_stash_gated column out of range".into());
         }
         let lq = ws.local_q_dim;
@@ -6928,10 +6277,6 @@ impl TpE4m3HostBounce {
                     local_q_dim,
                     o_block_cols,
                     o_out,
-                    w8t_oaq,
-                    w8t_oad,
-                    w8t_oin,
-                    w8t_cap,
                     ..
                 } = &mut *ws;
                 // MEMRA_TCOL_OPROJ_REF=1 (bisect): fill the partial slab via the t=1 b4
@@ -6963,46 +6308,6 @@ impl TpE4m3HostBounce {
                             .stream()
                             .memcpy_dtod(&yr.slice(0..*o_out), &mut dst)?;
                     }
-                } else if crate::step_tp_w8_on()
-                    && (0..4).all(|b| o_m.ranks[rank][b].q8.is_some())
-                    && (4 * *o_block_cols) % 32 == 0
-                {
-                    // The verify walk's biggest single kernel: bf16 tcol o_proj was 24.8% of
-                    // spec GPU time. Same planar q8_0 mirrors the decode arm uses, one launch
-                    // over all t columns.
-                    let in_f = 4 * *o_block_cols;
-                    if *w8t_oin != in_f || *w8t_cap < t || w8t_oaq.len() != ranks {
-                        w8t_oaq.clear();
-                        w8t_oad.clear();
-                        for e_rank in &self.ranks {
-                            let _m = e_rank.gpu.enter_main()?;
-                            w8t_oaq.push(e_rank.alloc_i8_uninit(32 * in_f)?);
-                            w8t_oad.push(e_rank.alloc_uninit::<f32>(32 * (in_f / 32))?);
-                        }
-                        *w8t_oin = in_f;
-                        *w8t_cap = (*w8t_cap).max(32);
-                    }
-                    engine.quantize_q8_1_into(
-                        &tcol_gated[rank],
-                        t,
-                        in_f,
-                        &mut w8t_oaq[rank],
-                        &mut w8t_oad[rank],
-                    )?;
-                    engine.qmatvec_q8_0_b4_rp_t_into(
-                        [
-                            o_m.ranks[rank][0].q8.as_ref().unwrap(),
-                            o_m.ranks[rank][1].q8.as_ref().unwrap(),
-                            o_m.ranks[rank][2].q8.as_ref().unwrap(),
-                            o_m.ranks[rank][3].q8.as_ref().unwrap(),
-                        ],
-                        &w8t_oaq[rank],
-                        &w8t_oad[rank],
-                        &mut tcol_opart[rank],
-                        *o_block_cols,
-                        *o_out,
-                        t,
-                    )?;
                 } else {
                     engine.matvec_bf16_b4_tcol_into(
                         [weights[0], weights[1], weights[2], weights[3]],
@@ -7056,7 +6361,6 @@ impl TpE4m3HostBounce {
         Ok(out)
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub(crate) fn decode_v2_input_qkv(
         &self,
         ws: &mut StepTpDecodeV2Ws,
@@ -7076,19 +6380,16 @@ impl TpE4m3HostBounce {
         rope_base: f32,
         rope_freqs: &[Option<&CudaSlice<f32>>],
         rms_eps: f32,
-        has_gate: bool,
         defer_norm_rope: bool,
         tcol_col: Option<usize>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let ranks = self.ranks.len();
         validate_replicated_device_rows(&self.ranks, decode_input)?;
-        let gate_sources = usize::from(gate_raw.is_some()) + usize::from(gate_shards.is_some());
         if decode_input.tokens != 1
             || decode_input.width != q_m.in_features
             || pos_d.len() != 1
             || gate_raw.is_some_and(|gate| gate.len() != ws.heads)
-            || (has_gate && gate_sources != 1)
-            || (!has_gate && gate_sources != 0)
+            || gate_raw.is_none() != gate_shards.is_some()
             || gate_shards.as_ref().is_some_and(|shards| match shards {
                 StepTpGateShards::F32(shards) => shards.len() != ranks,
                 StepTpGateShards::Bf16(shards) => shards.len() != ranks,
@@ -7127,8 +6428,8 @@ impl TpE4m3HostBounce {
                     let stream = e.stream();
                     let (hp, _g0) = h_stage.device_ptr(&stream);
                     let (pp, _g1) = pos_stage.device_ptr(&stream);
-                    ws.raw_h_stage = hp;
-                    ws.raw_pos_stage = pp;
+                    ws.raw_h_stage = hp as u64;
+                    ws.raw_pos_stage = pp as u64;
                 }
                 ws.h_stage = Some(h_stage);
                 ws.pos_stage = Some(pos_stage);
@@ -7141,7 +6442,7 @@ impl TpE4m3HostBounce {
                         let stream = engine.stream();
                         let (dp, _g2) = attn_in.device_ptr(&stream);
                         let (pp, _g3) = ws.pos[rank].device_ptr(&stream);
-                        (dp, pp)
+                        (dp as u64, pp as u64)
                     };
                     ws.raw_attn_in.push(dp);
                     ws.raw_pos.push(pp);
@@ -7155,9 +6456,9 @@ impl TpE4m3HostBounce {
                     let (a, _g) = ws.peer_partial.device_ptr(&stream);
                     let (b, _g) = ws.k_shadow.device_ptr(&stream);
                     let (c, _g) = ws.v_shadow.device_ptr(&stream);
-                    ws.raw_peer_partial = a;
-                    ws.raw_k_shadow = b;
-                    ws.raw_v_shadow = c;
+                    ws.raw_peer_partial = a as u64;
+                    ws.raw_k_shadow = b as u64;
+                    ws.raw_v_shadow = c as u64;
                 }
                 {
                     use cudarc::driver::DevicePtr;
@@ -7167,9 +6468,9 @@ impl TpE4m3HostBounce {
                     let (a, _g) = ws.o_partials[1][0].device_ptr(&stream);
                     let (b, _g) = ws.k[1].device_ptr(&stream);
                     let (c, _g) = ws.v_raw[1].device_ptr(&stream);
-                    ws.raw_o_partial1 = a;
-                    ws.raw_k1 = b;
-                    ws.raw_v1 = c;
+                    ws.raw_o_partial1 = a as u64;
+                    ws.raw_k1 = b as u64;
+                    ws.raw_v1 = c as u64;
                 }
             }
             {
@@ -7240,7 +6541,6 @@ impl TpE4m3HostBounce {
                 rope_freqs,
                 rms_eps,
                 gate_shards.as_ref(),
-                has_gate,
                 qkv_fused,
                 defer_norm_rope,
                 rank,
@@ -7269,7 +6569,6 @@ impl TpE4m3HostBounce {
         rope_freqs: &[Option<&CudaSlice<f32>>],
         rms_eps: f32,
         gate_shards: Option<&StepTpGateShards<'_>>,
-        has_gate: bool,
         qkv_fused: bool,
         defer_norm_rope: bool,
         rank: usize,
@@ -7286,8 +6585,6 @@ impl TpE4m3HostBounce {
         // (pure f32 moves, bit-exact) and skip the per-column matvec. Rope/norm/append run
         // below exactly as in the t=1 program.
         if qkv_fused && tcol_col.is_some() {
-            #[allow(clippy::unnecessary_unwrap)]
-            // allow: the Some-guard sits in a multi-clause regime gate; if-let would reshape the arm structure
             let c = tcol_col.expect("checked");
             if ws.tcol_cap == 0 || ws.tcol_q.len() != ranks {
                 return Err("tcol select without precompute".into());
@@ -7335,7 +6632,7 @@ impl TpE4m3HostBounce {
                     &mut dst,
                 )?;
             }
-            if has_gate && lg > 0 {
+            if lg > 0 {
                 let mut dst = gate[rank].slice_mut(0..lg);
                 stream.memcpy_dtod(&tcol_g[rank].slice(c * lg..(c + 1) * lg), &mut dst)?;
             }
@@ -7602,7 +6899,7 @@ impl TpE4m3HostBounce {
                 rope_freqs[rank],
             )?;
         }
-        if has_gate && gate_shards.is_none() {
+        if gate_shards.is_none() {
             let gate_start = rank * (ws.heads / ranks);
             let mut gate_dst = ws.gate[rank].slice_mut(0..ws.heads / ranks);
             engine.stream().memcpy_dtod(
@@ -7708,24 +7005,14 @@ impl TpE4m3HostBounce {
             }
         } else {
             for block in 0..ws.blocks_per_rank {
+                let ResidentBf16Weight::F32(weight) = &o_m.ranks[rank][block].weight else {
+                    return Err("step TP decode v2 lost its F32 O residency".into());
+                };
                 let x =
                     ws.gated[rank].slice(block * ws.o_block_cols..(block + 1) * ws.o_block_cols);
+                let w = weight.slice(0..weight.len());
                 let mut y = ws.o_partials[rank][block].slice_mut(0..ws.o_out);
-                match &o_m.ranks[rank][block].weight {
-                    ResidentBf16Weight::F32(weight) => {
-                        let w = weight.slice(0..weight.len());
-                        engine.linear_t1_into(&x, &w, &mut y, ws.o_block_cols, ws.o_out)?;
-                    }
-                    ResidentBf16Weight::Bf16(weight) => {
-                        engine.matvec_bf16_views_into(
-                            weight,
-                            &x,
-                            &mut y,
-                            ws.o_block_cols,
-                            ws.o_out,
-                        )?;
-                    }
-                }
+                engine.linear_t1_into(&x, &w, &mut y, ws.o_block_cols, ws.o_out)?;
             }
         }
         Ok(())
@@ -7794,7 +7081,7 @@ impl TpE4m3HostBounce {
                     let stream = e.stream();
                     let (p0, _g0) = ws.o_partials[0][0].device_ptr(&stream);
                     let (p1, _g1) = ws.o_partials[1][0].device_ptr(&stream);
-                    set_oproj_tail((p0, p1));
+                    set_oproj_tail((p0 as u64, p1 as u64));
                     return Ok(output);
                 }
                 e.add(
@@ -7823,12 +7110,8 @@ impl TpE4m3HostBounce {
                 for block in 0..ws.blocks_per_rank {
                     let use_peer = rank != 0;
                     if use_peer {
-                        raw_copy_bytes(
-                            ws.raw_peer_partial,
-                            ws.raw_o_partials[rank][block],
-                            ws.o_out * std::mem::size_of::<f32>(),
-                            root,
-                        )?;
+                        root.stream()
+                            .memcpy_dtod(&ws.o_partials[rank][block], &mut ws.peer_partial)?;
                     }
                     // add(prev, partial) -> the other reduce buffer, exactly one add per block
                     match (first, current_is_a, use_peer) {
@@ -7866,18 +7149,12 @@ impl TpE4m3HostBounce {
             }
             final_in_a = current_is_a;
 
-            if !no_local_shadow_on() {
-                let bytes = ws.local_kv_dim * std::mem::size_of::<f32>();
-                for rank in 0..ranks {
-                    let offset = rank * bytes;
-                    raw_copy_bytes(ws.raw_k_shadow + offset as u64, ws.raw_k[rank], bytes, root)?;
-                    raw_copy_bytes(
-                        ws.raw_v_shadow + offset as u64,
-                        ws.raw_v_raw[rank],
-                        bytes,
-                        root,
-                    )?;
-                }
+            for rank in 0..ranks {
+                let start = rank * ws.local_kv_dim;
+                let mut k_dst = ws.k_shadow.slice_mut(start..start + ws.local_kv_dim);
+                root.stream().memcpy_dtod(&ws.k[rank], &mut k_dst)?;
+                let mut v_dst = ws.v_shadow.slice_mut(start..start + ws.local_kv_dim);
+                root.stream().memcpy_dtod(&ws.v_raw[rank], &mut v_dst)?;
             }
             ws.ev_oproj.record(&root.stream())?;
         }
@@ -7900,7 +7177,6 @@ impl TpE4m3HostBounce {
         Ok(output)
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn run_routed_experts(
         &self,
         experts: &ResidentExpertParallel,
@@ -7983,7 +7259,6 @@ impl TpE4m3HostBounce {
         Ok(output)
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn run_routed_experts_native(
         &self,
         experts: &ResidentExpertParallel,
@@ -8110,7 +7385,6 @@ impl TpE4m3HostBounce {
         Ok(output)
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     fn run_routed_experts_native_device(
         &self,
         experts: &ResidentExpertParallel,
@@ -8248,7 +7522,6 @@ impl TpE4m3HostBounce {
     }
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn validate_column_shape(matrix: E4m3BlockMatrix<'_>, tp: usize) -> Result<(), String> {
     if matrix.out_features % tp != 0 {
         return Err(format!(
@@ -8257,7 +7530,7 @@ fn validate_column_shape(matrix: E4m3BlockMatrix<'_>, tp: usize) -> Result<(), S
         ));
     }
     let local_out = matrix.out_features / tp;
-    if !local_out.is_multiple_of(FP8_BLOCK) {
+    if local_out % FP8_BLOCK != 0 {
         return Err(format!(
             "column-parallel output shard {local_out} cuts through a {FP8_BLOCK}-row \
              E4M3 scale block"
@@ -8266,14 +7539,13 @@ fn validate_column_shape(matrix: E4m3BlockMatrix<'_>, tp: usize) -> Result<(), S
     Ok(())
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn step_bf16_canonical_chunk_rows(out_features: usize, tp: usize) -> Result<usize, String> {
     if !matches!(tp, 1 | 2 | 4 | 8) {
         return Err(format!(
             "Step BF16 canonical projection requires TP1/TP2/TP4/TP8, got TP={tp}"
         ));
     }
-    if out_features == 0 || !out_features.is_multiple_of(PRODUCT_MAX_CARDS) {
+    if out_features == 0 || out_features % PRODUCT_MAX_CARDS != 0 {
         return Err(format!(
             "Step BF16 output width {out_features} is not divisible by the TP8 product envelope"
         ));
@@ -8289,14 +7561,13 @@ fn step_bf16_canonical_chunk_rows(out_features: usize, tp: usize) -> Result<usiz
     Ok(canonical_rows)
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn step_bf16_canonical_chunk_cols(in_features: usize, tp: usize) -> Result<usize, String> {
     if !matches!(tp, 1 | 2 | 4 | 8) {
         return Err(format!(
             "Step BF16 canonical row projection requires TP1/TP2/TP4/TP8, got TP={tp}"
         ));
     }
-    if in_features == 0 || !in_features.is_multiple_of(PRODUCT_MAX_CARDS) {
+    if in_features == 0 || in_features % PRODUCT_MAX_CARDS != 0 {
         return Err(format!(
             "Step BF16 input width {in_features} is not divisible by the TP8 product envelope"
         ));
@@ -8312,7 +7583,6 @@ fn step_bf16_canonical_chunk_cols(in_features: usize, tp: usize) -> Result<usize
     Ok(canonical_cols)
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn validate_row_shape(matrix: E4m3BlockMatrix<'_>, tp: usize) -> Result<(), String> {
     if matrix.in_features % tp != 0 {
         return Err(format!(
@@ -8321,7 +7591,7 @@ fn validate_row_shape(matrix: E4m3BlockMatrix<'_>, tp: usize) -> Result<(), Stri
         ));
     }
     let local_in = matrix.in_features / tp;
-    if !local_in.is_multiple_of(FP8_BLOCK) {
+    if local_in % FP8_BLOCK != 0 {
         return Err(format!(
             "row-parallel input shard {local_in} cuts through a {FP8_BLOCK}-column \
              E4M3 scale block"
@@ -8364,7 +7634,7 @@ fn upload_bf16_rank(
     // MEMRA_STEP_TP_W8: encode the q8_0 decode mirror once, here, while the bf16 bytes are
     // already resident. Rows whose in_features is not a multiple of 32 have no q8_0 form and
     // simply keep the bf16 program (the decode arm checks for the mirror, never assumes it).
-    let q8 = if crate::step_tp_w8_on() && matrix.in_features.is_multiple_of(32) {
+    let q8 = if crate::step_tp_w8_on() && matrix.in_features % 32 == 0 {
         if let ResidentBf16Weight::Bf16(bytes) = &weight {
             // Two steps, because the mmvq rp kernel does NOT read ggml-interleaved 34-byte
             // blocks: it reads a PLANAR mirror (all quants, then all half scales — the
@@ -8429,7 +7699,6 @@ fn upload_expert_bank_rank(
     })
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn validate_column_bank_shape(bank: E4m3ExpertBank<'_>, tp: usize) -> Result<(), String> {
     if bank.out_features % tp != 0 {
         return Err(format!(
@@ -8438,7 +7707,7 @@ fn validate_column_bank_shape(bank: E4m3ExpertBank<'_>, tp: usize) -> Result<(),
         ));
     }
     let local_out = bank.out_features / tp;
-    if !local_out.is_multiple_of(FP8_BLOCK) {
+    if local_out % FP8_BLOCK != 0 {
         return Err(format!(
             "TP expert output shard {local_out} cuts through a {FP8_BLOCK}-row E4M3 scale block"
         ));
@@ -8446,7 +7715,6 @@ fn validate_column_bank_shape(bank: E4m3ExpertBank<'_>, tp: usize) -> Result<(),
     Ok(())
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn validate_row_bank_shape(bank: E4m3ExpertBank<'_>, tp: usize) -> Result<(), String> {
     if bank.in_features % tp != 0 {
         return Err(format!(
@@ -8455,7 +7723,7 @@ fn validate_row_bank_shape(bank: E4m3ExpertBank<'_>, tp: usize) -> Result<(), St
         ));
     }
     let local_in = bank.in_features / tp;
-    if !local_in.is_multiple_of(FP8_BLOCK) {
+    if local_in % FP8_BLOCK != 0 {
         return Err(format!(
             "TP expert input shard {local_in} cuts through a {FP8_BLOCK}-column E4M3 scale block"
         ));
@@ -8931,7 +8199,6 @@ fn replicated_device_row_source_values(
     Ok(values)
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn bf16_column_shard(
     matrix: Bf16Matrix<'_>,
     tp: usize,
@@ -8954,7 +8221,6 @@ fn bf16_column_shard(
     })
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn bf16_row_shard(matrix: Bf16Matrix<'_>, tp: usize, rank: usize) -> Result<Vec<u8>, String> {
     matrix.validate()?;
     if tp == 0 || rank >= tp || matrix.in_features % tp != 0 {
@@ -9197,75 +8463,6 @@ fn run_resident_bank_expert_block_device(
     )
 }
 
-/// Grant `accessor` the right to reach `owner`'s memory — BOTH halves of the grant, which is
-/// the part every caller gets wrong exactly once:
-///
-///   1. `cuCtxEnablePeerAccess`, which covers legacy `cuMemAlloc` allocations, and
-///   2. `cuMemPoolSetAccess` on `owner`'s DEFAULT MEMORY POOL, because
-///      `cuCtxEnablePeerAccess` does NOT map STREAM-ORDERED POOL allocations and every
-///      normal memra buffer is one (the same note `pp.rs:1543`/`pp.rs:1578` carries).
-///
-/// Extracted from [`configure_native_p2p`] (which now calls it per ordered pair) so a seam
-/// holding two `&Engine` rather than a `&[Engine]` — the glm5 TP-2 runtime — reuses the exact
-/// grant sequence instead of growing a second, drifting copy of it. Directed: call it once
-/// per direction. Refuses by name when `cuDeviceCanAccessPeer` says the pair has no path,
-/// which is the only honest answer: this card class is NOT uniformly peer-connected. Some
-/// 8-GPU host classes present PEER ISLANDS OF TWO — every cross-island cell of a peer-transfer
-/// matrix reads `N/A` — so a TP group placed across an island boundary has no peer path at all
-/// and must either stay inside one island or go through host memory. The per-host island map is
-/// fleet data and lives in the private deployment repo, never here; the engine's job is to
-/// refuse by name rather than to know which host it is on.
-pub(crate) fn grant_peer_access(
-    accessor: &Engine,
-    owner: &Engine,
-    label: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (a_dev, o_dev) = (accessor.ctx().ordinal(), owner.ctx().ordinal());
-    let mut can_access = 0;
-    unsafe {
-        cudarc::driver::sys::cuDeviceCanAccessPeer(
-            &mut can_access,
-            accessor.ctx().cu_device(),
-            owner.ctx().cu_device(),
-        )
-        .result()?;
-    }
-    if can_access == 0 {
-        return Err(
-            format!("{label} requires P2P, but dev{a_dev} cannot access dev{o_dev}").into(),
-        );
-    }
-    accessor.ctx().bind_to_thread()?;
-    let rc = unsafe { cudarc::driver::sys::cuCtxEnablePeerAccess(owner.ctx().cu_ctx(), 0) };
-    use cudarc::driver::sys::cudaError_enum as E;
-    if rc != E::CUDA_SUCCESS && rc != E::CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED {
-        return Err(format!(
-            "{label} cuCtxEnablePeerAccess(dev{a_dev} -> dev{o_dev}) failed: {rc:?}"
-        )
-        .into());
-    }
-    let device = cudarc::driver::result::device::get(o_dev as i32)?;
-    let mut pool: cudarc::driver::sys::CUmemoryPool = std::ptr::null_mut();
-    unsafe {
-        cudarc::driver::sys::cuDeviceGetDefaultMemPool(&mut pool, device).result()?;
-    }
-    let desc = cudarc::driver::sys::CUmemAccessDesc {
-        location: cudarc::driver::sys::CUmemLocation {
-            type_: cudarc::driver::sys::CUmemLocationType::CU_MEM_LOCATION_TYPE_DEVICE,
-            id: a_dev as i32,
-        },
-        flags: cudarc::driver::sys::CUmemAccess_flags::CU_MEM_ACCESS_FLAGS_PROT_READWRITE,
-    };
-    let rc = unsafe { cudarc::driver::sys::cuMemPoolSetAccess(pool, &desc, 1) };
-    if rc != cudarc::driver::sys::cudaError_enum::CUDA_SUCCESS {
-        return Err(format!(
-            "{label} cuMemPoolSetAccess(dev{o_dev} pool -> dev{a_dev}) failed: {rc:?}"
-        )
-        .into());
-    }
-    Ok(())
-}
-
 fn configure_native_p2p(
     ranks: &[Engine],
     devices: &[usize],
@@ -9288,7 +8485,61 @@ fn configure_native_p2p(
             if src == dst {
                 continue;
             }
-            grant_peer_access(&ranks[src], &ranks[dst], "native TP")?;
+            let mut can_access = 0;
+            unsafe {
+                cudarc::driver::sys::cuDeviceCanAccessPeer(
+                    &mut can_access,
+                    ranks[src].ctx().cu_device(),
+                    ranks[dst].ctx().cu_device(),
+                )
+                .result()?;
+            }
+            if can_access == 0 {
+                return Err(format!(
+                    "native TP requires P2P, but dev{} cannot access dev{}",
+                    devices[src], devices[dst]
+                )
+                .into());
+            }
+            ranks[src].ctx().bind_to_thread()?;
+            let rc =
+                unsafe { cudarc::driver::sys::cuCtxEnablePeerAccess(ranks[dst].ctx().cu_ctx(), 0) };
+            use cudarc::driver::sys::cudaError_enum as E;
+            if rc != E::CUDA_SUCCESS && rc != E::CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED {
+                return Err(format!(
+                    "native TP cuCtxEnablePeerAccess(dev{} -> dev{}) failed: {rc:?}",
+                    devices[src], devices[dst]
+                )
+                .into());
+            }
+        }
+    }
+
+    for &owner in devices {
+        for &accessor in devices {
+            if owner == accessor {
+                continue;
+            }
+            let device = cudarc::driver::result::device::get(owner as i32)?;
+            let mut pool: cudarc::driver::sys::CUmemoryPool = std::ptr::null_mut();
+            unsafe {
+                cudarc::driver::sys::cuDeviceGetDefaultMemPool(&mut pool, device).result()?;
+            }
+            let desc = cudarc::driver::sys::CUmemAccessDesc {
+                location: cudarc::driver::sys::CUmemLocation {
+                    type_: cudarc::driver::sys::CUmemLocationType::CU_MEM_LOCATION_TYPE_DEVICE,
+                    id: accessor as i32,
+                },
+                flags: cudarc::driver::sys::CUmemAccess_flags::CU_MEM_ACCESS_FLAGS_PROT_READWRITE,
+            };
+            let rc = unsafe { cudarc::driver::sys::cuMemPoolSetAccess(pool, &desc, 1) };
+            if rc != cudarc::driver::sys::cudaError_enum::CUDA_SUCCESS {
+                return Err(format!(
+                    "native TP cuMemPoolSetAccess(dev{owner} pool -> dev{accessor}) failed: \
+                     {rc:?}"
+                )
+                .into());
+            }
         }
     }
 
@@ -9458,7 +8709,7 @@ impl Nvfp4BlockMatrix<'_> {
         if self.in_features == 0 || self.out_features == 0 {
             return Err("NVFP4 matrix has a zero dimension".to_string());
         }
-        if !self.in_features.is_multiple_of(64) {
+        if self.in_features % 64 != 0 {
             return Err(format!(
                 "NVFP4 in_features {} is not 64-aligned (memra block_nvfp4 superblock)",
                 self.in_features
@@ -9580,48 +8831,9 @@ pub struct ResidentNvfp4ColumnBankRank {
     local_out: usize,
     in_features: usize,
     row_bytes: usize,
-    /// TRUE when these bytes are the slot-major permutation (`nvfp4_matrix_v2_permute`) and the
-    /// `_v2` readers must be used; FALSE when they are block_nvfp4 v1. Recorded at BUILD from
-    /// `ep2 || bank_slot_major_on()` and never re-derived: the layout travels with the pointer,
-    /// so no reader can consult an env door that disagrees with the resident bytes. Feeding v1
-    /// bytes to a `_v2` reader (or the reverse) is a garbage-output bug, and the 2026-08-29
-    /// step37 incident was its neighbour — a piece of layout geometry a caller failed to supply.
-    slot_major: bool,
 }
 
 impl ResidentNvfp4ColumnBankRank {
-    /// THE host-canonical reader for this bank, selected from the layout the bank RECORDS. One
-    /// place maps layout -> reader for the column banks; every oracle goes through it, so a new
-    /// producer cannot leave a reader behind (the failure mode that put v1 bytes under a `_v2`
-    /// reader, called out in the `run_tensor_parallel_routes_nvfp4_prime_grouped` receipt).
-    fn host_canonical_expert(
-        &self,
-        engine: &Engine,
-        expert: usize,
-        activations: &crate::CudaSlice<f32>,
-    ) -> Result<crate::CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let w = self.expert(expert);
-        if self.slot_major {
-            engine.qmatvec_nvfp4_fast_v2(
-                &w,
-                activations,
-                1,
-                self.in_features,
-                self.local_out,
-                self.row_bytes,
-            )
-        } else {
-            engine.qmatvec_nvfp4_fast(
-                &w,
-                activations,
-                1,
-                self.in_features,
-                self.local_out,
-                self.row_bytes,
-            )
-        }
-    }
-
     fn expert(&self, index: usize) -> cudarc::driver::CudaView<'_, u8> {
         self.bank
             .slice(index * self.expert_bytes..(index + 1) * self.expert_bytes)
@@ -9643,41 +8855,9 @@ pub struct ResidentNvfp4RowBankRank {
     out_features: usize,
     local_in: usize,
     row_bytes: usize,
-    /// Slot-major layout marker — see `ResidentNvfp4ColumnBankRank::slot_major`.
-    slot_major: bool,
 }
 
 impl ResidentNvfp4RowBankRank {
-    /// THE host-canonical reader for this down shard — see
-    /// `ResidentNvfp4ColumnBankRank::host_canonical_expert`.
-    fn host_canonical_expert(
-        &self,
-        engine: &Engine,
-        expert: usize,
-        activations: &crate::CudaSlice<f32>,
-    ) -> Result<crate::CudaSlice<f32>, Box<dyn std::error::Error>> {
-        let w = self.expert(expert);
-        if self.slot_major {
-            engine.qmatvec_nvfp4_fast_v2(
-                &w,
-                activations,
-                1,
-                self.local_in,
-                self.out_features,
-                self.row_bytes,
-            )
-        } else {
-            engine.qmatvec_nvfp4_fast(
-                &w,
-                activations,
-                1,
-                self.local_in,
-                self.out_features,
-                self.row_bytes,
-            )
-        }
-    }
-
     fn expert(&self, index: usize) -> cudarc::driver::CudaView<'_, u8> {
         self.bank
             .slice(index * self.expert_bytes..(index + 1) * self.expert_bytes)
@@ -9711,14 +8891,70 @@ pub struct ResidentNvfp4TensorParallel {
     /// Lazily-built persistent decode workspace (device routes program). Interior mutability
     /// mirrors StepEpGroupedDecode: the forward holds the bank behind a shared reference.
     device_workspace: std::sync::Mutex<Option<Nvfp4DeviceRoutesWorkspace>>,
-    /// Grouped-prime per-rank slot-major pointer tables (gate/up/down x n_expert), built once.
-    /// The banks are resident and never move, so rebuilding + re-uploading 3*n_expert u64s per
-    /// rank per LAYER was pure per-call host churn on the prime path.
-    prime_tables: std::sync::Mutex<Vec<crate::CudaSlice<u64>>>,
+    /// Lazily-built spec-verify t=2 workspace (MEMRA_TCOL_FFN): the two-column routed
+    /// sweep's slabs and events, kept apart from the serving workspace so the verify walk
+    /// never perturbs serving state.
+    t2_workspace: std::sync::Mutex<Option<Nvfp4T2Workspace>>,
     /// MEMRA_STEP_NVFP4_EP2: the rank banks above hold WHOLE experts (owner = id & 1,
     /// slot = id >> 1) at full width instead of TP shards. Consumers must branch on this;
     /// shard-semantics paths refuse loudly.
     pub(crate) ep2: bool,
+}
+
+/// Persistent buffers for the two-column (spec verify) NVFP4 device-routed program: every
+/// slab is the t=1 workspace shape doubled along the pair axis, plus per-column
+/// accumulators. One per expert bank, reused every (round, layer) call.
+pub struct Nvfp4T2Workspace {
+    input2: Vec<crate::CudaSlice<f32>>,
+    in_q2: Vec<crate::CudaSlice<i8>>,
+    in_d2: Vec<crate::CudaSlice<f32>>,
+    sel2: Vec<crate::CudaSlice<i32>>,
+    route_w2: Vec<crate::CudaSlice<f32>>,
+    gate_out2: Vec<crate::CudaSlice<f32>>,
+    up_out2: Vec<crate::CudaSlice<f32>>,
+    act_q2: Vec<crate::CudaSlice<i8>>,
+    act_d2: Vec<crate::CudaSlice<f32>>,
+    partial2: Vec<crate::CudaSlice<f32>>,
+    /// Per-rank per-column combine accumulators ([width] each).
+    acc_a: Vec<crate::CudaSlice<f32>>,
+    acc_b: Vec<crate::CudaSlice<f32>>,
+    /// down8_t2 arm: per-rank [2, width] combined slab, root peer pull and joined slab —
+    /// the fused kernel writes both columns, so the join is ONE pull + ONE add.
+    acc2: Vec<crate::CudaSlice<f32>>,
+    peer2: crate::CudaSlice<f32>,
+    omix2: crate::CudaSlice<f32>,
+    /// Root-side pulls of rank1's accumulators and the joined columns.
+    peer_a: crate::CudaSlice<f32>,
+    peer_b: crate::CudaSlice<f32>,
+    omix_a: crate::CudaSlice<f32>,
+    omix_b: crate::CudaSlice<f32>,
+    ev_entry: CudaEvent,
+    ev_rank: Vec<CudaEvent>,
+    ev_root: CudaEvent,
+    t_cap: usize,
+    n_sel: usize,
+    e_device: usize,
+}
+
+fn nvfp4_trow_workspace_needs_grow(
+    current: Option<(usize, usize)>,
+    t: usize,
+    n_sel: usize,
+) -> bool {
+    current.is_none_or(|(t_cap, n_sel_cap)| t_cap < t || n_sel_cap < n_sel)
+}
+
+#[cfg(test)]
+mod nvfp4_trow_workspace_tests {
+    use super::nvfp4_trow_workspace_needs_grow;
+
+    #[test]
+    fn workspace_grows_but_never_shrinks_between_spec_and_batch() {
+        assert!(nvfp4_trow_workspace_needs_grow(None, 2, 16));
+        assert!(nvfp4_trow_workspace_needs_grow(Some((2, 16)), 8, 64));
+        assert!(!nvfp4_trow_workspace_needs_grow(Some((8, 64)), 2, 16));
+        assert!(!nvfp4_trow_workspace_needs_grow(Some((32, 256)), 8, 64));
+    }
 }
 
 /// Persistent per-call device buffers for the NVFP4 device routes program: one gate/up output,
@@ -9752,7 +8988,6 @@ impl Nvfp4DeviceRoutesWorkspace {
     pub(crate) fn in_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
         self.in_stage_e.as_mut()
     }
-    #[allow(dead_code)] // allow: accessor twin of in_stage_mut; kept for the workspace API symmetry
     pub(crate) fn out_stage_mut(&mut self) -> Option<&mut crate::CudaSlice<f32>> {
         self.out_stage_e.as_mut()
     }
@@ -9854,79 +9089,11 @@ pub struct Nvfp4DeviceRoutesWorkspace {
 
 /// One rank's whole-expert NVFP4 residency (expert-parallel ownership).
 struct ResidentNvfp4EpRank {
-    gate: crate::CudaSlice<u8>,
-    up: crate::CudaSlice<u8>,
-    down: crate::CudaSlice<u8>,
-    gate_expert_bytes: usize,
-    down_expert_bytes: usize,
-    macros_gate: crate::CudaSlice<f32>,
-    macros_up: crate::CudaSlice<f32>,
-    macros_down: crate::CudaSlice<f32>,
+    gate: Vec<crate::CudaSlice<u8>>,
+    up: Vec<crate::CudaSlice<u8>>,
+    down: Vec<crate::CudaSlice<u8>>,
+    #[allow(dead_code)]
     expert_range: Range<usize>,
-}
-
-struct Nvfp4EpDeviceWorkspace {
-    input: Vec<crate::CudaSlice<f32>>,
-    input_bf16: Vec<crate::CudaSlice<u8>>,
-    input_q8: Vec<crate::CudaSlice<i8>>,
-    input_q8_scales: Vec<crate::CudaSlice<f32>>,
-    sel: Vec<crate::CudaSlice<i32>>,
-    token_rows: Vec<crate::CudaSlice<i32>>,
-    global_pairs: Vec<crate::CudaSlice<i32>>,
-    route_w: Vec<crate::CudaSlice<f32>>,
-    gate_out: Vec<crate::CudaSlice<f32>>,
-    up_out: Vec<crate::CudaSlice<f32>>,
-    activation_bf16: Vec<crate::CudaSlice<u8>>,
-    activation_q8: Vec<crate::CudaSlice<i8>>,
-    activation_q8_scales: Vec<crate::CudaSlice<f32>>,
-    slot_rows: crate::CudaSlice<f32>,
-    slot_rows_raw: u64,
-    route_weights: crate::CudaSlice<f32>,
-    graph_input: crate::CudaSlice<f32>,
-    graph_output: crate::CudaSlice<f32>,
-    graph_routes: Option<(u64, u64)>,
-    graphs: Vec<Option<RoutesGraph>>,
-    ev_entry: CudaEvent,
-    ev_entry_device: usize,
-    ev_rank: Vec<CudaEvent>,
-    phase_events: Option<Nvfp4EpPhaseEvents>,
-    capacity_tokens: usize,
-    experts_per_token: usize,
-}
-
-struct Nvfp4EpPhaseEvents {
-    head: Vec<CudaEvent>,
-    copy_done: Vec<CudaEvent>,
-    gate_up_done: Vec<CudaEvent>,
-    activation_done: Vec<CudaEvent>,
-    down_done: Vec<CudaEvent>,
-}
-
-pub(crate) const NVFP4_EP_DEVICE_BATCH_CAP: usize = 128;
-pub(crate) const NVFP4_EP_DEVICE_ROUTER_BATCH_CAP: usize = 32;
-pub(crate) const NVFP4_EP_Q8_BATCH_CAP: usize = 32;
-const NVFP4_EP_GRAPH_BATCH_CAP: usize = 1;
-
-fn nvfp4_ep_active_input_values(
-    input_values: usize,
-    tokens: usize,
-    input_width: usize,
-) -> Result<usize, String> {
-    if !(1..=NVFP4_EP_DEVICE_BATCH_CAP).contains(&tokens) {
-        return Err(format!(
-            "W4A16 NVFP4 device EP batch {tokens} is outside 1..={NVFP4_EP_DEVICE_BATCH_CAP}"
-        ));
-    }
-    let active_values = tokens
-        .checked_mul(input_width)
-        .ok_or("W4A16 NVFP4 device EP active input size overflows usize")?;
-    if input_values < active_values {
-        return Err(format!(
-            "W4A16 NVFP4 device EP input {input_values} is smaller than active \
-             tokens {tokens} x width {input_width} ({active_values})"
-        ));
-    }
-    Ok(active_values)
 }
 
 pub struct ResidentNvfp4ExpertParallel {
@@ -9939,7 +9106,6 @@ pub struct ResidentNvfp4ExpertParallel {
     pub expert_width: usize,
     gate_row_bytes: usize,
     down_row_bytes: usize,
-    device_workspace: std::sync::Mutex<Option<Nvfp4EpDeviceWorkspace>>,
 }
 
 fn nvfp4_repack_matrix(matrix: Nvfp4BlockMatrix<'_>) -> Vec<u8> {
@@ -9955,6 +9121,8 @@ fn nvfp4_row_bytes(in_features: usize) -> usize {
     in_features / 64 * 36 // memra block_nvfp4: 64 elems -> 36 bytes (4 UE4M3 + 32 packed e2m1)
 }
 
+/// MEMRA_NVFP4_BANK_V2=1: store the contiguous expert banks in the slot-major layout the
+/// coalesced `*_v2` kernels read (see qmatvec.cu). Pure byte permutation — value-exact.
 /// MEMRA_NO_LOCAL_SHADOW=1: skip the per-layer local-KV shadow gathers and appends in the
 /// eager v2 decode (lengths still advance) — the graph door proved contents-stale local KV
 /// is decode-identical (12/12). The local contents feed spec/MTP scratch only.
@@ -9970,32 +9138,15 @@ pub(crate) fn no_local_shadow_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_NO_LOCAL_SHADOW").as_deref() == Ok("1"))
 }
 
+pub(crate) fn nvfp4_bank_v2_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_NVFP4_BANK_V2").as_deref() == Ok("1"))
+}
+
 /// Permute one repacked block_nvfp4 matrix (out_features rows of `nvfp4_row_bytes(in_f)`)
-/// into the slot-major row layout the EP2 kernels read: per row, slot g's 16 qs bytes at
-/// g*16, then the two UE4M3 scale bytes per slot at nslots*16 + g*2. Row byte count
-/// unchanged. This layout USED to be an env door (`MEMRA_NVFP4_BANK_V2`, removed 2026-08-29
-/// after its ON arm changed generated text in serving, see
-/// research/step37-bankv2-removal-20260829); it survives ONLY as the fixed layout of the
-/// EP2 whole-expert banks, whose `*_ep` kernels read it unconditionally.
-///
-/// PUBLIC because it is the SINGLE SOURCE OF TRUTH for this byte map. Every reader — the
-/// `*_ep` decode kernels, `kq_fetch<QT_NVFP4_V2>` in the grouped GEMM,
-/// `dequant_nvfp4v2_f16_kernel` — is defined as "reads what this function writes", and the
-/// `nvfp4-bank-oracle` bin is what proves it, on device, per kernel arm. Do not reimplement
-/// the map anywhere: the two failures that appeared only on v2 readers were geometry-plumbing
-/// bugs around a byte map that was itself correct in two separate places. The layout was
-/// innocent; one live failure was the grouped-prefill sktail call site defaulting `in_f` to zero.
-pub fn nvfp4_matrix_v2_permute(v1: &[u8], out_features: usize, in_features: usize) -> Vec<u8> {
-    // The output row is n_slots*18 bytes; the stride every reader uses is
-    // nvfp4_row_bytes(in_features) = (in_features/64)*36. Those are equal only when
-    // in_features is a whole number of 64-element superblocks. At in_features % 64 == 32 the
-    // permute would silently emit a LONGER row than the stride and every row after row 0
-    // would be read at the wrong offset, so refuse instead of trusting the caller.
-    assert_eq!(
-        in_features % 64,
-        0,
-        "v2 permute needs whole 64-element superblocks, got in_features={in_features}"
-    );
+/// into the slot-major v2 row layout: per row, slot g's 16 qs bytes at g*16, then the two
+/// UE4M3 scale bytes per slot at nslots*16 + g*2. Row byte count unchanged.
+fn nvfp4_matrix_v2_permute(v1: &[u8], out_features: usize, in_features: usize) -> Vec<u8> {
     let row_bytes = nvfp4_row_bytes(in_features);
     assert_eq!(v1.len(), out_features * row_bytes, "v2 permute geometry");
     let n_slots = in_features / 32;
@@ -10017,13 +9168,11 @@ pub fn nvfp4_matrix_v2_permute(v1: &[u8], out_features: usize, in_features: usiz
     out
 }
 
-/// Repack one expert shard for the contiguous banks. `slot_major` is true ONLY for the EP2
-/// whole-expert banks, whose `*_ep` kernels read the slot-major permutation; the TP
-/// column/row shard banks stay in the block_nvfp4 v1 layout every other kernel reads.
-fn nvfp4_repack_bank_matrix(matrix: Nvfp4BlockMatrix<'_>, slot_major: bool) -> Vec<u8> {
+/// Repack + (optionally) v2-permute one expert shard for the contiguous banks.
+fn nvfp4_repack_bank_matrix(matrix: Nvfp4BlockMatrix<'_>) -> Vec<u8> {
     let (out_features, in_features) = (matrix.out_features, matrix.in_features);
     let v1 = nvfp4_repack_matrix(matrix);
-    if slot_major {
+    if nvfp4_bank_v2_on() {
         nvfp4_matrix_v2_permute(&v1, out_features, in_features)
     } else {
         v1
@@ -10032,7 +9181,6 @@ fn nvfp4_repack_bank_matrix(matrix: Nvfp4BlockMatrix<'_>, slot_major: bool) -> V
 
 /// Column shard: whole output rows per rank (codes and scales are row-major, so both slices are
 /// contiguous borrows). The macro rides unchanged — it is applied post-gather by the caller.
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn nvfp4_column_shard<'a>(
     matrix: Nvfp4BlockMatrix<'a>,
     tp: usize,
@@ -10058,7 +9206,6 @@ fn nvfp4_column_shard<'a>(
 
 /// Row shard: input-column windows per rank, 64-superblock aligned. Owned buffers: each output
 /// row contributes one contiguous byte window, gathered across rows.
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn nvfp4_row_shard(
     matrix: Nvfp4BlockMatrix<'_>,
     tp: usize,
@@ -10071,7 +9218,7 @@ fn nvfp4_row_shard(
         ));
     }
     let local_in = matrix.in_features / tp;
-    if !local_in.is_multiple_of(64) {
+    if local_in % 64 != 0 {
         return Err(format!(
             "NVFP4 row-parallel input shard {local_in} cuts through a 64-element superblock"
         ));
@@ -10381,7 +9528,6 @@ impl TpE4m3HostBounce {
     }
 
     /// Upload every expert's TP shards resident (one repacked block buffer per expert per rank).
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn upload_tensor_parallel_nvfp4(
         &self,
         gate: Nvfp4ExpertBank<'_>,
@@ -10412,8 +9558,8 @@ impl TpE4m3HostBounce {
             )
             .into());
         }
-        if !down.in_features.is_multiple_of(NVFP4_CANONICAL_ROW_SHARDS)
-            || !(down.in_features / NVFP4_CANONICAL_ROW_SHARDS).is_multiple_of(64)
+        if down.in_features % NVFP4_CANONICAL_ROW_SHARDS != 0
+            || (down.in_features / NVFP4_CANONICAL_ROW_SHARDS) % 64 != 0
         {
             return Err(format!(
                 "NVFP4 TP expert input width {} does not split into 64-aligned canonical \
@@ -10431,38 +9577,6 @@ impl TpE4m3HostBounce {
         }
 
         let ep2 = step_nvfp4_ep2_on() && tp == 2;
-        // LAYOUT DECISION, MADE ONCE PER BANK BUILD. EP2 whole-expert banks are ALWAYS
-        // slot-major (their `*_ep` kernels read that mapping unconditionally); TP shard banks
-        // are slot-major only under PROGRAM 1's door. Every reader below takes this from the
-        // bank it is reading, never from `bank_slot_major_on()` again.
-        let slot_major = ep2 || bank_slot_major_on();
-        // ENGAGEMENT RECEIPT, not a debug line. A pricing cell that proves only that the env var
-        // is SET measures nothing: if the door fails to reach the code, the cell reports "the
-        // program is worth 0%" when the truth is "the program never ran". That exact defect is
-        // banked -- the MEMRA_BF16_MMV lane's first sweep grepped for engagement, got 0 in BOTH
-        // arms, and the missing line was mistaken for a no-engagement result until an announce
-        // was added. So the layout decision announces itself, WITH ITS SOURCE, so a receipt can
-        // distinguish "armed by the door" from "armed because EP2" from "not armed".
-        eprintln!(
-            "[nvfp4-bank] layout={} source={} tp={tp} experts={} in_f={} out_f={}",
-            if slot_major {
-                "slot-major"
-            } else {
-                "block-nvfp4-v1"
-            },
-            // The source string distinguishes "armed by the 2026-09-01 DEFAULT" from "armed by
-            // an explicit recipe" from "rolled back by the seam" from "armed because EP2". A
-            // default flip whose receipt cannot say which of those happened cannot prove the
-            // DEFAULT was what got measured.
-            if ep2 {
-                "ep2-always"
-            } else {
-                bank_slot_major_source().1
-            },
-            gate.expert_count,
-            gate.in_features,
-            gate.out_features
-        );
         let mut gate_ranks = Vec::with_capacity(tp);
         let mut up_ranks = Vec::with_capacity(tp);
         let mut macros_gate_dev = Vec::with_capacity(tp);
@@ -10484,19 +9598,13 @@ impl TpE4m3HostBounce {
                         continue;
                     }
                     owned += 1;
-                    gate_host.extend_from_slice(&nvfp4_repack_bank_matrix(
-                        gate.expert(expert)?,
-                        slot_major,
-                    ));
-                    up_host.extend_from_slice(&nvfp4_repack_bank_matrix(
-                        up.expert(expert)?,
-                        slot_major,
-                    ));
+                    gate_host.extend_from_slice(&nvfp4_repack_bank_matrix(gate.expert(expert)?));
+                    up_host.extend_from_slice(&nvfp4_repack_bank_matrix(up.expert(expert)?));
                 } else {
                     let gate_shard = nvfp4_column_shard(gate.expert(expert)?, tp, rank_index)?;
-                    gate_host.extend_from_slice(&nvfp4_repack_bank_matrix(gate_shard, slot_major));
+                    gate_host.extend_from_slice(&nvfp4_repack_bank_matrix(gate_shard));
                     let up_shard = nvfp4_column_shard(up.expert(expert)?, tp, rank_index)?;
-                    up_host.extend_from_slice(&nvfp4_repack_bank_matrix(up_shard, slot_major));
+                    up_host.extend_from_slice(&nvfp4_repack_bank_matrix(up_shard));
                 }
             }
             let bank_experts = if ep2 { owned } else { gate.expert_count };
@@ -10513,7 +9621,6 @@ impl TpE4m3HostBounce {
                 local_out,
                 in_features: gate.in_features,
                 row_bytes: nvfp4_row_bytes(gate.in_features),
-                slot_major,
             });
             up_ranks.push(ResidentNvfp4ColumnBankRank {
                 bank: engine.htod_bytes(&up_host)?,
@@ -10521,7 +9628,6 @@ impl TpE4m3HostBounce {
                 local_out,
                 in_features: up.in_features,
                 row_bytes: nvfp4_row_bytes(up.in_features),
-                slot_major,
             });
             macros_gate_dev.push(engine.htod(gate.macros)?);
             macros_up_dev.push(engine.htod(up.macros)?);
@@ -10546,20 +9652,17 @@ impl TpE4m3HostBounce {
                         continue;
                     }
                     owned += 1;
-                    down_host.extend_from_slice(&nvfp4_repack_bank_matrix(down_matrix, slot_major));
+                    down_host.extend_from_slice(&nvfp4_repack_bank_matrix(down_matrix));
                 } else {
                     let (codes, scales, local_in) =
                         nvfp4_row_shard(down_matrix, NVFP4_CANONICAL_ROW_SHARDS, shard_index)?;
-                    down_host.extend_from_slice(&nvfp4_repack_bank_matrix(
-                        Nvfp4BlockMatrix {
-                            codes: &codes,
-                            scales: &scales,
-                            macro_scale: down_matrix.macro_scale,
-                            out_features: down_matrix.out_features,
-                            in_features: local_in,
-                        },
-                        slot_major,
-                    ));
+                    down_host.extend_from_slice(&nvfp4_repack_bank_matrix(Nvfp4BlockMatrix {
+                        codes: &codes,
+                        scales: &scales,
+                        macro_scale: down_matrix.macro_scale,
+                        out_features: down_matrix.out_features,
+                        in_features: local_in,
+                    }));
                 }
             }
             let bank_experts = if ep2 { owned } else { down.expert_count };
@@ -10576,7 +9679,6 @@ impl TpE4m3HostBounce {
                 out_features: down.out_features,
                 local_in,
                 row_bytes: nvfp4_row_bytes(local_in),
-                slot_major,
             });
         }
         Ok(ResidentNvfp4TensorParallel {
@@ -10593,7 +9695,7 @@ impl TpE4m3HostBounce {
             input_width: gate.in_features,
             expert_width: gate.out_features,
             device_workspace: std::sync::Mutex::new(None),
-            prime_tables: std::sync::Mutex::new(Vec::new()),
+            t2_workspace: std::sync::Mutex::new(None),
             ep2,
         })
     }
@@ -10616,7 +9718,25 @@ impl TpE4m3HostBounce {
         let engine = &self.ranks[owner];
         let _main = engine.gpu.enter_main()?;
         let activations = engine.htod(input)?;
-        let output = bank.host_canonical_expert(engine, slot, &activations)?;
+        let output = if nvfp4_bank_v2_on() {
+            engine.qmatvec_nvfp4_fast_v2(
+                &bank.expert(slot),
+                &activations,
+                1,
+                bank.in_features,
+                bank.local_out,
+                bank.row_bytes,
+            )?
+        } else {
+            engine.qmatvec_nvfp4_fast(
+                &bank.expert(slot),
+                &activations,
+                1,
+                bank.in_features,
+                bank.local_out,
+                bank.row_bytes,
+            )?
+        };
         let mut out = engine.dtoh(&output)?;
         apply_macro(&mut out, macros[expert]);
         Ok(out)
@@ -10639,7 +9759,25 @@ impl TpE4m3HostBounce {
         let engine = &self.ranks[owner];
         let _main = engine.gpu.enter_main()?;
         let activations = engine.htod(input)?;
-        let output = shard.host_canonical_expert(engine, slot, &activations)?;
+        let output = if nvfp4_bank_v2_on() {
+            engine.qmatvec_nvfp4_fast_v2(
+                &shard.expert(slot),
+                &activations,
+                1,
+                shard.local_in,
+                shard.out_features,
+                shard.row_bytes,
+            )?
+        } else {
+            engine.qmatvec_nvfp4_fast(
+                &shard.expert(slot),
+                &activations,
+                1,
+                shard.local_in,
+                shard.out_features,
+                shard.row_bytes,
+            )?
+        };
         let mut out = engine.dtoh(&output)?;
         apply_macro(&mut out, macros[expert]);
         Ok(out)
@@ -10660,7 +9798,25 @@ impl TpE4m3HostBounce {
         for (rank_index, (engine, bank)) in self.ranks.iter().zip(ranks).enumerate() {
             let _main = engine.gpu.enter_main()?;
             let activations = engine.htod(input)?;
-            let output = bank.host_canonical_expert(engine, expert, &activations)?;
+            let output = if nvfp4_bank_v2_on() {
+                engine.qmatvec_nvfp4_fast_v2(
+                    &bank.expert(expert),
+                    &activations,
+                    1,
+                    bank.in_features,
+                    bank.local_out,
+                    bank.row_bytes,
+                )?
+            } else {
+                engine.qmatvec_nvfp4_fast(
+                    &bank.expert(expert),
+                    &activations,
+                    1,
+                    bank.in_features,
+                    bank.local_out,
+                    bank.row_bytes,
+                )?
+            };
             let output = engine.dtoh(&output)?;
             gathered[rank_index * local_out..(rank_index + 1) * local_out].copy_from_slice(&output);
         }
@@ -10693,7 +9849,25 @@ impl TpE4m3HostBounce {
             let local_activations =
                 activation_shard(input, 1, in_features, shards.len(), shard_index);
             let activations = engine.htod(&local_activations)?;
-            let output = shard.host_canonical_expert(engine, expert, &activations)?;
+            let output = if nvfp4_bank_v2_on() {
+                engine.qmatvec_nvfp4_fast_v2(
+                    &shard.expert(expert),
+                    &activations,
+                    1,
+                    shard.local_in,
+                    shard.out_features,
+                    shard.row_bytes,
+                )?
+            } else {
+                engine.qmatvec_nvfp4_fast(
+                    &shard.expert(expert),
+                    &activations,
+                    1,
+                    shard.local_in,
+                    shard.out_features,
+                    shard.row_bytes,
+                )?
+            };
             let partial = engine.dtoh(&output)?;
             for (sum, value) in reduced.iter_mut().zip(&partial) {
                 *sum += *value;
@@ -10706,7 +9880,6 @@ impl TpE4m3HostBounce {
     /// Upload whole experts per owning rank (NVFP4 expert-parallel: the layout the clamped tail
     /// layers require — clamp semantics do not distribute across a tensor shard). Each owned
     /// expert keeps its full gate/up/down as one repacked block buffer on its owner.
-    #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
     pub fn upload_expert_parallel_nvfp4(
         &self,
         gate: Nvfp4ExpertBank<'_>,
@@ -10742,29 +9915,18 @@ impl TpE4m3HostBounce {
         for (rank_index, engine) in self.ranks.iter().enumerate() {
             let _main = engine.gpu.enter_main()?;
             let expert_range = rank_index * experts_per_rank..(rank_index + 1) * experts_per_rank;
-            let mut gate_host = Vec::new();
-            let mut up_host = Vec::new();
-            let mut down_host = Vec::new();
+            let mut gate_experts = Vec::with_capacity(experts_per_rank);
+            let mut up_experts = Vec::with_capacity(experts_per_rank);
+            let mut down_experts = Vec::with_capacity(experts_per_rank);
             for expert in expert_range.clone() {
-                gate_host.extend_from_slice(&nvfp4_repack_matrix(gate.expert(expert)?));
-                up_host.extend_from_slice(&nvfp4_repack_matrix(up.expert(expert)?));
-                down_host.extend_from_slice(&nvfp4_repack_matrix(down.expert(expert)?));
+                gate_experts.push(engine.htod_bytes(&nvfp4_repack_matrix(gate.expert(expert)?))?);
+                up_experts.push(engine.htod_bytes(&nvfp4_repack_matrix(up.expert(expert)?))?);
+                down_experts.push(engine.htod_bytes(&nvfp4_repack_matrix(down.expert(expert)?))?);
             }
-            let gate_expert_bytes = gate_host.len() / experts_per_rank;
-            let up_expert_bytes = up_host.len() / experts_per_rank;
-            if gate_expert_bytes != up_expert_bytes {
-                return Err("NVFP4 EP gate/up packed expert bytes differ".into());
-            }
-            let down_expert_bytes = down_host.len() / experts_per_rank;
             ranks.push(ResidentNvfp4EpRank {
-                gate: engine.htod_bytes(&gate_host)?,
-                up: engine.htod_bytes(&up_host)?,
-                down: engine.htod_bytes(&down_host)?,
-                gate_expert_bytes,
-                down_expert_bytes,
-                macros_gate: engine.htod(&gate.macros[expert_range.clone()])?,
-                macros_up: engine.htod(&up.macros[expert_range.clone()])?,
-                macros_down: engine.htod(&down.macros[expert_range.clone()])?,
+                gate: gate_experts,
+                up: up_experts,
+                down: down_experts,
                 expert_range,
             });
         }
@@ -10778,111 +9940,6 @@ impl TpE4m3HostBounce {
             expert_width: gate.out_features,
             gate_row_bytes: nvfp4_row_bytes(gate.in_features),
             down_row_bytes: nvfp4_row_bytes(down.in_features),
-            device_workspace: std::sync::Mutex::new(None),
-        })
-    }
-
-    /// Upload an already-normalized NVFP4 expert bank.
-    ///
-    /// `HostExps` is the physical-format boundary: stacked checkpoint tensors, gathered
-    /// per-expert tensors, and manifest-backed overlays all become the same contiguous
-    /// block_nvfp4 expert representation before the parallel backend sees them.
-    pub fn upload_expert_parallel_nvfp4_normalized(
-        &self,
-        gate: &crate::model::HostExps,
-        up: &crate::model::HostExps,
-        down: &crate::model::HostExps,
-    ) -> Result<ResidentNvfp4ExpertParallel, Box<dyn std::error::Error>> {
-        for (label, bank) in [("gate", gate), ("up", up), ("down", down)] {
-            if bank.qtype != crate::QT_NVFP4 || !bank.is_uniform_layout() {
-                return Err(format!(
-                    "NVFP4 EP normalized {label} bank requires one uniform NVFP4 layout, \
-                     got qtype={} uniform={}",
-                    bank.qtype,
-                    bank.is_uniform_layout()
-                )
-                .into());
-            }
-            if bank.n_expert == 0
-                || bank.expert_stride != bank.out_f * bank.row_bytes
-                || (0..bank.n_expert)
-                    .any(|expert| bank.expert_bytes(expert).len() != bank.expert_stride)
-            {
-                return Err(format!("NVFP4 EP normalized {label} bank geometry is invalid").into());
-            }
-        }
-        if gate.n_expert != up.n_expert || gate.n_expert != down.n_expert {
-            return Err("NVFP4 EP normalized gate/up/down expert counts differ".into());
-        }
-        if gate.in_f != up.in_f || gate.out_f != up.out_f {
-            return Err("NVFP4 EP normalized gate/up dimensions differ".into());
-        }
-        if down.in_f != gate.out_f || down.out_f != gate.in_f {
-            return Err(format!(
-                "NVFP4 EP normalized down {}x{} does not invert gate/up {}x{}",
-                down.out_f, down.in_f, gate.out_f, gate.in_f
-            )
-            .into());
-        }
-        let macros = |bank: &crate::model::HostExps| -> Result<Vec<f32>, String> {
-            let values = bank
-                .macros
-                .clone()
-                .unwrap_or_else(|| vec![1.0; bank.n_expert]);
-            if values.len() != bank.n_expert
-                || !values.iter().all(|value| value.is_finite() && *value > 0.0)
-            {
-                return Err("NVFP4 EP normalized macro row is not finite-positive".to_string());
-            }
-            Ok(values)
-        };
-        let macros_gate = macros(gate)?;
-        let macros_up = macros(up)?;
-        let macros_down = macros(down)?;
-        let world = self.ranks.len();
-        if !gate.n_expert.is_multiple_of(world) {
-            return Err(format!(
-                "NVFP4 EP normalized expert count {} is not divisible by {world} ranks",
-                gate.n_expert
-            )
-            .into());
-        }
-        let experts_per_rank = gate.n_expert / world;
-        let mut ranks = Vec::with_capacity(world);
-        for (rank_index, engine) in self.ranks.iter().enumerate() {
-            let _main = engine.gpu.enter_main()?;
-            let expert_range = rank_index * experts_per_rank..(rank_index + 1) * experts_per_rank;
-            let mut gate_host = Vec::with_capacity(experts_per_rank * gate.expert_stride);
-            let mut up_host = Vec::with_capacity(experts_per_rank * up.expert_stride);
-            let mut down_host = Vec::with_capacity(experts_per_rank * down.expert_stride);
-            for expert in expert_range.clone() {
-                gate_host.extend_from_slice(gate.expert_bytes(expert));
-                up_host.extend_from_slice(up.expert_bytes(expert));
-                down_host.extend_from_slice(down.expert_bytes(expert));
-            }
-            ranks.push(ResidentNvfp4EpRank {
-                gate: engine.htod_bytes(&gate_host)?,
-                up: engine.htod_bytes(&up_host)?,
-                down: engine.htod_bytes(&down_host)?,
-                gate_expert_bytes: gate.expert_stride,
-                down_expert_bytes: down.expert_stride,
-                macros_gate: engine.htod(&macros_gate[expert_range.clone()])?,
-                macros_up: engine.htod(&macros_up[expert_range.clone()])?,
-                macros_down: engine.htod(&macros_down[expert_range.clone()])?,
-                expert_range,
-            });
-        }
-        Ok(ResidentNvfp4ExpertParallel {
-            ranks,
-            macros_gate,
-            macros_up,
-            macros_down,
-            expert_count: gate.n_expert,
-            input_width: gate.in_f,
-            expert_width: gate.out_f,
-            gate_row_bytes: gate.row_bytes,
-            down_row_bytes: down.row_bytes,
-            device_workspace: std::sync::Mutex::new(None),
         })
     }
 
@@ -10939,9 +9996,7 @@ impl TpE4m3HostBounce {
                 let _main = engine.gpu.enter_main()?;
                 let device_input = engine.htod(input_row)?;
                 let gate_out = engine.qmatvec_nvfp4_fast(
-                    &rank.gate.slice(
-                        local * rank.gate_expert_bytes..(local + 1) * rank.gate_expert_bytes,
-                    ),
+                    &rank.gate[local].slice(0..rank.gate[local].len()),
                     &device_input,
                     1,
                     experts.input_width,
@@ -10949,9 +10004,7 @@ impl TpE4m3HostBounce {
                     experts.gate_row_bytes,
                 )?;
                 let up_out = engine.qmatvec_nvfp4_fast(
-                    &rank.up.slice(
-                        local * rank.gate_expert_bytes..(local + 1) * rank.gate_expert_bytes,
-                    ),
+                    &rank.up[local].slice(0..rank.up[local].len()),
                     &device_input,
                     1,
                     experts.input_width,
@@ -10969,9 +10022,7 @@ impl TpE4m3HostBounce {
                     .collect();
                 let device_activated = engine.htod(&activated)?;
                 let down_out = engine.qmatvec_nvfp4_fast(
-                    &rank.down.slice(
-                        local * rank.down_expert_bytes..(local + 1) * rank.down_expert_bytes,
-                    ),
+                    &rank.down[local].slice(0..rank.down[local].len()),
                     &device_activated,
                     1,
                     experts.expert_width,
@@ -10991,1367 +10042,6 @@ impl TpE4m3HostBounce {
             }
         }
         Ok(output)
-    }
-
-    /// Device-resident W4A16 expert parallelism for one scheduler/prefill batch (1..=128 rows).
-    ///
-    /// The host router partitions token/slot pairs by contiguous expert owner. Each rank
-    /// peer-reads the whole batch input once, rounds it to BF16, and executes its owner-local
-    /// selected gate/up -> host-expf SwiGLU -> BF16 -> down program. Down rows scatter directly
-    /// into canonical token-major pair positions in the model engine's peer-accessible pool at
-    /// every batch width; the root reduces each token's slots in original order. Thus batching
-    /// and owner assignment do not change route-reduction parenthesization.
-    #[allow(clippy::too_many_arguments)]
-    pub fn run_routed_experts_nvfp4_w4a16_device_io(
-        &self,
-        experts: &ResidentNvfp4ExpertParallel,
-        e: &Engine,
-        input_dev: &crate::CudaSlice<f32>,
-        tokens: usize,
-        selected: &[usize],
-        route_weights: &[f32],
-        experts_per_token: usize,
-        activation_limit: Option<f32>,
-    ) -> Result<crate::CudaSlice<f32>, Box<dyn std::error::Error>> {
-        // Diagnostic attribution only: force the returned root event chain to completion so the
-        // caller's shared-expert timer does not absorb routed-EP work. The normal path remains
-        // fully asynchronous.
-        static TIMING_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static TIMING_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let timing = std::env::var("MEMRA_STEP_TP_TIMING").as_deref() == Ok("1");
-        let started = timing.then(std::time::Instant::now);
-        if !self.native_p2p {
-            return Err("W4A16 NVFP4 device EP requires native P2P".into());
-        }
-        if self.devices.first().copied() != Some(e.ctx().ordinal()) {
-            return Err(format!(
-                "W4A16 NVFP4 device EP root device {:?} != model engine device {}",
-                self.devices.first(),
-                e.ctx().ordinal()
-            )
-            .into());
-        }
-        // Prime/cache scratch buffers are grow-only: a 160-token host-oracle chunk can be
-        // followed by a 44-token device-EP tail using the same 160-row allocation. Consume the
-        // active prefix rather than requiring allocation length == active length.
-        let active_input_values =
-            nvfp4_ep_active_input_values(input_dev.len(), tokens, experts.input_width)?;
-        let pairs = tokens
-            .checked_mul(experts_per_token)
-            .ok_or("W4A16 NVFP4 device EP route count overflow")?;
-        if selected.len() != pairs || route_weights.len() != pairs {
-            return Err(format!(
-                "W4A16 NVFP4 device EP routes selected={} weights={} != tokens {tokens} x \
-                 experts/token {experts_per_token} ({pairs})",
-                selected.len(),
-                route_weights.len(),
-            )
-            .into());
-        }
-        if !route_weights.iter().all(|weight| weight.is_finite()) {
-            return Err("W4A16 NVFP4 device EP route weights contain a non-finite value".into());
-        }
-        let world = self.ranks.len();
-        if world != experts.ranks.len() || !(2..=PRODUCT_MAX_CARDS).contains(&world) {
-            return Err(format!(
-                "W4A16 NVFP4 device EP runtime ranks {world} != bank ranks {}",
-                experts.ranks.len()
-            )
-            .into());
-        }
-        let owner_routes = partition_expert_owner_routes(
-            experts.expert_count,
-            world,
-            tokens,
-            experts_per_token,
-            selected,
-        )?;
-
-        let mut workspace_guard = experts
-            .device_workspace
-            .lock()
-            .map_err(|_| "W4A16 NVFP4 device EP workspace lock is poisoned")?;
-        if workspace_guard.is_none() {
-            let capacity_tokens = NVFP4_EP_DEVICE_BATCH_CAP;
-            let capacity_pairs = capacity_tokens * experts_per_token;
-            let mut input = Vec::with_capacity(world);
-            let mut input_bf16 = Vec::with_capacity(world);
-            let mut input_q8 = Vec::with_capacity(world);
-            let mut input_q8_scales = Vec::with_capacity(world);
-            let mut sel = Vec::with_capacity(world);
-            let mut token_rows = Vec::with_capacity(world);
-            let mut global_pairs = Vec::with_capacity(world);
-            let mut route_w = Vec::with_capacity(world);
-            let mut gate_out = Vec::with_capacity(world);
-            let mut up_out = Vec::with_capacity(world);
-            let mut activation_bf16 = Vec::with_capacity(world);
-            let mut activation_q8 = Vec::with_capacity(world);
-            let mut activation_q8_scales = Vec::with_capacity(world);
-            let mut ev_rank = Vec::with_capacity(world);
-            for engine in &self.ranks {
-                let _main = engine.gpu.enter_main()?;
-                input.push(engine.uninit(capacity_tokens * experts.input_width)?);
-                input_bf16.push(engine.alloc_u8_uninit(2 * capacity_tokens * experts.input_width)?);
-                input_q8.push(engine.alloc_i8_uninit(capacity_tokens * experts.input_width)?);
-                input_q8_scales
-                    .push(engine.uninit(capacity_tokens * experts.input_width.div_ceil(32))?);
-                sel.push(engine.htod_i32(&vec![0i32; capacity_pairs])?);
-                token_rows.push(engine.htod_i32(&vec![0i32; capacity_pairs])?);
-                global_pairs.push(engine.htod_i32(&vec![0i32; capacity_pairs])?);
-                route_w.push(engine.htod(&vec![0.0f32; capacity_pairs])?);
-                gate_out.push(engine.uninit(capacity_pairs * experts.expert_width)?);
-                up_out.push(engine.uninit(capacity_pairs * experts.expert_width)?);
-                activation_bf16
-                    .push(engine.alloc_u8_uninit(2 * capacity_pairs * experts.expert_width)?);
-                activation_q8.push(engine.alloc_i8_uninit(capacity_pairs * experts.expert_width)?);
-                activation_q8_scales
-                    .push(engine.uninit(capacity_pairs * experts.expert_width.div_ceil(32))?);
-                ev_rank.push(engine.ctx().new_event(None)?);
-            }
-            let _main = e.gpu.enter_main()?;
-            let slot_rows = e.uninit(capacity_pairs * experts.input_width)?;
-            let slot_rows_raw = {
-                use cudarc::driver::DevicePtr;
-                let stream = e.stream();
-                let (pointer, _guard) = slot_rows.device_ptr(&stream);
-                pointer
-            };
-            *workspace_guard = Some(Nvfp4EpDeviceWorkspace {
-                input,
-                input_bf16,
-                input_q8,
-                input_q8_scales,
-                sel,
-                token_rows,
-                global_pairs,
-                route_w,
-                gate_out,
-                up_out,
-                activation_bf16,
-                activation_q8,
-                activation_q8_scales,
-                slot_rows,
-                slot_rows_raw,
-                route_weights: e.htod(&vec![0.0f32; capacity_pairs])?,
-                graph_input: e.uninit(NVFP4_EP_GRAPH_BATCH_CAP * experts.input_width)?,
-                graph_output: e.uninit(NVFP4_EP_GRAPH_BATCH_CAP * experts.input_width)?,
-                graph_routes: None,
-                graphs: std::iter::repeat_with(|| None)
-                    .take(NVFP4_EP_GRAPH_BATCH_CAP + 1)
-                    .collect(),
-                ev_entry: e.ctx().new_event(None)?,
-                ev_entry_device: e.ctx().ordinal(),
-                ev_rank,
-                phase_events: None,
-                capacity_tokens,
-                experts_per_token,
-            });
-        }
-        let workspace = workspace_guard
-            .as_mut()
-            .expect("W4A16 NVFP4 device EP workspace initialized above");
-        if workspace.experts_per_token != experts_per_token || tokens > workspace.capacity_tokens {
-            return Err(format!(
-                "W4A16 NVFP4 device EP workspace tokens={} experts/token={} cannot serve \
-                 tokens={tokens} experts/token={experts_per_token}",
-                workspace.capacity_tokens, workspace.experts_per_token,
-            )
-            .into());
-        }
-        if workspace.ev_entry_device != e.ctx().ordinal() {
-            return Err("W4A16 NVFP4 device EP model engine changed".into());
-        }
-
-        {
-            let _main = e.gpu.enter_main()?;
-            let mut destination = workspace.route_weights.slice_mut(0..pairs);
-            e.stream()
-                .memcpy_htod(&route_weights[..pairs], &mut destination)?;
-            workspace.ev_entry.record(&e.stream())?;
-        }
-        for (rank_index, engine) in self.ranks.iter().enumerate() {
-            let _main = engine.gpu.enter_main()?;
-            engine.stream().wait(&workspace.ev_entry)?;
-            {
-                let mut destination = workspace.input[rank_index].slice_mut(0..active_input_values);
-                engine
-                    .stream()
-                    .memcpy_dtod(&input_dev.slice(0..active_input_values), &mut destination)?;
-            }
-            engine.f32_to_bf16_into(
-                &workspace.input[rank_index],
-                &mut workspace.input_bf16[rank_index],
-                tokens * experts.input_width,
-            )?;
-            let owner = &owner_routes[rank_index];
-            debug_assert_eq!(owner.rank, rank_index);
-            let local_count = owner.selected.len();
-            if local_count > 0 {
-                let local_selected = owner
-                    .selected
-                    .iter()
-                    .map(|&expert| expert as i32)
-                    .collect::<Vec<_>>();
-                let local_token_rows = owner
-                    .token_rows
-                    .iter()
-                    .map(|&token| token as i32)
-                    .collect::<Vec<_>>();
-                let local_global_pairs = owner
-                    .global_pairs
-                    .iter()
-                    .map(|&pair| pair as i32)
-                    .collect::<Vec<_>>();
-                {
-                    let mut destination = workspace.sel[rank_index].slice_mut(0..local_count);
-                    engine
-                        .stream()
-                        .memcpy_htod(&local_selected, &mut destination)?;
-                }
-                {
-                    let mut destination =
-                        workspace.token_rows[rank_index].slice_mut(0..local_count);
-                    engine
-                        .stream()
-                        .memcpy_htod(&local_token_rows, &mut destination)?;
-                }
-                {
-                    let mut destination =
-                        workspace.global_pairs[rank_index].slice_mut(0..local_count);
-                    engine
-                        .stream()
-                        .memcpy_htod(&local_global_pairs, &mut destination)?;
-                }
-                let rank = &experts.ranks[rank_index];
-                engine.qmatvec_nvfp4_bf16_sel_dual_rows_into(
-                    &rank.gate,
-                    &rank.up,
-                    &workspace.sel[rank_index],
-                    &workspace.token_rows[rank_index],
-                    &workspace.input_bf16[rank_index],
-                    &mut workspace.gate_out[rank_index],
-                    &mut workspace.up_out[rank_index],
-                    local_count,
-                    experts.input_width,
-                    experts.expert_width,
-                    experts.gate_row_bytes,
-                    rank.gate_expert_bytes,
-                    tokens,
-                )?;
-                engine.silu_mul_scaled_host_expf_bf16_sel_into(
-                    &workspace.gate_out[rank_index],
-                    &workspace.up_out[rank_index],
-                    &rank.macros_gate,
-                    &rank.macros_up,
-                    &workspace.sel[rank_index],
-                    activation_limit,
-                    &mut workspace.activation_bf16[rank_index],
-                    experts.expert_width,
-                    local_count,
-                )?;
-                engine.qmatvec_nvfp4_bf16_sel_down_rows_raw(
-                    &rank.down,
-                    &workspace.sel[rank_index],
-                    &workspace.global_pairs[rank_index],
-                    &workspace.activation_bf16[rank_index],
-                    &rank.macros_down,
-                    workspace.slot_rows_raw,
-                    local_count,
-                    experts.expert_width,
-                    experts.input_width,
-                    experts.down_row_bytes,
-                    rank.down_expert_bytes,
-                    pairs,
-                )?;
-            }
-            workspace.ev_rank[rank_index].record(&engine.stream())?;
-        }
-
-        let output = {
-            let _main = e.gpu.enter_main()?;
-            for event in &workspace.ev_rank {
-                e.stream().wait(event)?;
-            }
-            let mut output = e.uninit(tokens * experts.input_width)?;
-            e.axpy_rows_seq_tokens_into(
-                &workspace.slot_rows,
-                &workspace.route_weights,
-                &mut output,
-                experts.input_width,
-                experts_per_token,
-                tokens,
-            )?;
-            output
-        };
-        if let Some(started) = started {
-            use std::sync::atomic::Ordering;
-            e.stream().synchronize()?;
-            let elapsed = started.elapsed().as_nanos() as u64;
-            let ns = TIMING_NS.fetch_add(elapsed, Ordering::Relaxed) + elapsed;
-            let calls = TIMING_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-            if calls.is_multiple_of(430) {
-                eprintln!(
-                    "[nvfp4-ep-w4a16-timing] calls={calls} total_ms={:.1} avg_us={:.1}",
-                    ns as f64 / 1.0e6,
-                    ns as f64 / calls as f64 / 1.0e3,
-                );
-            }
-        }
-        Ok(output)
-    }
-
-    /// Fully device-routed W4A16 expert parallelism. Router ids/weights stay on the model GPU;
-    /// each rank receives the fixed token/slot metadata, rejects non-owned experts in-kernel, and
-    /// writes canonical token-major slot rows back to the root at every batch width. Preserving
-    /// that one accumulation program is required by speculative verification: the former t=1
-    /// owner-grouped FMA was a distinct numeric class and failed real HY3 MTP self-consistency.
-    #[allow(clippy::too_many_arguments)]
-    pub fn run_routed_experts_nvfp4_w4a16_device_routed(
-        &self,
-        experts: &ResidentNvfp4ExpertParallel,
-        e: &Engine,
-        input_dev: &crate::CudaSlice<f32>,
-        selected_dev: &crate::CudaSlice<i32>,
-        route_weights_dev: &crate::CudaSlice<f32>,
-        tokens: usize,
-        experts_per_token: usize,
-        activation_limit: Option<f32>,
-    ) -> Result<crate::CudaSlice<f32>, Box<dyn std::error::Error>> {
-        self.run_routed_experts_nvfp4_w4a16_device_routed_inner(
-            experts,
-            e,
-            input_dev,
-            selected_dev,
-            route_weights_dev,
-            tokens,
-            experts_per_token,
-            activation_limit,
-            None,
-        )
-    }
-
-    /// Automatic whole-expert EP with a PREJOIN hook. The hook runs after every rank's routed
-    /// chain has been issued and before the root waits for rank completion, so independent
-    /// root-device work can fill the peer drain without changing the routed accumulation order.
-    #[allow(clippy::too_many_arguments)]
-    pub fn run_routed_experts_nvfp4_w4a16_device_routed_prejoin(
-        &self,
-        experts: &ResidentNvfp4ExpertParallel,
-        e: &Engine,
-        input_dev: &crate::CudaSlice<f32>,
-        selected_dev: &crate::CudaSlice<i32>,
-        route_weights_dev: &crate::CudaSlice<f32>,
-        tokens: usize,
-        experts_per_token: usize,
-        activation_limit: Option<f32>,
-        mut pre_join: impl FnMut() -> Result<(), Box<dyn std::error::Error>>,
-    ) -> Result<crate::CudaSlice<f32>, Box<dyn std::error::Error>> {
-        self.run_routed_experts_nvfp4_w4a16_device_routed_inner(
-            experts,
-            e,
-            input_dev,
-            selected_dev,
-            route_weights_dev,
-            tokens,
-            experts_per_token,
-            activation_limit,
-            Some(&mut pre_join),
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn run_routed_experts_nvfp4_w4a16_device_routed_inner(
-        &self,
-        experts: &ResidentNvfp4ExpertParallel,
-        e: &Engine,
-        input_dev: &crate::CudaSlice<f32>,
-        selected_dev: &crate::CudaSlice<i32>,
-        route_weights_dev: &crate::CudaSlice<f32>,
-        tokens: usize,
-        experts_per_token: usize,
-        activation_limit: Option<f32>,
-        mut pre_join: Option<&mut dyn FnMut() -> Result<(), Box<dyn std::error::Error>>>,
-    ) -> Result<crate::CudaSlice<f32>, Box<dyn std::error::Error>> {
-        if !self.native_p2p {
-            return Err("W4A16 device-routed EP requires native P2P".into());
-        }
-        if self.devices.first().copied() != Some(e.ctx().ordinal()) {
-            return Err(format!(
-                "W4A16 device-routed EP root device {:?} != model engine device {}",
-                self.devices.first(),
-                e.ctx().ordinal()
-            )
-            .into());
-        }
-        let active_input_values =
-            nvfp4_ep_active_input_values(input_dev.len(), tokens, experts.input_width)?;
-        let pairs = tokens
-            .checked_mul(experts_per_token)
-            .ok_or("W4A16 device-routed EP route count overflow")?;
-        if selected_dev.len() < pairs || route_weights_dev.len() < pairs {
-            return Err(format!(
-                "W4A16 device-routed EP metadata selected={} weights={} < pairs={pairs}",
-                selected_dev.len(),
-                route_weights_dev.len(),
-            )
-            .into());
-        }
-        let world = self.ranks.len();
-        if world != experts.ranks.len() || !(2..=PRODUCT_MAX_CARDS).contains(&world) {
-            return Err(format!(
-                "W4A16 device-routed EP runtime ranks {world} != bank ranks {}",
-                experts.ranks.len()
-            )
-            .into());
-        }
-
-        static TIMING_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static TIMING_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static ISSUE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static JOIN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static COPY_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static GATE_UP_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static ACTIVATION_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static DOWN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static RANK_SPAN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let timing = std::env::var("MEMRA_STEP_TP_TIMING").as_deref() == Ok("1");
-        let started = timing.then(std::time::Instant::now);
-        let graph_enabled = parallel_ep_graph_enabled()?;
-        let pair_down_enabled = parallel_ep_pair_down_enabled()?;
-
-        let mut workspace_guard = experts
-            .device_workspace
-            .lock()
-            .map_err(|_| "W4A16 device-routed EP workspace lock is poisoned")?;
-        if workspace_guard.is_none() {
-            let capacity_tokens = NVFP4_EP_DEVICE_BATCH_CAP;
-            let capacity_pairs = capacity_tokens * experts_per_token;
-            let mut input = Vec::with_capacity(world);
-            let mut input_bf16 = Vec::with_capacity(world);
-            let mut input_q8 = Vec::with_capacity(world);
-            let mut input_q8_scales = Vec::with_capacity(world);
-            let mut sel = Vec::with_capacity(world);
-            let mut token_rows = Vec::with_capacity(world);
-            let mut global_pairs = Vec::with_capacity(world);
-            let mut route_w = Vec::with_capacity(world);
-            let mut gate_out = Vec::with_capacity(world);
-            let mut up_out = Vec::with_capacity(world);
-            let mut activation_bf16 = Vec::with_capacity(world);
-            let mut activation_q8 = Vec::with_capacity(world);
-            let mut activation_q8_scales = Vec::with_capacity(world);
-            let mut ev_rank = Vec::with_capacity(world);
-            let mut phase_head = Vec::with_capacity(world);
-            let mut phase_copy_done = Vec::with_capacity(world);
-            let mut phase_gate_up_done = Vec::with_capacity(world);
-            let mut phase_activation_done = Vec::with_capacity(world);
-            let mut phase_down_done = Vec::with_capacity(world);
-            for engine in &self.ranks {
-                let _main = engine.gpu.enter_main()?;
-                input.push(engine.uninit(capacity_tokens * experts.input_width)?);
-                input_bf16.push(engine.alloc_u8_uninit(2 * capacity_tokens * experts.input_width)?);
-                input_q8.push(engine.alloc_i8_uninit(capacity_tokens * experts.input_width)?);
-                input_q8_scales
-                    .push(engine.uninit(capacity_tokens * experts.input_width.div_ceil(32))?);
-                sel.push(engine.htod_i32(&vec![0i32; capacity_pairs])?);
-                token_rows.push(engine.htod_i32(&vec![0i32; capacity_pairs])?);
-                global_pairs.push(engine.htod_i32(&vec![0i32; capacity_pairs])?);
-                route_w.push(engine.htod(&vec![0.0f32; capacity_pairs])?);
-                gate_out.push(engine.uninit(capacity_pairs * experts.expert_width)?);
-                up_out.push(engine.uninit(capacity_pairs * experts.expert_width)?);
-                activation_bf16
-                    .push(engine.alloc_u8_uninit(2 * capacity_pairs * experts.expert_width)?);
-                activation_q8.push(engine.alloc_i8_uninit(capacity_pairs * experts.expert_width)?);
-                activation_q8_scales
-                    .push(engine.uninit(capacity_pairs * experts.expert_width.div_ceil(32))?);
-                ev_rank.push(engine.ctx().new_event(None)?);
-                if timing {
-                    phase_head.push(
-                        engine.ctx().new_event(Some(
-                            cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT,
-                        ))?,
-                    );
-                    phase_copy_done.push(
-                        engine.ctx().new_event(Some(
-                            cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT,
-                        ))?,
-                    );
-                    phase_gate_up_done.push(
-                        engine.ctx().new_event(Some(
-                            cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT,
-                        ))?,
-                    );
-                    phase_activation_done.push(
-                        engine.ctx().new_event(Some(
-                            cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT,
-                        ))?,
-                    );
-                    phase_down_done.push(
-                        engine.ctx().new_event(Some(
-                            cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT,
-                        ))?,
-                    );
-                }
-            }
-            let _main = e.gpu.enter_main()?;
-            let slot_rows = e.uninit(capacity_pairs * experts.input_width)?;
-            let slot_rows_raw = {
-                use cudarc::driver::DevicePtr;
-                let stream = e.stream();
-                let (pointer, _guard) = slot_rows.device_ptr(&stream);
-                pointer
-            };
-            *workspace_guard = Some(Nvfp4EpDeviceWorkspace {
-                input,
-                input_bf16,
-                input_q8,
-                input_q8_scales,
-                sel,
-                token_rows,
-                global_pairs,
-                route_w,
-                gate_out,
-                up_out,
-                activation_bf16,
-                activation_q8,
-                activation_q8_scales,
-                slot_rows,
-                slot_rows_raw,
-                route_weights: e.htod(&vec![0.0f32; capacity_pairs])?,
-                graph_input: e.uninit(NVFP4_EP_GRAPH_BATCH_CAP * experts.input_width)?,
-                graph_output: e.uninit(NVFP4_EP_GRAPH_BATCH_CAP * experts.input_width)?,
-                graph_routes: None,
-                graphs: std::iter::repeat_with(|| None)
-                    .take(NVFP4_EP_GRAPH_BATCH_CAP + 1)
-                    .collect(),
-                ev_entry: e.ctx().new_event(None)?,
-                ev_entry_device: e.ctx().ordinal(),
-                ev_rank,
-                phase_events: timing.then_some(Nvfp4EpPhaseEvents {
-                    head: phase_head,
-                    copy_done: phase_copy_done,
-                    gate_up_done: phase_gate_up_done,
-                    activation_done: phase_activation_done,
-                    down_done: phase_down_done,
-                }),
-                capacity_tokens,
-                experts_per_token,
-            });
-        }
-        let workspace = workspace_guard
-            .as_mut()
-            .expect("W4A16 device-routed EP workspace initialized above");
-        if workspace.experts_per_token != experts_per_token || tokens > workspace.capacity_tokens {
-            return Err(format!(
-                "W4A16 device-routed EP workspace tokens={} experts/token={} cannot serve \
-                 tokens={tokens} experts/token={experts_per_token}",
-                workspace.capacity_tokens, workspace.experts_per_token,
-            )
-            .into());
-        }
-
-        if tokens <= NVFP4_EP_Q8_BATCH_CAP && parallel_ep_q8_act_enabled()? {
-            if graph_enabled {
-                return Err("MEMRA_PARALLEL_EP_GRAPH=1 is exact W4A16-only; disable \
-                     MEMRA_PARALLEL_EP_Q8_ACT or the graph door"
-                    .into());
-            }
-            return self.run_routed_experts_nvfp4_w4a8_device_routed(
-                experts,
-                e,
-                input_dev,
-                selected_dev,
-                route_weights_dev,
-                workspace,
-                tokens,
-                experts_per_token,
-                activation_limit,
-                pre_join,
-            );
-        }
-
-        if graph_enabled && !timing && pre_join.is_none() && tokens <= NVFP4_EP_GRAPH_BATCH_CAP {
-            use cudarc::driver::DevicePtr;
-            let route_ptrs = {
-                let stream = e.stream();
-                let (sel_ptr, _sel_guard) = selected_dev.device_ptr(&stream);
-                let (weight_ptr, _weight_guard) = route_weights_dev.device_ptr(&stream);
-                (sel_ptr, weight_ptr)
-            };
-            if let Some(graph_exec) = workspace.graphs[tokens].as_ref().map(|graph| graph.exec) {
-                if workspace.graph_routes != Some(route_ptrs) {
-                    return Err(format!(
-                        "W4A16 EP graph route buffers moved: built={:?} current={route_ptrs:?}",
-                        workspace.graph_routes,
-                    )
-                    .into());
-                }
-                let _main = e.gpu.enter_main()?;
-                e.stream().memcpy_dtod(
-                    &input_dev.slice(0..active_input_values),
-                    &mut workspace.graph_input.slice_mut(0..active_input_values),
-                )?;
-                e.memset_zeros_view(
-                    &mut workspace
-                        .slot_rows
-                        .slice_mut(0..pairs * experts.input_width),
-                )?;
-                unsafe {
-                    let result = cudarc::driver::sys::cuGraphLaunch(
-                        graph_exec,
-                        e.stream().cu_stream() as cudarc::driver::sys::CUstream,
-                    );
-                    if result != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
-                        return Err(format!("W4A16 EP graph launch: {result:?}").into());
-                    }
-                }
-                let mut output = e.uninit(active_input_values)?;
-                e.stream().memcpy_dtod(
-                    &workspace.graph_output.slice(0..active_input_values),
-                    &mut output.slice_mut(0..active_input_values),
-                )?;
-                return Ok(output);
-            }
-        }
-
-        {
-            let _main = e.gpu.enter_main()?;
-            e.memset_zeros_view(
-                &mut workspace
-                    .slot_rows
-                    .slice_mut(0..pairs * experts.input_width),
-            )?;
-            workspace.ev_entry.record(&e.stream())?;
-        }
-
-        for (rank_index, engine) in self.ranks.iter().enumerate() {
-            let _main = engine.gpu.enter_main()?;
-            if let Some(events) = workspace.phase_events.as_ref() {
-                events.head[rank_index].record(&engine.stream())?;
-            }
-            engine.stream().wait(&workspace.ev_entry)?;
-            let Nvfp4EpDeviceWorkspace {
-                input_bf16,
-                sel,
-                route_w,
-                ..
-            } = &mut *workspace;
-            engine.nvfp4_ep_stage_inputs(
-                input_dev,
-                selected_dev,
-                route_weights_dev,
-                &mut input_bf16[rank_index],
-                &mut sel[rank_index],
-                &mut route_w[rank_index],
-                active_input_values,
-                pairs,
-                false,
-            )?;
-            if let Some(events) = workspace.phase_events.as_ref() {
-                events.copy_done[rank_index].record(&engine.stream())?;
-            }
-            let rank = &experts.ranks[rank_index];
-            let owner_start = rank.expert_range.start;
-            let owner_end = rank.expert_range.end;
-            engine.qmatvec_nvfp4_bf16_ep_dual_slots_into(
-                &rank.gate,
-                &rank.up,
-                &workspace.sel[rank_index],
-                &workspace.input_bf16[rank_index],
-                &mut workspace.gate_out[rank_index],
-                &mut workspace.up_out[rank_index],
-                pairs,
-                experts_per_token,
-                experts.input_width,
-                experts.expert_width,
-                owner_start,
-                owner_end,
-                experts.gate_row_bytes,
-                rank.gate_expert_bytes,
-            )?;
-            if let Some(events) = workspace.phase_events.as_ref() {
-                events.gate_up_done[rank_index].record(&engine.stream())?;
-            }
-            engine.silu_mul_scaled_host_expf_bf16_ep_slots_into(
-                &workspace.gate_out[rank_index],
-                &workspace.up_out[rank_index],
-                &rank.macros_gate,
-                &rank.macros_up,
-                &workspace.sel[rank_index],
-                owner_start,
-                owner_end,
-                activation_limit,
-                &mut workspace.activation_bf16[rank_index],
-                experts.expert_width,
-                pairs,
-            )?;
-            if let Some(events) = workspace.phase_events.as_ref() {
-                events.activation_done[rank_index].record(&engine.stream())?;
-            }
-            if tokens > 1 && pair_down_enabled {
-                engine.qmatvec_nvfp4_bf16_ep_down_pairs_raw(
-                    &rank.down,
-                    &workspace.sel[rank_index],
-                    &workspace.activation_bf16[rank_index],
-                    &rank.macros_down,
-                    workspace.slot_rows_raw,
-                    pairs,
-                    experts.expert_width,
-                    experts.input_width,
-                    owner_start,
-                    owner_end,
-                    experts.down_row_bytes,
-                    rank.down_expert_bytes,
-                )?;
-            } else {
-                engine.qmatvec_nvfp4_bf16_ep_down_slots_raw(
-                    &rank.down,
-                    &workspace.sel[rank_index],
-                    &workspace.activation_bf16[rank_index],
-                    &rank.macros_down,
-                    workspace.slot_rows_raw,
-                    pairs,
-                    experts.expert_width,
-                    experts.input_width,
-                    owner_start,
-                    owner_end,
-                    experts.down_row_bytes,
-                    rank.down_expert_bytes,
-                )?;
-            }
-            if let Some(events) = workspace.phase_events.as_ref() {
-                events.down_done[rank_index].record(&engine.stream())?;
-            }
-            workspace.ev_rank[rank_index].record(&engine.stream())?;
-        }
-
-        if let Some(pre_join) = pre_join.as_mut() {
-            pre_join()?;
-        }
-        let issue_ns_this = started
-            .as_ref()
-            .map(|started| started.elapsed().as_nanos() as u64);
-        let join_started = timing.then(std::time::Instant::now);
-        let output = {
-            let _main = e.gpu.enter_main()?;
-            for event in &workspace.ev_rank {
-                e.stream().wait(event)?;
-            }
-            let mut output = e.uninit(tokens * experts.input_width)?;
-            e.axpy_rows_seq_tokens_into(
-                &workspace.slot_rows,
-                route_weights_dev,
-                &mut output,
-                experts.input_width,
-                experts_per_token,
-                tokens,
-            )?;
-            output
-        };
-
-        if let Some(started) = started {
-            use std::sync::atomic::Ordering;
-            e.stream().synchronize()?;
-            let elapsed = started.elapsed().as_nanos() as u64;
-            let join_ns_this = join_started
-                .expect("timing join starts with total timing")
-                .elapsed()
-                .as_nanos() as u64;
-            let mut phase_max_ms = [0.0f32; 5];
-            if let Some(events) = workspace.phase_events.as_ref() {
-                for rank_index in 0..world {
-                    let engine = &self.ranks[rank_index];
-                    let _main = engine.gpu.enter_main()?;
-                    phase_max_ms[0] = phase_max_ms[0]
-                        .max(events.head[rank_index].elapsed_ms(&events.copy_done[rank_index])?);
-                    phase_max_ms[1] = phase_max_ms[1].max(
-                        events.copy_done[rank_index]
-                            .elapsed_ms(&events.gate_up_done[rank_index])?,
-                    );
-                    phase_max_ms[2] = phase_max_ms[2].max(
-                        events.gate_up_done[rank_index]
-                            .elapsed_ms(&events.activation_done[rank_index])?,
-                    );
-                    phase_max_ms[3] = phase_max_ms[3].max(
-                        events.activation_done[rank_index]
-                            .elapsed_ms(&events.down_done[rank_index])?,
-                    );
-                    phase_max_ms[4] = phase_max_ms[4]
-                        .max(events.head[rank_index].elapsed_ms(&events.down_done[rank_index])?);
-                }
-            }
-            let phase_ns = phase_max_ms.map(|ms| (ms as f64 * 1.0e6) as u64);
-            let ns = TIMING_NS.fetch_add(elapsed, Ordering::Relaxed) + elapsed;
-            let issue_ns = ISSUE_NS.fetch_add(
-                issue_ns_this.expect("timing issue starts with total timing"),
-                Ordering::Relaxed,
-            ) + issue_ns_this.expect("timing issue starts with total timing");
-            let join_ns = JOIN_NS.fetch_add(join_ns_this, Ordering::Relaxed) + join_ns_this;
-            let copy_ns = COPY_NS.fetch_add(phase_ns[0], Ordering::Relaxed) + phase_ns[0];
-            let gate_up_ns = GATE_UP_NS.fetch_add(phase_ns[1], Ordering::Relaxed) + phase_ns[1];
-            let activation_ns =
-                ACTIVATION_NS.fetch_add(phase_ns[2], Ordering::Relaxed) + phase_ns[2];
-            let down_ns = DOWN_NS.fetch_add(phase_ns[3], Ordering::Relaxed) + phase_ns[3];
-            let rank_span_ns = RANK_SPAN_NS.fetch_add(phase_ns[4], Ordering::Relaxed) + phase_ns[4];
-            let calls = TIMING_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-            if calls.is_multiple_of(430) {
-                eprintln!(
-                    "[nvfp4-ep-device-router-timing] calls={calls} total_ms={:.1} avg_us={:.1}",
-                    ns as f64 / 1.0e6,
-                    ns as f64 / calls as f64 / 1.0e3,
-                );
-                eprintln!(
-                    "[nvfp4-ep-device-router-phases] calls={calls} issue_us={:.1} \
-                     join_us={:.1} rank_span_us={:.1} copy_us={:.1} gate_up_us={:.1} \
-                     activation_us={:.1} down_us={:.1}",
-                    issue_ns as f64 / calls as f64 / 1.0e3,
-                    join_ns as f64 / calls as f64 / 1.0e3,
-                    rank_span_ns as f64 / calls as f64 / 1.0e3,
-                    copy_ns as f64 / calls as f64 / 1.0e3,
-                    gate_up_ns as f64 / calls as f64 / 1.0e3,
-                    activation_ns as f64 / calls as f64 / 1.0e3,
-                    down_ns as f64 / calls as f64 / 1.0e3,
-                );
-            }
-        }
-        if graph_enabled
-            && !timing
-            && pre_join.is_none()
-            && tokens <= NVFP4_EP_GRAPH_BATCH_CAP
-            && workspace.graphs[tokens].is_none()
-        {
-            e.stream().synchronize()?;
-            let graph = self.build_nvfp4_ep_routes_graph(
-                experts,
-                e,
-                workspace,
-                selected_dev,
-                route_weights_dev,
-                tokens,
-                experts_per_token,
-                activation_limit,
-            )?;
-            workspace.graphs[tokens] = Some(graph);
-            eprintln!(
-                "[parallel-ep-graph] captured devices={:?} tokens={tokens} \
-                 experts/token={experts_per_token} input=staged routes=fixed \
-                 device_arithmetic=unchanged performance_claim=false",
-                self.devices,
-            );
-        }
-        Ok(output)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn run_routed_experts_nvfp4_w4a8_device_routed(
-        &self,
-        experts: &ResidentNvfp4ExpertParallel,
-        e: &Engine,
-        input_dev: &crate::CudaSlice<f32>,
-        selected_dev: &crate::CudaSlice<i32>,
-        route_weights_dev: &crate::CudaSlice<f32>,
-        workspace: &mut Nvfp4EpDeviceWorkspace,
-        tokens: usize,
-        experts_per_token: usize,
-        activation_limit: Option<f32>,
-        mut pre_join: Option<&mut dyn FnMut() -> Result<(), Box<dyn std::error::Error>>>,
-    ) -> Result<crate::CudaSlice<f32>, Box<dyn std::error::Error>> {
-        static TIMING_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static TIMING_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static ISSUE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static JOIN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static COPY_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static GATE_UP_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static ACTIVATION_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static DOWN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        static RANK_SPAN_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let timing = std::env::var("MEMRA_STEP_TP_TIMING").as_deref() == Ok("1");
-        let started = timing.then(std::time::Instant::now);
-        let pairs = tokens
-            .checked_mul(experts_per_token)
-            .ok_or("W4A8 device-routed EP route count overflow")?;
-        let input_values = tokens
-            .checked_mul(experts.input_width)
-            .ok_or("W4A8 device-routed EP input size overflow")?;
-        let scope = parallel_ep_q8_scope()?.unwrap_or(ParallelEpQ8Scope::All);
-        let gate_up_paired = parallel_ep_q8_gu_paired_enabled(true, Some(scope))?;
-
-        {
-            let _main = e.gpu.enter_main()?;
-            e.memset_zeros_view(
-                &mut workspace
-                    .slot_rows
-                    .slice_mut(0..pairs * experts.input_width),
-            )?;
-            workspace.ev_entry.record(&e.stream())?;
-        }
-        for (rank_index, engine) in self.ranks.iter().enumerate() {
-            let _main = engine.gpu.enter_main()?;
-            if let Some(events) = workspace.phase_events.as_ref() {
-                events.head[rank_index].record(&engine.stream())?;
-            }
-            engine.stream().wait(&workspace.ev_entry)?;
-            let rank = &experts.ranks[rank_index];
-            let owner_start = rank.expert_range.start;
-            let owner_end = rank.expert_range.end;
-            match scope {
-                ParallelEpQ8Scope::All | ParallelEpQ8Scope::GateUp => {
-                    engine.quantize_q8_1_into(
-                        input_dev,
-                        tokens,
-                        experts.input_width,
-                        &mut workspace.input_q8[rank_index],
-                        &mut workspace.input_q8_scales[rank_index],
-                    )?;
-                    engine.moe_sel_w_mirror(
-                        selected_dev,
-                        route_weights_dev,
-                        &mut workspace.sel[rank_index],
-                        &mut workspace.route_w[rank_index],
-                        pairs,
-                    )?;
-                    if let Some(events) = workspace.phase_events.as_ref() {
-                        events.copy_done[rank_index].record(&engine.stream())?;
-                    }
-                    if gate_up_paired {
-                        engine.qmatvec_nvfp4_q8_ep_paired_slots_into(
-                            &rank.gate,
-                            &rank.up,
-                            &workspace.sel[rank_index],
-                            &workspace.input_q8[rank_index],
-                            &workspace.input_q8_scales[rank_index],
-                            &mut workspace.gate_out[rank_index],
-                            &mut workspace.up_out[rank_index],
-                            pairs,
-                            experts_per_token,
-                            experts.input_width,
-                            experts.expert_width,
-                            owner_start,
-                            owner_end,
-                            experts.gate_row_bytes,
-                            rank.gate_expert_bytes,
-                        )?;
-                    } else {
-                        engine.qmatvec_nvfp4_q8_ep_dual_slots_into(
-                            &rank.gate,
-                            &rank.up,
-                            &workspace.sel[rank_index],
-                            &workspace.input_q8[rank_index],
-                            &workspace.input_q8_scales[rank_index],
-                            &mut workspace.gate_out[rank_index],
-                            &mut workspace.up_out[rank_index],
-                            pairs,
-                            experts_per_token,
-                            experts.input_width,
-                            experts.expert_width,
-                            owner_start,
-                            owner_end,
-                            experts.gate_row_bytes,
-                            rank.gate_expert_bytes,
-                        )?;
-                    }
-                }
-                ParallelEpQ8Scope::Down => {
-                    engine.nvfp4_ep_stage_inputs(
-                        input_dev,
-                        selected_dev,
-                        route_weights_dev,
-                        &mut workspace.input_bf16[rank_index],
-                        &mut workspace.sel[rank_index],
-                        &mut workspace.route_w[rank_index],
-                        input_values,
-                        pairs,
-                        false,
-                    )?;
-                    if let Some(events) = workspace.phase_events.as_ref() {
-                        events.copy_done[rank_index].record(&engine.stream())?;
-                    }
-                    engine.qmatvec_nvfp4_bf16_ep_dual_slots_into(
-                        &rank.gate,
-                        &rank.up,
-                        &workspace.sel[rank_index],
-                        &workspace.input_bf16[rank_index],
-                        &mut workspace.gate_out[rank_index],
-                        &mut workspace.up_out[rank_index],
-                        pairs,
-                        experts_per_token,
-                        experts.input_width,
-                        experts.expert_width,
-                        owner_start,
-                        owner_end,
-                        experts.gate_row_bytes,
-                        rank.gate_expert_bytes,
-                    )?;
-                }
-            }
-            if let Some(events) = workspace.phase_events.as_ref() {
-                events.gate_up_done[rank_index].record(&engine.stream())?;
-            }
-            match scope {
-                ParallelEpQ8Scope::All | ParallelEpQ8Scope::Down => {
-                    engine.silu_mul_scaled_host_expf_q8_ep_slots_into(
-                        &workspace.gate_out[rank_index],
-                        &workspace.up_out[rank_index],
-                        &rank.macros_gate,
-                        &rank.macros_up,
-                        &workspace.sel[rank_index],
-                        owner_start,
-                        owner_end,
-                        activation_limit,
-                        &mut workspace.activation_q8[rank_index],
-                        &mut workspace.activation_q8_scales[rank_index],
-                        experts.expert_width,
-                        pairs,
-                    )?;
-                    if let Some(events) = workspace.phase_events.as_ref() {
-                        events.activation_done[rank_index].record(&engine.stream())?;
-                    }
-                    engine.qmatvec_nvfp4_q8_ep_down_slots_raw(
-                        &rank.down,
-                        &workspace.sel[rank_index],
-                        &workspace.activation_q8[rank_index],
-                        &workspace.activation_q8_scales[rank_index],
-                        &rank.macros_down,
-                        workspace.slot_rows_raw,
-                        pairs,
-                        experts.expert_width,
-                        experts.input_width,
-                        owner_start,
-                        owner_end,
-                        experts.down_row_bytes,
-                        rank.down_expert_bytes,
-                    )?;
-                }
-                ParallelEpQ8Scope::GateUp => {
-                    engine.silu_mul_scaled_host_expf_bf16_ep_slots_into(
-                        &workspace.gate_out[rank_index],
-                        &workspace.up_out[rank_index],
-                        &rank.macros_gate,
-                        &rank.macros_up,
-                        &workspace.sel[rank_index],
-                        owner_start,
-                        owner_end,
-                        activation_limit,
-                        &mut workspace.activation_bf16[rank_index],
-                        experts.expert_width,
-                        pairs,
-                    )?;
-                    if let Some(events) = workspace.phase_events.as_ref() {
-                        events.activation_done[rank_index].record(&engine.stream())?;
-                    }
-                    engine.qmatvec_nvfp4_bf16_ep_down_slots_raw(
-                        &rank.down,
-                        &workspace.sel[rank_index],
-                        &workspace.activation_bf16[rank_index],
-                        &rank.macros_down,
-                        workspace.slot_rows_raw,
-                        pairs,
-                        experts.expert_width,
-                        experts.input_width,
-                        owner_start,
-                        owner_end,
-                        experts.down_row_bytes,
-                        rank.down_expert_bytes,
-                    )?;
-                }
-            }
-            if let Some(events) = workspace.phase_events.as_ref() {
-                events.down_done[rank_index].record(&engine.stream())?;
-            }
-            workspace.ev_rank[rank_index].record(&engine.stream())?;
-        }
-
-        if let Some(pre_join) = pre_join.as_mut() {
-            pre_join()?;
-        }
-        let issue_ns_this = started
-            .as_ref()
-            .map(|started| started.elapsed().as_nanos() as u64);
-        let join_started = timing.then(std::time::Instant::now);
-        let output = {
-            let _main = e.gpu.enter_main()?;
-            for event in &workspace.ev_rank {
-                e.stream().wait(event)?;
-            }
-            let mut output = e.uninit(input_values)?;
-            e.axpy_rows_seq_tokens_into(
-                &workspace.slot_rows,
-                route_weights_dev,
-                &mut output,
-                experts.input_width,
-                experts_per_token,
-                tokens,
-            )?;
-            output
-        };
-        if let Some(started) = started {
-            use std::sync::atomic::Ordering;
-            e.stream().synchronize()?;
-            let elapsed = started.elapsed().as_nanos() as u64;
-            let join_ns_this = join_started
-                .expect("timing join starts with total timing")
-                .elapsed()
-                .as_nanos() as u64;
-            let mut phase_max_ms = [0.0f32; 5];
-            if let Some(events) = workspace.phase_events.as_ref() {
-                for rank_index in 0..self.ranks.len() {
-                    let engine = &self.ranks[rank_index];
-                    let _main = engine.gpu.enter_main()?;
-                    phase_max_ms[0] = phase_max_ms[0]
-                        .max(events.head[rank_index].elapsed_ms(&events.copy_done[rank_index])?);
-                    phase_max_ms[1] = phase_max_ms[1].max(
-                        events.copy_done[rank_index]
-                            .elapsed_ms(&events.gate_up_done[rank_index])?,
-                    );
-                    phase_max_ms[2] = phase_max_ms[2].max(
-                        events.gate_up_done[rank_index]
-                            .elapsed_ms(&events.activation_done[rank_index])?,
-                    );
-                    phase_max_ms[3] = phase_max_ms[3].max(
-                        events.activation_done[rank_index]
-                            .elapsed_ms(&events.down_done[rank_index])?,
-                    );
-                    phase_max_ms[4] = phase_max_ms[4]
-                        .max(events.head[rank_index].elapsed_ms(&events.down_done[rank_index])?);
-                }
-            }
-            let phase_ns = phase_max_ms.map(|ms| (ms as f64 * 1.0e6) as u64);
-            let ns = TIMING_NS.fetch_add(elapsed, Ordering::Relaxed) + elapsed;
-            let issue_ns = ISSUE_NS.fetch_add(
-                issue_ns_this.expect("timing issue starts with total timing"),
-                Ordering::Relaxed,
-            ) + issue_ns_this.expect("timing issue starts with total timing");
-            let join_ns = JOIN_NS.fetch_add(join_ns_this, Ordering::Relaxed) + join_ns_this;
-            let copy_ns = COPY_NS.fetch_add(phase_ns[0], Ordering::Relaxed) + phase_ns[0];
-            let gate_up_ns = GATE_UP_NS.fetch_add(phase_ns[1], Ordering::Relaxed) + phase_ns[1];
-            let activation_ns =
-                ACTIVATION_NS.fetch_add(phase_ns[2], Ordering::Relaxed) + phase_ns[2];
-            let down_ns = DOWN_NS.fetch_add(phase_ns[3], Ordering::Relaxed) + phase_ns[3];
-            let rank_span_ns = RANK_SPAN_NS.fetch_add(phase_ns[4], Ordering::Relaxed) + phase_ns[4];
-            let calls = TIMING_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-            if calls.is_multiple_of(430) {
-                eprintln!(
-                    "[nvfp4-ep-q8-timing] calls={calls} total_ms={:.1} avg_us={:.1}",
-                    ns as f64 / 1.0e6,
-                    ns as f64 / calls as f64 / 1.0e3,
-                );
-                eprintln!(
-                    "[nvfp4-ep-q8-phases] calls={calls} issue_us={:.1} join_us={:.1} \
-                     rank_span_us={:.1} copy_us={:.1} gate_up_us={:.1} \
-                     activation_us={:.1} down_us={:.1}",
-                    issue_ns as f64 / calls as f64 / 1.0e3,
-                    join_ns as f64 / calls as f64 / 1.0e3,
-                    rank_span_ns as f64 / calls as f64 / 1.0e3,
-                    copy_ns as f64 / calls as f64 / 1.0e3,
-                    gate_up_ns as f64 / calls as f64 / 1.0e3,
-                    activation_ns as f64 / calls as f64 / 1.0e3,
-                    down_ns as f64 / calls as f64 / 1.0e3,
-                );
-            }
-        }
-        static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            let (expert_input, post_activation, numeric_class) = match scope {
-                ParallelEpQ8Scope::All => ("q8_1", "q8_1", "w4a8-internal"),
-                ParallelEpQ8Scope::GateUp => ("q8_1", "bf16", "w4a8-gate-up-internal"),
-                ParallelEpQ8Scope::Down => ("bf16", "q8_1", "w4a8-down-internal"),
-            };
-            eprintln!(
-                "[parallel-ep-q8] devices={:?} tokens={tokens} scope={} \
-                 expert_input={expert_input} post_activation={post_activation} \
-                 gate_up_schedule={} \
-                 external_boundary=bf16 numeric_class={numeric_class} \
-                 host_expf=true accumulation=token-slot-order performance_claim=false",
-                self.devices,
-                scope.label(),
-                if gate_up_paired {
-                    "paired-cta"
-                } else {
-                    "separate-cta"
-                },
-            );
-        }
-        Ok(output)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn build_nvfp4_ep_routes_graph(
-        &self,
-        experts: &ResidentNvfp4ExpertParallel,
-        e: &Engine,
-        workspace: &mut Nvfp4EpDeviceWorkspace,
-        selected_dev: &crate::CudaSlice<i32>,
-        route_weights_dev: &crate::CudaSlice<f32>,
-        tokens: usize,
-        experts_per_token: usize,
-        activation_limit: Option<f32>,
-    ) -> Result<RoutesGraph, Box<dyn std::error::Error>> {
-        use cudarc::driver::DevicePtr;
-        use cudarc::driver::sys;
-
-        fn cu_try(result: sys::CUresult, context: &str) -> Result<(), Box<dyn std::error::Error>> {
-            if result == sys::CUresult::CUDA_SUCCESS {
-                Ok(())
-            } else {
-                Err(format!("{context}: {result:?}").into())
-            }
-        }
-
-        let world = self.ranks.len();
-        if world != experts.ranks.len() || !(2..=PRODUCT_MAX_CARDS).contains(&world) {
-            return Err(format!(
-                "W4A16 EP graph world {world} != expert ranks {}",
-                experts.ranks.len()
-            )
-            .into());
-        }
-        let width = experts.input_width;
-        if !(1..=NVFP4_EP_GRAPH_BATCH_CAP).contains(&tokens) {
-            return Err(format!(
-                "W4A16 EP graph tokens {tokens} outside 1..={NVFP4_EP_GRAPH_BATCH_CAP}"
-            )
-            .into());
-        }
-        let pairs = tokens
-            .checked_mul(experts_per_token)
-            .ok_or("W4A16 EP graph pair count overflow")?;
-        let input_values = tokens
-            .checked_mul(width)
-            .ok_or("W4A16 EP graph input size overflow")?;
-        let root_stream = e.stream();
-        let (input_ptr, _input_guard) = workspace.graph_input.device_ptr(&root_stream);
-        let (selected_ptr, _selected_guard) = selected_dev.device_ptr(&root_stream);
-        let (weights_ptr, _weights_guard) = route_weights_dev.device_ptr(&root_stream);
-        let route_ptrs = (selected_ptr, weights_ptr);
-
-        let mut children = Vec::with_capacity(world + 1);
-        for rank_index in 0..world {
-            let engine = &self.ranks[rank_index];
-            let rank = &experts.ranks[rank_index];
-            let owner_start = rank.expert_range.start;
-            let owner_end = rank.expert_range.end;
-            let _main = engine.gpu.enter_main()?;
-            let (child, _retained) = engine.capture_graph_retained(|_| {
-                engine.nvfp4_ep_stage_inputs_raw(
-                    input_ptr,
-                    selected_ptr,
-                    weights_ptr,
-                    &mut workspace.input_bf16[rank_index],
-                    &mut workspace.sel[rank_index],
-                    &mut workspace.route_w[rank_index],
-                    input_values,
-                    pairs,
-                    false,
-                )?;
-                engine.qmatvec_nvfp4_bf16_ep_dual_slots_into(
-                    &rank.gate,
-                    &rank.up,
-                    &workspace.sel[rank_index],
-                    &workspace.input_bf16[rank_index],
-                    &mut workspace.gate_out[rank_index],
-                    &mut workspace.up_out[rank_index],
-                    pairs,
-                    experts_per_token,
-                    width,
-                    experts.expert_width,
-                    owner_start,
-                    owner_end,
-                    experts.gate_row_bytes,
-                    rank.gate_expert_bytes,
-                )?;
-                engine.silu_mul_scaled_host_expf_bf16_ep_slots_into(
-                    &workspace.gate_out[rank_index],
-                    &workspace.up_out[rank_index],
-                    &rank.macros_gate,
-                    &rank.macros_up,
-                    &workspace.sel[rank_index],
-                    owner_start,
-                    owner_end,
-                    activation_limit,
-                    &mut workspace.activation_bf16[rank_index],
-                    experts.expert_width,
-                    pairs,
-                )?;
-                engine.qmatvec_nvfp4_bf16_ep_down_slots_raw(
-                    &rank.down,
-                    &workspace.sel[rank_index],
-                    &workspace.activation_bf16[rank_index],
-                    &rank.macros_down,
-                    workspace.slot_rows_raw,
-                    pairs,
-                    experts.expert_width,
-                    width,
-                    owner_start,
-                    owner_end,
-                    experts.down_row_bytes,
-                    rank.down_expert_bytes,
-                )?;
-                Ok(())
-            })?;
-            children.push(child);
-        }
-
-        {
-            let _main = e.gpu.enter_main()?;
-            let (child, _retained) = e.capture_graph_retained(|_| {
-                e.axpy_rows_seq_tokens_into(
-                    &workspace.slot_rows,
-                    route_weights_dev,
-                    &mut workspace.graph_output,
-                    width,
-                    experts_per_token,
-                    tokens,
-                )
-            })?;
-            children.push(child);
-        }
-
-        let mut parent: sys::CUgraph = std::ptr::null_mut();
-        unsafe {
-            cu_try(sys::cuGraphCreate(&mut parent, 0), "W4A16 EP cuGraphCreate")?;
-        }
-        let mut rank_nodes = Vec::with_capacity(world);
-        for (rank_index, child) in children.iter().take(world).enumerate() {
-            let mut node: sys::CUgraphNode = std::ptr::null_mut();
-            unsafe {
-                cu_try(
-                    sys::cuGraphAddChildGraphNode(
-                        &mut node,
-                        parent,
-                        std::ptr::null(),
-                        0,
-                        child.cu_graph(),
-                    ),
-                    &format!("W4A16 EP graph rank {rank_index}"),
-                )?;
-            }
-            rank_nodes.push(node);
-        }
-        let mut combine_node: sys::CUgraphNode = std::ptr::null_mut();
-        unsafe {
-            cu_try(
-                sys::cuGraphAddChildGraphNode(
-                    &mut combine_node,
-                    parent,
-                    rank_nodes.as_ptr(),
-                    rank_nodes.len(),
-                    children[world].cu_graph(),
-                ),
-                "W4A16 EP graph combine",
-            )?;
-        }
-        let mut exec: sys::CUgraphExec = std::ptr::null_mut();
-        unsafe {
-            cu_try(
-                sys::cuGraphInstantiateWithFlags(&mut exec, parent, 0),
-                "W4A16 EP graph instantiate",
-            )?;
-        }
-        workspace.graph_routes = Some(route_ptrs);
-        Ok(RoutesGraph {
-            exec,
-            parent,
-            _children: children,
-        })
     }
 
     /// Device-resident routed NVFP4 expert program (decode shape, t=1 rows). The geometry gift
@@ -12572,7 +10262,7 @@ impl TpE4m3HostBounce {
             let ns = TIMING_NS.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed)
                 + started.elapsed().as_nanos() as u64;
             let calls = TIMING_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-            if calls.is_multiple_of(430) {
+            if calls % 430 == 0 {
                 eprintln!(
                     "[nvfp4-dev-routes-timing] calls={calls} total_ms={:.1} avg_us={:.1}",
                     ns as f64 / 1.0e6,
@@ -12745,47 +10435,13 @@ impl TpE4m3HostBounce {
             let gate_bank = &experts.gate[rank_index];
             let up_bank = &experts.up[rank_index];
             let (aq, ad) = (&workspace.in_q[rank_index], &workspace.in_d[rank_index]);
-            // PROGRAM 2 (`MEMRA_NVFP4_SEL_GU`): the two sweeps share sel/aq/ad and, when the
-            // geometry matches exactly, one launch covers both — per-row bit-identical, double
-            // the grid fill. Armed by ITS OWN door, and additionally guarded on both banks
-            // reporting slot-major, because the fused kernel reads only that byte map. Its door
-            // is separate from PROGRAM 1's on purpose: in the removed implementation it armed
-            // silently on the bank predicate, so the bank layout and this fusion could never be
-            // priced apart (DIAGNOSIS.md, "the bisect could not name the mechanism").
-            let gu_fused = sel_gu_fused_on()
-                && gate_bank.slot_major
-                && up_bank.slot_major
+            // FUSION #2a (v2 banks): the two sweeps share sel/aq/ad and identical geometry
+            // — one launch, per-row bit-identical, double the grid fill.
+            let gu_fused = nvfp4_bank_v2_on()
                 && gate_bank.in_features == up_bank.in_features
                 && gate_bank.local_out == up_bank.local_out
                 && gate_bank.row_bytes == up_bank.row_bytes
                 && gate_bank.expert_bytes == up_bank.expert_bytes;
-            // ENGAGEMENT RECEIPT for PROGRAM 2, one line per DISTINCT decision combo. The
-            // removed implementation had this behind MEMRA_SWEEP_TRACE and its own comment said
-            // why it existed: "a silently-dead fusion reads as roofline physics without it".
-            // It is unconditional here, because a perf row whose fusion never armed is worse
-            // than no row -- it is a number that looks like evidence.
-            {
-                static SEEN_GU: std::sync::Mutex<Vec<(bool, bool, bool)>> =
-                    std::sync::Mutex::new(Vec::new());
-                let combo = (gu_fused, sel_gu_fused_on(), gate_bank.slot_major);
-                let mut seen = SEEN_GU.lock().unwrap();
-                if !seen.contains(&combo) {
-                    seen.push(combo);
-                    eprintln!(
-                        "[nvfp4-sweep] gu_fused={} door={} slot_major={} geometry_match={} \
-                         in_f={} out_f={} n_sel={n_sel}",
-                        gu_fused,
-                        sel_gu_fused_on(),
-                        gate_bank.slot_major,
-                        gate_bank.in_features == up_bank.in_features
-                            && gate_bank.local_out == up_bank.local_out
-                            && gate_bank.row_bytes == up_bank.row_bytes
-                            && gate_bank.expert_bytes == up_bank.expert_bytes,
-                        gate_bank.in_features,
-                        gate_bank.local_out
-                    );
-                }
-            }
             if gu_fused {
                 let Nvfp4DeviceRoutesWorkspace {
                     sel,
@@ -12808,7 +10464,6 @@ impl TpE4m3HostBounce {
                     gate_bank.local_out,
                     gate_bank.row_bytes,
                     gate_bank.expert_bytes,
-                    gate_bank.slot_major,
                 )?;
             } else {
                 engine.qmatvec_nvfp4_sel_into(
@@ -12824,7 +10479,6 @@ impl TpE4m3HostBounce {
                     gate_bank.expert_bytes,
                     0,
                     0,
-                    gate_bank.slot_major,
                 )?;
                 engine.qmatvec_nvfp4_sel_into(
                     &up_bank.bank,
@@ -12839,7 +10493,6 @@ impl TpE4m3HostBounce {
                     up_bank.expert_bytes,
                     0,
                     0,
-                    up_bank.slot_major,
                 )?;
             }
             // Fused macro-scaled SwiGLU that EMITS q8_1 directly — down consumes it with no
@@ -12875,42 +10528,30 @@ impl TpE4m3HostBounce {
                         .into(),
                 );
             }
-            // PROGRAM 3 (`MEMRA_NVFP4_SEL_DOWN8`): the down sweep and the route-weight combine
-            // in ONE launch, one warp per SLOT instead of one warp per (row, slot), and the
-            // `n_sel x out_f` partial round trip gone. Device-routed only — the host-routed arm
-            // folds the macro into `combine_w` instead of reading `md` on device — and
-            // slot-major only, read off the shard. `nsb <= 32` is the fit-block class the reduce
-            // identity is argued at. Its own door, priced LAST and only on green gates for the
-            // programs beneath it (lane mandate, milestone 5).
-            let down8 =
-                device_routed && sel_down8_on() && shard.slot_major && (shard.local_in >> 5) <= 32;
-            // ENGAGEMENT RECEIPT for PROGRAM 3, one line per distinct combo. `device_routed`
-            // and `nsb <= 32` are printed because they are the two eligibility conditions that
-            // can silently disqualify the arm on a geometry or a route the operator did not
-            // expect -- exactly the case where a flat perf row would be misread as "no win".
+            // MEMRA_SEL_DOWN8=1: down sweep + route-weight combine in ONE launch, one warp
+            // per SLOT instead of one warp per (row, slot) — the q8 `down8 w8` occupancy arm
+            // (cx-downkernel: waves/SM 0.91 -> 4.36) ported to the NVFP4 banks. Bit-identical
+            // (same dot program, same reduce tree, same slot-ordered chain), and the
+            // n_sel x out_f partial buffer round trip disappears. Device-routed only: the
+            // host-routed arm folds the macro into combine_w instead of reading md on device.
+            let down8 = device_routed && sel_down8_on() && (shard.local_in >> 5) <= 32;
             {
-                static SEEN_D8: std::sync::Mutex<Vec<(bool, bool, bool, bool)>> =
+                // MEMRA_SWEEP_TRACE=1: one receipt PER DISTINCT decision combo — a
+                // silently-dead fusion reads as roofline physics without it (and the
+                // prime's host-routed call must not swallow the decode receipt).
+                static SEEN: std::sync::Mutex<Vec<(bool, bool)>> =
                     std::sync::Mutex::new(Vec::new());
-                let combo = (down8, sel_down8_on(), device_routed, shard.slot_major);
-                let mut seen = SEEN_D8.lock().unwrap();
-                if !seen.contains(&combo) {
-                    seen.push(combo);
-                    // `door_source` is what makes this line a DEFAULT-flip receipt rather than
-                    // only an engagement receipt: `door=true door_source=default-on` is the
-                    // flip doing the work, `env=1` is a recipe doing it, and
-                    // `down8=false door=true` is the silent-no-op shape that PROGRAM 1's
-                    // default exists to prevent.
-                    eprintln!(
-                        "[nvfp4-sweep] down8={} door={} door_source={} device_routed={} \
-                         slot_major={} nsb={} in_class={} n_sel={n_sel}",
-                        down8,
-                        sel_down8_on(),
-                        sel_down8_source().1,
-                        device_routed,
-                        shard.slot_major,
-                        shard.local_in >> 5,
-                        (shard.local_in >> 5) <= 32
-                    );
+                if std::env::var("MEMRA_SWEEP_TRACE").as_deref() == Ok("1") {
+                    let mut seen = SEEN.lock().unwrap();
+                    if !seen.contains(&(down8, device_routed)) {
+                        seen.push((down8, device_routed));
+                        eprintln!(
+                            "[sweep-trace] down8={down8} device_routed={device_routed} \
+                             sel_down8_on={} local_in={} n_sel={n_sel}",
+                            sel_down8_on(),
+                            shard.local_in
+                        );
+                    }
                 }
             }
             if down8 {
@@ -12937,7 +10578,6 @@ impl TpE4m3HostBounce {
                     shard.expert_bytes,
                     local_out,
                     local_out / 32,
-                    shard.slot_major,
                 )?;
             } else {
                 let Nvfp4DeviceRoutesWorkspace {
@@ -12960,13 +10600,12 @@ impl TpE4m3HostBounce {
                     shard.expert_bytes,
                     local_out,
                     local_out / 32,
-                    shard.slot_major,
                 )?;
             }
             // Route-weight accumulation: axpy_rows_seq keeps the exact sequential per-pair
             // FP chain of the reset + n_sel axpy launches in ONE launch. Device-routed calls
-            // fold the down macro in-kernel from the device selection. (down8 already produced
-            // the accumulator inside the sweep.)
+            // fold the down macro in-kernel from the device selection. (down8 already
+            // produced the accumulator inside the sweep.)
             if !down8 {
                 let Nvfp4DeviceRoutesWorkspace {
                     partial,
@@ -13007,7 +10646,6 @@ impl TpE4m3HostBounce {
     /// the input's producer; each rank waits it before its peer read; the root reduce waits
     /// every rank's done event; `e` waits the root's done event before copying out. The
     /// program bytes are identical to the host-IO twin — dtoh/htod and dtod preserve f32 bits.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn run_tensor_parallel_routes_nvfp4_device_io(
         &self,
         experts: &ResidentNvfp4TensorParallel,
@@ -13201,7 +10839,7 @@ impl TpE4m3HostBounce {
                     .fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed)
                     + started.elapsed().as_nanos() as u64;
                 let calls = TIMING_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-                if calls.is_multiple_of(430) {
+                if calls % 430 == 0 {
                     eprintln!(
                         "[nvfp4-dev-routes-direct-timing] calls={calls} total_ms={:.1} avg_us={:.1}",
                         ns as f64 / 1.0e6,
@@ -13256,7 +10894,7 @@ impl TpE4m3HostBounce {
             let ns = TIMING_NS.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed)
                 + started.elapsed().as_nanos() as u64;
             let calls = TIMING_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-            if calls.is_multiple_of(430) {
+            if calls % 430 == 0 {
                 eprintln!(
                     "[nvfp4-dev-routes-io-timing] calls={calls} total_ms={:.1} avg_us={:.1}",
                     ns as f64 / 1.0e6,
@@ -13368,538 +11006,389 @@ impl TpE4m3HostBounce {
         Ok(true)
     }
 
-    /// STEP TP2 GEMM PRIME (`MEMRA_STEP_GEMM_PRIME`, 2026-08-27, TTFT lane): one grouped
-    /// f16 GEMM per projection over the RESIDENT NVFP4 banks for a prime chunk of `t` tokens.
+    /// TWO-COLUMN device-routed expert program (spec verify, MEMRA_TCOL_FFN): one gu_tcol
+    /// sweep over 2*n_sel_col pairs (pair t reads activation row t/n_sel_col — weights the
+    /// two columns share dedup through L2), the UNCHANGED silu/down kernels at n_sel=16
+    /// (both already index per pair), and one offset-axpy combine per column (the exact
+    /// t=1 sequential chain over that column's 8 pairs). No serving doors: no graph, no
+    /// prestage, no shexp folding — plain evented ordering. Returns [2, input_width] on e.
     ///
-    /// WHY: the t-row walk primes a 4,092-token prompt in 19.8 s at its widest (GEMV-bound) and
-    /// the generic batch prime's decode-class MoE takes 240 s; the CUTLASS sizing rows put
-    /// GEMM-class expert math at 170-270 TFLOP/s on this silicon, i.e. a sub-second cold prime.
-    /// This reuses the grouped f16 lane end to end (`moe_f16g_act` -> `moe_f16_grouped`
-    /// direct-from-NVFP4 -> silu pairs -> grouped down) once per RANK against that rank's bank
-    /// half: gate/up are column-halves (silu runs on matching halves), down is the canonical
-    /// row-shard pair producing partials joined in the pinned shard order, and the final
-    /// weighted scatter runs a fixed slot-0..n_used-1 sum per token - no atomics anywhere.
-    /// Per-expert NVFP4 macro scales land where they must: gate/up BEFORE silu (nonlinear),
-    /// down folded into the scatter weight.
-    ///
-    /// NUMERIC CLASS: the f16-mirror grouped-prefill class other families already serve -
-    /// admission is the prefill-KV acceptance gate plus the ship-shape tape, not byte identity.
+    /// EXACTNESS: every kernel body is the t=1 program per (pair,row) or per element; the
+    /// per-column combine order equals the t=1 combine; the cross-rank join adds the same
+    /// operand values elementwise. Gated by the greedy tape like every verify arm.
     #[allow(clippy::too_many_arguments)]
-    /// MEMRA_MOE_DETERM_STAGE=1: checksum a stage's device buffer so two back-to-back calls of the
-    /// grouped routine can be compared STAGE BY STAGE. The routine's OUTPUT is nondeterministic above
-    /// ~400 tokens on the direct lane (1.9e-7 / 99% of elements at t=4096) while its GEMM kernels are
-    /// bit-exact in isolation, so the divergence enters somewhere between. The first stage whose
-    /// checksum differs across the two calls is where.
-    ///
-    /// Sum-of-bits, not sum-of-floats: float addition would itself reorder and could mask exactly the
-    /// class of difference being hunted.
-    fn determ_stage_bytes(v: &[u8]) -> u64 {
-        v.iter().fold(0u64, |a, b| {
-            a.wrapping_mul(1_000_003).wrapping_add(*b as u64)
-        })
-    }
-
-    /// Checksum an i32 index/offset buffer. The CSR, the active-expert ids and the group
-    /// offsets are inputs the gate kernel dereferences just as much as the activations are;
-    /// leaving them unchecksummed is what let "identical inputs, different output" stand on a
-    /// SUBSET of the inputs for six rounds of this investigation.
-    fn determ_stage_i32(v: &[i32]) -> u64 {
-        v.iter().fold(0u64, |a, b| {
-            a.wrapping_mul(1_000_003).wrapping_add(*b as u32 as u64)
-        })
-    }
-
-    fn determ_stage_sum(v: &[f32]) -> u64 {
-        v.iter().fold(0u64, |a, x| {
-            a.wrapping_mul(1_000_003).wrapping_add(x.to_bits() as u64)
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
-    pub fn run_tensor_parallel_routes_nvfp4_prime_grouped(
+    pub fn run_tensor_parallel_routes_nvfp4_device_routed_tn(
         &self,
         experts: &ResidentNvfp4TensorParallel,
         e: &Engine,
         z_t: &crate::CudaSlice<f32>,
+        sel_d: &crate::CudaSlice<i32>,
+        w_d: &crate::CudaSlice<f32>,
         t: usize,
-        sel: &[i32],
-        w: &[f32],
-        n_used: usize,
+        n_sel_col: usize,
         activation_limit: Option<f32>,
     ) -> Result<crate::CudaSlice<f32>, Box<dyn std::error::Error>> {
         let world = self.ranks.len();
         if world != NVFP4_CANONICAL_ROW_SHARDS {
-            return Err("NVFP4 grouped prime requires the canonical 2-shard grid".into());
+            return Err("NVFP4 t-row routes require the canonical 2-shard grid".into());
         }
-        // The dequant must read the layout the bank was BUILT in (feeding slot-major bytes to
-        // the v1 kernel was a garbage-output bug this line exists for). Taken from the BANK,
-        // never from the environment: EP2 banks are always slot-major, TP shard banks are
-        // slot-major only under PROGRAM 1 (`MEMRA_NVFP4_BANK_SM`). All three banks share one
-        // decision at build (`nvfp4_repack_bank_matrix`), and the assert below refuses to run a
-        // prime over banks that disagree instead of silently priming one of them wrong.
-        //
-        // THIS IS THE LINE THE 2026-08-29 CORRUPTION WENT THROUGH. `QT_NVFP4_V2` selects the
-        // `kq_fetch` branch whose two prefetch callers omitted `in_f`; the codes stayed right
-        // and the per-16 scale came from inside the packed-codes region, so the prime produced
-        // fluent WRONG text. No v2 gate had ever run this GEMM. It is now covered device-side by
-        // `nvfp4-bank-oracle` (both step37 layer geometries, all four tile forms) and end-to-end
-        // by a prefill-heavy byte gate. Keep both: a decode-only byte gate proved nothing here.
-        let slot_major = experts.gate.iter().all(|b| b.slot_major)
-            && experts.up.iter().all(|b| b.slot_major)
-            && experts.down.iter().all(|b| b.slot_major);
-        let any_slot_major = experts.gate.iter().any(|b| b.slot_major)
-            || experts.up.iter().any(|b| b.slot_major)
-            || experts.down.iter().any(|b| b.slot_major);
-        if any_slot_major != slot_major {
+        let width = experts.input_width;
+        let n_sel = t * n_sel_col;
+        if t == 0 || t > 32 || z_t.len() < t * width || sel_d.len() < n_sel || w_d.len() < n_sel {
+            return Err("NVFP4 t-row routes geometry".into());
+        }
+        if !nvfp4_bank_v2_on() {
+            return Err("NVFP4 t-row routes require the v2 banks (MEMRA_NVFP4_BANK_V2=1)".into());
+        }
+        let local_out = experts.expert_width / world;
+        let mut guard = experts
+            .t2_workspace
+            .lock()
+            .map_err(|_| "NVFP4 t2 workspace lock is poisoned")?;
+        if nvfp4_trow_workspace_needs_grow(guard.as_ref().map(|ws| (ws.t_cap, ws.n_sel)), t, n_sel)
+        {
+            let t_cap = guard.as_ref().map_or(t, |ws| ws.t_cap.max(t));
+            let n_sel_cap = guard.as_ref().map_or(n_sel, |ws| ws.n_sel.max(n_sel));
+            let mut input2 = Vec::new();
+            let mut in_q2 = Vec::new();
+            let mut in_d2 = Vec::new();
+            let mut sel2 = Vec::new();
+            let mut route_w2 = Vec::new();
+            let mut gate_out2 = Vec::new();
+            let mut up_out2 = Vec::new();
+            let mut act_q2 = Vec::new();
+            let mut act_d2 = Vec::new();
+            let mut partial2 = Vec::new();
+            let mut acc_a = Vec::new();
+            let mut acc_b = Vec::new();
+            let mut acc2 = Vec::new();
+            let mut ev_rank = Vec::new();
+            for engine in &self.ranks {
+                let _m = engine.gpu.enter_main()?;
+                input2.push(engine.uninit(t_cap * width)?);
+                in_q2.push(engine.alloc_i8_uninit(t_cap * width)?);
+                in_d2.push(engine.uninit(t_cap * (width / 32))?);
+                sel2.push(engine.htod_i32(&vec![0i32; n_sel_cap])?);
+                route_w2.push(engine.uninit(n_sel_cap)?);
+                gate_out2.push(engine.uninit(n_sel_cap * local_out)?);
+                up_out2.push(engine.uninit(n_sel_cap * local_out)?);
+                act_q2.push(engine.alloc_i8_uninit(n_sel_cap * local_out)?);
+                act_d2.push(engine.uninit(n_sel_cap * (local_out / 32))?);
+                partial2.push(engine.uninit(n_sel_cap * width)?);
+                acc_a.push(engine.uninit(width)?);
+                acc_b.push(engine.uninit(width)?);
+                acc2.push(engine.uninit(t_cap * width)?);
+                ev_rank.push(engine.ctx().new_event(None)?);
+            }
+            let root = &self.ranks[0];
+            let (peer_a, peer_b, omix_a, omix_b, peer2, omix2, ev_root) = {
+                let _m = root.gpu.enter_main()?;
+                (
+                    root.uninit(width)?,
+                    root.uninit(width)?,
+                    root.uninit(width)?,
+                    root.uninit(width)?,
+                    root.uninit(t_cap * width)?,
+                    root.uninit(t_cap * width)?,
+                    root.ctx().new_event(None)?,
+                )
+            };
+            let ev_entry = {
+                let _m = e.gpu.enter_main()?;
+                e.ctx().new_event(None)?
+            };
+            *guard = Some(Nvfp4T2Workspace {
+                input2,
+                in_q2,
+                in_d2,
+                sel2,
+                route_w2,
+                gate_out2,
+                up_out2,
+                act_q2,
+                act_d2,
+                partial2,
+                acc_a,
+                acc_b,
+                acc2,
+                peer2,
+                omix2,
+                peer_a,
+                peer_b,
+                omix_a,
+                omix_b,
+                ev_entry,
+                ev_rank,
+                ev_root,
+                t_cap,
+                n_sel: n_sel_cap,
+                e_device: e.ctx().ordinal(),
+            });
+        }
+        let ws = guard.as_mut().expect("armed above");
+        if ws.e_device != e.ctx().ordinal() {
+            return Err("NVFP4 t2 routes engine changed".into());
+        }
+        {
+            let _main = e.gpu.enter_main()?;
+            ws.ev_entry.record(&e.stream())?;
+        }
+        // One decision for the sweep AND the join (an acc2 the sweep never wrote must
+        // never be joined). t > 2 has no split-accumulator fallback: it requires the
+        // fused rows kernel.
+        let down8 = sel_down8_on() && (local_out >> 5) <= 32 && n_sel_col <= 8;
+        if !down8 && t != 2 {
             return Err(
-                "NVFP4 grouped prime: gate/up/down banks disagree on the row layout — \
-                        one grouped GEMM cannot serve two byte maps"
-                    .into(),
+                "NVFP4 t-row routes at t != 2 require MEMRA_SEL_DOWN8=1 (fused rows kernel)".into(),
             );
         }
-        let bank_qt = if slot_major {
-            crate::QT_NVFP4_V2
-        } else {
-            crate::QT_NVFP4
-        };
-        let width = experts.input_width;
-        let n_expert = experts.expert_count;
-        let n_pairs = t * n_used;
-        if sel.len() < n_pairs || w.len() < n_pairs || z_t.len() < t * width {
-            return Err("NVFP4 grouped prime geometry".into());
-        }
-        // MEMRA_PRIME_PROF=1 sub-split of the grouped prime (2026-08-28). The [moe-prof] mark
-        // around this whole call reads 90% of the MoE bucket, but the call is not just GEMMs:
-        // it host-builds the CSR, allocates ~6 large device buffers per rank per layer (z_r is
-        // 67 MB, act is 84 MB at t=4096), and does 5 H2D copies per rank. Tile form, occupancy,
-        // padding, B double-buffering and register pressure have ALL come back null, which is
-        // the signature of time that is not in the kernel. So measure HOST wall with no syncs
-        // for the build and the issue, and let the join wait absorb the GPU time: host-bound and
-        // GPU-bound then read differently instead of summing into one opaque number.
-        let gprof = std::env::var("MEMRA_PRIME_PROF").as_deref() == Ok("1") && t >= 16;
-        let g_t0 = std::time::Instant::now();
-        // CSR: expert-major pair lists. Host-built - prime is chunk-granular, and the router
-        // selections arrive host-side from the sigmoid router oracle.
-        let mut buckets: Vec<Vec<i32>> = vec![Vec::new(); n_expert];
-        for (p, &s_id) in sel.iter().take(n_pairs).enumerate() {
-            let s_id = s_id as usize;
-            if s_id >= n_expert {
-                return Err(format!("grouped prime selection {s_id} >= {n_expert}").into());
-            }
-            buckets[s_id].push(p as i32);
-        }
-        let mut ex_ids: Vec<i32> = Vec::new();
-        let mut ex_off: Vec<i32> = vec![0];
-        let mut ex_pairs: Vec<i32> = Vec::new();
-        for (e_id, b) in buckets.iter().enumerate() {
-            if !b.is_empty() {
-                ex_ids.push(e_id as i32);
-                ex_pairs.extend_from_slice(b);
-                ex_off.push(ex_pairs.len() as i32);
-            }
-        }
-        let n_active = ex_ids.len();
-        if n_active == 0 {
-            return e.zeros(t * width);
-        }
-        if n_active > 512 {
-            return Err("grouped prime n_active > 512 (direct lane cap)".into());
-        }
-        let csr_tok: Vec<i32> = ex_pairs.iter().map(|&p| p / n_used as i32).collect();
-        // pair-id -> CSR row: lets the fused tail read the partials in place, so the prime skips
-        // a whole [n_pairs, width] permute (532 MB read + write per rank per layer at 4k).
-        let mut inv = vec![0i32; n_pairs];
-        for (row, &pair) in ex_pairs.iter().enumerate() {
-            inv[pair as usize] = row as i32;
-        }
-        // Per-CSR-row gate/up macro scales (before silu); down macro folds into the scatter w.
-        let mg: Vec<f32> = ex_pairs
-            .iter()
-            .map(|&p| experts.macros_gate[sel[p as usize] as usize])
-            .collect();
-        let mu: Vec<f32> = ex_pairs
-            .iter()
-            .map(|&p| experts.macros_up[sel[p as usize] as usize])
-            .collect();
-        let wd: Vec<f32> = (0..n_pairs)
-            .map(|p| w[p] * experts.macros_down[sel[p] as usize])
-            .collect();
-        // Pointer tables: built on first use and kept on the bank. Resident banks never move,
-        // so the old per-rank-per-LAYER rebuild+upload of 3*n_expert u64s was pure prime-path
-        // host churn (45 layers x 2 ranks x 864 entries per prime).
-        {
-            let mut tabs = experts
-                .prime_tables
-                .lock()
-                .map_err(|_| "grouped prime table cache is poisoned")?;
-            if tabs.len() != world {
-                tabs.clear();
-                for rank in 0..world {
-                    let engine = &self.ranks[rank];
-                    let _main = engine.gpu.enter_main()?;
-                    let (gb, ub, db) =
-                        (&experts.gate[rank], &experts.up[rank], &experts.down[rank]);
-                    let mut tab = vec![0u64; 3 * n_expert];
-                    {
-                        use cudarc::driver::DevicePtr;
-                        let stream = engine.stream();
-                        let (pg, _g0) = gb.bank.device_ptr(&stream);
-                        let (pu, _g1) = ub.bank.device_ptr(&stream);
-                        let (pd, _g2) = db.bank.device_ptr(&stream);
-                        for ex in 0..n_expert {
-                            tab[ex] = pg + (ex * gb.expert_bytes) as u64;
-                            tab[n_expert + ex] = pu + (ex * ub.expert_bytes) as u64;
-                            tab[2 * n_expert + ex] = pd + (ex * db.expert_bytes) as u64;
-                        }
-                    }
-                    tabs.push(engine.htod_u64(&tab)?);
-                }
-            }
-        }
-        let g_csr = g_t0.elapsed().as_secs_f64() * 1e3;
-        let g_t1 = std::time::Instant::now();
-        // WHAT ARE THESE RANKS, ACTUALLY (2026-08-28)? The grouped MoE measures join ~ span_sum
-        // (strictly serialized) at t=4096 while the same kernel hits 40 TFLOP/s standalone, and
-        // one intervention based on cudarc's peer-copy event was refuted. Before proposing an
-        // eleventh mechanism, verify the premise the whole question rests on: that the two ranks
-        // are on DISTINCT devices, contexts and streams. If they share any of those, the
-        // serialization needs no further explanation. One line per process.
-        {
-            static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-            if gprof && !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                for rank in 0..world {
-                    let e_r = &self.ranks[rank];
-                    let _m = e_r.gpu.enter_main();
-                    eprintln!(
-                        "[rank-id] rank={rank} ordinal={} ctx={:?} stream={:?} root_ordinal={} \
-                         root_stream={:?}",
-                        e_r.ctx().ordinal(),
-                        std::sync::Arc::as_ptr(e_r.ctx()),
-                        e_r.stream().cu_stream(),
-                        e.ctx().ordinal(),
-                        e.stream().cu_stream(),
-                    );
-                }
-            }
-        }
-
-        let mut partials: Vec<crate::CudaSlice<f32>> = Vec::with_capacity(world);
-        let mut ev_rank: Vec<CudaEvent> = Vec::with_capacity(world);
-        let mut ev_head: Vec<CudaEvent> = Vec::with_capacity(world);
-        let mut ev_tail_prof: Vec<CudaEvent> = Vec::with_capacity(world);
         for rank in 0..world {
             let engine = &self.ranks[rank];
             let _main = engine.gpu.enter_main()?;
-            if gprof {
-                // CU_EVENT_DEFAULT, not None: cudarc's new_event(None) creates the event with
-                // CU_EVENT_DISABLE_TIMING, and cuEventElapsedTime then returns INVALID_HANDLE.
-                // That is what failed every span query for two build cycles — the ordering
-                // events below correctly keep the default, since they are never timed.
-                let h = engine
-                    .ctx()
-                    .new_event(Some(cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT))?;
-                h.record(&engine.stream())?;
-                ev_head.push(h);
-            }
-            // The grouped-MoE FFI's raw launches follow the RUNTIME API's current device, not
-            // the pushed driver context — bind it per rank or rank-1 calls die InvalidValue.
-            engine.bind_runtime_device(engine.ctx().ordinal() as i32)?;
-            let gb = &experts.gate[rank];
-            let ub = &experts.up[rank];
-            let db = &experts.down[rank];
-            if db.device_rank != rank {
-                return Err("grouped prime: down shard placement drifted".into());
-            }
-            let local_ff = gb.local_out;
-            if ub.local_out != local_ff || db.local_in != local_ff || db.out_features != width {
-                return Err("grouped prime: bank width mismatch".into());
-            }
-            // All of the rank's host-side staging lands before its first kernel, so the
-            // launch chain below issues without host copies interleaved.
-            let csr_tok_d = engine.htod_i32(&csr_tok)?;
-            let exi_d = engine.htod_i32(&ex_ids)?;
-            let exoff_d = engine.htod_i32(&ex_off)?;
-            let mg_d = engine.htod(&mg)?;
-            let mu_d = engine.htod(&mu)?;
-            // Per-rank pointer table into the bank shards, slot-major like DevExps::ptr_row.
-            let tabs_guard = experts
-                .prime_tables
-                .lock()
-                .map_err(|_| "grouped prime table cache is poisoned")?;
-            let tab_d = &tabs_guard[rank];
-            let mut z_r = engine.uninit(t * width)?;
+            engine.stream().wait(&ws.ev_entry)?;
             {
-                let mut dst = z_r.slice_mut(0..t * width);
+                let mut dst = ws.input2[rank].slice_mut(0..t * width);
                 engine
                     .stream()
                     .memcpy_dtod(&z_t.slice(0..t * width), &mut dst)?;
             }
-            let dstage = std::env::var("MEMRA_MOE_DETERM_STAGE").as_deref() == Ok("1") && t >= 16;
-            let (z16, zs) = engine.moe_f16g_act(&z_r, Some(&csr_tok_d), width, n_pairs)?;
-            if dstage {
-                // z16 is the GEMM's actual DATA input and is a byte buffer; checksumming only
-                // z_r and zs left "identical inputs" unestablished and produced a localization
-                // that outran the measurement. Checksum it as bytes.
-                let zr = engine.dtoh(&z_r)?;
-                let zsv = engine.dtoh(&zs)?;
-                let z16v = engine.dtoh_u8(&z16)?;
-                eprintln!(
-                    "[determ-stage] rank={rank} t={t} z_r={:016x} zs={:016x} z16={:016x}",
-                    Self::determ_stage_sum(&zr),
-                    Self::determ_stage_sum(&zsv),
-                    Self::determ_stage_bytes(&z16v)
-                );
+            {
+                let mut dst = ws.sel2[rank].slice_mut(0..n_sel);
+                engine
+                    .stream()
+                    .memcpy_dtod(&sel_d.slice(0..n_sel), &mut dst)?;
             }
-            if dstage {
-                // INPUT CLOSURE. Everything the gate kernel dereferences, plus the launch
-                // geometry that decides how it is summed, checksummed in ONE place. A kernel
-                // proven bit-deterministic on live data, with no atomics, can only diverge if
-                // (A) some byte it reads differs, (B) the launch differs, or (C) it reads
-                // outside its declared inputs. This closes A and B; C is what compute-sanitizer
-                // is for. Partial input sets are how the divergence kept retreating into the
-                // part that was never measured.
-                engine.stream().synchronize()?;
-                let csr_v = engine.dtoh_i32(&csr_tok_d)?;
-                let exi_v = engine.dtoh_i32(&exi_d)?;
-                let exo_v = engine.dtoh_i32(&exoff_d)?;
-                let mg_v = engine.dtoh(&mg_d)?;
-                let mu_v = engine.dtoh(&mu_d)?;
-                let tab_v = engine.dtoh_u64(tab_d)?;
-                eprintln!(
-                    "[determ-closure] rank={rank} t={t} csr_tok={:016x} exi={:016x} exoff={:016x}                      ex_off_host={:016x} mg={:016x} mu={:016x} tab={:016x} | n_active={n_active}                      n_pairs={n_pairs} width={width} local_ff={local_ff} n_expert={n_expert}                      qt={bank_qt} rb={}",
-                    Self::determ_stage_i32(&csr_v),
-                    Self::determ_stage_i32(&exi_v),
-                    Self::determ_stage_i32(&exo_v),
-                    Self::determ_stage_i32(&ex_off),
-                    Self::determ_stage_sum(&mg_v),
-                    Self::determ_stage_sum(&mu_v),
-                    tab_v
-                        .iter()
-                        .fold(0u64, |a, b| a.wrapping_mul(1_000_003).wrapping_add(*b)),
-                    gb.row_bytes
-                );
-                // The resident weight bank is the GEMM's OTHER operand and was never checked.
-                // Opt-in because it is a ~424 MB dtoh per rank per layer.
-                if std::env::var("MEMRA_MOE_DETERM_BANK").as_deref() == Ok("1") {
-                    let bank_v = engine.dtoh_u8(&gb.bank)?;
-                    eprintln!(
-                        "[determ-closure] rank={rank} t={t} gate_bank={:016x} bytes={}",
-                        Self::determ_stage_bytes(&bank_v),
-                        bank_v.len()
-                    );
-                }
+            {
+                let mut dst = ws.route_w2[rank].slice_mut(0..n_sel);
+                engine
+                    .stream()
+                    .memcpy_dtod(&w_d.slice(0..n_sel), &mut dst)?;
             }
-            let mut g = engine.moe_f16_grouped(
-                tab_d,
-                0,
-                n_expert,
-                &exi_d,
-                &ex_off,
-                &exoff_d,
-                &z16,
-                &zs,
-                width,
-                local_ff,
-                n_active,
-                n_pairs,
-                bank_qt,
-                gb.row_bytes,
-            )?;
-            engine.scale_rows(&mut g, &mg_d, local_ff, n_pairs)?;
-            let mut u = engine.moe_f16_grouped(
-                tab_d,
-                1,
-                n_expert,
-                &exi_d,
-                &ex_off,
-                &exoff_d,
-                &z16,
-                &zs,
-                width,
-                local_ff,
-                n_active,
-                n_pairs,
-                bank_qt,
-                ub.row_bytes,
-            )?;
-            engine.scale_rows(&mut u, &mu_d, local_ff, n_pairs)?;
-            // step35 routed SwiGLU clamp (per-layer; live only on layers 43/44 for this
-            // family): min(silu(g), lim) * clamp(u, +-lim). Dropping it was the second
-            // correctness bug of the first engaged run.
-            let act = match activation_limit.filter(|l| *l > 1e-6) {
-                Some(lim) => {
-                    let mut a = engine.uninit(n_pairs * local_ff)?;
-                    engine.swiglu_clamped_mul_scaled(
-                        &g,
-                        &u,
-                        1.0,
-                        1.0,
-                        lim,
-                        &mut a,
-                        n_pairs * local_ff,
+            {
+                let Nvfp4T2Workspace {
+                    input2,
+                    in_q2,
+                    in_d2,
+                    ..
+                } = &mut *ws;
+                engine.quantize_q8_1_into(
+                    &input2[rank],
+                    t,
+                    width,
+                    &mut in_q2[rank],
+                    &mut in_d2[rank],
+                )?;
+            }
+            let gate_bank = &experts.gate[rank];
+            let up_bank = &experts.up[rank];
+            if gate_bank.in_features != up_bank.in_features
+                || gate_bank.local_out != up_bank.local_out
+                || gate_bank.row_bytes != up_bank.row_bytes
+                || gate_bank.expert_bytes != up_bank.expert_bytes
+            {
+                return Err("NVFP4 t-row routes need matched gate/up bank geometry".into());
+            }
+            {
+                let Nvfp4T2Workspace {
+                    sel2,
+                    in_q2,
+                    in_d2,
+                    gate_out2,
+                    up_out2,
+                    ..
+                } = &mut *ws;
+                engine.qmatvec_nvfp4_sel_gu_tcol_into(
+                    &gate_bank.bank,
+                    &up_bank.bank,
+                    &sel2[rank],
+                    &in_q2[rank],
+                    &in_d2[rank],
+                    &mut gate_out2[rank],
+                    &mut up_out2[rank],
+                    n_sel,
+                    n_sel_col,
+                    gate_bank.in_features,
+                    gate_bank.local_out,
+                    gate_bank.row_bytes,
+                    gate_bank.expert_bytes,
+                    width,
+                    width / 32,
+                )?;
+            }
+            {
+                let Nvfp4T2Workspace {
+                    gate_out2,
+                    up_out2,
+                    sel2,
+                    act_q2,
+                    act_d2,
+                    ..
+                } = &mut *ws;
+                engine.silu_mul_scaled_q8_1_sel_into(
+                    &gate_out2[rank],
+                    &up_out2[rank],
+                    &experts.macros_gate_dev[rank],
+                    &experts.macros_up_dev[rank],
+                    &sel2[rank],
+                    activation_limit,
+                    &mut act_q2[rank],
+                    &mut act_d2[rank],
+                    local_out,
+                    n_sel,
+                )?;
+            }
+            let shard = &experts.down[rank];
+            if shard.device_rank != rank || shard.local_in != local_out {
+                return Err("NVFP4 t-row routes: down shard placement drifted".into());
+            }
+            // MEMRA_SEL_DOWN8=1: down sweep + per-row combine in ONE launch (t2 twin of
+            // the t=1 fusion) — kills the n_sel x width partial round-trip and both axpy
+            // passes. Each row's FP chain == its own down8/axpy pair (bit-identical).
+            if down8 {
+                let Nvfp4T2Workspace {
+                    sel2,
+                    act_q2,
+                    act_d2,
+                    route_w2,
+                    acc2,
+                    ..
+                } = &mut *ws;
+                engine.qmatvec_nvfp4_sel_down8_rows_into(
+                    &shard.bank,
+                    &sel2[rank],
+                    &act_q2[rank],
+                    &act_d2[rank],
+                    &route_w2[rank],
+                    &experts.macros_down_dev[rank],
+                    &mut acc2[rank],
+                    t,
+                    n_sel_col,
+                    shard.local_in,
+                    shard.out_features,
+                    shard.row_bytes,
+                    shard.expert_bytes,
+                    local_out,
+                    local_out / 32,
+                )?;
+            } else {
+                {
+                    let Nvfp4T2Workspace {
+                        sel2,
+                        act_q2,
+                        act_d2,
+                        partial2,
+                        ..
+                    } = &mut *ws;
+                    engine.qmatvec_nvfp4_sel_into(
+                        &shard.bank,
+                        &sel2[rank],
+                        &act_q2[rank],
+                        &act_d2[rank],
+                        &mut partial2[rank],
+                        n_sel,
+                        shard.local_in,
+                        shard.out_features,
+                        shard.row_bytes,
+                        shard.expert_bytes,
+                        local_out,
+                        local_out / 32,
                     )?;
-                    a
                 }
-                None => engine.moe_pairs_silu_mul(&g, &u, n_pairs * local_ff)?,
-            };
-            if dstage {
-                let gv = engine.dtoh(&g)?;
-                let uv = engine.dtoh(&u)?;
-                let av = engine.dtoh(&act)?;
-                // A SUM tells you THAT gate differs; it does not tell you HOW. ULP-dense diffs
-                // (nearly every element, ~1e-8) are an ordering/precision class; a handful of
-                // huge ones are a corruption class. They need different hunts, so measure the
-                // shape here instead of inferring it later.
-                let key = (rank, t);
-                let mut prev_map = DETERM_PREV
-                    .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
-                    .lock()
-                    .map_err(|_| "determ prev map poisoned")?;
-                let shape = match prev_map.get(&key) {
-                    Some(prev) if prev.len() == gv.len() => {
-                        let mut md = 0.0f32;
-                        let mut n_diff = 0usize;
-                        let mut n_big = 0usize;
-                        for (a, b) in prev.iter().zip(gv.iter()) {
-                            let d = (a - b).abs();
-                            if d > 0.0 {
-                                n_diff += 1;
-                            }
-                            if d > 1e-3 {
-                                n_big += 1;
-                            }
-                            if d > md {
-                                md = d;
-                            }
-                        }
-                        format!(
-                            " | vs_prev maxdiff={md:.3e} differing={n_diff}/{} big(>1e-3)={n_big}",
-                            gv.len()
-                        )
-                    }
-                    _ => String::new(),
-                };
-                prev_map.insert(key, gv.clone());
-                drop(prev_map);
-                eprintln!(
-                    "[determ-stage] rank={rank} t={t} gate={:016x} up={:016x} silu={:016x}{shape}",
-                    Self::determ_stage_sum(&gv),
-                    Self::determ_stage_sum(&uv),
-                    Self::determ_stage_sum(&av)
-                );
+                let Nvfp4T2Workspace {
+                    partial2,
+                    route_w2,
+                    sel2,
+                    acc_a,
+                    acc_b,
+                    ..
+                } = &mut *ws;
+                engine.axpy_rows_seq_md_off_into(
+                    &partial2[rank],
+                    &route_w2[rank],
+                    &experts.macros_down_dev[rank],
+                    &sel2[rank],
+                    &mut acc_a[rank],
+                    width,
+                    n_sel_col,
+                    0,
+                )?;
+                engine.axpy_rows_seq_md_off_into(
+                    &partial2[rank],
+                    &route_w2[rank],
+                    &experts.macros_down_dev[rank],
+                    &sel2[rank],
+                    &mut acc_b[rank],
+                    width,
+                    n_sel_col,
+                    n_sel_col,
+                )?;
             }
-            let (a16, a_s) = engine.moe_f16g_act(&act, None, local_ff, n_pairs)?;
-            let d_csr = engine.moe_f16_grouped(
-                tab_d,
-                2,
-                n_expert,
-                &exi_d,
-                &ex_off,
-                &exoff_d,
-                &a16,
-                &a_s,
-                local_ff,
-                width,
-                n_active,
-                n_pairs,
-                bank_qt,
-                db.row_bytes,
-            )?;
-
-            // No host sync: both ranks' chains must be in flight before anything waits.
-            // The rank's tail event orders the root's cross-device pulls below.
-            if dstage {
-                engine.stream().synchronize()?;
-                let a16v = engine.dtoh_u8(&a16)?;
-                let dv = engine.dtoh(&d_csr)?;
-                eprintln!(
-                    "[determ-stage] rank={rank} t={t} a16={:016x} down_partial={:016x}",
-                    Self::determ_stage_bytes(&a16v),
-                    Self::determ_stage_sum(&dv)
-                );
+            if rank != 0 {
+                ws.ev_rank[rank].record(&engine.stream())?;
             }
-            let ev = engine.ctx().new_event(None)?;
-            ev.record(&engine.stream())?;
-            if gprof {
-                // Per-rank GPU SPAN (2026-08-28). Keep the tail event; the elapsed time is read
-                // AFTER the join sync below. Reading it here returns NOT_READY (the work has only
-                // been queued) and cudarc's elapsed_ms synchronizes, which serialized the very
-                // ranks this is meant to test: host issue jumped 1.9 ms -> 34-47 ms per call and
-                // the join wall fell to match. A probe that changes the schedule measures its own
-                // perturbation.
-                // CudaEvent is not Clone, so record a second tail event on the same stream —
-                // adjacent to `ev`, so it carries the same completion timestamp for timing.
-                let tp = engine
-                    .ctx()
-                    .new_event(Some(cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT))?;
-                tp.record(&engine.stream())?;
-                ev_tail_prof.push(tp);
+        }
+        let root = &self.ranks[0];
+        {
+            let _main = root.gpu.enter_main()?;
+            for ev in ws.ev_rank.iter().skip(1) {
+                root.stream().wait(ev)?;
             }
-            ev_rank.push(ev);
-            partials.push(d_csr);
+            if down8 {
+                // Fused-slab join: ONE peer pull + ONE elementwise add cover every
+                // row (independent elements; per-element op == the split join).
+                let Nvfp4T2Workspace {
+                    acc2, peer2, omix2, ..
+                } = &mut *ws;
+                {
+                    let mut dst = peer2.slice_mut(0..t * width);
+                    root.stream()
+                        .memcpy_dtod(&acc2[1].slice(0..t * width), &mut dst)?;
+                }
+                root.add(&acc2[0], peer2, omix2, t * width)?;
+            } else {
+                let Nvfp4T2Workspace {
+                    acc_a,
+                    acc_b,
+                    peer_a,
+                    peer_b,
+                    omix_a,
+                    omix_b,
+                    ..
+                } = &mut *ws;
+                {
+                    let mut dst = peer_a.slice_mut(0..width);
+                    root.stream()
+                        .memcpy_dtod(&acc_a[1].slice(0..width), &mut dst)?;
+                }
+                {
+                    let mut dst = peer_b.slice_mut(0..width);
+                    root.stream()
+                        .memcpy_dtod(&acc_b[1].slice(0..width), &mut dst)?;
+                }
+                root.add(&acc_a[0], peer_a, omix_a, width)?;
+                root.add(&acc_b[0], peer_b, omix_b, width)?;
+            }
+            ws.ev_root.record(&root.stream())?;
         }
         let _main = e.gpu.enter_main()?;
-        e.bind_runtime_device(e.ctx().ordinal() as i32)?;
-        // Host-only: every rank's chain is queued, nothing has been waited on yet.
-        let g_issue = g_t1.elapsed().as_secs_f64() * 1e3;
-        let g_t2 = std::time::Instant::now();
-        for ev in &ev_rank {
-            e.stream().wait(ev)?;
-        }
-        // Both partials land on the root (rank 1's crosses the link once), then ONE fused pass
-        // does join + CSR permute + weight + scatter. Shard order stays pinned as (y0 + y1).
-        let mut y0 = e.uninit(n_pairs * width)?;
-        {
-            let mut dst = y0.slice_mut(0..n_pairs * width);
-            e.stream()
-                .memcpy_dtod(&partials[0].slice(0..n_pairs * width), &mut dst)?;
-        }
-        let mut y1 = e.uninit(n_pairs * width)?;
-        {
-            let mut dst = y1.slice_mut(0..n_pairs * width);
-            e.stream()
-                .memcpy_dtod(&partials[1].slice(0..n_pairs * width), &mut dst)?;
-        }
-        let inv_d = e.htod_i32(&inv)?;
-        let wd_d = e.htod(&wd)?;
+        e.stream().wait(&ws.ev_root)?;
         let mut out = e.uninit(t * width)?;
-        e.moe_prime_join_scatter(&y0, &y1, &inv_d, &wd_d, &mut out, width, n_used, t)?;
-        if gprof {
-            let _ = e.stream().synchronize();
-            let g_join = g_t2.elapsed().as_secs_f64() * 1e3;
-            // Everything has completed, so both events of every pair are ready and elapsed_ms
-            // cannot block. A negative entry means the query itself failed and the row must be
-            // read as missing data, never as a zero-length span.
-            // cuEventElapsedTime needs the events' OWN context current — computing it under the
-            // root's pushed context returned an error for every pair, and the first version
-            // swallowed that into -1.0 with no reason attached. Enter each rank's context, and
-            // print the failure once so a dead probe can never again look like a zero-length span.
-            let mut span_ms: Vec<f32> = Vec::with_capacity(world);
-            for (rank, (h, tp)) in ev_head.iter().zip(ev_tail_prof.iter()).enumerate() {
-                let guard = self.ranks[rank].gpu.enter_main();
-                match guard.and_then(|_g| h.elapsed_ms(tp).map_err(|e| e.into())) {
-                    Ok(v) => span_ms.push(v),
-                    Err(err) => {
-                        static SAID: std::sync::atomic::AtomicBool =
-                            std::sync::atomic::AtomicBool::new(false);
-                        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                            eprintln!("[grp-prof] span query failed on rank {rank}: {err}");
-                        }
-                        span_ms.push(-1.0);
-                    }
-                }
-            }
-            eprintln!(
-                "[grp-prof] t={t} n_active={n_active} csr={g_csr:.1}ms issue={g_issue:.1}ms \
-                 join={g_join:.1}ms spans={span_ms:?} span_sum={:.1}ms span_max={:.1}ms",
-                span_ms.iter().sum::<f32>(),
-                span_ms.iter().cloned().fold(0.0f32, f32::max)
-            );
+        if down8 {
+            e.stream().memcpy_dtod(
+                &ws.omix2.slice(0..t * width),
+                &mut out.slice_mut(0..t * width),
+            )?;
+        } else {
+            e.stream()
+                .memcpy_dtod(&ws.omix_a.slice(0..width), &mut out.slice_mut(0..width))?;
+            e.stream().memcpy_dtod(
+                &ws.omix_b.slice(0..width),
+                &mut out.slice_mut(width..2 * width),
+            )?;
         }
         Ok(out)
     }
 
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn run_tensor_parallel_routes_nvfp4_device_routed(
         &self,
         experts: &ResidentNvfp4TensorParallel,
@@ -14042,13 +11531,7 @@ impl TpE4m3HostBounce {
         // stitched multi-device parent launched on e's stream — no events, no per-token node
         // updates (every address is persistent staging). VALUE-IDENTICAL to the eager path:
         // the children replay exactly the same kernel/copy sequence.
-        //
-        // GRAPH-LAUNCH HEADROOM GUARD (see spec::GRAPH_LAUNCH_MIN_FREE): below the
-        // driver-free floor on the launching device this call falls through to the
-        // eager routes path below — the exact body the graph captures, stateless per
-        // call — instead of feeding cuGraphLaunch an exhausted card
-        // (lane/graph-launch-guard-sweep-20260831).
-        if step_tp_graph_enabled()? && step_tp_graph_headroom_ok(e) {
+        if step_tp_graph_enabled()? {
             if experts.ep2 {
                 return Err(
                     "MEMRA_STEP_TP_GRAPH=1 with MEMRA_STEP_NVFP4_EP2=1 has never been \
@@ -14139,7 +11622,7 @@ impl TpE4m3HostBounce {
                     .fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed)
                     + started.elapsed().as_nanos() as u64;
                 let calls = TIMING_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-                if calls.is_multiple_of(430) {
+                if calls % 430 == 0 {
                     eprintln!(
                         "[nvfp4-dev-routed-timing] calls={calls} total_ms={:.1} avg_us={:.1}",
                         ns as f64 / 1.0e6,
@@ -14434,7 +11917,7 @@ impl TpE4m3HostBounce {
                     .fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed)
                     + started.elapsed().as_nanos() as u64;
                 let calls = TIMING_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-                if calls.is_multiple_of(430) {
+                if calls % 430 == 0 {
                     eprintln!(
                         "[nvfp4-dev-routes-direct-timing] calls={calls} total_ms={:.1} avg_us={:.1}",
                         ns as f64 / 1.0e6,
@@ -14489,7 +11972,7 @@ impl TpE4m3HostBounce {
             let ns = TIMING_NS.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed)
                 + started.elapsed().as_nanos() as u64;
             let calls = TIMING_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-            if calls.is_multiple_of(430) {
+            if calls % 430 == 0 {
                 eprintln!(
                     "[nvfp4-dev-routed-timing] calls={calls} total_ms={:.1} avg_us={:.1}",
                     ns as f64 / 1.0e6,
@@ -14579,7 +12062,7 @@ impl TpE4m3HostBounce {
         let _main = root.gpu.enter_main()?;
         let stream = root.stream();
         let (a, _g) = ws.reduce_a.device_ptr(&stream);
-        ws.raw_reduce_a = a;
+        ws.raw_reduce_a = a as u64;
         ws.raw_mixed_stage_e = mixed_stage_e;
         ws.raw_shadow_stage_e = shadow_stage_e;
         Ok(())
@@ -14617,12 +12100,12 @@ impl TpE4m3HostBounce {
         let ptr_f32 = |buf: &crate::CudaSlice<f32>, engine: &Engine| -> u64 {
             let stream = engine.stream();
             let (ptr, _g) = buf.device_ptr(&stream);
-            ptr
+            ptr as u64
         };
         let ptr_i32 = |buf: &crate::CudaSlice<i32>, engine: &Engine| -> u64 {
             let stream = engine.stream();
             let (ptr, _g) = buf.device_ptr(&stream);
-            ptr
+            ptr as u64
         };
         let (sel_e, w_e) = workspace
             .dev_route_e
@@ -14889,7 +12372,7 @@ impl TpE4m3HostBounce {
             let stream = root.stream();
             let (a, _g) = sel_e.device_ptr(&stream);
             let (b, _g) = w_e.device_ptr(&stream);
-            workspace.raw_dev_route_e = Some((a, b));
+            workspace.raw_dev_route_e = Some((a as u64, b as u64));
             let (c, _g) = workspace.accumulator[1].device_ptr(&stream);
             let (d, _g) = workspace.remote.device_ptr(&stream);
             let (f, _g) = workspace.combined.device_ptr(&stream);
@@ -14898,7 +12381,7 @@ impl TpE4m3HostBounce {
                 .as_ref()
                 .ok_or("routes out stage not armed")?;
             let (g_, _g) = out_stage.device_ptr(&stream);
-            workspace.raw_combine = Some((c, d, f, g_));
+            workspace.raw_combine = Some((c as u64, d as u64, f as u64, g_ as u64));
         }
         for rank in 0..self.ranks.len() {
             let engine = &self.ranks[rank];
@@ -14907,9 +12390,9 @@ impl TpE4m3HostBounce {
             let (a, _g) = workspace.input[rank].device_ptr(&stream);
             let (b, _g) = workspace.sel[rank].device_ptr(&stream);
             let (c, _g) = workspace.route_w[rank].device_ptr(&stream);
-            workspace.raw_input.push(a);
-            workspace.raw_sel.push(b);
-            workspace.raw_route_w.push(c);
+            workspace.raw_input.push(a as u64);
+            workspace.raw_sel.push(b as u64);
+            workspace.raw_route_w.push(c as u64);
         }
         Ok(())
     }
@@ -14917,7 +12400,6 @@ impl TpE4m3HostBounce {
     /// Routed NVFP4 expert program, host-canonical transport. Native/bulk P2P transport for the
     /// NVFP4 bank is a separate increment; this entry point is exactness-first and reports no
     /// throughput claim.
-    #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
     pub fn run_tensor_parallel_routes_nvfp4(
         &self,
         experts: &ResidentNvfp4TensorParallel,
@@ -15029,182 +12511,7 @@ impl TpE4m3HostBounce {
 }
 
 #[cfg(test)]
-mod default_on_door_tests {
-    use super::door_default_on_value;
-
-    /// The DEFAULT-ON parse, pinned in every state — including the two that only matter because
-    /// the default is ON.
-    ///
-    /// While these doors were default OFF the parse was `== Ok("1")` and its failure mode was
-    /// benign: any typo read as the default, which was OFF, which was the safe program. Flipping
-    /// the default INVERTS that. Under a naive `!= Ok("0")` rule, `MEMRA_NVFP4_BANK_SM=false`
-    /// (or `=off`, or `=no`) would leave the program ARMED while the operator believed they had
-    /// rolled it back — a rollback seam that silently does nothing, on the exact door whose
-    /// predecessor shipped fluent wrong text. So the unrecognized-value case is a named,
-    /// tested branch that keeps the default AND warns, rather than an accident of `!=`.
-    #[test]
-    fn the_default_on_door_parses_every_state_and_names_its_source() {
-        // unset: the flip is what arms it, and the source string says so — this is the string a
-        // default-flip receipt needs, because in the flip arms there is no env var to point at.
-        assert_eq!(
-            door_default_on_value("MEMRA_TEST_DOOR", None),
-            (true, "default-on")
-        );
-        // explicit 1: armed by a RECIPE, not by the default. Different fact, different label.
-        assert_eq!(
-            door_default_on_value("MEMRA_TEST_DOOR", Some("1")),
-            (true, "env=1")
-        );
-        // THE ROLLBACK SEAM. This is the assertion the flip's safety rests on.
-        assert_eq!(
-            door_default_on_value("MEMRA_TEST_DOOR", Some("0")),
-            (false, "env=0 (rollback seam)")
-        );
-        // Unrecognized values keep the DEFAULT (ON) and are flagged as such, for every shape an
-        // operator plausibly types when they mean "off". Every one of these MUST still read ON:
-        // a parse that guessed "off" from `false` would be a second, undocumented seam, and a
-        // parse that guessed "off" from `2` would make a typo a silent program change.
-        for bad in [
-            "false", "off", "no", "", " 0", "0 ", "00", "true", "2", "-1",
-        ] {
-            let (on, source) = door_default_on_value("MEMRA_TEST_DOOR", Some(bad));
-            assert!(on, "value {bad:?} must NOT disarm a default-ON door");
-            assert!(
-                source.contains("default-on") && source.contains("unrecognized"),
-                "value {bad:?} gave source {source:?}, which does not announce itself as an \
-                 ignored value — a receipt reader would take it for a clean default"
-            );
-        }
-    }
-}
-
-#[cfg(test)]
-mod bank_v2_layout_tests {
-    use super::{nvfp4_matrix_v2_permute, nvfp4_row_bytes};
-
-    /// The slot-major permutation had NO test at all until 2026-08-29, while its (since
-    /// removed) `MEMRA_NVFP4_BANK_V2` FLAGS row carried a bit-identity claim and the live
-    /// serving env pinned it on. This pins the DOCUMENTED mapping so a reader can be checked
-    /// against something: per row, slot g's 16 qs bytes land contiguously at `g*16`, and its
-    /// two UE4M3 scale bytes at `nslots*16 + g*2`. Source layout is memra `block_nvfp4`:
-    /// 36-byte superblocks of [4 scale bytes | 32 packed e2m1], two 32-value slots per
-    /// superblock. Since the 2026-08-29 door removal the permutation's ONLY consumer is the
-    /// EP2 whole-expert bank build (`nvfp4_repack_bank_matrix(_, true)`), whose `*_ep`
-    /// kernels and `qmatvec_nvfp4_fast_v2` oracle read this exact mapping.
-    #[test]
-    fn the_v2_bank_row_is_the_documented_slot_major_permutation() {
-        // two rows, in_features 128 => 2 superblocks/row, 4 slots/row, 72 bytes/row.
-        let (out_f, in_f) = (2usize, 128usize);
-        let row_bytes = nvfp4_row_bytes(in_f);
-        assert_eq!(row_bytes, 72);
-        let v1: Vec<u8> = (0..out_f * row_bytes).map(|i| (i % 251) as u8).collect();
-        let v2 = nvfp4_matrix_v2_permute(&v1, out_f, in_f);
-        assert_eq!(v2.len(), v1.len(), "a permutation cannot change the size");
-        let n_slots = in_f / 32;
-        for row in 0..out_f {
-            let src = &v1[row * row_bytes..(row + 1) * row_bytes];
-            let dst = &v2[row * row_bytes..(row + 1) * row_bytes];
-            for g in 0..n_slots {
-                let (sblk, h) = (g / 2, g % 2);
-                let sb = &src[sblk * 36..sblk * 36 + 36];
-                assert_eq!(
-                    &dst[g * 16..g * 16 + 16],
-                    &sb[4 + 16 * h..4 + 16 * h + 16],
-                    "row {row} slot {g} codes"
-                );
-                assert_eq!(
-                    &dst[n_slots * 16 + g * 2..n_slots * 16 + g * 2 + 2],
-                    &sb[2 * h..2 * h + 2],
-                    "row {row} slot {g} scales"
-                );
-            }
-            // and it moves bytes only: same multiset per row, rows never cross.
-            let (mut a, mut b) = (src.to_vec(), dst.to_vec());
-            a.sort_unstable();
-            b.sort_unstable();
-            assert_eq!(a, b, "row {row} is not a byte permutation");
-        }
-    }
-}
-
-#[cfg(test)]
 mod tests {
-
-    #[test]
-    fn door_composition_refuses_first_armed_flag_by_name() {
-        let table: [(&str, &str); 2] = [
-            ("MEMRA_DOOR_A", "gated on the unsharded walk only"),
-            ("MEMRA_DOOR_B", "no sharded branches"),
-        ];
-        // cold doors pass
-        super::refuse_door_composition("MEMRA_X_TP", &table, |_| false).expect("cold doors pass");
-        // an armed door refuses with the exact byte format the glm5 gate asserts on
-        let err = super::refuse_door_composition("MEMRA_X_TP", &table, |f| f == "MEMRA_DOOR_B")
-            .expect_err("armed door must refuse");
-        assert_eq!(
-            err,
-            "MEMRA_X_TP + MEMRA_DOOR_B: unproven composition, refused (no sharded branches)"
-        );
-        // a flag outside the table never trips it
-        super::refuse_door_composition("MEMRA_X_TP", &table, |f| f == "MEMRA_DOOR_C")
-            .expect("foreign flags are not the matrix");
-    }
-
-    /// THE DEFECT, ASSERTED SO IT CANNOT COME BACK. The retired memo key hashed only the K
-    /// pointer, the base pointer, the layer and t, while the table it returned ALSO carried
-    /// the V and LEN pointers. Two different allocation generations that happen to share a K
-    /// address therefore collide, and the entry the map hands back sends a live launch at
-    /// another allocation's V and len. This test does not assert the key is fine; it asserts
-    /// the key is BLIND, which is why `rows_tab_restage_on` exists and defaults ON.
-    #[test]
-    fn the_retired_rows_tab_key_cannot_see_the_v_and_len_pointers_it_hands_back() {
-        let (kp, bp) = (0xdead_0000u64, 0u64);
-        let live = [[kp, 0x00b1_0000u64, 0x00c1_0000u64, bp]];
-        let recycled = [[kp, 0x00b2_0000u64, 0x00c2_0000u64, bp]];
-        assert_eq!(
-            super::retired_rows_tab_key(kp, bp, 20, 2),
-            super::retired_rows_tab_key(kp, bp, 20, 2),
-            "same layer and t must hash the same, or the test proves nothing"
-        );
-        let a = super::rows_tab_host(&live, 0x9000, true, 1);
-        let b = super::rows_tab_host(&recycled, 0x9000, true, 1);
-        assert_ne!(a, b, "the two generations write DIFFERENT tables");
-        // ... yet one key covers both, which is exactly the use-after-free.
-        assert_eq!(
-            super::retired_rows_tab_key(live[0][0], live[0][3], 20, 1),
-            super::retired_rows_tab_key(recycled[0][0], recycled[0][3], 20, 1),
-            "the retired key collides across allocation generations"
-        );
-    }
-
-    /// The restage must be VALUE-NEUTRAL: on a fresh lookup the memo and the restage produce
-    /// identical bytes, which is what makes spec-on output byte-identical to spec-off.
-    #[test]
-    fn rows_tab_layout_is_the_same_bytes_the_memo_would_have_cached() {
-        let parts = [
-            [0x00a0u64, 0x00b0u64, 0x00c0u64, 0x00d0u64],
-            [0x00a1u64, 0x00b1u64, 0x00c1u64, 0x00d1u64],
-        ];
-        let same = super::rows_tab_host(&parts, 0x7000, true, 2);
-        assert_eq!(
-            same,
-            vec![
-                0x00a0u64, 0x00b0u64, 0x00c0u64, 0x00d0u64, 0x7000,
-                1, // row 0: back = t-1-r = 1
-                0x00a1u64, 0x00b1u64, 0x00c1u64, 0x00d1u64, 0x7000, 0, // row 1: back = 0
-            ],
-            "same-session rows share one counter cell and step back t-1-r"
-        );
-        let cross = super::rows_tab_host(&parts, 0x7000, false, 2);
-        assert_eq!(
-            cross,
-            vec![
-                0x00a0u64, 0x00b0u64, 0x00c0u64, 0x00d0u64, 0x7000, 0, 0x00a1u64, 0x00b1u64,
-                0x00c1u64, 0x00d1u64, 0x7004, 0,
-            ],
-            "cross-session rows get their own counter cell and no step back"
-        );
-    }
     use super::*;
 
     #[test]
@@ -15672,119 +12979,6 @@ mod tests {
     }
 
     #[test]
-    fn automatic_parallel_policy_needs_only_one_device_set_not_layer_recipes() {
-        assert_eq!(parse_auto_parallel_devices(None, None).unwrap(), None);
-        assert_eq!(
-            parse_auto_parallel_devices(Some("auto"), Some("0,1,2,3")).unwrap(),
-            Some(vec![0, 1, 2, 3])
-        );
-        assert!(parse_auto_parallel_devices(Some("auto"), None).is_err());
-        assert!(parse_auto_parallel_devices(Some("auto"), Some("0,1,1")).is_err());
-        assert!(parse_auto_parallel_devices(Some("auto"), Some("0,1,2,3,4")).is_err());
-        assert!(parse_auto_parallel_devices(Some("ep"), Some("0,1")).is_err());
-    }
-
-    #[test]
-    fn automatic_ep_device_router_flag_is_strict() {
-        assert!(!parse_parallel_ep_device_router(None).unwrap());
-        assert!(!parse_parallel_ep_device_router(Some("0")).unwrap());
-        assert!(parse_parallel_ep_device_router(Some("1")).unwrap());
-        assert!(parse_parallel_ep_device_router(Some("true")).is_err());
-    }
-
-    #[test]
-    fn automatic_ep_graph_flag_is_strict_and_defaults_off() {
-        assert!(!parse_parallel_ep_graph(None).unwrap());
-        assert!(!parse_parallel_ep_graph(Some("0")).unwrap());
-        assert!(parse_parallel_ep_graph(Some("1")).unwrap());
-        assert!(parse_parallel_ep_graph(Some("true")).is_err());
-    }
-
-    #[test]
-    fn automatic_ep_pair_down_flag_is_strict_and_defaults_off() {
-        assert!(!parse_parallel_ep_pair_down(None).unwrap());
-        assert!(!parse_parallel_ep_pair_down(Some("0")).unwrap());
-        assert!(parse_parallel_ep_pair_down(Some("1")).unwrap());
-        assert!(parse_parallel_ep_pair_down(Some("true")).is_err());
-    }
-
-    #[test]
-    fn automatic_ep_q8_activation_flag_is_strict() {
-        assert!(!parse_parallel_ep_q8_act(None).unwrap());
-        assert!(!parse_parallel_ep_q8_act(Some("0")).unwrap());
-        assert!(parse_parallel_ep_q8_act(Some("1")).unwrap());
-        assert!(parse_parallel_ep_q8_act(Some("true")).is_err());
-    }
-
-    #[test]
-    fn automatic_ep_q8_scope_is_explicit_and_strict() {
-        assert_eq!(parse_parallel_ep_q8_scope(None).unwrap(), None);
-        assert_eq!(
-            parse_parallel_ep_q8_scope(Some("all")).unwrap(),
-            Some(ParallelEpQ8Scope::All)
-        );
-        assert_eq!(
-            parse_parallel_ep_q8_scope(Some("gate-up")).unwrap(),
-            Some(ParallelEpQ8Scope::GateUp)
-        );
-        assert_eq!(
-            parse_parallel_ep_q8_scope(Some("down")).unwrap(),
-            Some(ParallelEpQ8Scope::Down)
-        );
-        assert!(parse_parallel_ep_q8_scope(Some("input")).is_err());
-    }
-
-    #[test]
-    fn automatic_ep_q8_gate_up_paired_is_parent_scoped_and_strict() {
-        assert_eq!(parse_parallel_ep_q8_gu_paired(None).unwrap(), None);
-        assert_eq!(parse_parallel_ep_q8_gu_paired(Some("")).unwrap(), None);
-        assert_eq!(
-            parse_parallel_ep_q8_gu_paired(Some("0")).unwrap(),
-            Some(false)
-        );
-        assert_eq!(
-            parse_parallel_ep_q8_gu_paired(Some("1")).unwrap(),
-            Some(true)
-        );
-        assert!(parse_parallel_ep_q8_gu_paired(Some("paired")).is_err());
-        assert!(parse_parallel_ep_q8_gu_paired(Some("true")).is_err());
-
-        assert!(!resolve_parallel_ep_q8_gu_paired(None, false, None).unwrap());
-        assert!(resolve_parallel_ep_q8_gu_paired(None, true, None).unwrap());
-        assert!(
-            resolve_parallel_ep_q8_gu_paired(None, true, Some(ParallelEpQ8Scope::GateUp)).unwrap()
-        );
-        assert!(
-            !resolve_parallel_ep_q8_gu_paired(None, true, Some(ParallelEpQ8Scope::Down)).unwrap()
-        );
-        assert!(!resolve_parallel_ep_q8_gu_paired(Some("0"), false, None).unwrap());
-        assert!(!resolve_parallel_ep_q8_gu_paired(Some("0"), true, None).unwrap());
-        assert!(resolve_parallel_ep_q8_gu_paired(Some("1"), false, None).is_err());
-        assert!(
-            resolve_parallel_ep_q8_gu_paired(Some("1"), true, Some(ParallelEpQ8Scope::Down))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn w4a16_device_ep_accepts_a_capacity_backed_active_prefix() {
-        let width = 4096;
-        assert_eq!(
-            nvfp4_ep_active_input_values(160 * width, 44, width).unwrap(),
-            44 * width
-        );
-        assert_eq!(
-            nvfp4_ep_active_input_values(44 * width, 44, width).unwrap(),
-            44 * width
-        );
-        assert!(nvfp4_ep_active_input_values(43 * width, 44, width).is_err());
-        assert!(
-            nvfp4_ep_active_input_values(160 * width, NVFP4_EP_DEVICE_BATCH_CAP + 1, width)
-                .is_err()
-        );
-    }
-
-    #[test]
     fn step_ep_layer_specs_are_literal_and_fail_closed() {
         assert!(parse_step_ep_layer_specs(None).unwrap().is_empty());
         assert!(parse_step_ep_layer_specs(Some("0")).unwrap().is_empty());
@@ -15865,8 +13059,6 @@ mod tests {
 /// One captured section: the child graph plus which parent node it became, and the CUDA
 /// context it was captured under (exec memset updates need it).
 struct TokenGraphChild {
-    #[allow(dead_code)]
-    // allow: keep-alive: the child graph must outlive the exec instantiated from it
     graph: cudarc::driver::CudaGraph,
     node: cudarc::driver::sys::CUgraphNode,
     ctx: cudarc::driver::sys::CUcontext,

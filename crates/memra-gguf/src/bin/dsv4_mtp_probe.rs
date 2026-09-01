@@ -50,10 +50,7 @@ fn main() {
         .collect();
     let s = ids.len();
     let t0 = std::time::Instant::now();
-    let model = Dsv4Model::open(Path::new(&args[1])).unwrap_or_else(|error| {
-        eprintln!("dsv4 model load failed: {error}");
-        std::process::exit(1);
-    });
+    let model = Dsv4Model::open(Path::new(&args[1]));
     let hc = model.cfg().hc_mult as usize;
     let hidden = model.mc.n_embd as usize;
     let n_trunk = model.mc.n_layer - model.mc.nextn_predict_layers;

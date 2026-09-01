@@ -2,10 +2,10 @@
 # Full cx-selfserve serving battery for box1 (2x RTX PRO 6000 Blackwell).
 set -Eeuo pipefail
 
-repo=${SELFSERVE_REPO:-/opt/scratch/nvme/cx-selfserve/memra}
+repo=${SELFSERVE_REPO:-/opt/dl-image/nvme/cx-selfserve/memra}
 out=${SELFSERVE_OUT:-$repo/research/selfserve-20260813/raw/box1-$(date -u +%Y%m%dT%H%M%SZ)}
 source_revision=${SELFSERVE_SOURCE_REVISION:-unknown}
-models=${SELFSERVE_MODELS_DIR:-/opt/scratch/nvme/cx-requal/models}
+models=${SELFSERVE_MODELS_DIR:-/opt/dl-image/nvme/cx-requal/models}
 q27=${SELFSERVE_Q27:-$models/Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf}
 q27_draft=${SELFSERVE_Q27_DRAFT:-$models/draft-daily-owntrim-nvfp4head-q4blk.gguf}
 q35=${SELFSERVE_Q35:-$models/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf}

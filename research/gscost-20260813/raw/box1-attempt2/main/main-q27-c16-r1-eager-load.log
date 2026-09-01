@@ -1,9 +1,9 @@
 Traceback (most recent call last):
-  File "/opt/scratch/nvme/cx-gscost/memra/research/gscost-20260813/cache-hit-decode.py", line 239, in <module>
+  File "/opt/dl-image/nvme/cx-gscost/memra/research/gscost-20260813/cache-hit-decode.py", line 239, in <module>
     raise SystemExit(main())
                      ^^^^^^
-  File "/opt/scratch/nvme/cx-gscost/memra/research/gscost-20260813/cache-hit-decode.py", line 169, in main
+  File "/opt/dl-image/nvme/cx-gscost/memra/research/gscost-20260813/cache-hit-decode.py", line 169, in main
     validate_rows(rows, len(prompt), args.max_tokens, "scored")
-  File "/opt/scratch/nvme/cx-gscost/memra/research/gscost-20260813/cache-hit-decode.py", line 94, in validate_rows
+  File "/opt/dl-image/nvme/cx-gscost/memra/research/gscost-20260813/cache-hit-decode.py", line 94, in validate_rows
     raise RuntimeError(f"{label} request {index} failed: {public(row)}")
 RuntimeError: scored request 11 failed: {'request_id': 'cmpl-d27def74fb387ed62cf39d33afd2d9df', 'http_status': 200, 'done': True, 'prompt_tokens': 4860, 'cached_tokens': 4860, 'completion_tokens': 11, 'finish_reason': 'stop', 'ttft_ms': 113.92936599440873, 'latency_ms': 518.7735629733652, 'inter_token_ms': 40.484419697895646, 'text_bytes': 59, 'text_sha256': 'ddbbcf35ae93821874be64e15f63feecb2471bbe6ea0c23b63fa00b1e98a9b73', 'ok': False}

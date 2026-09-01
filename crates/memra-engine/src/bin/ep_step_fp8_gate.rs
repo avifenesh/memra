@@ -19,7 +19,7 @@ use memra_engine::tp::{
     step_expert_activation_host,
 };
 use memra_gguf::GgmlType;
-use memra_gguf::config::{LayerGeometry, SwigluClamp};
+use memra_gguf::config::LayerGeometry;
 use memra_gguf::source::{Fp8StackedNative, SafetensorsSource, TensorSource};
 use std::hint::black_box;
 use std::time::Instant;
@@ -196,7 +196,7 @@ fn reference_expert(
 const STEP_GROUPED_TOP_K: usize = 8;
 
 fn grouped_selected_routes(tokens: usize, experts: usize) -> Result<Vec<usize>, String> {
-    if tokens == 0 || experts < STEP_GROUPED_TOP_K || !experts.is_multiple_of(STEP_GROUPED_TOP_K) {
+    if tokens == 0 || experts < STEP_GROUPED_TOP_K || experts % STEP_GROUPED_TOP_K != 0 {
         return Err(format!(
             "grouped Step route fixture requires tokens > 0 and expert count divisible by \
              {STEP_GROUPED_TOP_K}, got tokens={tokens} experts={experts}"
@@ -210,7 +210,6 @@ fn grouped_selected_routes(tokens: usize, experts: usize) -> Result<Vec<usize>, 
         .collect())
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn dynamic_grouped_selected_routes(
     tokens: usize,
     experts: usize,
@@ -1341,7 +1340,6 @@ fn run_attention_transition_pair(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn run_attention_to_expert_transition(
     runtime: &TpE4m3HostBounce,
     resident: &ResidentTransitionAttention,
@@ -1710,9 +1708,7 @@ fn run_full_decoder_layer_gate(
         &format!("{prefix}.exp_probs_b.bias"),
         expert_count,
     )?;
-    // This binary is the step35 EP/TP cell; its expert kernels encode step35's POST clamp.
-    // A PRE-clamped arch (glm5_next) has no arm here — refuse by name, never substitute.
-    let shared_activation_limit = post_clamp_only(config.clamp_shexp_at(layer as u32), layer)?;
+    let shared_activation_limit = config.clamp_shexp_at(layer as u32);
 
     let transition = prepare_attention_transition_gate(source, runtime, hidden, tokens, layer)?;
     let router = runtime.upload_sigmoid_topk_router(
@@ -2560,25 +2556,6 @@ fn numeric_delta(expected: &[f32], actual: &[f32]) -> NumericDelta {
     delta
 }
 
-/// This binary is the step35 expert-parallel cell end to end: its FP8 banks, grouped gates and
-/// reference expert all encode step35's POST clamp (`min(silu(gate), l) * clamp(up, +-l)`).
-/// glm5_next's PRE form is a different program with no arm here, so it is refused by name — a
-/// bare limit handed to a POST kernel would run and report a passing gate on wrong arithmetic.
-fn post_clamp_only(
-    clamp: Option<SwigluClamp>,
-    layer: usize,
-) -> Result<Option<f32>, Box<dyn std::error::Error>> {
-    match clamp {
-        None => Ok(None),
-        Some(SwigluClamp::Post(l)) => Ok(Some(l)),
-        Some(SwigluClamp::Pre(_)) => Err(format!(
-            "layer {layer}: PRE-clamped SwiGLU (glm5_next) has no expert-parallel arm in \
-             ep_step_fp8_gate; this cell is step35 POST-clamp only"
-        )
-        .into()),
-    }
-}
-
 fn per_iteration_us(start: Instant, iterations: usize) -> f64 {
     start.elapsed().as_secs_f64() * 1_000_000.0 / iterations as f64
 }
@@ -2998,7 +2975,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = source.config();
     let contract = ModelParallelContract::from_model(&config)?;
     let qualified = validate_step_fp8_checkpoint(&source, &contract)?;
-    let activation_limit = post_clamp_only(config.clamp_exp_at(layer as u32), layer)?;
+    let activation_limit = config.clamp_exp_at(layer as u32);
     let transport_only = strict_bool("MEMRA_STEP_EP_TRANSPORT_ONLY")?;
     let grouped_fp8_gate = strict_bool("MEMRA_STEP_EP_GROUPED_FP8_GATE")?;
     let owner_grouped_fp8_gate = strict_bool("MEMRA_STEP_EP_OWNER_GROUPED_FP8_GATE")?;

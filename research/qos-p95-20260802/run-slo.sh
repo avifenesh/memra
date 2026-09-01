@@ -8,7 +8,7 @@
 set -uo pipefail
 OUT=/home/ubuntu/receipts/qos-p95
 BIN=/home/ubuntu/memra/target/release/memra-server
-MODEL=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+MODEL=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 LS=/home/ubuntu/memra/tools/load-serve.py
 FLEET=/home/ubuntu/memra/tools/serve-fleet.sh
 DLOG=$OUT/driver-slo.log

@@ -259,7 +259,7 @@ protects a not-yet-full cache; in the spill regime the module's own docs state t
 "permanently full" (`moe_cache.rs:1023-1024`), so every hit pays the scan. The module
 self-documents the magnitude (`moe_cache.rs:532-537`): "~46k slots x ~850 hits/token that was
 ~40M host ops/token — measured as the fast-admit A/B regression 48.5 -> 46.0 tok/s on the 35B
-cloudbox decode" — that fix DEFERRED the scan until the cache fills; it did not remove it.
+sbox decode" — that fix DEFERRED the scan until the cache fills; it did not remove it.
 n_slots auto-sizes to 85% of free VRAM (`moe_cache.rs:317-345`) — tens of thousands, unbounded
 by any constant. Aggregate O(hits × n_slots) per decoded token, every token, whenever the model
 spills. Related same-module scans: `frequency_victim_in_class` (`moe_cache.rs:583-609`,

@@ -6,7 +6,7 @@ started 2026-08-10.
 ## Contract
 
 - Measurement and validation lane for `MEMRA_SWA_RING=1`; the flag remains default OFF.
-- Box1 rented cloud pair: two RTX PRO 6000 Blackwell Server Edition GPUs, PP-2 on devices 0,1.
+- Box1 hyperscaler pair: two RTX PRO 6000 Blackwell Server Edition GPUs, PP-2 on devices 0,1.
 - Pinned Step-3.7-flash IQ4_XS trunk plus Q8_0 MTP artifact under
   `/home/ubuntu/step37/models/step-3.7-flash`.
 - Serve shape: `MEMRA_CTX=262144`, `MEMRA_MOE_GROUPED=1`, and

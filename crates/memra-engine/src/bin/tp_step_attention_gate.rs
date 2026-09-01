@@ -200,7 +200,6 @@ fn gate_shard(gate: &[f32], tokens: usize, heads: usize, tp: usize, rank: usize)
     shard
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn run_cacheless_attention(
     runtime: &TpE4m3HostBounce,
     resident: &ResidentAttention,
@@ -534,8 +533,6 @@ fn run_cached_token(
     let t_kv = cache.staged_len() - view_start;
 
     let mut attention_shards = Vec::<CudaSlice<f32>>::with_capacity(tp);
-    #[allow(clippy::needless_range_loop)]
-    // allow: the explicit index loop keeps the offset arithmetic visible and aligned with the device-side indexing
     for rank in 0..tp {
         let engine = runtime
             .rank_engine(rank)
@@ -589,7 +586,6 @@ fn run_cached_token(
     Ok((attention, output))
 }
 
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 fn run_cached_attention_sequence(
     runtime: &TpE4m3HostBounce,
     resident: &ResidentAttention,
@@ -941,7 +937,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
     let positions = (0..tokens)
-        .map(i32::try_from)
+        .map(|position| i32::try_from(position))
         .collect::<Result<Vec<_>, _>>()?;
     let inputs = AttentionInputs {
         activations: &input,

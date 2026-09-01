@@ -102,7 +102,6 @@ fn band_violations(dec: &[f32], rl: &[f32], k: usize, band: f64) -> (usize, usiz
     (overlap, viol)
 }
 
-#[allow(clippy::manual_checked_ops)] // allow: the explicit zero guard names the degenerate-ratio case; checked ops would hide the sentinel
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 5 {

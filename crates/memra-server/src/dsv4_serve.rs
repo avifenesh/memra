@@ -114,7 +114,6 @@ pub fn caps(m: &Dsv4Model) -> ModelCaps {
     // string (rung-3 serve finding) — the detected encoding revision is the caps truth.
     let enc = m.tok.dsv4_encoding().is_some();
     ModelCaps {
-        hy3: false,
         tools_branch: enc || t.is_some_and(chat::template_has_tools_branch),
         qwen_think: t.is_some_and(|t| t.contains("<think>") && t.contains("add_generation_prompt")),
         think_switch: t.is_some_and(|t| t.contains("enable_thinking")),
@@ -127,15 +126,9 @@ pub fn caps(m: &Dsv4Model) -> ModelCaps {
         qwen_effort: t.is_some_and(chat::template_has_qwen_effort),
         gemma_think: false,
         dsv4: enc || t.is_some_and(chat::template_is_dsv4),
-        // A dsv4 artifact is never a glm5 one (disjoint dialect markers); stated rather than
-        // left to `..Default::default()`, which this literal does not use.
-        glm5: false,
         chat_temperature_default: None,
         chat_top_p_default: None,
         n_vocab: m.tok.vocab_size(),
-        // dsv4 is NOT a post-think model: its renderer honours NoThink through the
-        // encoding's own `chat` thinking mode, so constrained requests keep that path.
-        think_close: Vec::new(),
     }
 }
 
@@ -146,10 +139,6 @@ pub fn spawn(name: String, m: Dsv4Model) -> std::sync::mpsc::Sender<Box<Request>
         .name(format!("dsv4-serve-{name}"))
         .spawn(move || {
             while let Ok(mut req) = rx.recv() {
-                // The worker's DSV4 channel is unbounded, so the hard admission reservation
-                // remains held until this serving thread actually receives the request. Merely
-                // forwarding it from the command channel must not make the queue appear empty.
-                crate::worker::release_admission_reservation(req.lane);
                 if req.tx.is_closed() {
                     continue; // client gone while queued
                 }
@@ -322,16 +311,6 @@ impl<'a> Emit<'a> {
 }
 
 fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> {
-    if let Some(error) = crate::worker::prompt_source_limit_error(req) {
-        let param = if !req.prompt_ids.is_empty() {
-            "prompt_ids"
-        } else if !req.chat_turns.is_empty() {
-            "messages"
-        } else {
-            "prompt"
-        };
-        return Err(EngineError::invalid_param(error, param));
-    }
     if let Some(t) = req.ttft.as_ref() {
         t.mark_tokenize_start();
     }
@@ -385,13 +364,13 @@ fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> 
     if let Some(t) = req.ttft.as_ref() {
         t.mark_tokenize_end(prompt.len());
     }
-    if let Some(limit) = req.max_prompt_tokens
-        && prompt.len() > limit
-    {
-        return Err(EngineError::context_length(format!(
-            "prompt ({} tok) exceeds this model's prompt ceiling ({limit})",
-            prompt.len()
-        )));
+    if let Some(limit) = req.max_prompt_tokens {
+        if prompt.len() > limit {
+            return Err(EngineError::context_length(format!(
+                "prompt ({} tok) exceeds this model's prompt ceiling ({limit})",
+                prompt.len()
+            )));
+        }
     }
     Ok(prompt)
 }

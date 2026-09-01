@@ -21,7 +21,7 @@ import time
 
 HOME = os.path.expanduser("~")
 LANE = f"{HOME}/lane1"
-MODEL = "/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf"
+MODEL = "/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf"
 OUT = f"{LANE}/research/q27-mtp-20260801"
 LOGD = f"{OUT}/logs"
 JSONL = f"{OUT}/sweep.jsonl"

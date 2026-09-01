@@ -45,11 +45,6 @@ pub enum RewriteSurface {
     DecodeBatch,
     DecodeGraph,
     MtpSpec,
-    /// glm5_next T-parallel speculative loop (embedded MLA-mixer MTP draft + one-walk
-    /// verify over the HyperConnections trunk). A DISTINCT program from `MtpSpec` — the
-    /// two manifests' operation tables are disjoint on the mixer/residual classes, so no
-    /// plan is ever eligible for both.
-    Glm5Spec,
     Pipeline,
 }
 
@@ -137,7 +132,6 @@ impl RewriteSurface {
             Self::DecodeBatch => "decode-batch",
             Self::DecodeGraph => "decode-graph",
             Self::MtpSpec => "mtp-spec",
-            Self::Glm5Spec => "glm5-spec",
             Self::Pipeline => "pipeline",
         }
     }
@@ -432,15 +426,8 @@ pub fn execution_rewrites(plan: &ModelPlan) -> Vec<ExecutionRewrite> {
             "mtp-spec.v1",
             RewriteSurface::MtpSpec,
             MTP_SPEC,
-            spec_operations.clone(),
-            MTP_SPEC.capabilities(plan).speculative,
-        ),
-        (
-            "glm5-spec.v1",
-            RewriteSurface::Glm5Spec,
-            GLM5_SPEC,
             spec_operations,
-            GLM5_SPEC.capabilities(plan).speculative,
+            MTP_SPEC.capabilities(plan).speculative,
         ),
         (
             "pipeline.v1",
@@ -556,22 +543,6 @@ pub fn decode_batch_program(plan: &ModelPlan) -> DecodeBatchProgram {
     }
 }
 
-/// Does this plan's residual topology have NO converted batched-decode arm?
-///
-/// `HyperConnections` carries `streams` parallel residual streams collapsed per layer; every
-/// batched path (`decode_step_batch*`, `prime_cache_batch`, `prime_graph_new`, the graph-capture
-/// and speculative entry points) runs a serial residual and refuses this topology at the engine
-/// boundary rather than computing a different model. The converted set is `forward`,
-/// `forward_last`, `prime_cache`, `decode_step` — all reachable from the per-session eager route.
-///
-/// This is the plan-level twin of the `Gemma` arm of [`decode_batch_program`]: the scheduler needs
-/// to know a model has no batched arm BEFORE it places the session, so the topology is read from
-/// the `ModelPlan` rather than re-derived from engine internals.
-pub fn decode_batch_unconverted(plan: &ModelPlan) -> bool {
-    plan.trunk_operations()
-        .contains(&OperationKind::HyperConnections)
-}
-
 pub fn gdn_dspark_compatible(plan: &ModelPlan) -> bool {
     let operations = plan.trunk_operations();
     operations.contains(&OperationKind::GatedDeltaNet)
@@ -605,38 +576,6 @@ fn decode_graph_support(operation: OperationKind) -> OperationSupport {
 pub const DECODE_GRAPH: KernelManifest =
     KernelManifest::new("decode-cuda-graph", decode_graph_support);
 
-/// PIPELINE (stage-split trunk + boundary state transport).
-///
-/// THE GLM5_NEXT BLOCK BELOW WAS ADDED BY A MERGE, AND THE MERGE IS WHY IT WAS MISSING.
-/// The plan-admission refusal in `hybrid.rs` ("pipeline placement is unsupported for plan
-/// operations ...") and the glm5_next PP-N program were developed on OPPOSITE SIDES of the
-/// `lane/glm53-flash-bringup` x `main` merge: the refusal landed on main, which carries no
-/// `glm5-*-ppn-gate` at all, while the gates that exercise stage-split glm5_next live only on the
-/// lane. So neither side was red alone and the first tree that could see it was the merge, where
-/// EVERY glm5.3-flash PP-N load refused before uploading a shard — including the PP4
-/// splits-13,26,39 posture that is the only demonstrated 1M-context configuration and that had
-/// run on box B the same day (`research/glm53-flash-bringup-20260827/1m-battery-20260901/`).
-/// Attribution, not blame: an operation-level admission gate is only as wide as its table, and a
-/// table cannot know about an architecture whose gates are on another branch.
-///
-/// WHAT THE ADDED CLASSES ARE, and what covers them (`research/.../bankfix-consol-20260901/`):
-/// the glm5_next trunk class — hc residual topology on every trunk layer, KDA and MLA(+kpool)
-/// mixers with their recurrent / latent-KV state, MoE+shared FFN, pre-clamped SwiGLU. Their PP
-/// receipts are `glm5-spec-ppn-gate` (n2/n3 even/split1/split3/asym x streams/overlap arms),
-/// `glm5-hyper-ppn-gate` (n2/n3/n4, incl. the shard0 and longer-prompt arms) and
-/// `glm5-hyper-batch-gate` (the B<=15 ladder at ppn 1/2/4) — the ladders that prove boundary
-/// transport carries THIS state across a stage cut, re-run on the merged tree over four real
-/// devices rather than one card's emulation.
-///
-/// Deliberately still absent, so every other family stays fail-closed here (no-generic-support
-/// law): `SharedSparseIndex` — the ladders' fixture plan carries `SparseIndex` and the refusal
-/// named only that, so admitting the shared variant too would be claiming coverage nothing ran; if
-/// a real artifact needs it the load refuses BY NAME, which is the visible outcome we want.
-/// `GatedDeltaNet` (qwen35/step35 recurrent mixers have no PP ladder), `CompressedMlaAttention`
-/// (the dsv4 class), `SoftmaxRouter`, `GemmaResidual`/`GemmaParallelMoeResidual` (gemma keeps its
-/// separately gated PP2 program, grandfathered in `hybrid.rs` by fence length), `LogitsSoftcap`.
-/// A family that wants stage splitting brings its own ladder; being architecturally adjacent to
-/// one that has one is not a receipt.
 fn pipeline_support(operation: OperationKind) -> OperationSupport {
     let mut support = OperationSupport::none();
     support.pipeline = matches!(
@@ -661,14 +600,6 @@ fn pipeline_support(operation: OperationKind) -> OperationSupport {
             | OperationKind::LogitsMask
             | OperationKind::OutputProjection
             | OperationKind::PipelineBoundary
-            // ---- glm5_next trunk class (see the doc comment above for the covering ladders) ----
-            | OperationKind::KimiDeltaNet
-            | OperationKind::RecurrentState
-            | OperationKind::LatentMlaAttention
-            | OperationKind::SparseIndex
-            | OperationKind::LatentKvState
-            | OperationKind::HyperConnections
-            | OperationKind::SwiGluPreClampedActivation
     );
     support
 }
@@ -765,62 +696,6 @@ fn mtp_spec_support(operation: OperationKind) -> OperationSupport {
 }
 
 pub const MTP_SPEC: KernelManifest = KernelManifest::new("mtp-spec", mtp_spec_support);
-
-/// glm5_next T-parallel speculative loop (lane/glm5-spec-routing, 2026-08-30): the gated
-/// program is `glm_spec.rs` — draft K through the embedded MLA-mixer MTP block
-/// (`mtp_head_forward_mla_cached`), verify in ONE t=K+1 walk over the HyperConnections
-/// trunk in the batched-decode kernel classes (`glm5_verify_rows`), greedy or
-/// rejection-sampled accept, per-plane rollback (`glm5_verify_rollback`).
-///
-/// The table below names EXACTLY the operation classes those gates cover — the
-/// glm5_next class (hc residual topology on every trunk layer + KDA/MLA(+kpool) mixers,
-/// MoE/dense FFN) with a serial-residual MLA-mixer MoE MTP block. Deliberately absent, so
-/// every other family stays fail-closed here (no-generic-support law; each carries its own
-/// gated program or none):
-///   * `FullAttention`/`SlidingWindowAttention`/`GatedDeltaNet`/`KvState`/... — the qwen35 /
-///     step35 / gemma classes route through `MTP_SPEC`, never here;
-///   * `CompressedMlaAttention` — the dsv4 class (its own dspark program);
-///   * `SerialResidual`/`Gemma*Residual` as TRUNK residuals — `glm5_verify_rows` requires
-///     the hc topology (the walk's `hyper::pre_exact`/`post` glue IS the program), so a
-///     non-hc trunk must block. `SerialResidual` is spec_draft-only: the NextN block
-///     carries no hc_* tensors (mtp-draft LANE.md) and is serial by plan.
-///   * `DenseMlp` on the DRAFT side — `mtp_head_forward_mla_cached` refuses Dense-FFN MTP
-///     blocks by name; the trunk's dense L0 is in the gated walk (`hyper_ffn_branch_batch`).
-fn glm5_spec_support(operation: OperationKind) -> OperationSupport {
-    let mut support = OperationSupport::none();
-    let common = matches!(
-        operation,
-        OperationKind::Embedding
-            | OperationKind::RmsNorm
-            | OperationKind::LatentMlaAttention
-            | OperationKind::SparseIndex
-            | OperationKind::SharedSparseIndex
-            | OperationKind::KimiDeltaNet
-            | OperationKind::RecurrentState
-            | OperationKind::LatentKvState
-            | OperationKind::MoeMlp
-            | OperationKind::SigmoidRouter
-            | OperationKind::SharedMlp
-            | OperationKind::SwiGluPreClampedActivation
-            | OperationKind::OutputProjection
-    );
-    support.spec_verify = common
-        || matches!(
-            operation,
-            OperationKind::HyperConnections | OperationKind::DenseMlp
-        );
-    support.spec_draft = common
-        || matches!(
-            operation,
-            OperationKind::Mtp
-                | OperationKind::MtpFusion
-                | OperationKind::MtpHead
-                | OperationKind::SerialResidual
-        );
-    support
-}
-
-pub const GLM5_SPEC: KernelManifest = KernelManifest::new("glm5-spec", glm5_spec_support);
 
 #[cfg(test)]
 mod tests {
@@ -1047,142 +922,5 @@ mod tests {
             .find(|rewrite| rewrite.surface == RewriteSurface::MtpSpec)
             .unwrap();
         assert!(qwen35_spec.eligible());
-    }
-}
-
-/// glm5-spec class matrix (lane/glm5-spec-routing, 2026-08-30): the GLM5_SPEC manifest must
-/// declare speculative support for EXACTLY the glm5_next class with an MTP block present, and
-/// stay fail-closed everywhere else — including for glm5_next under the MTP_SPEC manifest
-/// (the qwen program), so the two spec programs can never both claim one plan.
-#[cfg(test)]
-mod glm5_spec_class_matrix {
-    use super::*;
-    use crate::model_plan::OperationKind;
-
-    /// The tparallel-verify / mtp-draft gate fixture family's config (4 trunk layers:
-    /// KDA + DSA(MLA+kpool) alternating, dense L0 + sigmoid noaux_tc MoE, mHC streams)
-    /// plus `nextn` MTP block(s). The REAL GLM-5.3-Flash text_config carries the same
-    /// operation classes (silu+swiglu_limit -> SwiGluPreClamped, sigmoid router, shared
-    /// expert, dense first layers, hc residuals, 1 NextN block).
-    fn glm5_plan(nextn: u32) -> crate::model_plan::ModelPlan {
-        let json = format!(
-            r#"{{
-          "model_type": "glm5_next_text", "num_hidden_layers": 4,
-          "num_nextn_predict_layers": {nextn},
-          "hidden_size": 128, "intermediate_size": 64, "vocab_size": 32,
-          "max_position_embeddings": 512, "rms_norm_eps": 1e-05, "hidden_act": "silu",
-          "swiglu_limit": 10.0, "tie_word_embeddings": true, "hc_mult": 4, "hc_eps": 1e-06,
-          "hc_sinkhorn_iters": 20, "mhc": true,
-          "layer_types": ["linear_attention", "deepseek_sparse_attention",
-                          "linear_attention", "deepseek_sparse_attention"],
-          "mlp_layer_types": ["dense", "sparse", "sparse", "sparse"],
-          "first_k_dense_replace": 1, "indexer_types": ["full", "full", "full", "full"],
-          "linear_attn_config": {{"num_heads": 1, "head_dim": 128, "short_conv_kernel_size": 4,
-            "gate_lower_bound": -5.0, "kda_layers": [0, 2], "full_attn_layers": [1, 3]}},
-          "num_attention_heads": 2, "num_key_value_heads": 2, "q_lora_rank": 16,
-          "kv_lora_rank": 16, "qk_head_dim": 16, "qk_nope_head_dim": 16, "qk_rope_head_dim": 0,
-          "v_head_dim": 16, "mla_use_nope": true, "index_n_heads": 1, "index_head_dim": 8,
-          "index_topk": 8, "index_kpool": 4, "index_kpool_always_select_tail": true,
-          "index_kpool_compress": true, "indexer_rope_interleave": true,
-          "index_share_for_mtp_iteration": true, "n_routed_experts": 4, "num_experts_per_tok": 2,
-          "moe_intermediate_size": 64, "n_shared_experts": 1, "scoring_func": "sigmoid",
-          "topk_method": "noaux_tc", "routed_scaling_factor": 2.5, "norm_topk_prob": true,
-          "n_group": 1, "topk_group": 1, "head_dim": 0, "attention_bias": false,
-          "moe_router_dtype": "float32", "dtype": "bfloat16"
-        }}"#
-        );
-        let config = crate::config::ModelConfig::from_hf(&crate::config::HfConfig::parse(&json));
-        crate::model_packs::for_config(&config)
-            .unwrap()
-            .compile_plan(&config)
-            .unwrap()
-    }
-
-    #[test]
-    fn glm5_with_mtp_block_is_supported_and_the_rewrite_row_is_eligible() {
-        let plan = glm5_plan(1);
-        let capability = GLM5_SPEC.capabilities(&plan).speculative;
-        assert!(
-            capability.supported,
-            "glm5_next + MTP block must be the supported class; blockers: {:?}",
-            capability.blockers
-        );
-        let rewrite = execution_rewrites(&plan)
-            .into_iter()
-            .find(|rewrite| rewrite.surface == RewriteSurface::Glm5Spec)
-            .unwrap();
-        assert!(
-            rewrite.eligible(),
-            "glm5-spec.v1 must be eligible for this plan"
-        );
-        // A sealed bundle for this plan now OWES a glm5-spec receipt: the surface is
-        // eligible, so `RewriteQualifications::allows(Glm5Spec)` is false until the
-        // real-artifact qualification lane banks one — fail-closed for production bundles.
-        assert_eq!(rewrite.id, "glm5-spec.v1");
-    }
-
-    #[test]
-    fn glm5_without_an_mtp_block_fails_closed_on_the_draft_plan() {
-        let plan = glm5_plan(0);
-        let capability = GLM5_SPEC.capabilities(&plan).speculative;
-        assert!(!capability.supported);
-        assert_eq!(
-            capability.blockers,
-            vec![OperationKind::DraftPlan],
-            "no NextN block = no draft program; the blocker must name it"
-        );
-    }
-
-    #[test]
-    fn the_two_spec_programs_never_both_claim_one_plan() {
-        // glm5_next stays UNSUPPORTED under the qwen-class MTP_SPEC manifest (its hc/KDA/MLA
-        // classes are deliberately absent there) — the worker's mtp_spec_capable therefore
-        // remains false for glm5 plans and the qwen spec route can never take them.
-        let glm5 = glm5_plan(1);
-        let mtp_spec = MTP_SPEC.capabilities(&glm5).speculative;
-        assert!(!mtp_spec.supported);
-        assert!(
-            mtp_spec.blockers.contains(&OperationKind::HyperConnections),
-            "the hc topology must be among MTP_SPEC's named blockers: {:?}",
-            mtp_spec.blockers
-        );
-
-        // And the qwen35 class stays UNSUPPORTED under GLM5_SPEC (Full/GDN/KvState/Serial
-        // trunk classes absent from its table) — qwen routing is unchanged by this lane.
-        let qwen35 = crate::model_packs::by_alias("qwen35")
-            .unwrap()
-            .compile_tiny_plan()
-            .unwrap();
-        assert!(MTP_SPEC.capabilities(&qwen35).speculative.supported);
-        let qwen_glm5 = GLM5_SPEC.capabilities(&qwen35).speculative;
-        assert!(!qwen_glm5.supported);
-        assert!(
-            qwen_glm5.blockers.contains(&OperationKind::SerialResidual),
-            "a serial-residual trunk must block the hc walk program: {:?}",
-            qwen_glm5.blockers
-        );
-    }
-
-    #[test]
-    fn foreign_state_classes_fail_closed_under_glm5_spec() {
-        // dsv4: CompressedMlaAttention class — its spec program is dspark, never this walk.
-        let dsv4 = crate::model_packs::by_alias("deepseek_v4_dspark")
-            .unwrap()
-            .compile_tiny_plan()
-            .unwrap();
-        let dsv4_cap = GLM5_SPEC.capabilities(&dsv4).speculative;
-        assert!(!dsv4_cap.supported);
-        assert!(
-            dsv4_cap
-                .blockers
-                .contains(&OperationKind::CompressedMlaAttention)
-        );
-
-        // Dense qwen3: no draft plan AND a foreign trunk class.
-        let dense = crate::model_packs::by_alias("qwen3")
-            .unwrap()
-            .compile_tiny_plan()
-            .unwrap();
-        assert!(!GLM5_SPEC.capabilities(&dense).speculative.supported);
     }
 }

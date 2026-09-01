@@ -1,1 +1,0 @@
-bin/expand-goldens.py

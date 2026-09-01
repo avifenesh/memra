@@ -2,10 +2,10 @@
 
 Status: io_uring remains a deferred, implementation-ready option. Commit `66394bf` implements the
 required comparison baseline: blocking `pread` plus a bounded worker-thread positioned-read path.
-On cloudbox, the depth-8 worker backend completed the first five frozen calibration requests in
+On Sbox, the depth-8 worker backend completed the first five frozen calibration requests in
 240.2775 s versus 688.6587 s for mmap (2.866x faster), with identical response payloads and 395
 byte-identical routing rows. The exact run record is
-[`evidence/spill-worker-ab-cloudbox-20260710.md`](evidence/spill-worker-ab-cloudbox-20260710.md). Implement
+[`evidence/spill-worker-ab-sbox-20260710.md`](evidence/spill-worker-ab-sbox-20260710.md). Implement
 this ring only if it improves end-to-end wall time over that worker baseline.
 
 ## Backend order and capability evidence
@@ -19,18 +19,18 @@ GPU SLRU -> bounded hot page/host cache -> pinned read buffers -> caller-thread 
 Use these promotion rungs:
 
 1. done: blocking buffered `pread` for byte/lifetime/fallback proof;
-2. done and cloudbox-gated: worker-thread buffered `pread` for real disk/compute overlap;
+2. done and Sbox-gated: worker-thread buffered `pread` for real disk/compute overlap;
 3. worker-thread `O_DIRECT` through the same buffers;
 4. buffered and direct io_uring against the winning worker baseline;
 5. mapped pinned-host zero-copy only for cold one-shot experts.
 
-All expert offsets and lengths in the five staged Hy3 artifacts are 4 KiB aligned. cloudbox `/scratch`
+All expert offsets and lengths in the five staged Hy3 artifacts are 4 KiB aligned. Sbox `/scratch`
 ext4 reports 512-byte memory and offset alignment via `STATX_DIOALIGN`, so direct I/O can be tested
 without repacking those artifacts. Native/general GGUF still needs a per-file capability check plus
 aligned over-read or an aligned sidecar.
 
 cuFile/GDS is outside this ladder. Both machines currently report compatibility mode; the local
-GeForce target is not a supported direct-storage deployment, and cloudbox has not passed a direct-mode
+GeForce target is not a supported direct-storage deployment, and Sbox has not passed a direct-mode
 capability probe. A compatibility-mode cuFile result would only benchmark another CPU bounce path.
 
 ## Decision and scope
@@ -52,7 +52,7 @@ not use `O_DIRECT` initially:
   same buffers before deciding whether io_uring is justified.
 
 The implemented runtime remains opt-in: `BW24_SPILL_IO=mmap|pread|worker`, default `mmap`.
-`BW24_SPILL_PREAD_DEPTH` controls both pinned-buffer and worker count (default 2; the cloudbox result used
+`BW24_SPILL_PREAD_DEPTH` controls both pinned-buffer and worker count (default 2; the Sbox result used
 8), and `BW24_SPILL_STATS=1` prints cumulative snapshots. A future `BW24_SPILL_IO=uring` mode would
 attempt the capability gate below and fall back to mmap if initialization fails.
 
@@ -170,7 +170,7 @@ Current knobs and proposed additions:
 
 ```text
 BW24_SPILL_IO=mmap|pread|worker default mmap (implemented)
-BW24_SPILL_PREAD_DEPTH=2      pinned buffers and worker count; cloudbox A/B used 8
+BW24_SPILL_PREAD_DEPTH=2      pinned buffers and worker count; Sbox A/B used 8
 BW24_SPILL_STATS=1            cumulative read/fallback/wait/ring-full snapshots
 BW24_SPILL_IO=uring           future selector after promotion
 BW24_SPILL_URING_DEPTH=8       number of fixed buffers and maximum disk reads in flight
@@ -198,7 +198,7 @@ registration failure (`ENOMEM`, `EPERM`, `EFAULT`, or `EOPNOTSUPP`), disabled io
 opcode, file registration failure, or CUDA pinned-allocation failure logs one diagnostic and returns
 `UringUnavailable`; the runtime uses mmap thereafter. Never raise `RLIMIT_MEMLOCK` inside bw24.
 
-The current cloudbox research host reports Linux 6.17, io_uring enabled, unlimited memlock, ext4 scratch,
+The current Sbox research host reports Linux 6.17, io_uring enabled, unlimited memlock, ext4 scratch,
 and 237 artifact files. The local target reports Linux 7.0 and io_uring enabled but an 8 MiB
 memlock limit, so the registration attempt itself—not kernel version assumptions—is authoritative.
 
@@ -341,7 +341,7 @@ GPU integration gates:
 Performance promotion requires matched cold-cache runs against mmap windows `1/4/8/16`, recording:
 prefill wall time, major faults, `folio_wait` samples, per-device read MiB/s, read queue depth,
 read-to-H2D latency, H2D latency, ring-full count, mmap fallback count, cache hit rate, and GPU duty.
-The worker baseline already passed a five-request frozen-input cloudbox direction gate; it still requires
+The worker baseline already passed a five-request frozen-input Sbox direction gate; it still requires
 the full calibration run and an RTX 5090 deployment gate. Keep io_uring only if it improves
 end-to-end wall time over worker without reducing steady-state cache behavior.
 
@@ -350,12 +350,12 @@ end-to-end wall time over worker without reducing steady-state cache behavior.
 1. Done: retain files in `GgufFile`/`Hy3RepackSource`; add `DiskExtent` and `expert_source()` with tests.
 2. Done: add blocking and worker `PreadPool` modes, bounded pinned-buffer ownership, exact reads,
    caller-thread H2D, cancellation, telemetry, and mmap fallback.
-3. Done: pass the live depth-8 ignored CUDA test and the frozen first-five cloudbox mmap/worker A/B.
+3. Done: pass the live depth-8 ignored CUDA test and the frozen first-five Sbox mmap/worker A/B.
 4. Next only after the direct-I/O decision: add Linux-only `spill_uring.rs` plus fixed-buffer
    state-machine and capability/readback tests; no cache integration yet.
 5. Integrate disk tickets into `MoeSlotCache::prefetch/dispatch` behind future
    `BW24_SPILL_IO=uring`, then add epoch cancellation and shutdown gates.
-6. Run a matched cloudbox A/B against worker, then repeat any winner on the local RTX 5090 target.
+6. Run a matched Sbox A/B against worker, then repeat any winner on the local RTX 5090 target.
 
 Do not combine this phase with SIMD/kernel changes. It is a storage-to-pinned-to-HBM pipeline
 experiment and must be measured separately before interaction tuning.

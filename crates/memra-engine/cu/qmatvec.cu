@@ -334,113 +334,6 @@ __device__ __forceinline__ float deq_nvfp4(const uint8_t* row, int j) {
     return (float)kvalues_mxfp4_d[code] * ue4m3_to_f32_d(d_bytes[s]);
 }
 
-// Exact 256-thread W4A16 row walk. Thread tid visits tid, tid+256, ... exactly as the scalar
-// kernel, but hoists the invariant block/sub-block address calculation.
-__device__ __forceinline__ float dot_nvfp4_bf16_row_256(
-        const uint8_t* __restrict__ row,
-        const unsigned short* __restrict__ x,
-        int in_f) {
-    const int tid = threadIdx.x;
-    const int within_block = tid & 63;
-    const int sub = within_block >> 4;
-    const int within_sub = within_block & 15;
-    const int q_offset = 4 + sub * 8 + (within_sub & 7);
-    const bool high_nibble = within_sub >= 8;
-    const int n_blocks = in_f >> 6;
-    float acc = 0.0f;
-    for (int block = tid >> 6; block < n_blocks; block += 4) {
-        const uint8_t* b = row + (long)block * 36;
-        const int packed = b[q_offset];
-        const int code = high_nibble ? (packed >> 4) : (packed & 0xF);
-        const int i = (block << 6) + within_block;
-        const float xv = __uint_as_float((unsigned)x[i] << 16);
-        acc += (float)kvalues_mxfp4_d[code] * ue4m3_to_f32_d(b[sub]) * xv;
-    }
-    return acc;
-}
-
-// True gate+up twin of the exact row walk; the two independent accumulators only share each
-// BF16 activation load.
-__device__ __forceinline__ float2 dot_nvfp4_bf16_dual_row_256(
-        const uint8_t* __restrict__ gate_row,
-        const uint8_t* __restrict__ up_row,
-        const unsigned short* __restrict__ x,
-        int in_f) {
-    const int tid = threadIdx.x;
-    const int within_block = tid & 63;
-    const int sub = within_block >> 4;
-    const int within_sub = within_block & 15;
-    const int q_offset = 4 + sub * 8 + (within_sub & 7);
-    const bool high_nibble = within_sub >= 8;
-    const int n_blocks = in_f >> 6;
-    float2 acc = make_float2(0.0f, 0.0f);
-    for (int block = tid >> 6; block < n_blocks; block += 4) {
-        const uint8_t* gate = gate_row + (long)block * 36;
-        const uint8_t* up = up_row + (long)block * 36;
-        const int gate_packed = gate[q_offset];
-        const int up_packed = up[q_offset];
-        const int gate_code =
-            high_nibble ? (gate_packed >> 4) : (gate_packed & 0xF);
-        const int up_code =
-            high_nibble ? (up_packed >> 4) : (up_packed & 0xF);
-        const int i = (block << 6) + within_block;
-        const float xv = __uint_as_float((unsigned)x[i] << 16);
-        acc.x +=
-            (float)kvalues_mxfp4_d[gate_code] * ue4m3_to_f32_d(gate[sub]) * xv;
-        acc.y +=
-            (float)kvalues_mxfp4_d[up_code] * ue4m3_to_f32_d(up[sub]) * xv;
-    }
-    return acc;
-}
-
-// Two adjacent output rows from gate and up. Four independent accumulator chains preserve the
-// scalar element order while sharing each BF16 activation load.
-__device__ __forceinline__ float4 dot_nvfp4_bf16_quad_row_256(
-        const uint8_t* __restrict__ gate_row0,
-        const uint8_t* __restrict__ up_row0,
-        const uint8_t* __restrict__ gate_row1,
-        const uint8_t* __restrict__ up_row1,
-        const unsigned short* __restrict__ x,
-        int in_f) {
-    const int tid = threadIdx.x;
-    const int within_block = tid & 63;
-    const int sub = within_block >> 4;
-    const int within_sub = within_block & 15;
-    const int q_offset = 4 + sub * 8 + (within_sub & 7);
-    const bool high_nibble = within_sub >= 8;
-    const int n_blocks = in_f >> 6;
-    float4 acc = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-    for (int block = tid >> 6; block < n_blocks; block += 4) {
-        const uint8_t* gate0 = gate_row0 + (long)block * 36;
-        const uint8_t* up0 = up_row0 + (long)block * 36;
-        const uint8_t* gate1 = gate_row1 + (long)block * 36;
-        const uint8_t* up1 = up_row1 + (long)block * 36;
-        const int gate0_packed = gate0[q_offset];
-        const int up0_packed = up0[q_offset];
-        const int gate1_packed = gate1[q_offset];
-        const int up1_packed = up1[q_offset];
-        const int gate0_code =
-            high_nibble ? (gate0_packed >> 4) : (gate0_packed & 0xF);
-        const int up0_code =
-            high_nibble ? (up0_packed >> 4) : (up0_packed & 0xF);
-        const int gate1_code =
-            high_nibble ? (gate1_packed >> 4) : (gate1_packed & 0xF);
-        const int up1_code =
-            high_nibble ? (up1_packed >> 4) : (up1_packed & 0xF);
-        const int i = (block << 6) + within_block;
-        const float xv = __uint_as_float((unsigned)x[i] << 16);
-        acc.x +=
-            (float)kvalues_mxfp4_d[gate0_code] * ue4m3_to_f32_d(gate0[sub]) * xv;
-        acc.y +=
-            (float)kvalues_mxfp4_d[up0_code] * ue4m3_to_f32_d(up0[sub]) * xv;
-        acc.z +=
-            (float)kvalues_mxfp4_d[gate1_code] * ue4m3_to_f32_d(gate1[sub]) * xv;
-        acc.w +=
-            (float)kvalues_mxfp4_d[up1_code] * ue4m3_to_f32_d(up1[sub]) * xv;
-    }
-    return acc;
-}
-
 // ---- Q4_0 f32 deq (gemma4 QAT-Q4_0 checkpoints): 18B block per 32 elems = fp16 d + 16 nibble
 // bytes; x[j] = d * (nib - 8); qs[i] holds elems i (lo nibble) and i+16 (hi nibble). ----
 __device__ __forceinline__ float deq_q4_0(const uint8_t* row, int j) {
@@ -715,63 +608,6 @@ __device__ __forceinline__ int get_int_b4(const void* p) {
     return __ldcs((const int*)p);   // streaming: weight-only helper (see get_int_b2)
 }
 
-// Two NVFP4 rows over one q8_1 activation row. Each accumulator retains the established dp4a
-// and floating-add order; only the activation bytes and scales are shared.
-__device__ __forceinline__ float2 dot_nvfp4_q8_dual_row(
-        const unsigned char* __restrict__ row0,
-        const unsigned char* __restrict__ row1,
-        const signed char* __restrict__ arow,
-        const float* __restrict__ adrow,
-        int in_f) {
-    const int tid = threadIdx.x;
-    const int nsb = in_f >> 5;
-    float2 acc = make_float2(0.0f, 0.0f);
-    for (int g = tid; g < nsb; g += blockDim.x) {
-        const int sblk = g >> 1;
-        const int which_half = g & 1;
-        const unsigned char* b0 = row0 + (long)sblk * 36;
-        const unsigned char* b1 = row1 + (long)sblk * 36;
-        const int s0 = which_half * 2;
-        const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
-        const int4 a01 = aq16[0], a23 = aq16[1];
-        const int aq4[8] = {
-            a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w
-        };
-        float partial0 = 0.0f;
-        float partial1 = 0.0f;
-        #pragma unroll
-        for (int sl = 0; sl < 2; ++sl) {
-            const int sub = s0 + sl;
-            const unsigned char* q0 = b0 + 4 + sub * 8;
-            const unsigned char* q1 = b1 + 4 + sub * 8;
-            const int2 a0 =
-                get_int_from_table_16_d(get_int_b4(q0), kvalues_mxfp4_d);
-            const int2 b0v =
-                get_int_from_table_16_d(get_int_b4(q0 + 4), kvalues_mxfp4_d);
-            const int2 a1 =
-                get_int_from_table_16_d(get_int_b4(q1), kvalues_mxfp4_d);
-            const int2 b1v =
-                get_int_from_table_16_d(get_int_b4(q1 + 4), kvalues_mxfp4_d);
-            const int base = sl * 4;
-            int sum0 = 0;
-            sum0 = dp4a(a0.x, aq4[base + 0], sum0);
-            sum0 = dp4a(b0v.x, aq4[base + 1], sum0);
-            sum0 = dp4a(a0.y, aq4[base + 2], sum0);
-            sum0 = dp4a(b0v.y, aq4[base + 3], sum0);
-            int sum1 = 0;
-            sum1 = dp4a(a1.x, aq4[base + 0], sum1);
-            sum1 = dp4a(b1v.x, aq4[base + 1], sum1);
-            sum1 = dp4a(a1.y, aq4[base + 2], sum1);
-            sum1 = dp4a(b1v.y, aq4[base + 3], sum1);
-            partial0 += ue4m3_to_f32_d(b0[sub]) * (float)sum0;
-            partial1 += ue4m3_to_f32_d(b1[sub]) * (float)sum1;
-        }
-        acc.x += adrow[g] * partial0;
-        acc.y += adrow[g] * partial1;
-    }
-    return acc;
-}
-
 // ============================ Stage-B MMVQ (warp-per-row decode) ============================
 // PERF-3 (DECODE-GEMV-PLAN): warp-per-row layout matching llama.cpp mmvq.cu. block=(32,ROWS,1):
 // one WARP (threadIdx.y) owns one output row. Reduction is warp-only __shfl_xor_sync (no smem,
@@ -886,205 +722,6 @@ extern "C" __global__ void qmatvec_q8_0_mmvq_fused3(
     else if (b < nb0 + nb1) { W = W1; y = y1; out_f = out1; b -= nb0; }
     else                    { W = W2; y = y2; out_f = out2; b -= nb0 + nb1; }
     q8_0_mmvq_row1(W, aq, ad, y, in_f, out_f, row_bytes, b * MEMRA_MMVQ_ROWS + (int)threadIdx.y);
-}
-
-// ----- f32 warp-per-row matvec body for the KDA fused-6 launch below. NOT a lift: the unfused
-// arm for a Float-resident weight is cuBLASLt f32 GEMV, whose internal reduction order is not
-// reproducible in a hand kernel. This body is a DETERMINISTIC replacement (lane-strided float4
-// walk + warp_reduce_sum) -> a reduction-order numeric-class change for exactly these rows, the
-// step37 MEMRA_STEP_TP_QKV_FUSED acceptance class ("2.4e-3 -> 4.2e-3"), measured and pinned by
-// crates/memra-engine/tests/kda_fused_proj_gpu.rs. Requires in_f % 128 == 0 (32 lanes x float4),
-// host-guarded. -----
-__device__ __forceinline__ void f32_mmvq_row1(
-        const float* __restrict__ W, const float* __restrict__ x,
-        float* __restrict__ y, int in_f, int out_f, int o) {
-    if (o >= out_f) return;
-    int lane = threadIdx.x;
-    const float* wr = W + (size_t)o * in_f;
-    float acc = 0.0f;
-    for (int i = lane * 4; i < in_f; i += 32 * 4) {
-        float4 w4 = *reinterpret_cast<const float4*>(wr + i);
-        float4 x4 = *reinterpret_cast<const float4*>(x + i);
-        acc += w4.x * x4.x + w4.y * x4.y + w4.z * x4.z + w4.w * x4.w;
-    }
-    acc = warp_reduce_sum(acc);
-    if (lane == 0) y[o] = acc;
-}
-
-// ----- FUSED KDA 6-way projection matvec (lane/glm5-launch-diet, 2026-08-30). The glm5_next KDA
-// stage-1 group (wq|wk|wv Q8_0-resident + f_a|g_a|b_proj f32-resident, ONE shared input) runs as
-// ONE launch instead of 3x(quantize+mmvq) + 3x cuBLASLt GEMV per layer per token. Same
-// block-offset range split as qmatvec_q8_0_mmvq_fused2/3 above, extended to six unequal ranges
-// and t rows (blockIdx.y, the 1..=15 decode/verify widths). Per (t,row) the Q8_0 body is
-// q8_0_mmvq_row1 on the t-offset activation slices = qmatvec_q8_0_mmvq VERBATIM ->
-// BIT-IDENTICAL to the separate MMVQ/batched launches; the f32 rows take f32_mmvq_row1 (numeric
-// class change vs cuBLASLt, see above). Both engines upstream ship this exact program shape
-// (vLLM in_proj_qkvbfg_a "6 to 1 launches"; SGLang fused_qkvbfg_a_proj) — design copied, no
-// kernel code (ENGINE-SURVEY.md C1). Host seam MEMRA_KDA_FUSED_PROJ (default OFF). -----
-extern "C" __global__ void qmatvec_kda6_q8f32_mmvq(
-        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
-        const unsigned char* __restrict__ W2,
-        const float* __restrict__ W3, const float* __restrict__ W4,
-        const float* __restrict__ W5,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        const float* __restrict__ x,
-        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
-        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
-        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
-        int m, long row_bytes) {
-    int t = blockIdx.y;
-    if (t >= m) return;
-    int nblk = in_f / 32;
-    const signed char* arow = aq + (size_t)t * in_f;
-    const float* adrow = ad + (size_t)t * nblk;
-    const float* xrow = x + (size_t)t * in_f;
-    int b = blockIdx.x;
-    int o = 0; // row within the selected tensor, assigned below
-    int nb;
-    nb = (out0 + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
-    if (b < nb) {
-        o = b * MEMRA_MMVQ_ROWS + (int)threadIdx.y;
-        q8_0_mmvq_row1(W0, arow, adrow, y0 + (size_t)t * out0, in_f, out0, row_bytes, o);
-        return;
-    }
-    b -= nb;
-    nb = (out1 + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
-    if (b < nb) {
-        o = b * MEMRA_MMVQ_ROWS + (int)threadIdx.y;
-        q8_0_mmvq_row1(W1, arow, adrow, y1 + (size_t)t * out1, in_f, out1, row_bytes, o);
-        return;
-    }
-    b -= nb;
-    nb = (out2 + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
-    if (b < nb) {
-        o = b * MEMRA_MMVQ_ROWS + (int)threadIdx.y;
-        q8_0_mmvq_row1(W2, arow, adrow, y2 + (size_t)t * out2, in_f, out2, row_bytes, o);
-        return;
-    }
-    b -= nb;
-    nb = (out3 + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
-    if (b < nb) {
-        o = b * MEMRA_MMVQ_ROWS + (int)threadIdx.y;
-        f32_mmvq_row1(W3, xrow, y3 + (size_t)t * out3, in_f, out3, o);
-        return;
-    }
-    b -= nb;
-    nb = (out4 + MEMRA_MMVQ_ROWS - 1) / MEMRA_MMVQ_ROWS;
-    if (b < nb) {
-        o = b * MEMRA_MMVQ_ROWS + (int)threadIdx.y;
-        f32_mmvq_row1(W4, xrow, y4 + (size_t)t * out4, in_f, out4, o);
-        return;
-    }
-    b -= nb;
-    o = b * MEMRA_MMVQ_ROWS + (int)threadIdx.y;
-    f32_mmvq_row1(W5, xrow, y5 + (size_t)t * out5, in_f, out5, o);
-}
-
-// ----- bf16 4-rows-per-block body for the BF16 fused-6 launch below: the inner loop of
-// matvec_bf16_f32acc_x4_rows VERBATIM (same 8-wide uint4 weight loads, same bits<<16
-// expansion, same per-thread acc chain, same red[] block tree at the SAME blockDim —
-// the launcher pins mmv_block() exactly like matvec_bf16_rows_into). BIT-IDENTICAL per
-// row to the unfused kernel by construction; asserted bytewise by
-// crates/memra-engine/tests/kda_fused_proj_bf16_gpu.rs. -----
-__device__ __forceinline__ void kda6_bf16_rows4(
-        const unsigned short* __restrict__ w, const float* __restrict__ x,
-        float* __restrict__ y, int in_f, int out_f, int blk) {
-    __shared__ float red[256];
-    #pragma unroll
-    for (int p = 0; p < 4; p++) {
-        int row = blk * 4 + p;
-        if (row >= out_f) return;
-        const unsigned short* wr = w + (size_t)row * in_f;
-        float acc = 0.0f;
-        const int stride = blockDim.x * 8;
-#pragma unroll 4
-        for (int i = threadIdx.x * 8; i < in_f; i += stride) {
-            uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
-            const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
-            float4 x0 = *reinterpret_cast<const float4*>(x + i);
-            float4 x1 = *reinterpret_cast<const float4*>(x + i + 4);
-            acc += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
-            acc += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
-            acc += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
-            acc += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
-            acc += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
-            acc += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
-            acc += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
-            acc += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
-        }
-        red[threadIdx.x] = acc;
-        __syncthreads();
-        for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-            if (threadIdx.x < s) red[threadIdx.x] += red[threadIdx.x + s];
-            __syncthreads();
-        }
-        if (threadIdx.x == 0) y[row] = red[0];
-        __syncthreads();
-    }
-}
-
-// ----- FUSED KDA 6-way projection matvec, BF16 operand arm (lane/glm5-decode-diet lever 3,
-// 2026-08-31). The SERVING-RECIPE twin of qmatvec_kda6_q8f32_mmvq above: under
-// MEMRA_BF16_MMV=1 the loader admits wq/wk/wv to raw bf16 residency (`admit=bf16_mmv`), so
-// the q8 arm refuses there by design and the unfused stage-1 group runs as 3x
-// matvec_bf16_f32acc_x4_rows + 3x cuBLASLt f32 GEMV pairs. This kernel runs the six in ONE
-// launch: the bf16 ranges take kda6_bf16_rows4 (per-row program VERBATIM -> BIT-IDENTICAL),
-// the f32 ranges take f32_mmvq_row1 (the SAME deterministic warp tree the q8 arm's f32 rows
-// use — the gated cuBLASLt-replacement numeric class, measured and pinned). Block =
-// mmv_block() like the unfused bf16 launcher (the red[] tree shape depends on blockDim, so
-// it is part of the bit-identity claim); each block owns 4 rows of one range; on the f32
-// ranges warps 1+ compute discarded partials (rows are warp-0-owned) — waste bounded by the
-// three small f32 ranges, correctness unaffected. Host seam MEMRA_KDA_FUSED_PROJ (default
-// OFF, same door as the q8 arm). -----
-extern "C" __global__ void qmatvec_kda6_bf16f32(
-        const unsigned short* __restrict__ W0, const unsigned short* __restrict__ W1,
-        const unsigned short* __restrict__ W2,
-        const float* __restrict__ W3, const float* __restrict__ W4,
-        const float* __restrict__ W5,
-        const float* __restrict__ x,
-        float* __restrict__ y0, float* __restrict__ y1, float* __restrict__ y2,
-        float* __restrict__ y3, float* __restrict__ y4, float* __restrict__ y5,
-        int in_f, int out0, int out1, int out2, int out3, int out4, int out5,
-        int m) {
-    int t = blockIdx.y;
-    if (t >= m) return;
-    const float* xrow = x + (size_t)t * in_f;
-    int b = blockIdx.x;
-    int nb;
-    nb = (out0 + 3) / 4;
-    if (b < nb) {
-        kda6_bf16_rows4(W0, xrow, y0 + (size_t)t * out0, in_f, out0, b);
-        return;
-    }
-    b -= nb;
-    nb = (out1 + 3) / 4;
-    if (b < nb) {
-        kda6_bf16_rows4(W1, xrow, y1 + (size_t)t * out1, in_f, out1, b);
-        return;
-    }
-    b -= nb;
-    nb = (out2 + 3) / 4;
-    if (b < nb) {
-        kda6_bf16_rows4(W2, xrow, y2 + (size_t)t * out2, in_f, out2, b);
-        return;
-    }
-    b -= nb;
-    nb = (out3 + 3) / 4;
-    if (b < nb) {
-        for (int p = 0; p < 4; p++)
-            f32_mmvq_row1(W3, xrow, y3 + (size_t)t * out3, in_f, out3, b * 4 + p);
-        return;
-    }
-    b -= nb;
-    nb = (out4 + 3) / 4;
-    if (b < nb) {
-        for (int p = 0; p < 4; p++)
-            f32_mmvq_row1(W4, xrow, y4 + (size_t)t * out4, in_f, out4, b * 4 + p);
-        return;
-    }
-    b -= nb;
-    for (int p = 0; p < 4; p++)
-        f32_mmvq_row1(W5, xrow, y5 + (size_t)t * out5, in_f, out5, b * 4 + p);
 }
 
 // ----- Q4_K warp-per-row MMVQ. Body lifted from qmatvec_q4_K_dp4a (loop @ ~line 427). -----
@@ -6173,53 +5810,6 @@ extern "C" __global__ void moe_gate_up_silu8_q8(
         act[(size_t)j * n_ff + o] = (g / (1.0f + expf(-g))) * accu;
     }
 }
-
-// glm5_next PRE-CLAMPED, MACRO-FOLDING twin of moe_gate_up_silu8_q8 (lane/glm53-epilogue,
-// 2026-08-28). Dots, grid/block, warp reduction and slot order are the sibling's VERBATIM; two
-// things change, and both are semantic requirements of this arch rather than optimizations:
-//
-//   1. EPILOGUE. glm5_next is ActivationPlan::SwiGluPreClamped, not plain silu(gate)*up. The
-//      expression below is swiglu_preclamped_mul_scaled_f32's (hybrid.cu:1061) character for
-//      character on the exact dot values:
-//          u = clamp(up*us, +-limit);  x = min(gate*gs, limit);  act = silu(x) * u
-//      The gate clamp lands BEFORE silu and is ONE-sided. step35's POST form
-//      (min(silu(gate*gs), limit) * u) compiles here just as happily and returns
-//      plausible-but-wrong logits; the two diverge by up to limit*(1-sigmoid(limit)) per element
-//      wherever gate*gs > limit. Gated by glm5_moe_epilogue_gpu.rs's `post-for-pre-clamp` arm.
-//   2. PER-SLOT MACRO SCALES. The compressed-tensors NVFP4 expert class carries a per-expert
-//      weight_scale_2 that is NOT in the block bytes; the sequential loop folds it through
-//      ffn_act_lim's gs/us. gs/us here are the SELECTED experts' scales in router slot order
-//      (host-gathered, so no macros[] indirection), 1.0 for a macro-free bank. Dropping them is
-//      the ~3e4x fluent-garbage class measured 2026-07-16.
-//
-// The DOWN projection needs no twin: its macro folds into the routing weight the caller already
-// passes to moe_down8_fma_q8 (w[j] * macro_down[sel[j]]), which is exactly what the sequential
-// loop's axpy_into does.
-extern "C" __global__ void moe_gate_up_preclamp8_q8(
-        wptr8_t gp, wptr8_t up, const signed char* __restrict__ aq, const float* __restrict__ ad,
-        f32x8_t gs, f32x8_t us, float limit,
-        float* __restrict__ act, int in_f, int n_ff, int qt_g, int qt_u, long rb_g, long rb_u) {
-    int o = blockIdx.x;              // expert-FFN row
-    int j = blockIdx.y;              // routed slot
-    int lane = threadIdx.x;          // 32 lanes, one warp per (o,j)
-    int nsb = in_f >> 5;
-    const unsigned char* grow = gp.p[j] + (long)o * rb_g;
-    const unsigned char* urow = up.p[j] + (long)o * rb_u;
-    float accg = 0.0f, accu = 0.0f;
-    for (int g = lane; g < nsb; g += 32) {
-        const signed char* aqb = aq + (size_t)g * 32;
-        float d8 = ad[g];
-        accg += expert_dot_g(qt_g, grow, g, aqb, d8);
-        accu += expert_dot_g(qt_u, urow, g, aqb, d8);
-    }
-    accg = warp_reduce_sum(accg);
-    accu = warp_reduce_sum(accu);
-    if (lane == 0) {
-        float u = fmaxf(fminf(accu * us.v[j], limit), -limit);
-        float x = fminf(accg * gs.v[j], limit);
-        act[(size_t)j * n_ff + o] = (x / (1.0f + expf(-x))) * u;
-    }
-}
 // act is quantized per-slot by the caller (aq2/ad2 hold n_used rows of q8_1).
 extern "C" __global__ void moe_down8_fma_q8(
         wptr8_t dp, f32x8_t w, const signed char* __restrict__ aq2, const float* __restrict__ ad2,
@@ -6239,314 +5829,6 @@ extern "C" __global__ void moe_down8_fma_q8(
         if (lane == 0) chain = __fmaf_rn(w.v[j], acc, chain);
     }
     if (lane == 0) dst[o] = chain;
-}
-
-// ---- VERIFY-ROWS twins of the fused glm5_next epilogue pair (lane/glm5-vrest, 2026-08-31) ----
-// ONE launch pair covers ALL t x n_used routed pairs of a spec-verify batch (the pair union
-// across the K+1 rows), replacing the per-(token,expert) sequential loop's 49 launches per
-// token-layer. Pair p = tok*n_used + j is DENSE slot-major, so per-token slot order is
-// structural. Per pair the body is moe_gate_up_preclamp8_q8 / moe_down8_fma_q8 VERBATIM —
-// same expert_dot_g g-strided order per (pair,row) (== qmatvec_expert_q8's chain), same warp
-// tree, same swiglu_preclamped_mul_scaled_f32 expression on the exact dot values, same
-// slot-ordered __fmaf_rn down chain (== the sequential axpy chain) — only the
-// pair -> (token activation row, expert pointer, macro pair) indirection is new, and
-// indirection moves no bits. Bit-gated per row vs the sequential chain
-// (glm5_verify_batch_gpu, swapped-pair + dropped-macro reds).
-//
-// ptrs: [3*n_pairs] u64 expert ROW-0 addresses, plane-major (gate | up | down), host-built
-// from the resident slab base + ex*stride — the sequential slab arm's exact pointer
-// arithmetic. scl: [3*n_pairs] f32 plane-major (gs | us | w*macro_down): gate/up macros ride
-// the epilogue exactly where ffn_act_lim's gs/us ride the unfused loop; the down macro folds
-// into the routing weight exactly where axpy_into folds it.
-extern "C" __global__ void moe_gate_up_preclamp8_q8_rows(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
-        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
-        int qt_g, int qt_u, long rb_g, long rb_u) {
-    int o = blockIdx.x;              // expert-FFN row
-    int pr = blockIdx.y;             // (token, slot) pair
-    if (o >= n_ff || pr >= n_pairs) return;
-    int lane = threadIdx.x;          // 32 lanes, one warp per (o,pr)
-    int nsb = in_f >> 5;
-    int tok = pr / n_used;
-    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
-    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
-    const signed char* arow = aq + (size_t)tok * in_f;
-    const float* adrow = ad + (size_t)tok * nsb;
-    float accg = 0.0f, accu = 0.0f;
-    for (int g = lane; g < nsb; g += 32) {
-        const signed char* aqb = arow + (size_t)g * 32;
-        float d8 = adrow[g];
-        accg += expert_dot_g(qt_g, grow, g, aqb, d8);
-        accu += expert_dot_g(qt_u, urow, g, aqb, d8);
-    }
-    accg = warp_reduce_sum(accg);
-    accu = warp_reduce_sum(accu);
-    if (lane == 0) {
-        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
-        float x = fminf(accg * scl[pr], limit);
-        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
-    }
-}
-// Down + slot-ordered weighted accumulation for EVERY verify row in one launch. Per (token,
-// out-row) the body is moe_down8_fma_q8 verbatim: the j=0..n_used-1 __fmaf_rn chain over that
-// token's pairs, full overwrite of dst[tok]. aq2/ad2 hold the [n_pairs, in_f] pair-major q8_1
-// activations; ptrs/scl are the launch-pair tables above (down plane = [2*n_pairs..)).
-extern "C" __global__ void moe_down8_fma_q8_rows(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq2, const float* __restrict__ ad2,
-        float* __restrict__ dst, int in_f, int out_f, int n_used, int n_pairs, int qt, long rb) {
-    int o = blockIdx.x;
-    int tok = blockIdx.y;
-    if (o >= out_f) return;
-    int lane = threadIdx.x;
-    int nsb = in_f >> 5;
-    float chain = 0.0f;
-    for (int j = 0; j < n_used; j++) {
-        int pr = tok * n_used + j;
-        const unsigned char* wrow = (const unsigned char*)ptrs[2 * n_pairs + pr] + (long)o * rb;
-        const signed char* arow = aq2 + (size_t)pr * in_f;
-        const float* adrow = ad2 + (size_t)pr * nsb;
-        float acc = 0.0f;
-        for (int g = lane; g < nsb; g += 32)
-            acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
-        acc = warp_reduce_sum(acc);
-        if (lane == 0) chain = __fmaf_rn(scl[2 * n_pairs + pr], acc, chain);
-    }
-    if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
-}
-
-// ---- WARP-PACKED twins of the verify-rows MoE pair (lane/glm5-matvec, MEMRA_MOE_VROWS_PACK).
-// The _rows pair launches block=(32,1,1) — ONE warp per block, so the resident-warp count is
-// capped by the blocks/SM limit (<=32 of 48 warp slots, <=67% occupancy) and every launch
-// schedules ~65k one-warp blocks (diet-battery c8-ship census: the pair is 26% of decode-round
-// GPU at the 57-64%-of-bound class the decode-gap attribution measured). These twins pack
-// MEMRA_MMVQ_ROWS = 4 warps per block on threadIdx.y — the qmatvec mmvq family's standing
-// shape — with the per-warp body VERBATIM (same expert_dot_g g-strided chain, same
-// warp_reduce_sum, same epilogue / slot-ordered __fmaf_rn chain; neither kernel has a
-// __syncthreads, so the early return on a ragged row tail is safe). Packing moves no bits:
-// output (o, pair) is computed by exactly one warp running exactly the _rows program.
-// Bonus locality: the 4 warps of a block share one pair's activation row and read 4 ADJACENT
-// expert rows (contiguous bank bytes). Bit-gated vs the unpacked pair (glm5_matvec_doors_gpu).
-extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_w4(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
-        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
-        int qt_g, int qt_u, long rb_g, long rb_u) {
-    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;  // expert-FFN row (packed)
-    int pr = blockIdx.y;                                 // (token, slot) pair
-    if (o >= n_ff || pr >= n_pairs) return;
-    int lane = threadIdx.x;                              // 32 lanes, one warp per (o,pr)
-    int nsb = in_f >> 5;
-    int tok = pr / n_used;
-    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
-    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
-    const signed char* arow = aq + (size_t)tok * in_f;
-    const float* adrow = ad + (size_t)tok * nsb;
-    float accg = 0.0f, accu = 0.0f;
-    for (int g = lane; g < nsb; g += 32) {
-        const signed char* aqb = arow + (size_t)g * 32;
-        float d8 = adrow[g];
-        accg += expert_dot_g(qt_g, grow, g, aqb, d8);
-        accu += expert_dot_g(qt_u, urow, g, aqb, d8);
-    }
-    accg = warp_reduce_sum(accg);
-    accu = warp_reduce_sum(accu);
-    if (lane == 0) {
-        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
-        float x = fminf(accg * scl[pr], limit);
-        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
-    }
-}
-extern "C" __global__ void moe_down8_fma_q8_rows_w4(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq2, const float* __restrict__ ad2,
-        float* __restrict__ dst, int in_f, int out_f, int n_used, int n_pairs, int qt, long rb) {
-    int o = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;  // output row (packed)
-    int tok = blockIdx.y;
-    if (o >= out_f) return;
-    int lane = threadIdx.x;
-    int nsb = in_f >> 5;
-    float chain = 0.0f;
-    for (int j = 0; j < n_used; j++) {
-        int pr = tok * n_used + j;
-        const unsigned char* wrow = (const unsigned char*)ptrs[2 * n_pairs + pr] + (long)o * rb;
-        const signed char* arow = aq2 + (size_t)pr * in_f;
-        const float* adrow = ad2 + (size_t)pr * nsb;
-        float acc = 0.0f;
-        for (int g = lane; g < nsb; g += 32)
-            acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
-        acc = warp_reduce_sum(acc);
-        if (lane == 0) chain = __fmaf_rn(scl[2 * n_pairs + pr], acc, chain);
-    }
-    if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
-}
-
-// ---- DEDUP-SCHEDULE twins of the verify-rows MoE pair (lane/glm5-dedup, 2026-08-31) ----
-//
-// WHY: the struct-battery instrument measured **21.96% cumulative repeat fraction** across the
-// pair's expert visits (2.55M visits / 99,751 layer-calls, mode-stable 22.27% greedy / 21.53%
-// vendor-sampled — struct-battery WINDOW.md cell 2), i.e. 6.9x the 3.21% independent-routing
-// bound: about a fifth of the (row, expert) visits re-read a slab another verify row in the SAME
-// layer-call already read. The pair runs at 90.2% / 89.9% of this card class's theoretical DRAM
-// peak (moe-loc LANE.md §1.3) so there is no efficiency left to win — the ONLY remaining lever is
-// reading less, and a repeat read is only avoided if it is SCHEDULED inside the reuse window.
-//
-// The mechanism is a pure VISIT-ORDER change: which block computes which (row, pair) output.
-//
-//   * `_ord` (gate/up): the grid is TRANSPOSED so the pair index is the FASTEST dimension
-//     (grid = (n_pairs, n_ff) instead of (n_ff, n_pairs)), and the pair walked by block
-//     `blockIdx.x` is read from an EXPERT-MAJOR order plane (`ptrs[3*n_pairs + q]`, built by
-//     `moe_vrows_order_from_sel` on device / the host arm's stable sort). Consequence: the whole
-//     pair union for ONE expert-FFN row `o` is co-resident, and two pairs sharing an expert are
-//     ADJACENT blocks reading the IDENTICAL gate row and up row. The reuse distance collapses
-//     from "one 9.44 MB slab pass must survive in L2" (the shipped o-fastest schedule: 2048
-//     blocks) to ~1 block over ~2 x 2.3 KB — an L1-class hit instead of an L2 gamble. The
-//     charter's slab-residency argument (4.72 MB slab vs ~128 MB L2) is the FALLBACK argument
-//     here, not the operative one.
-//   * `_tmaj` (down): same idea where the accumulation forbids a permutation. The down kernel's
-//     block owns one (token, out-row) and MUST walk j = 0..n_used-1 in SLOT order (that
-//     `__fmaf_rn` chain is the vrest gate-4 bit bar), so the pair order inside a block is
-//     untouchable. Only the GRID is transposed — token fastest, grid = (t, out_f) — so the t
-//     blocks at the same out-row `o` are adjacent and a repeated expert's down row (1152 B at
-//     the serving shape) is read once for all the tokens that share it.
-//
-// BIT IDENTITY, and why it is structural rather than measured: in both kernels every output is a
-// pure function of its (o, pr) / (o, tok) coordinate — `ptrs[pr]`, `scl[pr]`, `tok = pr / n_used`,
-// `act[pr*n_ff + o]`, `dst[tok*out_f + o]` — and the bodies below are their twins' character for
-// character (same `expert_dot_g` g-strided chain, same `warp_reduce_sum`, same
-// `swiglu_preclamped_mul_scaled_f32` expression, same slot-ordered `__fmaf_rn` chain). Neither
-// kernel has a `__syncthreads`, shared memory, or any cross-block communication, so RE-INDEXING
-// WHICH BLOCK COMPUTES WHICH OUTPUT MOVES NO BITS. The order plane is a permutation, so every
-// pair is still computed exactly once. Gated in `glm5_dedup_sched_gpu`: bit identity vs the
-// shipped pair at t=2..8 x {live macros, none} x both table provenances, a valid-shuffle arm that
-// must stay bit-INERT, and a non-permutation order plane that must BITE.
-//
-// The win, by contrast, is a SCHEDULING property (CUDA dispatches blocks in increasing linear id,
-// x fastest — the ordering every locality door in this family already rides), so it is unpriceable
-// on an exactness-only rig: both doors ship default OFF and the box prices the wall.
-extern "C" __global__ void moe_gate_up_preclamp8_q8_rows_ord(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq, const float* __restrict__ ad, float limit,
-        float* __restrict__ act, int in_f, int n_ff, int n_used, int n_pairs,
-        int qt_g, int qt_u, long rb_g, long rb_u) {
-    // Guard BEFORE the order-plane load: the plane is [3*n_pairs .. 4*n_pairs).
-    if (blockIdx.x >= (unsigned)n_pairs || blockIdx.y >= (unsigned)n_ff) return;
-    int pr = (int)ptrs[3 * n_pairs + blockIdx.x];   // expert-major visit order
-    int o = blockIdx.y;                             // expert-FFN row (now the SLOW dimension)
-    int lane = threadIdx.x;          // 32 lanes, one warp per (o,pr)
-    int nsb = in_f >> 5;
-    int tok = pr / n_used;
-    const unsigned char* grow = (const unsigned char*)ptrs[pr] + (long)o * rb_g;
-    const unsigned char* urow = (const unsigned char*)ptrs[n_pairs + pr] + (long)o * rb_u;
-    const signed char* arow = aq + (size_t)tok * in_f;
-    const float* adrow = ad + (size_t)tok * nsb;
-    float accg = 0.0f, accu = 0.0f;
-    for (int g = lane; g < nsb; g += 32) {
-        const signed char* aqb = arow + (size_t)g * 32;
-        float d8 = adrow[g];
-        accg += expert_dot_g(qt_g, grow, g, aqb, d8);
-        accu += expert_dot_g(qt_u, urow, g, aqb, d8);
-    }
-    accg = warp_reduce_sum(accg);
-    accu = warp_reduce_sum(accu);
-    if (lane == 0) {
-        float u = fmaxf(fminf(accu * scl[n_pairs + pr], limit), -limit);
-        float x = fminf(accg * scl[pr], limit);
-        act[(size_t)pr * n_ff + o] = (x / (1.0f + expf(-x))) * u;
-    }
-}
-// TOKEN-MAJOR grid twin of moe_down8_fma_q8_rows: grid = (t, out_f), token fastest. The j loop —
-// the slot-ordered __fmaf_rn chain that IS the accumulation order — is verbatim and keeps its
-// ORIGINAL slot order; only which block runs when changes.
-extern "C" __global__ void moe_down8_fma_q8_rows_tmaj(
-        const unsigned long long* __restrict__ ptrs, const float* __restrict__ scl,
-        const signed char* __restrict__ aq2, const float* __restrict__ ad2,
-        float* __restrict__ dst, int in_f, int out_f, int n_used, int n_pairs, int qt, long rb) {
-    int tok = blockIdx.x;            // verify row (now the FAST dimension)
-    int o = blockIdx.y;              // output row
-    if (o >= out_f) return;          // grid.x == t exactly, as the shipped twin's grid.y was
-    int lane = threadIdx.x;
-    int nsb = in_f >> 5;
-    float chain = 0.0f;
-    for (int j = 0; j < n_used; j++) {
-        int pr = tok * n_used + j;
-        const unsigned char* wrow = (const unsigned char*)ptrs[2 * n_pairs + pr] + (long)o * rb;
-        const signed char* arow = aq2 + (size_t)pr * in_f;
-        const float* adrow = ad2 + (size_t)pr * nsb;
-        float acc = 0.0f;
-        for (int g = lane; g < nsb; g += 32)
-            acc += expert_dot_g(qt, wrow, g, arow + (size_t)g * 32, adrow[g]);
-        acc = warp_reduce_sum(acc);
-        if (lane == 0) chain = __fmaf_rn(scl[2 * n_pairs + pr], acc, chain);
-    }
-    if (lane == 0) dst[(size_t)tok * out_f + o] = chain;
-}
-
-// EXPERT-MAJOR ORDER PLANE for the `_ord` gate/up twin (lane/glm5-dedup door E). Writes the
-// permutation into the pointer table's fourth plane, `ptrs[3*n_pairs .. 4*n_pairs)`, so the door
-// costs the device-tables arm ONE extra launch and the host-tables arm NOTHING (the host appends
-// the plane to the vector it already uploads in one `htod_u64_into`).
-//
-// STABLE COUNTING RANK, chosen so the device build is bit-identical to the host's stable sort by
-// (expert id, pair index) with no scratch, no scan and no order-of-execution dependence: thread p
-// counts how many pairs sort strictly before it and stores itself at that rank. Ties break on the
-// pair index, so the permutation is a total order and per-expert runs keep ascending slot order.
-// O(n_pairs^2) with n_pairs = t*n_used <= 64 on every serving shape (4096 comparisons total),
-// one 128-thread block: cheaper than any scan, and there is no correctness cliff to grow into.
-extern "C" __global__ void moe_vrows_order_from_sel(
-        const int* __restrict__ sel, unsigned long long* __restrict__ ptrs, int n_pairs) {
-    int p = blockIdx.x * blockDim.x + threadIdx.x;
-    if (p >= n_pairs) return;
-    int ep = sel[p];
-    int rank = 0;
-    for (int q = 0; q < n_pairs; q++) {
-        int eq = sel[q];
-        if (eq < ep || (eq == ep && q < p)) rank++;
-    }
-    ptrs[3 * n_pairs + rank] = (unsigned long long)p;
-}
-
-// DEVICE-SIDE POINTER/SCALE TABLE BUILD for the verify-rows pair (lane/glm5-moe-loc door D,
-// MEMRA_MOE_VROWS_DEV_TABLES). The pair's `ptrs`/`scl` tables were built on the HOST, which
-// forced the router's selection back across the bus: `moe_router_sigmoid_topk_host` does 2
-// DtoH into a pinned stage plus a FULL `cuStreamSynchronize` per MoE layer-call purely so the
-// host can evaluate `slab_base + ex*expert_stride` and three `macro_scale(ex)` lookups. That
-// is 42 device-wide drains + 84 DtoH + 84 pageable HtoD per ship round (the decode-gap
-// attribution's "43 cuStreamSynchronize/token ... the per-layer router-admission sync
-// structure", and 44.6% of the unattributed 71.6 HtoD calls/token). This kernel evaluates the
-// SAME arithmetic where the selection already lives.
-//
-// BIT IDENTITY, term by term vs the host loop (hybrid_forward.rs `moe_vrows_pairs_q8`):
-//   * ptrs: `base + ex*stride` is exact integer arithmetic on the same base and the same
-//     stride -> identical addresses. `sel` here is the router's own device i32 output, which
-//     is what the pinned DtoH copied verbatim, so `ex` is the same expert id.
-//   * scl gate/up: a table lookup of the same f32 macro plane at the same index -> identical.
-//   * scl down: `selw[p] * md` is ONE IEEE-754 single multiply of the same two operands in the
-//     same order as the host's `w * m.down_exps.macro_scale(ex)` -> identical bits (both
-//     round-to-nearest-even; no FMA contraction is possible in a bare product).
-// Absent macro planes (`have_macros == 0`) take 1.0f exactly as `macro_scale` returns 1.0 for a
-// non-macro bank. One thread per pair; n_pairs = t*n_used <= 128 on every serving shape.
-extern "C" __global__ void moe_vrows_tables_from_sel(
-        const int* __restrict__ sel, const float* __restrict__ selw,
-        const float* __restrict__ mac_g, const float* __restrict__ mac_u,
-        const float* __restrict__ mac_d,
-        unsigned long long* __restrict__ ptrs, float* __restrict__ scl,
-        unsigned long long pg, unsigned long long pu, unsigned long long pd,
-        long sg, long su, long sd, int n_pairs, int have_macros) {
-    int p = blockIdx.x * blockDim.x + threadIdx.x;
-    if (p >= n_pairs) return;
-    long ex = (long)sel[p];
-    ptrs[p] = pg + (unsigned long long)(ex * sg);
-    ptrs[n_pairs + p] = pu + (unsigned long long)(ex * su);
-    ptrs[2 * n_pairs + p] = pd + (unsigned long long)(ex * sd);
-    float mg = have_macros ? mac_g[ex] : 1.0f;
-    float mu = have_macros ? mac_u[ex] : 1.0f;
-    float md = have_macros ? mac_d[ex] : 1.0f;
-    scl[p] = mg;
-    scl[n_pairs + p] = mu;
-    // down-proj macro folds into the accumulate weight — the axpy_into fold, verbatim.
-    scl[2 * n_pairs + p] = selw[p] * md;
 }
 
 // One MoE layer's down-proj + weighted accumulation for all 8 routed experts in ONE launch.
@@ -10014,784 +9296,16 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel(
     }
 }
 
-// W4A16 selected-expert gate+up pair. The activation is checkpoint BF16, expanded exactly as
-// bits<<16 inside the qmatvec_f32 reduction. Each selected id is LOCAL to this rank's contiguous
-// expert bank. Per projection row this is bit-identical to qmatvec_f32 over a BF16-rounded input;
-// combining the two projections only removes one launch.
-extern "C" __global__ void qmatvec_nvfp4_bf16_sel_dual_rows(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel, const int* __restrict__ token_rows,
-        const unsigned short* __restrict__ x,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_sel, long row_bytes, long expert_stride) {
-    int o2 = blockIdx.x, t = blockIdx.y;
-    if (o2 >= 2 * out_f || t >= n_sel) return;
-    const unsigned char* bank = o2 < out_f ? Wg : Wu;
-    float* y = o2 < out_f ? yg : yu;
-    int o = o2 < out_f ? o2 : o2 - out_f;
-    const unsigned char* wrow =
-        bank + (long)sel[t] * expert_stride + (long)o * row_bytes;
-    const unsigned short* xrow = x + (size_t)token_rows[t] * (size_t)in_f;
-    float acc = 0.0f;
-    for (int i = threadIdx.x; i < in_f; i += blockDim.x) {
-        float xv = __uint_as_float((unsigned)xrow[i] << 16);
-        acc += deq_nvfp4(wrow, i) * xv;
-    }
-    __shared__ float s[32];
-    for (int off = 16; off > 0; off >>= 1)
-        acc += __shfl_down_sync(0xffffffff, acc, off);
-    if ((threadIdx.x & 31) == 0) s[threadIdx.x >> 5] = acc;
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float v = threadIdx.x < (blockDim.x + 31) / 32 ? s[threadIdx.x] : 0.0f;
-        for (int off = 16; off > 0; off >>= 1)
-            v += __shfl_down_sync(0xffffffff, v, off);
-        if (threadIdx.x == 0) y[(size_t)t * out_f + o] = v;
-    }
-}
-
-// Multi-token selected-expert gate+up pair. One CTA computes two adjacent rows from both banks;
-// every output accumulator keeps the scalar kernel's element order and reduction tree.
-extern "C" __global__ void qmatvec_nvfp4_bf16_sel_quad_rows(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel, const int* __restrict__ token_rows,
-        const unsigned short* __restrict__ x,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_sel, long row_bytes, long expert_stride) {
-    const int o0 = 2 * blockIdx.x;
-    const int t = blockIdx.y;
-    if (o0 >= out_f || t >= n_sel) return;
-    const int o1 = o0 + 1;
-    const bool has_o1 = o1 < out_f;
-    const unsigned char* gate_row0 =
-        Wg + (long)sel[t] * expert_stride + (long)o0 * row_bytes;
-    const unsigned char* up_row0 =
-        Wu + (long)sel[t] * expert_stride + (long)o0 * row_bytes;
-    const unsigned char* gate_row1 =
-        has_o1 ? gate_row0 + row_bytes : gate_row0;
-    const unsigned char* up_row1 =
-        has_o1 ? up_row0 + row_bytes : up_row0;
-    const unsigned short* xrow = x + (size_t)token_rows[t] * (size_t)in_f;
-    const float4 initial =
-        dot_nvfp4_bf16_quad_row_256(
-            gate_row0, up_row0, gate_row1, up_row1, xrow, in_f);
-    float4 acc = has_o1
-        ? initial
-        : make_float4(initial.x, initial.y, 0.0f, 0.0f);
-    __shared__ float gate0_s[32], up0_s[32], gate1_s[32], up1_s[32];
-    for (int off = 16; off > 0; off >>= 1)
-        acc.x += __shfl_down_sync(0xffffffff, acc.x, off);
-    for (int off = 16; off > 0; off >>= 1)
-        acc.y += __shfl_down_sync(0xffffffff, acc.y, off);
-    for (int off = 16; off > 0; off >>= 1)
-        acc.z += __shfl_down_sync(0xffffffff, acc.z, off);
-    for (int off = 16; off > 0; off >>= 1)
-        acc.w += __shfl_down_sync(0xffffffff, acc.w, off);
-    if ((threadIdx.x & 31) == 0) {
-        gate0_s[threadIdx.x >> 5] = acc.x;
-        up0_s[threadIdx.x >> 5] = acc.y;
-        gate1_s[threadIdx.x >> 5] = acc.z;
-        up1_s[threadIdx.x >> 5] = acc.w;
-    }
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float gate0_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? gate0_s[threadIdx.x] : 0.0f;
-        float up0_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? up0_s[threadIdx.x] : 0.0f;
-        float gate1_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? gate1_s[threadIdx.x] : 0.0f;
-        float up1_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? up1_s[threadIdx.x] : 0.0f;
-        for (int off = 16; off > 0; off >>= 1)
-            gate0_v += __shfl_down_sync(0xffffffff, gate0_v, off);
-        for (int off = 16; off > 0; off >>= 1)
-            up0_v += __shfl_down_sync(0xffffffff, up0_v, off);
-        for (int off = 16; off > 0; off >>= 1)
-            gate1_v += __shfl_down_sync(0xffffffff, gate1_v, off);
-        for (int off = 16; off > 0; off >>= 1)
-            up1_v += __shfl_down_sync(0xffffffff, up1_v, off);
-        if (threadIdx.x == 0) {
-            const size_t base = (size_t)t * out_f;
-            yg[base + o0] = gate0_v;
-            yu[base + o0] = up0_v;
-            if (has_o1) {
-                yg[base + o1] = gate1_v;
-                yu[base + o1] = up1_v;
-            }
-        }
-    }
-}
-
-// Device-routed W4A16 gate+up over fixed token/slot rows. `sel` carries GLOBAL expert ids;
-// each rank rejects slots outside its contiguous owner range and converts owned ids to local bank
-// rows. `pair/top_k` is the source token row. No host partition/count is required.
-extern "C" __global__ void qmatvec_nvfp4_bf16_ep_dual_slots(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel, const unsigned short* __restrict__ x,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_pairs, int top_k,
-        int owner_start, int owner_end, long row_bytes, long expert_stride) {
-    int o2 = blockIdx.x;
-    if (o2 >= 2 * out_f) return;
-    const unsigned char* bank = o2 < out_f ? Wg : Wu;
-    float* y = o2 < out_f ? yg : yu;
-    int o = o2 < out_f ? o2 : o2 - out_f;
-    __shared__ float s[32];
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const int token = pair / top_k;
-        const unsigned char* wrow =
-            bank + (long)expert * expert_stride + (long)o * row_bytes;
-        const unsigned short* xrow = x + (size_t)token * (size_t)in_f;
-        float acc = 0.0f;
-        for (int i = threadIdx.x; i < in_f; i += blockDim.x) {
-            float xv = __uint_as_float((unsigned)xrow[i] << 16);
-            acc += deq_nvfp4(wrow, i) * xv;
-        }
-        for (int off = 16; off > 0; off >>= 1)
-            acc += __shfl_down_sync(0xffffffff, acc, off);
-        if ((threadIdx.x & 31) == 0) s[threadIdx.x >> 5] = acc;
-        __syncthreads();
-        if (threadIdx.x < 32) {
-            float v = threadIdx.x < (blockDim.x + 31) / 32 ? s[threadIdx.x] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                v += __shfl_down_sync(0xffffffff, v, off);
-            if (threadIdx.x == 0) y[(size_t)pair * out_f + o] = v;
-        }
-        __syncthreads();
-    }
-}
-
-// Optional A8 expert-compute twin for t=1. The external routed-expert boundary remains BF16;
-// this kernel consumes one rank-local q8_1 quantization of that row and uses the established
-// interleaved-NVFP4 dp4a dot. Global expert ids are rejected outside the contiguous owner range.
-extern "C" __global__ void qmatvec_nvfp4_q8_ep_dual_slots(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_pairs, int top_k,
-        int owner_start, int owner_end, long row_bytes, long expert_stride) {
-    int o2 = blockIdx.x;
-    if (o2 >= 2 * out_f) return;
-    const unsigned char* bank = o2 < out_f ? Wg : Wu;
-    float* y = o2 < out_f ? yg : yu;
-    int o = o2 < out_f ? o2 : o2 - out_f;
-    int tid = threadIdx.x;
-    int nsb = in_f >> 5;
-    __shared__ float s[32];
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const int token = pair / top_k;
-        const unsigned char* wrow =
-            bank + (long)expert * expert_stride + (long)o * row_bytes;
-        const signed char* arow = aq + (size_t)token * (size_t)in_f;
-        const float* adrow = ad + (size_t)token * (size_t)nsb;
-        float acc = 0.0f;
-        for (int g = tid; g < nsb; g += blockDim.x) {
-            int sblk = g >> 1;
-            int which_half = g & 1;
-            const unsigned char* b = wrow + (long)sblk * 36;
-            const unsigned char* d_bytes = b;
-            const unsigned char* qs = b + 4;
-            int s0 = which_half * 2;
-            const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
-            int4 a01 = aq16[0], a23 = aq16[1];
-            int aq4[8] = {a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w};
-            float partial = 0.0f;
-            #pragma unroll
-            for (int sl = 0; sl < 2; ++sl) {
-                int sub = s0 + sl;
-                const unsigned char* qss = qs + sub * 8;
-                int q4a = get_int_b4(qss);
-                int q4b = get_int_b4(qss + 4);
-                int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
-                int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
-                int base = sl * 4;
-                int sumi = 0;
-                sumi = dp4a(va.x, aq4[base + 0], sumi);
-                sumi = dp4a(vb.x, aq4[base + 1], sumi);
-                sumi = dp4a(va.y, aq4[base + 2], sumi);
-                sumi = dp4a(vb.y, aq4[base + 3], sumi);
-                partial += ue4m3_to_f32_d(d_bytes[sub]) * (float)sumi;
-            }
-            acc += adrow[g] * partial;
-        }
-        for (int off = 16; off > 0; off >>= 1)
-            acc += __shfl_down_sync(0xffffffff, acc, off);
-        if ((tid & 31) == 0) s[tid >> 5] = acc;
-        __syncthreads();
-        if (tid < 32) {
-            float v = tid < (blockDim.x + 31) / 32 ? s[tid] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                v += __shfl_down_sync(0xffffffff, v, off);
-            if (tid == 0) y[(size_t)pair * out_f + o] = v;
-        }
-        __syncthreads();
-    }
-}
-
-// Known-good HY3 gate+up schedule from the admitted W4A8 receipt: one CTA owns one output row
-// in both banks. The activation bytes are shared, while gate and up retain independent dot and
-// reduction chains. Kept beside the separate-CTA schedule for a single-binary A/B.
-extern "C" __global__ void qmatvec_nvfp4_q8_ep_paired_slots(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_pairs, int top_k,
-        int owner_start, int owner_end, long row_bytes, long expert_stride) {
-    const int o = blockIdx.x;
-    if (o >= out_f) return;
-    const int tid = threadIdx.x;
-    const int nsb = in_f >> 5;
-    __shared__ float gate_s[32], up_s[32];
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const int token = pair / top_k;
-        const unsigned char* gate_row =
-            Wg + (long)expert * expert_stride + (long)o * row_bytes;
-        const unsigned char* up_row =
-            Wu + (long)expert * expert_stride + (long)o * row_bytes;
-        const signed char* arow = aq + (size_t)token * (size_t)in_f;
-        const float* adrow = ad + (size_t)token * (size_t)nsb;
-        float2 acc = dot_nvfp4_q8_dual_row(gate_row, up_row, arow, adrow, in_f);
-        for (int off = 16; off > 0; off >>= 1)
-            acc.x += __shfl_down_sync(0xffffffff, acc.x, off);
-        for (int off = 16; off > 0; off >>= 1)
-            acc.y += __shfl_down_sync(0xffffffff, acc.y, off);
-        if ((tid & 31) == 0) {
-            gate_s[tid >> 5] = acc.x;
-            up_s[tid >> 5] = acc.y;
-        }
-        __syncthreads();
-        if (tid < 32) {
-            float gate_v = tid < (blockDim.x + 31) / 32 ? gate_s[tid] : 0.0f;
-            float up_v = tid < (blockDim.x + 31) / 32 ? up_s[tid] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                gate_v += __shfl_down_sync(0xffffffff, gate_v, off);
-            for (int off = 16; off > 0; off >>= 1)
-                up_v += __shfl_down_sync(0xffffffff, up_v, off);
-            if (tid == 0) {
-                yg[(size_t)pair * out_f + o] = gate_v;
-                yu[(size_t)pair * out_f + o] = up_v;
-            }
-        }
-        __syncthreads();
-    }
-}
-
-// Multi-token twin of the fixed-slot gate/up kernel. One CTA owns one canonical token/slot row
-// instead of serially walking every pair. Dots and reductions are unchanged; only independent
-// pair rows execute concurrently. Non-owner CTAs return before reading expert weights.
-extern "C" __global__ void qmatvec_nvfp4_bf16_ep_dual_pairs(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel, const unsigned short* __restrict__ x,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_pairs, int top_k,
-        int owner_start, int owner_end, long row_bytes, long expert_stride) {
-    int o2 = blockIdx.x;
-    int pair = blockIdx.y;
-    if (o2 >= 2 * out_f || pair >= n_pairs) return;
-    const int global_expert = sel[pair];
-    if (global_expert < owner_start || global_expert >= owner_end) return;
-    const unsigned char* bank = o2 < out_f ? Wg : Wu;
-    float* y = o2 < out_f ? yg : yu;
-    int o = o2 < out_f ? o2 : o2 - out_f;
-    const int expert = global_expert - owner_start;
-    const int token = pair / top_k;
-    const unsigned char* wrow =
-        bank + (long)expert * expert_stride + (long)o * row_bytes;
-    const unsigned short* xrow = x + (size_t)token * (size_t)in_f;
-    float acc = 0.0f;
-    for (int i = threadIdx.x; i < in_f; i += blockDim.x) {
-        float xv = __uint_as_float((unsigned)xrow[i] << 16);
-        acc += deq_nvfp4(wrow, i) * xv;
-    }
-    __shared__ float s[32];
-    for (int off = 16; off > 0; off >>= 1)
-        acc += __shfl_down_sync(0xffffffff, acc, off);
-    if ((threadIdx.x & 31) == 0) s[threadIdx.x >> 5] = acc;
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float v = threadIdx.x < (blockDim.x + 31) / 32 ? s[threadIdx.x] : 0.0f;
-        for (int off = 16; off > 0; off >>= 1)
-            v += __shfl_down_sync(0xffffffff, v, off);
-        if (threadIdx.x == 0) y[(size_t)pair * out_f + o] = v;
-    }
-}
-
-// Adjacent-row multi-token twin. One CTA owns one canonical token/slot row and two output rows;
-// non-owner CTAs return before reading expert weights.
-extern "C" __global__ void qmatvec_nvfp4_bf16_ep_quad_pairs(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel, const unsigned short* __restrict__ x,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_pairs, int top_k,
-        int owner_start, int owner_end, long row_bytes, long expert_stride) {
-    const int o0 = 2 * blockIdx.x;
-    const int pair = blockIdx.y;
-    if (o0 >= out_f || pair >= n_pairs) return;
-    const int global_expert = sel[pair];
-    if (global_expert < owner_start || global_expert >= owner_end) return;
-    const int o1 = o0 + 1;
-    const bool has_o1 = o1 < out_f;
-    const int expert = global_expert - owner_start;
-    const int token = pair / top_k;
-    const unsigned char* gate_row0 =
-        Wg + (long)expert * expert_stride + (long)o0 * row_bytes;
-    const unsigned char* up_row0 =
-        Wu + (long)expert * expert_stride + (long)o0 * row_bytes;
-    const unsigned char* gate_row1 =
-        has_o1 ? gate_row0 + row_bytes : gate_row0;
-    const unsigned char* up_row1 =
-        has_o1 ? up_row0 + row_bytes : up_row0;
-    const unsigned short* xrow = x + (size_t)token * (size_t)in_f;
-    const float4 initial =
-        dot_nvfp4_bf16_quad_row_256(
-            gate_row0, up_row0, gate_row1, up_row1, xrow, in_f);
-    float4 acc = has_o1
-        ? initial
-        : make_float4(initial.x, initial.y, 0.0f, 0.0f);
-    __shared__ float gate0_s[32], up0_s[32], gate1_s[32], up1_s[32];
-    for (int off = 16; off > 0; off >>= 1)
-        acc.x += __shfl_down_sync(0xffffffff, acc.x, off);
-    for (int off = 16; off > 0; off >>= 1)
-        acc.y += __shfl_down_sync(0xffffffff, acc.y, off);
-    for (int off = 16; off > 0; off >>= 1)
-        acc.z += __shfl_down_sync(0xffffffff, acc.z, off);
-    for (int off = 16; off > 0; off >>= 1)
-        acc.w += __shfl_down_sync(0xffffffff, acc.w, off);
-    if ((threadIdx.x & 31) == 0) {
-        gate0_s[threadIdx.x >> 5] = acc.x;
-        up0_s[threadIdx.x >> 5] = acc.y;
-        gate1_s[threadIdx.x >> 5] = acc.z;
-        up1_s[threadIdx.x >> 5] = acc.w;
-    }
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float gate0_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? gate0_s[threadIdx.x] : 0.0f;
-        float up0_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? up0_s[threadIdx.x] : 0.0f;
-        float gate1_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? gate1_s[threadIdx.x] : 0.0f;
-        float up1_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? up1_s[threadIdx.x] : 0.0f;
-        for (int off = 16; off > 0; off >>= 1)
-            gate0_v += __shfl_down_sync(0xffffffff, gate0_v, off);
-        for (int off = 16; off > 0; off >>= 1)
-            up0_v += __shfl_down_sync(0xffffffff, up0_v, off);
-        for (int off = 16; off > 0; off >>= 1)
-            gate1_v += __shfl_down_sync(0xffffffff, gate1_v, off);
-        for (int off = 16; off > 0; off >>= 1)
-            up1_v += __shfl_down_sync(0xffffffff, up1_v, off);
-        if (threadIdx.x == 0) {
-            const size_t base = (size_t)pair * out_f;
-            yg[base + o0] = gate0_v;
-            yu[base + o0] = up0_v;
-            if (has_o1) {
-                yg[base + o1] = gate1_v;
-                yu[base + o1] = up1_v;
-            }
-        }
-    }
-}
-
-// Batched W4A16 down rows. `global_pairs[j]` is the canonical token-major route slot for this
-// owner-local pair; every rank writes disjoint rows into the root device's peer-accessible slot
-// slab. The root then reduces slots in original token/slot order, so owner assignment does not
-// change the numeric parenthesization.
-extern "C" __global__ void qmatvec_nvfp4_bf16_sel_down_rows(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const int* __restrict__ global_pairs, const unsigned short* __restrict__ x,
-        const float* __restrict__ macros_down, float* __restrict__ dst,
-        int in_f, int out_f, int n_sel, long row_bytes, long expert_stride) {
-    int o0 = 2 * blockIdx.x, j = blockIdx.y;
-    if (o0 >= out_f || j >= n_sel) return;
-    const int o1 = o0 + 1;
-    const bool has_o1 = o1 < out_f;
-    const int expert = sel[j];
-    const unsigned char* row0 =
-        Wbank + (long)expert * expert_stride + (long)o0 * row_bytes;
-    const unsigned char* row1 = has_o1 ? row0 + row_bytes : row0;
-    const unsigned short* xrow = x + (size_t)j * (size_t)in_f;
-    float2 acc = has_o1
-        ? dot_nvfp4_bf16_dual_row_256(row0, row1, xrow, in_f)
-        : make_float2(dot_nvfp4_bf16_row_256(row0, xrow, in_f), 0.0f);
-    __shared__ float row0_s[32], row1_s[32];
-    for (int off = 16; off > 0; off >>= 1)
-        acc.x += __shfl_down_sync(0xffffffff, acc.x, off);
-    for (int off = 16; off > 0; off >>= 1)
-        acc.y += __shfl_down_sync(0xffffffff, acc.y, off);
-    if ((threadIdx.x & 31) == 0) {
-        row0_s[threadIdx.x >> 5] = acc.x;
-        row1_s[threadIdx.x >> 5] = acc.y;
-    }
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float row0_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? row0_s[threadIdx.x] : 0.0f;
-        float row1_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? row1_s[threadIdx.x] : 0.0f;
-        for (int off = 16; off > 0; off >>= 1)
-            row0_v += __shfl_down_sync(0xffffffff, row0_v, off);
-        for (int off = 16; off > 0; off >>= 1)
-            row1_v += __shfl_down_sync(0xffffffff, row1_v, off);
-        if (threadIdx.x == 0) {
-            const size_t base = (size_t)global_pairs[j] * out_f;
-            dst[base + o0] = __fmul_rn(macros_down[expert], row0_v);
-            if (has_o1) {
-                dst[base + o1] = __fmul_rn(macros_down[expert], row1_v);
-            }
-        }
-    }
-}
-
-// Device-routed fixed-slot down rows. Exactly one rank owns each global expert and writes that
-// pair's root-resident row; non-owners return without touching the slot.
-extern "C" __global__ void qmatvec_nvfp4_bf16_ep_down_slots(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const unsigned short* __restrict__ x, const float* __restrict__ macros_down,
-        float* __restrict__ dst, int in_f, int out_f, int n_pairs,
-        int owner_start, int owner_end, long row_bytes, long expert_stride) {
-    int o0 = 2 * blockIdx.x;
-    if (o0 >= out_f) return;
-    const int o1 = o0 + 1;
-    const bool has_o1 = o1 < out_f;
-    __shared__ float row0_s[32], row1_s[32];
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const unsigned char* row0 =
-            Wbank + (long)expert * expert_stride + (long)o0 * row_bytes;
-        const unsigned char* row1 = has_o1 ? row0 + row_bytes : row0;
-        const unsigned short* xrow = x + (size_t)pair * (size_t)in_f;
-        float2 acc = has_o1
-            ? dot_nvfp4_bf16_dual_row_256(row0, row1, xrow, in_f)
-            : make_float2(dot_nvfp4_bf16_row_256(row0, xrow, in_f), 0.0f);
-        for (int off = 16; off > 0; off >>= 1)
-            acc.x += __shfl_down_sync(0xffffffff, acc.x, off);
-        for (int off = 16; off > 0; off >>= 1)
-            acc.y += __shfl_down_sync(0xffffffff, acc.y, off);
-        if ((threadIdx.x & 31) == 0) {
-            row0_s[threadIdx.x >> 5] = acc.x;
-            row1_s[threadIdx.x >> 5] = acc.y;
-        }
-        __syncthreads();
-        if (threadIdx.x < 32) {
-            float row0_v =
-                threadIdx.x < (blockDim.x + 31) / 32 ? row0_s[threadIdx.x] : 0.0f;
-            float row1_v =
-                threadIdx.x < (blockDim.x + 31) / 32 ? row1_s[threadIdx.x] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                row0_v += __shfl_down_sync(0xffffffff, row0_v, off);
-            for (int off = 16; off > 0; off >>= 1)
-                row1_v += __shfl_down_sync(0xffffffff, row1_v, off);
-            if (threadIdx.x == 0) {
-                const size_t base = (size_t)pair * out_f;
-                dst[base + o0] = __fmul_rn(macros_down[expert], row0_v);
-                if (has_o1) {
-                    dst[base + o1] = __fmul_rn(macros_down[expert], row1_v);
-                }
-            }
-        }
-        __syncthreads();
-    }
-}
-
-// Multi-token twin of the fixed-slot down kernel. Exactly one owner rank writes each canonical
-// pair row, and every dot preserves the scalar kernel's reduction order.
-extern "C" __global__ void qmatvec_nvfp4_bf16_ep_down_pairs(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const unsigned short* __restrict__ x, const float* __restrict__ macros_down,
-        float* __restrict__ dst, int in_f, int out_f, int n_pairs,
-        int owner_start, int owner_end, long row_bytes, long expert_stride) {
-    int o0 = 2 * blockIdx.x;
-    int pair = blockIdx.y;
-    if (o0 >= out_f || pair >= n_pairs) return;
-    const int o1 = o0 + 1;
-    const bool has_o1 = o1 < out_f;
-    const int global_expert = sel[pair];
-    if (global_expert < owner_start || global_expert >= owner_end) return;
-    const int expert = global_expert - owner_start;
-    const unsigned char* row0 =
-        Wbank + (long)expert * expert_stride + (long)o0 * row_bytes;
-    const unsigned char* row1 = has_o1 ? row0 + row_bytes : row0;
-    const unsigned short* xrow = x + (size_t)pair * (size_t)in_f;
-    float2 acc = has_o1
-        ? dot_nvfp4_bf16_dual_row_256(row0, row1, xrow, in_f)
-        : make_float2(dot_nvfp4_bf16_row_256(row0, xrow, in_f), 0.0f);
-    __shared__ float row0_s[32], row1_s[32];
-    for (int off = 16; off > 0; off >>= 1)
-        acc.x += __shfl_down_sync(0xffffffff, acc.x, off);
-    for (int off = 16; off > 0; off >>= 1)
-        acc.y += __shfl_down_sync(0xffffffff, acc.y, off);
-    if ((threadIdx.x & 31) == 0) {
-        row0_s[threadIdx.x >> 5] = acc.x;
-        row1_s[threadIdx.x >> 5] = acc.y;
-    }
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float row0_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? row0_s[threadIdx.x] : 0.0f;
-        float row1_v =
-            threadIdx.x < (blockDim.x + 31) / 32 ? row1_s[threadIdx.x] : 0.0f;
-        for (int off = 16; off > 0; off >>= 1)
-            row0_v += __shfl_down_sync(0xffffffff, row0_v, off);
-        for (int off = 16; off > 0; off >>= 1)
-            row1_v += __shfl_down_sync(0xffffffff, row1_v, off);
-        if (threadIdx.x == 0) {
-            const size_t base = (size_t)pair * out_f;
-            dst[base + o0] = __fmul_rn(macros_down[expert], row0_v);
-            if (has_o1) {
-                dst[base + o1] = __fmul_rn(macros_down[expert], row1_v);
-            }
-        }
-    }
-}
-
-// W4A16 selected-expert down + owner-local weighted combine. Every down input row is already
-// BF16-rounded by the host-expf SwiGLU kernel. Each dot replays qmatvec_f32's 256-thread reduction;
-// the owner then accumulates its selected slots in their original route order. The final EP join
-// adds owner rows in rank order, so this is a separately gated numeric class rather than a
-// bit-identity claim against the single-device slot chain.
-extern "C" __global__ void qmatvec_nvfp4_bf16_sel_down_fma(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const unsigned short* __restrict__ x, const float* __restrict__ route_w,
-        const float* __restrict__ macros_down, float* __restrict__ dst,
-        int in_f, int out_f, int n_sel, long row_bytes, long expert_stride) {
-    int o = blockIdx.x;
-    if (o >= out_f) return;
-    __shared__ float s[32];
-    float chain = 0.0f;
-    for (int j = 0; j < n_sel; ++j) {
-        const int expert = sel[j];
-        const unsigned char* wrow =
-            Wbank + (long)expert * expert_stride + (long)o * row_bytes;
-        const unsigned short* xrow = x + (size_t)j * (size_t)in_f;
-        float acc = 0.0f;
-        for (int i = threadIdx.x; i < in_f; i += blockDim.x) {
-            float xv = __uint_as_float((unsigned)xrow[i] << 16);
-            acc += deq_nvfp4(wrow, i) * xv;
-        }
-        for (int off = 16; off > 0; off >>= 1)
-            acc += __shfl_down_sync(0xffffffff, acc, off);
-        if ((threadIdx.x & 31) == 0) s[threadIdx.x >> 5] = acc;
-        __syncthreads();
-        if (threadIdx.x < 32) {
-            float v = threadIdx.x < (blockDim.x + 31) / 32 ? s[threadIdx.x] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                v += __shfl_down_sync(0xffffffff, v, off);
-            if (threadIdx.x == 0) {
-                const float scaled = __fmul_rn(macros_down[expert], v);
-                chain = __fadd_rn(chain, __fmul_rn(route_w[j], scaled));
-            }
-        }
-        __syncthreads();
-    }
-    if (threadIdx.x == 0) dst[o] = chain;
-}
-
-// Device-routed t=1 owner-local combine. The fixed top-k slot order is identical to the
-// host-partitioned owner list after skipping non-owned slots, so the existing rank-order join keeps
-// the same numerical program without a CPU route partition.
-extern "C" __global__ void qmatvec_nvfp4_bf16_ep_down_fma(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const unsigned short* __restrict__ x, const float* __restrict__ route_w,
-        const float* __restrict__ macros_down, float* __restrict__ dst,
-        int in_f, int out_f, int n_pairs, int owner_start, int owner_end,
-        long row_bytes, long expert_stride) {
-    int o = blockIdx.x;
-    if (o >= out_f) return;
-    __shared__ float s[32];
-    float chain = 0.0f;
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const unsigned char* wrow =
-            Wbank + (long)expert * expert_stride + (long)o * row_bytes;
-        const unsigned short* xrow = x + (size_t)pair * (size_t)in_f;
-        float acc = 0.0f;
-        for (int i = threadIdx.x; i < in_f; i += blockDim.x) {
-            float xv = __uint_as_float((unsigned)xrow[i] << 16);
-            acc += deq_nvfp4(wrow, i) * xv;
-        }
-        for (int off = 16; off > 0; off >>= 1)
-            acc += __shfl_down_sync(0xffffffff, acc, off);
-        if ((threadIdx.x & 31) == 0) s[threadIdx.x >> 5] = acc;
-        __syncthreads();
-        if (threadIdx.x < 32) {
-            float v = threadIdx.x < (blockDim.x + 31) / 32 ? s[threadIdx.x] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                v += __shfl_down_sync(0xffffffff, v, off);
-            if (threadIdx.x == 0) {
-                const float scaled = __fmul_rn(macros_down[expert], v);
-                chain = __fadd_rn(chain, __fmul_rn(route_w[pair], scaled));
-            }
-        }
-        __syncthreads();
-    }
-    if (threadIdx.x == 0) dst[o] = chain;
-}
-
-// Optional A8 fixed-slot down rows. Exactly one rank owns each global expert and writes that
-// pair's root-resident row; the root applies route weights later in canonical token/slot order.
-extern "C" __global__ void qmatvec_nvfp4_q8_ep_down_slots(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        const float* __restrict__ macros_down, float* __restrict__ dst,
-        int in_f, int out_f, int n_pairs, int owner_start, int owner_end,
-        long row_bytes, long expert_stride) {
-    const int o0 = 2 * blockIdx.x;
-    if (o0 >= out_f) return;
-    const int o1 = o0 + 1;
-    const bool has_o1 = o1 < out_f;
-    const int tid = threadIdx.x;
-    const int nsb = in_f >> 5;
-    __shared__ float row0_s[32], row1_s[32];
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const unsigned char* row0 =
-            Wbank + (long)expert * expert_stride + (long)o0 * row_bytes;
-        const unsigned char* row1 = has_o1 ? row0 + row_bytes : row0;
-        const signed char* arow = aq + (size_t)pair * (size_t)in_f;
-        const float* adrow = ad + (size_t)pair * (size_t)nsb;
-        const float2 initial =
-            dot_nvfp4_q8_dual_row(row0, row1, arow, adrow, in_f);
-        float2 acc = has_o1 ? initial : make_float2(initial.x, 0.0f);
-        for (int off = 16; off > 0; off >>= 1)
-            acc.x += __shfl_down_sync(0xffffffff, acc.x, off);
-        for (int off = 16; off > 0; off >>= 1)
-            acc.y += __shfl_down_sync(0xffffffff, acc.y, off);
-        if ((tid & 31) == 0) {
-            row0_s[tid >> 5] = acc.x;
-            row1_s[tid >> 5] = acc.y;
-        }
-        __syncthreads();
-        if (tid < 32) {
-            float row0_v = tid < (blockDim.x + 31) / 32 ? row0_s[tid] : 0.0f;
-            float row1_v = tid < (blockDim.x + 31) / 32 ? row1_s[tid] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                row0_v += __shfl_down_sync(0xffffffff, row0_v, off);
-            for (int off = 16; off > 0; off >>= 1)
-                row1_v += __shfl_down_sync(0xffffffff, row1_v, off);
-            if (tid == 0) {
-                const size_t base = (size_t)pair * out_f;
-                dst[base + o0] = __fmul_rn(macros_down[expert], row0_v);
-                if (has_o1) {
-                    dst[base + o1] = __fmul_rn(macros_down[expert], row1_v);
-                }
-            }
-        }
-        __syncthreads();
-    }
-}
-
-// Optional A8 t=1 down + owner-local weighted combine. The dot body matches the established
-// interleaved-NVFP4 q8_1 kernel; route accumulation remains slot-ordered within each owner.
-extern "C" __global__ void qmatvec_nvfp4_q8_ep_down_fma(
-        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        const float* __restrict__ route_w, const float* __restrict__ macros_down,
-        float* __restrict__ dst,
-        int in_f, int out_f, int n_pairs, int owner_start, int owner_end,
-        long row_bytes, long expert_stride) {
-    int o = blockIdx.x;
-    if (o >= out_f) return;
-    int tid = threadIdx.x;
-    int nsb = in_f >> 5;
-    __shared__ float s[32];
-    float chain = 0.0f;
-    for (int pair = 0; pair < n_pairs; ++pair) {
-        const int global_expert = sel[pair];
-        if (global_expert < owner_start || global_expert >= owner_end) continue;
-        const int expert = global_expert - owner_start;
-        const unsigned char* wrow =
-            Wbank + (long)expert * expert_stride + (long)o * row_bytes;
-        const signed char* arow = aq + (size_t)pair * (size_t)in_f;
-        const float* adrow = ad + (size_t)pair * (size_t)nsb;
-        float acc = 0.0f;
-        for (int g = tid; g < nsb; g += blockDim.x) {
-            int sblk = g >> 1;
-            int which_half = g & 1;
-            const unsigned char* b = wrow + (long)sblk * 36;
-            const unsigned char* d_bytes = b;
-            const unsigned char* qs = b + 4;
-            int s0 = which_half * 2;
-            const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
-            int4 a01 = aq16[0], a23 = aq16[1];
-            int aq4[8] = {a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w};
-            float partial = 0.0f;
-            #pragma unroll
-            for (int sl = 0; sl < 2; ++sl) {
-                int sub = s0 + sl;
-                const unsigned char* qss = qs + sub * 8;
-                int q4a = get_int_b4(qss);
-                int q4b = get_int_b4(qss + 4);
-                int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
-                int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
-                int base = sl * 4;
-                int sumi = 0;
-                sumi = dp4a(va.x, aq4[base + 0], sumi);
-                sumi = dp4a(vb.x, aq4[base + 1], sumi);
-                sumi = dp4a(va.y, aq4[base + 2], sumi);
-                sumi = dp4a(vb.y, aq4[base + 3], sumi);
-                partial += ue4m3_to_f32_d(d_bytes[sub]) * (float)sumi;
-            }
-            acc += adrow[g] * partial;
-        }
-        for (int off = 16; off > 0; off >>= 1)
-            acc += __shfl_down_sync(0xffffffff, acc, off);
-        if ((tid & 31) == 0) s[tid >> 5] = acc;
-        __syncthreads();
-        if (tid < 32) {
-            float v = tid < (blockDim.x + 31) / 32 ? s[tid] : 0.0f;
-            for (int off = 16; off > 0; off >>= 1)
-                v += __shfl_down_sync(0xffffffff, v, off);
-            if (tid == 0) {
-                const float scaled = __fmul_rn(macros_down[expert], v);
-                chain = __fadd_rn(chain, __fmul_rn(route_w[pair], scaled));
-            }
-        }
-        __syncthreads();
-    }
-    if (tid == 0) dst[o] = chain;
-}
-
-// ═══ SLOT-MAJOR row layout (QT_NVFP4_V2) and the readers that consume it ═══════════════════
-//
-// Per row the 16 qs bytes of slot g sit CONTIGUOUSLY at g*16 (a warp reads 512B in one
-// coalesced wave) and the two UE4M3 scale bytes at nslots*16 + g*2. The bytes are a pure
-// permutation of the block_nvfp4 row and the per-slot dp4a/scale order is unchanged —
-// BIT-IDENTICAL per row to the v1 kernels, and that claim is now a device-side gate
-// (`nvfp4-bank-oracle`, unpack(v2) vs unpack(v1) through the same entry) rather than a
-// comment. It was only ever a comment before 2026-09-01, which is how the corruption below
-// shipped.
-//
-// LAYOUT GEOMETRY IS A PROPERTY OF THE BANK, NEVER OF THE ENVIRONMENT. Every producer records
-// `slot_major` on the resident bank (tp.rs `ResidentNvfp4{Column,Row}BankRank`) and every
-// reader branches on that stored field. Two producers exist: the always-slot-major EP2
-// whole-expert banks (`MEMRA_STEP_NVFP4_EP2`) and the TP shard banks under
-// `MEMRA_NVFP4_BANK_SM` (default ON since 2026-09-01). A reader that re-derives the layout
-// from an env door,
-// or takes a defaultable geometry scalar, is the exact hole that produced the 2026-08-29
-// step37 text corruption: `kq_fetch(..., int in_f = 0)` in moe_f16_grouped.cu had two callers
-// omit `in_f`, so the QT_NVFP4_V2 branch fetched the scale byte from inside the packed-codes
-// region — right codes, wrong per-16 scale, on every k-block but kb=0. Diagnosis:
-// research/step37-bankv3-20260901/DIAGNOSIS.md. Fixed compiler-enforced (no default) at
-// 1b18a61e8; keep it that way.
+// MULTI-ROW twin of qmatvec_nvfp4_dp4a_sel: each block computes ROWS consecutive output rows
+// of the SAME (expert, activation) pair, running the exact single-row program per row (same g
+// striding, same shfl/shared reduction) — per row BIT-IDENTICAL to the single-row kernel. The
+// win is launch-tail amortization + warm L1 activation reloads across rows (the single-row
+// form measured ~570GB/s of weight traffic on the 188-SM card: one 2304B row per block).
+// ---- LAYOUT-V2 twins (MEMRA_NVFP4_BANK_V2): slot-major row storage. Per row the 16 qs bytes
+// of slot g sit CONTIGUOUSLY at g*16 (a warp reads 512B in one coalesced wave) and the two
+// UE4M3 scale bytes at nslots*16 + g*2. The bytes are a pure permutation of the block_nvfp4
+// row and the per-slot dp4a/scale order is unchanged — BIT-IDENTICAL per row to the v1
+// kernels. Targets the 570GB/s (36% of peak) the 36B-superblock scatter delivered.
 extern "C" __global__ void qmatvec_nvfp4_dp4a_v2(
         const unsigned char* __restrict__ W, const signed char* __restrict__ aq,
         const float* __restrict__ ad, float* __restrict__ y,
@@ -10838,6 +9352,11 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_v2(
     }
 }
 
+// v2-layout STREAMING twin: ROWS consecutive rows per block over the slot-major layout —
+// each row is one CONTIGUOUS 2304B stream (16B/thread coalesced qs + packed scales), with
+// next-row register prefetch hiding DRAM latency behind the reduction barriers. The v1-layout
+// streaming attempt LOST (scattered 36B reads); this is the same shape on coalesced rows.
+// Per-row program identical to the single-row v2 kernel — bit-identical.
 // ===================== EP2 OWNER-GUARDED SWEEPS (MEMRA_STEP_NVFP4_EP2=1) =====================
 // Whole-expert layout at 2 ranks: expert e lives ENTIRE on rank (e & 1), at bank slot (e >> 1).
 // Each rank sweeps only the routed pairs it owns, at FULL width (gate/up out=expert_width,
@@ -11005,8 +9524,7 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2_down8_ep(
     }
 }
 
-// NVFP4 sel GATE+UP WARP-PER-ROW (MEMRA_NVFP4_SEL_GU_WPR=1, sub-door of MEMRA_NVFP4_SEL_GU,
-// default OFF and UNPRICED). NUMERIC-CLASS door, same class and
+// NVFP4 sel GATE+UP WARP-PER-ROW (MEMRA_SEL_GU_WPR=1). NUMERIC-CLASS door, same class and
 // acceptance as MEMRA_STEP_TP_QKV_FUSED / MEMRA_BF16_MMV / MEMRA_RMS_BLOCK: the per-row
 // REDUCTION ORDER changes, values move by ULPs, and the gate is run-gen's prefill/decode
 // argmax MATCH plus the boot battery — not a bit-tape.
@@ -11065,8 +9583,7 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2_gu_wpr(
     if (lane == 0) y[(size_t)t * out_f + o] = acc;
 }
 
-// NVFP4 sel GATE+UP MULTIROW (MEMRA_NVFP4_SEL_GU_RPW=2|4, sub-door of MEMRA_NVFP4_SEL_GU,
-// default OFF and UNPRICED) — the q8 `gu_geom<RPW>` arm ported to
+// NVFP4 sel GATE+UP MULTIROW (MEMRA_SEL_GU_RPW=2|4) — the q8 `gu_geom<RPW>` arm ported to
 // the NVFP4 banks. The base _gu kernel runs one block per (row, slot) and each block re-reads
 // its slot's WHOLE activation row: 10240 blocks x 4.6 KB = 47 MB of L2 traffic per layer per
 // rank against only 23.6 MB of weights. Here one block covers RPW consecutive output rows of
@@ -11174,9 +9691,7 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2_gu_r4(
                                 row_bytes, expert_stride, act_row_stride, ad_row_stride);
 }
 
-// NVFP4 sel DOWN + COMBINE in ONE launch (MEMRA_NVFP4_SEL_DOWN8, default ON since
-// 2026-09-01; rollback MEMRA_NVFP4_SEL_DOWN8=0) — the q8
-// `down8 w8` arm (cx-downkernel, waves/SM
+// NVFP4 sel DOWN + COMBINE in ONE launch — the q8 `down8 w8` arm (cx-downkernel, waves/SM
 // 0.91 -> 4.36, +8.9% on that kernel) ported to the NVFP4 bank family, which never took it:
 // the sel path still launches (out_f, n_sel) ONE-WARP blocks (the q8 BASE shape) and then a
 // separate axpy_rows_seq_md over an n_sel x out_f partial buffer.
@@ -11244,13 +9759,70 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2_down8(
     }
 }
 
-// Slot-major STREAMING twin (MEMRA_NVFP4_SEL_SM_STREAM=1, sub-door of MEMRA_NVFP4_BANK_SM,
-// default OFF and UNPRICED): 8 consecutive output rows per block, each row ONE contiguous
-// stream (16B/thread coalesced qs + packed scale tail) with next-row register prefetch hiding
-// DRAM latency behind the reduction barriers. Needs 16B-aligned rows and one slot per thread,
-// so the launcher gates it on row_bytes % 16 == 0 && in_f <= 4096 (step37 gate/up 2304B yes,
-// down 360B no). Per-row program identical to _sel_v2 -> BIT-IDENTICAL. The v1-layout
-// streaming attempt LOST on scattered 36B reads; this is that shape on coalesced rows.
+// T-ROW twin of the down8 fusion (spec verify + batched serving MoE): one block per
+// (output row, token row) runs the EXACT t=1 down8 program for that token's n_sel_col
+// slots — warp j = slot j with the _sel_v2 chain, then the slot-ordered combine of
+// axpy_rows_seq_md_f32 — so every token row is bit-identical to its own down8/axpy pair
+// by construction, at any t. Kills the n_sel x out_f partial round-trip of the t-row
+// driver and joins all rows in one launch.
+extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2_down8_rows(
+        const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        const float* __restrict__ route_w, const float* __restrict__ md,
+        float* __restrict__ dst,
+        int in_f, int out_f, int n_sel_col,
+        long row_bytes, long expert_stride, long act_row_stride, long ad_row_stride) {
+    const int o = blockIdx.x;
+    const int row = blockIdx.y;               // token row; gridDim.y == t
+    if (o >= out_f) return;
+    const int lane = threadIdx.x;
+    const int j = threadIdx.y;                // slot within row; blockDim.y == n_sel_col (<= 8)
+    const int slot = row * n_sel_col + j;
+    const int nsb = in_f >> 5;
+    __shared__ float s_dot[8];
+    if (j < n_sel_col) {
+        const unsigned char* wrow = Wbank + (long)sel[slot] * expert_stride + (long)o * row_bytes;
+        const unsigned char* drow = wrow + (size_t)nsb * 16;
+        const signed char*   arow  = aq + (size_t)slot * (size_t)act_row_stride;
+        const float*         adrow = ad + (size_t)slot * (size_t)ad_row_stride;
+        float acc = 0.0f;
+        for (int g = lane; g < nsb; g += 32) {      // _sel_v2's loop (blockDim.x == 32 in both)
+            const unsigned char* qsg = wrow + (size_t)g * 16;
+            const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
+            int4 a01 = aq16[0], a23 = aq16[1];
+            int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+            float partial = 0.0f;
+            #pragma unroll
+            for (int sl = 0; sl < 2; sl++) {
+                int q4a = get_int_b4(qsg + sl * 8);
+                int q4b = get_int_b4(qsg + sl * 8 + 4);
+                int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
+                int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
+                int base = sl * 4;
+                int sumi = 0;
+                sumi = dp4a(va.x, aq4[base + 0], sumi);
+                sumi = dp4a(vb.x, aq4[base + 1], sumi);
+                sumi = dp4a(va.y, aq4[base + 2], sumi);
+                sumi = dp4a(vb.y, aq4[base + 3], sumi);
+                partial += ue4m3_to_f32_d(drow[g * 2 + sl]) * (float)sumi;
+            }
+            acc += adrow[g] * partial;
+        }
+        for (int off = 16; off > 0; off >>= 1) acc += __shfl_down_sync(0xffffffff, acc, off);
+        if (lane == 0) s_dot[j] = acc;
+    }
+    __syncthreads();
+    if (j == 0 && lane == 0) {
+        float out = 0.0f;
+        for (int p = 0; p < n_sel_col; ++p) {
+            const int sp = row * n_sel_col + p;
+            float w = route_w[sp] * md[sel[sp]];   // axpy_rows_seq_md_f32, verbatim shape
+            out += w * s_dot[p];
+        }
+        dst[(size_t)row * out_f + o] = out;
+    }
+}
+
 extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2s(
         const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
         const signed char* __restrict__ aq, const float* __restrict__ ad,
@@ -11331,12 +9903,6 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2s(
     }
 }
 
-// SELECTED-EXPERTS sweep over slot-major banks (MEMRA_NVFP4_BANK_SM, default ON since
-// 2026-09-01): the
-// _sel body with the slot-major byte map — one coalesced 512B warp wave per slot group
-// instead of the 36B-superblock scatter. Weights at sel[t]*expert_stride into the contiguous
-// per-rank bank; same dp4a order, same per-slot scale multiply, same shfl+shared reduce tree
-// as qmatvec_nvfp4_dp4a_sel -> BIT-IDENTICAL per (expert, row). Gated by nvfp4-bank-oracle.
 extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2(
         const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
         const signed char* __restrict__ aq, const float* __restrict__ ad,
@@ -11344,63 +9910,6 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2(
         long row_bytes, long expert_stride, long act_row_stride, long ad_row_stride) {
     int o = blockIdx.x, t = blockIdx.y;
     if (o >= out_f || t >= n_sel) return;
-    int tid = threadIdx.x;
-    int nsb = in_f >> 5;
-    const unsigned char* wrow = Wbank + (long)sel[t] * expert_stride + (long)o * row_bytes;
-    const unsigned char* drow = wrow + (size_t)nsb * 16;
-    const signed char*   arow = aq + (size_t)t * (size_t)act_row_stride;
-    const float*         adrow = ad + (size_t)t * (size_t)ad_row_stride;
-    float acc = 0.0f;
-    for (int g = tid; g < nsb; g += blockDim.x) {
-        const unsigned char* qsg = wrow + (size_t)g * 16;
-        const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
-        int4 a01 = aq16[0], a23 = aq16[1];
-        int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-        float partial = 0.0f;
-        #pragma unroll
-        for (int sl = 0; sl < 2; sl++) {
-            int q4a = get_int_b4(qsg + sl * 8);
-            int q4b = get_int_b4(qsg + sl * 8 + 4);
-            int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
-            int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
-            int base = sl * 4;
-            int sumi = 0;
-            sumi = dp4a(va.x, aq4[base + 0], sumi);
-            sumi = dp4a(vb.x, aq4[base + 1], sumi);
-            sumi = dp4a(va.y, aq4[base + 2], sumi);
-            sumi = dp4a(vb.y, aq4[base + 3], sumi);
-            partial += ue4m3_to_f32_d(drow[g * 2 + sl]) * (float)sumi;
-        }
-        acc += adrow[g] * partial;
-    }
-    __shared__ float s[32];
-    for (int off = 16; off > 0; off >>= 1) acc += __shfl_down_sync(0xffffffff, acc, off);
-    if ((tid & 31) == 0) s[tid >> 5] = acc;
-    __syncthreads();
-    if (tid < 32) {
-        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
-        for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffff, v, off);
-        if (tid == 0) y[(size_t)t * out_f + o] = v;
-    }
-}
-
-// FUSION #2a (MEMRA_NVFP4_SEL_GU=1, default OFF): gate+up selected-expert sweeps in ONE
-// launch over slot-major banks. The two
-// sweeps share sel/aq/ad and have identical geometry; blocks [0,out_f) run the exact
-// _sel_v2 body on the GATE bank, [out_f,2*out_f) on the UP bank — per-row bit-identical,
-// halves the sweep launch count and doubles grid fill.
-extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2_gu(
-        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
-        const int* __restrict__ sel,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ yg, float* __restrict__ yu,
-        int in_f, int out_f, int n_sel,
-        long row_bytes, long expert_stride, long act_row_stride, long ad_row_stride) {
-    int o2 = blockIdx.x, t = blockIdx.y;
-    if (o2 >= 2 * out_f || t >= n_sel) return;
-    const unsigned char* Wbank = (o2 < out_f) ? Wg : Wu;
-    float* y = (o2 < out_f) ? yg : yu;
-    int o = (o2 < out_f) ? o2 : o2 - out_f;
     int tid = threadIdx.x;
     int nsb = in_f >> 5;
     const unsigned char* wrow = Wbank + (long)sel[t] * expert_stride + (long)o * row_bytes;
@@ -11537,11 +10046,6 @@ extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_stream(
     }
 }
 
-// MULTI-ROW twin of qmatvec_nvfp4_dp4a_sel: each block computes ROWS consecutive output rows
-// of the SAME (expert, activation) pair, running the exact single-row program per row (same g
-// striding, same shfl/shared reduction) — per row BIT-IDENTICAL to the single-row kernel. The
-// win is launch-tail amortization + warm L1 activation reloads across rows (the single-row
-// form measured ~570GB/s of weight traffic on the 188-SM card: one 2304B row per block).
 extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_mr4(
         const unsigned char* __restrict__ Wbank, const int* __restrict__ sel,
         const signed char* __restrict__ aq, const float* __restrict__ ad,
@@ -12278,401 +10782,6 @@ extern "C" __global__ void matvec_bf16_f32acc_x4_rows(
     }
 }
 
-// T-COLUMN twin of matvec_bf16_f32acc_x4 (lane/glm5-verify-batch, the varlen-batched-cores
-// pattern): one block owns 4 output rows for ALL t tokens, so the weight pack is loaded ONCE
-// per (row, K-step) and reused across tokens — vs the _rows twin's grid.y=t per-token weight
-// re-read. EXACTNESS BY CONSTRUCTION (LAW:vl-bit-identity-order-pinning): each token keeps
-// its OWN single-chain f32 accumulator fed in the exact per-token add order of the t=1
-// kernel (the 8 pack lanes ascending, K ascending), and the shared-tree reduce runs once per
-// token with the identical red[256] strided tree — so output (row, token) is bit-identical
-// to the t=1 launch for that token. Gated by glm5_verify_batch_gpu's tcols bit-gate.
-// T is a runtime arg bounded by MEMRA_BF16_TCOLS_MAX; the host launcher enforces it.
-#define MEMRA_BF16_TCOLS_MAX 8
-extern "C" __global__ void matvec_bf16_f32acc_x4_tcols(
-        const unsigned short* __restrict__ w, const float* __restrict__ x,
-        float* __restrict__ y, int in_f, int out_f, int t) {
-    __shared__ float red[256];
-    #pragma unroll
-    for (int p = 0; p < 4; p++) {
-        int row = blockIdx.x * 4 + p;
-        if (row >= out_f) return;
-        const unsigned short* wr = w + (size_t)row * in_f;
-        float acc[MEMRA_BF16_TCOLS_MAX];
-        for (int tt = 0; tt < t; tt++) acc[tt] = 0.0f;
-        const int stride = blockDim.x * 8;
-        for (int i = threadIdx.x * 8; i < in_f; i += stride) {
-            uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
-            const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
-            for (int tt = 0; tt < t; tt++) {
-                const float* xr = x + (size_t)tt * in_f;
-                float4 x0 = *reinterpret_cast<const float4*>(xr + i);
-                float4 x1 = *reinterpret_cast<const float4*>(xr + i + 4);
-                float a = acc[tt];
-                a += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
-                a += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
-                a += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
-                a += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
-                a += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
-                a += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
-                a += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
-                a += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
-                acc[tt] = a;
-            }
-        }
-        for (int tt = 0; tt < t; tt++) {
-            red[threadIdx.x] = acc[tt];
-            __syncthreads();
-            for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-                if (threadIdx.x < s) red[threadIdx.x] += red[threadIdx.x + s];
-                __syncthreads();
-            }
-            if (threadIdx.x == 0) y[(size_t)tt * out_f + row] = red[0];
-            __syncthreads();
-        }
-    }
-}
-
-// WIDE-T TWIN of matvec_bf16_f32acc_x4_tcols (lane/glm5-matvec, MEMRA_BF16_TCOLS_WIDE):
-// t = 9..=16 — the DFlash2 drafter reuses the TARGET's lm head over its block's nd = 15
-// mask-fill rows, which the t<=8 tcols launcher refuses, so the ship shape re-read the
-// 1.27 GB head 15x per round through the _rows grid.y=t kernel (diet-battery c8-ship
-// census: 60 calls x 5.31 ms = 11.7% of capture GPU). A SEPARATE kernel (not a raised
-// MEMRA_BF16_TCOLS_MAX) so the priced t<=8 class keeps its acc[8] register footprint and
-// SASS untouched — the qmatvec _tw32 lesson: sizing acc[] for the widest launch cost the
-// t=2 verify ~10%. Body otherwise VERBATIM: per-token order-pinned single-chain
-// accumulators (8 pack lanes ascending, K ascending), identical red[256] strided tree per
-// token — bit-identical per (row, token) to the t=1 program, gated alongside the t<=8
-// twin (glm5_matvec_doors_gpu).
-#define MEMRA_BF16_TCOLS16_MAX 16
-extern "C" __global__ void matvec_bf16_f32acc_x4_tcols16(
-        const unsigned short* __restrict__ w, const float* __restrict__ x,
-        float* __restrict__ y, int in_f, int out_f, int t) {
-    __shared__ float red[256];
-    #pragma unroll
-    for (int p = 0; p < 4; p++) {
-        int row = blockIdx.x * 4 + p;
-        if (row >= out_f) return;
-        const unsigned short* wr = w + (size_t)row * in_f;
-        float acc[MEMRA_BF16_TCOLS16_MAX];
-        for (int tt = 0; tt < t; tt++) acc[tt] = 0.0f;
-        const int stride = blockDim.x * 8;
-        for (int i = threadIdx.x * 8; i < in_f; i += stride) {
-            uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
-            const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
-            for (int tt = 0; tt < t; tt++) {
-                const float* xr = x + (size_t)tt * in_f;
-                float4 x0 = *reinterpret_cast<const float4*>(xr + i);
-                float4 x1 = *reinterpret_cast<const float4*>(xr + i + 4);
-                float a = acc[tt];
-                a += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
-                a += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
-                a += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
-                a += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
-                a += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
-                a += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
-                a += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
-                a += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
-                acc[tt] = a;
-            }
-        }
-        for (int tt = 0; tt < t; tt++) {
-            red[threadIdx.x] = acc[tt];
-            __syncthreads();
-            for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-                if (threadIdx.x < s) red[threadIdx.x] += red[threadIdx.x + s];
-                __syncthreads();
-            }
-            if (threadIdx.x == 0) y[(size_t)tt * out_f + row] = red[0];
-            __syncthreads();
-        }
-    }
-}
-
-// X1-GRID TWIN of matvec_bf16_f32acc_x4_tcols (lane/glm5-matvec, MEMRA_BF16_TCOLS_X1):
-// ONE output row per block (grid.x = out_f), the p-loop dropped. WHY: the trunk kda
-// shapes launch out_f/4 = 512..2048 blocks of 128 threads — about one resident wave on
-// this card class, so every block's bit-pinned tree-reduce phases align and DRAM idles
-// between them (c8-ship census: 1.05 TB/s = 59% of peak on the 67.1 MB kda calls, while
-// the SAME x4 kernel at the lm head's 38720-block grid runs 1.43 TB/s = 80%). 4x the
-// blocks re-creates the cross-block load/reduce overlap. Per-row body and red[256] tree
-// VERBATIM — each row's float program is unchanged, so output (row, token) stays
-// bit-identical to the x4 twin and to the t=1 program.
-extern "C" __global__ void matvec_bf16_f32acc_x1_tcols(
-        const unsigned short* __restrict__ w, const float* __restrict__ x,
-        float* __restrict__ y, int in_f, int out_f, int t) {
-    __shared__ float red[256];
-    int row = blockIdx.x;
-    if (row >= out_f) return;
-    const unsigned short* wr = w + (size_t)row * in_f;
-    float acc[MEMRA_BF16_TCOLS_MAX];
-    for (int tt = 0; tt < t; tt++) acc[tt] = 0.0f;
-    const int stride = blockDim.x * 8;
-    for (int i = threadIdx.x * 8; i < in_f; i += stride) {
-        uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
-        const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
-        for (int tt = 0; tt < t; tt++) {
-            const float* xr = x + (size_t)tt * in_f;
-            float4 x0 = *reinterpret_cast<const float4*>(xr + i);
-            float4 x1 = *reinterpret_cast<const float4*>(xr + i + 4);
-            float a = acc[tt];
-            a += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
-            a += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
-            a += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
-            a += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
-            a += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
-            a += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
-            a += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
-            a += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
-            acc[tt] = a;
-        }
-    }
-    for (int tt = 0; tt < t; tt++) {
-        red[threadIdx.x] = acc[tt];
-        __syncthreads();
-        for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-            if (threadIdx.x < s) red[threadIdx.x] += red[threadIdx.x + s];
-            __syncthreads();
-        }
-        if (threadIdx.x == 0) y[(size_t)tt * out_f + row] = red[0];
-        __syncthreads();
-    }
-}
-
-// ---- Door R (lane/glm5-door-r, MEMRA_BF16_TCOLS_RED_FUSED): fused-t reduce tails. ----
-//
-// WHY (moe-loc LANE.md §2.2): after door X the kda trunk's tcols calls sit at 67.0% of peak
-// because the reduce tail runs t SEPARATE 7-level strided trees, 9 block-wide barriers per
-// token column (~30 at t=3.34, 135 at the drafter head's t=15) against a 4-iteration main
-// loop — the kernel is barrier/tail-bound, not DRAM-bound. The `_rf` twins restructure ONLY
-// the tail: (a) one shared region per token column (`red[t*blockDim.x]`, dynamic) so the t
-// trees share ONE barrier sequence — a single store barrier plus one barrier per block-wide
-// level down to s=32; (b) levels s<=16 are intra-warp (after the s=32 level only indices
-// 0..31 of each column hold live partials), so they become a `__shfl_down_sync` chain with
-// the IDENTICAL pairing and the IDENTICAL `v = v + v[i+off]` operand order as the strided
-// tree, zero barriers, one column per warp. Barriers per block: 9t -> 3 (x1 form at 128
-// threads). BIT-IDENTICAL by pairing preservation: at every level the same index pairs are
-// added in the same operand order as `red[i] += red[i+s]` (induction: after level s, lanes
-// i<s hold exactly the tree's red[i]); the main loop is VERBATIM, so output (row, token)
-// matches the standing twins and the t=1 program bit-for-bit. The gate's shifted-pairing
-// RED (`..._rf_redshift` below) proves the bar can see an association change.
-// CONTRACT: blockDim.x must be a POWER OF TWO >= 32 (the block-wide loop must pass exactly
-// through s=32); the host launcher refuses the door for any other MEMRA_MMV_BLOCK. Dynamic
-// shared = t * blockDim.x * 4 bytes, passed at launch.
-extern "C" __global__ void matvec_bf16_f32acc_x1_tcols_rf(
-        const unsigned short* __restrict__ w, const float* __restrict__ x,
-        float* __restrict__ y, int in_f, int out_f, int t) {
-    extern __shared__ float red[]; // t * blockDim.x floats
-    int row = blockIdx.x;
-    if (row >= out_f) return;
-    const unsigned short* wr = w + (size_t)row * in_f;
-    float acc[MEMRA_BF16_TCOLS_MAX];
-    for (int tt = 0; tt < t; tt++) acc[tt] = 0.0f;
-    const int stride = blockDim.x * 8;
-    for (int i = threadIdx.x * 8; i < in_f; i += stride) {
-        uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
-        const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
-        for (int tt = 0; tt < t; tt++) {
-            const float* xr = x + (size_t)tt * in_f;
-            float4 x0 = *reinterpret_cast<const float4*>(xr + i);
-            float4 x1 = *reinterpret_cast<const float4*>(xr + i + 4);
-            float a = acc[tt];
-            a += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
-            a += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
-            a += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
-            a += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
-            a += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
-            a += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
-            a += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
-            a += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
-            acc[tt] = a;
-        }
-    }
-    for (int tt = 0; tt < t; tt++) red[tt * blockDim.x + threadIdx.x] = acc[tt];
-    __syncthreads();
-    for (int s = blockDim.x / 2; s >= 32; s >>= 1) {
-        if (threadIdx.x < s) {
-            for (int tt = 0; tt < t; tt++)
-                red[tt * blockDim.x + threadIdx.x] += red[tt * blockDim.x + threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    const int lane = threadIdx.x & 31;
-    const int wid = threadIdx.x >> 5;
-    const int nw = (int)blockDim.x >> 5;
-    for (int tt = wid; tt < t; tt += nw) {
-        float v = red[tt * blockDim.x + lane];
-        for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
-        if (lane == 0) y[(size_t)tt * out_f + row] = v;
-    }
-}
-
-// Fused-tail twin of matvec_bf16_f32acc_x4_tcols (door R): p-loop body VERBATIM, tail as
-// above; one trailing barrier per p iteration protects the shared region before the next
-// row's stores (the standing kernel's own trailing sync, once per p instead of once per t).
-extern "C" __global__ void matvec_bf16_f32acc_x4_tcols_rf(
-        const unsigned short* __restrict__ w, const float* __restrict__ x,
-        float* __restrict__ y, int in_f, int out_f, int t) {
-    extern __shared__ float red[]; // t * blockDim.x floats
-    #pragma unroll
-    for (int p = 0; p < 4; p++) {
-        int row = blockIdx.x * 4 + p;
-        if (row >= out_f) return;
-        const unsigned short* wr = w + (size_t)row * in_f;
-        float acc[MEMRA_BF16_TCOLS_MAX];
-        for (int tt = 0; tt < t; tt++) acc[tt] = 0.0f;
-        const int stride = blockDim.x * 8;
-        for (int i = threadIdx.x * 8; i < in_f; i += stride) {
-            uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
-            const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
-            for (int tt = 0; tt < t; tt++) {
-                const float* xr = x + (size_t)tt * in_f;
-                float4 x0 = *reinterpret_cast<const float4*>(xr + i);
-                float4 x1 = *reinterpret_cast<const float4*>(xr + i + 4);
-                float a = acc[tt];
-                a += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
-                a += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
-                a += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
-                a += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
-                a += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
-                a += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
-                a += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
-                a += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
-                acc[tt] = a;
-            }
-        }
-        for (int tt = 0; tt < t; tt++) red[tt * blockDim.x + threadIdx.x] = acc[tt];
-        __syncthreads();
-        for (int s = blockDim.x / 2; s >= 32; s >>= 1) {
-            if (threadIdx.x < s) {
-                for (int tt = 0; tt < t; tt++)
-                    red[tt * blockDim.x + threadIdx.x] +=
-                        red[tt * blockDim.x + threadIdx.x + s];
-            }
-            __syncthreads();
-        }
-        const int lane = threadIdx.x & 31;
-        const int wid = threadIdx.x >> 5;
-        const int nw = (int)blockDim.x >> 5;
-        for (int tt = wid; tt < t; tt += nw) {
-            float v = red[tt * blockDim.x + lane];
-            for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
-            if (lane == 0) y[(size_t)tt * out_f + row] = v;
-        }
-        __syncthreads();
-    }
-}
-
-// Fused-tail twin of matvec_bf16_f32acc_x4_tcols16 (door R): the drafter head's t=15 case
-// is the extreme win (135 barriers -> 6 per block at 128 threads); acc[16] stays SEPARATE
-// from the priced t<=8 class (the `_tw32` acc-sizing lesson, same as the standing twin).
-extern "C" __global__ void matvec_bf16_f32acc_x4_tcols16_rf(
-        const unsigned short* __restrict__ w, const float* __restrict__ x,
-        float* __restrict__ y, int in_f, int out_f, int t) {
-    extern __shared__ float red[]; // t * blockDim.x floats
-    #pragma unroll
-    for (int p = 0; p < 4; p++) {
-        int row = blockIdx.x * 4 + p;
-        if (row >= out_f) return;
-        const unsigned short* wr = w + (size_t)row * in_f;
-        float acc[MEMRA_BF16_TCOLS16_MAX];
-        for (int tt = 0; tt < t; tt++) acc[tt] = 0.0f;
-        const int stride = blockDim.x * 8;
-        for (int i = threadIdx.x * 8; i < in_f; i += stride) {
-            uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
-            const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
-            for (int tt = 0; tt < t; tt++) {
-                const float* xr = x + (size_t)tt * in_f;
-                float4 x0 = *reinterpret_cast<const float4*>(xr + i);
-                float4 x1 = *reinterpret_cast<const float4*>(xr + i + 4);
-                float a = acc[tt];
-                a += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
-                a += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
-                a += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
-                a += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
-                a += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
-                a += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
-                a += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
-                a += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
-                acc[tt] = a;
-            }
-        }
-        for (int tt = 0; tt < t; tt++) red[tt * blockDim.x + threadIdx.x] = acc[tt];
-        __syncthreads();
-        for (int s = blockDim.x / 2; s >= 32; s >>= 1) {
-            if (threadIdx.x < s) {
-                for (int tt = 0; tt < t; tt++)
-                    red[tt * blockDim.x + threadIdx.x] +=
-                        red[tt * blockDim.x + threadIdx.x + s];
-            }
-            __syncthreads();
-        }
-        const int lane = threadIdx.x & 31;
-        const int wid = threadIdx.x >> 5;
-        const int nw = (int)blockDim.x >> 5;
-        for (int tt = wid; tt < t; tt += nw) {
-            float v = red[tt * blockDim.x + lane];
-            for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffffu, v, off);
-            if (lane == 0) y[(size_t)tt * out_f + row] = v;
-        }
-        __syncthreads();
-    }
-}
-
-// GATE-ONLY shifted-pairing RED twin of matvec_bf16_f32acc_x1_tcols_rf: the warp phase runs
-// the shuffle chain with ASCENDING offsets (1,2,4,8,16) — the same 32 partials summed under
-// a DIFFERENT association (adjacent-pair tree instead of the halving tree). Mathematically
-// the same sum; in f32 rounding it is not, so the door-R bit bar must see it. Never
-// dispatched by any route — it exists so glm5_matvec_doors_gpu can prove the pairing bar
-// bites (the `_vl` twin discipline's red arm for a REDUCTION restructure).
-extern "C" __global__ void matvec_bf16_f32acc_x1_tcols_rf_redshift(
-        const unsigned short* __restrict__ w, const float* __restrict__ x,
-        float* __restrict__ y, int in_f, int out_f, int t) {
-    extern __shared__ float red[]; // t * blockDim.x floats
-    int row = blockIdx.x;
-    if (row >= out_f) return;
-    const unsigned short* wr = w + (size_t)row * in_f;
-    float acc[MEMRA_BF16_TCOLS_MAX];
-    for (int tt = 0; tt < t; tt++) acc[tt] = 0.0f;
-    const int stride = blockDim.x * 8;
-    for (int i = threadIdx.x * 8; i < in_f; i += stride) {
-        uint4 pack = *reinterpret_cast<const uint4*>(wr + i);
-        const unsigned short* wp = reinterpret_cast<const unsigned short*>(&pack);
-        for (int tt = 0; tt < t; tt++) {
-            const float* xr = x + (size_t)tt * in_f;
-            float4 x0 = *reinterpret_cast<const float4*>(xr + i);
-            float4 x1 = *reinterpret_cast<const float4*>(xr + i + 4);
-            float a = acc[tt];
-            a += __uint_as_float((unsigned)wp[0] << 16) * x0.x;
-            a += __uint_as_float((unsigned)wp[1] << 16) * x0.y;
-            a += __uint_as_float((unsigned)wp[2] << 16) * x0.z;
-            a += __uint_as_float((unsigned)wp[3] << 16) * x0.w;
-            a += __uint_as_float((unsigned)wp[4] << 16) * x1.x;
-            a += __uint_as_float((unsigned)wp[5] << 16) * x1.y;
-            a += __uint_as_float((unsigned)wp[6] << 16) * x1.z;
-            a += __uint_as_float((unsigned)wp[7] << 16) * x1.w;
-            acc[tt] = a;
-        }
-    }
-    for (int tt = 0; tt < t; tt++) red[tt * blockDim.x + threadIdx.x] = acc[tt];
-    __syncthreads();
-    for (int s = blockDim.x / 2; s >= 32; s >>= 1) {
-        if (threadIdx.x < s) {
-            for (int tt = 0; tt < t; tt++)
-                red[tt * blockDim.x + threadIdx.x] += red[tt * blockDim.x + threadIdx.x + s];
-        }
-        __syncthreads();
-    }
-    const int lane = threadIdx.x & 31;
-    const int wid = threadIdx.x >> 5;
-    const int nw = (int)blockDim.x >> 5;
-    for (int tt = wid; tt < t; tt += nw) {
-        float v = red[tt * blockDim.x + lane];
-        // THE SHIFT: ascending offsets — a different association of the same 32 partials.
-        for (int off = 1; off <= 16; off <<= 1) v += __shfl_down_sync(0xffffffffu, v, off);
-        if (lane == 0) y[(size_t)tt * out_f + row] = v;
-    }
-}
-
 // ---- Fused QKV F32 matvec (step TP decode v2, MEMRA_STEP_TP_QKV_FUSED). ----
 // One launch computes all three rank-local projections from the shared input: block b maps to
 // (weight, output, row) by range — rows [0, out_q) are Q, [out_q, out_q+out_kv) are K, the rest
@@ -12764,6 +10873,124 @@ extern "C" __global__ void matvec_bf16_dual(
         float v = (threadIdx.x < (blockDim.x + 31) / 32) ? s[threadIdx.x] : 0.0f;
         for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffff, v, off);
         if (threadIdx.x == 0) y[row] = v;
+    }
+}
+
+// ---- Fused QK rms-norm + neox rope (step TP decode, t=1, MEMRA_STEP_TP_QKV_FUSED). ----
+// One launch per rank: block h < nh_q norms+ropes Q head h, else K head h-nh_q. rms math is
+// rms_norm_f32's (same per-thread square loop + tree reduce, ncols=head_dim); rope math is
+// rope_neox2_f32's (same theta chain, pos read directly from the device counter — the per-rank
+// position upload disappears). Same numeric-class door as the fused QKV projection.
+// FUSION #2a: gate+up selected-expert sweeps in ONE launch (v2 slot-major banks). The two
+// sweeps share sel/aq/ad and have identical geometry; blocks [0,out_f) run the exact
+// _sel_v2 body on the GATE bank, [out_f,2*out_f) on the UP bank — per-row bit-identical,
+// halves the sweep launch count and doubles grid fill.
+extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2_gu(
+        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
+        const int* __restrict__ sel,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ yg, float* __restrict__ yu,
+        int in_f, int out_f, int n_sel,
+        long row_bytes, long expert_stride, long act_row_stride, long ad_row_stride) {
+    int o2 = blockIdx.x, t = blockIdx.y;
+    if (o2 >= 2 * out_f || t >= n_sel) return;
+    const unsigned char* Wbank = (o2 < out_f) ? Wg : Wu;
+    float* y = (o2 < out_f) ? yg : yu;
+    int o = (o2 < out_f) ? o2 : o2 - out_f;
+    int tid = threadIdx.x;
+    int nsb = in_f >> 5;
+    const unsigned char* wrow = Wbank + (long)sel[t] * expert_stride + (long)o * row_bytes;
+    const unsigned char* drow = wrow + (size_t)nsb * 16;
+    const signed char*   arow = aq + (size_t)t * (size_t)act_row_stride;
+    const float*         adrow = ad + (size_t)t * (size_t)ad_row_stride;
+    float acc = 0.0f;
+    for (int g = tid; g < nsb; g += blockDim.x) {
+        const unsigned char* qsg = wrow + (size_t)g * 16;
+        const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
+        int4 a01 = aq16[0], a23 = aq16[1];
+        int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+        float partial = 0.0f;
+        #pragma unroll
+        for (int sl = 0; sl < 2; sl++) {
+            int q4a = get_int_b4(qsg + sl * 8);
+            int q4b = get_int_b4(qsg + sl * 8 + 4);
+            int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
+            int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
+            int base = sl * 4;
+            int sumi = 0;
+            sumi = dp4a(va.x, aq4[base + 0], sumi);
+            sumi = dp4a(vb.x, aq4[base + 1], sumi);
+            sumi = dp4a(va.y, aq4[base + 2], sumi);
+            sumi = dp4a(vb.y, aq4[base + 3], sumi);
+            partial += ue4m3_to_f32_d(drow[g * 2 + sl]) * (float)sumi;
+        }
+        acc += adrow[g] * partial;
+    }
+    __shared__ float s[32];
+    for (int off = 16; off > 0; off >>= 1) acc += __shfl_down_sync(0xffffffff, acc, off);
+    if ((tid & 31) == 0) s[tid >> 5] = acc;
+    __syncthreads();
+    if (tid < 32) {
+        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
+        for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffff, v, off);
+        if (tid == 0) y[(size_t)t * out_f + o] = v;
+    }
+}
+
+// T-COLUMN twin of _sel_v2_gu (spec verify, MEMRA_TCOL_FFN): 2*n_sel_col selection pairs
+// over TWO activation rows — pair t reads activation row t/n_sel_col. The per-(pair,row)
+// body is the _sel_v2_gu program verbatim, so each column's outputs are bit-equal to its
+// own t=1 launch with its own 8-pair selection.
+extern "C" __global__ void qmatvec_nvfp4_dp4a_sel_v2_gu_tcol(
+        const unsigned char* __restrict__ Wg, const unsigned char* __restrict__ Wu,
+        const int* __restrict__ sel,
+        const signed char* __restrict__ aq, const float* __restrict__ ad,
+        float* __restrict__ yg, float* __restrict__ yu,
+        int in_f, int out_f, int n_sel,
+        long row_bytes, long expert_stride, long act_row_stride, long ad_row_stride,
+        int n_sel_col) {
+    int o2 = blockIdx.x, t = blockIdx.y;
+    if (o2 >= 2 * out_f || t >= n_sel) return;
+    const unsigned char* Wbank = (o2 < out_f) ? Wg : Wu;
+    float* y = (o2 < out_f) ? yg : yu;
+    int o = (o2 < out_f) ? o2 : o2 - out_f;
+    int tid = threadIdx.x;
+    int nsb = in_f >> 5;
+    const unsigned char* wrow = Wbank + (long)sel[t] * expert_stride + (long)o * row_bytes;
+    const unsigned char* drow = wrow + (size_t)nsb * 16;
+    const signed char*   arow = aq + (size_t)(t / n_sel_col) * (size_t)act_row_stride;
+    const float*         adrow = ad + (size_t)(t / n_sel_col) * (size_t)ad_row_stride;
+    float acc = 0.0f;
+    for (int g = tid; g < nsb; g += blockDim.x) {
+        const unsigned char* qsg = wrow + (size_t)g * 16;
+        const int4* aq16 = (const int4*)(arow + (size_t)g * 32);
+        int4 a01 = aq16[0], a23 = aq16[1];
+        int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
+        float partial = 0.0f;
+        #pragma unroll
+        for (int sl = 0; sl < 2; sl++) {
+            int q4a = get_int_b4(qsg + sl * 8);
+            int q4b = get_int_b4(qsg + sl * 8 + 4);
+            int2 va = get_int_from_table_16_d(q4a, kvalues_mxfp4_d);
+            int2 vb = get_int_from_table_16_d(q4b, kvalues_mxfp4_d);
+            int base = sl * 4;
+            int sumi = 0;
+            sumi = dp4a(va.x, aq4[base + 0], sumi);
+            sumi = dp4a(vb.x, aq4[base + 1], sumi);
+            sumi = dp4a(va.y, aq4[base + 2], sumi);
+            sumi = dp4a(vb.y, aq4[base + 3], sumi);
+            partial += ue4m3_to_f32_d(drow[g * 2 + sl]) * (float)sumi;
+        }
+        acc += adrow[g] * partial;
+    }
+    __shared__ float s[32];
+    for (int off = 16; off > 0; off >>= 1) acc += __shfl_down_sync(0xffffffff, acc, off);
+    if ((tid & 31) == 0) s[tid >> 5] = acc;
+    __syncthreads();
+    if (tid < 32) {
+        float v = (tid < (blockDim.x + 31) / 32) ? s[tid] : 0.0f;
+        for (int off = 16; off > 0; off >>= 1) v += __shfl_down_sync(0xffffffff, v, off);
+        if (tid == 0) y[(size_t)t * out_f + o] = v;
     }
 }
 
@@ -12889,23 +11116,6 @@ extern "C" __global__ void axpy_rows_seq_f32(
     float acc = 0.0f;
     for (int p = 0; p < n_rows; p++) acc += w[p] * x[(size_t)p * width + i];
     y[i] = acc;
-}
-
-// Token-major twin: each output token reduces its own contiguous `slots` route rows in canonical
-// slot order. Used by batched EP decode after owner ranks scatter down rows into the root slab.
-extern "C" __global__ void axpy_rows_seq_tokens_f32(
-        const float* __restrict__ x, const float* __restrict__ w, float* __restrict__ y,
-        int width, int slots, int tokens) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int token = blockIdx.y;
-    if (i >= width || token >= tokens) return;
-    float acc = 0.0f;
-    int row0 = token * slots;
-    for (int slot = 0; slot < slots; ++slot) {
-        int row = row0 + slot;
-        acc += w[row] * x[(size_t)row * width + i];
-    }
-    y[(size_t)token * width + i] = acc;
 }
 
 // ---- Clamped selected-experts SwiGLU (step35 routed clamp, device routes program). ----
@@ -13250,407 +11460,4 @@ extern "C" __global__ void qmatvec_q8_0_b4_rp(
         total += warp_reduce_sum(acc);
     }
     if (lane == 0) y[row] = total;
-}
-
-// T-COLUMN q8_0 TWINS OF THE VERIFY WALK'S TWO HOT KERNELS (MEMRA_STEP_TP_W8, 2026-08-26).
-// nsys on a K=1 spec window put matvec_bf16_b4_tcol at 24.8% of GPU time and
-// matvec_bf16_qkvg_tcol at 12.3% — 37% of the verify in two BF16 kernels, because the W8 door
-// had only replaced the DECODE twins. These read the same planar q8_0 mirrors the decode arm
-// uses, one warp per (row, column): per-row program identical to qmatvec_q8_0_qkv_rp /
-// qmatvec_q8_0_b4_rp, so a t-column call is bit-identical to t separate single-row calls.
-// blockIdx.y is the verify column; the activation is q8_1 per column (aq/ad strided by column).
-extern "C" __global__ void qmatvec_q8_0_qkv_rp_t(
-        const unsigned char* __restrict__ Wq, const unsigned char* __restrict__ Wk,
-        const unsigned char* __restrict__ Wv,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ yq, float* __restrict__ yk, float* __restrict__ yv,
-        int in_f, int out_q, int out_kv) {
-    MEMRA_PDL_ENTRY();
-    const int col = blockIdx.y;
-    const int r = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    const int rows = out_q + 2 * out_kv;
-    if (r >= rows) return;
-    const unsigned char* W;
-    float* y;
-    int row, plane_rows, ystride;
-    if (r < out_q) {
-        W = Wq; y = yq; row = r; plane_rows = out_q; ystride = out_q;
-    } else if (r < out_q + out_kv) {
-        W = Wk; y = yk; row = r - out_q; plane_rows = out_kv; ystride = out_kv;
-    } else {
-        W = Wv; y = yv; row = r - out_q - out_kv; plane_rows = out_kv; ystride = out_kv;
-    }
-    const int lane = threadIdx.x;
-    const int nblk = in_f / 32;
-    const unsigned char* wq; const unsigned short* wd;
-    q8_0_rp_planes(W, plane_rows, row, nblk, &wq, &wd);
-    const signed char* arow = aq + (size_t)col * in_f;
-    const float* adrow = ad + (size_t)col * nblk;
-    float acc = 0.0f;
-    for (int blk = lane; blk < nblk; blk += 32) {
-        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
-        int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
-        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-        float dw = half_to_float(wd[blk]);
-        const int4* aq16 = (const int4*)(arow + blk * 32);
-        int4 a01 = aq16[0], a23 = aq16[1];
-        int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-        int sumi = 0;
-        #pragma unroll
-        for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
-        acc += dw * adrow[blk] * (float)sumi;
-    }
-    acc = warp_reduce_sum(acc);
-    if (lane == 0) y[(size_t)col * ystride + row] = acc;
-}
-
-// T-column q8_0 o_proj over the four HEAD_SPLIT blocks; blockIdx.y is the verify column.
-extern "C" __global__ void qmatvec_q8_0_b4_rp_t(
-        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
-        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ y, int block_cols, int out_f) {
-    MEMRA_PDL_ENTRY();
-    const int col = blockIdx.y;
-    const int row = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    if (row >= out_f) return;
-    const int lane = threadIdx.x;
-    const int nblk = block_cols / 32;
-    const unsigned char* planes[4] = { W0, W1, W2, W3 };
-    const signed char* acol = aq + (size_t)col * 4 * block_cols;
-    const float* adcol = ad + (size_t)col * 4 * nblk;
-    float total = 0.0f;
-    for (int b = 0; b < 4; b++) {
-        const unsigned char* wq; const unsigned short* wd;
-        q8_0_rp_planes(planes[b], out_f, row, nblk, &wq, &wd);
-        const signed char* arow = acol + (size_t)b * block_cols;
-        const float* adrow = adcol + (size_t)b * nblk;
-        float acc = 0.0f;
-        for (int blk = lane; blk < nblk; blk += 32) {
-            int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
-            int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
-            int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-            float dw = half_to_float(wd[blk]);
-            const int4* aq16 = (const int4*)(arow + blk * 32);
-            int4 a01 = aq16[0], a23 = aq16[1];
-            int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-            int sumi = 0;
-            #pragma unroll
-            for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
-            acc += dw * adrow[blk] * (float)sumi;
-        }
-        total += warp_reduce_sum(acc);
-    }
-    if (lane == 0) y[(size_t)col * out_f + row] = total;
-}
-
-// T-COLUMN q8_0 SINGLE-MATRIX GEMV (MEMRA_STEP_TP_W8 + MEMRA_W8_HYBRID, 2026-08-26). The verify
-// walk's shexp/dense rows still ran bf16 (`matvec_bf16_f32acc_x4_rows`: 78 launches/round at
-// 56.5 us = ~162 ms of GPU in a 37-round capture) because the mirror routing only fired at t==1.
-// One warp per (row, column); per-row program identical to qmatvec_q8_0_mmvq_rp, so a t-column
-// call is bit-identical to t single-row calls.
-extern "C" __global__ void qmatvec_q8_0_rows_t(
-        const unsigned char* __restrict__ W,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ y, int in_f, int out_f) {
-    MEMRA_PDL_ENTRY();
-    const int col = blockIdx.y;
-    const int row = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    if (row >= out_f) return;
-    const int lane = threadIdx.x;
-    const int nblk = in_f / 32;
-    const unsigned char* wq; const unsigned short* wd;
-    q8_0_rp_planes(W, out_f, row, nblk, &wq, &wd);
-    const signed char* arow = aq + (size_t)col * in_f;
-    const float* adrow = ad + (size_t)col * nblk;
-    float acc = 0.0f;
-    for (int blk = lane; blk < nblk; blk += 32) {
-        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
-        int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
-        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-        float dw = half_to_float(wd[blk]);
-        const int4* aq16 = (const int4*)(arow + blk * 32);
-        int4 a01 = aq16[0], a23 = aq16[1];
-        int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-        int sumi = 0;
-        #pragma unroll
-        for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
-        acc += dw * adrow[blk] * (float)sumi;
-    }
-    acc = warp_reduce_sum(acc);
-    if (lane == 0) y[(size_t)col * out_f + row] = acc;
-}
-
-// WEIGHT-ONCE T-COLUMN TWINS (`_tw`, MEMRA_Q8T_WONCE, 2026-08-27). The `_t` forms above put the
-// verify column on blockIdx.y — a full row-grid copy per column — and load weights with __ldcs,
-// the STREAMING evict-first modifier. At t=1 that pairing is right (weights have no reuse); at
-// t>1 it is exactly wrong: the columns share every weight byte and the second column re-reads
-// them all from DRAM through a path that refuses cache retention. nsys (2026-08-27, K=1 doors):
-// qkv_rp_t 36.5 us vs qkv_rp 21.8 (1.67x for 2 columns), b4_rp_t 29.0 vs 20.3 (1.43x), where a
-// weight-bound kernel should scale ~1.1x. These twins drop the column grid axis, load each weight
-// int4 ONCE, and run `t` independent accumulator chains against it.
-//
-// EXACTNESS (LAW:vl-bit-identity-order-pinning): each column keeps its own single-dependence
-// accumulator chain over the SAME lane-strided blk order as the `_t` form, reduced by the same
-// warp_reduce_sum — the per-column float program is unchanged, only the weight-load schedule
-// moves. ptxas must not be given a reason to merge chains: the accumulators live in a plain
-// array indexed by a #pragma unroll'd loop, never summed across columns.
-#define MEMRA_Q8T_TMAX 8
-// Wide twins (_tw32) carry their own accumulator bound so the t<=8 kernels keep their
-// register footprint: acc[32] in every launch sized registers for 32 columns and cost the
-// t=2 decode verify ~10% (naked-spec 83.6 vs 93.2, caught by the deploy gate 2026-08-27).
-#define MEMRA_Q8T_TMAX_WIDE 32
-
-extern "C" __global__ void qmatvec_q8_0_qkv_rp_tw(
-        const unsigned char* __restrict__ Wq, const unsigned char* __restrict__ Wk,
-        const unsigned char* __restrict__ Wv,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ yq, float* __restrict__ yk, float* __restrict__ yv,
-        int in_f, int out_q, int out_kv, int t) {
-    MEMRA_PDL_ENTRY();
-    const int r = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    const int rows = out_q + 2 * out_kv;
-    if (r >= rows) return;
-    const unsigned char* W;
-    float* y;
-    int row, plane_rows, ystride;
-    if (r < out_q) {
-        W = Wq; y = yq; row = r; plane_rows = out_q; ystride = out_q;
-    } else if (r < out_q + out_kv) {
-        W = Wk; y = yk; row = r - out_q; plane_rows = out_kv; ystride = out_kv;
-    } else {
-        W = Wv; y = yv; row = r - out_q - out_kv; plane_rows = out_kv; ystride = out_kv;
-    }
-    const int lane = threadIdx.x;
-    const int nblk = in_f / 32;
-    const unsigned char* wq; const unsigned short* wd;
-    q8_0_rp_planes(W, plane_rows, row, nblk, &wq, &wd);
-    float acc[MEMRA_Q8T_TMAX];
-    #pragma unroll
-    for (int c = 0; c < MEMRA_Q8T_TMAX; c++) acc[c] = 0.0f;
-    for (int blk = lane; blk < nblk; blk += 32) {
-        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
-        int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
-        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-        float dw = half_to_float(wd[blk]);
-        for (int c = 0; c < t; c++) {
-            const int4* aq16 = (const int4*)(aq + (size_t)c * in_f + blk * 32);
-            int4 a01 = aq16[0], a23 = aq16[1];
-            int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-            int sumi = 0;
-            #pragma unroll
-            for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
-            acc[c] += dw * ad[(size_t)c * nblk + blk] * (float)sumi;
-        }
-    }
-    for (int c = 0; c < t; c++) {
-        float a = warp_reduce_sum(acc[c]);
-        if (lane == 0) y[(size_t)c * ystride + row] = a;
-    }
-}
-
-extern "C" __global__ void qmatvec_q8_0_qkv_rp_tw32(
-        const unsigned char* __restrict__ Wq, const unsigned char* __restrict__ Wk,
-        const unsigned char* __restrict__ Wv,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ yq, float* __restrict__ yk, float* __restrict__ yv,
-        int in_f, int out_q, int out_kv, int t) {
-    MEMRA_PDL_ENTRY();
-    const int r = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    const int rows = out_q + 2 * out_kv;
-    if (r >= rows) return;
-    const unsigned char* W;
-    float* y;
-    int row, plane_rows, ystride;
-    if (r < out_q) {
-        W = Wq; y = yq; row = r; plane_rows = out_q; ystride = out_q;
-    } else if (r < out_q + out_kv) {
-        W = Wk; y = yk; row = r - out_q; plane_rows = out_kv; ystride = out_kv;
-    } else {
-        W = Wv; y = yv; row = r - out_q - out_kv; plane_rows = out_kv; ystride = out_kv;
-    }
-    const int lane = threadIdx.x;
-    const int nblk = in_f / 32;
-    const unsigned char* wq; const unsigned short* wd;
-    q8_0_rp_planes(W, plane_rows, row, nblk, &wq, &wd);
-    float acc[MEMRA_Q8T_TMAX_WIDE];
-    #pragma unroll
-    for (int c = 0; c < MEMRA_Q8T_TMAX_WIDE; c++) acc[c] = 0.0f;
-    for (int blk = lane; blk < nblk; blk += 32) {
-        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
-        int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
-        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-        float dw = half_to_float(wd[blk]);
-        for (int c = 0; c < t; c++) {
-            const int4* aq16 = (const int4*)(aq + (size_t)c * in_f + blk * 32);
-            int4 a01 = aq16[0], a23 = aq16[1];
-            int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-            int sumi = 0;
-            #pragma unroll
-            for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
-            acc[c] += dw * ad[(size_t)c * nblk + blk] * (float)sumi;
-        }
-    }
-    for (int c = 0; c < t; c++) {
-        float a = warp_reduce_sum(acc[c]);
-        if (lane == 0) y[(size_t)c * ystride + row] = a;
-    }
-}
-
-extern "C" __global__ void qmatvec_q8_0_b4_rp_tw(
-        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
-        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ y, int block_cols, int out_f, int t) {
-    MEMRA_PDL_ENTRY();
-    const int row = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    if (row >= out_f) return;
-    const int lane = threadIdx.x;
-    const int nblk = block_cols / 32;
-    const unsigned char* planes[4] = { W0, W1, W2, W3 };
-    float total[MEMRA_Q8T_TMAX];
-    #pragma unroll
-    for (int c = 0; c < MEMRA_Q8T_TMAX; c++) total[c] = 0.0f;
-    for (int b = 0; b < 4; b++) {
-        const unsigned char* wq; const unsigned short* wd;
-        q8_0_rp_planes(planes[b], out_f, row, nblk, &wq, &wd);
-        float acc[MEMRA_Q8T_TMAX];
-        #pragma unroll
-        for (int c = 0; c < MEMRA_Q8T_TMAX; c++) acc[c] = 0.0f;
-        for (int blk = lane; blk < nblk; blk += 32) {
-            int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
-            int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
-            int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-            float dw = half_to_float(wd[blk]);
-            for (int c = 0; c < t; c++) {
-                const signed char* arow = aq + (size_t)c * 4 * block_cols + (size_t)b * block_cols;
-                const float* adrow = ad + (size_t)c * 4 * nblk + (size_t)b * nblk;
-                const int4* aq16 = (const int4*)(arow + blk * 32);
-                int4 a01 = aq16[0], a23 = aq16[1];
-                int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-                int sumi = 0;
-                #pragma unroll
-                for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
-                acc[c] += dw * adrow[blk] * (float)sumi;
-            }
-        }
-        // Same per-plane reduce-then-add order as the `_t` form: total_c += reduce(acc_c) per b.
-        for (int c = 0; c < t; c++) total[c] += warp_reduce_sum(acc[c]);
-    }
-    if (lane == 0)
-        for (int c = 0; c < t; c++) y[(size_t)c * out_f + row] = total[c];
-}
-
-extern "C" __global__ void qmatvec_q8_0_b4_rp_tw32(
-        const unsigned char* __restrict__ W0, const unsigned char* __restrict__ W1,
-        const unsigned char* __restrict__ W2, const unsigned char* __restrict__ W3,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ y, int block_cols, int out_f, int t) {
-    MEMRA_PDL_ENTRY();
-    const int row = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    if (row >= out_f) return;
-    const int lane = threadIdx.x;
-    const int nblk = block_cols / 32;
-    const unsigned char* planes[4] = { W0, W1, W2, W3 };
-    float total[MEMRA_Q8T_TMAX_WIDE];
-    #pragma unroll
-    for (int c = 0; c < MEMRA_Q8T_TMAX_WIDE; c++) total[c] = 0.0f;
-    for (int b = 0; b < 4; b++) {
-        const unsigned char* wq; const unsigned short* wd;
-        q8_0_rp_planes(planes[b], out_f, row, nblk, &wq, &wd);
-        float acc[MEMRA_Q8T_TMAX_WIDE];
-        #pragma unroll
-        for (int c = 0; c < MEMRA_Q8T_TMAX_WIDE; c++) acc[c] = 0.0f;
-        for (int blk = lane; blk < nblk; blk += 32) {
-            int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
-            int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
-            int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-            float dw = half_to_float(wd[blk]);
-            for (int c = 0; c < t; c++) {
-                const signed char* arow = aq + (size_t)c * 4 * block_cols + (size_t)b * block_cols;
-                const float* adrow = ad + (size_t)c * 4 * nblk + (size_t)b * nblk;
-                const int4* aq16 = (const int4*)(arow + blk * 32);
-                int4 a01 = aq16[0], a23 = aq16[1];
-                int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-                int sumi = 0;
-                #pragma unroll
-                for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
-                acc[c] += dw * adrow[blk] * (float)sumi;
-            }
-        }
-        // Same per-plane reduce-then-add order as the `_t` form: total_c += reduce(acc_c) per b.
-        for (int c = 0; c < t; c++) total[c] += warp_reduce_sum(acc[c]);
-    }
-    if (lane == 0)
-        for (int c = 0; c < t; c++) y[(size_t)c * out_f + row] = total[c];
-}
-
-extern "C" __global__ void qmatvec_q8_0_rows_tw(
-        const unsigned char* __restrict__ W,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ y, int in_f, int out_f, int t) {
-    MEMRA_PDL_ENTRY();
-    const int row = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    if (row >= out_f) return;
-    const int lane = threadIdx.x;
-    const int nblk = in_f / 32;
-    const unsigned char* wq; const unsigned short* wd;
-    q8_0_rp_planes(W, out_f, row, nblk, &wq, &wd);
-    float acc[MEMRA_Q8T_TMAX];
-    #pragma unroll
-    for (int c = 0; c < MEMRA_Q8T_TMAX; c++) acc[c] = 0.0f;
-    for (int blk = lane; blk < nblk; blk += 32) {
-        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
-        int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
-        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-        float dw = half_to_float(wd[blk]);
-        for (int c = 0; c < t; c++) {
-            const int4* aq16 = (const int4*)(aq + (size_t)c * in_f + blk * 32);
-            int4 a01 = aq16[0], a23 = aq16[1];
-            int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-            int sumi = 0;
-            #pragma unroll
-            for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
-            acc[c] += dw * ad[(size_t)c * nblk + blk] * (float)sumi;
-        }
-    }
-    for (int c = 0; c < t; c++) {
-        float a = warp_reduce_sum(acc[c]);
-        if (lane == 0) y[(size_t)c * out_f + row] = a;
-    }
-}
-
-extern "C" __global__ void qmatvec_q8_0_rows_tw32(
-        const unsigned char* __restrict__ W,
-        const signed char* __restrict__ aq, const float* __restrict__ ad,
-        float* __restrict__ y, int in_f, int out_f, int t) {
-    MEMRA_PDL_ENTRY();
-    const int row = blockIdx.x * MEMRA_MMVQ_ROWS + threadIdx.y;
-    if (row >= out_f) return;
-    const int lane = threadIdx.x;
-    const int nblk = in_f / 32;
-    const unsigned char* wq; const unsigned short* wd;
-    q8_0_rp_planes(W, out_f, row, nblk, &wq, &wd);
-    float acc[MEMRA_Q8T_TMAX_WIDE];
-    #pragma unroll
-    for (int c = 0; c < MEMRA_Q8T_TMAX_WIDE; c++) acc[c] = 0.0f;
-    for (int blk = lane; blk < nblk; blk += 32) {
-        int4 w01 = __ldcs((const int4*)(wq + (size_t)blk * 32));
-        int4 w23 = __ldcs((const int4*)(wq + (size_t)blk * 32 + 16));
-        int wi[8] = { w01.x, w01.y, w01.z, w01.w, w23.x, w23.y, w23.z, w23.w };
-        float dw = half_to_float(wd[blk]);
-        for (int c = 0; c < t; c++) {
-            const int4* aq16 = (const int4*)(aq + (size_t)c * in_f + blk * 32);
-            int4 a01 = aq16[0], a23 = aq16[1];
-            int aq4[8] = { a01.x, a01.y, a01.z, a01.w, a23.x, a23.y, a23.z, a23.w };
-            int sumi = 0;
-            #pragma unroll
-            for (int k = 0; k < 8; k++) sumi = dp4a(wi[k], aq4[k], sumi);
-            acc[c] += dw * ad[(size_t)c * nblk + blk] * (float)sumi;
-        }
-    }
-    for (int c = 0; c < t; c++) {
-        float a = warp_reduce_sum(acc[c]);
-        if (lane == 0) y[(size_t)c * out_f + row] = a;
-    }
 }

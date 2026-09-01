@@ -167,7 +167,6 @@ impl Geometry {
     ///
     /// For fields an upstream config legitimately leaves unset (`sliding_window` is `None` on
     /// non-SWA models). Absence is reported so a silently-thinning manifest is visible.
-    #[allow(dead_code)] // allow: shared #[path] include across the parity bins; not every bin uses every expect_* helper
     pub fn expect_usize_if_present(&self, key: &str, want: usize) -> Result<bool, String> {
         if self.get(key).is_none() {
             return Ok(false);
@@ -178,7 +177,6 @@ impl Geometry {
 
     /// Same, string-valued. Used for per-layer flag vectors whose upstream representation
     /// (`layer_types`) an export may nest or omit.
-    #[allow(dead_code)] // allow: shared #[path] include across the parity bins; not every bin uses every expect_* helper
     pub fn expect_str_if_present(&self, key: &str, want: &str) -> Result<bool, String> {
         if self.get(key).is_none() {
             return Ok(false);
@@ -212,7 +210,6 @@ pub fn expect_len(dump: &str, got: usize, want: usize, how: &str) -> Result<(), 
 /// remaining known site is `crates/memra-gguf/examples/dequant_oracle_diff.rs`, in another crate
 /// (GATE-INTEGRITY-20260819 §5).
 #[allow(dead_code)]
-#[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
 pub fn exact_div(dump: &str, len: usize, per: usize, per_desc: &str) -> Result<usize, String> {
     if per == 0 {
         return Err(format!(

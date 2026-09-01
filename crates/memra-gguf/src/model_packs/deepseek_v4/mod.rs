@@ -109,7 +109,6 @@ fn plan_builder(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
     Ok(plan)
 }
 
-#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 fn tensor_schema(
     config: &ModelConfig,
     plan: &ModelPlan,
@@ -364,69 +363,71 @@ fn semantic_key(name: &str) -> String {
 }
 
 fn semantic_tensor_id(name: &str, plan: &ModelPlan) -> TensorId {
-    if let Some(rest) = name.strip_prefix("layers.")
-        && let Some((index, suffix)) = rest.split_once('.')
-        && let Ok(index) = index.parse()
-    {
-        if let Some((expert, tensor)) = expert_tensor_for_suffix(suffix) {
-            return TensorId::Expert {
-                layer: index,
-                expert,
-                tensor,
-            };
-        }
-        if let Some(tensor) = layer_tensor_for_suffix(suffix) {
-            return TensorId::Layer { index, tensor };
+    if let Some(rest) = name.strip_prefix("layers.") {
+        if let Some((index, suffix)) = rest.split_once('.') {
+            if let Ok(index) = index.parse() {
+                if let Some((expert, tensor)) = expert_tensor_for_suffix(suffix) {
+                    return TensorId::Expert {
+                        layer: index,
+                        expert,
+                        tensor,
+                    };
+                }
+                if let Some(tensor) = layer_tensor_for_suffix(suffix) {
+                    return TensorId::Layer { index, tensor };
+                }
+            }
         }
     }
-    if let Some(rest) = name.strip_prefix("mtp.")
-        && let Some((stage, suffix)) = rest.split_once('.')
-        && let Ok(stage) = stage.parse::<usize>()
-    {
-        let Some(DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref() else {
-            return TensorId::Family {
-                family: "deepseek_v4",
-                key: semantic_key(name),
-            };
-        };
-        let last = dspark.blocks.len().saturating_sub(1);
-        let special = match (stage, suffix) {
-            (0, "main_proj.weight") => Some(DsparkTensor::MainProjection),
-            (0, "main_norm.weight") => Some(DsparkTensor::MainNorm),
-            (stage, "norm.weight") if stage == last => Some(DsparkTensor::OutputNorm),
-            (stage, "markov_head.markov_w1.weight") if stage == last => {
-                Some(DsparkTensor::MarkovEmbedding)
+    if let Some(rest) = name.strip_prefix("mtp.") {
+        if let Some((stage, suffix)) = rest.split_once('.') {
+            if let Ok(stage) = stage.parse::<usize>() {
+                let Some(DrafterPlan::Dspark(dspark)) = plan.drafter.as_ref() else {
+                    return TensorId::Family {
+                        family: "deepseek_v4",
+                        key: semantic_key(name),
+                    };
+                };
+                let last = dspark.blocks.len().saturating_sub(1);
+                let special = match (stage, suffix) {
+                    (0, "main_proj.weight") => Some(DsparkTensor::MainProjection),
+                    (0, "main_norm.weight") => Some(DsparkTensor::MainNorm),
+                    (stage, "norm.weight") if stage == last => Some(DsparkTensor::OutputNorm),
+                    (stage, "markov_head.markov_w1.weight") if stage == last => {
+                        Some(DsparkTensor::MarkovEmbedding)
+                    }
+                    (stage, "markov_head.markov_w2.weight") if stage == last => {
+                        Some(DsparkTensor::MarkovOutput)
+                    }
+                    (stage, "confidence_head.proj.weight") if stage == last => {
+                        Some(DsparkTensor::ConfidenceProjection)
+                    }
+                    (stage, "hc_head_base") if stage == last => Some(DsparkTensor::HeadHyperBase),
+                    (stage, "hc_head_fn") if stage == last => Some(DsparkTensor::HeadHyperFunction),
+                    (stage, "hc_head_scale") if stage == last => Some(DsparkTensor::HeadHyperScale),
+                    _ => None,
+                };
+                if let Some(tensor) = special {
+                    return TensorId::Dspark(tensor);
+                }
+                if let (Some(layer), Some((expert, tensor))) =
+                    (dspark.blocks.get(stage), expert_tensor_for_suffix(suffix))
+                {
+                    return TensorId::Expert {
+                        layer: layer.index,
+                        expert,
+                        tensor,
+                    };
+                }
+                if let (Some(layer), Some(tensor)) =
+                    (dspark.blocks.get(stage), layer_tensor_for_suffix(suffix))
+                {
+                    return TensorId::Layer {
+                        index: layer.index,
+                        tensor,
+                    };
+                }
             }
-            (stage, "markov_head.markov_w2.weight") if stage == last => {
-                Some(DsparkTensor::MarkovOutput)
-            }
-            (stage, "confidence_head.proj.weight") if stage == last => {
-                Some(DsparkTensor::ConfidenceProjection)
-            }
-            (stage, "hc_head_base") if stage == last => Some(DsparkTensor::HeadHyperBase),
-            (stage, "hc_head_fn") if stage == last => Some(DsparkTensor::HeadHyperFunction),
-            (stage, "hc_head_scale") if stage == last => Some(DsparkTensor::HeadHyperScale),
-            _ => None,
-        };
-        if let Some(tensor) = special {
-            return TensorId::Dspark(tensor);
-        }
-        if let (Some(layer), Some((expert, tensor))) =
-            (dspark.blocks.get(stage), expert_tensor_for_suffix(suffix))
-        {
-            return TensorId::Expert {
-                layer: layer.index,
-                expert,
-                tensor,
-            };
-        }
-        if let (Some(layer), Some(tensor)) =
-            (dspark.blocks.get(stage), layer_tensor_for_suffix(suffix))
-        {
-            return TensorId::Layer {
-                index: layer.index,
-                tensor,
-            };
         }
     }
     TensorId::Family {
@@ -449,7 +450,7 @@ fn expert_tensor_for_suffix(suffix: &str) -> Option<(u32, ExpertTensor)> {
 }
 
 fn layer_tensor_for_suffix(suffix: &str) -> Option<LayerTensor> {
-    match suffix {
+    let tensor = match suffix {
         "attn_norm.weight" => Some(LayerTensor::PreAttentionNorm),
         "ffn_norm.weight" => Some(LayerTensor::PreMlpNorm),
         "attn.wq_a.weight" => Some(LayerTensor::MlaQueryDown),
@@ -483,7 +484,8 @@ fn layer_tensor_for_suffix(suffix: &str) -> Option<LayerTensor> {
         "ffn.shared_experts.w2.weight" => Some(LayerTensor::SharedMlpDown),
         "ffn.shared_experts.w3.weight" => Some(LayerTensor::SharedMlpUp),
         _ => None,
-    }
+    };
+    tensor
 }
 
 #[cfg(test)]
@@ -568,7 +570,6 @@ mod tests {
                     }),
                     other => panic!("unexpected DSV4 constraint {other:?}"),
                 },
-                physical_bytes: 1,
             })
             .collect();
         let bound = contract.bind(&census).unwrap();

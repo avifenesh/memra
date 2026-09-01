@@ -251,7 +251,6 @@ fn gate_block(g: &GgufFile, cfg: &ModelConfig, il: u32, t_q: usize, t_kv: usize,
     );
 }
 
-#[allow(clippy::unusual_byte_groupings)] // allow: mnemonic grouping of a pinned seed/magic constant
 fn fixture() -> (std::path::PathBuf, GgufFile, ModelConfig) {
     let p = std::env::temp_dir().join(format!(
         "memra-mla-fwd-{}-{:?}.gguf",

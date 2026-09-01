@@ -64,7 +64,7 @@ two PRO 6000 pod classes and roughly 2x apart between a 188-SM and an 82-SM boar
 | `vast-maxq-20260810` (historical) | 2x RTX PRO 6000 Blackwell Max-Q Workstation Edition, 96 GB each, 300 W, CUDA 13.1; PP-2 used host bounce | Rented | Historical/Max-Q serving numbers only; never a current regression baseline (`research/27bab-20260810/`) |
 | `pro6000sv-pair` | 2x RTX PRO 6000 Blackwell Server Edition 96 GB, sm_120a, CUDA 13.2, Gen5 x16 P2P | Rented, retired | Pre-merge and pre-release battery receipts (`research/coldfix-20260812/`, `research/b1fix-20260810/`); source of the PP-2 lanes (batched decode, spec verdict, hardening) and Step-3.7-Flash bring-up. GPU windows held under `flock`, both cards verified at 0 MiB on entry and exit |
 | rented H100 80 GB | 8x / 3x / 1x HBM3 pods | Rented | The H100 board, the replica fleet, QoS lanes, endurance |
-| `rtx6000` (receipts `research/tune-data/cloud-rtx6000.jsonl`) | PRO 6000 Server Edition | Rented | Hy3 spill / quantization research (`docs/HY3-SPILL.md`) |
+| `rtx6000` (receipts `research/tune-data/sbox-rtx6000.jsonl`) | PRO 6000 Server Edition | Rented | Hy3 spill / quantization research (`docs/HY3-SPILL.md`) |
 
 **No datacenter or desktop card is owned** — the 5090 Laptop is the only owned GPU, and the
 `Owned?` column above says so per rig. That is stated once, here, so no reader mistakes this
@@ -528,62 +528,6 @@ co-residence changes. The 188-SM phase-1 cell has not been re-measured on the cu
 (phase 1), [`research/servepath-p2-20260805/`](../research/servepath-p2-20260805/) (the
 fix + the graph-door refutation). The published boards above are **bare-CLI** numbers; do
 not read them as serve-path numbers.
-
-### Cold-prime rate under concurrency: the receipted gap (competitive-bench debt 2, OPEN)
-
-The 2026-09-01 competitive bench (darklanes
-`research/competitive-bench-20260901/RESULTS.md`, sections 4-7: one rented box, RTX PRO
-6000 Blackwell Server Edition 96 GB, the same `unsloth/Qwen3.8-27B-NVFP4`
-compressed-tensors bytes on every arm, spec OFF everywhere, corpus and driver banked in
-that lane) measured rebuilding an evicted context by re-prefill at:
-
-- N32 (0.93x of the vLLM device pool): memra cold TTFT p50 26.41-30.53 s vs vLLM 0.28.0
-  cold p50 6.82 s / p95 11.21 s. The verdict names this "the cold-prime rate gap on this
-  artifact class (our 27 s vs vLLM 7-11 s p50 at N32)".
-- N12 (0.35x, fits): memra cold p50 34.12-36.26 s; vLLM had zero cold turns.
-- Production context receipt, same shape: box12 rebuilt a 61,484-token context in
-  20.96 s cold (the host-tier flip receipt), about 2.9k tok/s end-to-end.
-
-What this number is NOT: it is not a single-stream prefill claim. The bench's cold TTFT
-column includes queue position behind concurrent primes and the decode interleave. It is
-also not the 5090 W4A4 numeric-class gap documented above ("Prefill, root-caused"): that
-one is single-stream and numeric; this one is concurrency-shaped, on the serving card
-class.
-
-Mechanism map from the worker (suspects, named for the diagnostic; none of this is a
-measured attribution yet):
-
-1. Interactive prime is time-sliced at `PREFILL_TICK_T` = 1024 tokens per session per
-   scheduler tick. With K sessions priming, a 60k-token rebuild pays ~59 round-robin
-   visits, each behind K-1 sibling chunks plus the batched decode phase (tick order:
-   spec bursts, prefill chunks, batched decode).
-2. The wide prime paths (the `SOLO_PREFILL_TICK_T` = 8192 widened solo prime, the
-   batched GEMM prime gated on `cache.pos == 0`, the fanout dedup) disengage in exactly
-   the N32/N56 regime: sessions are neither solo nor groupable. The 2026-08-28
-   `solo_widen_fresh` fix recovered only the solo shape (an armed capture boundary had
-   been silently costing 76% of cold TTFT on one measured shape).
-3. Boundary-stopped primes (`ckpt_at`, `snapshot_at`, including the new
-   `MEMRA_PREFIX_STABLE_BOUNDARY` arm) exclude their sessions from fanout and
-   prime-batch by design; that trade is stated on the flag rows.
-4. vLLM's arm on the same box runs continuous batching with chunked prefill folded into
-   the running batch, so its cold p50 tracks compute, not queue position.
-
-This is ENGINE work (scheduler and prime path), not ops, and it is GPU-diagnosis-first:
-no code arc opens before the attribution cell splits queue-wait from prime-compute.
-
-**Named GPU gate (PENDING, next hardware window), two cells:**
-
-- **Cell A, single-stream prime rate:** one session, cold prompts at 30/45/60/80k
-  tokens, bench artifact pins (`unsloth/Qwen3.8-27B-NVFP4` @ `57926bac...`), memra vs
-  vLLM 0.28.0 on the same box class, `MEMRA_TTFT_TRACE=1` phase receipts per turn.
-  Decides the kernel/numeric share of the gap.
-- **Cell B, contention twin:** the bench N32 organic replay (corpus v2 + the banked
-  driver), per-turn cold TTFT decomposed into queue-wait vs prime-compute from the ttft
-  trace. Decides the scheduling share.
-- Acceptance: the decomposition reproduces the observed ~27 s cold p50 within 15%, and
-  the follow-up arc is opened on the dominant term with these receipts attached.
-  Receipts land in darklanes `research/competitive-bench-20260901/` beside the orn66k
-  gate.
 
 ### Pipeline-parallel (PP-2) — the capacity shape
 

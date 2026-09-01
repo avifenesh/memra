@@ -76,8 +76,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|k| k.len + 1)
             .next()
             .unwrap_or(0);
-        #[allow(clippy::manual_div_ceil)]
-        // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
         let bucket = ((t_kv + 63) / 64).max(1);
         if !buckets_seen.contains(&bucket) {
             buckets_seen.push(bucket);

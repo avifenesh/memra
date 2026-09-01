@@ -30,7 +30,7 @@ size, OR endpoints hy3 + step-3.7-flash.
 ## 0. What the second card actually adds (engine truth, receipts first)
 
 - **Transport is NOT the problem on this pair.** PRO 6000 advertises P2P on the stock driver
-  (P2P NOTE §5: `can_device_access_peer` True/True on 2x PRO 6000, driver 580.95; our own cloudbox
+  (P2P NOTE §5: `can_device_access_peer` True/True on 2x PRO 6000, driver 580.95; our own Sbox
   experience). `pp.rs` already ships the `cudaMemcpyPeerAsync` boundary — the host-staged
   bounce arm (the 5090 gap, issue #67 class) is **not needed** here. Boundary payload is
   `n_embd` f32 only: 122B-class = 12 KB/token; even at 5090-bounce worst-case pricing that

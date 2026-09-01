@@ -172,8 +172,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         // dc pair (exact bucket + a bucketed replay: bucket_max = next 512-multiple + 64)
         let tdev = e.htod_i32(&[d as i32])?;
-        #[allow(clippy::manual_div_ceil)]
-        // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
         for bucket in [d, (d + 511) / 512 * 512 + 64] {
             unsafe {
                 std::env::set_var("MEMRA_FA_DEEP", "0");

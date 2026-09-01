@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let in_f = t.ne[0] as usize;
         let out_f = t.ne[1] as usize;
-        if !in_f.is_multiple_of(64) || out_f < 128 {
+        if in_f % 64 != 0 || out_f < 128 {
             continue;
         }
         tested += 1;

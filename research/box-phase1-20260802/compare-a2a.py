@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""a2a curve compare: box-aug2 (Ohio 8-card H100 box) vs Jul-31 Mumbai receipts.
+"""a2a curve compare: box-aug2 (Ohio rentedbox-48xlarge) vs Jul-31 Mumbai receipts.
 Medians of per_a2a_us at 64 KiB/peer, N stated per row (evidence discipline)."""
 import json, statistics as st, sys
 from pathlib import Path

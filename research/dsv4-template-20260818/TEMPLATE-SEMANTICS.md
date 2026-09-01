@@ -1,6 +1,6 @@
 # encoding_dsv4 census — DeepSeek-V4-Flash template / think-modes arm (lane 5, 2026-08-18)
 
-Semantic source (THE LAW): `encoding_dsv4.py` staged from the rented bench box, copied byte-identical
+Semantic source (THE LAW): `encoding_dsv4.py` staged from the hyperscaler box, copied byte-identical
 into this dir (`ref/encoding/encoding_dsv4.py` == `ref/artifact-encoding/encoding_dsv4.py`,
 sha256 `bdbd57c132a1b3725042323d02b98b9d1df28e5f388f134399555d041f5055e0`). Citations `E:N`
 are line numbers in that file; `R:N` cites `ref/encoding/README.md`. The NVFP4 artifact's
