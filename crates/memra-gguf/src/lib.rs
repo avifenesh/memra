@@ -50,6 +50,12 @@ pub mod tensor_contract;
 pub const GGUF_MAGIC: u32 = 0x4655_4747; // "GGUF" little-endian
 pub const GGUF_DEFAULT_ALIGNMENT: u64 = 32;
 const MAX_SPLIT_SHARDS: usize = 1_024;
+const MAX_GGUF_METADATA_BYTES: usize = 256 * 1024 * 1024;
+const MAX_GGUF_STRING_BYTES: usize = 16 * 1024 * 1024;
+const MAX_GGUF_ARRAY_ELEMENTS: usize = 2_000_000;
+const MAX_GGUF_KV_ENTRIES: usize = 1_000_000;
+const MAX_GGUF_TENSORS: usize = 1_000_000;
+const MAX_GGUF_TENSOR_RANK: usize = 128;
 
 /// ggml_type ids — values are the on-disk integers (ggml/include/ggml.h).
 /// Variant names mirror ggml's C enum exactly (Q4_0, Q8_K, …) by design.
@@ -140,6 +146,21 @@ impl GgmlType {
     pub fn block_and_type_size(self) -> (u64, u64) {
         self.try_block_and_type_size()
             .unwrap_or_else(|| panic!("block_and_type_size not implemented for {self:?}"))
+    }
+
+    /// Exact encoded byte extent for a tensor geometry, or `None` on overflow, an unsupported
+    /// storage layout, or a quantized element count that is not block-divisible. Manifest-backed
+    /// sources use this same calculation as the GGUF parser so geometry and byte ranges cannot
+    /// drift across formats before reaching native/CUDA consumers.
+    pub fn checked_nbytes(self, ne: &[u64]) -> Option<u64> {
+        let elements = ne
+            .iter()
+            .try_fold(1u64, |total, extent| total.checked_mul(*extent))?;
+        let (block, type_size) = self.try_block_and_type_size()?;
+        if elements % block != 0 {
+            return None;
+        }
+        (elements / block).checked_mul(type_size)
     }
 
     fn try_block_and_type_size(self) -> Option<(u64, u64)> {
@@ -353,6 +374,16 @@ impl<'a> Cursor<'a> {
                 self.path.display()
             ),
         ))?;
+        if len > MAX_GGUF_STRING_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "GGUF string length {raw_len} at byte offset {length_offset} exceeds the \
+                     {MAX_GGUF_STRING_BYTES}-byte limit in {}",
+                    self.path.display()
+                ),
+            ));
+        }
         let bytes = self.take(len, &format!("string length {raw_len}"))?;
         Ok(String::from_utf8_lossy(bytes).into_owned())
     }
@@ -403,6 +434,16 @@ impl<'a> Cursor<'a> {
                         self.path.display()
                     ),
                 ))?;
+                if n > MAX_GGUF_ARRAY_ELEMENTS {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "GGUF metadata array length {raw_n} at byte offset {length_offset} \
+                             exceeds the {MAX_GGUF_ARRAY_ELEMENTS}-element limit in {}",
+                            self.path.display()
+                        ),
+                    ));
+                }
                 let remaining = self.remaining();
                 if n > remaining / min_elem_bytes {
                     return Err(io::Error::new(
@@ -578,6 +619,15 @@ fn parse_one(
     let n_kv_offset = c.pos;
     let raw_n_kv = c.i64()?;
     let n_kv = checked_count(raw_n_kv, "n_kv", n_kv_offset, &path)?;
+    if n_tensors > MAX_GGUF_TENSORS || n_kv > MAX_GGUF_KV_ENTRIES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "GGUF header declares n_tensors={n_tensors}, n_kv={n_kv}; limits are \
+             {MAX_GGUF_TENSORS} tensors and {MAX_GGUF_KV_ENTRIES} metadata entries"
+            ),
+        ));
+    }
 
     const MIN_KV_BYTES: usize = 13; // empty key + type id + smallest scalar value
     let remaining = c.remaining();
@@ -593,12 +643,22 @@ fn parse_one(
     }
 
     // --- metadata KV ---
+    let metadata_start = c.pos;
     let mut metadata = BTreeMap::new();
     for _ in 0..n_kv {
         let key = c.string()?;
         let vtype = c.u32()?;
         let val = c.value(vtype)?;
         metadata.insert(key, val);
+        if c.pos.saturating_sub(metadata_start) > MAX_GGUF_METADATA_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "GGUF metadata exceeds the {MAX_GGUF_METADATA_BYTES}-byte cumulative limit in {}",
+                    path.display()
+                ),
+            ));
+        }
     }
 
     let alignment = metadata_alignment(&metadata, &path)?;
@@ -639,6 +699,15 @@ fn parse_one(
                 path.display()
             ),
         ))?;
+        if n_dims > MAX_GGUF_TENSOR_RANK {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "tensor {name} n_dims={n_dims} exceeds the rank limit {MAX_GGUF_TENSOR_RANK} in {}",
+                    path.display()
+                ),
+            ));
+        }
         let remaining = c.remaining();
         let min_tail_bytes = n_dims.checked_mul(8).and_then(|n| n.checked_add(12));
         if min_tail_bytes.is_none_or(|needed| needed > remaining) {
@@ -1384,6 +1453,26 @@ mod split_tests {
     }
 
     #[test]
+    fn metadata_string_and_tensor_rank_limits_fail_before_allocation() {
+        let mut h = raw_header(0, 1);
+        h.extend_from_slice(&((MAX_GGUF_STRING_BYTES as u64) + 1).to_le_bytes());
+        h.extend_from_slice(&[0u8; 5]);
+        let (dir, path) = write_raw_fixture("oversize-string", &h);
+        let msg = open_error_without_panic(&path);
+        assert_error_mentions(&msg, &["string length", "exceeds", "limit"]);
+        std::fs::remove_dir_all(dir).ok();
+
+        let mut h = raw_header(1, 0);
+        h.extend_from_slice(&0u64.to_le_bytes()); // empty tensor name
+        h.extend_from_slice(&((MAX_GGUF_TENSOR_RANK as u32) + 1).to_le_bytes());
+        h.extend_from_slice(&[0u8; 12]);
+        let (dir, path) = write_raw_fixture("oversize-rank", &h);
+        let msg = open_error_without_panic(&path);
+        assert_error_mentions(&msg, &["n_dims=129", "rank limit"]);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn every_prefix_truncation_of_a_valid_gguf_is_an_error_not_a_panic() {
         let dir =
             std::env::temp_dir().join(format!("memra-ggufhard-prefixes-{}", std::process::id()));
@@ -1414,10 +1503,7 @@ mod split_tests {
         let h = raw_header(i64::MAX, 0);
         let (dir, path) = write_raw_fixture("oversized-tensors", &h);
         let msg = open_error_without_panic(&path);
-        assert_error_mentions(
-            &msg,
-            &["n_tensors=9223372036854775807", "0 remaining bytes"],
-        );
+        assert_error_mentions(&msg, &["n_tensors=9223372036854775807", "limits are"]);
         std::fs::remove_dir_all(dir).ok();
 
         let h = raw_header(0, -1);
@@ -1435,7 +1521,7 @@ mod split_tests {
         let msg = open_error_without_panic(&path);
         assert_error_mentions(
             &msg,
-            &["array length 18446744073709551615", "0 remaining bytes"],
+            &["array length 18446744073709551615", "element limit"],
         );
         std::fs::remove_dir_all(dir).ok();
     }

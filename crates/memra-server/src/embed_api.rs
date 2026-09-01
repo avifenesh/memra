@@ -120,7 +120,7 @@ async fn run_capture(
     // header/key lane resolution still runs so its 403s and validation stay identical.
     crate::lane_for_tenant(headers, tenant)?;
     let lane = crate::lanes::Lane::Harvest;
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let (tx, rx) = worker::event_channel();
     let mut request = worker::Request {
         model: model.to_string(),
         prompt_ids: Vec::new(),
@@ -284,7 +284,7 @@ async fn run_capture(
 /// receipt discipline: prompt usage recorded, terminal `Done` completes the receipt
 /// (completion_tokens is 0 by construction), `Error` settles it rejected.
 async fn collect_capture(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    mut rx: worker::EventReceiver,
     mut receipt: Option<Box<dyn crate::metering::Receipt>>,
     _guard: crate::InflightGuard,
     rl: crate::RateLimit,

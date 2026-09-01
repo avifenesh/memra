@@ -1128,6 +1128,26 @@ fn bf16_to_f32(bytes: &[u8]) -> Vec<f32> {
         .collect()
 }
 
+fn validate_dflash_tensor(
+    name: &str,
+    info: &memra_gguf::safetensors::StInfo,
+    expected: &[u64],
+) -> Result<(), String> {
+    if info.dtype != "BF16" {
+        return Err(format!(
+            "DFlash tensor {name} has dtype {}, expected BF16",
+            info.dtype
+        ));
+    }
+    let found = info.ne();
+    if found != expected {
+        return Err(format!(
+            "DFlash tensor {name} has shape {found:?}, expected {expected:?}"
+        ));
+    }
+    Ok(())
+}
+
 /// Host q8_0 encode (ggml block layout: [d f16][32 x i8] = 34B/32 vals). The drafter's
 /// weights ride the dp4a fast path at 1.6GB resident (bf16 3.1GB + the 31B trunk OOM'd
 /// 24GB; f32 6.2GB worse). Drafter quantization moves ACCEPTANCE only — verify exactness
@@ -1275,22 +1295,41 @@ impl DflashDraft {
         // DFlash2 scalars parse from their OWN scopes; other families keep the
         // historical global-find behavior byte-identically.
         let d2_cfg_txt: Option<&str> = if is_dflash2 {
-            Some(scope(&txt, "dflash_config").unwrap_or_else(|| {
-                panic!("DFlash2DraftModel config.json has no dflash_config object — refusing")
-            }))
+            Some(
+                scope(&txt, "dflash_config")
+                    .ok_or("DFlash2DraftModel config.json has no dflash_config object")?,
+            )
         } else {
             None
         };
-        let g = |k: &str| num(&txt, k).unwrap_or_else(|| panic!("config missing {k}")) as usize;
-        let g2 = |k: &str| -> usize {
-            let t = d2_cfg_txt.expect("dflash2 scope");
-            num(t, k).unwrap_or_else(|| panic!("dflash_config missing {k} — refusing")) as usize
+        let required_usize =
+            |scope: &str, k: &str, label: &str| -> Result<usize, Box<dyn std::error::Error>> {
+                let value = num(scope, k).ok_or_else(|| format!("{label} missing {k}"))?;
+                if !value.is_finite()
+                    || value < 0.0
+                    || value.fract() != 0.0
+                    || value > usize::MAX as f64
+                {
+                    return Err(format!("{label} {k}={value} is not a non-negative usize").into());
+                }
+                Ok(value as usize)
+            };
+        let g = |k: &str| required_usize(&txt, k, "config");
+        let g2 = |k: &str| {
+            required_usize(
+                d2_cfg_txt.ok_or("DFlash2 config scope is unavailable")?,
+                k,
+                "dflash_config",
+            )
         };
         // layer_types order: count entries, mark sliding ones
         let layer_sliding: Vec<bool> = {
-            let i = txt.find("\"layer_types\"").expect("layer_types");
+            let i = txt
+                .find("\"layer_types\"")
+                .ok_or("config missing layer_types")?;
             let rest = &txt[i..];
-            let (a, b) = (rest.find('[').unwrap(), rest.find(']').unwrap());
+            let a = rest.find('[').ok_or("layer_types is not an array")?;
+            let b = rest.find(']').ok_or("layer_types array is unterminated")?;
             rest[a + 1..b]
                 .split(',')
                 .map(|s| s.contains("sliding_attention"))
@@ -1300,7 +1339,7 @@ impl DflashDraft {
         // only constrains rounds when a sliding layer exists (reference: resolve_dflash_
         // attention_layout returns None when no layer slides).
         let sliding_window = if layer_sliding.iter().any(|&s| s) {
-            g("sliding_window")
+            g("sliding_window")?
         } else {
             num(&txt, "sliding_window")
                 .map(|v| v as usize)
@@ -1313,39 +1352,44 @@ impl DflashDraft {
             .and_then(|i| txt[i..].find(':').map(|c| i + c + 1))
             .map(|v| txt[v..].trim_start().starts_with("true"));
         let cfg = DflashCfg {
-            hidden: g("hidden_size"),
-            n_head: g("num_attention_heads"),
-            n_kv: g("num_key_value_heads"),
-            head_dim: g("head_dim"),
-            n_ff: g("intermediate_size"),
-            n_layer: g("num_hidden_layers"),
-            eps: num(&txt, "rms_norm_eps").expect("rms_norm_eps") as f32,
+            hidden: g("hidden_size")?,
+            n_head: g("num_attention_heads")?,
+            n_kv: g("num_key_value_heads")?,
+            head_dim: g("head_dim")?,
+            n_ff: g("intermediate_size")?,
+            n_layer: g("num_hidden_layers")?,
+            eps: num(&txt, "rms_norm_eps").ok_or("config missing rms_norm_eps")? as f32,
             // DFlash2 (transformers-5 style): rope_theta lives in the nested
             // rope_parameters object — parse it from its scope, not by global find.
             rope_theta: if is_dflash2 {
                 let rp = scope(&txt, "rope_parameters")
-                    .unwrap_or_else(|| panic!("DFlash2 config has no rope_parameters — refusing"));
-                assert!(
-                    rp.contains("\"default\""),
-                    "DFlash2 rope_parameters rope_type is not \"default\" — the port \
-                     implements plain neox rope only; refusing ({rp})"
-                );
-                num(rp, "rope_theta").expect("rope_parameters.rope_theta") as f32
+                    .ok_or("DFlash2 config has no rope_parameters")?;
+                if !rp.contains("\"default\"") {
+                    return Err(format!(
+                        "DFlash2 rope_parameters rope_type is not default; refusing {rp}"
+                    )
+                    .into());
+                }
+                num(rp, "rope_theta").ok_or("rope_parameters missing rope_theta")? as f32
             } else {
-                num(&txt, "rope_theta").expect("rope_theta") as f32
+                num(&txt, "rope_theta").ok_or("config missing rope_theta")? as f32
             },
             block_size: if is_dflash2 {
-                g2("block_size")
+                g2("block_size")?
             } else {
-                g("block_size")
+                g("block_size")?
             },
-            mask_token_id: if is_dflash2 {
-                g2("mask_token_id")
+            mask_token_id: u32::try_from(if is_dflash2 {
+                g2("mask_token_id")?
             } else {
-                g("mask_token_id")
-            } as u32,
+                g("mask_token_id")?
+            })
+            .map_err(|_| "DFlash mask_token_id does not fit u32")?,
             target_layer_ids: if is_dflash2 {
-                num_list(d2_cfg_txt.expect("dflash2 scope"), "target_layer_ids")
+                num_list(
+                    d2_cfg_txt.ok_or("DFlash2 config scope is unavailable")?,
+                    "target_layer_ids",
+                )
             } else {
                 num_list(&txt, "target_layer_ids")
             },
@@ -1354,40 +1398,69 @@ impl DflashDraft {
             strategy_dspark: dspark_strategy_census(&txt),
             is_causal,
         };
+        if cfg.n_layer == 0 || cfg.n_layer > 1_024 {
+            return Err(format!(
+                "DFlash num_hidden_layers {} is outside 1..=1024",
+                cfg.n_layer
+            )
+            .into());
+        }
+        if cfg.hidden == 0
+            || cfg.n_head == 0
+            || cfg.n_kv == 0
+            || cfg.head_dim == 0
+            || cfg.n_ff == 0
+            || !cfg.eps.is_finite()
+            || cfg.eps <= 0.0
+            || !cfg.rope_theta.is_finite()
+            || cfg.rope_theta <= 0.0
+        {
+            return Err("DFlash config carries zero or non-finite model geometry".into());
+        }
         if is_dflash2 {
             // The windowed round arm implements the reference's NON-causal symmetric
             // window only (config `is_causal: false` on the q38 DFlash2 export). A
             // causal DFlash2 variant is a different mask program — refuse it rather
             // than run the wrong one fluently.
-            assert_eq!(
-                cfg.is_causal,
-                Some(false),
-                "DFlash2 port requires explicit config is_causal=false \
-                 (non-causal symmetric sliding window); got {is_causal:?} — refusing"
-            );
-            assert!(
-                cfg.layer_sliding.iter().all(|&s| s),
-                "DFlash2 port expects all layers sliding_attention (q38 export); \
-                 got {:?} — refusing (unverified mask program)",
-                cfg.layer_sliding
-            );
-            assert!(
-                cfg.block_size <= cfg.sliding_window,
-                "DFlash2 block {} exceeds the sliding window {} — the windowed SDPA \
-                 omits the future-side mask because block rows stay within the window",
-                cfg.block_size,
-                cfg.sliding_window
-            );
+            if cfg.is_causal != Some(false) {
+                return Err(format!(
+                    "DFlash2 requires explicit is_causal=false; got {:?}",
+                    cfg.is_causal
+                )
+                .into());
+            }
+            if !cfg.layer_sliding.iter().all(|&sliding| sliding) {
+                return Err(format!(
+                    "DFlash2 expects all layers sliding_attention; got {:?}",
+                    cfg.layer_sliding
+                )
+                .into());
+            }
+            if cfg.block_size > cfg.sliding_window {
+                return Err(format!(
+                    "DFlash2 block {} exceeds sliding window {}",
+                    cfg.block_size, cfg.sliding_window
+                )
+                .into());
+            }
         }
         let st = memra_gguf::safetensors::StModel::open(&dir.join("model.safetensors"))?;
+        let validate = |name: &str,
+                        info: &memra_gguf::safetensors::StInfo,
+                        expected: &[u64]|
+         -> Result<(), Box<dyn std::error::Error>> {
+            validate_dflash_tensor(name, info, expected).map_err(Into::into)
+        };
         // 1D norm weights ride raw slices; 2D matmul weights ride GpuTensor::Float
         // (cuBLASLt f32 arm — the Stage-A numeric class, right for oracle parity).
-        let up = |name: &str| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-            let (_info, bytes) = st
-                .raw(name)
-                .ok_or_else(|| format!("missing tensor {name}"))?;
-            e.htod(&bf16_to_f32(bytes))
-        };
+        let up =
+            |name: &str, expected: &[u64]| -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+                let (info, bytes) = st
+                    .raw(name)
+                    .ok_or_else(|| format!("missing tensor {name}"))?;
+                validate(name, info, expected)?;
+                e.htod(&bf16_to_f32(bytes))
+            };
         // Precision policy (MEMRA_DFLASH_PREC seam): "q4" = all q4_0 (DEFAULT since
         // lane/dflash2-head-trim 2026-08-25, owner-ratified): measured on BOTH engaging
         // card classes at unchanged acceptance — RTX PRO 6000 dspark_q38_gate x3
@@ -1400,10 +1473,11 @@ impl DflashDraft {
         // "q5" arm was measured DEFECTIVE (acceptance 0.656 -> 0.424) and never landed.
         let prec_env = std::env::var("MEMRA_DFLASH_PREC").ok();
         let prec = dflash_precision(prec_env.as_deref())?;
-        let upw = |name: &str| -> Result<GpuTensor, Box<dyn std::error::Error>> {
+        let upw = |name: &str, expected: &[u64]| -> Result<GpuTensor, Box<dyn std::error::Error>> {
             let (info, bytes) = st
                 .raw(name)
                 .ok_or_else(|| format!("missing tensor {name}"))?;
+            validate(name, info, expected)?;
             let shape = info.ne(); // ggml order: ne[0]=in_f, ne[1]=out_f
             let in_f = shape[0] as usize;
             let is_ffn = name.contains(".mlp.");
@@ -1450,29 +1524,44 @@ impl DflashDraft {
                 f16: None,
             })
         };
+        let hidden = cfg.hidden as u64;
+        let q_width = cfg
+            .n_head
+            .checked_mul(cfg.head_dim)
+            .ok_or("DFlash q geometry overflow")? as u64;
+        let kv_width = cfg
+            .n_kv
+            .checked_mul(cfg.head_dim)
+            .ok_or("DFlash kv geometry overflow")? as u64;
+        let ff = cfg.n_ff as u64;
+        let head_dim = cfg.head_dim as u64;
         let mut layers = Vec::with_capacity(cfg.n_layer);
         for i in 0..cfg.n_layer {
             let p = |s: &str| format!("layers.{i}.{s}");
             layers.push(DflashLayer {
-                wq: upw(&p("self_attn.q_proj.weight"))?,
-                wk: upw(&p("self_attn.k_proj.weight"))?,
-                wv: upw(&p("self_attn.v_proj.weight"))?,
-                wo: upw(&p("self_attn.o_proj.weight"))?,
-                w_gate: upw(&p("mlp.gate_proj.weight"))?,
-                w_up: upw(&p("mlp.up_proj.weight"))?,
-                w_down: upw(&p("mlp.down_proj.weight"))?,
-                ln_in: up(&p("input_layernorm.weight"))?,
-                ln_post: up(&p("post_attention_layernorm.weight"))?,
-                q_norm: up(&p("self_attn.q_norm.weight"))?,
-                k_norm: up(&p("self_attn.k_norm.weight"))?,
+                wq: upw(&p("self_attn.q_proj.weight"), &[hidden, q_width])?,
+                wk: upw(&p("self_attn.k_proj.weight"), &[hidden, kv_width])?,
+                wv: upw(&p("self_attn.v_proj.weight"), &[hidden, kv_width])?,
+                wo: upw(&p("self_attn.o_proj.weight"), &[q_width, hidden])?,
+                w_gate: upw(&p("mlp.gate_proj.weight"), &[hidden, ff])?,
+                w_up: upw(&p("mlp.up_proj.weight"), &[hidden, ff])?,
+                w_down: upw(&p("mlp.down_proj.weight"), &[ff, hidden])?,
+                ln_in: up(&p("input_layernorm.weight"), &[hidden])?,
+                ln_post: up(&p("post_attention_layernorm.weight"), &[hidden])?,
+                q_norm: up(&p("self_attn.q_norm.weight"), &[head_dim])?,
+                k_norm: up(&p("self_attn.k_norm.weight"), &[head_dim])?,
             });
         }
         let markov = if let Some((info, bytes)) = st.raw("markov_head.markov_w1.weight") {
             let sh = info.ne(); // [rank, vocab] in ggml order (safetensors [V, rank] reversed)
+            if info.dtype != "BF16" || sh.len() != 2 {
+                return Err("markov_head.markov_w1.weight must be rank-2 BF16".into());
+            }
             let (rank, vocab) = (sh[0] as usize, sh[1] as usize);
             let (i2, b2) = st
                 .raw("markov_head.markov_w2.weight")
                 .ok_or("markov_w2 missing beside markov_w1")?;
+            validate("markov_head.markov_w2.weight", i2, &sh)?;
             // w2 follows the precision seam: bf16 for parity runs (the q8_0 encode is a
             // serving-size choice and would put quant error inside the markov-logits gate),
             // q8_0 otherwise (acceptance-only impact, like the trunk weights).
@@ -1510,19 +1599,24 @@ impl DflashDraft {
         };
         let confidence = if let Some((info, bytes)) = st.raw("confidence_head.proj.weight") {
             let sh = info.ne(); // ggml order: ne[0]=in_dim, ne[1]=1
+            if info.dtype != "BF16" || sh.len() != 2 || sh[1] != 1 {
+                return Err("confidence_head.proj.weight must be BF16 [in_dim, 1]".into());
+            }
             let in_dim = sh[0] as usize;
-            let (_bi, bb) = st
+            let (bi, bb) = st
                 .raw("confidence_head.proj.bias")
                 .ok_or("confidence bias missing beside weight")?;
+            validate("confidence_head.proj.bias", bi, &[1])?;
             let with_markov = markov
                 .as_ref()
                 .map(|m| in_dim == cfg.hidden + m.rank)
                 .unwrap_or(false);
             if !with_markov && in_dim != cfg.hidden {
-                panic!(
+                return Err(format!(
                     "confidence_head in_dim {in_dim} matches neither hidden {} nor hidden+rank",
                     cfg.hidden
-                );
+                )
+                .into());
             }
             Some(ConfidenceHead {
                 w: bf16_to_f32(bytes),
@@ -1539,40 +1633,49 @@ impl DflashDraft {
         // when the arch says DFlash2DraftModel: a missing tensor is a refusal (`?`),
         // never a degraded program.
         let dflash2 = if is_dflash2 {
-            assert!(
-                markov.is_none() && confidence.is_none(),
-                "DFlash2 checkpoint carries markov/confidence tensors — no such \
-                 variant exists in the family (census refuses the ambiguity)"
-            );
-            let rank = g2("selector_rank");
-            let top_k = g2("selector_top_k");
-            let conv_k = g2("conv_kernel_size");
-            let group_size = g2("conv_group_size");
+            if markov.is_some() || confidence.is_some() {
+                return Err(
+                    "DFlash2 checkpoint carries unsupported markov/confidence tensors".into(),
+                );
+            }
+            let rank = g2("selector_rank")?;
+            let top_k = g2("selector_top_k")?;
+            let conv_k = g2("conv_kernel_size")?;
+            let group_size = g2("conv_group_size")?;
+            if rank == 0
+                || top_k == 0
+                || conv_k == 0
+                || group_size == 0
+                || !cfg.hidden.is_multiple_of(group_size)
+            {
+                return Err(
+                    "DFlash2 selector/convolution geometry is zero or not divisible".into(),
+                );
+            }
             let groups = cfg.hidden / group_size;
             let load_conv = |name: &str| -> Result<Dflash2Conv, Box<dyn std::error::Error>> {
                 let (bi, bb) = st
                     .raw(&format!("{name}.base_kernel"))
                     .ok_or_else(|| format!("DFlash2 census: missing {name}.base_kernel"))?;
                 // safetensors [2, k, hidden] -> ggml ne reversed [hidden, k, 2]
-                let bne = bi.ne();
-                assert_eq!(
-                    (bne[0] as usize, bne[1] as usize, bne[2] as usize),
-                    (cfg.hidden, conv_k, 2),
-                    "{name}.base_kernel shape != [2, conv_kernel_size, hidden]"
-                );
+                validate(
+                    &format!("{name}.base_kernel"),
+                    bi,
+                    &[cfg.hidden as u64, conv_k as u64, 2],
+                )?;
                 let pname = format!("{name}.kernel_projection.weight");
                 let (pi, _pb) = st
                     .raw(&pname)
                     .ok_or_else(|| format!("DFlash2 census: missing {pname}"))?;
-                let pne = pi.ne(); // ggml: [in_f=hidden, out_f=2*k*groups]
-                assert_eq!(
-                    (pne[0] as usize, pne[1] as usize),
-                    (cfg.hidden, 2 * conv_k * groups),
-                    "{pname} shape != [2*conv_kernel_size*groups, hidden]"
-                );
+                let projected = 2usize
+                    .checked_mul(conv_k)
+                    .and_then(|value| value.checked_mul(groups))
+                    .ok_or("DFlash2 convolution projection geometry overflow")?;
+                let expected = [cfg.hidden as u64, projected as u64];
+                validate(&pname, pi, &expected)?;
                 Ok(Dflash2Conv {
                     base: e.htod(&bf16_to_f32(bb))?,
-                    proj: upw(&pname)?,
+                    proj: upw(&pname, &expected)?,
                 })
             };
             let mut attn_conv = Vec::with_capacity(cfg.n_layer);
@@ -1588,25 +1691,30 @@ impl DflashDraft {
                     .raw(&format!("candidate_selector.{name}"))
                     .ok_or_else(|| format!("DFlash2 census: missing candidate_selector.{name}"))?;
                 let ne = ci.ne(); // ggml: [rank, V]
-                assert_eq!(ne[0] as usize, rank, "candidate_selector.{name} rank");
+                if ci.dtype != "BF16" || ne.len() != 2 || ne[0] as usize != rank {
+                    return Err(format!(
+                        "candidate_selector.{name} must be rank-2 BF16 with inner rank {rank}; found {:?} {}",
+                        ne, ci.dtype
+                    )
+                    .into());
+                }
                 Ok((cbytes.to_vec(), ne[1] as usize))
             };
             let (pred_codebook, v1) = cb("predecessor_codebook")?;
             let (succ_codebook, v2) = cb("successor_codebook")?;
-            assert_eq!(v1, v2, "codebook vocab mismatch");
+            if v1 != v2 {
+                return Err(format!("DFlash2 codebook vocab mismatch: {v1} != {v2}").into());
+            }
             let hp_name = "candidate_selector.hidden_projection.weight";
             let (hi, _hb) = st
                 .raw(hp_name)
                 .ok_or_else(|| format!("DFlash2 census: missing {hp_name}"))?;
-            assert_eq!(
-                (hi.ne()[0] as usize, hi.ne()[1] as usize),
-                (cfg.hidden, rank),
-                "{hp_name} shape != [rank, hidden]"
-            );
+            let hp_expected = [cfg.hidden as u64, rank as u64];
+            validate(hp_name, hi, &hp_expected)?;
             Some(Dflash2Head {
                 attn_conv,
                 mlp_conv,
-                hidden_proj: upw(hp_name)?,
+                hidden_proj: upw(hp_name, &hp_expected)?,
                 pred_codebook,
                 succ_codebook,
                 rank,
@@ -1675,7 +1783,10 @@ impl DflashDraft {
             let leftovers: Vec<&String> = st.names().filter(|n| !consumed.contains(*n)).collect();
             if !leftovers.is_empty() {
                 if markov.is_some() || dflash2.is_some() {
-                    panic!("dspark/dflash2 census: unrecognized tensors {leftovers:?}");
+                    return Err(format!(
+                        "dspark/dflash2 census: unrecognized tensors {leftovers:?}"
+                    )
+                    .into());
                 }
                 eprintln!("[dflash census] unmapped tensors (ignored): {leftovers:?}");
             }
@@ -1684,10 +1795,20 @@ impl DflashDraft {
         // numerically vs Qwen3RotaryEmbedding on the arm-a export).
         let rope_yarn =
             if txt.contains("\"rope_type\": \"yarn\"") || txt.contains("\"rope_type\":\"yarn\"") {
-                let factor = num(&txt, "factor").expect("yarn factor") as f64;
-                let orig = num(&txt, "original_max_position_embeddings").expect("yarn orig");
-                let beta_fast = num(&txt, "beta_fast").expect("beta_fast");
-                let beta_slow = num(&txt, "beta_slow").expect("beta_slow");
+                let factor = num(&txt, "factor").ok_or("yarn missing factor")?;
+                let orig = num(&txt, "original_max_position_embeddings")
+                    .ok_or("yarn missing original_max_position_embeddings")?;
+                let beta_fast = num(&txt, "beta_fast").ok_or("yarn missing beta_fast")?;
+                let beta_slow = num(&txt, "beta_slow").ok_or("yarn missing beta_slow")?;
+                if !factor.is_finite()
+                    || factor <= 0.0
+                    || !orig.is_finite()
+                    || orig <= 0.0
+                    || !beta_fast.is_finite()
+                    || !beta_slow.is_finite()
+                {
+                    return Err("yarn parameters must be finite and positive".into());
+                }
                 let base = cfg.rope_theta as f64;
                 let d = cfg.head_dim as f64;
                 let corr =
@@ -1708,7 +1829,12 @@ impl DflashDraft {
             } else {
                 None
             };
-        let fc = upw("fc.weight")?;
+        let fc_in = cfg
+            .target_layer_ids
+            .len()
+            .checked_mul(cfg.hidden)
+            .ok_or("DFlash fc geometry overflow")? as u64;
+        let fc = upw("fc.weight", &[fc_in, hidden])?;
         // Ratified-default receipts (capacity-keyed-defaults law: the active program is
         // NAMED at load, never inferred from silence). The boot output-sample gate greps
         // these lines; a run whose log lacks them did not load this code.
@@ -1747,8 +1873,8 @@ impl DflashDraft {
         );
         Ok(Self {
             fc,
-            hidden_norm: up("hidden_norm.weight")?,
-            norm: up("norm.weight")?,
+            hidden_norm: up("hidden_norm.weight", &[hidden])?,
+            norm: up("norm.weight", &[hidden])?,
             cfg,
             layers,
             markov,
@@ -6369,5 +6495,41 @@ mod dflash_precision_tests {
             let err = dflash_precision(Some(prec)).unwrap_err();
             assert!(err.contains("want q4, q8, mixed, bf16, or fc"));
         }
+    }
+}
+
+#[cfg(test)]
+mod dflash_tensor_contract_tests {
+    use super::validate_dflash_tensor;
+    use memra_gguf::safetensors::StInfo;
+
+    #[test]
+    fn named_tensor_contract_refuses_wrong_dtype_rank_and_shape_before_cuda() {
+        let valid = StInfo {
+            dtype: "BF16".into(),
+            shape: vec![8, 4],
+            data_offsets: [0, 64],
+        };
+        assert!(validate_dflash_tensor("w", &valid, &[4, 8]).is_ok());
+
+        let mut bad = valid.clone();
+        bad.dtype = "F32".into();
+        assert!(
+            validate_dflash_tensor("w", &bad, &[4, 8])
+                .unwrap_err()
+                .contains("dtype")
+        );
+        bad = valid.clone();
+        bad.shape = vec![32];
+        assert!(
+            validate_dflash_tensor("w", &bad, &[4, 8])
+                .unwrap_err()
+                .contains("shape")
+        );
+        assert!(
+            validate_dflash_tensor("w", &valid, &[8, 4])
+                .unwrap_err()
+                .contains("expected")
+        );
     }
 }

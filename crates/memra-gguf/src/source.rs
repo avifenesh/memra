@@ -16,6 +16,10 @@ use memmap2::Mmap;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -845,18 +849,39 @@ impl Hy3RepackSource {
             let ne = obj
                 .u64_array("ne")
                 .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing ne")))?;
-            let bytes = obj
+            let raw_bytes = obj
                 .u64("bytes")
-                .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing bytes")))?
-                as usize;
+                .ok_or_else(|| invalid_data(format!("manifest tensor {name} missing bytes")))?;
+            let bytes = usize::try_from(raw_bytes).map_err(|_| {
+                invalid_data(format!(
+                    "manifest tensor {name} bytes={raw_bytes} does not fit this platform"
+                ))
+            })?;
+            let raw_offset = obj.u64("offset").unwrap_or(0);
+            let offset = usize::try_from(raw_offset).map_err(|_| {
+                invalid_data(format!(
+                    "manifest tensor {name} offset={raw_offset} does not fit this platform"
+                ))
+            })?;
+            let ggml_type = manifest_qtype(&qtype).ok_or_else(|| {
+                invalid_data(format!("manifest tensor {name} unsupported qtype {qtype}"))
+            })?;
+            let expected = ggml_type.checked_nbytes(&ne).ok_or_else(|| {
+                invalid_data(format!(
+                    "manifest tensor {name} has invalid or overflowing {ggml_type:?} geometry {ne:?}"
+                ))
+            })?;
+            if expected != raw_bytes {
+                return Err(invalid_data(format!(
+                    "manifest tensor {name} declares {raw_bytes} bytes but {ggml_type:?} geometry {ne:?} encodes exactly {expected}"
+                )));
+            }
             tensors.insert(
                 name.to_string(),
                 RepackTensor {
                     file,
-                    offset: obj.u64("offset").unwrap_or(0) as usize,
-                    ggml_type: manifest_qtype(&qtype).ok_or_else(|| {
-                        invalid_data(format!("manifest tensor {name} unsupported qtype {qtype}"))
-                    })?,
+                    offset,
+                    ggml_type,
                     ne,
                     bytes,
                     expert_stride: obj.u64("expert_stride").map(|x| x as usize),
@@ -976,8 +1001,7 @@ impl Hy3RepackSource {
             if !seen.insert(t.file.clone()) {
                 continue;
             }
-            let p = dir.join(&t.file);
-            let file = Arc::new(File::open(&p)?);
+            let file = Arc::new(open_repack_shard(&dir, &t.file)?);
             let map = unsafe { Mmap::map(file.as_ref())? };
             let retain_file = t.expert_stride.is_some() || expert_files.contains(&t.file);
             // Expert slabs use the configured whole-map policy. Default random is the historical
@@ -999,7 +1023,13 @@ impl Hy3RepackSource {
                 .ok_or_else(|| invalid_data(format!("manifest tensor {name} file not mapped")))?
                 .map
                 .len();
-            if len < t.offset + t.bytes {
+            let end = t.offset.checked_add(t.bytes).ok_or_else(|| {
+                invalid_data(format!(
+                    "manifest tensor {name} offset {} + {} bytes overflows this platform",
+                    t.offset, t.bytes
+                ))
+            })?;
+            if len < end {
                 return Err(invalid_data(format!(
                     "manifest tensor {name} declares offset {} + {} bytes but {:?} has {len}",
                     t.offset, t.bytes, t.file
@@ -1273,6 +1303,68 @@ fn validated_manifest_file(raw: &str) -> Result<PathBuf, &'static str> {
     Ok(path.to_path_buf())
 }
 
+fn repack_trusted_roots(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut roots = vec![std::fs::canonicalize(dir)?];
+    let Some(raw) = std::env::var_os("MEMRA_REPACK_EXTERNAL_ROOTS") else {
+        return Ok(roots);
+    };
+    for root in std::env::split_paths(&raw) {
+        if !root.is_absolute() {
+            return Err(invalid_data(format!(
+                "MEMRA_REPACK_EXTERNAL_ROOTS entry {} is not absolute",
+                root.display()
+            )));
+        }
+        roots.push(std::fs::canonicalize(&root).map_err(|error| {
+            invalid_data(format!(
+                "canonicalize MEMRA_REPACK_EXTERNAL_ROOTS entry {}: {error}",
+                root.display()
+            ))
+        })?);
+    }
+    Ok(roots)
+}
+
+fn open_repack_shard(dir: &Path, relative: &Path) -> std::io::Result<File> {
+    let path = dir.join(relative);
+    let external_roots_configured = std::env::var_os("MEMRA_REPACK_EXTERNAL_ROOTS").is_some();
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    if !external_roots_configured {
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options.open(&path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(invalid_data(format!(
+            "repack shard {} is not a regular file",
+            path.display()
+        )));
+    }
+    #[cfg(unix)]
+    if metadata.nlink() != 1 {
+        return Err(invalid_data(format!(
+            "repack shard {} has {} hard links; expected exactly one",
+            path.display(),
+            metadata.nlink()
+        )));
+    }
+
+    #[cfg(target_os = "linux")]
+    let opened_path = std::fs::canonicalize(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
+    #[cfg(not(target_os = "linux"))]
+    let opened_path = std::fs::canonicalize(&path)?;
+    let trusted = repack_trusted_roots(dir)?;
+    if !trusted.iter().any(|root| opened_path.starts_with(root)) {
+        return Err(invalid_data(format!(
+            "repack shard {} resolves outside the artifact root and MEMRA_REPACK_EXTERNAL_ROOTS",
+            path.display()
+        )));
+    }
+    Ok(file)
+}
+
 /// safetensors-backed source: an HF checkpoint (config.json + one/more .safetensors shards).
 /// `find` translates the requested ggml name into the HF name, looks it up, and reverses the
 /// shape into ggml `ne` order.
@@ -1471,15 +1563,16 @@ impl SafetensorsSource {
 
     pub fn raw_hf(&self, hf_name: &str) -> Option<TensorView<'_>> {
         let (info, bytes) = self.lookup(hf_name)?;
-        // Name the tensor before st_dtype_to_ggml can panic on it — a bare "FP8 not
-        // supported" without the tensor name cost a debugging round (2026-07-16).
-        assert!(
-            !info.dtype.starts_with("F8"),
-            "FP8 tensor {hf_name} reached the raw path (no handled weight_scale sibling)"
-        );
+        let ggml_type = match info.ggml_type() {
+            Ok(ggml_type) => ggml_type,
+            Err(error) => {
+                eprintln!("[safetensors] refusing generic tensor {hf_name:?}: {error}");
+                return None;
+            }
+        };
         Some(TensorView {
             bytes: Cow::Borrowed(bytes),
-            ggml_type: info.ggml_type(),
+            ggml_type,
             ne: info.ne(),
         })
     }
@@ -1646,7 +1739,7 @@ impl SafetensorsSource {
         let ne = info.ne();
         let n: u64 = ne.iter().product();
         Some((
-            crate::dequant::dequantize(info.ggml_type(), bytes, n as usize),
+            crate::dequant::dequantize(info.ggml_type().ok()?, bytes, n as usize),
             ne,
         ))
     }
@@ -2205,7 +2298,7 @@ impl TensorSource for SafetensorsSource {
             if let Some((info, bytes)) = self.lookup(&format!("{hf_stem}.weight_scale_2")) {
                 return Some(TensorView {
                     bytes: Cow::Borrowed(bytes),
-                    ggml_type: info.ggml_type(),
+                    ggml_type: info.ggml_type().ok()?,
                     ne: vec![1],
                 });
             }
@@ -2604,6 +2697,63 @@ mod tests {
         assert_eq!(census.tensors[0].entry.name, "blk.0.attn_q.weight");
         assert_eq!(census.tensors[0].entry.physical_bytes, 16);
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn repack_manifest_requires_exact_encoded_extent() {
+        let dir = std::env::temp_dir().join(format!("memra-repack-extent-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("weights.bin"), [0u8; 32]).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":4,
+                "num_attention_heads":1,"num_key_value_heads":1,"head_dim":4,
+                "intermediate_size":8,"vocab_size":4,"max_position_embeddings":16}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("manifest.json"),
+            r#"{"format":"memra-repack-v1","tensors":{
+                "blk.0.attn_q.weight":{"file":"weights.bin","qtype":"F32",
+                "ne":[4,1],"bytes":8}}}"#,
+        )
+        .unwrap();
+        let error = match Hy3RepackSource::open(&dir) {
+            Ok(_) => panic!("mismatched manifest byte extent was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("encodes exactly 16"), "{error}");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repack_shard_symlink_is_rejected_without_an_explicit_trusted_root() {
+        use std::os::unix::fs::symlink;
+
+        let dir = std::env::temp_dir().join(format!("memra-repack-link-{}", std::process::id()));
+        let outside =
+            std::env::temp_dir().join(format!("memra-repack-outside-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&outside, [0u8; 16]).unwrap();
+        symlink(&outside, dir.join("weights.bin")).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":4,
+                "num_attention_heads":1,"num_key_value_heads":1,"head_dim":4,
+                "intermediate_size":8,"vocab_size":4,"max_position_embeddings":16}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("manifest.json"),
+            r#"{"format":"memra-repack-v1","tensors":{
+                "blk.0.attn_q.weight":{"file":"weights.bin","qtype":"F32",
+                "ne":[4,1],"bytes":16}}}"#,
+        )
+        .unwrap();
+        assert!(Hy3RepackSource::open(&dir).is_err());
+        std::fs::remove_dir_all(dir).ok();
+        std::fs::remove_file(outside).ok();
     }
 
     #[test]

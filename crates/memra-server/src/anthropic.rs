@@ -833,7 +833,7 @@ pub(crate) async fn messages(
 // dead. Real state, false positive.
 #[allow(clippy::too_many_arguments, unused_assignments)]
 fn messages_sse(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    mut rx: crate::worker::EventReceiver,
     mut receipt: Option<Box<dyn crate::metering::Receipt>>,
     env: Envelope,
     model: String,
@@ -1555,7 +1555,7 @@ mod tests {
     /// cumulative-usage message_delta -> message_stop.
     #[tokio::test]
     async fn sse_text_stream_speaks_the_anthropic_grammar() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = crate::worker::event_channel();
         tx.send(Event::PromptUsage {
             n_prompt: 10,
             n_cached: 4,
@@ -1627,7 +1627,7 @@ mod tests {
     /// "tool_use" — the exact contract an agentic client's tool loop hangs on.
     #[tokio::test]
     async fn sse_tool_call_stream_produces_tool_use_blocks_and_stop_reason() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = crate::worker::event_channel();
         tx.send(Event::PromptUsage {
             n_prompt: 5,
             n_cached: 0,
@@ -1708,7 +1708,7 @@ mod tests {
     /// Mid-stream faults surface as the Anthropic `error` event, typed by class.
     #[tokio::test]
     async fn sse_midstream_fault_emits_the_anthropic_error_event() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = crate::worker::event_channel();
         tx.send(Event::PromptUsage {
             n_prompt: 3,
             n_cached: 0,

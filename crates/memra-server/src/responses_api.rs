@@ -759,7 +759,7 @@ pub(crate) async fn responses(
 // dead. Real state, false positive.
 #[allow(clippy::too_many_arguments, unused_assignments)]
 fn responses_sse(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    mut rx: crate::worker::EventReceiver,
     mut receipt: Option<Box<dyn crate::metering::Receipt>>,
     env: Envelope,
     model: String,
@@ -1366,7 +1366,7 @@ mod tests {
     /// response.completed carrying id + usage.
     #[tokio::test]
     async fn sse_text_stream_speaks_the_responses_grammar() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = crate::worker::event_channel();
         tx.send(Event::PromptUsage {
             n_prompt: 10,
             n_cached: 4,
@@ -1456,7 +1456,7 @@ mod tests {
         // `response.reasoning_summary_text.delta`) — never stripped server-side — and a
         // reasoning-off generation produces NO reasoning item.
         let drive = |think_text: bool| async move {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, rx) = crate::worker::event_channel();
             tx.send(Event::PromptUsage {
                 n_prompt: 10,
                 n_cached: 0,
@@ -1535,7 +1535,7 @@ mod tests {
 
     #[tokio::test]
     async fn sse_tool_call_stream_produces_function_call_items() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = crate::worker::event_channel();
         tx.send(Event::PromptUsage {
             n_prompt: 5,
             n_cached: 0,
@@ -1609,7 +1609,7 @@ mod tests {
     /// "completed"; faults are response.failed.
     #[tokio::test]
     async fn sse_terminal_states_are_honest() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = crate::worker::event_channel();
         tx.send(Event::Token {
             id: 1,
             text: "part".into(),
@@ -1644,7 +1644,7 @@ mod tests {
             "max_output_tokens"
         );
 
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = crate::worker::event_channel();
         tx.send(Event::Error(crate::worker::EngineError::overloaded(
             "vram exhausted",
         )))

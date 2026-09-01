@@ -149,12 +149,14 @@ fn validate_tensor_extents(
     Ok(())
 }
 
-/// safetensors dtype string -> memra GgmlType. FP8 is deferred (explicit panic, never silent).
+/// Safetensors dtype string -> resident memra GgmlType. Byte-oriented FP8/U8/BOOL tensors are
+/// accepted by the container parser for specialized consumers, but generic weight loading must
+/// reject them as a normal artifact error rather than panicking the process.
 /// Shape note handled by the caller: safetensors shape is row-major outer..inner, memra `ne` is
 /// inner-fastest, so the caller reverses the shape.
-pub fn st_dtype_to_ggml(s: &str) -> GgmlType {
+pub fn st_dtype_to_ggml(s: &str) -> Result<GgmlType, String> {
     use GgmlType::*;
-    match s {
+    Ok(match s {
         "F32" => F32,
         "F16" => F16,
         "BF16" => BF16,
@@ -163,15 +165,13 @@ pub fn st_dtype_to_ggml(s: &str) -> GgmlType {
         "I16" => I16,
         "I32" => I32,
         "I64" => I64,
-        // FP8 deferred in v1 — explicit failure, NOT silent garbage.
-        "F8_E4M3" | "F8_E5M2" | "F8_E8M0" => {
-            panic!(
-                "FP8 ({s}) safetensors not yet supported; use the GGUF twin or an F16/BF16 checkpoint"
-            )
+        "F8_E4M3" | "F8_E5M2" | "F8_E8M0" | "F8_E4M3FNUZ" | "F8_E5M2FNUZ" => {
+            return Err(format!(
+                "FP8 ({s}) requires a specialized scale-aware loader; generic tensor loading refused"
+            ));
         }
-        // U8 / BOOL have no GgmlType equivalent and never appear as model weights here.
-        other => panic!("unsupported safetensors dtype {other}"),
-    }
+        other => return Err(format!("unsupported generic safetensors dtype {other}")),
+    })
 }
 
 /// One tensor's header entry.
@@ -223,7 +223,7 @@ impl StInfo {
     pub fn ne(&self) -> Vec<u64> {
         self.shape.iter().rev().cloned().collect()
     }
-    pub fn ggml_type(&self) -> GgmlType {
+    pub fn ggml_type(&self) -> Result<GgmlType, String> {
         st_dtype_to_ggml(&self.dtype)
     }
 }
@@ -1053,7 +1053,7 @@ mod tests {
         assert_eq!(ia.shape, vec![2, 3]);
         // shape-reversal: ne = [3,2] -> in_features=ne[0]=3, out_features=ne[1]=2
         assert_eq!(ia.ne(), vec![3, 2]);
-        assert_eq!(ia.ggml_type(), GgmlType::F32);
+        assert_eq!(ia.ggml_type().unwrap(), GgmlType::F32);
         assert_eq!(ra.len(), 24);
         let f0 = f32::from_le_bytes(ra[0..4].try_into().unwrap());
         let f5 = f32::from_le_bytes(ra[20..24].try_into().unwrap());
@@ -1178,10 +1178,10 @@ mod tests {
         let p = write_temp("dq", &bytes);
         let sh = StShard::open(&p).unwrap();
         let (ia, ra) = sh.raw("a.weight").unwrap();
-        let av = crate::dequant::dequantize(ia.ggml_type(), ra, 6);
+        let av = crate::dequant::dequantize(ia.ggml_type().unwrap(), ra, 6);
         assert_eq!(av, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
         let (ib, rb) = sh.raw("b.norm").unwrap();
-        let bv = crate::dequant::dequantize(ib.ggml_type(), rb, 3);
+        let bv = crate::dequant::dequantize(ib.ggml_type().unwrap(), rb, 3);
         assert_eq!(bv, vec![1.0, 2.0, -1.0]);
         std::fs::remove_file(&p).ok();
     }
@@ -1497,9 +1497,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "FP8")]
-    fn fp8_panics_explicitly() {
-        st_dtype_to_ggml("F8_E4M3");
+    fn unsupported_generic_dtypes_are_fallible() {
+        assert!(
+            st_dtype_to_ggml("F8_E4M3")
+                .unwrap_err()
+                .contains("scale-aware")
+        );
+        assert!(st_dtype_to_ggml("U8").unwrap_err().contains("unsupported"));
     }
 
     /// Real on-disk safetensors: parse a multi-shard HF checkpoint and assert known tensor
@@ -1546,7 +1550,7 @@ mod tests {
         assert_eq!(lm.shape, vec![151936, 2048]);
 
         // BF16 bytes dequant to finite f32 (spot-check the first row of the final norm).
-        let nv = crate::dequant::dequantize(nrm.ggml_type(), nb, 2048);
+        let nv = crate::dequant::dequantize(nrm.ggml_type().unwrap(), nb, 2048);
         assert!(nv.iter().all(|v| v.is_finite()), "norm dequants finite");
         eprintln!(
             "real_qwen3_17b_header OK: {} tensors, norm[0]={}",

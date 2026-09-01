@@ -127,6 +127,7 @@ use axum::{
 use futures_core::Stream as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tower::ServiceExt as _;
 
 use memra_engine::decode::GenParams;
 use memra_engine::sampler::SamplerConfig;
@@ -173,6 +174,13 @@ const BODY_READ_RATE_BYTES_PER_SEC: u64 = 2 * 1024 * 1024;
 const BODY_READ_TIMEOUT_MAX: std::time::Duration = std::time::Duration::from_secs(180);
 const BODY_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const BODY_ADMISSION_RETRY_AFTER_S: u64 = 1;
+const MAX_STOP_SEQUENCES: usize = 16;
+const MAX_STOP_SEQUENCE_BYTES: usize = 1_024;
+const MAX_STOP_SEQUENCES_BYTES: usize = 4 * 1_024;
+const MAX_CLIENT_IDENTIFIER_BYTES: usize = 256;
+const MAX_HTTP_CONNECTIONS: usize = 1_024;
+const MAX_HTTP2_STREAMS_PER_CONNECTION: u32 = 128;
+const HTTP1_HEADER_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn body_admission_semaphore() -> Arc<tokio::sync::Semaphore> {
     static SEMAPHORE: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
@@ -365,9 +373,11 @@ async fn authenticate_inference_before_body(
             return shape_inference_early_response(&path, response).await;
         }
     };
-    // Tie the permit to the request body stream rather than the whole handler future. JSON/Bytes
-    // extractors release it as soon as they observe EOF (or when an early parse/limit error drops
-    // the stream), before generation, ledger I/O, or streaming response work begins.
+    // The permit stays owned by this middleware until the inner handler has completed request
+    // extraction, JSON deserialization, semantic validation, and response construction. Releasing
+    // at body EOF is too early: a fast sender can recycle four permits while many 192 MiB JSON
+    // parses remain live. Streaming responses return after construction, so slow readers and token
+    // generation do not retain this body-parser permit.
     let body = std::mem::replace(req.body_mut(), Body::empty());
     let mut body = Box::pin(body.into_data_stream());
     let body_timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -404,10 +414,10 @@ async fn authenticate_inference_before_body(
                 None => break,
             }
         }
-        drop(body_permit);
     };
     *req.body_mut() = Body::from_stream(guarded_body);
     let response = next.run(req).await;
+    drop(body_permit);
     if body_timed_out.load(std::sync::atomic::Ordering::Acquire) {
         let request_id = Envelope::new(path != "/v1/completions");
         let timeout = error_response_coded(
@@ -439,7 +449,6 @@ async fn authenticate_inference_before_body(
 #[cfg(test)]
 mod body_limit_tests {
     use super::*;
-    use tower::ServiceExt as _;
 
     static BODY_ADMISSION_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -684,6 +693,68 @@ mod body_limit_tests {
             .unwrap();
         let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(payload["error"]["code"], "body_admission_busy");
+    }
+
+    #[tokio::test]
+    async fn vision_preprocess_admission_is_fail_fast_and_retryable() {
+        let semaphore = Box::leak(Box::new(tokio::sync::Semaphore::new(1)));
+        let held = semaphore.try_acquire().unwrap();
+        let busy = try_vision_preprocess_with(true, semaphore).unwrap_err();
+        assert_eq!(busy.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(busy.headers()["retry-after"], "1");
+        drop(held);
+        assert!(
+            try_vision_preprocess_with(true, semaphore)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            try_vision_preprocess_with(false, semaphore)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn transport_closes_stalled_headers_and_caps_connections() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let server = tokio::spawn(serve_bounded_http_with_limits(
+            listener,
+            Router::new().route("/", get(|| async { "ok" })),
+            async move {
+                let _ = shutdown_rx.await;
+            },
+            std::time::Duration::from_millis(30),
+            1,
+        ));
+
+        let mut stalled = tokio::net::TcpStream::connect(address).await.unwrap();
+        stalled.write_all(b"GET / HT").await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        let mut excess = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut bytes = Vec::new();
+        tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            excess.read_to_end(&mut bytes),
+        )
+        .await
+        .expect("connection beyond the cap must be closed promptly")
+        .unwrap();
+
+        bytes.clear();
+        tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            stalled.read_to_end(&mut bytes),
+        )
+        .await
+        .expect("stalled request headers must hit the configured deadline")
+        .unwrap();
+        let _ = shutdown_tx.send(());
+        server.await.unwrap().unwrap();
     }
 }
 
@@ -2429,6 +2500,37 @@ impl StopSequences {
         };
         stops.into_iter().filter(|s| !s.is_empty()).collect()
     }
+
+    fn validate(&self) -> Result<(), String> {
+        let stops: &[String] = match self {
+            Self::One(stop) => std::slice::from_ref(stop),
+            Self::Many(stops) => stops,
+            Self::None => &[],
+        };
+        if stops.len() > MAX_STOP_SEQUENCES {
+            return Err(format!(
+                "stop accepts at most {MAX_STOP_SEQUENCES} sequences"
+            ));
+        }
+        let mut total = 0usize;
+        for stop in stops {
+            let bytes = stop.len();
+            if bytes > MAX_STOP_SEQUENCE_BYTES {
+                return Err(format!(
+                    "each stop sequence must be at most {MAX_STOP_SEQUENCE_BYTES} UTF-8 bytes"
+                ));
+            }
+            total = total
+                .checked_add(bytes)
+                .ok_or_else(|| "stop sequence byte count overflowed".to_string())?;
+        }
+        if total > MAX_STOP_SEQUENCES_BYTES {
+            return Err(format!(
+                "stop sequences must total at most {MAX_STOP_SEQUENCES_BYTES} UTF-8 bytes"
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// OpenAI-compatible multi-turn chat request. `tools`/`tool_choice`/role:"tool" are accepted
@@ -3014,25 +3116,54 @@ fn affinity_key(
     session_id: &Option<String>,
     user: &Option<String>,
     headers: &axum::http::HeaderMap,
-) -> Option<String> {
-    let clean = |s: &str| -> Option<String> {
+) -> Result<Option<String>, String> {
+    let clean = |s: &str| -> Result<Option<String>, String> {
         let t = s.trim();
         if t.is_empty() {
-            None
+            Ok(None)
+        } else if t.len() > MAX_CLIENT_IDENTIFIER_BYTES {
+            Err(format!(
+                "session identity must be at most {MAX_CLIENT_IDENTIFIER_BYTES} UTF-8 bytes"
+            ))
+        } else if t.chars().any(char::is_control) {
+            Err("session identity must not contain control characters".into())
         } else {
-            Some(t.to_string())
+            Ok(Some(t.to_string()))
         }
     };
-    session_id
-        .as_deref()
-        .and_then(clean)
-        .or_else(|| user.as_deref().and_then(clean))
-        .or_else(|| {
-            headers
-                .get("x-session-id")
-                .and_then(|v| v.to_str().ok())
-                .and_then(clean)
-        })
+    if let Some(value) = session_id.as_deref()
+        && let Some(value) = clean(value)?
+    {
+        return Ok(Some(value));
+    }
+    if let Some(value) = user.as_deref()
+        && let Some(value) = clean(value)?
+    {
+        return Ok(Some(value));
+    }
+    match headers.get("x-session-id") {
+        Some(value) => clean(
+            value
+                .to_str()
+                .map_err(|_| "x-session-id must contain visible ASCII or UTF-8 text")?,
+        ),
+        None => Ok(None),
+    }
+}
+
+fn validate_client_identifier(value: Option<&str>, name: &str) -> Result<(), String> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if value.len() > MAX_CLIENT_IDENTIFIER_BYTES {
+        return Err(format!(
+            "{name} must be at most {MAX_CLIENT_IDENTIFIER_BYTES} UTF-8 bytes"
+        ));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(format!("{name} must not contain control characters"));
+    }
+    Ok(())
 }
 
 /// OpenAI error body: `{"error": {"message", "type", "param", "code"}}` — the object
@@ -3329,6 +3460,45 @@ static VISION_PATCH_BYTES_IN_USE: std::sync::atomic::AtomicUsize =
 /// phase prevents multiple requests from simultaneously holding their transient RGB canvases.
 pub(crate) static VISION_PREPROCESS_SEMAPHORE: tokio::sync::Semaphore =
     tokio::sync::Semaphore::const_new(1);
+
+// Axum handlers use `Response` as their rejection type. Boxing this rare 429/503 response
+// would add allocation and conversion at every `?` boundary for no reduction in retained state.
+#[allow(clippy::result_large_err)]
+pub(crate) fn try_vision_preprocess(
+    required: bool,
+) -> Result<Option<tokio::sync::SemaphorePermit<'static>>, Response> {
+    try_vision_preprocess_with(required, &VISION_PREPROCESS_SEMAPHORE)
+}
+
+#[allow(clippy::result_large_err)]
+fn try_vision_preprocess_with(
+    required: bool,
+    semaphore: &'static tokio::sync::Semaphore,
+) -> Result<Option<tokio::sync::SemaphorePermit<'static>>, Response> {
+    if !required {
+        return Ok(None);
+    }
+    match semaphore.try_acquire() {
+        Ok(permit) => Ok(Some(permit)),
+        Err(tokio::sync::TryAcquireError::NoPermits) => Err(retry_contract_response(
+            error_response_coded(
+                StatusCode::TOO_MANY_REQUESTS,
+                "vision preprocessing is busy",
+                "rate_limit_error",
+                Some("messages"),
+                Some("vision_preprocess_busy"),
+            ),
+            Some(BODY_ADMISSION_RETRY_AFTER_S),
+        )),
+        Err(tokio::sync::TryAcquireError::Closed) => Err(error_response_coded(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "vision preprocessing is unavailable",
+            "server_error",
+            Some("messages"),
+            Some("vision_preprocess_unavailable"),
+        )),
+    }
+}
 
 pub(crate) struct VisionMemoryPermit {
     bytes: usize,
@@ -4367,6 +4537,94 @@ fn tool_call_json(c: &ParsedToolCall) -> serde_json::Value {
 /// The whole server as a library entry point (BASE-4 stays: this crate is the
 /// async-only seam; the bin in `src/main.rs` is one line deep). Public so a
 /// deployment-owned binary can wrap the same server with its own wiring.
+async fn serve_bounded_http_with_limits<F>(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    shutdown: F,
+    header_read_timeout: std::time::Duration,
+    max_connections: usize,
+) -> std::io::Result<()>
+where
+    F: std::future::Future<Output = ()> + Send,
+{
+    let connections = Arc::new(tokio::sync::Semaphore::new(max_connections));
+    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
+    let mut shutdown = Box::pin(shutdown);
+
+    loop {
+        tokio::select! {
+            _ = &mut shutdown => break,
+            accepted = listener.accept() => {
+                let (stream, _) = match accepted {
+                    Ok(connection) => connection,
+                    Err(error) => {
+                        eprintln!("[server] accept failed: {error}");
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
+                let permit = match connections.clone().try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        drop(stream);
+                        continue;
+                    }
+                };
+                let service = app.clone().map_request(
+                    |request: hyper::Request<hyper::body::Incoming>| request.map(Body::new),
+                );
+                let service = hyper_util::service::TowerToHyperService::new(service);
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let mut builder = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                );
+                builder
+                    .http1()
+                    .timer(hyper_util::rt::TokioTimer::new())
+                    .header_read_timeout(header_read_timeout)
+                    .max_headers(64);
+                builder
+                    .http2()
+                    .max_concurrent_streams(MAX_HTTP2_STREAMS_PER_CONNECTION);
+                let connection = builder
+                    .serve_connection_with_upgrades(io, service)
+                    .into_owned();
+                let connection = graceful.watch(connection);
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    let _ = connection.await;
+                });
+            }
+        }
+    }
+    drop(listener);
+    if tokio::time::timeout(std::time::Duration::from_secs(5), graceful.shutdown())
+        .await
+        .is_err()
+    {
+        eprintln!("[server] WARN: HTTP connections exceeded the 5s graceful close deadline");
+    }
+    Ok(())
+}
+
+async fn serve_bounded_http<F>(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    shutdown: F,
+) -> std::io::Result<()>
+where
+    F: std::future::Future<Output = ()> + Send,
+{
+    serve_bounded_http_with_limits(
+        listener,
+        app,
+        shutdown,
+        HTTP1_HEADER_READ_TIMEOUT,
+        MAX_HTTP_CONNECTIONS,
+    )
+    .await
+}
+
 #[tokio::main]
 pub async fn serve_main() -> Result<(), Box<dyn std::error::Error>> {
     serve_with(ServerWiring::stock()).await
@@ -4835,69 +5093,68 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
     // their current response, and returns — exit 0 (in-flight loss only past deadline).
     let inflight = inflight_handle;
     let signal_admin_shutdown = drain_shutdown_tx.clone();
-    let serve_result = axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            let mut sigterm =
-                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-                    Ok(s) => s,
-                    Err(err) => {
-                        eprintln!("[server] WARN: no SIGTERM handler ({err}); drain disabled");
-                        std::future::pending::<()>().await;
-                        unreachable!()
-                    }
-                };
-            sigterm.recv().await;
-            DRAINING.store(true, std::sync::atomic::Ordering::SeqCst);
-            let _ = signal_admin_shutdown.send(true);
-            // STOPPING=1 + EXTEND_TIMEOUT_USEC: tell systemd the stop is deliberate and how
-            // long the drain may legitimately take, so TimeoutStopSec does not SIGKILL a
-            // healthy drain mid-stream (audit's systemd section).
-            health::sd_notify(&format!(
-                "STOPPING=1\nSTATUS=draining\nEXTEND_TIMEOUT_USEC={}",
-                (drain_deadline_s() + 5) * 1_000_000
-            ));
+    let serve_result = serve_bounded_http(listener, app, async move {
+        let mut sigterm =
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(s) => s,
+                Err(err) => {
+                    eprintln!("[server] WARN: no SIGTERM handler ({err}); drain disabled");
+                    std::future::pending::<()>().await;
+                    unreachable!()
+                }
+            };
+        sigterm.recv().await;
+        DRAINING.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = signal_admin_shutdown.send(true);
+        // STOPPING=1 + EXTEND_TIMEOUT_USEC: tell systemd the stop is deliberate and how
+        // long the drain may legitimately take, so TimeoutStopSec does not SIGKILL a
+        // healthy drain mid-stream (audit's systemd section).
+        health::sd_notify(&format!(
+            "STOPPING=1\nSTATUS=draining\nEXTEND_TIMEOUT_USEC={}",
+            (drain_deadline_s() + 5) * 1_000_000
+        ));
+        let n: usize = inflight
+            .iter()
+            .map(|c| c.load(std::sync::atomic::Ordering::SeqCst))
+            .sum();
+        eprintln!(
+            "[server] SIGTERM: draining ({n} in flight, deadline {}s)",
+            drain_deadline_s()
+        );
+        let deadline = std::time::Duration::from_secs(drain_deadline_s());
+        let t0 = std::time::Instant::now();
+        loop {
             let n: usize = inflight
                 .iter()
                 .map(|c| c.load(std::sync::atomic::Ordering::SeqCst))
                 .sum();
-            eprintln!(
-                "[server] SIGTERM: draining ({n} in flight, deadline {}s)",
-                drain_deadline_s()
-            );
-            let deadline = std::time::Duration::from_secs(drain_deadline_s());
-            let t0 = std::time::Instant::now();
-            loop {
-                let n: usize = inflight
-                    .iter()
-                    .map(|c| c.load(std::sync::atomic::Ordering::SeqCst))
-                    .sum();
-                if n == 0 {
-                    eprintln!(
-                        "[server] drain complete in {:.1}s; exiting",
-                        t0.elapsed().as_secs_f64()
-                    );
-                    break;
-                }
-                if t0.elapsed() >= deadline {
-                    eprintln!(
-                        "[server] drain deadline ({}s) hit with {n} in flight; exiting",
-                        drain_deadline_s()
-                    );
-                    // Fault attribution (owner ruling 2026-08-23): everything still in
-                    // flight past this point is killed by OUR shutdown. Latch the
-                    // classification so their receipts settle `drain_killed` (debit
-                    // ZERO) instead of `abandoned` (partial-billed client walk-away).
-                    // Through the seam: a custom implementation that never heard this
-                    // would partial-bill every drain-killed request.
-                    if let Some(metering) = drain_metering.as_ref() {
-                        metering.drain_kill();
-                    }
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if n == 0 {
+                eprintln!(
+                    "[server] drain complete in {:.1}s; exiting",
+                    t0.elapsed().as_secs_f64()
+                );
+                break;
             }
-        })
-        .await;
+            if t0.elapsed() >= deadline {
+                eprintln!(
+                    "[server] drain deadline ({}s) hit with {n} in flight; exiting",
+                    drain_deadline_s()
+                );
+                // Fault attribution (owner ruling 2026-08-23): everything still in
+                // flight past this point is killed by OUR shutdown. Latch the
+                // classification so their receipts settle `drain_killed` (debit
+                // ZERO) instead of `abandoned` (partial-billed client walk-away).
+                // Through the seam: a custom implementation that never heard this
+                // would partial-bill every drain-killed request.
+                if let Some(metering) = drain_metering.as_ref() {
+                    metering.drain_kill();
+                }
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    })
+    .await;
     // Drain complete: tell every deployment-side surface to end and drop its
     // TrimHandle (see the worker-join note below).
     let _ = drain_shutdown_tx.send(true);
@@ -6255,8 +6512,8 @@ async fn yield_metrics(State(st): State<AppState>, headers: HeaderMap) -> Respon
 /// `{"error": "<string>"}` — a BARE STRING where every OpenAI SDK expects an object, which
 /// made shed errors render as a blank message in every client that parses the standard shape.
 async fn peek_admission(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-) -> Result<tokio::sync::mpsc::UnboundedReceiver<Event>, (Response, &'static str)> {
+    mut rx: worker::EventReceiver,
+) -> Result<worker::EventReceiver, (Response, &'static str)> {
     match rx.recv().await {
         // Any pre-admission failure — a shed, a rejected allocation, a load fault — is
         // answered as a normal HTTP error with its own class instead of being smuggled into a
@@ -6267,7 +6524,7 @@ async fn peek_admission(
             Err((engine_error_response(&e), error_code))
         }
         first => {
-            let (tx2, rx2) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, rx2) = worker::event_channel();
             if let Some(ev) = first {
                 let _ = tx2.send(ev);
             }
@@ -6287,10 +6544,7 @@ async fn peek_admission(
 /// (`req.tx.is_closed()`) never appeared, and neither a client disconnect nor a deadline
 /// miss could actually cancel it. Selecting on `tx2.closed()` closes that gap for every
 /// consumer-side exit — client hang-up, deadline, or handler return.
-async fn forward_events(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
-    tx2: tokio::sync::mpsc::UnboundedSender<Event>,
-) {
+async fn forward_events(mut rx: worker::EventReceiver, tx2: worker::EventSender) {
     loop {
         tokio::select! {
             biased;
@@ -6322,9 +6576,9 @@ async fn forward_events(
 /// worker-side event channel — is dropped, which IS the cancel signal: the worker retires
 /// closed-channel requests queued or active at the next tick.
 async fn peek_first_token(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    mut rx: worker::EventReceiver,
     deadline: RequestDeadline,
-) -> Result<tokio::sync::mpsc::UnboundedReceiver<Event>, ()> {
+) -> Result<worker::EventReceiver, ()> {
     let mut buffered: Vec<Event> = Vec::new();
     loop {
         match tokio::time::timeout_at(deadline.at, rx.recv()).await {
@@ -6342,7 +6596,7 @@ async fn peek_first_token(
             }
         }
     }
-    let (tx2, rx2) = tokio::sync::mpsc::unbounded_channel();
+    let (tx2, rx2) = worker::event_channel();
     for ev in buffered {
         let _ = tx2.send(ev);
     }
@@ -6357,7 +6611,7 @@ async fn peek_first_token(
 /// own `SamplingDefaults` to `build_request_with_trace` directly.
 fn build_request(
     req: &CompletionReq,
-    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    tx: worker::EventSender,
     lane: lanes::Lane,
     affinity: Option<String>,
 ) -> Request {
@@ -6366,7 +6620,7 @@ fn build_request(
 
 fn build_request_with_trace(
     req: &CompletionReq,
-    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    tx: worker::EventSender,
     lane: lanes::Lane,
     affinity: Option<String>,
     ttft: Option<Arc<ttft::Trace>>,
@@ -6532,7 +6786,7 @@ pub(crate) fn reserve_vision_memory(
 fn build_chat_request(
     req: ChatCompletionReq,
     caps: Option<&ModelCaps>,
-    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    tx: worker::EventSender,
     lane: lanes::Lane,
     affinity: Option<String>,
 ) -> Result<ChatPlan, String> {
@@ -6559,13 +6813,14 @@ fn build_chat_request(
 fn build_chat_request_with_trace(
     req: ChatCompletionReq,
     caps: Option<&ModelCaps>,
-    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    tx: worker::EventSender,
     lane: lanes::Lane,
     affinity: Option<String>,
     ttft: Option<Arc<ttft::Trace>>,
     default_effort: Option<&str>,
     sampling_defaults: &ModelSamplingDefaults,
 ) -> Result<ChatPlan, String> {
+    req.stop.validate()?;
     // The client's own expression is snapshotted here; the omitted fields resolve to a
     // vendor arm only once the thinking mode is final (see `sampler_cfg` below).
     let client_sampling: ClientSampling = (&req).into();
@@ -7836,6 +8091,12 @@ async fn completions(
     Json(mut req): Json<CompletionReq>,
 ) -> Response {
     let env = Envelope::new(false);
+    if let Err(msg) = req.stop.validate() {
+        return with_request_id(&env.id, bad_request(&msg, Some("stop")));
+    }
+    if let Err(msg) = validate_client_identifier(req.trace_id.as_deref(), "trace_id") {
+        return with_request_id(&env.id, bad_request(&msg, Some("trace_id")));
+    }
     match canonical_model_id(&st.models, &req.model) {
         Some(canonical) => req.model = canonical,
         None => {
@@ -7893,10 +8154,13 @@ async fn completions(
         Ok(l) => l,
         Err(resp) => return resp,
     };
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let (tx, rx) = worker::event_channel();
     let model = req.model.clone();
     let stream = req.stream;
-    let affinity = affinity_key(&req.session_id, &req.user, &headers);
+    let affinity = match affinity_key(&req.session_id, &req.user, &headers) {
+        Ok(affinity) => affinity,
+        Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("session_id"))),
+    };
     let mut request = build_request_with_trace(
         &req,
         tx,
@@ -8198,26 +8462,15 @@ async fn chat_completions(
     // Preprocessing has its own bounded permit. GIFs must be decoded while the plan is built so
     // their sampled timestamps can render the prompt, while still images decode later; serializing
     // this phase keeps their transient canvases from multiplying outside request admission.
-    let vision_preprocess_permit = if request_has_vision(&req) {
-        match VISION_PREPROCESS_SEMAPHORE.acquire().await {
-            Ok(permit) => Some(permit),
-            Err(_) => {
-                return with_request_id(
-                    &env.id,
-                    error_response(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "vision preprocessing is unavailable",
-                        "server_error",
-                        None,
-                    ),
-                );
-            }
-        }
-    } else {
-        None
+    let vision_preprocess_permit = match try_vision_preprocess(request_has_vision(&req)) {
+        Ok(permit) => permit,
+        Err(response) => return with_request_id(&env.id, response),
     };
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
-    let affinity = affinity_key(&req.session_id, &req.user, &headers);
+    let (tx, rx) = worker::event_channel();
+    let affinity = match affinity_key(&req.session_id, &req.user, &headers) {
+        Ok(affinity) => affinity,
+        Err(msg) => return with_request_id(&env.id, bad_request(&msg, Some("session_id"))),
+    };
     let mut plan = match build_chat_request_with_trace(
         req,
         st.caps.get(&model),
@@ -8501,7 +8754,7 @@ async fn chat_completions(
 /// (OpenAI clients never parse named SSE events) followed by [DONE].
 #[cfg(test)]
 fn sse_response(
-    rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    rx: worker::EventReceiver,
     model: String,
     chat: bool,
     parser: Option<ToolStreamParser>,
@@ -8514,7 +8767,7 @@ fn sse_response(
 
 #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 fn sse_response_with_receipt(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    mut rx: worker::EventReceiver,
     model: String,
     chat: bool,
     mut parser: Option<ToolStreamParser>,
@@ -8915,7 +9168,7 @@ impl StopScrubber {
 
 #[cfg(test)]
 async fn blocking_response(
-    rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    rx: worker::EventReceiver,
     model: String,
     chat: bool,
     stop_strings: Vec<String>,
@@ -9055,7 +9308,7 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
 /// answers 408 unbilled — there is nothing to deliver.
 #[allow(clippy::too_many_arguments)] // allow: the parameter list mirrors the kernel/FFI/call contract; bundling into a struct is a refactor, not a lint fix
 async fn blocking_response_with_receipt(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    mut rx: worker::EventReceiver,
     model: String,
     chat: bool,
     stop_strings: Vec<String>,
@@ -9638,7 +9891,7 @@ mod tests {
             "prompt_ids": vec![7u32; prompt_ids],
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let mut request = build_request(&req, tx, lanes::Lane::Interactive, None);
         request.params.max_new = max_new;
         request
@@ -9939,7 +10192,7 @@ mod tests {
         let prompt = json!([{ "role": "user", "content": "capture me — exactly" }]);
 
         let drive = |receipt: Option<Box<dyn metering::Receipt>>| async {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+            let (tx, rx) = worker::event_channel();
             tx.send(Event::PromptUsage {
                 n_prompt: 7,
                 n_cached: 0,
@@ -10272,7 +10525,7 @@ mod tests {
             );
             let expected = std::fs::read_to_string(&expected_path).unwrap();
             let req: ChatCompletionReq = serde_json::from_value(input["request"].clone()).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let plan = build_chat_request(
                 req,
                 Some(&gemma_tool_caps()),
@@ -10334,7 +10587,7 @@ mod tests {
     /// One fixture request through the REAL serve pipeline, rendered with the vendor template.
     fn glm5_render(body: serde_json::Value) -> Result<String, String> {
         let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(req, Some(&glm5_caps()), tx, lanes::Lane::Interactive, None)?;
         chat::apply_chat_template_tools_ex(
             Some(&glm5_template()),
@@ -10450,7 +10703,7 @@ mod tests {
                        "reasoning_effort": v, "seed": 7}),
             )
             .unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let plan =
                 build_chat_request(req, Some(&glm5_caps()), tx, lanes::Lane::Interactive, None)
                     .unwrap();
@@ -10627,7 +10880,7 @@ mod tests {
                        "parameters": {"type": "object",
                                       "properties": {"city": {"type": "string"}}}}}]}))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(req, Some(&glm5_caps()), tx, lanes::Lane::Interactive, None)
             .unwrap();
         let mut parser = plan.parser.expect("glm5 tools request must carry a parser");
@@ -10667,7 +10920,7 @@ mod tests {
             json!({"model": "m", "messages": [{"role": "user", "content": "hi"}]}),
         )
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(req, Some(&glm5_caps()), tx, lanes::Lane::Interactive, None)
             .unwrap();
         let mut parser = plan
@@ -11348,7 +11601,7 @@ mod tests {
             "stop": "<stop>"
         });
         let req: ChatCompletionReq = serde_json::from_value(payload).unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(req, None, tx, lanes::Lane::Interactive, None).unwrap();
         let request = plan.request;
         assert!(
@@ -11364,7 +11617,7 @@ mod tests {
             "model": "plain_quant", "messages": [{"role": "user", "content": "task"}]
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(req, None, tx, lanes::Lane::Interactive, None).unwrap();
         assert_eq!(plan.request.params.max_new, worker::MAX_NEW_CTX_BOUNDED);
         // max_completion_tokens alias still honored exactly.
@@ -11373,7 +11626,7 @@ mod tests {
             "max_completion_tokens": 7
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert_eq!(
             build_chat_request(req, None, tx, lanes::Lane::Interactive, None)
                 .unwrap()
@@ -11387,7 +11640,7 @@ mod tests {
             "model": "plain_quant", "prompt": "task"
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert_eq!(
             build_request(&req, tx, lanes::Lane::Interactive, None)
                 .params
@@ -11442,9 +11695,33 @@ mod tests {
         assert!(req.stop.into_vec().is_empty());
     }
 
+    #[test]
+    fn stop_sequence_limits_bound_count_individual_and_aggregate_work() {
+        let at_limit = StopSequences::Many(vec!["x".repeat(256); MAX_STOP_SEQUENCES]);
+        assert!(at_limit.validate().is_ok());
+        assert!(
+            StopSequences::Many(vec![String::new(); MAX_STOP_SEQUENCES + 1])
+                .validate()
+                .unwrap_err()
+                .contains("at most")
+        );
+        assert!(
+            StopSequences::One("x".repeat(MAX_STOP_SEQUENCE_BYTES + 1))
+                .validate()
+                .unwrap_err()
+                .contains("each stop")
+        );
+        assert!(
+            StopSequences::Many(vec!["x".repeat(300); MAX_STOP_SEQUENCES])
+                .validate()
+                .unwrap_err()
+                .contains("total at most")
+        );
+    }
+
     #[tokio::test]
     async fn chat_response_has_openai_message_shape() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Token {
             id: 1,
             text: "hello".into(),
@@ -11504,7 +11781,7 @@ mod tests {
 
     #[tokio::test]
     async fn native_response_uses_terminal_token_snapshot_for_coalesced_events() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         // A speculative round may commit four ids but expose one detokenized text delta.
         tx.send(Event::Token {
             id: 4,
@@ -11546,7 +11823,7 @@ mod tests {
     /// acceptance summary as an additive usage extension; every existing field is untouched.
     #[tokio::test]
     async fn chat_usage_carries_spec_acceptance_summary() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Token {
             id: 1,
             text: "hello".into(),
@@ -11613,7 +11890,7 @@ mod tests {
     /// mismatch refuses instead of desyncing runs from units (lane/glm5-vision).
     #[test]
     fn glm5_vision_decode_is_deferred_and_grid_pinned() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let req: ChatCompletionReq = serde_json::from_value(json!({
             "model": "m", "messages": [{"role": "user", "content": "hi"}],
         }))
@@ -11681,7 +11958,7 @@ mod tests {
         // pad runs from HEADER dims only; canvases expand in decode_pending_vision,
         // which runs after admit_tenant_budget in chat_completions/admit_translated.
         // Build a plain plan, then drive phase 2 directly.
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let req: ChatCompletionReq = serde_json::from_value(json!({
             "model": "m", "messages": [{"role": "user", "content": "hi"}],
         }))
@@ -11758,7 +12035,7 @@ mod tests {
 
     #[test]
     fn tools_request_renders_client_key_order_and_arms_parser() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(
             weather_request(json!({})),
             Some(&tool_caps()),
@@ -11781,7 +12058,7 @@ mod tests {
 
     #[test]
     fn hy3_tools_and_reasoning_flow_through_the_real_chat_plan() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(
             weather_request(json!({"reasoning_effort": "high"})),
             Some(&hy3_tool_caps()),
@@ -11827,7 +12104,7 @@ mod tests {
 
     #[test]
     fn tool_choice_none_strips_tools_and_parser() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(
             weather_request(json!({"tool_choice": "none"})),
             Some(&tool_caps()),
@@ -11851,7 +12128,7 @@ mod tests {
         );
         assert!(plan.request.tools_json.is_empty());
         // unsupported tool_choice forms are clean 400s, not silent downgrades.
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert!(
             build_chat_request(
                 weather_request(json!({"tool_choice": "required"})),
@@ -11862,7 +12139,7 @@ mod tests {
             )
             .is_err()
         );
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert!(
             build_chat_request(
                 weather_request(json!({"tool_choice":
@@ -11952,7 +12229,7 @@ mod tests {
             "messages": [{"role": "user", "content": "hello"}],
         });
         let req: ChatCompletionReq = serde_json::from_value(payload).unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let err = match build_chat_request(req, Some(&caps), tx, lanes::Lane::Interactive, None) {
             Err(e) => e,
             Ok(_) => panic!("templateless dir checkpoint must reject chat"),
@@ -11969,7 +12246,7 @@ mod tests {
 
     #[test]
     fn tools_on_model_without_tools_branch_is_rejected() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let caps = ModelCaps {
             chat_ok: true,
             ..Default::default()
@@ -11984,7 +12261,7 @@ mod tests {
             )
             .is_err()
         );
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert!(
             build_chat_request(
                 weather_request(json!({})),
@@ -12032,7 +12309,7 @@ mod tests {
                 ThinkMode::NoThink,
             ),
         ] {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let plan = build_chat_request(
                 weather_request(extra.clone()),
                 // A LADDER-carrying model (qwen3.8 shape), so every rung of the table is
@@ -12056,7 +12333,7 @@ mod tests {
             json!({"reasoning": {"enabled": false, "effort": "banana"}}),
             json!({"reasoning": {"enabled": true, "effort": ""}}),
         ] {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             assert!(
                 build_chat_request(
                     weather_request(extra.clone()),
@@ -12122,7 +12399,7 @@ mod tests {
             ..Default::default()
         };
         let build = |caps: &ModelCaps, effort: &str| {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let req: ChatCompletionReq = serde_json::from_value(json!({
                 "model": "m",
                 "messages": [{"role": "user", "content": "hi"}],
@@ -12162,7 +12439,7 @@ mod tests {
         // expressed no reasoning preference flips; every explicit client choice is
         // honored unchanged.
         let build = |extra: serde_json::Value, default_effort: Option<&str>| {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request_with_trace(
                 weather_request(extra),
                 Some(&ladder_caps()),
@@ -12232,7 +12509,7 @@ mod tests {
         // deserialized away and the request served with reasoning ON behind a 200. Measured
         // on the live endpoint against both served models before the fix.
         let build = |extra: serde_json::Value| {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(
                 weather_request(extra),
                 Some(&tool_caps()),
@@ -12316,7 +12593,7 @@ mod tests {
         // This renderer is Rust, not jinja: a kwarg it does not implement changes nothing
         // about the prompt, so accepting it with 200 is the same defect one level down.
         let build = |extra: serde_json::Value| {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(
                 weather_request(extra),
                 Some(&tool_caps()),
@@ -12393,7 +12670,7 @@ mod tests {
             }
         }
         let req: ChatCompletionReq = serde_json::from_value(payload).unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request_with_trace(
             req,
             Some(caps),
@@ -12613,7 +12890,7 @@ focused, moving directly to the conclusion without unnecessary elaboration.";
     #[test]
     fn the_reasoning_object_refuses_every_key_it_cannot_honour() {
         let build = |extra: serde_json::Value| {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(
                 weather_request(extra),
                 Some(&ladder_caps()),
@@ -12792,7 +13069,7 @@ focused, moving directly to the conclusion without unnecessary elaboration.";
         // chain surface -> schema -> bytes.
         let render_chat = |body: serde_json::Value| -> Result<String, String> {
             let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let plan = build_chat_request(
                 req,
                 Some(&ladder_caps()),
@@ -12879,7 +13156,7 @@ focused, moving directly to the conclusion without unnecessary elaboration.";
         };
         let render_switchless = |body: serde_json::Value| -> Result<String, String> {
             let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let plan =
                 build_chat_request(req, Some(&switchless), tx, lanes::Lane::Interactive, None)?;
             Ok(format!("{:?}", plan.request.think))
@@ -12917,7 +13194,7 @@ focused, moving directly to the conclusion without unnecessary elaboration.";
         // arm, with its last_query_index walk) stays unimplemented and refuses: serving
         // replay bytes under a strip request would misdescribe the prompt.
         let build = |extra: serde_json::Value| {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(
                 weather_request(extra),
                 Some(&ladder_caps()),
@@ -12968,7 +13245,7 @@ focused, moving directly to the conclusion without unnecessary elaboration.";
             json!({"enable_thinking": false}),
             json!({"include_reasoning": false}),
         ] {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let plan = build_chat_request(
                 weather_request(extra.clone()),
                 Some(&dsv4_caps),
@@ -12986,7 +13263,7 @@ focused, moving directly to the conclusion without unnecessary elaboration.";
         // Two explicit switches that disagree: silently honoring one makes the other an
         // accepted-and-ignored parameter, which is the whole class this lane removes.
         let build = |extra: serde_json::Value| {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(
                 weather_request(extra),
                 Some(&tool_caps()),
@@ -13036,7 +13313,7 @@ focused, moving directly to the conclusion without unnecessary elaboration.";
             ..Default::default()
         };
         let build = |extra: serde_json::Value, caps: &ModelCaps, default_effort: Option<&str>| {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request_with_trace(
                 weather_request(extra),
                 Some(caps),
@@ -13123,7 +13400,7 @@ focused, moving directly to the conclusion without unnecessary elaboration.";
                     }
                 }
                 let req: ChatCompletionReq = serde_json::from_value(payload).unwrap();
-                let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+                let (tx, _rx) = worker::event_channel();
                 let plan = build_chat_request_with_trace(
                     req,
                     Some(&gemma_caps),
@@ -13248,7 +13525,7 @@ default_reasoning_effort = "always"
             (json!({"reasoning_effort": "xhigh"}), Some("high")),
             (json!({"reasoning": {"effort": "max"}}), Some("high")),
         ] {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let plan = build_chat_request(
                 weather_request(extra.clone()),
                 Some(&effort_caps),
@@ -13276,7 +13553,7 @@ default_reasoning_effort = "always"
             json!({"enable_thinking": false}),
             json!({"include_reasoning": false}),
         ] {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let err = build_chat_request(
                 weather_request(extra.clone()),
                 Some(&effort_caps),
@@ -13301,7 +13578,7 @@ default_reasoning_effort = "always"
             json!({"reasoning_effort": "high"}),
             json!({"reasoning": {"effort": "low"}}),
         ] {
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             let plan = build_chat_request(
                 weather_request(extra.clone()),
                 Some(&tool_caps()),
@@ -13314,7 +13591,7 @@ default_reasoning_effort = "always"
             assert_eq!(plan.request.reasoning_effort, None, "extra={extra}");
         }
         // and an unset request on that class still renders the template's own default.
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(
             weather_request(json!({})),
             Some(&tool_caps()),
@@ -13340,7 +13617,7 @@ default_reasoning_effort = "always"
             ],
         });
         let req: ChatCompletionReq = serde_json::from_value(payload).unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let plan = build_chat_request(req, Some(&tool_caps()), tx, lanes::Lane::Interactive, None)
             .unwrap();
         let turns = &plan.request.chat_turns;
@@ -13369,7 +13646,7 @@ default_reasoning_effort = "always"
 
     #[tokio::test]
     async fn blocking_tools_response_carries_tool_calls_and_finish_reason() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Token {
             id: 1,
             text: "plan</think>\n\n".into(),
@@ -13441,7 +13718,7 @@ default_reasoning_effort = "always"
             "model": "m", "prompt": "task", "cache_salt": "tenant-a"
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert_eq!(
             build_request(&req, tx, lanes::Lane::Interactive, None).cache_ns,
             "tenant-a"
@@ -13452,7 +13729,7 @@ default_reasoning_effort = "always"
             "cache_salt": "tenant-b"
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert_eq!(
             build_chat_request(req, None, tx, lanes::Lane::Interactive, None)
                 .unwrap()
@@ -13466,7 +13743,7 @@ default_reasoning_effort = "always"
             "model": "m", "prompt": "task"
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert_eq!(
             build_request(&req, tx, lanes::Lane::Interactive, None).cache_ns,
             ""
@@ -13475,7 +13752,7 @@ default_reasoning_effort = "always"
             "model": "m", "messages": [{"role": "user", "content": "task"}]
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert_eq!(
             build_chat_request(req, None, tx, lanes::Lane::Interactive, None)
                 .unwrap()
@@ -13534,24 +13811,47 @@ default_reasoning_effort = "always"
         let empty = HeaderMap::new();
         let s = |v: &str| Some(v.to_string());
         // each convention alone.
-        assert_eq!(affinity_key(&s("explicit"), &None, &empty), s("explicit"));
         assert_eq!(
-            affinity_key(&None, &s("openai-user"), &empty),
+            affinity_key(&s("explicit"), &None, &empty).unwrap(),
+            s("explicit")
+        );
+        assert_eq!(
+            affinity_key(&None, &s("openai-user"), &empty).unwrap(),
             s("openai-user")
         );
-        assert_eq!(affinity_key(&None, &None, &hdr("hdr-id")), s("hdr-id"));
+        assert_eq!(
+            affinity_key(&None, &None, &hdr("hdr-id")).unwrap(),
+            s("hdr-id")
+        );
         // priority: session_id > user > header. Body beats header because a header can be
         // rewritten by an intermediary.
-        assert_eq!(affinity_key(&s("a"), &s("b"), &hdr("c")), s("a"));
-        assert_eq!(affinity_key(&None, &s("b"), &hdr("c")), s("b"));
+        assert_eq!(affinity_key(&s("a"), &s("b"), &hdr("c")).unwrap(), s("a"));
+        assert_eq!(affinity_key(&None, &s("b"), &hdr("c")).unwrap(), s("b"));
         // blank/whitespace is ABSENT, not a key — a client sending "user": "" must not
         // collapse every conversation onto one shared session.
-        assert_eq!(affinity_key(&s("  "), &s(""), &hdr("  ")), None);
-        assert_eq!(affinity_key(&s(""), &s("real"), &empty), s("real"));
+        assert_eq!(affinity_key(&s("  "), &s(""), &hdr("  ")).unwrap(), None);
+        assert_eq!(affinity_key(&s(""), &s("real"), &empty).unwrap(), s("real"));
         // trimmed.
-        assert_eq!(affinity_key(&s(" padded "), &None, &empty), s("padded"));
+        assert_eq!(
+            affinity_key(&s(" padded "), &None, &empty).unwrap(),
+            s("padded")
+        );
         // nothing supplied -> implicit tier (fingerprint) in the worker.
-        assert_eq!(affinity_key(&None, &None, &empty), None);
+        assert_eq!(affinity_key(&None, &None, &empty).unwrap(), None);
+        assert!(
+            affinity_key(
+                &s(&"x".repeat(MAX_CLIENT_IDENTIFIER_BYTES + 1)),
+                &None,
+                &empty,
+            )
+            .unwrap_err()
+            .contains("at most")
+        );
+        assert!(
+            affinity_key(&s("forged\nlog"), &None, &empty)
+                .unwrap_err()
+                .contains("control")
+        );
     }
 
     #[test]
@@ -13560,8 +13860,8 @@ default_reasoning_effort = "always"
             "model": "m", "prompt": "task", "session_id": "conv-1"
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let key = affinity_key(&req.session_id, &req.user, &axum::http::HeaderMap::new());
+        let (tx, _rx) = worker::event_channel();
+        let key = affinity_key(&req.session_id, &req.user, &axum::http::HeaderMap::new()).unwrap();
         assert_eq!(
             build_request(&req, tx, lanes::Lane::Interactive, key)
                 .affinity
@@ -13574,8 +13874,8 @@ default_reasoning_effort = "always"
             "user": "conv-2"
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let key = affinity_key(&req.session_id, &req.user, &axum::http::HeaderMap::new());
+        let (tx, _rx) = worker::event_channel();
+        let key = affinity_key(&req.session_id, &req.user, &axum::http::HeaderMap::new()).unwrap();
         assert_eq!(
             build_chat_request(req, None, tx, lanes::Lane::Interactive, key)
                 .unwrap()
@@ -13589,7 +13889,7 @@ default_reasoning_effort = "always"
             "model": "m", "prompt": "task"
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         assert!(
             build_request(&req, tx, lanes::Lane::Interactive, None)
                 .affinity
@@ -13617,7 +13917,7 @@ default_reasoning_effort = "always"
         // and a reasoning-off generation carries NO reasoning field rather than an empty one.
         // Billing unchanged either way: reasoning tokens are output tokens.
         let feed = |think: bool| {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, rx) = worker::event_channel();
             let body = if think {
                 "a plan</think>\n\nanswer"
             } else {
@@ -13732,7 +14032,7 @@ default_reasoning_effort = "always"
 
     #[tokio::test]
     async fn stream_chunks_carry_envelope_and_first_delta_role() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Token {
             id: 1,
             text: "he".into(),
@@ -13800,7 +14100,7 @@ default_reasoning_effort = "always"
             ("MaxNew", "length"),
             ("ContextFull", "length"),
         ] {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, rx) = worker::event_channel();
             // EOS deliberately has empty text: it is still one generated, streamed, and
             // accounted token id. This is the exact Q35 sellgate terminal-token case.
             tx.send(Event::Token {
@@ -13851,7 +14151,7 @@ default_reasoning_effort = "always"
         // gap-scan F9: the worker emits the delta BEFORE its stop check — the stream
         // shape must still exclude the stop text (and same-token overshoot) exactly
         // like the non-stream truncate. Stop spans two token events here.
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Token {
             id: 1,
             text: "answer\nPro".into(),
@@ -13896,7 +14196,7 @@ default_reasoning_effort = "always"
         assert_eq!(content, "answer\n");
 
         // held-back text that never becomes a stop is flushed at Done.
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Token {
             id: 1,
             text: "ends in Pro".into(),
@@ -13938,7 +14238,7 @@ default_reasoning_effort = "always"
 
     #[tokio::test]
     async fn stream_worker_error_is_a_data_chunk_not_a_named_event() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Error(worker::EngineError::engine("boom")))
             .unwrap();
         drop(tx);
@@ -13983,7 +14283,7 @@ default_reasoning_effort = "always"
 
     #[tokio::test]
     async fn error_bodies_use_the_openai_object_shape() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Error(worker::EngineError::model_not_found(
             "unknown model \"x\"",
         )))
@@ -15098,7 +15398,7 @@ default_reasoning_effort = "always"
         // The worker thread died (panicked, unrecoverable) mid-request: the Event channel
         // closes with neither Done nor Error. The client's retry may land on a restarted
         // process, so this is capacity-class with a window — not a bare 500.
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+        let (tx, rx) = worker::event_channel();
         drop(tx);
         let resp =
             blocking_response(rx, "m".into(), true, Vec::new(), None, Envelope::new(true)).await;
@@ -15110,7 +15410,7 @@ default_reasoning_effort = "always"
     async fn a_dark_lane_shed_is_429_with_an_openai_object_body() {
         // The admission peek used to answer `{"error": "<string>"}` — a bare string where every SDK
         // expects an object, which renders as a blank message client-side.
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Error(worker::EngineError::rate_limit(
             "lane judge shed: interactive p99 over budget, retry",
         )))
@@ -15142,7 +15442,7 @@ default_reasoning_effort = "always"
     async fn interactive_admission_error_is_a_preheader_429() {
         // An unattainable long-context request must remain retryable even when the client asked
         // for streaming; committing a 200 before this worker verdict would prevent failover.
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Error(worker::EngineError::rate_limit(
             "KV capacity unavailable",
         )))
@@ -15156,7 +15456,7 @@ default_reasoning_effort = "always"
 
     #[tokio::test]
     async fn admission_peek_preserves_context_error_for_the_ledger() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Error(worker::EngineError::context_length(
             "prompt exceeds configured model maximum",
         )))
@@ -15170,7 +15470,7 @@ default_reasoning_effort = "always"
 
     #[tokio::test]
     async fn admission_peek_replays_prompt_usage_without_waiting_for_a_token() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::PromptUsage {
             n_prompt: 262_143,
             n_cached: 0,
@@ -15195,7 +15495,7 @@ default_reasoning_effort = "always"
             "frequency_penalty": 0.5, "presence_penalty": 0.25, "repetition_penalty": 1.1
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let cfg = build_chat_request(req, None, tx, lanes::Lane::Interactive, None)
             .unwrap()
             .request
@@ -15209,7 +15509,7 @@ default_reasoning_effort = "always"
             "model": "m", "prompt": "task", "frequency_penalty": 1.5
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let cfg = build_request(&req, tx, lanes::Lane::Interactive, None).sampler_cfg;
         assert_eq!(cfg.penalty_freq, 1.5);
         assert_eq!(cfg.penalty_last_n, memra_engine::spec::PEN_WINDOW_MAX);
@@ -15219,7 +15519,7 @@ default_reasoning_effort = "always"
             "model": "m", "prompt": "task"
         }))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let cfg = build_request(&req, tx, lanes::Lane::Interactive, None).sampler_cfg;
         assert_eq!(cfg.penalty_last_n, 0);
         assert_eq!(cfg.penalty_repeat, 1.0);
@@ -15244,7 +15544,7 @@ default_reasoning_effort = "always"
         // "no declaration = OpenAI-compatible", "declaration = the vendor's own numbers".
         let chat_temp = |body: serde_json::Value| {
             let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(req, None, tx, lanes::Lane::Interactive, None)
                 .unwrap()
                 .request
@@ -15253,7 +15553,7 @@ default_reasoning_effort = "always"
         };
         let comp_temp = |body: serde_json::Value| {
             let req: CompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_request(&req, tx, lanes::Lane::Interactive, None)
                 .sampler_cfg
                 .temperature
@@ -15329,7 +15629,7 @@ default_reasoning_effort = "always"
         let req: CompletionReq = serde_json::from_value(serde_json::json!({
             "model": "m", "prompt": "t"}))
         .unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         let cfg = build_request(&req, tx, lanes::Lane::Interactive, None).sampler_cfg;
         assert_eq!(cfg.top_p, 1.0, "omitted top_p = OpenAI 1.0 = disabled");
         assert_eq!(cfg.top_k, 0, "omitted top_k = disabled");
@@ -15362,7 +15662,7 @@ default_reasoning_effort = "always"
                 .unwrap()
                 .extend(extra.as_object().unwrap().clone());
             let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(req, Some(&caps), tx, lanes::Lane::Interactive, None)
                 .unwrap()
                 .request
@@ -15437,7 +15737,7 @@ default_reasoning_effort = "always"
                 .unwrap()
                 .extend(extra.as_object().unwrap().clone());
             let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request_with_trace(
                 req,
                 Some(&ModelCaps {
@@ -15534,7 +15834,7 @@ default_reasoning_effort = "always"
                 .unwrap()
                 .extend(extra.as_object().unwrap().clone());
             let req: CompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_request_with_trace(&req, tx, lanes::Lane::Interactive, None, None, &d).sampler_cfg
         };
         let chat = |extra: serde_json::Value| {
@@ -15546,7 +15846,7 @@ default_reasoning_effort = "always"
                 .unwrap()
                 .extend(extra.as_object().unwrap().clone());
             let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request_with_trace(
                 req,
                 Some(&ModelCaps {
@@ -16195,7 +16495,7 @@ temperture = 0.7
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
         let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = worker::event_channel();
         build_chat_request_with_trace(
             req,
             Some(caps),
@@ -16621,14 +16921,14 @@ temperature = 0.6
         // research/sampledspec-20260804/). The loop survives the temperature fix alone.
         let comp_seed = |body: serde_json::Value| {
             let req: CompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_request(&req, tx, lanes::Lane::Interactive, None)
                 .sampler_cfg
                 .seed
         };
         let chat_seed = |body: serde_json::Value| {
             let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(req, None, tx, lanes::Lane::Interactive, None)
                 .unwrap()
                 .request
@@ -16702,7 +17002,7 @@ temperature = 0.6
                 body["response_format"] = rf;
             }
             let req: ChatCompletionReq = serde_json::from_value(body).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(req, None, tx, lanes::Lane::Interactive, None)
         };
         assert!(mk(None).unwrap().request.grammar.is_none());
@@ -16748,7 +17048,7 @@ temperature = 0.6
                 "model": "m", "messages": [{"role": "user", "content": "t"}],
                 "response_format": {"type": "json_object"}}))
             .unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_chat_request(req, Some(caps), tx, lanes::Lane::Interactive, None)
         };
         // qwen class: enable_thinking switch — grammar path forces NoThink, unchanged.
@@ -19193,7 +19493,7 @@ completion = "0.0000003230"
         };
         let build = |value: serde_json::Value| {
             let req: CompletionReq = serde_json::from_value(value).unwrap();
-            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let (tx, _rx) = worker::event_channel();
             build_request(&req, tx, lanes::Lane::Interactive, None)
         };
 
@@ -19608,7 +19908,7 @@ request = "0"
 
     #[tokio::test]
     async fn blocking_response_excludes_stop_text_across_token_events() {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = worker::event_channel();
         tx.send(Event::Token {
             id: 1,
             text: "answer\nPro".into(),

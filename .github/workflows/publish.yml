@@ -29,8 +29,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-24.04
+    environment: crates-io
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Shared guard (tools/release-guard.sh, teeth in ci.yml): workspace version must
       # equal the tag AND the release/claim-<tag> branch must exist (docs/RELEASING.md
@@ -39,9 +40,14 @@ jobs:
       # refusals (this file caught them) but mismatched GitHub releases (release.yml
       # had no guard at all). Cargo-free now, so it runs BEFORE the 4-minute CUDA
       # install and fails fast.
-      - name: Guard — version match + claim branch (tag runs only)
-        if: github.event_name == 'push'
-        run: tools/release-guard.sh "$GITHUB_REF_NAME"
+      - name: Guard — immutable tag, version match + claim branch
+        if: github.event_name == 'push' || inputs.publish == true
+        run: |
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            echo "::error::real publishing requires dispatching the immutable vX.Y.Z tag ref"
+            exit 1
+          fi
+          tools/release-guard.sh "$GITHUB_REF_NAME"
 
       # The publish census runs on EVERY invocation, dispatch included — the recovery door is
       # exactly when a stale list does the most damage, because the operator reaching for it is
@@ -55,19 +61,15 @@ jobs:
           tools/stub-abi-census.py
 
       - name: Install CUDA 13.1 (nvcc + headers — publish verification compiles the kernels)
-        run: |
-          wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
-          sudo dpkg -i cuda-keyring_1.1-1_all.deb
-          sudo apt-get update -q
-          sudo apt-get install -y -q cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1
+        run: tools/install-cuda-ci.sh
 
       # The publish verify-compile runs on the repo-root rust-toolchain.toml pin (named
       # explicitly to pre-install it). Consumer-side floating-stable coverage lives in
       # ci.yml's publish-dryrun job, which escapes the pin on purpose.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           toolchain: "1.97.1"
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: publish-sm120a
 
