@@ -135,6 +135,20 @@ decision` line. Compare that line across the two arms' boot logs before reading 
 The vision request's own decode row is reported as information only — a different prompt shape is
 not comparable to the text row.
 
+## One command, because the slot is on the critical path
+
+`run-battery.sh <out-dir> [reps]` drives arms A -> B -> C+D in order and writes one `VERDICT.txt`.
+Vision is a ship gate alongside the cache (owner ruling 2026-09-01), so everything decidable before
+the window is decided before it: the probe's own 17 refusal paths are re-executed and the fixture
+shas printed BEFORE the first request, and every missing input (boot commands, readyz, binary path,
+fixtures) is a named refusal rather than a guess. It claims no slot, deploys nothing, and never
+touches the live dark stack — it runs against a slot already handed over.
+
+Two clauses in it are worth knowing before reading any output: a boot whose build identity is
+`degraded` REFUSES (a version-only id cannot back a published claim), and a fix boot reporting
+`cross_context=false` is a **VOID** — the window would not be testing the ppN serving shape, and no
+row from it may be cited.
+
 ## Banking
 
 Everything under `../receipts/box-<UTC>/`: the two boots' full logs, `receipts.json` per arm,
