@@ -1,15 +1,15 @@
-# Dev-platform verdict: RTX PRO 6000 Blackwell (the cloud PRO 6000) vs rented 5090s vs local-only
+# Dev-platform verdict: RTX PRO 6000 Blackwell (hyperscaler Sbox) vs rented 5090s vs local-only
 
 Date: 2026-08-02. Lane: `lane/dev-platform`. Web-researched (every external claim carries a
 source + date) plus in-repo receipts. Nothing in this report was measured today — §3 defines
 the validation-day experiment; the empirical anchors quoted are existing repo evidence.
 
 **Owner question (verbatim intent):** development should happen on rented cloud GPUs matching
-the product silicon; "we decide if rtx 6000 on [the cloud vendor] is good enogh for the similarity betwen the
+the product silicon; "we decide if rtx 6000 on hyperscaler is good enogh for the similarity betwen the
 hardware or we need 5090 otherwise we are doing double job."
-**Owner decision rule (2026-08-02):** the cloud vendor is preferred (below-list pricing) IF the RTX 6000
+**Owner decision rule (2026-08-02):** hyperscaler is preferred (below-list pricing) IF the RTX 6000
 Blackwell class is silicon-similar to the 5090 end goal; vast.ai 5090s only if similarity fails
-or the cloud vendor doesn't carry the card.
+or hyperscaler doesn't carry the card.
 
 ---
 
@@ -18,14 +18,14 @@ or the cloud vendor doesn't carry the card.
 **Silicon identity: YES — same family, same ISA, same compiled kernels.** RTX PRO 6000
 Blackwell is GB202 — the same die as the desktop RTX 5090 — compute capability 12.0, the same
 `sm_120a` target our build system emits for every 5090. Our fatbins are arch-exact SASS, and
-this repo has already run them **unchanged** on this exact card: the dead cloud PRO 6000 research box WAS
+this repo has already run them **unchanged** on this exact card: the dead Sbox research box WAS
 an RTX PRO 6000 Blackwell Server Edition, and its 2026-07-04 bring-up row
-(`research/tune-data/cloud-rtx6000.jsonl`) records kernel-check ALL GREEN, run-gen argmax MATCH
+(`research/tune-data/sbox-rtx6000.jsonl`) records kernel-check ALL GREEN, run-gen argmax MATCH
 with logit maxdiff identical to the same-day rig5090 run, and spec K=1..8 PASS.
 
-**The cloud vendor carries it: YES.** the vendor PRO 6000 family (launched 2026-01-20, N. Virginia + Ohio) = RTX PRO 6000
+**hyperscaler carries it: YES.** cloud compute Sbox (launched 2026-01-20, N-Virginia + Ohio) = RTX PRO 6000
 Blackwell Server Edition, 1-8 GPUs per instance, local NVMe, GPUDirect P2P. Under the owner
-rule, **the cloud PRO 6000 is the pick**; vast.ai 5090 is the fallback/cross-check tier, not needed as
+rule, **hyperscaler Sbox is the pick**; vast.ai 5090 is the fallback/cross-check tier, not needed as
 primary.
 
 **The honest asterisk:** ISA identity is not perf-verdict identity. The proof rig is the RTX
@@ -42,15 +42,15 @@ the test that measures how small that residual double-job actually is.
 
 ### 1.1 The card matrix
 
-| | **RTX 5090 Laptop** (local proof rig) | **RTX 5090 desktop** (vast.ai rentals) | **RTX PRO 6000 Blackwell WS Ed.** | **RTX PRO 6000 Blackwell Server Ed.** (the cloud PRO 6000) | RTX 6000 **Ada** (NOT similar) |
+| | **RTX 5090 Laptop** (local proof rig) | **RTX 5090 desktop** (vast.ai rentals) | **RTX PRO 6000 Blackwell WS Ed.** | **RTX PRO 6000 Blackwell Server Ed.** (hyperscaler Sbox) | RTX 6000 **Ada** (NOT similar) |
 |---|---|---|---|---|---|
 | Die | GB203 | **GB202** | **GB202** | **GB202** | AD102 |
 | Compute cap / arch | 12.0 / sm_120a | 12.0 / sm_120a | **12.0 / sm_120a** | **12.0 / sm_120a** | 8.9 / sm_89 |
 | SMs / CUDA cores | 82 / 10,496 | 170 / 21,760 | 188 / 24,064 | 188 / 24,064 | 142 / 18,176 |
 | L2 | 64 MB | 96 MB | **128 MB** (deviceQuery receipt) | 128 MB | 96 MB |
 | Memory | 24 GB GDDR7, 256-bit | 32 GB GDDR7, 512-bit | 96 GB GDDR7 ECC, 512-bit | 96 GB GDDR7 ECC, 512-bit | 48 GB GDDR6 |
-| Bandwidth | 896 GB/s spec, **858 measured** (repo) | 1,792 GB/s | 1,792 GB/s | **1,597 GB/s** (vendor spec) | 960 GB/s |
-| Boost clock | 2,715 MHz spec (150 W TGP) | 2,407 MHz (575 W) | 2,617 MHz (600 W) | **2,430 MHz max measured on the cloud PRO 6000 box** (600 W cap) | — |
+| Bandwidth | 896 GB/s spec, **858 measured** (repo) | 1,792 GB/s | 1,792 GB/s | **1,597 GB/s** (hyperscaler spec) | 960 GB/s |
+| Boost clock | 2,715 MHz spec (150 W TGP) | 2,407 MHz (575 W) | 2,617 MHz (600 W) | **2,430 MHz max measured on the Sbox box** (600 W cap) | — |
 | FP4/FP8 block-scale MMA (5th-gen TC) | yes | yes | yes (4,000 AI TOPS FP4) | yes | **no FP4** |
 
 Sources: NVIDIA/press launch specs — GB202, 24,064 cores/188 SM, 96 GB GDDR7 ECC 512-bit,
@@ -59,10 +59,10 @@ L2 128 MB + CC 12.0 + 188 SM from an actual deviceQuery on the card
 ([Fixstars Max-Q teardown](https://blog.us.fixstars.com/what-kind-of-gpu-is-the-nvidia-rtx-pro-6000-blackwell-max-q/), fetched 2026-08-02 — some spec DBs echo "98 MB"; the deviceQuery receipt wins);
 5090 desktop 170 SM / 96 MB L2 vs PRO 6000 full-die-ish config
 ([Chips and Cheese GB202 analysis](https://chipsandcheese.com/p/blackwell-nvidias-massive-gpu));
-Server Edition bandwidth 1,597 GB/s (vendor product page, link scrubbed 2026-09-01; fetched 2026-08-02);
+Server Edition bandwidth 1,597 GB/s ([hyperscaler Sbox product page](https://hyperscaler.amazon.com/vm/instance-types/sbox/), fetched 2026-08-02);
 5090 Laptop GB203 / 82 SM / 64 MB L2 / 24 GB / 896 GB/s / 2,715 MHz / 150 W
 ([VideoCardz.net](https://videocardz.net/nvidia-geforce-rtx-5090-laptop-gpu) / eatyourbytes DB, fetched 2026-08-02);
-cloud PRO 6000 measured clocks: `cloud-rtx6000.jsonl` bring-up row ("idle 180MHz, max 2430MHz, 600W cap").
+Sbox measured clocks: `sbox-rtx6000.jsonl` bring-up row ("idle 180MHz, max 2430MHz, 600W cap").
 RTX 6000 Ada = AD102/sm_89 ([Arnon Shimoni's arch table](https://arnon.dk/matching-sm-architectures-arch-and-gencode-for-various-nvidia-cards/)) —
 that is our compile-gated legacy arch (`MEMRA_CUDA_ARCH=89`, portable eval only); anyone
 quoting "RTX 6000" prices must check the generation — DigitalOcean for example rents only the
@@ -73,11 +73,11 @@ Ada one ($1.57/hr, [DO pricing](https://www.digitalocean.com/pricing/gpu-droplet
 - **The PRO 6000 (all editions) reports compute_cap 12.0** — same as every RTX 50 card.
   Receipts: Fixstars deviceQuery (CC 12.0, above); vLLM tracks it as SM120
   ([vllm#31085](https://github.com/vllm-project/vllm/issues/31085)); and decisively, **our own
-  cloud PRO 6000 box**: `crates/memra-engine/build.rs::detect_arch()` reads
+  Sbox box**: `crates/memra-engine/build.rs::detect_arch()` reads
   `nvidia-smi --query-gpu=compute_cap` and maps `"12.0" -> "120a"`, `Engine::new` refuses to
   init when device CC != built arch, and the 2026-07-04 bring-up ran the rig-built sm_120a
   fatbins **unchanged** through the full battery. SASS is arch-exact — sm_120a SASS cannot
-  even load on a device of any other CC, so ALL GREEN on the cloud PRO 6000 card is proof of identity,
+  even load on a device of any other CC, so ALL GREEN on the Sbox card is proof of identity,
   not just compatibility.
 - **The `a` suffix is not "consumer-only".** `compute_120a/sm_120a` is the arch-specific
   feature target for ALL CC 12.0 silicon — it is the only form that assembles the FP4/FP8
@@ -88,7 +88,7 @@ Ada one ($1.57/hr, [DO pricing](https://www.digitalocean.com/pricing/gpu-droplet
   deviceQuery receipt since — including ours — says 12.0. Do not let that issue seed a
   "different arch" belief on validation day; if a rented box ever prints anything but 12.0,
   that is a driver/VM anomaly to capture, not a card property.
-- Auto-detect on a cloud PRO 6000 box therefore produces the **byte-identical naked sm_120a build** with
+- Auto-detect on a Sbox box therefore produces the **byte-identical naked sm_120a build** with
   zero flags — the same binary contract as the local rig (README.md: "the naked sm_120a
   build is byte-for-byte the tuned 5090 engine").
 
@@ -98,40 +98,40 @@ Identical: ISA, tensor-core generation (FP4/NVFP4, FP8, int8 dp4a, mma.sync shap
 SASS, exactness behavior (bring-up row: 27B logit maxdiff 3.402e-1 **identical** to the
 same-day rig5090 run — the numeric class transfers bit-for-bit).
 
-Not identical: perf shape. vs the local proof rig the cloud PRO 6000 card is 2.29x the SMs (188/82),
+Not identical: perf shape. vs the local proof rig the Sbox card is 2.29x the SMs (188/82),
 1.86x the bandwidth (1597/858), 4x the power, 2x the L2, and clocks ~10% lower. The repo has
-already paid for this lesson once: the same grouped-MoE change measured **4.8-7.2x on cloud PRO 6000 vs
-1.48-1.95x locally** (HANDOVER.md:1270-1271 — cloud PRO 6000's 188 SMs idle on matvecs, the laptop
+already paid for this lesson once: the same grouped-MoE change measured **4.8-7.2x on Sbox vs
+1.48-1.95x locally** (HANDOVER.md:1270-1271 — Sbox's 188 SMs idle on matvecs, the laptop
 clocks higher), and the box era produced the standing law that kernel verdicts do not
 transfer across power walls (HANDOVER.md:219). Directionality mostly transferred; magnitudes
 and thresholds did not. That is exactly the class of risk §3's test quantifies — and note a
 rented **desktop** 5090 (170 SM, 1792 GB/s, 575 W, GB202) sits on the same side of the power
-wall as the cloud PRO 6000 card, not on the laptop's side. Renting 5090s does not buy proof-rig identity.
+wall as the Sbox card, not on the laptop's side. Renting 5090s does not buy proof-rig identity.
 
 ---
 
 ## 2. Cloud availability, August 2026
 
-### 2.1 the cloud vendor — the vendor PRO 6000 family (the RTX PRO 6000 Blackwell Server Edition family)
+### 2.1 hyperscaler — cloud compute Sbox (the RTX PRO 6000 Blackwell Server Edition family)
 
 Launched 2026-01-20, initially US East (N. Virginia) and US East (Ohio)
-(vendor announcement, link scrubbed 2026-09-01; fetched 2026-08-02).
-On-Demand, Spot, Savings Plans. Specs from the vendor product page (link scrubbed 2026-09-01) (fetched 2026-08-02):
+([hyperscaler News Blog](https://hyperscaler.amazon.com/blogs/hyperscaler/announcing-amazon-vm-sbox-instances-accelerated-by-nvidia-rtx-pro-6000-blackwell-server-edition-gpus), fetched 2026-08-02).
+On-Demand, Spot, Savings Plans. Specs from the [Sbox product page](https://hyperscaler.amazon.com/vm/instance-types/sbox/) (fetched 2026-08-02):
 
-| Size | GPUs | vCPU | RAM | Local NVMe | Net | List $/hr (N. Virginia) |
+| Size | GPUs | vCPU | RAM | Local NVMe | Net | List $/hr (N-Virginia) |
 |---|---|---|---|---|---|---|
-| cloud-1card-s | 1 | 8 | 64 GiB | 1.9 TB | 50 Gbps | **$3.36 OD** (DevZero, 2026-08, link scrubbed) |
-| cloud-1card-m | 1 | 16 | 128 GiB | 1.9 TB | 50 Gbps | $4.00 OD (DevZero, link scrubbed) |
-| cloud-1card-l | 1 | 32 | 256 GiB | 1.9 TB | 100 Gbps | not fetched |
-| cloud-2card | 2 | 48 | 512 GiB | 3.8 TB | 400 Gbps | **$8.29 OD / $3.23 spot** (Vantage, fetched 2026-08-02, link scrubbed) |
-| cloud-4card | 4 | 96 | 1024 GiB | 3.8 TB | 800 Gbps | not fetched (OD scales ~linearly in-family) |
-| cloud-8card | 8 | 192 | 2048 GiB | 3.8 TB | 1600 Gbps EFA | ~$33.14 OD ([Thunder Compute](https://www.thundercompute.com/blog/nvidia-rtx-pro-6000-pricing), 2026-08) |
+| sbox-1card-8c | 1 | 8 | 64 GiB | 1.9 TB | 50 Gbps | **$3.36 OD** ([DevZero](https://www.devzero.io/instances/hyperscaler/sbox-1card-8c), 2026-08) |
+| sbox-1card-16c | 1 | 16 | 128 GiB | 1.9 TB | 50 Gbps | $4.00 OD ([DevZero](https://www.devzero.io/instances/hyperscaler/sbox-1card-16c)) |
+| sbox-1card-32c | 1 | 32 | 256 GiB | 1.9 TB | 100 Gbps | not fetched |
+| sbox-2card | 2 | 48 | 512 GiB | 3.8 TB | 400 Gbps | **$8.29 OD / $3.23 spot** ([Vantage](https://instances.vantage.sh/hyperscaler/vm/sbox-2card), fetched 2026-08-02) |
+| sbox-4card | 4 | 96 | 1024 GiB | 3.8 TB | 800 Gbps | not fetched (OD scales ~linearly in-family) |
+| sbox-8card | 8 | 192 | 2048 GiB | 3.8 TB | 1600 Gbps EFA | ~$33.14 OD ([Thunder Compute](https://www.thundercompute.com/blog/nvidia-rtx-pro-6000-pricing), 2026-08) |
 
 GPUDirect RDMA + P2P supported; Vantage lists the GPU as "NVIDIA GB202" outright. Spot on the
 2-GPU size is **~$1.61/GPU-hr** at list. **All list prices are an upper bound here — the owner
-has negotiated below-list the cloud vendor pricing** (rate not assumed in this report). Operationally this
-is a *restore*, not new work: the repo still carries the `cloudbox/*` remotes, `lane/cloudbox`, and the
-`cloud-rtx6000.jsonl` rig log to append to.
+has negotiated below-list hyperscaler pricing** (rate not assumed in this report). Operationally this
+is a *restore*, not new work: the repo still carries the `sbox/*` remotes, `lane/sbox`, and the
+`sbox-rtx6000.jsonl` rig log to append to.
 
 ### 2.2 Other RTX PRO 6000 Blackwell rentals (context / BATNA)
 
@@ -141,8 +141,8 @@ Workstation Ed. 789 units, median $1.09/hr; Server Ed. 421 units, median $1.60/h
 ([500.farm exporter](https://500.farm/vastai-exporter/gpu-stats), 2026-08-02T12:56Z);
 CoreWeave 8x-only instance $2.50/GPU-hr OD, $1.39 spot ([coreweave.com/pricing](https://www.coreweave.com/pricing));
 GCP G4 ~$4.50/hr; Azure NC-series v6 ~$5.50/hr ([getdeploying](https://getdeploying.com/gpus/nvidia-rtx-5090), updated 2026-08-02);
-Lambda: none; DigitalOcean/Paperspace: none (Ada only). So even without the vendor discount, the
-the cloud vendor list premium buys EBS/NVMe/EFA/on-demand reliability over marketplaces; with the discount
+Lambda: none; DigitalOcean/Paperspace: none (Ada only). So even without the hyperscaler discount, the
+hyperscaler list premium buys EBS/NVMe/EFA/on-demand reliability over marketplaces; with the discount
 the question closes.
 
 ### 2.3 The direct alternative: rented consumer RTX 5090s
@@ -169,9 +169,9 @@ From the 2026-08-02 pricing sweep (live vast.ai API + aggregators):
 ## 3. The double-job test (defined, not run)
 
 Purpose: measure, on the rented card, whether memra's *decisions* — not just its bytes —
-match the 5090 rig. One cloud PRO 6000 day, ~6 hours GPU time. Stage models onto the instance-local NVMe
+match the 5090 rig. One Sbox day, ~6 hours GPU time. Stage models onto the instance-local NVMe
 first (never bench off EBS — standing rule). Append every row to
-`research/tune-data/cloud-rtx6000.jsonl` (rig id `cloud-rtx6000-sm120-188sm` already exists);
+`research/tune-data/sbox-rtx6000.jsonl` (rig id `sbox-rtx6000-sm120-188sm` already exists);
 tee every raw log under `research/dev-platform-20260802/` per evidence discipline.
 
 ### Stage 0 — identity gate (minutes)
@@ -193,7 +193,7 @@ Acceptance (all bit-deterministic, must be EXACT):
 - run-gen token shas equal the rig5090 mode-2-class anchors: q35 `e94b6553fde7b9a0`,
   KAT `9102ffd0b8241a65`, o35b `c0c12c3b350dc7f5` (from `research/f16g-default-rearb-20260802/RESULTS.md`).
 - run-spec K=1..8 PASS, and acceptance percentages match the local values exactly (the
-  2026-07-04 cloud PRO 6000 row already recorded K1..K8 = 82.4/53.3/51.3/40.4/32.3/26.9/23.1/20.2 on the
+  2026-07-04 Sbox row already recorded K1..K8 = 82.4/53.3/51.3/40.4/32.3/26.9/23.1/20.2 on the
   synthetic [55] prompt — identical draft/target argmax means identical acceptance).
 
 ### Stage 2 — dispatch-decision parity (the actual question, ~3 h)
@@ -220,7 +220,7 @@ MEMRA_MODELS_DIR=/scratch/hf-models tools/local-ci.sh --perf        # the standi
 plus the q35/KAT/o35b/g26 headline cells (pp board-2048, gen512/NGEN=128), N>=5 medians, power
 state recorded, same-day rig5090 rows as the denominator (never cross-day — clock-drift law).
 
-Acceptance bands (cloud PRO 6000 / local-5090 ratio, stated so a miss is unambiguous):
+Acceptance bands (Sbox / local-5090 ratio, stated so a miss is unambiguous):
 - **decode (bandwidth-bound):** predicted 1597/858 = **1.86x**; accept **1.5x-2.2x** (+/-20%).
 - **prefill (GEMM-bound):** predicted SM*clock ratio (188x2430)/(82x2715) ~= **2.05x**; accept
   **1.55x-2.6x** (+/-25%; q35 prefill has non-GEMM Amdahl components that damp the ratio).
@@ -229,7 +229,7 @@ Acceptance bands (cloud PRO 6000 / local-5090 ratio, stated so a miss is unambig
 ### Verdict rules
 
 - **PASS (no double job):** Stage 0-1 exact + arms (a) and (b) reproduce the 5090 picks +
-  bands hold => daily dev, kernel iteration, and dispatch tuning all run on cloud PRO 6000; the local
+  bands hold => daily dev, kernel iteration, and dispatch tuning all run on Sbox; the local
   5090 keeps only the standing pre-ship final gate (kernel-check + argmax + spec + board
   re-gate) — which it keeps under EVERY outcome, so this residual is a constant, not a
   double job.
@@ -237,7 +237,7 @@ Acceptance bands (cloud PRO 6000 / local-5090 ratio, stated so a miss is unambig
   transfers 1:1; threshold-class tunings (crossovers, floors) get swept per-rig — the repo
   already treats thresholds as re-sweep-on-rig-move items (H100 laws #2).
 - **FAIL:** (a) or (b) lands the H100-class pick => the card arbitrates like a different arch
-  despite the ISA; keep cloud PRO 6000 for correctness + multi-GPU + big-VRAM work only, and move perf
+  despite the ISA; keep Sbox for correctness + multi-GPU + big-VRAM work only, and move perf
   lanes to a rented desktop 5090 (vast.ai) — then the §4 risk table applies to that card
   instead.
 
@@ -248,18 +248,18 @@ divergence already observed once), but per evidence discipline the verdict waits
 
 ## 4. Recommendation
 
-**Pick: the cloud PRO 6000.** Rationale, in the owner's decision order:
+**Pick: hyperscaler Sbox.** Rationale, in the owner's decision order:
 
 1. **Similarity holds at the level that was in question.** Same GB202 die family, compute_cap
    12.0, the same sm_120a fatbins byte-for-byte — already proven on this exact card class by
-   this repo's own July bring-up battery. The RTX 6000 *Blackwell* on the cloud vendor is emphatically not
+   this repo's own July bring-up battery. The RTX 6000 *Blackwell* on hyperscaler is emphatically not
    the RTX 6000 *Ada* trap (sm_89).
-2. **The cloud vendor carries it and the owner pays below list.** cloud-1card-s $3.36/hr OD list (upper
+2. **hyperscaler carries it and the owner pays below list.** sbox-1card-8c $3.36/hr OD list (upper
    bound) for daily single-GPU dev; spot 2-GPU at ~$1.61/GPU-hr list. Plus the boring wins a
    dev box needs: 1.9-3.8 TB local NVMe, EBS persistence, stable identity, and the existing
-   cloud PRO 6000 remotes/rig-log/workflow from July.
-3. **Multi-GPU dev (PP-2/PP-4) is in-family:** cloud-2card (2 GPU, 400 Gbps, GPUDirect P2P)
-   and cloud-4card (4 GPU) — same card, same build, no host-quality lottery. The vendor workstation
+   Sbox remotes/rig-log/workflow from July.
+3. **Multi-GPU dev (PP-2/PP-4) is in-family:** sbox-2card (2 GPU, 400 Gbps, GPUDirect P2P)
+   and sbox-4card (4 GPU) — same card, same build, no host-quality lottery. hyperscaler workstation
    sizes are NOT single-card-only in this family, contrary to the usual pattern.
 4. **The 96 GB is a feature, not a similarity bug,** for exactly the lanes CLAUDE.md already
    assigns off-rig: Hy3 expert banks, spill research, artifact generation — while the 24 GB
@@ -269,23 +269,23 @@ divergence already observed once), but per evidence discipline the verdict waits
 
 | Option | $/GPU-hr (2026-08-02) | Similarity risk | Ops risk |
 |---|---|---|---|
-| **the cloud PRO 6000** (pick) | $3.36 list OD, below-list actual; $1.61 list spot (2-GPU) | perf-shape gap vs laptop proof rig (188 SM / 1597 GB/s / 600 W vs 82 / 858 / 150) — bounded by the §3 test + standing local final gate | lowest; region the two US-East regions |
-| vast.ai 5090 (fallback) | $0.45 median OD; 4x hosts ~$0.28-0.67 | desktop 5090 is *also* not the proof rig (GB202 / 170 SM / 1792 GB/s / 575 W) — same ISA as cloud PRO 6000, similar-magnitude shape gap, so it does NOT eliminate the double job it appears to | host lottery, host-pinned storage, mislabeled hosts; mitigate via >=0.99-reliability hosts |
-| RunPod 5090 / PRO6000 | $0.69-0.99 / $1.69-1.99 | as above per card | better persistence than vast, weaker than the cloud vendor |
+| **hyperscaler Sbox** (pick) | $3.36 list OD, below-list actual; $1.61 list spot (2-GPU) | perf-shape gap vs laptop proof rig (188 SM / 1597 GB/s / 600 W vs 82 / 858 / 150) — bounded by the §3 test + standing local final gate | lowest; region N-Virginia/2 |
+| vast.ai 5090 (fallback) | $0.45 median OD; 4x hosts ~$0.28-0.67 | desktop 5090 is *also* not the proof rig (GB202 / 170 SM / 1792 GB/s / 575 W) — same ISA as Sbox, similar-magnitude shape gap, so it does NOT eliminate the double job it appears to | host lottery, host-pinned storage, mislabeled hosts; mitigate via >=0.99-reliability hosts |
+| RunPod 5090 / PRO6000 | $0.69-0.99 / $1.69-1.99 | as above per card | better persistence than vast, weaker than hyperscaler |
 | local-only | sunk | zero | serializes research against the 24/7 proof rig — the exact problem this decision solves |
 
 **Bottom line:** the "or we need 5090" branch of the owner's question dissolves under the
 spec sheet — the rentable 5090 is the desktop card, which is silicon-identical in ISA and
-*non*-identical in shape in the same ways the cloud PRO 6000 card is. Given below-list the cloud vendor pricing, cloud PRO 6000
+*non*-identical in shape in the same ways the Sbox card is. Given below-list hyperscaler pricing, Sbox
 dominates: run §3 on day one of the new box; expected outcome is dev-transfers with the local
 5090 keeping only the ship gate it was always going to keep.
 
-**Cost sketch (list, upper bound):** ~6 h validation day on cloud-1card-s ~= $20; a heavy dev
+**Cost sketch (list, upper bound):** ~6 h validation day on sbox-1card-8c ~= $20; a heavy dev
 month (8 h/day x 22 d) ~= $590 list before discount — spot and Savings Plans cut further;
-PP-2 days on cloud-2card spot ~= $26/day list.
+PP-2 days on sbox-2card spot ~= $26/day list.
 
 ---
 
-*Not done here: no benchmarks were run (this is a define-the-test deliverable); cloud PRO 6000 pricing
-for the 4- and 8-card tiers not fetched; region expansion beyond the two US-East regions unverified since the January
+*Not done here: no benchmarks were run (this is a define-the-test deliverable); Sbox pricing
+for 8xl/24xl not fetched; region expansion beyond N-Virginia/2 unverified since the January
 launch post. Marketplace prices are point-in-time 2026-08-02 snapshots.*

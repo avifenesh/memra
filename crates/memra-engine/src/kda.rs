@@ -319,9 +319,8 @@ fn kda_core(
 /// cross-rank GATHERED gated tensor rather than this shard's slice — the plain path is
 /// `kda_core` above, byte-for-byte the pre-split body (the wo matmul and its rows-exact
 /// routing moved, nothing else). This body is the CURRENT doored/batched core: it carries
-/// the `MEMRA_KDA_FUSED_PROJ` door and the verify-batch rows arm; the TP decode/prime walk
-/// calls it with `KdaStash::None`, the spec x TP verify walk (lane/glm5-composition) with
-/// `KdaStash::Rows` per rank, and the TP load preflight refuses the fused-proj door by
+/// the `MEMRA_KDA_FUSED_PROJ` door and the verify-batch rows arm; the TP walk calls it
+/// with `KdaStash::None` only, and the TP load preflight refuses the fused-proj door by
 /// name (unproven composition on head shards — see the FLAGS.md composition matrix).
 #[allow(clippy::too_many_arguments)] // mirrors kda_core's own contract-shaped list
 pub(crate) fn kda_core_gated(
@@ -869,27 +868,6 @@ pub fn kda_verify_rollback_rows(
     cache: &mut Cache,
     il: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let rl = cache.recur[il]
-        .as_mut()
-        .ok_or_else(|| format!("blk.{il}: KDA rows rollback on a layer with no recurrent state"))?;
-    kda_verify_rollback_rows_on(e, la, snap, stash, keep, rl, il)
-}
-
-/// [`kda_verify_rollback_rows`] over a CALLER-OWNED state plane — the glm5 spec x TP seam
-/// (lane/glm5-composition): under `MEMRA_GLM5_TP` each rank's shard-geometry conv ring +
-/// ssm ping-pong lives in `cache.glm5_tp_recur[il][rank]` on that rank's engine, so the
-/// rollback restores per rank through this entry with the rank's own `(engine, shard,
-/// snapshot, stash)` tuple. The cache wrapper above delegates here — one body, byte-for-byte
-/// the pre-refactor walk on the plain path.
-pub fn kda_verify_rollback_rows_on(
-    e: &Engine,
-    la: &KdaAttnLayer,
-    snap: &CudaSlice<f32>,
-    stash: &KdaRowsStash,
-    keep: usize,
-    rl: &mut RecurLayer,
-    il: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
     if keep == 0 || keep >= stash.rows {
         return Err(format!(
             "blk.{il}: KDA rows rollback keep={keep} outside 1..{} (full accept keeps the \
@@ -902,6 +880,9 @@ pub fn kda_verify_rollback_rows_on(
     let kernel = la.conv_kernel();
     let heads = la.heads();
     let scale = 1.0 / (la.head_dim() as f32).sqrt();
+    let rl = cache.recur[il]
+        .as_mut()
+        .ok_or_else(|| format!("blk.{il}: KDA rows rollback on a layer with no recurrent state"))?;
     // Conv ring: pre-round snapshot back, then re-roll the kept raw rows per plane. The
     // roll kernel reads every old slot into registers before any store, so T=keep < pad
     // mixes snapshot slots and kept rows exactly as the sequential chain's rolls did.
@@ -969,9 +950,8 @@ pub fn kda_scan_replay(
     }
     if la.tp.is_some() {
         return Err(format!(
-            "blk.{il}: KDA scan replay (the PER-ROW rollback seam) is unwired for a \
-             glm5-TP-sharded layer — the spec x TP composition requires the BATCHED \
-             verify walk, whose rollback rides kda_verify_rollback_rows_on per rank"
+            "blk.{il}: KDA scan replay is unwired for a glm5-TP-sharded layer (spec is \
+             co-refused while MEMRA_GLM5_TP is armed)"
         )
         .into());
     }
@@ -1242,22 +1222,6 @@ impl Engine {
         t: usize,
     ) -> Result<Option<Vec<CudaSlice<f32>>>, Box<dyn std::error::Error>> {
         if std::env::var("MEMRA_KDA_FUSED_PROJ").as_deref() != Ok("1") {
-            return Ok(None);
-        }
-        // glm5 TP composition guard (#82 review): the load preflight refuses this door at
-        // ARM time, but the flag is read PER CALL — a post-load `set` would otherwise
-        // engage the fused six-projection group on head shards inside the TP walk, an
-        // unproven composition (the door's gate ran on full-width projections). A shard
-        // declines here and takes the caller's unchanged arm, announced once.
-        if la.tp.is_some() {
-            static TP_F6_DECLINE: std::sync::Once = std::sync::Once::new();
-            TP_F6_DECLINE.call_once(|| {
-                eprintln!(
-                    "[kda-fused-proj] DECLINED on a glm5-TP head shard: the door is gated \
-                     on full-width projections (the load preflight refuses the pair; this \
-                     is the per-call twin for a post-load flag set)"
-                );
-            });
             return Ok(None);
         }
         if !(1..=15).contains(&t) {

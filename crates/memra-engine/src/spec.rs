@@ -1152,136 +1152,6 @@ impl SpecSampling {
     }
 }
 
-/// Which draft source a spec session is pinned to. The ENGINE-LEVEL half of
-/// `DraftSourcePlan` (memra-gguf `model_plan.rs`, always general): the plan states what the
-/// model DECLARES, this states what actually LOADED and therefore what the session runs.
-/// Pinned at session creation for the session's lifetime.
-///
-/// Family-agnostic on purpose (lane/glm5-extract2, the DraftSource seam): glm5 is today's
-/// consumer with NativeMtp | Dflash2; the hy3/qwen-next spec lanes select through the same
-/// three-way law instead of re-deriving it. What each family still owns is the per-session
-/// STATE behind the kind (see `dflash.rs`'s seam note for why that half is not a trait yet).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DraftSourceKind {
-    /// The model's own embedded NextN/MTP head.
-    NativeMtp,
-    /// A separately loaded DFlash2 block-diffusion drafter
-    /// ([`crate::dflash::DflashDrafter`]).
-    Dflash2,
-}
-
-/// The uniform draft-source selection law. Pure — no env, no engine, no family types — so it
-/// is CPU-gateable and so every spec family answers "which source" the same way.
-///
-/// THE LAW, in precedence order:
-/// 1. A LOADED DFlash2 drafter IS the source. The operator asked for it by name (a set
-///    drafter flag that cannot load is already a loud boot failure, never a silent
-///    fallback), and the family's embedded head is deliberately NOT loaded for this source —
-///    it is a full trunk layer of VRAM.
-/// 2. Otherwise the embedded head, and only when the PLAN declares an embedded source: a
-///    loaded head under a plan that does not declare `Embedded` is a load-path bug, not a
-///    draft source, and it is refused by name rather than drafted from.
-/// 3. Otherwise there is no draft source and speculative decode must refuse before drafting.
-pub fn resolve_draft_source_kind(
-    plan: memra_gguf::model_plan::DraftSourcePlan,
-    embedded_head_loaded: bool,
-    dflash_loaded: bool,
-) -> Result<DraftSourceKind, String> {
-    use memra_gguf::model_plan::DraftSourcePlan as P;
-    if dflash_loaded {
-        return Ok(DraftSourceKind::Dflash2);
-    }
-    if embedded_head_loaded {
-        if plan != P::Embedded {
-            return Err(format!(
-                "an embedded draft head is loaded but the ModelPlan declares \
-                 draft_source={plan:?} — refused rather than drafting from a head the plan \
-                 does not claim"
-            ));
-        }
-        return Ok(DraftSourceKind::NativeMtp);
-    }
-    Err(format!(
-        "no draft source loaded (ModelPlan declares draft_source={plan:?}): speculative \
-         decode has nothing to draft from"
-    ))
-}
-
-#[cfg(test)]
-mod draft_source_kind_tests {
-    use super::{DraftSourceKind, resolve_draft_source_kind};
-    use memra_gguf::model_plan::DraftSourcePlan as P;
-
-    #[test]
-    fn a_loaded_drafter_wins_over_a_co_loaded_embedded_head() {
-        // The operator asked for the drafter BY NAME (a set drafter flag that cannot load is
-        // already a loud boot failure), so it takes precedence under every plan value —
-        // including ExternalArtifact, which is what a pack declares when the draft weights
-        // are not in the model file.
-        for plan in [P::Embedded, P::ExternalArtifact, P::None] {
-            assert_eq!(
-                resolve_draft_source_kind(plan, true, true).unwrap(),
-                DraftSourceKind::Dflash2,
-                "plan {plan:?}: a loaded drafter must win"
-            );
-            assert_eq!(
-                resolve_draft_source_kind(plan, false, true).unwrap(),
-                DraftSourceKind::Dflash2
-            );
-        }
-    }
-
-    #[test]
-    fn the_embedded_head_is_the_source_only_under_a_plan_that_claims_it() {
-        assert_eq!(
-            resolve_draft_source_kind(P::Embedded, true, false).unwrap(),
-            DraftSourceKind::NativeMtp
-        );
-        // A head loaded under a plan that does not declare Embedded is a LOAD-PATH BUG, not a
-        // draft source. Unreachable on glm5 today (its pack hardcodes Embedded and the head
-        // only loads under it) — which is exactly why it is pinned here: an unreachable
-        // refusal with no arm is an untested refusal, and the next family is the one that
-        // makes it reachable.
-        for plan in [P::ExternalArtifact, P::None] {
-            let err = resolve_draft_source_kind(plan, true, false)
-                .expect_err("a head under a non-Embedded plan must refuse");
-            assert!(err.contains("does not claim"), "{err}");
-            assert!(err.contains(&format!("{plan:?}")), "{err}");
-        }
-    }
-
-    #[test]
-    fn nothing_loaded_refuses_before_drafting_and_names_the_plan() {
-        for plan in [P::Embedded, P::ExternalArtifact, P::None] {
-            let err =
-                resolve_draft_source_kind(plan, false, false).expect_err("no source must refuse");
-            assert!(err.contains("no draft source loaded"), "{err}");
-            assert!(err.contains(&format!("{plan:?}")), "{err}");
-        }
-    }
-}
-
-/// `MEMRA_SPEC_PMIN` break semantics over per-slot draft confidences (the chain break this
-/// module's drafting loops apply inline: `p < p_min && (j > 0 || pmin0)`): keep the longest
-/// prefix whose every slot clears `p_min`; slot 0 survives a miss unless PMIN0 arms
-/// zero-draft rounds. Prefix truncation is forced by the accept rule anyway (a kept slot
-/// after a dropped one could never commit — the dspark confidence-slot argument). Pure so
-/// the rule is CPU-gateable; the SHARED K-policy surface every spec family consumes
-/// (hoisted from the glm5 loop, lane/glm5-extract-general).
-pub fn spec_conf_keep(q: &[f32], p_min: f32, pmin0: bool) -> usize {
-    if p_min <= 0.0 {
-        return q.len();
-    }
-    let mut kept = 0usize;
-    for (j, &qj) in q.iter().enumerate() {
-        if qj < p_min && (j > 0 || pmin0) {
-            break;
-        }
-        kept += 1;
-    }
-    kept
-}
-
 /// Host Philox4x32-10 uniform in (0,1) — mirrors spec_sample.cu's `philox4`/`u01` with the
 /// ctr_lo tag 0xFFFF_FFFE, so the host accept-test stream never collides with any device
 /// sampling event (device Gumbel uses (i>>2, stream_pos); device residual uses 0xFFFF_FFFD).
@@ -1591,7 +1461,7 @@ impl SpecSession {
     /// one-way by design — there is no cheap symmetric re-promotion (rebuilding the draft KV
     /// would mean an `mtp_kv_fill` over the whole committed history).
     pub fn into_demoted(self) -> Option<(Cache, u32)> {
-        if self.pending_tok.is_some() || self.cache.tainted {
+        if self.pending_tok.is_some() {
             return None;
         }
         let np = self.next_pred?;
@@ -1663,19 +1533,12 @@ pub struct SpecBoundaryCapture {
     /// (the `SpecSession::last_h` convention). Empty = unavailable (capture stays valid;
     /// the fill's zeros row-0 fallback covers it at a bounded acceptance cost).
     pub last_h: Vec<f32>,
-    /// Per-layer latent boundary tails (lane/glm5-prefix-latent2, 2026-09-01): the
-    /// generation-destroyed slice of each MLA/DSA layer's boundary state, captured eagerly
-    /// so the worker's DEFERRED publication can slice the append-only planes from the live
-    /// cache (`LatentKvLayer::snapshot_plane_at`). EMPTY on every two-plane model — the
-    /// pre-field captures are byte-identical; a latent-bearing cache with an EMPTY vec here
-    /// keeps the publisher's loud refusal (the fail-closed door stays shut).
-    pub latent_tails: Vec<Option<crate::cache::LatentTailCapture>>,
 }
 
 /// D2H one hidden row out of a `[T, n_embd]` prime hidden stack — the boundary anchor a
 /// spec boundary capture carries for later restored-session fills. Failure is silent
 /// (`turn_ckpt` convention): the capture publishes without an anchor.
-pub(crate) fn capture_boundary_hidden(
+fn capture_boundary_hidden(
     e: &Engine,
     h_rows: &CudaSlice<f32>,
     pos: usize,
@@ -2011,13 +1874,6 @@ impl SpecPipeSync {
 struct SpecPipeLane {
     sync: std::sync::Arc<SpecPipeSync>,
     lane: usize,
-    rt: &'static crate::pp::PpNRt,
-    walk_permit: crate::pp::PpWalkPermit,
-}
-
-struct SpecPipePrimaryGuard<'a> {
-    _primary: std::sync::MutexGuard<'a, ()>,
-    _walk: crate::pp::PpWalkBorrowGuard,
 }
 
 impl SpecPipeLane {
@@ -2037,7 +1893,7 @@ impl SpecPipeLane {
         })
     }
 
-    fn setup_begin(&self) -> Result<crate::pp::PpWalkBorrowGuard, Box<dyn std::error::Error>> {
+    fn setup_begin(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut p = self.sync.progress.lock().unwrap();
         while !p.aborted && self.lane == 1 && !p.setup_done[0] && !p.finished[0] {
             p = self.sync.changed.wait(p).unwrap();
@@ -2045,8 +1901,7 @@ impl SpecPipeLane {
         if p.aborted {
             Err(Self::aborted())
         } else {
-            drop(p);
-            self.rt.borrow_walk(&self.walk_permit, "spec_pipe/setup")
+            Ok(())
         }
     }
 
@@ -2059,7 +1914,7 @@ impl SpecPipeLane {
     fn draft_begin(
         &self,
         round: usize,
-    ) -> Result<SpecPipePrimaryGuard<'_>, Box<dyn std::error::Error>> {
+    ) -> Result<std::sync::MutexGuard<'_, ()>, Box<dyn std::error::Error>> {
         let peer = self.peer();
         let mut p = self.sync.progress.lock().unwrap();
         loop {
@@ -2081,12 +1936,7 @@ impl SpecPipeLane {
             p = self.sync.changed.wait(p).unwrap();
         }
         drop(p);
-        let primary = self.sync.primary.lock().unwrap();
-        let walk = self.rt.borrow_walk(&self.walk_permit, "spec_pipe/draft")?;
-        Ok(SpecPipePrimaryGuard {
-            _primary: primary,
-            _walk: walk,
-        })
+        Ok(self.sync.primary.lock().unwrap())
     }
 
     fn draft_end(&self, round: usize) {
@@ -2148,7 +1998,7 @@ impl SpecPipeLane {
     fn accept_begin(
         &self,
         round: usize,
-    ) -> Result<SpecPipePrimaryGuard<'_>, Box<dyn std::error::Error>> {
+    ) -> Result<std::sync::MutexGuard<'_, ()>, Box<dyn std::error::Error>> {
         let mut p = self.sync.progress.lock().unwrap();
         loop {
             if p.aborted {
@@ -2165,12 +2015,7 @@ impl SpecPipeLane {
             p = self.sync.changed.wait(p).unwrap();
         }
         drop(p);
-        let primary = self.sync.primary.lock().unwrap();
-        let walk = self.rt.borrow_walk(&self.walk_permit, "spec_pipe/accept")?;
-        Ok(SpecPipePrimaryGuard {
-            _primary: primary,
-            _walk: walk,
-        })
+        Ok(self.sync.primary.lock().unwrap())
     }
 
     fn accept_end(&self, round: usize) {
@@ -2179,18 +2024,8 @@ impl SpecPipeLane {
         self.sync.changed.notify_all();
     }
 
-    fn primary(&self) -> Result<SpecPipePrimaryGuard<'_>, Box<dyn std::error::Error>> {
-        let primary = self.sync.primary.lock().unwrap();
-        let walk = self.rt.borrow_walk(&self.walk_permit, "spec_pipe/tail")?;
-        Ok(SpecPipePrimaryGuard {
-            _primary: primary,
-            _walk: walk,
-        })
-    }
-
-    fn coordinated_walk(&self) -> Result<crate::pp::PpWalkBorrowGuard, Box<dyn std::error::Error>> {
-        self.rt
-            .borrow_walk(&self.walk_permit, "spec_pipe/coordinated_verify")
+    fn primary(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.sync.primary.lock().unwrap()
     }
 
     fn finish(&self, failed: bool) {
@@ -3594,7 +3429,6 @@ struct VerifyBoundaryTicket {
     stage0_ms: f64,
     tx_ms: f64,
     trace: Option<SpecPipeTraceCtx>,
-    _walk_owner: crate::pp::PpWalkLease,
 }
 
 /// Explicit OPTIPIPE diagnostic control. Forced modes are set only by `optipipe-gate`; the
@@ -5841,20 +5675,15 @@ impl HybridModel {
                 )?;
                 e.matmul(ffn_down, &act, 1)?
             }
-            // ROUND-STREAM: a softmax-routed resident MoE takes the zero-D2H device router +
-            // expert program and is capture-legal. Sigmoid-routed MoE (Hy3/M3/Step) still
-            // selects through the host-visible sigmoid router; capturing that stream sync
-            // invalidates CUDA capture, so it stays on the eager draft chain even when every
-            // expert is resident. Non-resident (SLRU-lock) is likewise rejected.
-            crate::hybrid::Ffn::Moe(m)
-                if m.dev_exps.is_some() && self.cfg.sigmoid_router().is_none() =>
-            {
+            // ROUND-STREAM: the 35B NextN block carries a MoE FFN. With RESIDENT experts the
+            // dev path is pure device launches (device top-k + rows kernels, ZERO-DtoH by
+            // design) — capture-legal. Non-resident (SLRU-lock) stays rejected: the capture
+            // error arm degrades the caller to eager/stream-off.
+            crate::hybrid::Ffn::Moe(m) if m.dev_exps.is_some() => {
                 self.moe_ffn_il(e, m, &z, 1, u16::MAX)?
             }
             crate::hybrid::Ffn::Moe(_) => {
-                return Err(
-                    "graph draft requires a Dense or device-routed resident-MoE MTP FFN".into(),
-                );
+                return Err("graph draft requires a Dense (or resident-MoE) MTP FFN".into());
             }
         };
         let mut h_inner = e.zeros(di)?;
@@ -6016,7 +5845,6 @@ impl HybridModel {
         cache: &mut Cache,
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        cache.ensure_usable("decode_step_t")?;
         let n_embd = self.cfg.n_embd as usize;
         let t = tokens.len();
         let (logits, x) = self.decode_step_t_core(e, tokens, pos0, cache, embd_dev, None)?;
@@ -6102,7 +5930,6 @@ impl HybridModel {
             return Err("two-session speculative pipeline requires the PP verify split".into());
         }
         let interval_fence = pipe.stage0_begin(round)?;
-        let _walk = pipe.coordinated_walk()?;
         let ticket = self.verify_stage0_issue(
             e,
             tokens,
@@ -6428,9 +6255,6 @@ impl HybridModel {
             );
         }
         let rt = crate::pp::PpNRt::get(e)?;
-        // Pipelined callers do not bypass ownership: their explicit coordinator borrow makes
-        // this acquire clone the same active generation. Ordinary callers acquire a fresh lease.
-        let walk_owner = rt.acquire_walk("verify_stage0_issue")?;
         let n_st = fence.len() - 1;
         assert_eq!(
             rt.n_stages(),
@@ -6551,7 +6375,6 @@ impl HybridModel {
             stage0_ms,
             tx_ms,
             trace,
-            _walk_owner: walk_owner,
         })
     }
 
@@ -6583,7 +6406,6 @@ impl HybridModel {
             stage0_ms,
             tx_ms,
             trace,
-            _walk_owner,
         } = ticket;
         let n_embd = self.cfg.n_embd as usize;
         let eps = self.cfg.rms_eps;
@@ -8788,16 +8610,6 @@ impl HybridModel {
                     }
                 }
             };
-            if spec_nan_scan_level() >= 2 {
-                let mixed_width = mixed.len() / t;
-                nan_scan_rows(
-                    e,
-                    &mixed,
-                    t,
-                    mixed_width,
-                    &format!("verify layer {il} batched ATTN out pos0={pos0}"),
-                )?;
-            }
 
             // DISPATCH-MIRRORED post-attn norm: eager residual_norm_ffn fuses add+norm+quant
             // (1024-thread add_rms_norm_q8_1) only for Dense FFNs whose gate+up are q8_1-fast;
@@ -8864,15 +8676,6 @@ impl HybridModel {
                 z = zf;
                 None
             };
-            if spec_nan_scan_level() >= 2 && !z.is_empty() {
-                nan_scan_rows(
-                    e,
-                    &z,
-                    t,
-                    n_embd,
-                    &format!("verify layer {il} post-attn norm z pos0={pos0}"),
-                )?;
-            }
             // DECODE-EXACT FFN projections: force MMVQ for gate/up/down at any T to match the
             // T=1 decode FP accumulation order. At T>=5 the generic matmul/matmul_pre falls to dp4a
             // (128-thread, different FP sum order). At T=2-4 the batched MMVQ is already bit-identical.
@@ -8941,26 +8744,6 @@ impl HybridModel {
                 }
                 crate::hybrid::Ffn::Moe(m) => self.moe_ffn_il(e, m, &z, t, il as u16)?,
             };
-            if spec_nan_scan_level() >= 2 {
-                nan_scan_rows(
-                    e,
-                    &ffn_out,
-                    t,
-                    n_embd,
-                    &format!("verify layer {il} batched FFN out pos0={pos0}"),
-                )?;
-            }
-            if spec_nan_scan() {
-                let mut residual = vbuf(e, t * n_embd)?;
-                e.add(&x1, &ffn_out, &mut residual, t * n_embd)?;
-                nan_scan_rows(
-                    e,
-                    &residual,
-                    t,
-                    n_embd,
-                    &format!("verify layer {il} residual pos0={pos0}"),
-                )?;
-            }
             // CROSS-LAYER fusion: defer this layer's post-FFN residual add — the next layer's
             // fused-q8 attn norm folds it in (add_rms_norm_q8_1 == add; rms_norm; quantize,
             // kernel-check-pinned at nrows=T). Non-fused next layers add explicitly above.
@@ -9486,7 +9269,6 @@ impl HybridModel {
         (Vec<f32>, Vec<CudaSlice<f32>>, Option<Vec<CudaSlice<f32>>>),
         Box<dyn std::error::Error>,
     > {
-        cache.ensure_usable("decode_step_t_aux2")?;
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -9754,15 +9536,7 @@ impl HybridModel {
         // form emitted by the fused rms_norm_q8_1 (bit-identical to rms_norm_decode ->
         // quantize_q8_1, kernel-check-pinned). When present (caller checked mixer q8_1-fast),
         // every projection consumes it — `h` may be a zero-len placeholder and must not be read.
-        let (qf, mut k, v) = if let Some(mut qkv) = self.full_attn_tp_qkv(e, fa, h, t)? {
-            let v = qkv.pop().ok_or("full-attention TP verify QKV omitted V")?;
-            let k = qkv.pop().ok_or("full-attention TP verify QKV omitted K")?;
-            let q = qkv.pop().ok_or("full-attention TP verify QKV omitted Q")?;
-            if !qkv.is_empty() {
-                return Err("full-attention TP verify QKV returned extra projections".into());
-            }
-            (q, k, v)
-        } else {
+        let (qf, mut k, v) = {
             let mut fused = None;
             let qkv_fast =
                 e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk) && e.uses_q8_1_fast(&fa.wv);
@@ -10035,10 +9809,7 @@ impl HybridModel {
         };
         // DECODE-EXACT wo projection: at m>=5 (K=4+ with pending) the generic matmul would use dp4a
         // (128-thread, different FP sum order than MMVQ). Force MMVQ for bit-identity with decode.
-        match self.full_attn_tp_o(e, fa, &attn_g, t)? {
-            Some(output) => Ok(output),
-            None => Ok(e.matmul_decode_exact(&fa.wo, &attn_g, t)?),
-        }
+        e.matmul_decode_exact(&fa.wo, &attn_g, t)
     }
 
     /// Context-linear bytes for a plain serving session's trunk cache.
@@ -10234,10 +10005,6 @@ impl HybridModel {
         let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
             Err((Some(cache), msg))
         };
-        if let Err(error) = cache.ensure_usable("spec_session_from_restored") {
-            drop(cache);
-            return Err((None, error.to_string()));
-        }
         if self.mtp.is_none() {
             return fail(cache, "no MTP head attached (nothing to draft with)".into());
         }
@@ -10434,7 +10201,6 @@ impl HybridModel {
                             pos: pos + seg_end,
                             logits: feed_logits.clone(),
                             last_h: capture_boundary_hidden(e, &h_rows, seg_end, n_embd),
-                            latent_tails: Vec::new(),
                         });
                     }
                     let anchor: Result<CudaSlice<f32>, Box<dyn std::error::Error>> =
@@ -10564,7 +10330,6 @@ impl HybridModel {
                         pos: pos + t,
                         logits: feed_logits.clone(),
                         last_h: capture_boundary_hidden(e, &h_rows, t, n_embd),
-                        latent_tails: Vec::new(),
                     });
                 }
             }
@@ -11052,7 +10817,6 @@ impl HybridModel {
         sess: &mut SpecSession,
         sampling: Option<SpecSampling>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        sess.cache.ensure_usable("spec_flush_pending")?;
         let Some(b) = sess.pending_tok.take() else {
             return Ok(());
         };
@@ -11101,7 +10865,6 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        cache.ensure_usable("spec_target_step_h")?;
         if !self.sliding_gated_moe_batch_program() && !self.batched_serving_numeric_class() {
             return self.decode_step_h(e, token, cache);
         }
@@ -11118,36 +10881,21 @@ impl HybridModel {
     /// carries the drift until a near-tie flips deep in generation. One predicate so the five
     /// dispatch sites cannot drift apart again.
     /// Draft-graph head admissibility (lane/draftcost-moe, 2026-08-20): the capture body
-    /// (`mtp_head_forward_cap`) supports Dense heads and SOFTMAX device-routed resident-MoE
-    /// heads. Residency alone is insufficient: Hy3/M3/Step sigmoid routing returns selected
-    /// experts through a host synchronization, which is capture-illegal. Those heads use the
-    /// exact eager draft chain until a device-only sigmoid expert program lands. Trunk FFN class
-    /// is irrelevant — the graph body is the HEAD forward only. One predicate for all three
+    /// (`mtp_head_forward_cap`) supports Dense heads AND resident-MoE heads
+    /// (`Ffn::Moe(m) if m.dev_exps.is_some()`); non-resident MoE still refuses inside the
+    /// capture and the caller falls back to the eager chain by design. Trunk FFN class is
+    /// irrelevant — the graph body is the HEAD forward only. One predicate for all three
     /// eligibility sites so they cannot drift (the serving numeric-class lesson).
     fn mtp_graph_capturable(&self) -> bool {
-        let sigmoid_router = self.cfg.sigmoid_router().is_some();
-        for head in self.mtp.iter().chain(self.mtp_extra.iter()) {
-            let reason = match &head.ffn {
-                crate::hybrid::Ffn::Dense { .. } => None,
-                crate::hybrid::Ffn::Moe(mo) if mo.dev_exps.is_none() => {
-                    Some("non-resident MoE MTP head")
-                }
-                crate::hybrid::Ffn::Moe(_) if sigmoid_router => {
-                    Some("sigmoid-router MoE MTP head requires host-visible routing")
-                }
-                crate::hybrid::Ffn::Moe(_) => None,
-            };
-            if let Some(reason) = reason {
-                static NOTICE: std::sync::Once = std::sync::Once::new();
-                NOTICE.call_once(|| {
-                    eprintln!(
-                        "[spec] draft graph unavailable: {reason}; eager draft chain engaged"
-                    );
-                });
-                return false;
-            }
-        }
-        self.mtp.is_some()
+        // EVERY loaded head must be capturable: the multi-head chain graphs capture each
+        // head's forward (lane/step37-draft-graph-serving-20260830), so one SLRU-locked MoE
+        // head anywhere in the chain refuses capture for the whole chain (loudly, via the
+        // capture-site WARN) rather than capturing a subset the launch order cannot honor.
+        let head_ok = |m: &MtpHead| match &m.ffn {
+            crate::hybrid::Ffn::Dense { .. } => true,
+            crate::hybrid::Ffn::Moe(mo) => mo.dev_exps.is_some(),
+        };
+        self.mtp.as_ref().map(&head_ok).unwrap_or(false) && self.mtp_extra.iter().all(head_ok)
     }
 
     fn batched_serving_numeric_class(&self) -> bool {
@@ -11203,11 +10951,6 @@ impl HybridModel {
             || self.gemma_batch_program()
             || self.mtp.is_none()
             || !self.mtp_extra.is_empty()
-            // Both paired lanes would otherwise hold the model-global verify-graph mutex across
-            // setup and wait for each other. Independent graph pools are future work; the pair
-            // requires the explicit eager-verify arm today.
-            || crate::spec::spec_verify_graph_env()
-                .unwrap_or_else(|| self.vgraph_family_default())
         {
             return false;
         }
@@ -11242,9 +10985,6 @@ impl HybridModel {
         if !self.spec_pipe_available(e) {
             return Err("two-session speculative pipeline is outside its reduced matrix".into());
         }
-        let rt = crate::pp::PpNRt::get(e)?;
-        let pp_walk = rt.acquire_walk("generate_spec_session_pair")?;
-        let pp_permit = rt.walk_permit(&pp_walk, "generate_spec_session_pair")?;
         if max_new_a == 0 || max_new_b == 0 || k_a == 0 || k_b == 0 {
             return Err(
                 "two-session speculative pipeline requires non-empty positive-K bursts".into(),
@@ -11281,37 +11021,33 @@ impl HybridModel {
         let lane_a = SpecPipeLane {
             sync: sync.clone(),
             lane: 0,
-            rt,
-            walk_permit: pp_permit.clone(),
         };
-        let lane_b = SpecPipeLane {
-            sync,
-            lane: 1,
-            rt,
-            walk_permit: pp_permit,
-        };
+        let lane_b = SpecPipeLane { sync, lane: 1 };
         let mut sess_b_ptr = SpecPipeSessionPtr(sess_b as *mut SpecSession);
         let (result_a, result_b) = std::thread::scope(|scope| {
             let b = scope.spawn(move || {
                 let mut finish = SpecPipeFinish::new(&lane_b);
                 let sess_b = unsafe { sess_b_ptr.get_mut() };
-                let result = (|| -> Result<_, String> {
-                    e.ctx().bind_to_thread().map_err(|err| err.to_string())?;
-                    self.generate_spec_inner2(
-                        e,
-                        &[],
-                        max_new_b,
-                        k_b,
-                        graph_b,
-                        Some(sess_b),
-                        None,
-                        None,
-                        None,
-                        None,
-                        Some(&lane_b),
-                    )
+                let result = e
+                    .ctx()
+                    .bind_to_thread()
                     .map_err(|err| err.to_string())
-                })();
+                    .and_then(|_| {
+                        self.generate_spec_inner2(
+                            e,
+                            &[],
+                            max_new_b,
+                            k_b,
+                            graph_b,
+                            Some(sess_b),
+                            None,
+                            None,
+                            None,
+                            None,
+                            Some(&lane_b),
+                        )
+                        .map_err(|err| err.to_string())
+                    });
                 finish.close(result.is_err());
                 result
             });
@@ -11597,10 +11333,9 @@ impl HybridModel {
         pipe: Option<&SpecPipeLane>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
         assert!(k >= 1, "k must be >= 1");
-        let pipe_setup_walk = match pipe {
-            Some(p) => Some(p.setup_begin()?),
-            None => None,
-        };
+        if let Some(p) = pipe {
+            p.setup_begin()?;
+        }
         // sse-cadence flush cursor: everything in out[..flushed] has been handed to on_commit.
         let mut flushed = 0usize;
         // admission yield (2026-08-06): on_commit's continue-verdict; false = end the burst
@@ -11743,7 +11478,6 @@ impl HybridModel {
                 )
             }
         };
-        cache.ensure_usable("generate_spec")?;
         if scratch.plane_count() != self.mtp_head_count() {
             return Err(format!(
                 "MTP scratch/head count mismatch ({}/{})",
@@ -11946,7 +11680,6 @@ impl HybridModel {
                             // rows [0..seg_end) of h_all are primed — the following
                             // segments append, never overwrite.
                             last_h: capture_boundary_hidden(e, &h_all, seg_end, n_embd),
-                            latent_tails: Vec::new(),
                         });
                     }
                 }
@@ -12018,7 +11751,6 @@ impl HybridModel {
                         .as_ref()
                         .map(|ph| capture_boundary_hidden(e, ph, prompt.len(), n_embd))
                         .unwrap_or_default(),
-                    latent_tails: Vec::new(),
                 });
             }
         }
@@ -13287,12 +13019,6 @@ impl HybridModel {
                     .unwrap_or(4096)
             };
             let fill_chunk = if fill_chunk == 0 { tp } else { fill_chunk };
-            // CUDA launch wall (same class as the trunk prime's PRIME_CHUNK_LAUNCH_CAP):
-            // a fill call's matmuls can land on the grid.y=m dp4a family, and grid.y caps
-            // at 65,535. This loop has no tail fold, so the raw limit is exact:
-            // tp <= 65,535 keeps the legacy schedule (monolithic included) byte-for-byte,
-            // and larger fills — unreachable before the trunk prime's own cap fix — chunk.
-            let fill_chunk = fill_chunk.min(crate::hybrid_forward::CUDA_GRID_YZ_MAX);
             let mut start = 0usize;
             while start < tp {
                 let end = (start + fill_chunk).min(tp);
@@ -13509,8 +13235,6 @@ impl HybridModel {
         let k_cap = k.min(cap_max).max(1);
         let mut kc = k_cap;
         let mut opti_fork: Option<OptiForkState> = None;
-        let mut _opti_walk: Option<crate::pp::PpWalkLease> = None;
-        let mut _opti_walk_borrow: Option<crate::pp::PpWalkBorrowGuard> = None;
         let mut fork_snapshot: Option<crate::cache::CacheSnapshot> = None;
         if fork_mode != OptiForkGateMode::Disabled {
             let fence = crate::pp::pp_cuts(self.layers.len());
@@ -13555,12 +13279,6 @@ impl HybridModel {
                     OPTI_FORK_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     eprintln!("[opti-fork] refused reason=requires-supported-primary-cross-device");
                 } else {
-                    // The optimistic controller can keep two boundary tickets in flight. Give
-                    // every nested verify an explicit borrow of one whole-walk generation; no
-                    // `pp_pipe` boolean is allowed to bypass ownership on its own.
-                    let walk = rt.acquire_walk("opti_fork_coordinator")?;
-                    let permit = rt.walk_permit(&walk, "opti_fork_coordinator")?;
-                    let borrow = rt.borrow_walk(&permit, "opti_fork_coordinator")?;
                     // Both recurrent snapshots and both seed generations are allocated before
                     // the first fork, each through its owning PP stage. Allocation failure
                     // therefore happens before any optimistic state mutation can occur.
@@ -13587,8 +13305,6 @@ impl HybridModel {
                     );
                     fork_snapshot = Some(current_snapshot);
                     opti_fork = Some(fork);
-                    _opti_walk = Some(walk);
-                    _opti_walk_borrow = Some(borrow);
                 }
             }
         }
@@ -13700,7 +13416,6 @@ impl HybridModel {
         if let Some(p) = pipe {
             p.setup_end();
         }
-        drop(pipe_setup_walk);
         let mut graph_guard_noted = false;
         while keep_going && out.len() < max_new {
             // GRAPH-LAUNCH HEADROOM GUARD (see GRAPH_LAUNCH_MIN_FREE): below the floor,
@@ -15925,7 +15640,7 @@ impl HybridModel {
                 other * 1e3 / rounds_f,
             );
         }
-        let _pipe_tail = pipe.map(|p| p.primary()).transpose()?;
+        let _pipe_tail = pipe.map(|p| p.primary());
         // SESSION TAIL: leave the session in the exact invariant the next turn's suffix prime
         // expects — every row in `committed` has trunk KV/recur state AND an exact draft-KV row.
         // Park the draft-graph ctx back on the session (the serve-burst fixed-cost fix): the next

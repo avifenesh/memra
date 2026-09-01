@@ -37,7 +37,7 @@ Why this split and not a single winner:
    confirmation (`research/tune-data/rig5090.jsonl:256`). Format does not decide decode;
    power headroom does, and the desktop 2x5090 sits on the box side of that law (unmeasured
    there — measurement M2 below).
-2. **Prefill is where FP8 wins by an order of magnitude at the GEMM level** — the July cloudbox
+2. **Prefill is where FP8 wins by an order of magnitude at the GEMM level** — the July sbox
    micro-probe measured our q8_0 GEMM classes at **47–72 TFLOPS** vs cuBLASLt FP8-E4M3 at
    **624–794 TFLOPS on the same shapes** (8.7–14.2x on the attn/linear layers; exact quote in
    §2b). The engine-level FP8 prefill path already exists and is gated green
@@ -65,7 +65,7 @@ Why this split and not a single winner:
 |---|---|---|---|
 | Weight bytes/elem | 1.0625 (per-32 fp16 scale) | ~1.008 (block-128) / 1.0 (per-tensor) | ~1.03 |
 | Decode kernel path | dp4a MMVQ / fused3 / q8-fast — the proven chain (fp8_ffi.rs:12-14) | `qmatvec_e4m3_mmvq` + batched twins under `MEMRA_ST_E4M3` (FLAGS.md:83) | none in memra; would be new |
-| Prefill GEMM class | int8-MMA MMQ (`MEMRA_PP_Q8MMQ` default, FLAGS.md:219); hand-tiled class probed 47–72 TF (cloud-rtx6000 jsonl:39) | cuBLASLt FP8 624–794 TF probed (cloud-rtx6000 jsonl:39); engine path merged, +28% pp measured at budget 4096 MB (rig5090.jsonl:234) | int8-MMA, ≈ FP8 TOPS on paper; W8A8 prefill GEMMs **refuted on the H100 lane at m=512 AND m=2048** (FLAGS.md:417-419) |
+| Prefill GEMM class | int8-MMA MMQ (`MEMRA_PP_Q8MMQ` default, FLAGS.md:219); hand-tiled class probed 47–72 TF (sbox jsonl:39) | cuBLASLt FP8 624–794 TF probed (sbox jsonl:39); engine path merged, +28% pp measured at budget 4096 MB (rig5090.jsonl:234) | int8-MMA, ≈ FP8 TOPS on paper; W8A8 prefill GEMMs **refuted on the H100 lane at m=512 AND m=2048** (FLAGS.md:417-419) |
 | Exactness machinery today | full: bit-identity kernel-check pins, argmax gates, K=1..8 spec, the entire board history | argmax MATCH maxdiff 0.0 held on every FP8-prefill gate run (rig5090.jsonl:233-234, 256); 9B ST full battery green (rig5090.jsonl:266); decode unchanged bit-for-bit (m≥16-only dispatch, fp8_ffi.rs:12-14) | none; "w8a8-class numerics change model outputs" is the standing owner-gated note (FLAGS.md:420-421) |
 | Drafter/MTP | native (DRAFT-REGIME.md; board spec rows) | works: model-trained MTP head live from safetensors (rig5090.jsonl:186), ST spec K=3 95.4 tok/s, GGUF-free frspec toolchain (rig5090.jsonl:268) | n/a |
 | LoRA future | no adapter story (format has no adapter/backprop ecosystem) | ecosystem standard; vLLM FP8-LoRA RFC #33301 (2026-01) | ST-based but niche |
@@ -101,8 +101,8 @@ have the headroom; expectation (unmeasured) is e4m3 decode ≥ Q8_0 there. **Mea
 
 ### 2b. Prefill (the known gap): the FP8 probe row, quoted precisely
 
-`research/tune-data/cloud-rtx6000.jsonl:39` (recovered-fragment, ts 2026-07-08, rig
-cloud-rtx6000-sm120-188sm, lane/prefill-fp8, probes `probe/fp8_lt_prefill.cu` +
+`research/tune-data/sbox-rtx6000.jsonl:39` (recovered-fragment, ts 2026-07-08, rig
+sbox-rtx6000-sm120-188sm, lane/prefill-fp8, probes `probe/fp8_lt_prefill.cu` +
 `fp8_lt_scale_probe.cu` + `fp8_vec16_probe.cu` — all three still in `probe/`):
 
 > Per-shape TFLOPS from nsys grid buckets at m=4096-chunk: **q8_0 GEMM 47-72 TF** (kv_proj 47,
@@ -121,7 +121,7 @@ Context for the 47–72 TF figure: it profiles the hand-tiled `qmatvec_gemm_q8_0
 FLAGS.md:219) and the W4A8-FP8 MMQ tile is a 381-TF class (FLAGS.md:131) — so today's Q8_0
 prefill is better than 47–72 TF but still 2–3x under the cuBLASLt FP8 ceiling.
 
-Engine-level receipts on the same lane: `MEMRA_PP_FP8` **+78–129% pp on the cloudbox**;
+Engine-level receipts on the same lane: `MEMRA_PP_FP8` **+78–129% pp on the sbox box**;
 local NV-27B budget sweep pp1845 887.9 → 1136.3 (**+28.0%** @4096 MB stash, argmax MATCH
 maxdiff 0.000e0, no decode regression) with OOM at 4608 on 24 GB (rig5090.jsonl:233-234);
 `MEMRA_ST_E4M3` one-copy variant pp1845 1291.2 → 1364.1 (+5.6%) at FULL coverage, −7.3 GB
@@ -135,7 +135,7 @@ prompts, prefix-cache misses) is where the q8_0 GEMM class actually bleeds — a
 serving SLO, not a vanity number.
 
 **Amdahl bound:** on the NVIDIA-27B ST anatomy, q8_0-class GEMMs were 46.5% of pp GPU time and
-NVFP4-MLP another 30.4% (cloud-rtx6000 jsonl:39 baseline field). FP8-izing only the attn/linear class
+NVFP4-MLP another 30.4% (sbox jsonl:39 baseline field). FP8-izing only the attn/linear class
 bounds the pp gain near ~1.85x (fp8_ffi.rs:3-6 projection). A *full-FP8* checkpoint (all
 linear layers FP8, which is what Qwen ships) puts ~77% of GEMM time on the 624–794 TF pipe —
 that is the real FP8-arm prize and it only exists on the ST arm.
@@ -180,7 +180,7 @@ attn/linear projections, source.rs:981) and unsloth compressed-tensors per-chann
 (source.rs:1015-1017). This is the first work item of the FP8 track (§7, W2-1).
 
 Second gap, prefill-side: the cuBLASLt path feeds ONE scalar weight scale via
-B_SCALE_POINTER (fp8_prefill.cu; per-token OUTER_VEC probed NOT_SUPPORTED on sm120, cloudbox
+B_SCALE_POINTER (fp8_prefill.cu; per-token OUTER_VEC probed NOT_SUPPORTED on sm120, sbox
 jsonl:39). Block-128 weight scales need either cuBLASLt block-scaled FP8 (exists for
 sm90/sm100 since CUDA 12.8/12.9 — **sm_120 support unknown, probe needed**) or our own
 f8f4-style MMQ kernel extended to block-scale dequant (the `MEMRA_MMQ_F8F4` machinery,
@@ -330,7 +330,7 @@ parallel (no GPU needed until its gate). Both tracks fit the window with two age
 ## 8. Source ledger
 
 Repo (all paths relative to repo root at 69cdd1eb):
-`research/tune-data/cloud-rtx6000.jsonl:35,39` · `research/tune-data/rig5090.jsonl:184,186,204,
+`research/tune-data/sbox-rtx6000.jsonl:35,39` · `research/tune-data/rig5090.jsonl:184,186,204,
 233,234,256,266,268,292,294` · `crates/memra-gguf/src/safetensors.rs:28-46` ·
 `crates/memra-gguf/src/source.rs:838-851,960-1112` · `crates/memra-engine/src/fp8_ffi.rs:1-62`
 · `crates/memra-engine/cu/fp8_prefill.cu:14,143-148` · `crates/memra-engine/src/mmq_ffi.rs:911-

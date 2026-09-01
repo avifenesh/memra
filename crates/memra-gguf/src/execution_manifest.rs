@@ -605,38 +605,6 @@ fn decode_graph_support(operation: OperationKind) -> OperationSupport {
 pub const DECODE_GRAPH: KernelManifest =
     KernelManifest::new("decode-cuda-graph", decode_graph_support);
 
-/// PIPELINE (stage-split trunk + boundary state transport).
-///
-/// THE GLM5_NEXT BLOCK BELOW WAS ADDED BY A MERGE, AND THE MERGE IS WHY IT WAS MISSING.
-/// The plan-admission refusal in `hybrid.rs` ("pipeline placement is unsupported for plan
-/// operations ...") and the glm5_next PP-N program were developed on OPPOSITE SIDES of the
-/// `lane/glm53-flash-bringup` x `main` merge: the refusal landed on main, which carries no
-/// `glm5-*-ppn-gate` at all, while the gates that exercise stage-split glm5_next live only on the
-/// lane. So neither side was red alone and the first tree that could see it was the merge, where
-/// EVERY glm5.3-flash PP-N load refused before uploading a shard — including the PP4
-/// splits-13,26,39 posture that is the only demonstrated 1M-context configuration and that had
-/// run on box B the same day (`research/glm53-flash-bringup-20260827/1m-battery-20260901/`).
-/// Attribution, not blame: an operation-level admission gate is only as wide as its table, and a
-/// table cannot know about an architecture whose gates are on another branch.
-///
-/// WHAT THE ADDED CLASSES ARE, and what covers them (`research/.../bankfix-consol-20260901/`):
-/// the glm5_next trunk class — hc residual topology on every trunk layer, KDA and MLA(+kpool)
-/// mixers with their recurrent / latent-KV state, MoE+shared FFN, pre-clamped SwiGLU. Their PP
-/// receipts are `glm5-spec-ppn-gate` (n2/n3 even/split1/split3/asym x streams/overlap arms),
-/// `glm5-hyper-ppn-gate` (n2/n3/n4, incl. the shard0 and longer-prompt arms) and
-/// `glm5-hyper-batch-gate` (the B<=15 ladder at ppn 1/2/4) — the ladders that prove boundary
-/// transport carries THIS state across a stage cut, re-run on the merged tree over four real
-/// devices rather than one card's emulation.
-///
-/// Deliberately still absent, so every other family stays fail-closed here (no-generic-support
-/// law): `SharedSparseIndex` — the ladders' fixture plan carries `SparseIndex` and the refusal
-/// named only that, so admitting the shared variant too would be claiming coverage nothing ran; if
-/// a real artifact needs it the load refuses BY NAME, which is the visible outcome we want.
-/// `GatedDeltaNet` (qwen35/step35 recurrent mixers have no PP ladder), `CompressedMlaAttention`
-/// (the dsv4 class), `SoftmaxRouter`, `GemmaResidual`/`GemmaParallelMoeResidual` (gemma keeps its
-/// separately gated PP2 program, grandfathered in `hybrid.rs` by fence length), `LogitsSoftcap`.
-/// A family that wants stage splitting brings its own ladder; being architecturally adjacent to
-/// one that has one is not a receipt.
 fn pipeline_support(operation: OperationKind) -> OperationSupport {
     let mut support = OperationSupport::none();
     support.pipeline = matches!(
@@ -661,14 +629,6 @@ fn pipeline_support(operation: OperationKind) -> OperationSupport {
             | OperationKind::LogitsMask
             | OperationKind::OutputProjection
             | OperationKind::PipelineBoundary
-            // ---- glm5_next trunk class (see the doc comment above for the covering ladders) ----
-            | OperationKind::KimiDeltaNet
-            | OperationKind::RecurrentState
-            | OperationKind::LatentMlaAttention
-            | OperationKind::SparseIndex
-            | OperationKind::LatentKvState
-            | OperationKind::HyperConnections
-            | OperationKind::SwiGluPreClampedActivation
     );
     support
 }

@@ -71,24 +71,12 @@ pub(crate) mod lanes {
 /// completion-length history, and the `[admit-predict]` receipt line behind
 /// `MEMRA_ADMIT_PREDICT_SHADOW` (default 0). Logs verdicts, never enforces.
 mod admit_predict;
-/// CPU affinity for the GPU worker thread (`MEMRA_WORKER_CPUSET`, alias
-/// `MEMRA_WORKER_AFFINITY` honored, default OFF —
-/// lane/glm5-host-audit 2026-09-01). Engine-wide, not one family's: every served family's
-/// decode tick runs on the single `memra-gpu-worker` thread this module can pin, and that
-/// thread was measured migrating across L3 domains on a 12-CCD EPYC while 192 unpinned tokio
-/// workers shared the same CPUs. Machine config, so it defaults OFF and stays a seam.
-mod affinity;
 /// Translation surfaces (lane/api-surfaces, 2026-08-17): the Anthropic Messages API and
 /// the OpenAI Responses API served over the SAME chat-completions core — same tenant
 /// auth, budget admission, ledger receipts, metering and capture posture; only the wire
 /// rendering differs. `surfaces` is the shared admission driver; the other two are the
 /// per-dialect request translations and response renderers.
 mod anthropic;
-/// The `system_fingerprint` identity, shared with `build.rs` (which `include!`s this same
-/// file to bake the value). Compiled into the crate so the fingerprint tests can re-derive
-/// the id from the working tree instead of pinning a second copy of the algorithm.
-#[allow(dead_code)] // one implementation, two callers: each uses a subset.
-mod build_id;
 mod dsv4_serve;
 mod embed_api;
 /// The admission/accounting seam: the server admits, denies, and reports counts;
@@ -153,13 +141,6 @@ use worker::{Cmd, Event, ModelCaps, Request, SharedMetrics};
 /// per-lane concurrency slots bound how many of these can buffer at once). Applies to
 /// EVERY route on the app router, including `/v1/messages`' raw `Bytes` path (the
 /// `DefaultBodyLimit` extension reaches `Bytes` and `Json` extractors alike).
-///
-/// The "12 MiB raw" per-image line item is ENFORCED, not just budgeted: both data-URI
-/// decoders (`vision_pre::decode_data_uri`, `vision_gemma::gemma_decode_data_uri`)
-/// refuse a payload past `vision_pre::IMG_MAX_RAW_BYTES` by encoded LENGTH, before any
-/// decode allocation, with a named 400 (hermes review finding 48f96cb4cd37e436: until
-/// then only this body ceiling bounded the decode, which runs in the content walkers
-/// BEFORE slot admission, so one image could expand ~144 MiB of host bytes pre-check).
 const MAX_BODY_BYTES: usize = 192 * 1024 * 1024;
 const MAX_BODY_ADMISSIONS: usize = 4;
 const MAX_SMALL_BODY_ADMISSIONS: usize = 32;
@@ -1818,7 +1799,7 @@ pub(crate) fn deadline_exceeded_response(ms: u64, stream: bool) -> Response {
 // INDUSTRY CHECK (owner: "check how other enddoints handle non streaming answers"):
 // Anthropic enforces the same idea client-side — its SDK raises
 // "Streaming is required for operations that may take longer than 10 minutes" BEFORE
-// sending — and OpenAI, Google, Azure and the hosted resellers all decline to publish a server-side duration
+// sending — and OpenAI/Google/Bedrock/Azure all decline to publish a server-side duration
 // ceiling and push long work to streaming or an async/batch surface. Refusing early with
 // an actionable message is the precedented behaviour; silently truncating is not.
 
@@ -1856,7 +1837,7 @@ fn env_flag_on(name: &'static str, default_on: bool) -> bool {
 
 /// A POSITIVE numeric knob (a rate): zero and garbage fall back to the default, because a
 /// zero rate would divide by zero in the estimate. NEVER read a boolean through this.
-pub(crate) fn env_u64(name: &'static str, default: u64) -> u64 {
+fn env_u64(name: &'static str, default: u64) -> u64 {
     std::env::var(name)
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -2837,50 +2818,10 @@ fn usage_json(
 // convention, serving_engine.py) for support/tracing. The memra-native response shape
 // (non-chat, MEMRA_COMPAT unset) is untouched — validation harnesses depend on it.
 
-/// Backend-config fingerprint: `memra-<crate version>-<content id>`, baked by `build.rs`
-/// from the crate version plus a digest of the workspace's compiled inputs. Together with
+/// Backend-config fingerprint: the build's git SHA (baked by build.rs). Together with
 /// `seed`, responses are checkable for determinism across deploys — the OpenAI
 /// `system_fingerprint` contract.
-///
-/// It is derived from file CONTENT, not from git history, and that is the whole point:
-///
-/// - **It cannot degrade to a label.** The old form was `concat!("memra-", <git sha>)`, and
-///   a git failure inside darklanes' release container silently baked the literal
-///   `unknown`. Prod served `system_fingerprint: memra-unknown` to every request for a
-///   deploy generation, which also meant darklanes' `tools/check-claim-builds.mjs --live`
-///   had nothing to verify published performance pins against. See `build.rs` for the
-///   receipt chain.
-/// - **It survives a history rewrite.** Rewriting commits changes every SHA while the bytes
-///   of the tree stay put, so a fingerprint quoted in a published claim, a research
-///   receipt, or a customer's own response keeps naming the same build afterwards.
-///
-/// Deliberately NOT in the value: a build timestamp. Two builds of the same source must
-/// produce the same fingerprint, because `check-claim-builds` compares it for EQUALITY
-/// against a published pin and a per-rebuild value would churn every pin. Build time is an
-/// artifact-registry fact (the filename and the file's mtime), not an identity.
-pub const SYSTEM_FINGERPRINT: &str = concat!(
-    "memra-",
-    env!("CARGO_PKG_VERSION"),
-    "-",
-    env!("MEMRA_BUILD_ID")
-);
-
-/// How `SYSTEM_FINGERPRINT`'s id was derived: `source-tree` (real) or `degraded`.
-pub const BUILD_ID_SRC: &str = env!("MEMRA_BUILD_ID_SRC");
-
-/// Why the id is degraded. Empty when it is not.
-pub const BUILD_ID_NOTE: &str = env!("MEMRA_BUILD_ID_NOTE");
-
-/// The build's git sha when the build could read a repo, else `unknown`. An EXTRA
-/// provenance field: convenient, never the identity. A shipped binary outlives the commit it
-/// was cut from, and after an authorized history rewrite the sha names nothing at all.
-pub const BUILD_GIT_SHA: &str = env!("MEMRA_BUILD_SHA");
-
-/// One line of build provenance, printed at boot by EVERY binary that links this server
-/// (the stock bin and darklanes' deployment bin both enter through `serve_with`).
-pub fn build_identity_line() -> String {
-    format!("[server] build: {SYSTEM_FINGERPRINT} (id: {BUILD_ID_SRC}, git: {BUILD_GIT_SHA})")
-}
+const SYSTEM_FINGERPRINT: &str = concat!("memra-", env!("MEMRA_BUILD_SHA"));
 
 /// 128 random-ish hex bits: two RandomState-seeded hashes over a process counter + time.
 /// Uniqueness class (request ids), not crypto.
@@ -4440,12 +4381,6 @@ pub struct RuntimeHandles {
     /// Tenant lifecycle purge (lane/kv-tenancy-compaction-20260831): the deployment
     /// admin surface calls this from its key-revocation and tenant-deletion paths.
     pub purge: PurgeHandle,
-    /// Host-tier deploy handoff (lane/host-tier-deploy-warmth-20260901): the deployment
-    /// admin surface exposes these as `POST /admin/kv-host/export` (called by
-    /// serve-deploy on the DRAINED old slot after the edge flip) and
-    /// `POST /admin/kv-host/import` (called on the promoted slot right after). Both are
-    /// inert unless MEMRA_KV_HOST_HANDOFF names a path on the slot.
-    pub kv_handoff: HostHandoffHandle,
     /// Flips to `true` when the graceful drain completes (the moment the in-tree
     /// admin listener stops). A deployment-side surface MUST end and drop its
     /// [`TrimHandle`] AND [`PurgeHandle`] on this signal: each handle wraps a worker
@@ -4505,87 +4440,12 @@ impl PurgeHandle {
     }
 }
 
-/// Host-tier deploy handoff (lane/host-tier-deploy-warmth-20260901): the engine half of a
-/// deployment admin `POST /admin/kv-host/export` / `POST /admin/kv-host/import` pair.
-/// Contract notes for the deployment surface: export is called ONLY on the drained old
-/// slot (it refuses under traffic unless `force`, and the write stalls that slot's ticks
-/// for its duration, expected and harmless when drained); import answers as soon as the
-/// file header validates, then re-materializes entries one per tick in the background
-/// (watch `prefix_host_handoff_*` in /metrics for completion). Same lifetime contract as
-/// [`TrimHandle`]: drop it on the shutdown signal.
-#[derive(Clone)]
-pub struct HostHandoffHandle {
-    cmd_tx: Sender<Cmd>,
-}
-
-impl HostHandoffHandle {
-    /// Errors as strings: worker down, refused, or no answer. The timeout is generous by
-    /// design: tens of GB of drain-demote + NVMe write happen inside the reply.
-    pub async fn export(&self, force: bool) -> Result<serde_json::Value, String> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        if self
-            .cmd_tx
-            .send(Cmd::ExportHostHandoff { force, tx })
-            .is_err()
-        {
-            return Err("worker is down".into());
-        }
-        match tokio::time::timeout(std::time::Duration::from_secs(900), rx).await {
-            Ok(Ok(Ok(report))) => Ok(json!(report)),
-            Ok(Ok(Err(refused))) => Err(refused),
-            _ => Err("worker did not answer the export within 900s".into()),
-        }
-    }
-
-    /// Begin the drip import; answers with the validated header (fast: no entry bytes are
-    /// read yet) or the refusal reason.
-    pub async fn import(&self) -> Result<serde_json::Value, String> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        if self.cmd_tx.send(Cmd::ImportHostHandoff { tx }).is_err() {
-            return Err("worker is down".into());
-        }
-        match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
-            Ok(Ok(Ok(start))) => Ok(json!(start)),
-            Ok(Ok(Err(refused))) => Err(refused),
-            _ => Err("worker did not answer the import within 30s".into()),
-        }
-    }
-}
-
 pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::Error>> {
     // Key lifecycle CLI (lane/api-keys): `--gen-key <tenant>` / `--revoke-key <prefix>`
     // manage the keyring and exit — no engine, no GPU, no model load.
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // `--version` prints the build identity and exits: no engine, no GPU, no model load. So
-    // the fingerprint of a DEPLOYED artifact is checkable on any box, and in the release
-    // container that produced it, without touching a serving stack. That check is the one
-    // that would have caught `memra-unknown` before it reached a customer.
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("memra-server {}", env!("CARGO_PKG_VERSION"));
-        println!("system_fingerprint {SYSTEM_FINGERPRINT}");
-        println!("build_id_src {BUILD_ID_SRC}");
-        println!("git_sha {BUILD_GIT_SHA}");
-        if !BUILD_ID_NOTE.is_empty() {
-            println!("degraded {BUILD_ID_NOTE}");
-        }
-        return Ok(());
-    }
     if let Some(code) = auth::run_cli(&args) {
         std::process::exit(code);
-    }
-    // Build provenance is the FIRST line of every boot. An unknown fingerprint is how this
-    // defect hid: a build with a meaningless identity looked exactly like a good one, on
-    // both sides of the deploy.
-    eprintln!("{}", build_identity_line());
-    if BUILD_ID_SRC != build_id::BUILD_ID_SRC_TREE {
-        eprintln!(
-            "[server] WARNING: build identity is DEGRADED: {BUILD_ID_NOTE}. \
-             system_fingerprint {SYSTEM_FINGERPRINT} carries a version-only id, so it does \
-             NOT identify the source this binary was compiled from and published \
-             performance pins cannot be verified against it (darklanes \
-             tools/check-claim-builds.mjs --live). Rebuild where the workspace source tree \
-             is readable."
-        );
     }
     // Keyring (MEMRA_API_KEYS): parsed once here so a bad config is a startup FATAL,
     // not a per-request surprise. Absent = single-key/open behavior, unchanged.
@@ -4738,9 +4598,6 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
                 cmd_tx: cmd_tx.clone(),
             },
             purge: PurgeHandle {
-                cmd_tx: cmd_tx.clone(),
-            },
-            kv_handoff: HostHandoffHandle {
                 cmd_tx: cmd_tx.clone(),
             },
             shutdown: drain_shutdown_rx.clone(),
@@ -5248,43 +5105,6 @@ fn insert_dual_pp_metrics(
     });
 }
 
-#[derive(Clone, Copy)]
-struct PpWaveMetricsSnapshot {
-    ticks: usize,
-    cells: usize,
-    overlaps: usize,
-}
-
-impl PpWaveMetricsSnapshot {
-    fn current() -> Self {
-        let (ticks, cells, overlaps) = memra_engine::pp::pp_wave_snapshot();
-        Self {
-            ticks,
-            cells,
-            overlaps,
-        }
-    }
-}
-
-fn insert_pp_wave_metrics(
-    body: &mut serde_json::Value,
-    metrics_scope: &MetricsScope,
-    snapshot: impl FnOnce() -> PpWaveMetricsSnapshot,
-) {
-    if !metrics_scope.operator() {
-        return;
-    }
-    let snapshot = snapshot();
-    if snapshot.ticks == 0 && snapshot.cells == 0 {
-        return;
-    }
-    body["pp_wave"] = json!({
-        "ticks": snapshot.ticks,
-        "cells": snapshot.cells,
-        "overlaps": snapshot.overlaps,
-    });
-}
-
 fn insert_spec_acceptance_metrics(
     body: &mut serde_json::Value,
     metrics_scope: &MetricsScope,
@@ -5443,11 +5263,6 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         // candidates whose session returned before the timer (or left nothing demotable).
         body["prefix_host_pause_demotes"] = json!(m.prefix_host_pause_demotes);
         body["prefix_host_pause_cancels"] = json!(m.prefix_host_pause_cancels);
-        body["prefix_host_handoff_exports"] = json!(m.prefix_host_handoff_exports);
-        body["prefix_host_handoff_imported_entries"] =
-            json!(m.prefix_host_handoff_imported_entries);
-        body["prefix_host_handoff_imported_bytes"] = json!(m.prefix_host_handoff_imported_bytes);
-        body["prefix_host_handoff_skips"] = json!(m.prefix_host_handoff_skips);
         // KV budget flex (MEMRA_KV_FLEX, lane/kv-flex-20260831, tiering spec Arc G):
         // borrowed_bytes = current device prefix-cache residency above its configured
         // floor; sheds/shed_ms = borrowed-slice reclaims and their CUMULATIVE wall-time
@@ -5573,7 +5388,6 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
     }
     insert_spec_acceptance_metrics(&mut body, &metrics_scope, || m.spec_window.clone());
     insert_dual_pp_metrics(&mut body, &metrics_scope, DualPpMetricsSnapshot::current);
-    insert_pp_wave_metrics(&mut body, &metrics_scope, PpWaveMetricsSnapshot::current);
     insert_peer_probe_metrics(
         &mut body,
         &metrics_scope,
@@ -5646,22 +5460,13 @@ fn openrouter_supported_parameters(
     }
     parameters.insert("max_tokens".into(), max_tokens);
     // Constrained decoding is NOT universal, and this catalog used to say it was. The dsv4
-    // route refuses `response_format` by name. A template whose `<think>` tail opens
-    // unconditionally with no `enable_thinking` switch is refused ONLY when its think-close
-    // token contract is unknown (`ModelCaps::think_close` empty — GLM-5.3-Flash): with a known
-    // close sequence, POST-THINK constrained decoding serves it (think runs unconstrained, the
-    // grammar engages at the close token — lane/step37-postthink-grammar). This predicate
-    // mirrors the ACTUAL refusal in `build_chat_request`, not a template heuristic: v0.123.0
-    // shipped the heuristic form and advertised `structured_output: false` for step37 while the
-    // server was serving schema-valid `response_format` on it (found by the 2026-09-01 claim
-    // re-seal; live-verified both ways). Same predicate as the contract-v2 row's
-    // `structured_output`, so the two catalogs cannot disagree about one model. Off the chat
-    // surface (embedders, rerankers) nothing chat-shaped is advertised at all.
-    if is_chat
-        && caps.is_some_and(|c| {
-            !c.dsv4 && !(c.qwen_think && !c.think_switch && c.think_close.is_empty())
-        })
-    {
+    // route refuses `response_format` by name, and so does any template whose `<think>` tail
+    // opens unconditionally with no `enable_thinking` switch (the grammar masks from the first
+    // generated token, so the tail can never be closed) — GLM-5.3-Flash and step35 both.
+    // Same predicate as the contract-v2 row's `structured_output`, so the two catalogs cannot
+    // disagree about one model. Off the chat surface (embedders, rerankers) nothing
+    // chat-shaped is advertised at all.
+    if is_chat && caps.is_some_and(|c| !c.dsv4 && !(c.qwen_think && !c.think_switch)) {
         parameters.insert("json_mode".into(), json!({ "type": "boolean" }));
         parameters.insert("structured_outputs".into(), json!({ "type": "boolean" }));
     }
@@ -6127,16 +5932,14 @@ fn model_entry_v1(
             // does not stream, does not call tools, and does not reason.
             "streaming": is_chat,
             "tools": is_chat && caps.is_some_and(|c| c.tools_branch),
-            // A switchless force-open `<think>` tail refuses `response_format` ONLY when
-            // its think-close contract is unknown (`think_close` empty — GLM-5.3-Flash);
-            // with a known close sequence POST-THINK constrained decoding serves it
-            // (lane/step37-postthink-grammar), so the advertisement mirrors the actual
-            // `build_chat_request` refusal. The heuristic form of this predicate shipped in
-            // v0.123.0 and advertised false for step37 while the server served schema-valid
-            // constrained output on it.
+            // Constrained decoding masks from the FIRST generated token, so a template
+            // whose `<think>` tail opens unconditionally and carries no `enable_thinking`
+            // switch cannot honour `response_format` at all — `build_chat_request` 400s it by
+            // name. Advertising `true` there was a claim the server itself refuses (found on
+            // GLM-5.3-Flash, lane/glm53-flash-bringup; step35 carries the same shape).
             "structured_output": is_chat
                 && !is_dsv4
-                && !caps.is_some_and(|c| c.qwen_think && !c.think_switch && c.think_close.is_empty()),
+                && !caps.is_some_and(|c| c.qwen_think && !c.think_switch),
             "reasoning": is_chat && thinking,
             "prompt_caching": is_chat && !is_dsv4,
         },
@@ -6416,7 +6219,6 @@ fn build_request_with_trace(
         glm5_images: Vec::new(),
         step_images: Vec::new(),
         vision_memory: None,
-        wire_deadline: None, // stamped by the handler at submission (with request_id)
         ttft,
         tx,
     }
@@ -6821,15 +6623,8 @@ fn build_chat_request_with_trace(
     // splitter — the qwen scanner's `<function=` body grammar never matches this wire, so
     // before this branch a glm5 tool call would have surfaced VERBATIM as content.
     let glm5 = caps.map(|c| c.glm5).unwrap_or(false);
-    // Tencent HY3 dialect: reasoning closes with `</think:opensource>` and calls use the
-    // suffixed `<tool_calls:opensource>` protocol. Armed on think-open or tools, like dsv4.
-    let is_hy3 = caps.map(|c| c.hy3).unwrap_or(false);
-    let hy3_think_open = is_hy3 && think == ThinkMode::Think;
-    let hy3_tools = is_hy3 && !tools_json.is_empty();
     let parser = if glm5 {
         Some(ToolStreamParser::glm5(think_open, schemas))
-    } else if is_hy3 && (hy3_tools || hy3_think_open) {
-        Some(ToolStreamParser::hy3(schemas, hy3_think_open))
     } else if is_dsv4 && (dsv4_tools || dsv4_think_open) {
         Some(ToolStreamParser::dsv4(dsv4_think_open))
     } else if gemma_tools {
@@ -6884,11 +6679,6 @@ fn build_chat_request_with_trace(
                 if dsv4_tools {
                     stops.push("</\u{ff5c}DSML\u{ff5c}tool_calls>".to_string());
                 }
-                // HY3 tool requests: stop on the native suffixed tool_calls close. Keep the
-                // marker in the stream so the parser can close and emit every call.
-                if hy3_tools {
-                    stops.push("</tool_calls:opensource>".to_string());
-                }
                 stops
             },
             trace_id: None,
@@ -6916,7 +6706,6 @@ fn build_chat_request_with_trace(
             step_images: Vec::new(),
             capture: None, // set only by the embeddings/rerank routes
             vision_memory: None,
-            wire_deadline: None, // stamped by the handler at submission (with request_id)
             ttft,
             tx,
         },
@@ -7910,9 +7699,6 @@ async fn completions(
     );
     request.cache_ns = cache_ns;
     request.request_id = env.id.clone();
-    // The wire deadline rides to the worker beside the receipt identity, so the
-    // first-token deadline gate judges the REMAINING deadline at its own tick.
-    request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = apply_model_request_limits(
         &mut request,
         st.openrouter_metadata.get(&model),
@@ -8237,7 +8023,6 @@ async fn chat_completions(
     };
     plan.request.cache_ns = cache_ns;
     plan.request.request_id = env.id.clone();
-    plan.request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = apply_model_request_limits(
         &mut plan.request,
         st.openrouter_metadata.get(&model),
@@ -9049,7 +8834,7 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
 /// `error_type: "timeout"`), and billed for the tokens the caller actually received.
 ///
 /// `finish_reason: "length"` would have been the cheaper lie: no provider's finish-reason
-/// enum has a time value (OpenAI, Anthropic, Google and the hosted resellers all mean max_tokens by
+/// enum has a time value (OpenAI/Anthropic/Bedrock/Google all mean max_tokens by
 /// "length"/MAX_TOKENS), so reporting a time cut as "length" tells the caller to ask for
 /// more tokens when the truth is that it needs to stream. Only a zero-token miss still
 /// answers 408 unbilled — there is nothing to deliver.
@@ -9613,23 +9398,6 @@ mod tests {
     /// because they have no reason to touch the drain flag. Flagged by review.
     static GATE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// Acquire GATE_ENV_LOCK surviving a poisoned peer, and restore the baseline it
-    /// guards: `MEMRA_NONSTREAM_DEADLINE_GATE` unset (the documented default). The
-    /// off-switch arm can panic between its `set_var` and its `remove_var`, and a plain
-    /// `.unwrap()` would then hand every peer a PoisonError — the DRAIN_LOCK cascade of
-    /// 2026-09-01 (one flake, 21 reds), same class. Recovery is sound because the env
-    /// var is the only state under this lock and this resets it.
-    fn gate_env_lock() -> std::sync::MutexGuard<'static, ()> {
-        let guard = GATE_ENV_LOCK.lock().unwrap_or_else(|poisoned| {
-            // Un-latch the flag too: poison otherwise persists forever, and only call
-            // sites routed through this helper would survive it.
-            GATE_ENV_LOCK.clear_poison();
-            poisoned.into_inner()
-        });
-        unsafe { std::env::remove_var("MEMRA_NONSTREAM_DEADLINE_GATE") };
-        guard
-    }
-
     /// A Request shaped for the feasibility-gate tests: `max_new` declared, prompt given as
     /// raw ids so the estimate is exact rather than a byte proxy.
     fn gate_request(max_new: usize, prompt_ids: usize) -> worker::Request {
@@ -9707,7 +9475,7 @@ mod tests {
         // through a positive-only numeric reader, so `=0` fell back to the default and the
         // gate kept firing. The bench gate found it (arm 7 ran with the flag set to 0 and was
         // still refused); this arm is why it cannot come back.
-        let _l = gate_env_lock(); // mutates process env
+        let _l = GATE_ENV_LOCK.lock().unwrap(); // mutates process env
         for off in ["0", "off", "false"] {
             unsafe { std::env::set_var("MEMRA_NONSTREAM_DEADLINE_GATE", off) };
             assert!(
@@ -9827,7 +9595,7 @@ mod tests {
 
     #[test]
     fn a_ctx_bounded_request_is_not_gated_because_context_is_its_only_limit() {
-        let _l = gate_env_lock();
+        let _l = GATE_ENV_LOCK.lock().unwrap();
         // Owner ruling 2026-08-26: "or limit is full context". A caller who sent no
         // max_tokens has declared no length for the gate to judge; partial delivery covers
         // it instead of a refusal the caller cannot act on.
@@ -10086,17 +9854,6 @@ mod tests {
             gemma_think: true,
             chat_ok: true,
             instruct_type: Some("gemma".into()),
-            ..Default::default()
-        }
-    }
-
-    fn hy3_tool_caps() -> ModelCaps {
-        ModelCaps {
-            tools_branch: true,
-            hy3: true,
-            chat_ok: true,
-            effort_levels: true,
-            instruct_type: Some("hy3".into()),
             ..Default::default()
         }
     }
@@ -10817,25 +10574,6 @@ mod tests {
             glm_params.get("structured_outputs").is_none(),
             "{glm_params}"
         );
-        // THE step37 SHAPE (v0.123.0 regression, found by the 2026-09-01 claim re-seal):
-        // switchless force-open think WITH a derivable think-close contract is SERVED via
-        // post-think constrained decoding, so both catalogs must say true. v0.123.0's
-        // heuristic predicate advertised false here while the live server returned
-        // schema-valid response_format output on the same model.
-        let step_like = ModelCaps {
-            chat_ok: true,
-            qwen_think: true,
-            think_switch: false,
-            think_close: vec![128799],
-            ..caps.clone()
-        };
-        let step_row = model_entry_v1("stepfun/step-3.7-flash", Some(&step_like), None);
-        assert_eq!(step_row["capabilities"]["structured_output"], json!(true));
-        let step_params = openrouter_supported_parameters(Some(&step_like), None, true);
-        assert!(
-            step_params.get("structured_outputs").is_some(),
-            "{step_params}"
-        );
         assert!(glm_params.get("json_mode").is_none(), "{glm_params}");
         assert!(glm_params.get("tools").is_some(), "{glm_params}");
         let qwen_params = openrouter_supported_parameters(Some(&tool_caps()), None, true);
@@ -11478,13 +11216,11 @@ mod tests {
         // OpenAI envelope (gap-scan F1): the official SDK pydantic-REQUIRES id + created.
         assert!(payload["id"].as_str().unwrap().starts_with("chatcmpl-"));
         assert!(payload["created"].as_u64().unwrap() > 1_700_000_000);
-        // Shape, not prefix: `starts_with("memra-")` is what this line used to assert, and
-        // `memra-unknown` passes that, which is how a meaningless fingerprint sat inside a
-        // tested surface all the way to prod.
-        let fingerprint = payload["system_fingerprint"].as_str().unwrap();
         assert!(
-            build_id::fingerprint_is_well_formed(fingerprint),
-            "system_fingerprint {fingerprint:?} is not memra-<version>-<12 hex>"
+            payload["system_fingerprint"]
+                .as_str()
+                .unwrap()
+                .starts_with("memra-")
         );
         assert_eq!(payload["choices"][0]["message"]["role"], "assistant");
         assert_eq!(payload["choices"][0]["message"]["content"], "hello");
@@ -11777,52 +11513,6 @@ mod tests {
              \"properties\": {\"city\": {\"type\": \"string\"}, \"days\": {\"type\": \
              \"integer\"}}, \"required\": [\"city\"]}}}"
         );
-    }
-
-    #[test]
-    fn hy3_tools_and_reasoning_flow_through_the_real_chat_plan() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let plan = build_chat_request(
-            weather_request(json!({"reasoning_effort": "high"})),
-            Some(&hy3_tool_caps()),
-            tx,
-            lanes::Lane::Interactive,
-            None,
-        )
-        .unwrap();
-        assert_eq!(plan.request.think, ThinkMode::Think);
-        assert_eq!(plan.request.reasoning_effort.as_deref(), Some("high"));
-        assert!(
-            plan.request
-                .stop_strings
-                .iter()
-                .any(|stop| stop == "</tool_calls:opensource>")
-        );
-        let rendered = chat::apply_chat_template_tools_ex(
-            Some("... hy_User ... <tools> ..."),
-            &plan.request.chat_turns,
-            true,
-            &plan.request.tools_json,
-            &plan.request.tools_struct,
-            plan.request.think,
-            plan.request.reasoning_effort.as_deref(),
-            None,
-        )
-        .unwrap();
-        assert!(rendered.contains("<tool_calls:opensource>"));
-        assert!(rendered.ends_with("<think:opensource>"));
-
-        let mut parser = plan.parser.expect("HY3 tools arm its native parser");
-        let pieces = parser.push(concat!(
-            "Need weather.</think:opensource>",
-            "<tool_calls:opensource><tool_call:opensource>get_weather",
-            "<tool_sep:opensource>\n<arg_key:opensource>city</arg_key:opensource>\n",
-            "<arg_value:opensource>Paris</arg_value:opensource>\n",
-            "</tool_call:opensource></tool_calls:opensource>",
-        ));
-        assert!(pieces.contains(&Piece::Reasoning("Need weather.".into())));
-        assert!(pieces.iter().any(|piece| matches!(piece, Piece::Call(call)
-            if call.name == "get_weather" && call.arguments == r#"{"city":"Paris"}"#)));
     }
 
     #[test]
@@ -13775,10 +13465,11 @@ default_reasoning_effort = "always"
         for c in &chunks {
             assert_eq!(c["id"], id.as_str());
             assert!(c["created"].as_u64().unwrap() > 1_700_000_000);
-            let fingerprint = c["system_fingerprint"].as_str().unwrap();
             assert!(
-                build_id::fingerprint_is_well_formed(fingerprint),
-                "chunk system_fingerprint {fingerprint:?} is not memra-<version>-<12 hex>"
+                c["system_fingerprint"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("memra-")
             );
             assert_eq!(c["object"], "chat.completion.chunk");
         }
@@ -14025,51 +13716,6 @@ default_reasoning_effort = "always"
         serde_json::from_slice(&bytes).expect("json body")
     }
 
-    /// POST one chat request through the FULL handler, retrying the server's contention
-    /// refusals until the request is actually ADMITTED.
-    ///
-    /// `reserve_pending_admit` reads the process-global lane backlog
-    /// (`worker::ADMISSION_RESERVATIONS`) and the test runner is parallel: any sibling
-    /// test's in-flight reservation window puts `backlog > 0` under this request, and
-    /// with a fresh state's empty metrics the queue-wait estimate is the 2 s static —
-    /// more than the minimum 1000 ms deadline these tests declare, so the request sheds
-    /// 429 `shed_deadline` before admission. Schedule-dependent and load-amplified: on a
-    /// loaded box the windows stretch, and the deadline tests observed 429 where they
-    /// asserted 408 (the 2026-09-01 accrace flake). The shed is the server's documented,
-    /// unbilled refusal-under-load — so the honest test answer is to treat it as "try
-    /// again", never as the outcome: the caller's assertions still require the ADMITTED
-    /// request to prove its 408/billing contract, and a 429 that is not a shed stays a
-    /// loud failure.
-    async fn chat_completion_admitted(st: &AppState, req: serde_json::Value) -> Response {
-        let mut last_shed = serde_json::Value::Null;
-        for _ in 0..50 {
-            let resp = chat_completions(
-                State(st.clone()),
-                HeaderMap::new(),
-                None,
-                Json(serde_json::from_value(req.clone()).unwrap()),
-            )
-            .await;
-            if resp.status() != StatusCode::TOO_MANY_REQUESTS {
-                return resp;
-            }
-            let body = body_value(resp).await;
-            let code = body["error"]["code"].as_str().unwrap_or_default();
-            assert!(
-                code.starts_with("shed_"),
-                "only a contention shed may be retried; any other 429 is a finding: {body}"
-            );
-            last_shed = body;
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
-        // The shed message names the estimate and the remaining deadline, so triage can
-        // tell a genuinely saturated run from a shed regression that never clears.
-        panic!(
-            "still shed after 50 attempts — either load the retry budget cannot absorb \
-             or a shed that no longer clears; last refusal: {last_shed}"
-        );
-    }
-
     #[test]
     fn timeout_ms_parses_clamps_nothing_and_names_every_refusal() {
         // Absent / explicit null => the DOCUMENTED default, not "no deadline".
@@ -14115,7 +13761,7 @@ default_reasoning_effort = "always"
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn a_bad_timeout_ms_is_the_same_named_400_on_every_surface() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let st = fake_worker_state();
 
         let comp = completions(
@@ -14194,7 +13840,7 @@ default_reasoning_effort = "always"
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn a_non_integer_timeout_ms_is_a_named_400() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let st = fake_worker_state();
         let resp = chat_completions(
             State(st),
@@ -14221,7 +13867,7 @@ default_reasoning_effort = "always"
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn a_missed_non_stream_deadline_delivers_the_partial_bills_it_and_cancels_generation() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         // A worker that publishes prompt usage and ONE token, then never finishes — the
         // shape a real deadline miss has (work done, no terminal event in time). It keeps
         // the request's sender so the handler's drop of rx is observable as a closed
@@ -14267,11 +13913,16 @@ default_reasoning_effort = "always"
         let mock = MockMetering::admit_all();
         st.metering = Some(mock.clone());
 
-        let resp = chat_completion_admitted(
-            &st,
-            json!({
-                "model": "m", "messages": [{"role": "user", "content": "t"}],
-                "timeout_ms": 1_000}),
+        let resp = chat_completions(
+            State(st),
+            HeaderMap::new(),
+            None,
+            Json(
+                serde_json::from_value(json!({
+                    "model": "m", "messages": [{"role": "user", "content": "t"}],
+                    "timeout_ms": 1_000}))
+                .unwrap(),
+            ),
         )
         .await;
 
@@ -14349,7 +14000,7 @@ default_reasoning_effort = "always"
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn a_deadline_missed_before_any_token_is_still_408_and_unbilled() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
         let health = health::WorkerHealth::new();
         let h = health.clone();
@@ -14383,11 +14034,16 @@ default_reasoning_effort = "always"
         st.health = health;
         let mock = MockMetering::admit_all();
         st.metering = Some(mock.clone());
-        let resp = chat_completion_admitted(
-            &st,
-            json!({
-                "model": "m", "messages": [{"role": "user", "content": "t"}],
-                "timeout_ms": 1_000}),
+        let resp = chat_completions(
+            State(st),
+            HeaderMap::new(),
+            None,
+            Json(
+                serde_json::from_value(json!({
+                    "model": "m", "messages": [{"role": "user", "content": "t"}],
+                    "timeout_ms": 1_000}))
+                .unwrap(),
+            ),
         )
         .await;
         assert_eq!(resp.status(), StatusCode::REQUEST_TIMEOUT);
@@ -14420,7 +14076,7 @@ default_reasoning_effort = "always"
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn a_stream_that_misses_ttft_is_a_preheader_408_and_not_billed() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         // Admits (publishes prompt usage) but produces NO token — a prefill that overruns.
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
         let health = health::WorkerHealth::new();
@@ -14451,11 +14107,16 @@ default_reasoning_effort = "always"
         let mock = MockMetering::admit_all();
         st.metering = Some(mock.clone());
 
-        let resp = chat_completion_admitted(
-            &st,
-            json!({
-                "model": "m", "messages": [{"role": "user", "content": "t"}],
-                "stream": true, "timeout_ms": 1_000}),
+        let resp = chat_completions(
+            State(st),
+            HeaderMap::new(),
+            None,
+            Json(
+                serde_json::from_value(json!({
+                    "model": "m", "messages": [{"role": "user", "content": "t"}],
+                    "stream": true, "timeout_ms": 1_000}))
+                .unwrap(),
+            ),
         )
         .await;
         // PRE-HEADER: a real status, not a 200 with an error chunk — the whole reason the
@@ -14487,17 +14148,22 @@ default_reasoning_effort = "always"
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn a_stream_is_immune_to_the_deadline_after_its_first_token() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         // 4 tokens, 400ms apart: the first arrives well inside a 1s deadline and the
         // stream then runs ~1.6s — past it. The stream must still finish normally.
         let mut st = fake_worker_state_with_steps(4, std::time::Duration::from_millis(400));
         let mock = MockMetering::admit_all();
         st.metering = Some(mock.clone());
-        let resp = chat_completion_admitted(
-            &st,
-            json!({
-                "model": "m", "messages": [{"role": "user", "content": "t"}],
-                "stream": true, "timeout_ms": 1_000}),
+        let resp = chat_completions(
+            State(st),
+            HeaderMap::new(),
+            None,
+            Json(
+                serde_json::from_value(json!({
+                    "model": "m", "messages": [{"role": "user", "content": "t"}],
+                    "stream": true, "timeout_ms": 1_000}))
+                .unwrap(),
+            ),
         )
         .await;
         assert_eq!(
@@ -14533,55 +14199,6 @@ default_reasoning_effort = "always"
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Put an admission counter back on DROP — including the drop that unwinds a failed
-    /// assertion. The swap tests below used to restore with a trailing `store(prev)`
-    /// AFTER their asserts, so one red left the process-global lane backlog pinned at the
-    /// swapped value (e.g. max_queue_depth) and every later-admitted request in the run
-    /// shed 429 — the 2026-09-01 one-flake-becomes-21-reds cascade, counter form.
-    struct CounterRestore<'a>(&'a std::sync::atomic::AtomicUsize, usize);
-    impl Drop for CounterRestore<'_> {
-        fn drop(&mut self) {
-            self.0.store(self.1, std::sync::atomic::Ordering::Release);
-        }
-    }
-
-    /// `reserve_pending_admit` on the interactive lane, retrying through the TRANSIENT
-    /// contention shed: the lane backlog is a process-global reading
-    /// (`worker::ADMISSION_RESERVATIONS`) and the runner is parallel, so a sibling
-    /// handler test's in-flight reservation puts `backlog > 0` for an instant and the
-    /// wait estimate then deadline-sheds a tight deadline — schedule-dependent,
-    /// load-amplified (the 2026-09-01 class). A PERSISTENT shed is not contention and
-    /// still fails the caller's assert: whatever pins the backlog for all 50 attempts
-    /// (e.g. a cross-lane leak) is a finding. Any refusal other than the deadline shed
-    /// panics immediately.
-    #[allow(clippy::result_large_err)] // allow: passes reserve_pending_admit's own contract through unchanged
-    fn reserve_interactive_through_contention(
-        st: &AppState,
-        rl: &RateLimit,
-        deadline_ms: u64,
-    ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
-        let reserve = || {
-            reserve_pending_admit(
-                st,
-                lanes::Lane::Interactive,
-                rl,
-                RequestDeadline::starting_now(deadline_ms),
-            )
-        };
-        let mut g = reserve();
-        for _ in 0..50 {
-            match &g {
-                Ok(_) => break,
-                Err((_, "shed_deadline")) => {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
-                    g = reserve();
-                }
-                Err((_, outcome)) => panic!("unexpected refusal: {outcome}"),
-            }
-        }
-        g
-    }
-
     /// BACKPRESSURE, absolute bound: at MEMRA_MAX_QUEUE_DEPTH the request sheds with 429 +
     /// Retry-After, outcome `shed_queue`, no bill, X-RateLimit trio present.
     #[test]
@@ -14592,7 +14209,6 @@ default_reasoning_effort = "always"
         let cap = lane_cap(lane);
         let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
         let prev = counter.swap(max_queue_depth(cap), std::sync::atomic::Ordering::AcqRel);
-        let _restore = CounterRestore(counter, prev);
         let rl = RateLimit {
             limit: cap,
             remaining: 0,
@@ -14606,6 +14222,7 @@ default_reasoning_effort = "always"
         )
         .map(|_| ())
         .expect_err("a backlog at the bound must shed");
+        counter.store(prev, std::sync::atomic::Ordering::Release);
         assert_eq!(outcome, "shed_queue");
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
         assert!(
@@ -14640,7 +14257,6 @@ default_reasoning_effort = "always"
         }
         let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
         let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel); // one wave ahead
-        let _restore = CounterRestore(counter, prev);
         let rl = RateLimit {
             limit: cap,
             remaining: 0,
@@ -14667,6 +14283,7 @@ default_reasoning_effort = "always"
         )
         .map(|_| ())
         .expect_err("a deadline shorter than the estimated wait must shed");
+        counter.store(prev, std::sync::atomic::Ordering::Release);
         assert_eq!(outcome, "shed_deadline");
         assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
         assert!(retry_after(&resp).is_some());
@@ -14691,11 +14308,12 @@ default_reasoning_effort = "always"
             remaining: 1,
             reset_s: 0,
         };
-        // Retried through the transient sibling-reservation shed (see the helper): this
-        // enormous estimate sheds even the minimum deadline whenever the process-global
-        // backlog reads > 0 for an instant. The assertion still requires the free-slot
-        // admit to prove itself.
-        let g = reserve_interactive_through_contention(&st, &free, TIMEOUT_MS_MIN);
+        let g = reserve_pending_admit(
+            &st,
+            lanes::Lane::Interactive,
+            &free,
+            RequestDeadline::starting_now(TIMEOUT_MS_MIN),
+        );
         assert!(
             g.is_ok(),
             "free capacity must admit regardless of the estimate"
@@ -14711,7 +14329,6 @@ default_reasoning_effort = "always"
         for lane in [lanes::Lane::Judge, lanes::Lane::Harvest] {
             let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
             let prev = counter.swap(1, std::sync::atomic::Ordering::AcqRel); // backlog > 0
-            let _restore = CounterRestore(counter, prev);
             let g = reserve_pending_admit(
                 &st,
                 lane,
@@ -14723,6 +14340,7 @@ default_reasoning_effort = "always"
                 "{lane:?} must not be deadline-shed by the interactive gate"
             );
             drop(g);
+            counter.store(prev, std::sync::atomic::Ordering::Release);
         }
     }
 
@@ -14744,7 +14362,6 @@ default_reasoning_effort = "always"
             |_| Some(0),
         );
         let counter = &worker::ADMISSION_RESERVATIONS[lanes::Lane::Interactive.idx()];
-        let _restore = CounterRestore(counter, 0);
         counter.store(bound - 1, std::sync::atomic::Ordering::Release);
         let guard = reserve_pending_admit(
             &st,
@@ -14776,6 +14393,7 @@ default_reasoning_effort = "always"
             RequestDeadline::starting_now(TIMEOUT_MS_MAX),
         );
         assert!(matches!(rejected, Err((_, "shed_queue"))));
+        counter.store(0, std::sync::atomic::Ordering::Release);
     }
 
     #[test]
@@ -14786,7 +14404,6 @@ default_reasoning_effort = "always"
         let interactive = lanes::Lane::Interactive;
         let harvest_counter = &worker::ADMISSION_RESERVATIONS[harvest.idx()];
         let interactive_counter = &worker::ADMISSION_RESERVATIONS[interactive.idx()];
-        let _restore = CounterRestore(harvest_counter, 0);
         harvest_counter.store(
             max_queue_depth(lane_cap(harvest)),
             std::sync::atomic::Ordering::Release,
@@ -14797,32 +14414,14 @@ default_reasoning_effort = "always"
             remaining: 1,
             reset_s: 0,
         };
-        // Two arms, because the harvest bound (max_queue_depth of its cap 8 = 32) is far
-        // below every interactive threshold: a cross-lane backlog leak (a lane.idx()
-        // slip in reserve_pending_admit) would put 32 on the interactive reading — never
-        // enough for its shed_queue bound (256), and only 2 s of estimated wait. So the
-        // MAX arm proves the path is open, and the MIN arm is the teeth: with the leak,
-        // that pinned 2 s estimate deadline-sheds a 1000 ms request on EVERY attempt and
-        // outlasts the retry budget; healthy, backlog 0 + a free slot admits with no
-        // estimate applied at all. The retry absorbs only the TRANSIENT sibling
-        // reservation (load-flaked run 2 of the 2026-09-01 triple), which clears between
-        // attempts — the harvest counter this test pins does not.
         let guard = reserve_pending_admit(
             &st,
             interactive,
             &free,
-            RequestDeadline::starting_now(TIMEOUT_MS_MAX),
+            RequestDeadline::starting_now(TIMEOUT_MS_MIN),
         )
         .expect("a full harvest queue must not consume interactive capacity");
         drop(guard);
-        let tight = reserve_interactive_through_contention(&st, &free, TIMEOUT_MS_MIN);
-        assert!(
-            tight.is_ok(),
-            "a full harvest queue must not deadline-shed a tight interactive request \
-             (a backlog that outlasts the retry budget here is a cross-lane leak, not \
-             contention)"
-        );
-        drop(tight);
         let harvest_rl = RateLimit {
             limit: lane_cap(harvest),
             remaining: 0,
@@ -14837,6 +14436,7 @@ default_reasoning_effort = "always"
             ),
             Err((_, "shed_queue"))
         ));
+        harvest_counter.store(0, std::sync::atomic::Ordering::Release);
     }
 
     #[test]
@@ -15024,7 +14624,8 @@ default_reasoning_effort = "always"
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn command_send_failure_obeys_the_retry_contract() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
+        DRAINING.store(false, std::sync::atomic::Ordering::SeqCst);
         let mut st = fake_worker_state();
         let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
         drop(cmd_rx);
@@ -15641,7 +15242,7 @@ default_reasoning_effort = "always"
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn same_omitted_request_resolves_identically_on_all_four_surfaces() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let step_caps = ModelCaps {
             chat_ok: true,
             chat_temperature_default: Some(0.5),
@@ -15778,7 +15379,7 @@ default_reasoning_effort = "always"
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn same_effort_value_resolves_identically_on_every_surface() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         // effort_levels caps so the level string is worker-visible too (step35 dialect);
         // ThinkMode alone would still catch the switch half on binary templates.
         let caps = ModelCaps {
@@ -16958,7 +16559,7 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn deep_schema_fails_while_normal_decode_keeps_stepping() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let st = fake_worker_state_with_steps(64, std::time::Duration::from_millis(5));
         let normal_state = st.clone();
         let normal = tokio::spawn(async move {
@@ -17029,7 +16630,7 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn valid_response_format_preflight_preserves_generation() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let response = chat_completions(
             State(fake_worker_state()),
             axum::http::HeaderMap::new(),
@@ -17055,7 +16656,7 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn unknown_model_refuses_model_not_found_before_admission() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         // The fake worker answers ANY admitted request with "ok", so a model_not_found
         // response proves the handler refused BEFORE worker admission — and a fortiori
         // before prepaid budget reservation, which sits between (the live bug: a typo'd
@@ -17303,7 +16904,6 @@ temperature = 0.6
             "spec_tau",
             "spec_accept_by_position",
             "dual_pp",
-            "pp_wave",
             "peer_probe_bypassed",
             "peer_probe_boundary_copies",
             "peer_probe_runtime_reprobes",
@@ -17390,32 +16990,6 @@ temperature = 0.6
             body["dual_pp"]["cuda_event_spans"]["wave_a_stage0"]["mean_ms"],
             1.0
         );
-    }
-
-    #[test]
-    fn populated_pp_wave_metrics_are_operator_only() {
-        let populated = PpWaveMetricsSnapshot {
-            ticks: 11,
-            cells: 96,
-            overlaps: 37,
-        };
-        for scope in [
-            MetricsScope::CompletionDomain,
-            MetricsScope::Tenant("t:acme".into()),
-        ] {
-            let mut body = json!({});
-            insert_pp_wave_metrics(&mut body, &scope, || populated);
-            assert!(
-                body.get("pp_wave").is_none(),
-                "{scope:?} leaked PP wave topology"
-            );
-        }
-
-        let mut body = json!({});
-        insert_pp_wave_metrics(&mut body, &MetricsScope::All, || populated);
-        assert_eq!(body["pp_wave"]["ticks"], 11);
-        assert_eq!(body["pp_wave"]["cells"], 96);
-        assert_eq!(body["pp_wave"]["overlaps"], 37);
     }
 
     #[test]
@@ -17880,45 +17454,10 @@ temperature = 0.6
     /// test must not 503 a concurrently-running handler test).
     static DRAIN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// Acquire DRAIN_LOCK surviving a poisoned peer, and restore the baseline it guards.
-    ///
-    /// 2026-09-01 (accrace close): one load-flaky deadline test panicked while holding
-    /// this lock, and every later acquirer's `.unwrap()` then failed with PoisonError —
-    /// one flake became 21 reds and buried its own cause under twenty unrelated ones.
-    /// The lock guards the process-global DRAINING flag, not any invariant of the
-    /// panicked test's own data, so recovering the guard is sound as long as the flag is
-    /// put back to the "not draining" baseline every acquirer assumes; the drain tests
-    /// that want it up set it themselves AFTER acquiring. Same poison-recovery idiom as
-    /// `admission_counters_guard`. This normalization also retires the per-test
-    /// `DRAINING.store(false, ..)` resets the 2026-08-09 flake introduced — the baseline
-    /// now has one owner.
-    fn drain_lock() -> std::sync::MutexGuard<'static, ()> {
-        let guard = DRAIN_LOCK.lock().unwrap_or_else(|poisoned| {
-            // Un-latch the flag too: poison otherwise persists forever, and only call
-            // sites routed through this helper would survive it.
-            DRAIN_LOCK.clear_poison();
-            poisoned.into_inner()
-        });
-        DRAINING.store(false, std::sync::atomic::Ordering::SeqCst);
-        guard
-    }
-
-    /// Put DRAINING back down on drop — including the drop that unwinds a failed
-    /// assertion. The flag is read by every handler, INCLUDING in tests that have no
-    /// reason to hold DRAIN_LOCK: a drain test that panicked between its `store(true)`
-    /// and its reset would 503 every concurrently-running handler test until the next
-    /// `drain_lock()` acquisition normalized the flag.
-    struct DrainingRestore;
-    impl Drop for DrainingRestore {
-        fn drop(&mut self) {
-            DRAINING.store(false, std::sync::atomic::Ordering::SeqCst);
-        }
-    }
-
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn responses_carry_rate_limit_headers_and_slot_frees() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let st = fake_worker_state();
         // non-stream chat: headers present, remaining = cap - 1 (this request held
         // the only slot), slot freed after completion.
@@ -17985,7 +17524,7 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn handlers_sync_worker_truth_usage_and_cost_before_terminal_response() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let mut st = fake_worker_state();
         let mock = MockMetering::admit_all();
         st.metering = Some(mock.clone());
@@ -18066,7 +17605,7 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn completion_admission_supports_metered_blocked_and_paid_transitions() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         // The handler's admission obligations, scripted at the seam: a denial maps to
         // the 402 contract and settles a REJECT receipt; an admission (with or without
         // a reservation permit) serves and settles COMPLETE, permit threaded through to
@@ -18199,7 +17738,7 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn streaming_client_disconnect_records_partial_usage_and_cost() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let mut st = fake_worker_state_with_steps(4, std::time::Duration::from_millis(100));
         let mock = MockMetering::admit_all();
         st.metering = Some(mock.clone());
@@ -18270,11 +17809,8 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn draining_rejects_new_requests_with_503_and_retry_after() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let st = fake_worker_state();
-        // RAII, not just the trailing reset below: a panic while the flag is up would
-        // 503 every concurrently-running handler test (they read DRAINING lock-free).
-        let _down = DrainingRestore;
         DRAINING.store(true, std::sync::atomic::Ordering::SeqCst);
         // both completion routes: immediate 503 + Retry-After, no slot held.
         let resp = chat_completions(
@@ -18399,7 +17935,7 @@ temperature = 0.6
     async fn health_is_green_only_while_the_worker_is_alive() {
         // /readyz reads the process-global DRAINING flag, which the drain test toggles —
         // serialize against it or this races (measured: an interleaved run saw 503 here).
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
         let st = fake_worker_state();
         // loaded + alive: 200 ok, and the payload explains WHY (phase + heartbeat age vs the
         // threshold), so an operator reading a green never has to guess.
@@ -18461,7 +17997,8 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn readyz_peer_probe_integrity_is_present_and_advisory() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
+        DRAINING.store(false, std::sync::atomic::Ordering::SeqCst);
         let st = fake_worker_state();
 
         let ready = health_ready(State(st.clone())).await.into_response();
@@ -18510,11 +18047,11 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn liveness_failure_obeys_the_retry_contract() {
-        // drain_lock() serializes AND resets the flag: health_live returns 200 ("draining")
-        // whenever the process-global DRAINING flag is up, so any test asserting a
-        // health_live 503 races the drain tests without it (the a_wedged flake, 2026-08-09
-        // — schedule-dependent).
-        let _l = drain_lock();
+        // DRAIN_LOCK + explicit reset: health_live returns 200 ("draining") whenever the
+        // process-global DRAINING flag is up, so any test asserting a health_live 503 races
+        // the drain tests without this (the a_wedged flake, 2026-08-09 — schedule-dependent).
+        let _l = DRAIN_LOCK.lock().unwrap();
+        DRAINING.store(false, std::sync::atomic::Ordering::SeqCst);
         let st = fake_worker_state();
         st.health
             .mark_dead("worker thread panicked: retry-contract-test");
@@ -18534,7 +18071,8 @@ temperature = 0.6
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn readiness_failure_obeys_the_retry_contract() {
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
+        DRAINING.store(false, std::sync::atomic::Ordering::SeqCst);
         let st = fake_worker_state();
         st.health
             .mark_dead("worker thread panicked: retry-contract-test");
@@ -18558,12 +18096,13 @@ temperature = 0.6
         // timeout is the alarm. The worker thread may still be looping (blocked in a driver
         // call), so the heartbeat alone would never catch this — the GPU latch does.
         //
-        // drain_lock() serializes + resets (2026-08-09 flake): health_live short-circuits to
-        // 200 ("draining") on the process-global DRAINING flag, so this test's 503 assertions
+        // DRAIN_LOCK + reset (2026-08-09 flake): health_live short-circuits to 200
+        // ("draining") on the process-global DRAINING flag, so this test's 503 assertions
         // race the drain tests when tokio schedules them concurrently — it failed only in
         // full-suite runs, never solo, and the same suite on the identical commit passes or
         // fails by schedule. Same serialization the other drain-flag readers already take.
-        let _l = drain_lock();
+        let _l = DRAIN_LOCK.lock().unwrap();
+        DRAINING.store(false, std::sync::atomic::Ordering::SeqCst);
         let st = fake_worker_state();
         assert_eq!(
             health_live(State(st.clone()))
@@ -18604,7 +18143,6 @@ temperature = 0.6
         // KNOWN plan metadata populates every OR-schema field from worker truth.
         let caps = ModelCaps {
             tools_branch: true,
-            hy3: false,
             qwen_think: true,
             think_switch: true,
             chat_ok: true,
@@ -18918,7 +18456,7 @@ is_ready = true
 is_free = false
 discount_to_user = 0.1
 openrouter_slug = "qwen/qwen3.6-27b"
-datacenters = [{ country_code = "US", region = "us-east" }]
+datacenters = [{ country_code = "US", region = "N-Virginia" }]
 zdr = true
 hipaa = false
 
@@ -19682,166 +19220,5 @@ request = "0"
             {"type": "image_url", "image_url": {"url": "http://example.com/x.png"}}
         ]);
         assert!(content_to_text_vision_step(&http, &mut Vec::new()).is_err());
-    }
-}
-
-/// The `system_fingerprint` identity gates (lane/real-system-fingerprint-20260901).
-///
-/// These exist because the field's only assertion used to be `starts_with("memra-")`, which
-/// `memra-unknown` satisfies. Prod served that literal to every customer request for a
-/// deploy generation and the test suite was green the whole time.
-#[cfg(test)]
-mod build_identity_tests {
-    use super::{BUILD_GIT_SHA, BUILD_ID_NOTE, BUILD_ID_SRC, SYSTEM_FINGERPRINT, build_id};
-
-    /// The baked fingerprint a customer sees: present, shaped, and not the degraded label.
-    #[test]
-    fn baked_fingerprint_is_real_and_well_formed() {
-        assert!(!SYSTEM_FINGERPRINT.is_empty());
-        assert_ne!(SYSTEM_FINGERPRINT, "memra-unknown");
-        assert!(
-            !SYSTEM_FINGERPRINT.contains("unknown"),
-            "fingerprint {SYSTEM_FINGERPRINT:?} still carries the degraded literal"
-        );
-        assert!(
-            build_id::fingerprint_is_well_formed(SYSTEM_FINGERPRINT),
-            "fingerprint {SYSTEM_FINGERPRINT:?} is not memra-<version>-<12 hex>"
-        );
-        // The documented shape names the crate version, so a version bump is visible in the
-        // field without reading the id.
-        assert!(
-            SYSTEM_FINGERPRINT.starts_with(concat!("memra-", env!("CARGO_PKG_VERSION"), "-")),
-            "fingerprint {SYSTEM_FINGERPRINT:?} does not name this crate version"
-        );
-    }
-
-    /// Regression pin on the exact value that shipped, plus the OLD shape it replaced:
-    /// `memra-<sha>` must not validate either, or a stale-git build could pass the gate.
-    #[test]
-    fn the_shape_check_rejects_what_shipped_to_prod() {
-        assert!(!build_id::fingerprint_is_well_formed("memra-unknown"));
-        assert!(!build_id::fingerprint_is_well_formed(
-            "memra-0.123.0-unknown"
-        ));
-        // The pre-lane form: bare 12-hex git sha, no version component. Assembled rather
-        // than written out because `tools/public-boundary-policy.toml`'s `live_fingerprint`
-        // rule treats a literal `memra-<12 hex>` as deployment identity leaking into the
-        // public repo, and it is right to: that shape used to BE a serving build's id.
-        let old_form = format!("memra-{}", "0".repeat(12));
-        assert!(!build_id::fingerprint_is_well_formed(&old_form));
-        assert!(!build_id::fingerprint_is_well_formed(""));
-        assert!(!build_id::fingerprint_is_well_formed("memra-"));
-        assert!(!build_id::fingerprint_is_well_formed("memra-0.123.0-"));
-        // Wrong id width, and uppercase hex (the renderer emits lowercase).
-        assert!(!build_id::fingerprint_is_well_formed("memra-0.123.0-abc"));
-        assert!(!build_id::fingerprint_is_well_formed(
-            "memra-0.123.0-ABCDEF012345"
-        ));
-        assert!(!build_id::fingerprint_is_well_formed(
-            "memra-0.123.0-zzzzzzzzzzzz"
-        ));
-        // ...and accepts the real shape.
-        assert!(build_id::fingerprint_is_well_formed(
-            "memra-0.123.0-4b1f9c02d7a3"
-        ));
-    }
-
-    /// The identity is a FUNCTION OF THE SOURCE, so two builds of the same tree agree.
-    ///
-    /// A test cannot run cargo twice, so it does the equivalent and stronger thing: it
-    /// re-derives the id from the working tree with the same implementation `build.rs`
-    /// used, in a different process, at a different time, from a different working
-    /// directory. If the baked id were a function of the build ENVIRONMENT (which a git
-    /// lookup is) this would not match.
-    #[test]
-    fn build_id_is_rederivable_from_the_source_tree() {
-        let root = build_id::workspace_root(env!("CARGO_MANIFEST_DIR"));
-        let scan = root.as_deref().and_then(build_id::content_id);
-        match scan {
-            Some(scan) => {
-                assert_eq!(
-                    BUILD_ID_SRC,
-                    build_id::BUILD_ID_SRC_TREE,
-                    "the source tree is readable, so the baked id must come from it"
-                );
-                assert!(BUILD_ID_NOTE.is_empty(), "note set on a non-degraded build");
-                let expected =
-                    format!(concat!("memra-", env!("CARGO_PKG_VERSION"), "-{}"), scan.id);
-                assert_eq!(
-                    SYSTEM_FINGERPRINT,
-                    expected,
-                    "baked fingerprint disagrees with a re-derivation over {} files: the id \
-                     is not a pure function of the source tree, or the build script did not \
-                     re-run after an edit",
-                    scan.files.len()
-                );
-                assert!(scan.files.len() > 100, "suspiciously small hashed file set");
-            }
-            None => {
-                // Not a pass by omission: an unreadable tree MUST have produced the
-                // degraded marker and a stated reason, and the fingerprint must still be
-                // shaped (asserted by baked_fingerprint_is_real_and_well_formed).
-                assert_eq!(BUILD_ID_SRC, build_id::BUILD_ID_SRC_DEGRADED);
-                assert!(
-                    !BUILD_ID_NOTE.is_empty(),
-                    "a degraded build must state its reason so the boot WARN can print it"
-                );
-            }
-        }
-    }
-
-    /// The id is not the git sha, in either direction: the identity must not be history, and
-    /// the sha must stay available as a separate extra field.
-    #[test]
-    fn identity_is_independent_of_git_history() {
-        let id = SYSTEM_FINGERPRINT.rsplit_once('-').unwrap().1;
-        assert_ne!(
-            id, BUILD_GIT_SHA,
-            "the content id equals the git sha; the identity must not be history, it has to \
-             survive a rewrite that changes every commit"
-        );
-        assert!(
-            !SYSTEM_FINGERPRINT.contains(BUILD_GIT_SHA),
-            "the git sha leaked into the customer-visible fingerprint {SYSTEM_FINGERPRINT:?}"
-        );
-        // The extra field is still populated: either a repo was visible to this build, or it
-        // honestly reads `unknown`. Never empty, and never the identity.
-        assert!(!BUILD_GIT_SHA.is_empty());
-    }
-
-    /// Determinism of the digest itself: same bytes in, same id out, and any change in
-    /// content, path, or ordering-relevant input changes it.
-    #[test]
-    fn content_digest_is_deterministic_and_change_sensitive() {
-        let a = build_id::degraded_build_id("memra-server", "0.123.0");
-        let b = build_id::degraded_build_id("memra-server", "0.123.0");
-        assert_eq!(a, b, "the digest is not deterministic");
-        assert_eq!(a.len(), build_id::BUILD_ID_HEX);
-        assert!(
-            a.chars()
-                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
-        );
-        assert_ne!(a, build_id::degraded_build_id("memra-server", "0.123.1"));
-        assert_ne!(a, build_id::degraded_build_id("memra-serve", "r0.123.0"));
-        // Fixed width even when the leading nibbles are zero.
-        assert_eq!(build_id::render_build_id(0).len(), build_id::BUILD_ID_HEX);
-        assert_eq!(
-            build_id::render_build_id(0),
-            "0".repeat(build_id::BUILD_ID_HEX)
-        );
-    }
-
-    /// Two scans of the same unchanged tree in one process agree: the in-process half of
-    /// "stable across two builds of the same source".
-    #[test]
-    fn two_scans_of_one_tree_agree() {
-        let Some(root) = build_id::workspace_root(env!("CARGO_MANIFEST_DIR")) else {
-            assert_eq!(BUILD_ID_SRC, build_id::BUILD_ID_SRC_DEGRADED);
-            return;
-        };
-        let first = build_id::content_id(&root).expect("first scan");
-        let second = build_id::content_id(&root).expect("second scan");
-        assert_eq!(first.id, second.id);
-        assert_eq!(first.files.len(), second.files.len());
     }
 }

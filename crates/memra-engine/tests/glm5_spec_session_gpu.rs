@@ -1055,7 +1055,7 @@ fn gpu_verify_ws_bursts_byte_identical_with_alloc_receipt() {
     // and an unset arm would silently run the workspace twice — the MLA-TC flip lesson).
     // SAFETY: serialized behind gpu_guard.
     unsafe { std::env::set_var("MEMRA_GLM5_VERIFY_WS", "0") };
-    let hits0 = memra_engine::verify_ws_hits();
+    let hits0 = memra_engine::glm5_verify_ws_hits();
     let a0 = alloc_calls();
     let mut off_sess = h
         .model
@@ -1064,7 +1064,7 @@ fn gpu_verify_ws_bursts_byte_identical_with_alloc_receipt() {
     let (off_tape, off_drafted, ..) = drive_bursts(&h, &mut off_sess, &prompt, k, max_new, 5, &[]);
     let allocs_off = alloc_calls() - a0;
     assert_eq!(
-        memra_engine::verify_ws_hits(),
+        memra_engine::glm5_verify_ws_hits(),
         hits0,
         "flag-off arm drew from the verify workspace pool"
     );
@@ -1080,7 +1080,7 @@ fn gpu_verify_ws_bursts_byte_identical_with_alloc_receipt() {
         .expect("on-arm session");
     let (on_tape, ..) = drive_bursts(&h, &mut on_sess, &prompt, k, max_new, 5, &[]);
     let allocs_on = alloc_calls() - a1;
-    let hits = memra_engine::verify_ws_hits() - hits0;
+    let hits = memra_engine::glm5_verify_ws_hits() - hits0;
     // SAFETY: serialized behind gpu_guard.
     unsafe { std::env::remove_var("MEMRA_GLM5_VERIFY_WS") };
 

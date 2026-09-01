@@ -17,9 +17,6 @@ pub struct ModelPlan {
     pub multimodal: Option<VisionTokenInjectionPlan>,
     pub layers: Vec<LayerPlan>,
     pub output_norm: NormPlan,
-    /// qwen4_exp: the exit downmix replacing a final norm module (`Some` ⇒ the model has NO
-    /// `model.norm` tensor; the mixer's grouped hc_norm normalizes at exit).
-    pub exit_mixer: Option<GatedResidualMixerPlan>,
     pub logits: Vec<LogitsTransform>,
     pub mtp_blocks: Vec<MtpBlockPlan>,
     pub drafter: Option<DrafterPlan>,
@@ -147,16 +144,6 @@ pub struct LayerPlan {
     pub mlp: MlpPlan,
     pub residual: ResidualTopology,
     pub state: StatePlan,
-    /// qwen4_exp QSA: a micro-block top-k selector OVERLAYING a full-attention mixer (the
-    /// reference form is dense attention under the combined causal∧index mask — SEMANTICS.md
-    /// §QSA indexer). `None` everywhere else. Carried beside `attention` rather than as an
-    /// AttentionPlan variant because the mixer IS full attention; only the visibility mask
-    /// is the new program.
-    pub sparse_overlay: Option<MicroBlockIndexPlan>,
-    /// qwen4_exp PLE n-gram embedding block, added to the WIDE residual stream before the
-    /// attention read gate. Present only on the config-declared linear-attention layer(s)
-    /// (artifact: checkpoint layer 1). `None` everywhere else.
-    pub ple: Option<PleEmbeddingPlan>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -243,64 +230,6 @@ pub enum RopeFactors {
     },
 }
 
-/// transformers 5.14.1 `_compute_yarn_parameters` twin (truncate=True arm), expressed as
-/// per-pair FREQUENCY DIVISORS over the rotary dims: the plain rope computes
-/// `freq_j = base^(-2j/dim)`; under YaRN the effective frequency is `freq_j / divisor_j`,
-/// `divisor_j ∈ [1, factor]` (1 = pure extrapolation on high-frequency dims, `factor` =
-/// pure interpolation on low-frequency dims, linear-ramp mix across the correction range).
-/// This is the same divisor convention as `RopeFactors::Checkpoint` freq factors and the
-/// `rope_neox_ff` kernels, so every consumer shares one table shape.
-///
-/// `factor <= 1.0` returns EXACT ones — the identity arm (yarn-with-factor-1.0 must be
-/// byte-identical to the unscaled rope; an fp ramp mix could be 1-ulp off 1.0).
-/// Pinned against the real transformers on the fleet box:
-/// research/qwen4exp-bringup-20260829/yarn/transformers-yarn-params.tsv.
-pub fn yarn_frequency_divisors(
-    dim: u32,
-    base: f32,
-    factor: f32,
-    original_context: u32,
-    beta_fast: f32,
-    beta_slow: f32,
-) -> Vec<f32> {
-    let half = (dim / 2) as usize;
-    if factor <= 1.0 {
-        return vec![1.0f32; half];
-    }
-    let dim_f = dim as f64;
-    let base_f = base as f64;
-    let factor_f = factor as f64;
-    // find_correction_dim in f64 (python math.log), floor/ceil (truncate=True), clamped.
-    let fcd = |num_rotations: f64| -> f64 {
-        dim_f * (original_context as f64 / (num_rotations * 2.0 * std::f64::consts::PI)).ln()
-            / (2.0 * base_f.ln())
-    };
-    let low = fcd(beta_fast as f64).floor().max(0.0);
-    let high = fcd(beta_slow as f64).ceil().min(dim_f - 1.0);
-    let (low, high) = (low, if low == high { high + 0.001 } else { high });
-    (0..half)
-        .map(|j| {
-            let pos_freq = base_f.powf(2.0 * j as f64 / dim_f);
-            let extra = 1.0 / pos_freq;
-            let inter = 1.0 / (factor_f * pos_freq);
-            let ramp = ((j as f64 - low) / (high - low)).clamp(0.0, 1.0);
-            let extrapolation_factor = 1.0 - ramp;
-            let inv = inter * (1.0 - extrapolation_factor) + extra * extrapolation_factor;
-            (extra / inv) as f32
-        })
-        .collect()
-}
-
-/// transformers `get_mscale(factor)` — the derived YaRN attention factor multiplied into
-/// cos/sin (`attention_scaling`): `0.1 * ln(factor) + 1`, exactly 1.0 for factor <= 1.
-pub fn yarn_attention_factor(factor: f32) -> f32 {
-    if factor <= 1.0 {
-        1.0
-    } else {
-        (0.1 * (factor as f64).ln() + 1.0) as f32
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TensorPresence {
     Absent,
@@ -374,58 +303,6 @@ pub struct GatedDeltaNetPlan {
     pub key_head_dim: u32,
     pub value_head_dim: u32,
     pub conv_kernel: u32,
-    /// Activation applied to the z-gate inside the gated output RMSNorm. qwen3_5 = Silu;
-    /// qwen4_exp = Sigmoid (config `output_gate_type` — the ONE numeric divergence from the
-    /// qwen3_5 GDN program, SEMANTICS.md §GDN; do not reuse 27B pinned outputs across it).
-    pub gate_activation: GdnGateActivation,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GdnGateActivation {
-    Silu,
-    Sigmoid,
-}
-
-/// qwen4_exp QSA micro-block indexer (self_attn.indexer.*) — a visibility-mask selector on a
-/// full-attention layer. Reference semantics (SEMANTICS.md §QSA indexer, transformers
-/// modular_qwen4_exp.py): fused `index_qk_proj` [(query_heads+kv_heads)*head_dim, hidden]
-/// splits into per-head q (RMSNorm(head_dim) then MAIN partial rope over `rope_dimensions`)
-/// and ONE shared key cached RAW (pre-norm, pre-rope). Per query: complete blocks of
-/// `block_size` visible tokens are fp32-mean pooled -> k_layernorm -> rope at the block-start
-/// position; score(block) = Σ_h relu(q_h · k) / sqrt(head_dim) in fp32; top `budget_blocks`
-/// blocks stay visible plus the incomplete tail block (always visible), so max selected =
-/// budget_tokens + block_size − 1.
-// VERIFY: torch.topk tie order is impl-defined — the kernel arm must pin a deterministic tie
-// rule and gate it against the reference on tie-free fixtures (dsv4-lane lesson).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MicroBlockIndexPlan {
-    pub query_heads: u32,     // 4
-    pub kv_heads: u32,        // 1 (MQA shared key head)
-    pub head_dim: u32,        // 128 (indexer key cache cost: kv_heads*head_dim raw dims/token)
-    pub rope_dimensions: u32, // 64 (main partial-rotary width, applied to the index heads too)
-    pub block_size: u32,      // 4 (indexer_compress_ratio)
-    pub budget_blocks: u32,   // 512
-    pub budget_tokens: u32,   // 2048 (= budget_blocks * block_size)
-}
-
-/// qwen4_exp per-layer n-gram / PLE embedding block (SEMANTICS.md §PLE). N-gram ids hash the
-/// token history through checkpoint I64 buffers (layer_multipliers [max_ngram],
-/// ngram_heads_offsets/vocab_sizes [ngram_heads] — per-head vocabs are consecutive primes,
-/// LOADED never re-derived); each head gathers one `head_embed_dim` row; the 16-row gather is
-/// keyed against the wide stream (signed-sqrt sigmoid gates per stream) and refined by a
-/// depthwise causal conv (kernel `conv_kernel`, dilation 3, left-pad 9, own cache slot).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PleEmbeddingPlan {
-    pub ngram_heads: u32,    // 16 = heads_per_ngram * (ngram_size - 1)
-    pub head_embed_dim: u32, // 160 (census: ngram_embedding shard [2500012, 160])
-    pub vocab_shards: u32,   // 128 (split_ngram_parts; shards concatenate on dim 0)
-    pub embed_dim: u32,      // 2560 (= ngram_heads * head_embed_dim = value_proj in/out)
-    pub conv_kernel: u32,    // 4
-    pub max_ngram: u32,      // 3 (bigram + trigram histories)
-    /// Token history pads with EOS and n-gram segments reset at it (SEMANTICS.md §PLE) —
-    /// the executor needs the id, so the plan carries it (248044 on the artifact; a list
-    /// config takes its first entry, modular L621). Parse enforces presence.
-    pub eos_token_id: u32,
 }
 
 /// Kimi Delta Attention (glm5_next linear-attn layers). Deliberately NOT
@@ -538,26 +415,6 @@ pub enum ResidualTopology {
         /// same Sinkhorn program either way.
         collapse: HcCollapse,
     },
-    /// qwen4_exp 4-branch gated residual (attn_/mlp_hyper_connection.*): the residual stream
-    /// is `streams` copies of hidden (10240 wide); each sublayer READS a 2560 mix through a
-    /// grouped-RMSNorm + rank-`bottleneck_rank` sigmoid mix (input_mix_weight_down/_up) and
-    /// WRITES back through per-stream scalar gates (block_inject_weight [streams, wide]).
-    /// Distinct program from the Sinkhorn `HyperConnections` above (no permutation basis, no
-    /// Sinkhorn iterations) — SEMANTICS.md §Gated residual.
-    GatedResidual {
-        streams: u32,         // 4 (hc_count)
-        bottleneck_rank: u32, // 320 (hc_lowrank)
-    },
-}
-
-/// qwen4_exp trunk/MTP exit downmix: `hyper_connection_mixer` (same tensor shapes as one
-/// sublayer read gate) collapses the wide stream to hidden at model exit. There is NO
-/// separate final norm module — the mixer's grouped hc_norm is the exit normalization
-/// (SEMANTICS.md §Layer stack; census has no `model.language_model.norm`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GatedResidualMixerPlan {
-    pub streams: u32,
-    pub bottleneck_rank: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -637,15 +494,7 @@ pub struct MtpInputPlan {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MtpFusionPlan {
-    /// qwen35-class: `eh_proj [hidden, 2*hidden]` over concat(norm(embed), norm(hidden)).
     ConcatenateProjection,
-    /// qwen4_exp (SEMANTICS.md §MTP, from the SGLang day-0 implementation): TWO separate
-    /// projections instead of one concat —
-    /// `fc_embedding(zero-centered-RMSNorm_hidden(embed(tok)))` broadcast-added over streams
-    /// to per-stream `fc_hidden(grouped-RMSNorm_wide(trunk wide hidden))`, yielding the WIDE
-    /// draft input. The post-layer wide state is the multi-step (K>1) carrier; exit runs
-    /// through the MTP's own hyper_connection_mixer then the SHARED target lm_head.
-    SeparateProjections,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -756,16 +605,9 @@ impl ModelPlan {
                 depth,
                 layer: compile_layer(cfg, index, true, norm)?,
                 input: MtpInputPlan {
-                    // qwen4_exp hidden_norm covers the WIDE stream (pre_fc_norm_hidden
-                    // [10240] measured) and fuses through two separate projections; the
-                    // qwen35 class norms hidden [2560] into one concat eh_proj.
                     embedding_norm: norm,
                     hidden_norm: norm,
-                    fusion: if cfg.qwen4exp.is_some() {
-                        MtpFusionPlan::SeparateProjections
-                    } else {
-                        MtpFusionPlan::ConcatenateProjection
-                    },
+                    fusion: MtpFusionPlan::ConcatenateProjection,
                 },
                 output: MtpOutputPlan {
                     norm: MtpTensorPolicy::PreferPrivateThenModel,
@@ -873,10 +715,6 @@ impl ModelPlan {
             partition_boundaries: (1..trunk_layers as usize).collect(),
             layers,
             output_norm: norm,
-            exit_mixer: cfg.qwen4exp.as_ref().map(|q| GatedResidualMixerPlan {
-                streams: q.hc_count,
-                bottleneck_rank: q.hc_lowrank,
-            }),
             logits,
             mtp_blocks,
             drafter: None,
@@ -941,12 +779,7 @@ impl ModelPlan {
         if self.mtp_blocks.is_empty() && self.drafter.is_none() {
             return None;
         }
-        // qwen4_exp draft exit runs the MTP's OWN hyper_connection_mixer, not a final norm.
-        if self.exit_mixer.is_some() {
-            operations.push(OperationKind::GatedResidualMixer);
-        } else {
-            operations.push(OperationKind::RmsNorm);
-        }
+        operations.push(OperationKind::RmsNorm);
         for transform in &self.logits {
             operations.push(match transform {
                 LogitsTransform::Softcap(_) => OperationKind::LogitsSoftcap,
@@ -1006,13 +839,7 @@ impl ModelPlan {
                 operations.push(OperationKind::DsparkConfidenceHead);
             }
         }
-        // qwen4_exp exits through the global mixer (grouped hc_norm inside); every other
-        // arch keeps the final RmsNorm.
-        if self.exit_mixer.is_some() {
-            operations.push(OperationKind::GatedResidualMixer);
-        } else {
-            operations.push(OperationKind::RmsNorm);
-        }
+        operations.push(OperationKind::RmsNorm);
         for transform in &self.logits {
             operations.push(match transform {
                 LogitsTransform::Softcap(_) => OperationKind::LogitsSoftcap,
@@ -1293,13 +1120,7 @@ fn derive_capabilities(
 
 impl LayerPlan {
     fn operations(&self, operations: &mut Vec<OperationKind>) {
-        if self.ple.is_some() {
-            operations.push(OperationKind::PleNgramEmbedding);
-        }
         operations.push(OperationKind::RmsNorm);
-        if self.sparse_overlay.is_some() {
-            operations.push(OperationKind::MicroBlockSparseIndex);
-        }
         match &self.attention {
             AttentionPlan::Full(attention) => {
                 operations.push(OperationKind::FullAttention);
@@ -1364,7 +1185,6 @@ impl LayerPlan {
                 parallel_moe: None, ..
             } => OperationKind::GemmaResidual,
             ResidualTopology::HyperConnections { .. } => OperationKind::HyperConnections,
-            ResidualTopology::GatedResidual { .. } => OperationKind::GatedResidualConnections,
         });
     }
 }
@@ -1405,36 +1225,6 @@ fn compile_layer(
     norm: NormPlan,
 ) -> Result<LayerPlan, PlanCompileError> {
     let (attention, state) = compile_attention(cfg, index, mtp)?;
-    // qwen4_exp: EVERY full-attention layer carries the micro-block indexer — the 12 trunk
-    // QSA layers and the MTP block (SGLang runs the draft layer as QSA with its own indexer;
-    // census: mtp.layers.0.self_attn.indexer.index_qk_proj). GDN layers carry none.
-    let sparse_overlay = cfg.qwen4exp.as_ref().and_then(|q| {
-        matches!(&attention, AttentionPlan::Full(_)).then(|| MicroBlockIndexPlan {
-            query_heads: q.indexer_n_heads,
-            kv_heads: q.indexer_kv_heads,
-            head_dim: q.indexer_head_dim,
-            rope_dimensions: cfg.rope_dim_count,
-            block_size: q.indexer_compress_ratio,
-            budget_blocks: q.indexer_budget_blocks(),
-            budget_tokens: q.indexer_budget,
-        })
-    });
-    // PLE sits on its config-declared trunk layer only (never the MTP block:
-    // ple_layer_ids=[] in the SGLang MTP config — SEMANTICS.md §MTP).
-    let ple = cfg.qwen4exp.as_ref().and_then(|q| {
-        (!mtp && q.has_ple(index)).then(|| PleEmbeddingPlan {
-            ngram_heads: q.ngram_heads(),
-            head_embed_dim: q.ngram_head_embed_dim(),
-            vocab_shards: q.split_ngram_parts,
-            embed_dim: q.ple_embed_dim,
-            conv_kernel: q.ple_conv_kernel_size,
-            max_ngram: q.ngram_size,
-            // parse asserts presence whenever ple_layer_ids is non-empty
-            eos_token_id: q
-                .eos_token_id
-                .expect("qwen4_exp parse guarantees eos_token_id when PLE layers exist"),
-        })
-    });
     Ok(LayerPlan {
         index,
         pre_attention_norm: norm,
@@ -1449,8 +1239,6 @@ fn compile_layer(
             residual_topology(cfg)
         },
         state,
-        sparse_overlay,
-        ple,
     })
 }
 
@@ -1657,12 +1445,6 @@ fn compile_attention(
             key_head_dim: ssm.state_size,
             value_head_dim,
             conv_kernel: ssm.conv_kernel,
-            // qwen4_exp declares the z-gate activation ("sigmoid" on the artifact); the
-            // qwen3_5 family and every other GDN arch here is the silu program.
-            gate_activation: match cfg.qwen4exp.as_ref().map(|q| q.output_gate_type.as_str()) {
-                Some("sigmoid") => GdnGateActivation::Sigmoid,
-                _ => GdnGateActivation::Silu,
-            },
         };
         return Ok((
             AttentionPlan::GatedDeltaNet(attention),
@@ -1808,19 +1590,7 @@ fn attention_geometry(
         rope: RopePlan {
             dimensions: geometry.n_rot,
             base: geometry.rope_base,
-            // YaRN from the config (qwen4_exp long-context lane: ModelConfig::rope_yarn is
-            // set by that family's HF arm only). Applies to the trunk QSA layers AND the
-            // MTP draft (same generic tail, mtp=true) — the draft shares the main rotary
-            // semantics (SEMANTICS.md §Rope/§MTP), and the QSA indexer consumes the same
-            // cos/sin, so one plan field feeds all three consumers.
-            factors: if let Some(yarn) = cfg.rope_yarn.as_ref() {
-                RopeFactors::Yarn {
-                    factor: yarn.factor,
-                    original_context: yarn.original_context,
-                    beta_fast: yarn.beta_fast,
-                    beta_slow: yarn.beta_slow,
-                }
-            } else if geometry.rope_factors {
+            factors: if geometry.rope_factors {
                 RopeFactors::Checkpoint
             } else {
                 RopeFactors::None
@@ -1904,10 +1674,8 @@ fn compile_mlp(cfg: &ModelConfig, index: u32, mtp: bool) -> Result<MlpPlan, Plan
         expert_intermediate_size: moe.expert_ff_length,
         router: router(cfg, index),
         shared: (shared_intermediate_size > 0).then_some(SharedMlpPlan {
-            // qwen4_exp: shared expert output scaled by sigmoid(shared_expert_gate(x))
-            // (SEMANTICS.md §MoE — the Qwen3NextSparseMoeBlock convention qwen35moe rides).
-            gated: matches!(cfg.arch, Arch::Qwen35Moe | Arch::Qwen4Exp),
             intermediate_size: shared_intermediate_size,
+            gated: matches!(cfg.arch, Arch::Qwen35Moe),
         }),
         activation: activation(cfg, index, true),
     }))
@@ -2016,12 +1784,6 @@ fn activation(cfg: &ModelConfig, index: u32, routed: bool) -> ActivationPlan {
 }
 
 fn residual_topology(cfg: &ModelConfig) -> ResidualTopology {
-    if let Some(q) = cfg.qwen4exp.as_ref() {
-        return ResidualTopology::GatedResidual {
-            streams: q.hc_count,
-            bottleneck_rank: q.hc_lowrank,
-        };
-    }
     if let Some(dsv4) = cfg.dsv4.as_ref() {
         return ResidualTopology::HyperConnections {
             streams: dsv4.hc_mult,
@@ -2065,9 +1827,7 @@ fn residual_topology(cfg: &ModelConfig) -> ResidualTopology {
 }
 
 fn norm_weight_transform(cfg: &ModelConfig) -> WeightTransform {
-    // qwen4_exp keeps the family (1+w)-centered RMSNorm convention (zero-initialized norm
-    // weights, SEMANTICS.md §Gated residual — _init_weights zero-inits RMSNorm).
-    if matches!(cfg.arch, Arch::Qwen35 | Arch::Qwen35Moe | Arch::Qwen4Exp)
+    if matches!(cfg.arch, Arch::Qwen35 | Arch::Qwen35Moe)
         || cfg.m3.as_ref().is_some_and(|m3| m3.use_gemma_norm)
     {
         WeightTransform::AddOne
@@ -2113,8 +1873,6 @@ pub enum OperationKind {
     KvCompressor,
     SparseIndex,
     SharedSparseIndex,
-    /// qwen4_exp QSA micro-block top-k mask overlay — its own program, NOT dsv4's SparseIndex.
-    MicroBlockSparseIndex,
     GatedDeltaNet,
     KimiDeltaNet,
     FusedAttentionGate,
@@ -2136,12 +1894,6 @@ pub enum OperationKind {
     GemmaResidual,
     GemmaParallelMoeResidual,
     HyperConnections,
-    /// qwen4_exp 4-branch gated residual (read/write gates) — NOT the Sinkhorn program.
-    GatedResidualConnections,
-    /// qwen4_exp exit downmix (global hyper_connection_mixer; replaces the final RmsNorm).
-    GatedResidualMixer,
-    /// qwen4_exp PLE n-gram embedding block on its declared layer(s).
-    PleNgramEmbedding,
     KvState,
     SlidingKvState,
     RecurrentState,
@@ -2297,243 +2049,6 @@ mod tests {
             AttentionPlan::Full(_)
         ));
         assert_eq!(plan.output_norm.weight_transform, WeightTransform::AddOne);
-    }
-
-    #[test]
-    // excessive_precision: the literals quote the banked transformers receipt digits verbatim.
-    #[allow(clippy::excessive_precision)]
-    fn yarn_divisors_match_the_banked_transformers_receipt() {
-        // Pinned against transformers 5.14.1 `_compute_yarn_parameters` run on the fleet
-        // box (research/qwen4exp-bringup-20260829/yarn/transformers-yarn-params.tsv).
-        // Real 1M-target shape: dim 64, theta 1e7, factor 1,000,000/262,144, orig 262144.
-        let div = yarn_frequency_divisors(64, 1.0e7, 3.814697265625, 262_144, 32.0, 1.0);
-        assert_eq!(div.len(), 32);
-        // Correction range low=14 high=22: pure extrapolation (1.0) through j=14.
-        for (j, d) in div.iter().enumerate().take(15) {
-            assert_eq!(*d, 1.0, "j={j} must be pure extrapolation");
-        }
-        let expect = [
-            (15, 1.101603031f32),
-            (16, 1.226187348),
-            (17, 1.382544518),
-            (18, 1.584605217),
-            (19, 1.855838418),
-            (23, 3.814697504),
-            (27, 3.814697266),
-            (31, 3.814697266),
-        ];
-        for (j, want) in expect {
-            let got = div[j];
-            let rel = (got - want).abs() / want;
-            assert!(rel < 5e-6, "j={j}: divisor {got} vs transformers {want}");
-        }
-        let mscale = yarn_attention_factor(3.814697265625);
-        let rel = (mscale - 1.133_886_1).abs() / 1.133_886_1;
-        assert!(
-            rel < 1e-6,
-            "attention factor {mscale} vs 1.1338861307885257"
-        );
-
-        // Tiny-gate shape (dim 4, theta 1e4, factor 2, orig 8): low=0 high=1 ->
-        // j=0 extrapolation, j=1 interpolation; receipt rows [1.0, 2.0].
-        let tiny = yarn_frequency_divisors(4, 1.0e4, 2.0, 8, 32.0, 1.0);
-        assert_eq!(tiny.len(), 2);
-        assert_eq!(tiny[0], 1.0);
-        assert!((tiny[1] - 2.0).abs() < 1e-6);
-        let tiny_mscale = yarn_attention_factor(2.0);
-        assert!((tiny_mscale - 1.069_314_7).abs() < 1e-6);
-
-        // factor 1.0 = the identity arm: EXACT ones and EXACT 1.0 mscale, by construction
-        // (the byte-identity gate depends on it).
-        let ones = yarn_frequency_divisors(64, 1.0e7, 1.0, 262_144, 32.0, 1.0);
-        assert!(ones.iter().all(|&d| d == 1.0));
-        assert_eq!(yarn_attention_factor(1.0), 1.0);
-    }
-
-    #[test]
-    // excessive_precision: 3.814697265625 is the artifact's exact yarn factor (1,000,000/262,144).
-    #[allow(clippy::excessive_precision)]
-    fn compiles_qwen4exp_yarn_rope_from_config() {
-        // The 1M override shape: rope_type yarn + factor + original inside rope_parameters
-        // (the transformers 5.x spelling this artifact uses).
-        let json = crate::config::hf_tests::qwen4exp_config_json().replace(
-            "\"rope_type\": \"default\"",
-            "\"rope_type\": \"yarn\", \"factor\": 3.814697265625, \
-             \"original_max_position_embeddings\": 262144",
-        );
-        assert_ne!(json, crate::config::hf_tests::qwen4exp_config_json());
-        let cfg = config(&json);
-        let yarn = RopeFactors::Yarn {
-            factor: 3.814697265625,
-            original_context: 262_144,
-            beta_fast: 32.0,
-            beta_slow: 1.0,
-        };
-        let plan = ModelPlan::compile(&cfg).unwrap();
-        // Every trunk QSA layer and the MTP draft carry the yarn factors; GDN layers have
-        // no rope plan to carry.
-        for layer in &plan.layers {
-            if let AttentionPlan::Full(attention) = &layer.attention {
-                assert_eq!(attention.rope.factors, yarn, "layer {}", layer.index);
-            }
-        }
-        let mtp = &plan.mtp_blocks[0];
-        let AttentionPlan::Full(attention) = &mtp.layer.attention else {
-            panic!("MTP block must be full attention");
-        };
-        assert_eq!(attention.rope.factors, yarn, "MTP draft");
-
-        // The shipped config (rope_type "default") stays RopeFactors::None — the yarn arm
-        // must never engage on the untouched artifact.
-        let base_plan =
-            ModelPlan::compile(&config(&crate::config::hf_tests::qwen4exp_config_json())).unwrap();
-        for layer in &base_plan.layers {
-            if let AttentionPlan::Full(attention) = &layer.attention {
-                assert_eq!(attention.rope.factors, RopeFactors::None);
-            }
-        }
-    }
-
-    #[test]
-    fn compiles_qwen4exp_qsa_gdn_ple_gated_residual_and_mtp() {
-        let cfg = config(&crate::config::hf_tests::qwen4exp_config_json());
-        let plan = ModelPlan::compile(&cfg).unwrap();
-        assert_eq!(plan.layers.len(), 48);
-        assert_eq!(plan.mtp_blocks.len(), 1);
-
-        // GDN layers ride the qwen3_5 program with the ONE declared divergence: sigmoid gate.
-        let AttentionPlan::GatedDeltaNet(gdn) = &plan.layers[0].attention else {
-            panic!("layer 0 must be GDN");
-        };
-        assert_eq!(
-            (
-                gdn.key_heads,
-                gdn.value_heads,
-                gdn.key_head_dim,
-                gdn.value_head_dim
-            ),
-            (16, 48, 128, 128)
-        );
-        assert_eq!(gdn.conv_kernel, 4);
-        assert_eq!(gdn.gate_activation, GdnGateActivation::Sigmoid);
-        assert!(plan.layers[0].sparse_overlay.is_none());
-
-        // QSA = full attention + micro-block overlay, never dsv4's SparseIndex program.
-        let qsa = &plan.layers[3];
-        let AttentionPlan::Full(attention) = &qsa.attention else {
-            panic!("layer 3 must be full attention");
-        };
-        assert_eq!(
-            attention.output_gate,
-            crate::config::AttentionGateKind::FusedQ
-        );
-        assert_eq!(attention.rope.dimensions, 64);
-        assert_eq!(attention.rope.base, 10_000_000.0);
-        let overlay = qsa.sparse_overlay.expect("QSA overlay");
-        assert_eq!(
-            overlay,
-            MicroBlockIndexPlan {
-                query_heads: 4,
-                kv_heads: 1,
-                head_dim: 128,
-                rope_dimensions: 64,
-                block_size: 4,
-                budget_blocks: 512,
-                budget_tokens: 2048,
-            }
-        );
-        assert_eq!(
-            qsa.state,
-            StatePlan::KvCache {
-                key_width: 512,
-                value_width: 512
-            }
-        );
-
-        // PLE on checkpoint layer 1 ONLY (config [2] is one-indexed).
-        let ple = plan.layers[1].ple.expect("PLE on layer 1");
-        assert_eq!(
-            ple,
-            PleEmbeddingPlan {
-                ngram_heads: 16,
-                head_embed_dim: 160,
-                vocab_shards: 128,
-                embed_dim: 2560,
-                conv_kernel: 4,
-                max_ngram: 3,
-                eos_token_id: 248_044,
-            }
-        );
-        assert!(plan.layers[2].ple.is_none());
-
-        // 4-branch gated residual everywhere + the global exit mixer (no final norm module).
-        assert_eq!(
-            plan.layers[0].residual,
-            ResidualTopology::GatedResidual {
-                streams: 4,
-                bottleneck_rank: 320
-            }
-        );
-        assert_eq!(
-            plan.exit_mixer,
-            Some(GatedResidualMixerPlan {
-                streams: 4,
-                bottleneck_rank: 320
-            })
-        );
-
-        // MoE: softmax router (Qwen3NextTopKRouter — NOT sigmoid), gated shared expert.
-        let MlpPlan::Moe(moe) = &plan.layers[0].mlp else {
-            panic!("every layer is MoE");
-        };
-        assert_eq!(moe.router, RouterPlan::Softmax);
-        assert_eq!((moe.expert_count, moe.experts_per_token), (512, 10));
-        assert_eq!(moe.expert_intermediate_size, 640);
-        assert_eq!(
-            moe.shared,
-            Some(SharedMlpPlan {
-                intermediate_size: 640,
-                gated: true
-            })
-        );
-
-        // MTP: full-attn QSA block with its own overlay, TWO separate fusion projections.
-        let mtp = &plan.mtp_blocks[0];
-        assert!(matches!(mtp.layer.attention, AttentionPlan::Full(_)));
-        assert!(mtp.layer.sparse_overlay.is_some());
-        assert!(mtp.layer.ple.is_none());
-        assert_eq!(mtp.input.fusion, MtpFusionPlan::SeparateProjections);
-
-        // (1+w)-centered RMSNorm family convention.
-        assert_eq!(plan.output_norm.weight_transform, WeightTransform::AddOne);
-
-        let operations = plan.operations();
-        for operation in [
-            OperationKind::GatedDeltaNet,
-            OperationKind::FullAttention,
-            OperationKind::FusedAttentionGate,
-            OperationKind::MicroBlockSparseIndex,
-            OperationKind::PleNgramEmbedding,
-            OperationKind::GatedResidualConnections,
-            OperationKind::GatedResidualMixer,
-            OperationKind::MoeMlp,
-            OperationKind::SoftmaxRouter,
-            OperationKind::SharedMlp,
-        ] {
-            assert!(operations.contains(&operation), "missing {operation:?}");
-        }
-        for foreign in [
-            OperationKind::SparseIndex,
-            OperationKind::HyperConnections,
-            OperationKind::SigmoidRouter,
-        ] {
-            assert!(
-                !operations.contains(&foreign),
-                "foreign program {foreign:?}"
-            );
-        }
-        assert!(cfg.uses_hybrid_executor());
-        assert!(plan.draft_operations().is_some());
     }
 
     #[test]

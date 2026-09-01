@@ -12,8 +12,7 @@ edges of batched serving.
 > same SKU and ~2x between a 188-SM and an 82-SM board. The open gaps stated below travel
 > with the wins.
 
-The qualified published shape is a 2x RTX PRO 6000 Blackwell pair. PP-3/PP-4 infrastructure is
-experimental until its exact-topology and sampled-serving battery lands. Which provider hosts which role —
+The supported shape is a 2x RTX PRO 6000 Blackwell pair. Which provider hosts which role —
 serving, verification, tuning — is a deployment fact and lives in darklanes, not here. The
 Provider runbooks are not in this repo at all — they moved to darklanes with the rest of
 deployment. What stays here is `deploy/systemd/`, the supervision contract.
@@ -25,18 +24,14 @@ on one card:
   processes, one engine per GPU (`Engine::new(0)`; `CUDA_VISIBLE_DEVICES` is the placement
   mechanism), fronted by an admission proxy. This is the throughput shape — see
   [Fleet tooling](#fleet-tooling).
-- **Pipeline-parallel PP-2** (qualified for a model that fits only across the pair): ONE engine
+- **Pipeline-parallel PP-2** (for a model that fits only across the pair): ONE engine
   process, the layer trunk cut into stages, each stage's weights and KV resident on its own
   card. Opt-in via `MEMRA_PP_STAGES` / `MEMRA_PP_DEVICES`; see
   [Pipeline-parallel serving](#pipeline-parallel-pp-2-serving) below for what is gated and
   what is refused.
-- **Pipeline-parallel PP-3/PP-4** (experimental): the same stage-local weight/KV and peer-copy
-  runtime, with `MEMRA_PP_WAVE=1` filling stages from independent request or prompt-microchunk
-  waves. It is default-off and has no published performance/support claim yet; see
-  [the design decision](decisions/PRO6000-MULTICARD.md).
 
-Tensor parallelism is neither. Step-3.7 has an exact model-specific TP2/TP4/EP implementation,
-but that does not establish generic dense TP or transfer a topology/default to another model.
+Tensor parallelism is neither — it is a separate in-progress build (M0 comms floor measured
+— ARCHITECTURE-H100.md).
 
 ### Step topology contract (placement only)
 
@@ -502,29 +497,6 @@ bytes), which is exactly why a refusal rather than a warning was the right call.
 `MEMRA_PP_SHARD=0` is the non-measurement escape (weights all home — full speed, forfeits the
 capacity PP-2 exists for).
 
-### Experimental PP-3/PP-4 wavefront
-
-The PP-N transport already places complete layer ranges, their weights, and their KV state on
-each stage. `MEMRA_PP_WAVE=1` adds the missing 3–4 card serving schedule: the worker forms up to
-one exact-width request wave per stage, and the engine advances cells by dependency order while
-one host worker owns each stage. Prompt microchunks use the same shape. Every boundary retains
-two explicit credits, so a slot cannot be reused until the downstream `rx` has recorded that
-wave's read-complete event.
-
-The door requires 3 or 4 distinct CUDA ordinals, native P2P, the resolved double-slot policy,
-ModelPlan pipeline capability plus legal selected cuts, and a qualified batched decode rewrite.
-Host bounce and repeated devices refuse. Per-device admission charges stage-local context and
-learned fixed residency, then projects only missing capacity in the process-global grow-only
-boundary slots (including the enabled Step concat-prime high-water). Generic dense/non-Step
-concat prime has no cross-device PP split and is routed through individual wavefront primes. A
-failed mutating wave taints every affected cache and the worker aborts those sessions instead of
-retrying or parking partial state. `/metrics.pp_wave` exposes operator-only ticks, cells, and real
-host-walker overlap. `MEMRA_PP_WAVE=0` returns to the serial PP-N walk.
-
-This is implemented infrastructure, not a qualified model surface. Before enabling it outside a
-research process, run the PP-N gate matrix in [Testing](TESTING.md#multi-gpu-pp-n-exactness-gates--run-on-the-multi-card-box)
-on the exact 3/4-card RTX PRO 6000 host and retain sampled serving/performance receipts.
-
 ### v0.73 PP-2 prefill stack and Step trial receipt
 
 Three prefill mechanisms compose on the current Step path, but their performance claims stay
@@ -597,32 +569,23 @@ assistant-history `tool_calls`,
 `role:"tool"` result turns, and `reasoning_effort`/`reasoning`. The path is **template +
 parsing only — zero engine changes**:
 
-- Tool schemas render into each model's own tools branch. Qwen3.5/3.6 uses its ChatML
-  `<tool_call>`/`<function=…>` protocol; HY3 uses the pinned shipping template's suffixed
-  `<tool_calls:opensource>` / `<arg_key:opensource>` / `<tool_responses:opensource>` protocol,
-  including its no_think/low/high reasoning header. Both are reproduced byte-for-byte from the
-  committed vendor template. Models whose template has no supported tools branch (plain gemma4
-  and bare ChatML) reject `tools` with a 400 at admission.
-- Emitted model-native tool-call blocks are parsed from the generated stream into OpenAI-shape
+- Tool schemas render into the model chat template's own `<tools>` branch (the qwen3.5/3.6
+  ChatML convention: schemas JSON in the system region, `<tool_call>`/`<function=…>` call
+  format, `<tool_response>` result turns), byte-per-byte per the committed template dumps
+  (`research/onboard-ornith-20260801/templates/`). Models whose template has no tools
+  branch (hy3 dialect, gemma4, bare ChatML) reject `tools` with a 400 at admission.
+- Emitted `<tool_call>` blocks are parsed from the generated stream into OpenAI-shape
   `tool_calls` (streaming deltas + non-stream `message.tool_calls`, deterministic ids,
   `finish_reason:"tool_calls"`); argument values coerce per the declared JSON-schema types.
   **Malformed policy:** a block that does not parse is surfaced verbatim as content — never
   an error, never dropped bytes; unterminated blocks flush raw at end of generation.
 - **`reasoning_effort` — one surface, per-arch native thinking control** (owner directive
   2026-08-07: every supported model is a thinking model). The reasoning-capable-model
-  convention: `low|medium|high` = thinking ON, with the named level passed to templates
-  that consume one; `none|minimal` = thinking OFF; **absent = the model's own default**
-  (never overridden; no silent behavior change for existing deployments). The named levels
-  are per-request token-saving dials, NOT a graded quality ladder: measured on the
-  level-consuming step37 template (`research/step37-reasoning-effort-20260829/RESULTS.md`,
-  cell12, n=8 vendor-default sampled per level), every level is honored and answers
-  sanely, but reasoning depth is not monotone in the level (`high` landed below `medium`
-  on both non-trivial prompts) and the absent-field default is the DEEPEST arm by a wide
-  margin, so naming any level constrains the model relative to sending nothing. Name a
-  level to spend fewer reasoning tokens; do not promise or expect more depth from a higher
-  one. `reasoning: {enabled, effort}` (OpenRouter form) maps the same
+  convention: `low|medium|high` = thinking ON at that budget, `none|minimal` = thinking
+  OFF, **absent = the model's own default** (never overridden — no silent behavior change
+  for existing deployments). `reasoning: {enabled, effort}` (OpenRouter form) maps the same
   way; `{enabled: false}` is the explicit off, `{enabled: true}` thinking on at the
-  template default. `xhigh|max|ultra` are accepted as clamp aliases for `high`
+  template default budget. `xhigh|max|ultra` are accepted as clamp aliases for `high`
   (real default-config clients send them: codex `xhigh` on `/v1/responses`, Claude Code
   `xhigh` on `/v1/messages`). Any other value 400s. **The canonical set —
   `none|minimal|low|medium|high` plus the three clamp aliases — is ONE table
@@ -851,9 +814,8 @@ gated by the official `openai` Python SDK against a live server
 (`research/serve-compat-20260802/`):
 
 - **Envelope:** every OpenAI-shape completion and stream chunk carries `id`
-  (`chatcmpl-…`/`cmpl-…`), `created`, and `system_fingerprint`
-  (`memra-<version>-<content id>`, baked at build, see **The build fingerprint** below);
-  the id echoes as the `x-request-id` response header. The first stream delta
+  (`chatcmpl-…`/`cmpl-…`), `created`, and `system_fingerprint` (`memra-<git sha>`, baked
+  at build); the id echoes as the `x-request-id` response header. The first stream delta
   carries `role:"assistant"`. Error bodies are the OpenAI object —
   `{"error": {"message","type","param","code"}}` — and mid-stream worker errors arrive as
   a final `data:` error chunk + `[DONE]`, never a named SSE event. SSE keep-alive comments
@@ -908,92 +870,6 @@ gated by the official `openai` Python SDK against a live server
   the next event arrived, so a request still in prefill (producing nothing yet) kept its
   channel open indefinitely and no disconnect or deadline could cancel it.
 - **`timeout_ms` request deadline** (all four surfaces — see the billing contract below).
-
-## The build fingerprint (lane/real-system-fingerprint, 2026-09-01)
-
-`system_fingerprint` is **`memra-<crate version>-<content id>`**, for example
-`memra-0.123.0-6371ca8a0af4` (every concrete value in this section is this lane's head,
-2026-09-01; the id moves with the source, which is the point). It is baked at compile time by
-`crates/memra-server/build.rs` and the algorithm lives in `crates/memra-server/src/build_id.rs`,
-which the build script `include!`s and the crate compiles as a module: one implementation,
-two callers, so the tests re-derive the value instead of pinning a copy of the algorithm.
-
-The `<content id>` is 12 lowercase hex: an FNV-1a-128 digest, folded to its top 48 bits, over
-the workspace's compiled inputs: root `Cargo.toml` and `Cargo.lock` plus every `*.rs`,
-`*.toml`, `*.cu`, `*.cuh`, `*.h` under `crates/`, keyed by workspace-relative path and
-sorted, so it does not depend on `read_dir` order or on where the checkout lives. Uniqueness
-class, not crypto: it is a build identity, not a tamper seal.
-
-**Why content and not the git sha.** The field used to be `concat!("memra-", <git rev-parse>)`
-with any git failure swallowed into the literal `"unknown"`. Two consequences, both real:
-
-- **It degraded silently.** darklanes' release container (`serving/build-artifact.sh`)
-  compiles as root over a uid-1000 read-only mount; before its `safe.directory` line landed
-  on 2026-08-30 git aborted with "detected dubious ownership" and the build baked
-  `unknown`. Prod answered `system_fingerprint: memra-unknown` to every request for a whole
-  deploy generation. A build with a meaningless identity looked exactly like a good one.
-- **It did not survive a history rewrite.** A rewrite changes every commit SHA while the
-  bytes of the tree stay put, so a sha baked into a shipped binary becomes a dangling
-  reference, and a fingerprint quoted in a published claim, a research receipt, or a
-  customer's own response stops naming anything. A content id is unchanged by a rewrite
-  (receipt in the lane PR: `git commit --amend` over this tree moved the commit sha
-  `2bfd89fb74d2` to `07b909892f43` while the id stayed `6371ca8a0af4`).
-
-**Deliberately NOT in the value: a build timestamp.** Two builds of the same source must
-produce the same fingerprint, because darklanes' `tools/check-claim-builds.mjs --live`
-compares it for **equality** against the pin published beside every performance figure; a
-per-rebuild component would churn every pin and make the gate meaningless. Build time is an
-artifact-registry fact (the artifact filename and the file's mtime), not an identity.
-
-**The git sha is still baked, as an extra field, never as the identity:**
-`MEMRA_BUILD_SHA` → `memra_server::BUILD_GIT_SHA`. It is allowed to read `unknown` there,
-because there it is honest.
-
-**No flag.** The real fingerprint is unconditional: there is no env var that turns it off,
-downgrades it, or overrides it. A knob here would be a knob for publishing an unverifiable
-identity (new-flags law: the default is a written decision, and this one is "no flag").
-
-**Reading it without a GPU.** `memra-server --version` (also `-V`) prints the identity and
-exits before any engine, GPU, or model work, so a deployed artifact can be identified on any
-box and in the release container that produced it:
-
-```
-$ memra-server --version
-memra-server 0.123.0
-system_fingerprint memra-0.123.0-6371ca8a0af4
-build_id_src source-tree
-git_sha <this build's short sha, or `unknown` if it could not read a repo>
-```
-
-The same path is in `serve_with`, so darklanes' deployment binary answers `--version` too.
-
-**The degraded path is loud on both sides.** If the workspace source tree is unreadable (a
-vendored or packaged crate), the id falls back to a digest of the package's own identity,
-still shaped, still never `unknown`, and:
-
-- `build.rs` emits a `cargo:warning=memra build identity DEGRADED: <reason>` at build time;
-- every boot prints `[server] WARNING: build identity is DEGRADED: <reason>` naming the
-  consequence (published performance pins cannot be verified against it).
-
-Every boot also prints the identity line unconditionally, as its first line:
-`[server] build: memra-0.123.0-6371ca8a0af4 (id: source-tree, git: <short sha>)`.
-
-**Gates** (`crates/memra-server/src/lib.rs`, `mod build_identity_tests`): the baked value is
-non-empty, is not `memra-unknown`, contains no `unknown`, matches
-`memra-<version>-<12 lowercase hex>` and names this crate version; the shape checker rejects
-what shipped to prod **and** the old `memra-<sha>` form; the baked id is re-derived from the
-working tree in a separate process and must match, which is what proves it is a function of
-the source rather than of the build environment; two scans of one tree agree; and the id is
-asserted to differ from `BUILD_GIT_SHA`, so history can never become the identity by
-accident. The two OpenAI envelope tests now assert the full shape: they used to assert
-`starts_with("memra-")`, which `memra-unknown` passes, which is how the defect sat inside a
-tested surface all the way to a customer.
-
-**Consumers.** darklanes `tools/check-claim-builds.mjs` reads `system_fingerprint` from a
-live endpoint and compares it to the `build` / `*Build` pins carried by every published
-performance figure (`PRODUCT-TRUTH.md` §2.7). While the field read `memra-unknown` that gate
-had nothing to verify; both prod boxes need a binary from this lane before the `--live` half
-means anything, and the pins move to the new shape as part of that deploy.
 
 ## Request deadlines and the billing promise (`timeout_ms`)
 
@@ -2141,7 +2017,7 @@ Two behaviours keep that ceiling from eating a customer's work:
    408 `deadline_exceeded`, unbilled, because there is nothing to deliver.
 
 `finish_reason: "length"` is deliberately NOT used for a time cut. No provider's
-finish-reason enum has a time value (OpenAI, Anthropic, Google and the hosted resellers all mean
+finish-reason enum has a time value (OpenAI, Anthropic, Bedrock and Google all mean
 max_tokens by `length`/`MAX_TOKENS`), so reporting a deadline as `length` would tell a
 caller to ask for more tokens when the truth is that it must stream.
 

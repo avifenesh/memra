@@ -1,0 +1,395 @@
+[tpd] marker UP 2026-08-31T14:42:45Z
+tpd-battery TP-2 DIET RE-PRICE timed block
+rounds=1 2 3 cards=0,1 (+0,1,2 for the served calibration boot)
+raised 2026-08-31T14:42:45Z by the tpd-battery window agent
+######## C2 POOL round=1 arm=v1 ########
+[tpd] arm=v1 mode=timed prompts=/root/out-tpd/prompts-decode run=t1 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":4.4248,"ttft_s":4.4727,"gen_wall_s":11.2548,"decode_tok_s":22.657,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":4.1134,"ttft_s":4.1577,"gen_wall_s":11.2960,"decode_tok_s":22.574,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":4.9380,"ttft_s":4.9823,"gen_wall_s":11.2591,"decode_tok_s":22.648,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":11.4624,"ttft_s":11.5073,"gen_wall_s":11.4719,"decode_tok_s":22.228,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":8.0230,"ttft_s":8.0676,"gen_wall_s":11.4284,"decode_tok_s":22.313,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":10.5938,"ttft_s":10.6383,"gen_wall_s":7.7234,"decode_tok_s":22.270,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":3.3339,"ttft_s":3.3773,"gen_wall_s":11.2573,"decode_tok_s":22.652,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.2647,"ttft_s":2.3086,"gen_wall_s":11.1464,"decode_tok_s":22.877,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":4.8038,"ttft_s":4.8482,"gen_wall_s":11.2539,"decode_tok_s":22.659,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":3.8613,"ttft_s":3.9056,"gen_wall_s":11.2354,"decode_tok_s":22.696,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.4415,"ttft_s":2.4854,"gen_wall_s":11.2041,"decode_tok_s":22.760,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+arm=v1 mode=timed run=t1 rc=0
+announce diet_engaged=0 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=1012568
+ep-diet-counters dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+[tpd] rc=0 arm=v1 mode=timed run=t1
+######## C2 POOL round=1 arm=diet ########
+[tpd] arm=diet mode=timed prompts=/root/out-tpd/prompts-decode run=t1 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":5.6285,"ttft_s":5.6728,"gen_wall_s":10.3224,"decode_tok_s":24.703,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":5.3167,"ttft_s":5.3576,"gen_wall_s":10.3504,"decode_tok_s":24.637,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":6.5354,"ttft_s":6.5759,"gen_wall_s":10.4038,"decode_tok_s":24.510,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":14.9965,"ttft_s":15.0384,"gen_wall_s":10.5755,"decode_tok_s":24.112,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":10.9476,"ttft_s":10.9886,"gen_wall_s":10.5041,"decode_tok_s":24.276,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":12.4406,"ttft_s":12.4818,"gen_wall_s":7.0841,"decode_tok_s":24.280,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":4.1562,"ttft_s":4.1964,"gen_wall_s":10.3008,"decode_tok_s":24.755,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.6652,"ttft_s":2.7056,"gen_wall_s":10.2577,"decode_tok_s":24.859,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":6.3614,"ttft_s":6.4021,"gen_wall_s":10.3470,"decode_tok_s":24.645,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":4.9743,"ttft_s":5.0153,"gen_wall_s":10.3452,"decode_tok_s":24.649,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.8897,"ttft_s":2.9299,"gen_wall_s":10.2628,"decode_tok_s":24.847,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+arm=diet mode=timed run=t1 rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=1012568
+ep-diet-counters dispatches=114786 bulk_returns=114382 roundtrips_avoided=1012568 fanout_uploads_avoided=137366 grouped_prime_dispatches=0
+[tpd] rc=0 arm=diet mode=timed run=t1
+######## C2 POOL round=1 arm=dietmap ########
+[tpd] arm=dietmap mode=timed prompts=/root/out-tpd/prompts-decode run=t1 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+56dea5ca5a2502f2b7558e8339f5c49eac5259e5b7a1489c1b2843b7fe81e2d4  /root/out-tpd/maps/agentic-t1-coactivation.json
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":5.6588,"ttft_s":5.7089,"gen_wall_s":11.5440,"decode_tok_s":22.089,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":5.3630,"ttft_s":5.4096,"gen_wall_s":11.5798,"decode_tok_s":22.021,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":6.5552,"ttft_s":6.6017,"gen_wall_s":11.5947,"decode_tok_s":21.993,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":14.9347,"ttft_s":14.9816,"gen_wall_s":11.5558,"decode_tok_s":22.067,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":11.0433,"ttft_s":11.0901,"gen_wall_s":11.6053,"decode_tok_s":21.973,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":12.4745,"ttft_s":12.5212,"gen_wall_s":7.8770,"decode_tok_s":21.836,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":4.2104,"ttft_s":4.2566,"gen_wall_s":11.5298,"decode_tok_s":22.117,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.7083,"ttft_s":2.7546,"gen_wall_s":11.4106,"decode_tok_s":22.348,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":6.3843,"ttft_s":6.4310,"gen_wall_s":11.2845,"decode_tok_s":22.597,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":4.9882,"ttft_s":5.0342,"gen_wall_s":11.3142,"decode_tok_s":22.538,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.9610,"ttft_s":3.0068,"gen_wall_s":11.4519,"decode_tok_s":22.267,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+[glm5-tp-preflight] ep-map armed path=/root/out-tpd/maps/agentic-t1-coactivation.json sha256=56dea5ca5a2502f2b7558e8339f5c49eac5259e5b7a1489c1b2843b7fe81e2d4 layers=42 experts=288 ranks=2 entry_rank=0 performance_claim=false
+arm=dietmap mode=timed run=t1 rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=1
+ep-peer-slot-dispatches=445157
+ep-diet-counters dispatches=114786 bulk_returns=73944 roundtrips_avoided=445157 fanout_uploads_avoided=177804 grouped_prime_dispatches=0
+[tpd] rc=0 arm=dietmap mode=timed run=t1
+######## C2 POOL round=2 arm=v1 ########
+[tpd] arm=v1 mode=timed prompts=/root/out-tpd/prompts-decode run=t2 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":4.4278,"ttft_s":4.4757,"gen_wall_s":11.2436,"decode_tok_s":22.680,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":4.1094,"ttft_s":4.1537,"gen_wall_s":11.2774,"decode_tok_s":22.612,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":4.9371,"ttft_s":4.9814,"gen_wall_s":11.2625,"decode_tok_s":22.642,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":11.5172,"ttft_s":11.5621,"gen_wall_s":11.4669,"decode_tok_s":22.238,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":8.0334,"ttft_s":8.0779,"gen_wall_s":11.4001,"decode_tok_s":22.368,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":10.6137,"ttft_s":10.6581,"gen_wall_s":7.7014,"decode_tok_s":22.334,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":3.3297,"ttft_s":3.3731,"gen_wall_s":11.2194,"decode_tok_s":22.728,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.2639,"ttft_s":2.3079,"gen_wall_s":11.1384,"decode_tok_s":22.894,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":4.8072,"ttft_s":4.8517,"gen_wall_s":11.2632,"decode_tok_s":22.640,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":3.8592,"ttft_s":3.9036,"gen_wall_s":11.2464,"decode_tok_s":22.674,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.4409,"ttft_s":2.4848,"gen_wall_s":11.1788,"decode_tok_s":22.811,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+arm=v1 mode=timed run=t2 rc=0
+announce diet_engaged=0 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=1012568
+ep-diet-counters dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+[tpd] rc=0 arm=v1 mode=timed run=t2
+######## C2 POOL round=2 arm=diet ########
+[tpd] arm=diet mode=timed prompts=/root/out-tpd/prompts-decode run=t2 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":5.6261,"ttft_s":5.6705,"gen_wall_s":10.3184,"decode_tok_s":24.713,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":5.3192,"ttft_s":5.3600,"gen_wall_s":10.3607,"decode_tok_s":24.612,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":6.5357,"ttft_s":6.5761,"gen_wall_s":10.4039,"decode_tok_s":24.510,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":15.0865,"ttft_s":15.1282,"gen_wall_s":10.5716,"decode_tok_s":24.121,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":10.9710,"ttft_s":11.0120,"gen_wall_s":10.5056,"decode_tok_s":24.273,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":12.4330,"ttft_s":12.4742,"gen_wall_s":7.0890,"decode_tok_s":24.263,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":4.1577,"ttft_s":4.1979,"gen_wall_s":10.3128,"decode_tok_s":24.727,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.6663,"ttft_s":2.7066,"gen_wall_s":10.2539,"decode_tok_s":24.869,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":6.3633,"ttft_s":6.4041,"gen_wall_s":10.3429,"decode_tok_s":24.655,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":4.9766,"ttft_s":5.0175,"gen_wall_s":10.3539,"decode_tok_s":24.628,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.8910,"ttft_s":2.9313,"gen_wall_s":10.2742,"decode_tok_s":24.819,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+arm=diet mode=timed run=t2 rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=1012568
+ep-diet-counters dispatches=114786 bulk_returns=114382 roundtrips_avoided=1012568 fanout_uploads_avoided=137366 grouped_prime_dispatches=0
+[tpd] rc=0 arm=diet mode=timed run=t2
+######## C2 POOL round=2 arm=dietmap ########
+[tpd] arm=dietmap mode=timed prompts=/root/out-tpd/prompts-decode run=t2 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+56dea5ca5a2502f2b7558e8339f5c49eac5259e5b7a1489c1b2843b7fe81e2d4  /root/out-tpd/maps/agentic-t1-coactivation.json
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":5.6589,"ttft_s":5.7091,"gen_wall_s":11.5232,"decode_tok_s":22.129,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":5.3544,"ttft_s":5.4011,"gen_wall_s":11.5618,"decode_tok_s":22.055,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":6.5471,"ttft_s":6.5934,"gen_wall_s":11.6003,"decode_tok_s":21.982,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":14.9067,"ttft_s":14.9536,"gen_wall_s":11.5607,"decode_tok_s":22.057,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":11.0242,"ttft_s":11.0710,"gen_wall_s":11.5917,"decode_tok_s":21.999,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":12.4474,"ttft_s":12.4942,"gen_wall_s":7.8783,"decode_tok_s":21.832,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":4.2046,"ttft_s":4.2508,"gen_wall_s":11.5143,"decode_tok_s":22.146,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.7009,"ttft_s":2.7470,"gen_wall_s":11.3850,"decode_tok_s":22.398,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":6.3774,"ttft_s":6.4241,"gen_wall_s":11.2623,"decode_tok_s":22.642,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":4.9819,"ttft_s":5.0279,"gen_wall_s":11.2870,"decode_tok_s":22.592,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.9563,"ttft_s":3.0021,"gen_wall_s":11.4400,"decode_tok_s":22.290,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+[glm5-tp-preflight] ep-map armed path=/root/out-tpd/maps/agentic-t1-coactivation.json sha256=56dea5ca5a2502f2b7558e8339f5c49eac5259e5b7a1489c1b2843b7fe81e2d4 layers=42 experts=288 ranks=2 entry_rank=0 performance_claim=false
+arm=dietmap mode=timed run=t2 rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=1
+ep-peer-slot-dispatches=445157
+ep-diet-counters dispatches=114786 bulk_returns=73944 roundtrips_avoided=445157 fanout_uploads_avoided=177804 grouped_prime_dispatches=0
+[tpd] rc=0 arm=dietmap mode=timed run=t2
+######## C2 POOL round=3 arm=v1 ########
+[tpd] arm=v1 mode=timed prompts=/root/out-tpd/prompts-decode run=t3 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":4.4444,"ttft_s":4.4921,"gen_wall_s":11.2610,"decode_tok_s":22.644,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":4.1147,"ttft_s":4.1588,"gen_wall_s":11.2685,"decode_tok_s":22.630,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":4.9441,"ttft_s":4.9884,"gen_wall_s":11.2743,"decode_tok_s":22.618,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":11.5120,"ttft_s":11.5569,"gen_wall_s":11.4835,"decode_tok_s":22.206,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":8.0572,"ttft_s":8.1017,"gen_wall_s":11.4360,"decode_tok_s":22.298,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":10.6139,"ttft_s":10.6583,"gen_wall_s":7.6905,"decode_tok_s":22.365,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":3.3326,"ttft_s":3.3761,"gen_wall_s":11.2103,"decode_tok_s":22.747,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.2641,"ttft_s":2.3080,"gen_wall_s":11.1210,"decode_tok_s":22.930,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":4.8033,"ttft_s":4.8479,"gen_wall_s":11.2507,"decode_tok_s":22.665,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":3.8587,"ttft_s":3.9032,"gen_wall_s":11.2442,"decode_tok_s":22.678,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.4410,"ttft_s":2.4849,"gen_wall_s":11.1650,"decode_tok_s":22.839,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+arm=v1 mode=timed run=t3 rc=0
+announce diet_engaged=0 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=1012568
+ep-diet-counters dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+[tpd] rc=0 arm=v1 mode=timed run=t3
+######## C2 POOL round=3 arm=diet ########
+[tpd] arm=diet mode=timed prompts=/root/out-tpd/prompts-decode run=t3 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":5.6351,"ttft_s":5.6796,"gen_wall_s":10.4039,"decode_tok_s":24.510,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":5.3178,"ttft_s":5.3586,"gen_wall_s":10.3815,"decode_tok_s":24.563,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":6.5376,"ttft_s":6.5781,"gen_wall_s":10.4344,"decode_tok_s":24.438,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":15.0126,"ttft_s":15.0543,"gen_wall_s":10.6109,"decode_tok_s":24.032,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":10.9568,"ttft_s":10.9979,"gen_wall_s":10.5008,"decode_tok_s":24.284,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":12.4424,"ttft_s":12.4836,"gen_wall_s":7.0859,"decode_tok_s":24.273,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":4.1574,"ttft_s":4.1977,"gen_wall_s":10.3356,"decode_tok_s":24.672,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.6663,"ttft_s":2.7066,"gen_wall_s":10.2864,"decode_tok_s":24.790,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":6.3632,"ttft_s":6.4040,"gen_wall_s":10.3627,"decode_tok_s":24.607,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":4.9764,"ttft_s":5.0173,"gen_wall_s":10.3422,"decode_tok_s":24.656,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.8898,"ttft_s":2.9300,"gen_wall_s":10.2811,"decode_tok_s":24.803,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+arm=diet mode=timed run=t3 rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=1012568
+ep-diet-counters dispatches=114786 bulk_returns=114382 roundtrips_avoided=1012568 fanout_uploads_avoided=137366 grouped_prime_dispatches=0
+[tpd] rc=0 arm=diet mode=timed run=t3
+######## C2 POOL round=3 arm=dietmap ########
+[tpd] arm=dietmap mode=timed prompts=/root/out-tpd/prompts-decode run=t3 extras=BOXP_SAMPLED=1 BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+56dea5ca5a2502f2b7558e8339f5c49eac5259e5b7a1489c1b2843b7fe81e2d4  /root/out-tpd/maps/agentic-t1-coactivation.json
+{"tag":"d00-code","arm":"greedy","prompt_tokens":239,"out_tokens":256,"prime_s":5.6622,"ttft_s":5.7122,"gen_wall_s":11.5397,"decode_tok_s":22.098,"finish":"length","seed":20260831,"tape_sha16":"7d21d56acbbcb607"}
+{"tag":"d00-code","arm":"vendor","prompt_tokens":239,"out_tokens":256,"prime_s":5.3560,"ttft_s":5.4025,"gen_wall_s":11.5682,"decode_tok_s":22.043,"finish":"length","seed":20260831,"tape_sha16":"925937b3ef372800"}
+{"tag":"d01-code","arm":"greedy","prompt_tokens":289,"out_tokens":256,"prime_s":6.5538,"ttft_s":6.6003,"gen_wall_s":11.6043,"decode_tok_s":21.975,"finish":"length","seed":20260831,"tape_sha16":"ca4d58f9a4f691b9"}
+{"tag":"d02-code","arm":"greedy","prompt_tokens":563,"out_tokens":256,"prime_s":14.9168,"ttft_s":14.9637,"gen_wall_s":11.5668,"decode_tok_s":22.046,"finish":"length","seed":20260831,"tape_sha16":"2162595707a207d9"}
+{"tag":"d03-code","arm":"greedy","prompt_tokens":453,"out_tokens":256,"prime_s":11.0405,"ttft_s":11.0873,"gen_wall_s":11.5945,"decode_tok_s":21.993,"finish":"length","seed":20260831,"tape_sha16":"257fe8459976c43f"}
+{"tag":"d04-code","arm":"greedy","prompt_tokens":520,"out_tokens":173,"prime_s":12.4587,"ttft_s":12.5055,"gen_wall_s":7.8741,"decode_tok_s":21.844,"finish":"stop","seed":20260831,"tape_sha16":"53a9e906e5b97f24"}
+{"tag":"d05-code","arm":"greedy","prompt_tokens":192,"out_tokens":256,"prime_s":4.2056,"ttft_s":4.2518,"gen_wall_s":11.5226,"decode_tok_s":22.130,"finish":"length","seed":20260831,"tape_sha16":"4a6671086bb6b2b5"}
+{"tag":"d06-prose","arm":"greedy","prompt_tokens":131,"out_tokens":256,"prime_s":2.7014,"ttft_s":2.7476,"gen_wall_s":11.3886,"decode_tok_s":22.391,"finish":"length","seed":20260831,"tape_sha16":"3321854f9129eba0"}
+{"tag":"d07-prose","arm":"greedy","prompt_tokens":281,"out_tokens":256,"prime_s":6.3780,"ttft_s":6.4247,"gen_wall_s":11.2711,"decode_tok_s":22.624,"finish":"length","seed":20260831,"tape_sha16":"e97828f437084055"}
+{"tag":"d08-prose","arm":"greedy","prompt_tokens":225,"out_tokens":256,"prime_s":4.9823,"ttft_s":5.0284,"gen_wall_s":11.2939,"decode_tok_s":22.579,"finish":"length","seed":20260831,"tape_sha16":"0e714152c1cbac45"}
+{"tag":"d09-prose","arm":"greedy","prompt_tokens":140,"out_tokens":256,"prime_s":2.9561,"ttft_s":3.0017,"gen_wall_s":11.4453,"decode_tok_s":22.280,"finish":"length","seed":20260831,"tape_sha16":"521b1642db4718e4"}
+[glm5-tp-preflight] ep-map armed path=/root/out-tpd/maps/agentic-t1-coactivation.json sha256=56dea5ca5a2502f2b7558e8339f5c49eac5259e5b7a1489c1b2843b7fe81e2d4 layers=42 experts=288 ranks=2 entry_rank=0 performance_claim=false
+arm=dietmap mode=timed run=t3 rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=1
+ep-peer-slot-dispatches=445157
+ep-diet-counters dispatches=114786 bulk_returns=73944 roundtrips_avoided=445157 fanout_uploads_avoided=177804 grouped_prime_dispatches=0
+[tpd] rc=0 arm=dietmap mode=timed run=t3
+C2_POOL_ROUNDS_DONE: 1 2 3 rc=0
+=== C2 AGGREGATE (medians, 128-token floor named) ===
+run	n_rows	med_decode_tok_s	med_ttft_s	med_prime_s	tags
+diet-timed-t1	10	24.647	6.037	5.995	d00-code,d01-code,d02-code,d03-code,d04-code,d05-code,d06-prose,d07-prose,d08-prose,d09-prose
+  vendor: d00-code tok/s=24.637 ttft=5.358 out=256 seed=20260831
+diet-timed-t2	10	24.642	6.037	5.995	d00-code,d01-code,d02-code,d03-code,d04-code,d05-code,d06-prose,d07-prose,d08-prose,d09-prose
+  vendor: d00-code tok/s=24.612 ttft=5.360 out=256 seed=20260831
+diet-timed-t3	10	24.559	6.042	5.999	d00-code,d01-code,d02-code,d03-code,d04-code,d05-code,d06-prose,d07-prose,d08-prose,d09-prose
+  vendor: d00-code tok/s=24.563 ttft=5.359 out=256 seed=20260831
+dietmap-timed-t1	10	22.103	6.070	6.022	d00-code,d01-code,d02-code,d03-code,d04-code,d05-code,d06-prose,d07-prose,d08-prose,d09-prose
+  vendor: d00-code tok/s=22.021 ttft=5.410 out=256 seed=20260831
+dietmap-timed-t2	10	22.138	6.067	6.018	d00-code,d01-code,d02-code,d03-code,d04-code,d05-code,d06-prose,d07-prose,d08-prose,d09-prose
+  vendor: d00-code tok/s=22.055 ttft=5.401 out=256 seed=20260831
+dietmap-timed-t3	10	22.114	6.068	6.020	d00-code,d01-code,d02-code,d03-code,d04-code,d05-code,d06-prose,d07-prose,d08-prose,d09-prose
+  vendor: d00-code tok/s=22.043 ttft=5.402 out=256 seed=20260831
+v1-timed-t1	10	22.654	4.660	4.614	d00-code,d01-code,d02-code,d03-code,d04-code,d05-code,d06-prose,d07-prose,d08-prose,d09-prose
+  vendor: d00-code tok/s=22.574 ttft=4.158 out=256 seed=20260831
+v1-timed-t2	10	22.658	4.664	4.617	d00-code,d01-code,d02-code,d03-code,d04-code,d05-code,d06-prose,d07-prose,d08-prose,d09-prose
+  vendor: d00-code tok/s=22.612 ttft=4.154 out=256 seed=20260831
+v1-timed-t3	10	22.654	4.670	4.624	d00-code,d01-code,d02-code,d03-code,d04-code,d05-code,d06-prose,d07-prose,d08-prose,d09-prose
+  vendor: d00-code tok/s=22.630 ttft=4.159 out=256 seed=20260831
+=== C2 LOOP-LAW SCREEN ===
+[loop-law] screened=99 flagged=0
+=== C2/C4 RELATIVE DELTAS + ENGAGEMENT-COUNTER RECONCILIATION ===
+v1       decode boot-medians [22.654, 22.658, 22.654] median 22.654 spread 0.015% | prime med 4.617s | pool TTFT med 4.664s | vendor [22.57, 22.61, 22.63]
+         counters {'peer_slots': 1012568, 'dispatches': 0, 'bulk_returns': 0, 'roundtrips_avoided': 0, 'fanout_uploads_avoided': 0, 'grouped_prime_dispatches': 0, 'boot': 'v1-timed-t1'}
+         counters {'peer_slots': 1012568, 'dispatches': 0, 'bulk_returns': 0, 'roundtrips_avoided': 0, 'fanout_uploads_avoided': 0, 'grouped_prime_dispatches': 0, 'boot': 'v1-timed-t2'}
+         counters {'peer_slots': 1012568, 'dispatches': 0, 'bulk_returns': 0, 'roundtrips_avoided': 0, 'fanout_uploads_avoided': 0, 'grouped_prime_dispatches': 0, 'boot': 'v1-timed-t3'}
+diet     decode boot-medians [24.647, 24.642, 24.559] median 24.642 spread 0.359% | prime med 5.995s | pool TTFT med 6.037s | vendor [24.64, 24.61, 24.56]
+         counters {'peer_slots': 1012568, 'dispatches': 114786, 'bulk_returns': 114382, 'roundtrips_avoided': 1012568, 'fanout_uploads_avoided': 137366, 'grouped_prime_dispatches': 0, 'boot': 'diet-timed-t1'}
+         counters {'peer_slots': 1012568, 'dispatches': 114786, 'bulk_returns': 114382, 'roundtrips_avoided': 1012568, 'fanout_uploads_avoided': 137366, 'grouped_prime_dispatches': 0, 'boot': 'diet-timed-t2'}
+         counters {'peer_slots': 1012568, 'dispatches': 114786, 'bulk_returns': 114382, 'roundtrips_avoided': 1012568, 'fanout_uploads_avoided': 137366, 'grouped_prime_dispatches': 0, 'boot': 'diet-timed-t3'}
+dietmap  decode boot-medians [22.103, 22.138, 22.114] median 22.114 spread 0.156% | prime med 6.020s | pool TTFT med 6.068s | vendor [22.02, 22.05, 22.04]
+         counters {'peer_slots': 445157, 'dispatches': 114786, 'bulk_returns': 73944, 'roundtrips_avoided': 445157, 'fanout_uploads_avoided': 177804, 'grouped_prime_dispatches': 0, 'boot': 'dietmap-timed-t1'}
+         counters {'peer_slots': 445157, 'dispatches': 114786, 'bulk_returns': 73944, 'roundtrips_avoided': 445157, 'fanout_uploads_avoided': 177804, 'grouped_prime_dispatches': 0, 'boot': 'dietmap-timed-t2'}
+         counters {'peer_slots': 445157, 'dispatches': 114786, 'bulk_returns': 73944, 'roundtrips_avoided': 445157, 'fanout_uploads_avoided': 177804, 'grouped_prime_dispatches': 0, 'boot': 'dietmap-timed-t3'}
+
+pooled spread (max within-arm range) = 0.088 tok/s
+diet/v1 = 1.0877  (gap +1.987 tok/s)
+dietmap/v1 = 0.9761  (gap -0.541 tok/s)
+PLACEMENT SIGN ON THE DIETED WALK: dietmap/diet = 0.8974 (gap -2.528 tok/s; struct-battery measured 0.9686 on the v1 walk)
+######## C3 DEEP round=1 arm=v1 ########
+[tpd] arm=v1 mode=timed prompts=/root/out-tpd/prompts-l3 run=t1l extras=BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":94.4439,"ttft_s":94.4974,"gen_wall_s":12.5576,"decode_tok_s":20.306,"finish":"length","seed":20260831,"tape_sha16":"550771eaeb7b992f"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":7.7189,"ttft_s":7.7636,"gen_wall_s":11.4005,"decode_tok_s":22.367,"finish":"length","seed":20260831,"tape_sha16":"dcd1fb09789077af"}
+arm=v1 mode=timed run=t1l rc=0
+announce diet_engaged=0 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=946203
+ep-diet-counters dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+[tpd] rc=0 arm=v1 mode=timed run=t1l
+######## C3 DEEP round=1 arm=diet ########
+[tpd] arm=diet mode=timed prompts=/root/out-tpd/prompts-l3 run=t1l extras=BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":135.4647,"ttft_s":135.5141,"gen_wall_s":11.6432,"decode_tok_s":21.901,"finish":"length","seed":20260831,"tape_sha16":"550771eaeb7b992f"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":10.2628,"ttft_s":10.3036,"gen_wall_s":10.4791,"decode_tok_s":24.334,"finish":"length","seed":20260831,"tape_sha16":"dcd1fb09789077af"}
+arm=diet mode=timed run=t1l rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=946203
+ep-diet-counters dispatches=21546 bulk_returns=21473 roundtrips_avoided=946203 fanout_uploads_avoided=212131 grouped_prime_dispatches=0
+[tpd] rc=0 arm=diet mode=timed run=t1l
+######## C3 DEEP round=1 arm=dietgp ########
+[tpd] arm=dietgp mode=timed prompts=/root/out-tpd/prompts-l3 run=t1l extras=BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":23.7209,"ttft_s":23.7743,"gen_wall_s":11.6298,"decode_tok_s":21.926,"finish":"length","seed":20260831,"tape_sha16":"73b586bf2dbad347"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":1.0605,"ttft_s":1.1013,"gen_wall_s":10.5235,"decode_tok_s":24.232,"finish":"length","seed":20260831,"tape_sha16":"6a294f25def9477b"}
+arm=dietgp mode=timed run=t1l rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=42 ep_map_armed=0
+ep-peer-slot-dispatches=946026
+ep-diet-counters dispatches=21420 bulk_returns=21449 roundtrips_avoided=86063 fanout_uploads_avoided=97 grouped_prime_dispatches=126
+[tpd] rc=0 arm=dietgp mode=timed run=t1l
+######## C3 DEEP round=2 arm=v1 ########
+[tpd] arm=v1 mode=timed prompts=/root/out-tpd/prompts-l3 run=t2l extras=BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":94.5762,"ttft_s":94.6294,"gen_wall_s":12.4767,"decode_tok_s":20.438,"finish":"length","seed":20260831,"tape_sha16":"550771eaeb7b992f"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":7.7145,"ttft_s":7.7591,"gen_wall_s":11.3724,"decode_tok_s":22.423,"finish":"length","seed":20260831,"tape_sha16":"dcd1fb09789077af"}
+arm=v1 mode=timed run=t2l rc=0
+announce diet_engaged=0 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=946203
+ep-diet-counters dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+[tpd] rc=0 arm=v1 mode=timed run=t2l
+######## C3 DEEP round=2 arm=diet ########
+[tpd] arm=diet mode=timed prompts=/root/out-tpd/prompts-l3 run=t2l extras=BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":135.2425,"ttft_s":135.2921,"gen_wall_s":11.6338,"decode_tok_s":21.919,"finish":"length","seed":20260831,"tape_sha16":"550771eaeb7b992f"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":10.2407,"ttft_s":10.2815,"gen_wall_s":10.4736,"decode_tok_s":24.347,"finish":"length","seed":20260831,"tape_sha16":"dcd1fb09789077af"}
+arm=diet mode=timed run=t2l rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=946203
+ep-diet-counters dispatches=21546 bulk_returns=21473 roundtrips_avoided=946203 fanout_uploads_avoided=212131 grouped_prime_dispatches=0
+[tpd] rc=0 arm=diet mode=timed run=t2l
+######## C3 DEEP round=2 arm=dietgp ########
+[tpd] arm=dietgp mode=timed prompts=/root/out-tpd/prompts-l3 run=t2l extras=BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":23.6362,"ttft_s":23.6896,"gen_wall_s":11.6586,"decode_tok_s":21.872,"finish":"length","seed":20260831,"tape_sha16":"73b586bf2dbad347"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":1.0565,"ttft_s":1.0973,"gen_wall_s":10.5429,"decode_tok_s":24.187,"finish":"length","seed":20260831,"tape_sha16":"6a294f25def9477b"}
+arm=dietgp mode=timed run=t2l rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=42 ep_map_armed=0
+ep-peer-slot-dispatches=946026
+ep-diet-counters dispatches=21420 bulk_returns=21449 roundtrips_avoided=86063 fanout_uploads_avoided=97 grouped_prime_dispatches=126
+[tpd] rc=0 arm=dietgp mode=timed run=t2l
+######## C3 DEEP round=3 arm=v1 ########
+[tpd] arm=v1 mode=timed prompts=/root/out-tpd/prompts-l3 run=t3l extras=BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":94.3564,"ttft_s":94.4098,"gen_wall_s":12.4901,"decode_tok_s":20.416,"finish":"length","seed":20260831,"tape_sha16":"550771eaeb7b992f"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":7.7155,"ttft_s":7.7600,"gen_wall_s":11.3780,"decode_tok_s":22.412,"finish":"length","seed":20260831,"tape_sha16":"dcd1fb09789077af"}
+arm=v1 mode=timed run=t3l rc=0
+announce diet_engaged=0 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=946203
+ep-diet-counters dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+[tpd] rc=0 arm=v1 mode=timed run=t3l
+######## C3 DEEP round=3 arm=diet ########
+[tpd] arm=diet mode=timed prompts=/root/out-tpd/prompts-l3 run=t3l extras=BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":135.2718,"ttft_s":135.3214,"gen_wall_s":11.6533,"decode_tok_s":21.882,"finish":"length","seed":20260831,"tape_sha16":"550771eaeb7b992f"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":10.2515,"ttft_s":10.2924,"gen_wall_s":10.4887,"decode_tok_s":24.312,"finish":"length","seed":20260831,"tape_sha16":"dcd1fb09789077af"}
+arm=diet mode=timed run=t3l rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=946203
+ep-diet-counters dispatches=21546 bulk_returns=21473 roundtrips_avoided=946203 fanout_uploads_avoided=212131 grouped_prime_dispatches=0
+[tpd] rc=0 arm=diet mode=timed run=t3l
+######## C3 DEEP round=3 arm=dietgp ########
+[tpd] arm=dietgp mode=timed prompts=/root/out-tpd/prompts-l3 run=t3l extras=BOXP_MAX_NEW=256 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+{"tag":"l3-A4630","arm":"greedy","prompt_tokens":4626,"out_tokens":256,"prime_s":23.5142,"ttft_s":23.5675,"gen_wall_s":11.6207,"decode_tok_s":21.944,"finish":"length","seed":20260831,"tape_sha16":"73b586bf2dbad347"}
+{"tag":"l3-WARM","arm":"greedy","prompt_tokens":426,"out_tokens":256,"prime_s":1.0740,"ttft_s":1.1149,"gen_wall_s":10.5092,"decode_tok_s":24.265,"finish":"length","seed":20260831,"tape_sha16":"6a294f25def9477b"}
+arm=dietgp mode=timed run=t3l rc=0
+announce diet_engaged=1 grouped_prime_flag=1 grouped_prime_execute=42 ep_map_armed=0
+ep-peer-slot-dispatches=946026
+ep-diet-counters dispatches=21420 bulk_returns=21449 roundtrips_avoided=86063 fanout_uploads_avoided=97 grouped_prime_dispatches=126
+[tpd] rc=0 arm=dietgp mode=timed run=t3l
+C2_DEEP_ROUNDS_DONE: 1 2 3 rc=0
+=== C3 DEEP (l3) AGGREGATE — the grouped-EP-prime deliverable ===
+run	n_rows	med_decode_tok_s	med_ttft_s	med_prime_s	tags
+diet-timed-t1l	2	23.117	72.909	72.864	l3-A4630,l3-WARM
+diet-timed-t2l	2	23.133	72.787	72.742	l3-A4630,l3-WARM
+diet-timed-t3l	2	23.097	72.807	72.762	l3-A4630,l3-WARM
+dietgp-timed-t1l	2	23.079	12.438	12.391	l3-A4630,l3-WARM
+dietgp-timed-t2l	2	23.029	12.393	12.346	l3-A4630,l3-WARM
+dietgp-timed-t3l	2	23.105	12.341	12.294	l3-A4630,l3-WARM
+v1-timed-t1l	2	21.337	51.130	51.081	l3-A4630,l3-WARM
+v1-timed-t2l	2	21.430	51.194	51.145	l3-A4630,l3-WARM
+v1-timed-t3l	2	21.414	51.085	51.036	l3-A4630,l3-WARM
+=== C3 LOOP-LAW SCREEN ===
+[loop-law] screened=18 flagged=0
+=== C3 PER-PROMPT PRIME / TTFT / PREFILL tok/s (banked v1: 94.2 s @4626 tok = 49.1 tok/s) ===
+arm      tag         p_tok   prime_s prefill tok/s   ttft_s decode tok/s   n
+diet     l3-A4630     4626   135.272          34.2  135.321       21.901   3
+diet     l3-WARM       426    10.252          41.6   10.292       24.334   3
+dietgp   l3-A4630     4626    23.636         195.7   23.690       21.926   3
+dietgp   l3-WARM       426     1.060         401.7    1.101       24.232   3
+v1       l3-A4630     4626    94.444          49.0   94.497       20.416   3
+v1       l3-WARM       426     7.715          55.2    7.760       22.412   3
+[l3-A4630] grouped-prime TTFT 135.321s -> 23.690s (5.71x faster), prefill 34.2 -> 195.7 tok/s
+[l3-A4630] vs v1: TTFT 94.497s -> 23.690s (3.99x), prefill 49.0 -> 195.7 tok/s
+[l3-WARM] grouped-prime TTFT 10.292s -> 1.101s (9.35x faster), prefill 41.6 -> 401.7 tok/s
+[l3-WARM] vs v1: TTFT 7.760s -> 1.101s (7.05x), prefill 55.2 -> 401.7 tok/s
+
+--- grouped-prime engagement counters per deep boot ---
+v1-timed-t1l             grouped_prime_execute_lines=     0 | dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+v1-timed-t2l             grouped_prime_execute_lines=     0 | dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+v1-timed-t3l             grouped_prime_execute_lines=     0 | dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+diet-timed-t1l           grouped_prime_execute_lines=     0 | dispatches=21546 bulk_returns=21473 roundtrips_avoided=946203 fanout_uploads_avoided=212131 grouped_prime_dispatches=0
+diet-timed-t2l           grouped_prime_execute_lines=     0 | dispatches=21546 bulk_returns=21473 roundtrips_avoided=946203 fanout_uploads_avoided=212131 grouped_prime_dispatches=0
+diet-timed-t3l           grouped_prime_execute_lines=     0 | dispatches=21546 bulk_returns=21473 roundtrips_avoided=946203 fanout_uploads_avoided=212131 grouped_prime_dispatches=0
+dietgp-timed-t1l         grouped_prime_execute_lines=    42 | dispatches=21420 bulk_returns=21449 roundtrips_avoided=86063 fanout_uploads_avoided=97 grouped_prime_dispatches=126
+dietgp-timed-t2l         grouped_prime_execute_lines=    42 | dispatches=21420 bulk_returns=21449 roundtrips_avoided=86063 fanout_uploads_avoided=97 grouped_prime_dispatches=126
+dietgp-timed-t3l         grouped_prime_execute_lines=    42 | dispatches=21420 bulk_returns=21449 roundtrips_avoided=86063 fanout_uploads_avoided=97 grouped_prime_dispatches=126
+######## C2 SERVED PP-3 CALIBRATION BOOT (plain, no extras) ########
+[tpd] no pidfile, nothing to stop
+[tpd] launched pid=167034 boot=cal nonce=3f2c32e2-d4d5-4c13-a86c-383d59c48327
+[tpd] READY after 32s
+[tpd] GATES GREEN boot=cal
+[timed] d00-code ttft=0.68 tok/s=35.5 spec=None err=None
+[timed] d01-code ttft=0.384 tok/s=35.3 spec=None err=None
+[timed] d02-code ttft=0.466 tok/s=34.3 spec=None err=None
+[timed] d03-code ttft=0.434 tok/s=34.7 spec=None err=None
+[timed] d04-code ttft=0.454 tok/s=34.6 spec=None err=None
+[timed] d05-code ttft=0.34 tok/s=35.5 spec=None err=None
+[timed] d06-prose ttft=0.298 tok/s=35.8 spec=None err=None
+[timed] d07-prose ttft=0.364 tok/s=35.2 spec=None err=None
+[timed] d08-prose ttft=0.349 tok/s=35.4 spec=None err=None
+[timed] d09-prose ttft=0.299 tok/s=35.8 spec=None err=None
+[timed l3] l3-WARM ttft=0.422 tok/s=34.7 ptok=427 err=None
+[timed l3] l3-A4630 ttft=2.21 tok/s=30.0 ptok=4626 err=None
+[timed l3] l3-B5550 ttft=2.541 tok/s=30.0 ptok=5547 err=None
+[timed l3] l3-C6470 ttft=2.869 tok/s=29.9 ptok=6467 err=None
+[timed deep] l3-WARM ttft=0.422 err=None
+[timed deep] l3-A4630 ttft=2.209 err=None
+[timed vendor] d04-code tok/s=34.2 spec=None err=None
+engage=bf16-tcols-wide(T,default-on) expected=0 lines=0
+engage=bf16-tcols-x1(X,default-on) expected=0 lines=0
+engage=moe-vrows-pack(M,off-refuted) expected=0 lines=0
+engage=topk-shards(K,default-on) expected=0 lines=0
+engage=glm5-verify-ws(W,default-on) expected=0 lines=0
+engage=moe-vrows-dev-tables(D) expected=0 lines=0
+engage=moe-vrows-dedup(S) expected=0 lines=0
+engage=glm5-ep-diet(served path must never arm it) expected=0 lines=0
+engage=glm5-ep-grouped-prime(served path) expected=0 lines=0
+engage=glm5-tp-preflight(served worker refuses TP) expected=0 lines=0
+[tpd] ENGAGE GREEN boot=cal
+[tpd] SIGTERM pid=167034 exe=/root/memra-tpd/target/release/memra-server
+[tpd] stopped
+=== C2 SERVED CALIBRATION SUMMARY (vs banked 35.36 pool / 29.99 deep / 0.42s / 2.21s) ===
+served PP-3 pool rows n=14
+  decode tok/s median = 34.976   (banked 35.36)
+  TTFT median         = 0.428 s (banked 0.42 s @0.4-0.5k)
+  deep l3-WARM    ttft=0.42206222214736044 decode_tok_s=None ct=None err=None   (banked deep 29.99 tok/s, TTFT 2.21 s)
+  deep l3-A4630   ttft=2.208831015974283 decode_tok_s=None ct=None err=None   (banked deep 29.99 tok/s, TTFT 2.21 s)
+  VENDOR-DEFAULT sampled row: {'tag': 'd04-code', 'ttft_s': 0.4549367711879313, 'decode_tok_s': 34.2275381437299, 'completion_tokens': 256, 'spec': None, 'finish': 'length', 'err': None}
+[loop-law] screened=14 flagged=0
+C2SERVED_DONE
+TIMED_BLOCK_DONE rc=0 rounds=1 2 3
+[tpd] marker DOWN 2026-08-31T15:49:10Z

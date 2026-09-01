@@ -420,7 +420,7 @@ pub(crate) fn translate(v: &Value) -> Result<Value, String> {
                 .as_object()
                 .ok_or_else(|| format!("thinking must be an object, got {th}"))?;
             // ...and unknown KEYS inside a well-formed object were silently dropped, including
-            // a hosted-reseller's `max_thinking_tokens` spelling of the budget. Iterated like
+            // Bedrock's `max_thinking_tokens` spelling of the budget. Iterated like
             // `output_config` below, so SERVING.md's "every reasoning field this server cannot
             // act on is a named 400, on every surface" is true rather than aspirational.
             if let Some(other) = th_map
@@ -1368,7 +1368,7 @@ mod tests {
                 json!({"thinking": {"type": 3}}),
                 "thinking.type must be a string",
             ),
-            // unknown keys inside a well-formed object were dropped — including a hosted-reseller's
+            // unknown keys inside a well-formed object were dropped — including Bedrock's
             // spelling of the budget, which is exactly the field we refuse by name.
             (
                 json!({"thinking": {"type": "enabled", "max_thinking_tokens": 8192}}),

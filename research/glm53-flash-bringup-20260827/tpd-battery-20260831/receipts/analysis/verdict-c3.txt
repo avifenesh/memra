@@ -1,0 +1,22 @@
+arm      tag         p_tok   prime_s prefill tok/s   ttft_s decode tok/s   n
+diet     l3-A4630     4626   135.272          34.2  135.321       21.901   3
+diet     l3-WARM       426    10.252          41.6   10.292       24.334   3
+dietgp   l3-A4630     4626    23.636         195.7   23.690       21.926   3
+dietgp   l3-WARM       426     1.060         401.7    1.101       24.232   3
+v1       l3-A4630     4626    94.444          49.0   94.497       20.416   3
+v1       l3-WARM       426     7.715          55.2    7.760       22.412   3
+[l3-A4630] grouped-prime TTFT 135.321s -> 23.690s (5.71x faster), prefill 34.2 -> 195.7 tok/s
+[l3-A4630] vs v1: TTFT 94.497s -> 23.690s (3.99x), prefill 49.0 -> 195.7 tok/s
+[l3-WARM] grouped-prime TTFT 10.292s -> 1.101s (9.35x faster), prefill 41.6 -> 401.7 tok/s
+[l3-WARM] vs v1: TTFT 7.760s -> 1.101s (7.05x), prefill 55.2 -> 401.7 tok/s
+
+--- grouped-prime engagement counters per deep boot ---
+v1-timed-t1l             grouped_prime_execute_lines=     0 | dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+v1-timed-t2l             grouped_prime_execute_lines=     0 | dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+v1-timed-t3l             grouped_prime_execute_lines=     0 | dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+diet-timed-t1l           grouped_prime_execute_lines=     0 | dispatches=21546 bulk_returns=21473 roundtrips_avoided=946203 fanout_uploads_avoided=212131 grouped_prime_dispatches=0
+diet-timed-t2l           grouped_prime_execute_lines=     0 | dispatches=21546 bulk_returns=21473 roundtrips_avoided=946203 fanout_uploads_avoided=212131 grouped_prime_dispatches=0
+diet-timed-t3l           grouped_prime_execute_lines=     0 | dispatches=21546 bulk_returns=21473 roundtrips_avoided=946203 fanout_uploads_avoided=212131 grouped_prime_dispatches=0
+dietgp-timed-t1l         grouped_prime_execute_lines=    42 | dispatches=21420 bulk_returns=21449 roundtrips_avoided=86063 fanout_uploads_avoided=97 grouped_prime_dispatches=126
+dietgp-timed-t2l         grouped_prime_execute_lines=    42 | dispatches=21420 bulk_returns=21449 roundtrips_avoided=86063 fanout_uploads_avoided=97 grouped_prime_dispatches=126
+dietgp-timed-t3l         grouped_prime_execute_lines=    42 | dispatches=21420 bulk_returns=21449 roundtrips_avoided=86063 fanout_uploads_avoided=97 grouped_prime_dispatches=126

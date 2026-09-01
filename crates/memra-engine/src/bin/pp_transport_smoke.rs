@@ -108,7 +108,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_var("MEMRA_PP_OVERLAP", "1");
     } // exercise slot alternation
     let rt = memra_engine::pp::Pp2Rt::get(&e)?;
-    let _walk = rt.acquire_walk("pp_transport_smoke")?;
     rt.init_boundary_transport(&e, 4096)?;
     println!("Pp2Rt built: cross_device={}", rt.cross_device());
     let n = 5120usize;

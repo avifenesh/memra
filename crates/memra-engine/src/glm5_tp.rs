@@ -1,57 +1,42 @@
-//! glm5_next (GLM-5.3-Flash) TP-N seam — `MEMRA_GLM5_TP` (lane/glm5-tp2, 2026-08-31;
-//! rank-widened to TP-4 by lane/glm5-composition, 2026-09-01).
+//! glm5_next (GLM-5.3-Flash) TP-2 seam — `MEMRA_GLM5_TP` (lane/glm5-tp2, 2026-08-31).
 //!
-//! WHAT THIS IS. A correctness-first tensor-parallel execution program for the glm5_next
+//! WHAT THIS IS. A correctness-first tensor-parallel-2 execution program for the glm5_next
 //! hybrid trunk, per the lane's shard map (`research/glm53-flash-bringup-20260827/
 //! tp2-20260831/SHARD-MAP.md`). Per layer class:
 //!
-//!   * KDA (34 layers): head-sharded, `heads / ranks` per rank. Each rank runs the UNCHANGED
+//!   * KDA (34 layers): head-sharded, 32 heads per rank. Each rank runs the UNCHANGED
 //!     `kda_core_gated` program on its shard (per-head kernels: conv, L2 norm, gate, scan,
-//!     gated rmsnorm are all head-independent), the gated `[t, qkv/ranks]` parts are
-//!     gathered, and each rank's COLUMN-parallel `wo` slice (out rows over the FULL gathered
-//!     input) computes its slice of the output with the same plain matvec kernel — joins are
-//!     pure data movement, never a partial-sum reduction, which is what makes model-level
-//!     TP-vs-plain BYTE identity the bar instead of a tolerance band.
+//!     gated rmsnorm are all head-independent), the gated `[t, qkv/2]` halves are gathered,
+//!     and each rank's COLUMN-parallel `wo` half (out rows over the FULL gathered input)
+//!     computes its slice of the output with the same plain matvec kernel — joins are pure
+//!     data movement, never a partial-sum reduction, which is what makes model-level
+//!     TP-2-vs-plain BYTE identity the bar instead of a tolerance band.
 //!   * MLA/DSA (11 layers): head-sharded per-head operands (`wq_b`, `wk_b`, `wv_b`);
 //!     REPLICATED per-token shared work (`wq_a`/`q_a_norm`, `wkv_a`/`kv_a_norm`, the whole
-//!     indexer + k-pool selection) — every rank computes identical bytes from identical
+//!     indexer + k-pool selection) — both ranks compute identical bytes from identical
 //!     inputs, so the latent + indexer planes are replicated per rank and no per-token
 //!     cross-rank hop exists in the latent chain. `wo` is column-parallel over the gathered
-//!     attention parts, exactly like KDA.
-//!   * MoE (sparse-FFN layers): EP-N, whole experts, contiguous slices (even split: rank =
-//!     expert / (n_expert/ranks)). The router stays root-computed (host sigmoid top-k,
-//!     unchanged); each owner extracts its slots' UNWEIGHTED down rows with the same
-//!     fused-epilogue kernels at n_used=1, and root re-applies the slot-ordered fmaf
-//!     accumulation chain — the same rounded-operation sequence as the plain
-//!     `moe_down8_fma_q8` walk. Shared expert, dense MLPs, router, mHC, norms, embed and
-//!     lm_head stay ROOT-OWNED (the `MEMRA_STEP_TP` owner-stage precedent).
+//!     attention halves, exactly like KDA.
+//!   * MoE (sparse-FFN layers): EP-2, whole experts, contiguous halves (rank = expert /
+//!     (n_expert/2)). The router stays root-computed (host sigmoid top-k, unchanged); each
+//!     owner extracts its slots' UNWEIGHTED down rows with the same fused-epilogue kernels
+//!     at n_used=1, and root re-applies the slot-ordered fmaf accumulation chain — the same
+//!     rounded-operation sequence as the plain `moe_down8_fma_q8` walk. Shared expert,
+//!     dense MLPs, router, mHC, norms, embed and lm_head stay ROOT-OWNED (the
+//!     `MEMRA_STEP_TP` owner-stage precedent).
 //!
-//! TRANSPORT is a SEPARATE, SWAPPABLE AXIS (`MEMRA_GLM5_TP_TRANSPORT`,
-//! lane/glm5-tp-transport 2026-09-01). Because every cross-rank hop above is pure movement,
-//! the transport arm cannot change a bit — so this module names the hop SHAPES and
-//! `tp_transport` owns the bytes. `host-canonical` (the default, and what every banked
-//! glm5 TP number was measured on) bounces each hop through host with a full stream drain
-//! per leg; `peer-pull` issues a consumer-side device peer copy per hop with event ordering
-//! and no host boundary. The join-diet doors are an orthogonal axis (they cut hop COUNT; the
-//! transport cuts hop COST) and compose.
+//! V1 TRANSPORT is host-canonical staging (the step seam's correctness transport): fan-out
+//! and joins bounce through host. Native P2P and the join-diet doors are the box arc.
 //!
 //! FAIL-CLOSED SURFACE. The preflight refuses before any TP CUDA state exists: non-glm5
-//! plans, rank counts outside the qualified set (2 and 4 — see [`GLM5_TP_ALLOWED_RANKS`]),
-//! head/expert counts that do not divide, duplicate devices (serving parse), co-armed
-//! `MEMRA_PP_STAGES>1`, `MEMRA_STEP_TP`/`MEMRA_STEP_EP`. A sharded layer POISONS every plain
-//! path: `kda_core`, `mla_attn_cached` and the batched walks refuse a TP-armed layer by
-//! name. The memra-server worker refuses the flag outright (serving wiring is the named
-//! box-lane increment, not v1).
+//! plans, rank counts other than 2, head/expert counts that do not divide, duplicate
+//! devices (serving parse), co-armed `MEMRA_PP_STAGES>1`, `MEMRA_STEP_TP`/`MEMRA_STEP_EP`.
+//! A sharded layer POISONS every plain path: `kda_core`, `mla_attn_cached` and the batched
+//! walks refuse a TP-armed layer by name. The memra-server worker refuses the flag outright
+//! (serving wiring is the named box-lane increment, not v1).
 //!
 //! Engagement markers: `[glm5-tp-preflight]`, `[glm5-tp-kda]`, `[glm5-tp-mla]`,
-//! `[glm5-tp-ep]`, `[glm5-tp-transport]` — every marker carries `performance_claim=false`,
-//! and the first four name the LIVE transport rather than a hardcoded string (the
-//! tp2-battery greps `transport=` on all four seams, and a hardcoded value would have made a
-//! transport A/B unreadable from the boot log).
-
-// lane/clippy-zero-restore-20260901: perf-gated TP2 host code (fresh lane receipts);
-// index loops stay in their gated shape — iterator reshapes are not bit-neutral by inspection.
-#![allow(clippy::needless_range_loop)]
+//! `[glm5-tp-ep]` — every marker carries `performance_claim=false`.
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -64,24 +49,9 @@ use crate::kda::{ConvArm, KdaAttnLayer};
 use crate::model::GpuTensor;
 use memra_kv::{Cache, LatentKvLayer, RecurLayer};
 
-/// The qualified rank envelope: TP-2 (the v1 seam, box-battery-gated) and TP-4.
-///
-/// GEOMETRY (lane/glm5-tp-transport, 2026-09-01). The DSA indexer is REPLICATED per rank by
-/// this seam's own shard map (`shard_mla_layer`'s `replicate_indexer`), so its 32 heads
-/// impose no divisibility constraint at any rank count. TP-4 needs NO padding on the
-/// glm5_next geometry: 64/4 = 16 KDA heads, 64/4 = 16 MLA heads, 288/4 = 72 experts,
-/// 4096/4 = 1024 `wo` out rows, KDA `head_dim` 128 is rank-count independent. TP-3 remains
-/// refused: the only real obstruction is the 64 attention/KDA heads (a HEAD-PADDING
-/// question, 64 -> 66, RESEARCH.md §1.5d — not built). See `tp-transport-20260901/LANE.md`
-/// "TP-4 divisibility".
-pub const GLM5_TP_ALLOWED_RANKS: [usize; 2] = [2, 4];
-
-/// This family's receipt marker for the GENERAL transport seam (`tp_transport`, generalized
-/// lane/glm5-extract2). The tag is the caller's so lane/glm5-tp-transport's and
-/// lane/glm5-composition's banked gate and box receipts keep their exact bytes while a second
-/// family gets its own marker — the same rule phase 1 set for `[glm5-phase]` on the shared
-/// spec timers.
-pub const GLM5_TP_TRANSPORT_TAG: &str = "glm5-tp-transport";
+/// v1 rank envelope: TP-2 exactly. TP-3 is refused by geometry (64 attention heads and the
+/// 32-head indexer do not divide by 3); TP-4+ is refused until designed and gated.
+pub const GLM5_TP_RANKS: usize = 2;
 
 pub type Glm5TpLayerSpec = crate::tp::StepEpLayerSpec;
 
@@ -101,7 +71,7 @@ pub fn glm5_tp_armed() -> bool {
     matches!(glm5_tp_env_raw().as_deref(), Some(v) if !v.is_empty() && v != "0")
 }
 
-/// Parse the shared `LAYER[-LAYER]@DEVICE,DEVICE[,...][;...]` grammar for the glm5 door.
+/// Parse the shared `LAYER[-LAYER]@DEVICE,DEVICE[;...]` grammar for the glm5 door.
 /// `trunk_layers` is the loaded model's trunk length (the `all` shorthand expands against
 /// it — the model contract owns that number, never a constant in the parser).
 pub fn parse_glm5_tp_layer_specs(
@@ -111,22 +81,21 @@ pub fn parse_glm5_tp_layer_specs(
     crate::tp::parse_layer_specs_for_trunk("MEMRA_GLM5_TP", value, Some(trunk_layers))
 }
 
-/// Gate-harness knob, never a serving flag: `MEMRA_GLM5_TP_GATE_SAME_DEV=1` builds every
-/// peer rank as an ADDITIONAL CUDA CONTEXT ON THE ROOT DEVICE (the one-card rig gate's
-/// emulation; the ppN same-device-stages precedent). The spec's non-root device ids become
-/// logical rank ids. The serving worker refuses `MEMRA_GLM5_TP` outright, so this can never
-/// leak into serving.
+/// Gate-harness knob, never a serving flag: `MEMRA_GLM5_TP_GATE_SAME_DEV=1` builds the peer
+/// rank as a SECOND CUDA CONTEXT ON THE ROOT DEVICE (the one-card rig gate's emulation; the
+/// ppN same-device-stages precedent). The spec's second device id becomes a logical rank id.
+/// The serving worker refuses `MEMRA_GLM5_TP` outright, so this can never leak into serving.
 pub fn gate_same_device() -> bool {
     std::env::var("MEMRA_GLM5_TP_GATE_SAME_DEV").as_deref() == Ok("1")
 }
 
 /// Gate-harness RED-arm knob, never a serving flag (`MEMRA_GLM5_TP_GATE_RED`):
-///   * `swap-wo` — each rank's column `wo` slice takes the NEXT rank's out rows (a broken
+///   * `swap-wo` — each rank's column `wo` half takes the OTHER rank's out rows (a broken
 ///     shard map); the gate run MUST diverge from plain.
 ///   * `swap-ep-gateup` — the root EP slab's gate and up projections swap (wrong expert
 ///     weights); MUST diverge.
 ///   * `skip-peer-combine` — the EP combine drops every peer-owned slot; MUST diverge,
-///     which is also the non-vacuity proof that the peer ranks contribute real work.
+///     which is also the non-vacuity proof that the peer rank contributes real work.
 ///   * `corrupt-ep-map` — the placement's local-slot table for rank 0 is reversed after
 ///     the slabs are built (owner table and slab bytes disagree — a corrupted map row);
 ///     MUST diverge. This is the red that proves the MEASURED-placement indirection is
@@ -159,114 +128,50 @@ pub fn gate_red() -> Result<Option<GateRed>, String> {
 // Runtime
 // ------------------------------------------------------------------------------------------
 
-/// The TP-N rank runtime. Rank 0 (root) executes on the model's own engine — the PP-owner
-/// context, exactly like the step seam's owner-first rank law. Ranks `1..ranks` each own a
-/// full peer Engine, in `MEMRA_GLM5_TP` device order (`peers[i]` = rank `i + 1`).
+/// The TP-2 rank runtime. Rank 0 (root) executes on the model's own engine — the PP-owner
+/// context, exactly like the step seam's owner-first rank law. Rank 1 (peer) owns a second
+/// full Engine.
 pub struct Glm5TpRt {
-    pub peers: Vec<Engine>,
+    pub peer: Engine,
     pub root_dev: usize,
-    pub peer_devs: Vec<usize>,
+    pub peer_dev: usize,
     /// True only when built through [`Glm5TpRt::new_gate_same_device`] — the one-card rig
-    /// gate's multi-context emulation (the ppN same-device gate precedent). The env-driven
+    /// gate's dual-context emulation (the ppN same-device gate precedent). The env-driven
     /// serving parse can never reach this: the grammar refuses duplicate devices.
     pub same_device_gate: bool,
-    /// Which transport every cross-rank hop of this runtime moves its bytes with
-    /// (`MEMRA_GLM5_TP_TRANSPORT`, default `host-canonical`). Frozen at
-    /// [`Glm5TpRt::arm_transport`] time, announced once, and named in every gate log.
-    pub transport: crate::tp_transport::TpTransport,
-    /// The peer-pull ordering primitives — `Some` only on the peer-pull arm, and only after
-    /// its byte-integrity ladder passed.
-    link: Option<crate::tp_transport::PeerPullLink>,
 }
 
 impl Glm5TpRt {
-    pub fn new(devices: &[usize]) -> Result<Self, Box<dyn std::error::Error>> {
-        let root_dev = devices[0];
-        let peer_devs: Vec<usize> = devices[1..].to_vec();
-        for &d in &peer_devs {
-            if d == root_dev || peer_devs.iter().filter(|&&x| x == d).count() > 1 {
-                return Err(format!(
-                    "MEMRA_GLM5_TP rank devices must be distinct in serving; got {devices:?} \
-                     (the same-device form exists only for the rig gate binary)"
-                )
-                .into());
-            }
+    pub fn new(root_dev: usize, peer_dev: usize) -> Result<Self, Box<dyn std::error::Error>> {
+        if root_dev == peer_dev {
+            return Err(format!(
+                "MEMRA_GLM5_TP rank devices must be distinct in serving; got {root_dev},{peer_dev} \
+                 (the same-device form exists only for the rig gate binary)"
+            )
+            .into());
         }
-        let mut peers = Vec::with_capacity(peer_devs.len());
-        for &d in &peer_devs {
-            peers.push(Engine::new(d)?);
-        }
+        let peer = Engine::new(peer_dev)?;
         Ok(Self {
-            peers,
+            peer,
             root_dev,
-            peer_devs,
+            peer_dev,
             same_device_gate: false,
-            transport: crate::tp_transport::TpTransport::HostCanonical,
-            link: None,
         })
     }
 
-    /// Same-device multi-context runtime for the ONE-CARD rig gate (exactness only). Every
-    /// peer rank is an additional CUDA context on the root device: the whole shard/join
-    /// walk — shard loads, replicated compute, gathers, canonical combines — executes
-    /// exactly as on N cards, minus real peer transport (which the pro6000 batteries
-    /// qualify on the box card class separately).
-    pub fn new_gate_same_device(
-        root_dev: usize,
-        ranks: usize,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut peers = Vec::with_capacity(ranks - 1);
-        for _ in 1..ranks {
-            peers.push(Engine::new(root_dev)?);
-        }
+    /// Same-device dual-context runtime for the ONE-CARD rig gate (exactness only). The
+    /// peer rank is a second CUDA context on the root device: the whole shard/join walk —
+    /// shard loads, replicated compute, gathers, canonical combines — executes exactly as
+    /// on two cards, minus real peer transport (which the pro6000 batteries qualify on the
+    /// box card class separately).
+    pub fn new_gate_same_device(root_dev: usize) -> Result<Self, Box<dyn std::error::Error>> {
+        let peer = Engine::new(root_dev)?;
         Ok(Self {
-            peers,
+            peer,
             root_dev,
-            peer_devs: vec![root_dev; ranks - 1],
+            peer_dev: root_dev,
             same_device_gate: true,
-            transport: crate::tp_transport::TpTransport::HostCanonical,
-            link: None,
         })
-    }
-
-    /// Rank count of this runtime (root + peers).
-    pub fn ranks(&self) -> usize {
-        self.peers.len() + 1
-    }
-
-    /// Freeze the transport for this runtime: read the flag, grant peer access (real groups
-    /// only), and run the byte-integrity pull ladder over every ordered rank pair. Called
-    /// from the preflight BEFORE any layer is sharded, so a bad fabric refuses the load
-    /// rather than corrupting a shard.
-    pub fn arm_transport(&mut self, root: &Engine) -> Result<(), Box<dyn std::error::Error>> {
-        // The seam is general; the TAG and the flag name are the FAMILY's (lane/glm5-extract2,
-        // the phase-1 caller-owned-tag pattern) — `[glm5-tp-transport]` bytes stay exactly as
-        // lane/glm5-tp-transport and lane/glm5-composition banked them, and `armed_flag` is
-        // whichever of `MEMRA_TP_TRANSPORT` / `MEMRA_GLM5_TP_TRANSPORT` the operator actually
-        // set, so a peer-access or ladder refusal names their flag.
-        let (transport, armed_flag) = crate::tp_transport::transport_env()?;
-        let engines: Vec<&Engine> = std::iter::once(root).chain(self.peers.iter()).collect();
-        let link = crate::tp_transport::arm_transport(
-            transport,
-            armed_flag,
-            GLM5_TP_TRANSPORT_TAG,
-            &engines,
-            self.same_device_gate,
-        )?;
-        self.transport = transport;
-        self.link = link;
-        Ok(())
-    }
-
-    /// Build the per-hop transport handle. Every cross-rank movement in the glm5 TP walk
-    /// goes through one of `tp_transport`'s named hop shapes with this handle, which is
-    /// what makes the arm swap a ONE-PLACE change and the movement census automatic.
-    pub fn hop<'a>(&'a self, root: &'a Engine) -> crate::tp_transport::Hop<'a> {
-        crate::tp_transport::Hop {
-            engines: std::iter::once(root).chain(self.peers.iter()).collect(),
-            transport: self.transport,
-            link: self.link.as_ref(),
-        }
     }
 }
 
@@ -297,7 +202,7 @@ pub enum Glm5LayerClass {
 }
 
 /// The armed load plan: the runtime plus the layer set the spec selected, plus the
-/// measured expert-placement map when `MEMRA_EP_MAP` (or its glm5 alias) is armed (validated at
+/// measured expert-placement map when `MEMRA_GLM5_EP_MAP` is armed (validated at
 /// preflight, before any TP CUDA state — absent flag = the even split, byte-unchanged).
 pub struct Glm5TpLoadPlan {
     pub rt: Arc<Glm5TpRt>,
@@ -305,48 +210,51 @@ pub struct Glm5TpLoadPlan {
     pub ep_map: Option<crate::ep_map::EpMap>,
 }
 
+/// Raw `MEMRA_GLM5_EP_MAP` value. `Some("")` REFUSES downstream (a set-but-empty flag is
+/// an operator error, never a silent even split).
+pub fn glm5_ep_map_env() -> Option<String> {
+    std::env::var("MEMRA_GLM5_EP_MAP").ok()
+}
+
 /// Load + validate the placement map against the model view and the armed layer set.
-/// The env seam is the general `ep_map::ep_map_env()` (`MEMRA_EP_MAP`, glm5 alias
-/// honored); every refusal names the flag that ARMED the load. `Some("")` REFUSES (a
-/// set-but-empty flag is an operator error, never a silent even split). Fail-closed on
-/// every axis: unreadable file, malformed text, rank/expert-count mismatch, layer-cover
-/// mismatch. Returns `None` only when both names are UNSET.
+/// Fail-closed on every axis: unreadable file, malformed text, rank/expert-count
+/// mismatch, layer-cover mismatch. Returns `None` only when the flag is UNSET.
 fn load_glm5_ep_map(
     view: &Glm5TpModelView,
     layers: &std::collections::BTreeSet<usize>,
-    ranks: usize,
 ) -> Result<Option<crate::ep_map::EpMap>, Box<dyn std::error::Error>> {
-    let Some((flag, path)) = crate::ep_map::ep_map_env()? else {
+    let Some(path) = glm5_ep_map_env() else {
         return Ok(None);
     };
     if path.is_empty() {
-        return Err(format!(
-            "{flag} is set but empty (fail-closed: unset the flag for \
+        return Err(
+            "MEMRA_GLM5_EP_MAP is set but empty (fail-closed: unset the flag for \
                     the even split; an empty value never silently means default)"
-        )
-        .into());
+                .into(),
+        );
     }
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| format!("{flag}={path}: cannot read the map file ({e}) — refused by name"))?;
-    let map = crate::ep_map::EpMap::parse(&text).map_err(|e| format!("{flag}={path}: {e}"))?;
-    if map.ranks != ranks {
+    let text = std::fs::read_to_string(&path).map_err(|e| {
+        format!("MEMRA_GLM5_EP_MAP={path}: cannot read the map file ({e}) — refused by name")
+    })?;
+    let map =
+        crate::ep_map::EpMap::parse(&text).map_err(|e| format!("MEMRA_GLM5_EP_MAP={path}: {e}"))?;
+    if map.ranks != GLM5_TP_RANKS {
         return Err(format!(
-            "{flag}={path}: map declares ranks={}, this load is TP-{ranks} \
-             (re-mint the map for the armed rank count)",
+            "MEMRA_GLM5_EP_MAP={path}: map declares ranks={}, the v1 seam is TP-{GLM5_TP_RANKS}",
             map.ranks
         )
         .into());
     }
     if map.n_experts != view.n_routed_experts {
         return Err(format!(
-            "{flag}={path}: map declares expert_count={}, the model routes {}",
+            "MEMRA_GLM5_EP_MAP={path}: map declares expert_count={}, the model routes {}",
             map.n_experts, view.n_routed_experts
         )
         .into());
     }
     if map.entry_rank != 0 {
         return Err(format!(
-            "{flag}={path}: entry_rank={} but the glm5 TP first-hop card is \
+            "MEMRA_GLM5_EP_MAP={path}: entry_rank={} but the glm5 TP-2 first-hop card is \
              rank 0 (root: router + combine + shared expert) — re-mint with \
              --entry-rank 0 (refused rather than silently remapping ranks)",
             map.entry_rank
@@ -359,7 +267,7 @@ fn load_glm5_ep_map(
         .filter(|&il| view.layer_is_moe[il])
         .collect();
     map.validate_layer_cover(&ep_layers)
-        .map_err(|e| format!("{flag}={path}: {e}"))?;
+        .map_err(|e| format!("MEMRA_GLM5_EP_MAP={path}: {e}"))?;
     // Receipt anchor: the map bytes that armed this load, named by digest.
     let digest = {
         use sha2::{Digest, Sha256};
@@ -384,10 +292,9 @@ fn load_glm5_ep_map(
 /// door cold, and each door's own gate ran on the unsharded walk, so v1 refuses by name
 /// rather than silently picking an arm; a pair unlocks only with its own composition gate
 /// (the `MEMRA_GLM5_TP` row in docs/FLAGS.md carries the matrix). `MEMRA_GLM5_VERIFY_BATCH`
-/// is absent DELIBERATELY: its walk exists only inside glm5 spec sessions — co-refused on
-/// a sharded model unless `MEMRA_GLM5_SPEC_TP=1` arms the GATED composition
-/// (lane/glm5-composition; the spec x TP pair HAS its composition gate, `glm5-tp-gate`
-/// arms S2/Q-S4), whose admission REQUIRES the batched walk by name.
+/// is absent DELIBERATELY: its walk exists only inside glm5 spec sessions, which are
+/// already co-refused while the TP door is armed (and the mixer choke points refuse a
+/// sharded layer by name if ever reached).
 pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 4] = [
     (
         "MEMRA_HC_FUSED_PRE",
@@ -409,13 +316,18 @@ pub const GLM5_TP_REFUSED_DOOR_FLAGS: [(&str, &str); 4] = [
 ];
 
 /// The pure composition law over [`GLM5_TP_REFUSED_DOOR_FLAGS`]: the first armed door
-/// refuses by name, before any TP CUDA state exists. Delegates to the general
-/// [`crate::tp::refuse_door_composition`] pattern (lane/glm5-extract-general) with this
-/// door's own table — error bytes unchanged. `armed` reports whether a flag is set to
-/// `"1"` (env in production; a plain set in the unit test — the module keeps its tests
-/// env-mutation-free).
+/// refuses by name, before any TP CUDA state exists. `armed` reports whether a flag is
+/// set to `"1"` (env in production; a plain set in the unit test — the module keeps its
+/// tests env-mutation-free).
 pub fn refuse_glm5_tp_door_composition(armed: impl Fn(&str) -> bool) -> Result<(), String> {
-    crate::tp::refuse_door_composition("MEMRA_GLM5_TP", &GLM5_TP_REFUSED_DOOR_FLAGS, armed)
+    for (flag, why) in GLM5_TP_REFUSED_DOOR_FLAGS {
+        if armed(flag) {
+            return Err(format!(
+                "MEMRA_GLM5_TP + {flag}: unproven composition, refused ({why})"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Fail-closed preflight + runtime construction. Returns `None` when the seam is off.
@@ -434,7 +346,7 @@ pub fn prepare_glm5_tp_load(
     // silently coexist (the MEMRA_DSPARK precedent).
     if crate::pp::pp_cuts(view.trunk_layers).is_some() {
         return Err(
-            "MEMRA_GLM5_TP + MEMRA_PP_STAGES>1: the TP x PP composition is unwired and \
+            "MEMRA_GLM5_TP + MEMRA_PP_STAGES>1: the TP-2 x PP composition is unwired and \
              refuses until its own gate exists (stage 5 of the tp2 lane names it)"
                 .into(),
         );
@@ -450,19 +362,6 @@ pub fn prepare_glm5_tp_load(
     }
     refuse_glm5_tp_door_composition(|flag| std::env::var(flag).as_deref() == Ok("1"))?;
 
-    // One device group across the whole spec (one runtime group), root-first; the rank
-    // count comes from the device list and must be in the qualified envelope.
-    let devices = specs[0].devices.clone();
-    let ranks = devices.len();
-    if !GLM5_TP_ALLOWED_RANKS.contains(&ranks) {
-        return Err(format!(
-            "MEMRA_GLM5_TP names {ranks} devices per layer; the qualified rank envelope is \
-             {GLM5_TP_ALLOWED_RANKS:?} (TP-3 is a head-padding question, not built — see the \
-             module doc)"
-        )
-        .into());
-    }
-
     // Structural geometry laws, all dimension-derived.
     if view.layer_class.len() != view.trunk_layers || view.layer_is_moe.len() != view.trunk_layers {
         return Err(format!(
@@ -473,9 +372,9 @@ pub fn prepare_glm5_tp_load(
         )
         .into());
     }
-    if !view.kda_heads.is_multiple_of(ranks) || view.kda_heads == 0 {
+    if !view.kda_heads.is_multiple_of(GLM5_TP_RANKS) || view.kda_heads == 0 {
         return Err(format!(
-            "glm5-tp: {} KDA heads do not shard across {ranks} ranks",
+            "glm5-tp: {} KDA heads do not shard across {GLM5_TP_RANKS} ranks",
             view.kda_heads
         )
         .into());
@@ -488,16 +387,16 @@ pub fn prepare_glm5_tp_load(
         )
         .into());
     }
-    if !view.mla_heads.is_multiple_of(ranks) || view.mla_heads == 0 {
+    if !view.mla_heads.is_multiple_of(GLM5_TP_RANKS) || view.mla_heads == 0 {
         return Err(format!(
-            "glm5-tp: {} MLA heads do not shard across {ranks} ranks",
+            "glm5-tp: {} MLA heads do not shard across {GLM5_TP_RANKS} ranks",
             view.mla_heads
         )
         .into());
     }
-    if !view.n_routed_experts.is_multiple_of(ranks) || view.n_routed_experts == 0 {
+    if !view.n_routed_experts.is_multiple_of(GLM5_TP_RANKS) || view.n_routed_experts == 0 {
         return Err(format!(
-            "glm5-tp: {} routed experts do not partition across {ranks} ranks",
+            "glm5-tp: {} routed experts do not partition across {GLM5_TP_RANKS} ranks",
             view.n_routed_experts
         )
         .into());
@@ -506,10 +405,19 @@ pub fn prepare_glm5_tp_load(
         return Err("glm5-tp: top_k exceeds the routed expert count".into());
     }
 
+    // One device pair across the whole spec (one runtime group in v1), root-first.
+    let devices = specs[0].devices.clone();
+    if devices.len() != GLM5_TP_RANKS {
+        return Err(format!(
+            "MEMRA_GLM5_TP requires exactly {GLM5_TP_RANKS} devices per layer in v1, got {}",
+            devices.len()
+        )
+        .into());
+    }
     for s in &specs {
         if s.devices != devices {
             return Err(format!(
-                "MEMRA_GLM5_TP carries ONE runtime group: layer {} names devices {:?}, \
+                "MEMRA_GLM5_TP v1 carries ONE runtime group: layer {} names devices {:?}, \
                  the first spec names {:?}",
                 s.layer, s.devices, devices
             )
@@ -539,23 +447,18 @@ pub fn prepare_glm5_tp_load(
     if let Some(red) = red {
         eprintln!("[glm5-tp-preflight] GATE RED ARM armed: {red:?} — outputs MUST diverge");
     }
-    let mut rt = if same_dev {
+    let rt = if same_dev {
         eprintln!(
-            "[glm5-tp-preflight] GATE same-device emulation: {} peer ranks are additional \
-             contexts on device {root_dev} (spec devices {:?} are logical rank ids)",
-            ranks - 1,
-            &devices[1..],
+            "[glm5-tp-preflight] GATE same-device emulation: peer rank is a second context \
+             on device {root_dev} (spec device {} is a logical rank id)",
+            devices[1]
         );
-        Glm5TpRt::new_gate_same_device(root_dev, ranks)?
+        Arc::new(Glm5TpRt::new_gate_same_device(root_dev)?)
     } else {
-        Glm5TpRt::new(&devices)?
+        Arc::new(Glm5TpRt::new(devices[0], devices[1])?)
     };
-    // Transport arms HERE — after the rank engines exist, BEFORE any layer is sharded. A
-    // peer-pull ladder failure refuses the load with zero TP shards built (lane/glm5-tp-transport).
-    rt.arm_transport(e)?;
-    let rt = Arc::new(rt);
     let layers: std::collections::BTreeSet<usize> = specs.iter().map(|s| s.layer).collect();
-    let ep_map = load_glm5_ep_map(view, &layers, ranks)?;
+    let ep_map = load_glm5_ep_map(view, &layers)?;
     let (mut kda_n, mut mla_n, mut moe_n) = (0usize, 0usize, 0usize);
     for &il in &layers {
         match view.layer_class[il] {
@@ -567,15 +470,14 @@ pub fn prepare_glm5_tp_load(
         }
     }
     eprintln!(
-        "[glm5-tp-preflight] armed ranks={ranks} devices={devices:?} layers={} \
+        "[glm5-tp-preflight] armed ranks={GLM5_TP_RANKS} devices={devices:?} layers={} \
          kda_shard={kda_n} mla_shard={mla_n} moe_ep={moe_n} kda_heads_per_rank={} \
-         mla_heads_per_rank={} experts_per_rank={} transport={} \
+         mla_heads_per_rank={} experts_per_rank={} transport=host-canonical \
          weights_loaded=false performance_claim=false",
         layers.len(),
-        view.kda_heads / ranks,
-        view.mla_heads / ranks,
-        view.n_routed_experts / ranks,
-        rt.transport.name(),
+        view.kda_heads / GLM5_TP_RANKS,
+        view.mla_heads / GLM5_TP_RANKS,
+        view.n_routed_experts / GLM5_TP_RANKS,
     );
     Ok(Some(Glm5TpLoadPlan { rt, layers, ep_map }))
 }
@@ -704,40 +606,28 @@ fn replicate(
     shard_rows(src_engine, dst, t, 0..outer)
 }
 
-/// Rank r's engine within a runtime, given the root engine (rank 0 has no owned Engine in
-/// the runtime — it IS the model's engine).
-pub(crate) fn rank_engine<'a>(e: &'a Engine, rt: &'a Glm5TpRt, r: usize) -> &'a Engine {
-    if r == 0 { e } else { &rt.peers[r - 1] }
-}
-
 // ------------------------------------------------------------------------------------------
 // KDA sidecar
 // ------------------------------------------------------------------------------------------
 
-/// The KDA TP sidecar: the peer ranks' head shards plus the runtime handle. The OUTER
-/// `KdaAttnLayer` that carries this in its `tp` field is the root shard; every shard's
-/// `wo` field holds that rank's COLUMN slice (out rows over the full `qkv` input).
+/// The KDA TP-2 sidecar: the peer's head shard plus the runtime handle. The OUTER
+/// `KdaAttnLayer` that carries this in its `tp` field is the root shard; both shards'
+/// `wo` fields hold the rank's COLUMN half (out rows over the full `qkv` input).
 pub struct Glm5TpKda {
     pub rt: Arc<Glm5TpRt>,
-    /// `peers[i]` is rank `i + 1`'s shard, resident on `rt.peers[i]`.
-    pub peers: Vec<KdaAttnLayer>,
-    /// Full-width qkv of the UNSHARDED layer (`ranks * shard qkv`) — the gather width.
+    pub peer: KdaAttnLayer,
+    /// Full-width qkv of the UNSHARDED layer (`2 * shard qkv`) — the gather width.
     pub full_qkv: usize,
-    /// Full hidden width (`wo` out rows across all ranks).
+    /// Full hidden width (`wo` out rows across both ranks).
     pub n_embd: usize,
-}
-
-impl Glm5TpKda {
-    pub fn ranks(&self) -> usize {
-        self.peers.len() + 1
-    }
 }
 
 static KDA_MARKED: AtomicBool = AtomicBool::new(false);
 
-/// Shard one loaded KDA layer: returns the ROOT shard (heads/ranks, wo out-rows
-/// `0..H/ranks`) with the peer shards in its `tp` sidecar. The full layer's tensors are
-/// consumed and dropped — per-layer transient VRAM is one layer, never the model.
+/// Shard one loaded KDA layer: returns the ROOT shard (heads/2, wo out-rows 0..H/2) with
+/// the peer shard (heads/2, wo out-rows H/2..H) in its `tp` sidecar. The full layer's
+/// tensors are consumed and dropped — per-layer transient VRAM is one layer, never the
+/// model.
 pub(crate) fn shard_kda_layer(
     e: &Engine,
     rt: &Arc<Glm5TpRt>,
@@ -746,21 +636,20 @@ pub(crate) fn shard_kda_layer(
     if la.tp.is_some() {
         return Err("shard_kda_layer: layer is already sharded".into());
     }
-    let ranks = rt.ranks();
     let heads = la.heads();
     let head_dim = la.head_dim();
     let qkv = la.qkv();
     let kernel = la.conv_kernel();
-    if !heads.is_multiple_of(ranks) {
-        return Err(format!("KDA heads {heads} do not shard across {ranks} ranks").into());
+    if !heads.is_multiple_of(GLM5_TP_RANKS) {
+        return Err(format!("KDA heads {heads} do not shard across {GLM5_TP_RANKS} ranks").into());
     }
-    let hl = heads / ranks; // heads per rank
-    let ql = qkv / ranks; // channels per rank
+    let hl = heads / GLM5_TP_RANKS; // heads per rank
+    let ql = qkv / GLM5_TP_RANKS; // channels per rank
     let n_embd = la.wo.out_features();
-    if !n_embd.is_multiple_of(ranks) {
+    if !n_embd.is_multiple_of(GLM5_TP_RANKS) {
         return Err(format!("KDA wo out {n_embd} does not split across ranks").into());
     }
-    let hh = n_embd / ranks;
+    let hh = n_embd / GLM5_TP_RANKS;
 
     let mut shard_plan = la.plan;
     shard_plan.num_heads = hl as u32;
@@ -778,11 +667,10 @@ pub(crate) fn shard_kda_layer(
             dst.htod(&piece)
         };
 
-    // Gate red arm: a broken shard map hands each rank the NEXT rank's wo out rows
-    // (the two-rank swap generalized to a rotation — still guaranteed wrong on every rank).
+    // Gate red arm: a broken shard map hands each rank the OTHER rank's wo out rows.
     let wo_rank = |r: usize| -> usize {
         match gate_red() {
-            Ok(Some(GateRed::SwapWo)) => (r + 1) % ranks,
+            Ok(Some(GateRed::SwapWo)) => 1 - r,
             _ => r,
         }
     };
@@ -812,20 +700,16 @@ pub(crate) fn shard_kda_layer(
     };
 
     let mut root = rank_shard(e, 0)?;
-    let mut peers = Vec::with_capacity(ranks - 1);
-    for r in 1..ranks {
-        peers.push(rank_shard(&rt.peers[r - 1], r)?);
-    }
+    let peer = rank_shard(&rt.peer, 1)?;
     if !KDA_MARKED.swap(true, Ordering::Relaxed) {
         eprintln!(
-            "[glm5-tp-kda] head shard armed: ranks={ranks} heads_per_rank={hl} \
-             head_dim={head_dim} wo=column-over-gather transport={} performance_claim=false",
-            rt.transport.name(),
+            "[glm5-tp-kda] head shard armed: heads_per_rank={hl} head_dim={head_dim} \
+             wo=column-over-gather transport=host-canonical performance_claim=false"
         );
     }
     root.tp = Some(Box::new(Glm5TpKda {
         rt: Arc::clone(rt),
-        peers,
+        peer,
         full_qkv: qkv,
         n_embd,
     }));
@@ -834,15 +718,14 @@ pub(crate) fn shard_kda_layer(
 
 /// Ensure layer `il`'s per-rank KDA state planes exist (lazily, sized for the SHARD
 /// geometry — the canonical `cache.recur[il]` planes are full-width and stay untouched
-/// as allocated; the TP walk never reads them). Index 0 = root's plane on `e`, index r =
-/// rank r's plane on its peer engine.
+/// as allocated; the TP walk never reads them).
 fn ensure_kda_tp_state<'c>(
     e: &Engine,
     rt: &Glm5TpRt,
     la_root: &KdaAttnLayer,
     cache: &'c mut Cache,
     il: usize,
-) -> Result<&'c mut Vec<RecurLayer>, Box<dyn std::error::Error>> {
+) -> Result<&'c mut [RecurLayer; 2], Box<dyn std::error::Error>> {
     if cache.glm5_tp_recur.len() <= il {
         return Err(format!("glm5-tp: cache carries no TP recur slot for layer {il}").into());
     }
@@ -856,158 +739,14 @@ fn ensure_kda_tp_state<'c>(
                 ssm_state_alt: dev.zeros(state)?,
             })
         };
-        let mut planes = Vec::with_capacity(rt.ranks());
-        planes.push(mk(e)?);
-        for p in &rt.peers {
-            planes.push(mk(p)?);
-        }
-        cache.glm5_tp_recur[il] = Some(planes);
+        cache.glm5_tp_recur[il] = Some([mk(e)?, mk(&rt.peer)?]);
     }
     Ok(cache.glm5_tp_recur[il].as_mut().unwrap())
 }
 
-/// The KDA TP walk, ONE body for both consumers (the #80 review's dedup finding — the
-/// forked verify twin had already drifted to root-first issue order):
-///   * prime/decode ([`kda_tp_cached`]): `verify_stash = None`, plain `wo` matmul —
-///     byte-for-byte the pre-composition walk.
-///   * spec x TP verify rows ([`kda_tp_verify_rows`]): `verify_stash = Some`, per-rank
-///     pre-round ssm snapshot + batched `KdaStash::Rows` capture, `wo` on the ROWS-EXACT
-///     class (the unsharded verify walk's own routing), per-rank scan-ns accumulated into
-///     `scan_clock` so the `[glm5-phase-v]` receipt keeps its sequential-floor share on
-///     the composed shape.
-///
-/// Issue order is PEERS FIRST, ROOT LAST on both arms (v1's order; the twins document it).
-/// THREE cross-rank hop shapes, each a named `tp_transport` shape: fan-out of `x`,
-/// gather of the gated parts, concat of the `wo` parts. On `host-canonical` at two ranks
-/// that is 5 draining `dtoh` + 4 `htod` per layer-call, exactly as v1; on `peer-pull` it is
-/// device peer copies, local copies and 0 host boundaries.
-#[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
-fn kda_tp_core(
-    e: &Engine,
-    la_root: &KdaAttnLayer,
-    x: &CudaSlice<f32>,
-    t: usize,
-    eps: f32,
-    cache: &mut Cache,
-    il: usize,
-    arm: ConvArm,
-    verify_stash: Option<&mut Glm5TpKdaVerifyStash>,
-    mut scan_clock: Option<&mut u64>,
-) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    let tp = la_root
-        .tp
-        .as_ref()
-        .ok_or("kda_tp_core called on an unsharded layer")?;
-    let rt = &tp.rt;
-    let ranks = rt.ranks();
-    let ql = la_root.qkv(); // per-rank channels
-    let full = tp.full_qkv;
-    let n_embd = tp.n_embd;
-    let hh = n_embd / ranks;
-    let rows_exact = verify_stash.is_some();
-    // Per-rank verify capture, RANK-indexed regardless of issue order; assembled into the
-    // caller's stash after the loop.
-    let mut captured: Vec<Option<(CudaSlice<f32>, crate::kda::KdaRowsStash)>> =
-        (0..ranks).map(|_| None).collect();
-
-    let hop = rt.hop(e);
-    // HOP 1 — fan-out of the mixer input to every peer rank. `x.len()` and not `t * n_embd`:
-    // the v1 arm moved the WHOLE buffer, and the arms must move identical byte ranges or
-    // the transport A/B stops being a transport A/B.
-    let x_peers = crate::tp_transport::fanout_f32(&hop, x, x.len())?;
-    let states = ensure_kda_tp_state(e, rt, la_root, cache, il)?;
-
-    // Peer shards first (host-canonical serial walk; overlap is the box arc), root last —
-    // v1's issue order at two ranks, both arms.
-    let mut gated: Vec<Option<CudaSlice<f32>>> = (0..ranks).map(|_| None).collect();
-    for r in (1..ranks).chain(std::iter::once(0)) {
-        let dev = if r == 0 { e } else { &rt.peers[r - 1] };
-        let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
-        let xin = if r == 0 { x } else { &x_peers[r - 1] };
-        // Verify arm: the pre-round snapshot on the rank's engine, BEFORE the batched
-        // call advances the resident state (the ckpt contract's per-rank twin).
-        let snap = if rows_exact {
-            Some(dev.clone_dtod(&states[r].ssm_state)?)
-        } else {
-            None
-        };
-        let mut rank_stash: Option<crate::kda::KdaRowsStash> = None;
-        let mut rank_scan_ns = 0u64;
-        let out = {
-            let RecurLayer {
-                conv_state,
-                ssm_state,
-                ssm_state_alt,
-            } = &mut states[r];
-            let out = crate::kda::kda_core_gated(
-                dev,
-                la,
-                xin,
-                t,
-                eps,
-                conv_state,
-                ssm_state,
-                ssm_state_alt,
-                arm,
-                if rows_exact {
-                    crate::kda::KdaStash::Rows(&mut rank_stash)
-                } else {
-                    crate::kda::KdaStash::None
-                },
-                scan_clock.as_deref_mut().map(|_| &mut rank_scan_ns),
-            )?;
-            std::mem::swap(ssm_state, ssm_state_alt);
-            out
-        };
-        if let Some(clock) = scan_clock.as_deref_mut() {
-            *clock += rank_scan_ns;
-        }
-        if rows_exact {
-            let snap = snap.expect("verify arm cloned the snapshot above");
-            let rank_stash = rank_stash
-                .ok_or("kda_core_gated returned without filling the requested rows stash")?;
-            captured[r] = Some((snap, rank_stash));
-        }
-        gated[r] = Some(out);
-    }
-    if let Some(stash_vec) = verify_stash {
-        stash_vec.clear();
-        for c in captured {
-            stash_vec.push(c.expect("every rank captured on the verify arm"));
-        }
-    }
-
-    // HOP 2 — gather the gated parts into the FULL [t, qkv] layout on EVERY rank
-    // (column-parallel wo needs the whole input on each rank). Token-major interleave: row
-    // tok is [rank0 ql | rank1 ql | ...]. `full == ranks * ql` by the shard map.
-    debug_assert_eq!(full, ranks * ql);
-    let gated_refs: Vec<&CudaSlice<f32>> = gated
-        .iter()
-        .map(|g| g.as_ref().expect("filled above"))
-        .collect();
-    let fulls = crate::tp_transport::gather_parts(&hop, &gated_refs, t, ql)?;
-
-    // Per-rank column wo slices: each output element is one full-K dot by the SAME kernel
-    // class the consumer's unsharded walk uses — no cross-rank arithmetic in this join.
-    let mut ys = Vec::with_capacity(ranks);
-    if rows_exact {
-        ys.push(e.matmul_rows_exact(&la_root.wo, &fulls[0], t)?);
-        for r in 1..ranks {
-            ys.push(rt.peers[r - 1].matmul_rows_exact(&tp.peers[r - 1].wo, &fulls[r], t)?);
-        }
-    } else {
-        ys.push(e.matmul(&la_root.wo, &fulls[0], t)?);
-        for r in 1..ranks {
-            ys.push(rt.peers[r - 1].matmul(&tp.peers[r - 1].wo, &fulls[r], t)?);
-        }
-    }
-
-    // HOP 3 — concat the column parts into the mixer output on ROOT.
-    let y_refs: Vec<&CudaSlice<f32>> = ys.iter().collect();
-    crate::tp_transport::concat_parts_on_root(&hop, &y_refs, t, hh)
-}
-
-/// The KDA TP walk for one prime/decode call — [`kda_tp_core`] with no verify capture.
+/// The KDA TP-2 walk for one prime/decode call: per-rank `kda_core_gated` on the shards,
+/// host-canonical gather of the gated halves, per-rank column `wo`, and the output
+/// concatenation. `la_root` is the root shard (its `tp` sidecar carries the peer).
 #[allow(clippy::too_many_arguments)] // mirrors the kda entry contract shape
 pub(crate) fn kda_tp_cached(
     e: &Engine,
@@ -1019,105 +758,112 @@ pub(crate) fn kda_tp_cached(
     il: usize,
     arm: ConvArm,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-    kda_tp_core(e, la_root, x, t, eps, cache, il, arm, None, None)
-}
-
-/// Per-rank rollback material of ONE sharded-KDA verify round (lane/glm5-composition, the
-/// spec x TP composition): index = rank; each entry is that rank's pre-round ssm snapshot
-/// (cloned on the rank's engine BEFORE its batched call advanced the resident state) plus
-/// the batched [`crate::kda::KdaRowsStash`] its `KdaStash::Rows` call filled. Rollback to
-/// `keep` rows restores every rank through `kda_verify_rollback_rows_on` with the rank's
-/// own engine/shard/plane tuple — the same two-plane contract as the unsharded stash,
-/// per rank.
-pub type Glm5TpKdaVerifyStash = Vec<(CudaSlice<f32>, crate::kda::KdaRowsStash)>;
-
-/// The sharded-KDA VERIFY walk (spec x TP composition) — [`kda_tp_core`] with the verify
-/// capture armed: batched `KdaStash::Rows` per rank, ROWS-EXACT `wo` (the unsharded verify
-/// walk's own routing), per-rank scan-ns accumulated into `scan_clock`. Returns the mixer
-/// output plus the rank-indexed rollback stash the ckpt banks.
-#[allow(clippy::too_many_arguments)] // mirrors the kda verify entry contract shape
-pub(crate) fn kda_tp_verify_rows(
-    e: &Engine,
-    la_root: &KdaAttnLayer,
-    x: &CudaSlice<f32>,
-    t: usize,
-    eps: f32,
-    cache: &mut Cache,
-    il: usize,
-    scan_clock: Option<&mut u64>,
-) -> Result<(CudaSlice<f32>, Glm5TpKdaVerifyStash), Box<dyn std::error::Error>> {
-    let mut stash: Glm5TpKdaVerifyStash = Vec::new();
-    let out = kda_tp_core(
-        e,
-        la_root,
-        x,
-        t,
-        eps,
-        cache,
-        il,
-        ConvArm::Prefill,
-        Some(&mut stash),
-        scan_clock,
-    )?;
-    Ok((out, stash))
-}
-
-/// Roll every rank's sharded-KDA state back to "after row `keep-1`" from a spec x TP verify
-/// round (the [`Glm5TpKdaVerifyStash`] contract). Full accept never calls this — the
-/// resident per-rank states ARE the state after the last kept row.
-pub(crate) fn kda_tp_verify_rollback(
-    e: &Engine,
-    la_root: &KdaAttnLayer,
-    stash: &Glm5TpKdaVerifyStash,
-    keep: usize,
-    cache: &mut Cache,
-    il: usize,
-) -> Result<(), Box<dyn std::error::Error>> {
     let tp = la_root
         .tp
         .as_ref()
-        .ok_or("kda_tp_verify_rollback called on an unsharded layer")?;
+        .ok_or("kda_tp_cached called on an unsharded layer")?;
     let rt = &tp.rt;
-    let ranks = rt.ranks();
-    if stash.len() != ranks {
-        return Err(format!(
-            "glm5-tp verify rollback: stash carries {} ranks, the runtime has {ranks}",
-            stash.len()
-        )
-        .into());
+    let ql = la_root.qkv(); // per-rank channels
+    let full = tp.full_qkv;
+    let n_embd = tp.n_embd;
+    let hh = n_embd / GLM5_TP_RANKS;
+
+    // Host-canonical fan-out of x.
+    let x_host = e.dtoh(x)?;
+    let x_peer = rt.peer.htod(&x_host)?;
+
+    let [root_state, peer_state] = ensure_kda_tp_state(e, rt, la_root, cache, il)?;
+
+    // Peer shard first (host-canonical serial walk; overlap is the box arc).
+    let gated_peer = {
+        let RecurLayer {
+            conv_state,
+            ssm_state,
+            ssm_state_alt,
+        } = peer_state;
+        let out = crate::kda::kda_core_gated(
+            &rt.peer,
+            &tp.peer,
+            &x_peer,
+            t,
+            eps,
+            conv_state,
+            ssm_state,
+            ssm_state_alt,
+            arm,
+            crate::kda::KdaStash::None,
+            None,
+        )?;
+        std::mem::swap(ssm_state, ssm_state_alt);
+        out
+    };
+    let gated_root = {
+        let RecurLayer {
+            conv_state,
+            ssm_state,
+            ssm_state_alt,
+        } = root_state;
+        let out = crate::kda::kda_core_gated(
+            e,
+            la_root,
+            x,
+            t,
+            eps,
+            conv_state,
+            ssm_state,
+            ssm_state_alt,
+            arm,
+            crate::kda::KdaStash::None,
+            None,
+        )?;
+        std::mem::swap(ssm_state, ssm_state_alt);
+        out
+    };
+
+    // Gather the gated halves into the FULL [t, qkv] layout on BOTH ranks (column-parallel
+    // wo needs the whole input on each rank). Token-major interleave: row tok is
+    // [root ql | peer ql].
+    let gated_peer_host = rt.peer.dtoh(&gated_peer)?;
+    let gated_root_host = e.dtoh(&gated_root)?;
+    let mut full_host = vec![0f32; t * full];
+    for tok in 0..t {
+        full_host[tok * full..tok * full + ql]
+            .copy_from_slice(&gated_root_host[tok * ql..(tok + 1) * ql]);
+        full_host[tok * full + ql..(tok + 1) * full]
+            .copy_from_slice(&gated_peer_host[tok * ql..(tok + 1) * ql]);
     }
-    let states = cache.glm5_tp_recur[il]
-        .as_mut()
-        .ok_or_else(|| format!("glm5-tp verify rollback: layer {il} has no per-rank state"))?;
-    for r in 0..ranks {
-        let dev = if r == 0 { e } else { &rt.peers[r - 1] };
-        let la = if r == 0 { la_root } else { &tp.peers[r - 1] };
-        let (snap, rows) = &stash[r];
-        crate::kda::kda_verify_rollback_rows_on(dev, la, snap, rows, keep, &mut states[r], il)?;
+    let full_root = e.htod(&full_host)?;
+    let full_peer = rt.peer.htod(&full_host)?;
+
+    // Per-rank column wo halves: each output element is one full-K dot by the SAME plain
+    // matvec kernel — no cross-rank arithmetic anywhere in this join.
+    let y_root = e.matmul(&la_root.wo, &full_root, t)?; // [t, hh] rows 0..hh
+    let y_peer = rt.peer.matmul(&tp.peer.wo, &full_peer, t)?; // [t, hh] rows hh..2hh
+    let y_peer_host = rt.peer.dtoh(&y_peer)?;
+    let y_root_host = e.dtoh(&y_root)?;
+    let mut out_host = vec![0f32; t * n_embd];
+    for tok in 0..t {
+        out_host[tok * n_embd..tok * n_embd + hh]
+            .copy_from_slice(&y_root_host[tok * hh..(tok + 1) * hh]);
+        out_host[tok * n_embd + hh..(tok + 1) * n_embd]
+            .copy_from_slice(&y_peer_host[tok * hh..(tok + 1) * hh]);
     }
-    Ok(())
+    e.htod(&out_host)
 }
 
 // ------------------------------------------------------------------------------------------
 // MLA sidecar
 // ------------------------------------------------------------------------------------------
 
-/// The MLA TP sidecar: the peer ranks' head shards (with replicated `wq_a`/`wkv_a`/norms
-/// and full indexer replicas) plus the runtime handle.
+/// The MLA TP-2 sidecar: the peer's head shard (with replicated `wq_a`/`wkv_a`/norms and
+/// a full indexer replica) plus the runtime handle.
 pub struct Glm5TpMla {
     pub rt: Arc<Glm5TpRt>,
-    /// `peers[i]` is rank `i + 1`'s shard, resident on `rt.peers[i]`.
-    pub peers: Vec<crate::hybrid::MlaAttnLayer>,
+    pub peer: crate::hybrid::MlaAttnLayer,
     /// Full head count of the unsharded layer.
     pub full_heads: usize,
-    /// Full hidden width (`wo` out rows across all ranks).
+    /// Full hidden width (`wo` out rows across both ranks).
     pub n_embd: usize,
-}
-
-impl Glm5TpMla {
-    pub fn ranks(&self) -> usize {
-        self.peers.len() + 1
-    }
 }
 
 static MLA_MARKED: AtomicBool = AtomicBool::new(false);
@@ -1131,19 +877,18 @@ pub(crate) fn shard_mla_layer(
     if la.tp.is_some() {
         return Err("shard_mla_layer: layer is already sharded".into());
     }
-    let ranks = rt.ranks();
     let g = la.geom;
     let nh = g.n_head;
-    if !nh.is_multiple_of(ranks) {
-        return Err(format!("MLA heads {nh} do not shard across {ranks} ranks").into());
+    if !nh.is_multiple_of(GLM5_TP_RANKS) {
+        return Err(format!("MLA heads {nh} do not shard across {GLM5_TP_RANKS} ranks").into());
     }
-    let hl = nh / ranks;
+    let hl = nh / GLM5_TP_RANKS;
     let head_q = g.d_nope + g.d_rope; // per-head wq_b out rows
     let n_embd = la.wo.out_features();
-    if !n_embd.is_multiple_of(ranks) {
+    if !n_embd.is_multiple_of(GLM5_TP_RANKS) {
         return Err(format!("MLA wo out {n_embd} does not split across ranks").into());
     }
-    let hh = n_embd / ranks;
+    let hh = n_embd / GLM5_TP_RANKS;
 
     let mut shard_geom = g;
     shard_geom.n_head = hl;
@@ -1162,10 +907,10 @@ pub(crate) fn shard_mla_layer(
             })
         };
 
-    // Gate red arm: a broken shard map hands each rank the NEXT rank's wo out rows.
+    // Gate red arm: a broken shard map hands each rank the OTHER rank's wo out rows.
     let wo_rank = |r: usize| -> usize {
         match gate_red() {
-            Ok(Some(GateRed::SwapWo)) => (r + 1) % ranks,
+            Ok(Some(GateRed::SwapWo)) => 1 - r,
             _ => r,
         }
     };
@@ -1189,68 +934,60 @@ pub(crate) fn shard_mla_layer(
                 None => None,
             },
             tp: None,
-            tp_shard: true,
         })
     };
 
     let mut root = rank_shard(e, 0)?;
-    let mut peers = Vec::with_capacity(ranks - 1);
-    for r in 1..ranks {
-        peers.push(rank_shard(&rt.peers[r - 1], r)?);
-    }
+    let peer = rank_shard(&rt.peer, 1)?;
     if !MLA_MARKED.swap(true, Ordering::Relaxed) {
         eprintln!(
-            "[glm5-tp-mla] head shard armed: ranks={ranks} heads_per_rank={hl} kv_rank={} \
-             latent=replicated indexer=replicated wo=column-over-gather transport={} \
+            "[glm5-tp-mla] head shard armed: heads_per_rank={hl} kv_rank={} latent=replicated \
+             indexer=replicated wo=column-over-gather transport=host-canonical \
              performance_claim=false",
-            g.kv_rank,
-            rt.transport.name(),
+            g.kv_rank
         );
     }
     root.tp = Some(Box::new(Glm5TpMla {
         rt: Arc::clone(rt),
-        peers,
+        peer,
         full_heads: nh,
         n_embd,
     }));
     Ok(root)
 }
 
-/// Ensure the PEER ranks' replicated latent planes for layer `il` exist, geometry-cloned
-/// from the canonical (root) plane. The canonical plane IS the root replica — the root path
-/// is unchanged. `cache_slot` holds one plane per peer rank (`[i]` = rank `i + 1`).
+/// Ensure the PEER's replicated latent plane for layer `il` exists, geometry-cloned from
+/// the canonical (root) plane. The canonical plane IS the root replica — the root path is
+/// unchanged.
 pub(crate) fn ensure_mla_peer_latent(
     rt: &Glm5TpRt,
     canonical: &LatentKvLayer,
-    cache_slot: &mut Option<Vec<LatentKvLayer>>,
+    cache_slot: &mut Option<LatentKvLayer>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if cache_slot.is_some() {
         return Ok(());
     }
-    let mut planes = Vec::with_capacity(rt.peers.len());
-    for dev in &rt.peers {
-        let rows = dev.zeros(canonical.rows.len())?;
-        // Fresh replica starts at len 0 like a fresh canonical plane; the walk appends to
-        // every replica in the same calls, so the lengths stay in lock-step by construction.
-        let len_d = dev.htod_i32(&[0])?;
-        let index_rows = match &canonical.index_rows {
-            Some(p) => Some(dev.zeros(p.len())?),
-            None => None,
-        };
-        planes.push(LatentKvLayer {
-            rows,
-            width: canonical.width,
-            index_width: canonical.index_width,
-            len: 0,
-            len_d,
-            index_rows,
-            index_ring_rows: canonical.index_ring_rows,
-            index_pool_keys: None, // lazily allocated by the core, exactly like the canonical plane
-            index_pools_ready: 0,
-            index_pool: canonical.index_pool,
-        });
-    }
-    *cache_slot = Some(planes);
+    let dev = &rt.peer;
+    let rows = dev.zeros(canonical.rows.len())?;
+    // Fresh replica starts at len 0 like a fresh canonical plane; the walk appends to both
+    // in the same calls, so the lengths stay in lock-step by construction.
+    let len_d = dev.htod_i32(&[0])?;
+    let index_rows = match &canonical.index_rows {
+        Some(p) => Some(dev.zeros(p.len())?),
+        None => None,
+    };
+    *cache_slot = Some(LatentKvLayer {
+        rows,
+        width: canonical.width,
+        index_width: canonical.index_width,
+        len: 0,
+        len_d,
+        index_rows,
+        index_ring_rows: canonical.index_ring_rows,
+        index_pool_keys: None, // lazily allocated by the core, exactly like the canonical plane
+        index_pools_ready: 0,
+        index_pool: canonical.index_pool,
+    });
     Ok(())
 }
 
@@ -1260,7 +997,7 @@ pub(crate) fn ensure_mla_peer_latent(
 
 /// One rank's expert slab: the rank's owned experts packed in ASCENDING expert-id order
 /// for every projection, device-resident on that rank. For the even split the packing is
-/// the contiguous slice — byte-for-byte the pre-map layout.
+/// the contiguous half — byte-for-byte the pre-map layout.
 pub struct EpRankSlab {
     pub gate: CudaSlice<u8>,
     pub up: CudaSlice<u8>,
@@ -1268,7 +1005,7 @@ pub struct EpRankSlab {
     pub n_experts: usize,
 }
 
-/// The MoE EP sidecar on `MoeWeights`: per-rank expert slabs, the placement tables,
+/// The MoE EP-2 sidecar on `MoeWeights`: per-rank expert slabs, the placement tables,
 /// and the runtime handle. Router, shared expert, macros and all host metadata stay on
 /// the unchanged `MoeWeights`.
 ///
@@ -1279,13 +1016,13 @@ pub struct EpRankSlab {
 /// changes arithmetic.
 pub struct Glm5EpExps {
     pub rt: Arc<Glm5TpRt>,
-    /// `slabs[r]` is rank r's expert slab (`[0]` = root's, on the model's engine).
-    pub slabs: Vec<EpRankSlab>,
+    pub root: EpRankSlab,
+    pub peer: EpRankSlab,
     /// `owner_of[expert]` = owning rank (0 = root).
     pub owner_of: Vec<u8>,
     /// `local_of[expert]` = slot inside the owner's slab (ascending-id packing order).
     pub local_of: Vec<u32>,
-    /// Per-rank grouped-dispatch pointer tables, `[rank]`, each the `DevExps::ptr_row`
+    /// Per-rank grouped-dispatch pointer tables, `[root, peer]`, each the `DevExps::ptr_row`
     /// shape ([3 * n_expert] u64 device pointers: gate | up | down planes, indexed by GLOBAL
     /// expert id, resident on the owning rank's device). Owned experts point at
     /// `slab_base + local * stride`; non-owned entries are 0 and never dereferenced — the EP
@@ -1293,7 +1030,7 @@ pub struct Glm5EpExps {
     /// wrong rank's table. Built AFTER the gate-red slab mutations, from the FINAL slab
     /// buffers and the FINAL `local_of`, so `swap-ep-gateup` and `corrupt-ep-map` bite the
     /// grouped walk exactly as they bite the sequential one.
-    pub ptr_rows: Vec<CudaSlice<u64>>,
+    pub ptr_rows: [CudaSlice<u64>; 2],
 }
 
 impl Glm5EpExps {
@@ -1301,17 +1038,13 @@ impl Glm5EpExps {
     pub fn owner(&self, expert: usize) -> usize {
         self.owner_of[expert] as usize
     }
-
-    pub fn ranks(&self) -> usize {
-        self.slabs.len()
-    }
 }
 
 static EP_MARKED: AtomicBool = AtomicBool::new(false);
 
 /// Engagement counter: PEER-owned expert slots dispatched by the EP walk (counted before
-/// any gate-red skip, so a red arm can still assert a peer was ROUTED). Gates read it to
-/// prove the peer ranks contribute real expert work — a token stream that never routes a
+/// any gate-red skip, so a red arm can still assert the peer was ROUTED). Gates read it to
+/// prove the peer rank contributes real expert work — a token stream that never routes a
 /// peer-owned expert makes every EP identity arm vacuous.
 pub static GLM5_EP_PEER_SLOT_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
@@ -1332,9 +1065,8 @@ pub fn glm5_ep_diet_dispatches() -> u64 {
     GLM5_EP_DIET_DISPATCHES.load(Ordering::Relaxed)
 }
 
-/// Bulk peer-row block returns performed by the dieted walk (one per (layer-call, peer
-/// rank) that routed at least one slot owned by that rank; each replaces that call's ENTIRE
-/// per-slot return dribble for that rank).
+/// Bulk peer-row block returns performed by the dieted walk (one per layer-call that routed
+/// at least one peer-owned slot; each replaces that call's ENTIRE per-slot return dribble).
 pub static GLM5_EP_DIET_BULK_RETURNS: AtomicU64 = AtomicU64::new(0);
 
 /// Snapshot of [`GLM5_EP_DIET_BULK_RETURNS`].
@@ -1343,7 +1075,7 @@ pub fn glm5_ep_diet_bulk_returns() -> u64 {
 }
 
 /// Per-slot synchronous peer round-trips (one peer DtoH + one root pageable HtoD each, the
-/// v1 walk's dominant hop class) that the dieted walk folded into its bulk returns — one
+/// v1 walk's dominant hop class) that the dieted walk folded into its bulk return — one
 /// count per peer-owned slot bulked.
 pub static GLM5_EP_DIET_PEER_ROUNDTRIPS_AVOIDED: AtomicU64 = AtomicU64::new(0);
 
@@ -1352,11 +1084,10 @@ pub fn glm5_ep_diet_peer_roundtrips_avoided() -> u64 {
     GLM5_EP_DIET_PEER_ROUNDTRIPS_AVOIDED.load(Ordering::Relaxed)
 }
 
-/// Per-token peer z uploads the dieted walk avoided: `t-1` per (fanned layer-call, peer
-/// rank) (one bulk [t, n_embd] upload replaces t per-token uploads) plus `t` per (layer-call,
-/// rank) whose routing never touched that rank's experts (the fan-out is skipped entirely —
-/// the placement-map multiplier: single-rank layer-calls move ZERO activation bytes off
-/// root).
+/// Per-token peer z uploads the dieted walk avoided: `t-1` per fanned layer-call (one bulk
+/// [t, n_embd] upload replaces t per-token uploads) plus `t` per layer-call whose routing
+/// never touched a peer-owned expert (the fan-out is skipped entirely — the placement-map
+/// multiplier: single-rank layer-calls move ZERO activation bytes off root).
 pub static GLM5_EP_DIET_FANOUT_UPLOADS_AVOIDED: AtomicU64 = AtomicU64::new(0);
 
 /// Snapshot of [`GLM5_EP_DIET_FANOUT_UPLOADS_AVOIDED`].
@@ -1374,9 +1105,9 @@ pub fn glm5_ep_grouped_prime_dispatches() -> u64 {
     GLM5_EP_GROUPED_PRIME_DISPATCHES.load(Ordering::Relaxed)
 }
 
-/// Arm one MoE layer for EP. `placement` is the layer's validated map row
-/// (`owners[expert] = rank`) when `MEMRA_EP_MAP` (or its glm5 alias) is armed; `None` = the
-/// even split, whose ascending-id packing is byte-for-byte the pre-map contiguous slices.
+/// Arm one MoE layer for EP-2. `placement` is the layer's validated map row
+/// (`owners[expert] = rank`) when `MEMRA_GLM5_EP_MAP` is armed; `None` = the even
+/// split, whose ascending-id packing is byte-for-byte the pre-map contiguous halves.
 pub(crate) fn arm_moe_ep(
     e: &Engine,
     rt: &Arc<Glm5TpRt>,
@@ -1386,11 +1117,10 @@ pub(crate) fn arm_moe_ep(
     if m.glm5_ep.is_some() {
         return Err("arm_moe_ep: layer is already EP-armed".into());
     }
-    let ranks = rt.ranks();
     let n_expert = m.gate_exps.n_expert;
-    if !n_expert.is_multiple_of(ranks) {
+    if !n_expert.is_multiple_of(GLM5_TP_RANKS) {
         return Err(format!(
-            "glm5-tp EP: {n_expert} experts do not partition across {ranks} ranks"
+            "glm5-tp EP: {n_expert} experts do not partition across {GLM5_TP_RANKS} ranks"
         )
         .into());
     }
@@ -1409,18 +1139,16 @@ pub(crate) fn arm_moe_ep(
                 )
                 .into());
             }
-            if owners.iter().any(|&r| (r as usize) >= ranks) {
-                return Err(
-                    format!("glm5-tp EP: placement row names a rank outside TP-{ranks}").into(),
-                );
+            if owners.iter().any(|&r| (r as usize) >= GLM5_TP_RANKS) {
+                return Err("glm5-tp EP: placement row names a rank outside TP-2".into());
             }
             owners.to_vec()
         }
-        None => crate::ep_map::EpMap::even_owners(n_expert, ranks),
+        None => crate::ep_map::EpMap::even_owners(n_expert, GLM5_TP_RANKS),
     };
     // Ascending-id packing per rank + the local-slot table.
     let mut local_of = vec![0u32; n_expert];
-    let mut owned: Vec<Vec<usize>> = vec![Vec::new(); ranks];
+    let mut owned: [Vec<usize>; GLM5_TP_RANKS] = [Vec::new(), Vec::new()];
     for ex in 0..n_expert {
         let r = owner_of[ex] as usize;
         local_of[ex] = owned[r].len() as u32;
@@ -1465,13 +1193,10 @@ pub(crate) fn arm_moe_ep(
                 n_experts: experts.len(),
             })
         };
-    let mut slabs = Vec::with_capacity(ranks);
-    for r in 0..ranks {
-        slabs.push(slab(rank_engine(e, rt, r), &owned[r])?);
-    }
+    let mut root = slab(e, &owned[0])?;
+    let peer = slab(&rt.peer, &owned[1])?;
     // Gate red arm: wrong expert weights on the root rank (gate/up swapped).
     if matches!(gate_red(), Ok(Some(GateRed::SwapEpGateUp))) {
-        let root = &mut slabs[0];
         std::mem::swap(&mut root.gate, &mut root.up);
     }
     // Gate red arm: a corrupted map row — the local-slot table for rank 0 is reversed
@@ -1510,34 +1235,28 @@ pub(crate) fn arm_moe_ep(
         }
         dev.htod_u64(&host)
     };
-    let mut ptr_rows = Vec::with_capacity(ranks);
-    for r in 0..ranks {
-        ptr_rows.push(ptr_table(rank_engine(e, rt, r), &slabs[r], r as u8)?);
-    }
+    let ptr_rows = [ptr_table(e, &root, 0)?, ptr_table(&rt.peer, &peer, 1)?];
     if !EP_MARKED.swap(true, Ordering::Relaxed) {
         eprintln!(
-            "[glm5-tp-ep] expert-parallel armed: experts_per_rank={:?} ownership={} \
-             router=root combine=slot-ordered-fmaf transport={} \
+            "[glm5-tp-ep] expert-parallel armed: experts rank0={} rank1={} ownership={} \
+             router=root combine=slot-ordered-fmaf transport=host-canonical \
              performance_claim=false",
-            owned.iter().map(Vec::len).collect::<Vec<_>>(),
-            // ORDER MATTERS and it was wrong once: the ownership string must land on
-            // `ownership={}` and the transport on `transport={}`. The first gate run's
-            // receipt-extract printed `[glm5-tp-ep] transport=even-split`, which is how the
-            // swap was caught — a receipt line is only worth what its argument order is.
+            owned[0].len(),
+            owned[1].len(),
             if placement.is_some() {
                 "measured-map"
             } else {
                 "even-split"
             },
-            rt.transport.name(),
         );
     }
-    // The root-resident full slab (if the loader built one) is superseded by the EP slices;
+    // The root-resident full slab (if the loader built one) is superseded by the EP halves;
     // dropping it returns its VRAM and removes the arm that would silently bypass EP.
     m.dev_exps = None;
     m.glm5_ep = Some(Glm5EpExps {
         rt: Arc::clone(rt),
-        slabs,
+        root,
+        peer,
         owner_of,
         local_of,
         ptr_rows,
@@ -1561,10 +1280,6 @@ mod tests {
         assert_eq!(all[0].devices, vec![0, 1]);
         let all4 = parse_glm5_tp_layer_specs(Some("all@0,1"), 4).unwrap();
         assert_eq!(all4.len(), 4);
-        // The TP-4 device list parses through the same grammar.
-        let quad = parse_glm5_tp_layer_specs(Some("all@0,1,2,3"), 45).unwrap();
-        assert_eq!(quad.len(), 45);
-        assert_eq!(quad[0].devices, vec![0, 1, 2, 3]);
         // Explicit ranges.
         let r = parse_glm5_tp_layer_specs(Some("0-2@0,1;4@0,1"), 45).unwrap();
         assert_eq!(
@@ -1587,9 +1302,9 @@ mod tests {
                 Glm5LayerClass::Mla,
             ],
             layer_is_moe: vec![false, true, true, true],
-            kda_heads: 4,
+            kda_heads: 2,
             kda_head_dim: 128,
-            mla_heads: 4,
+            mla_heads: 2,
             n_routed_experts: 4,
             top_k: 2,
         }
@@ -1600,19 +1315,16 @@ mod tests {
     /// (The armed happy path needs an Engine and lives in the gate binary.)
     #[test]
     fn preflight_geometry_laws_are_dimension_derived() {
-        // The checks below mirror prepare_glm5_tp_load's law order on the view alone, at
-        // BOTH qualified rank counts.
+        // The checks below mirror prepare_glm5_tp_load's law order on the view alone.
         let v = fixture_view();
-        for ranks in GLM5_TP_ALLOWED_RANKS {
-            assert_eq!(v.kda_heads % ranks, 0);
-            assert_eq!(v.mla_heads % ranks, 0);
-            assert_eq!(v.n_routed_experts % ranks, 0);
-        }
+        assert_eq!(v.kda_heads % GLM5_TP_RANKS, 0);
+        assert_eq!(v.mla_heads % GLM5_TP_RANKS, 0);
+        assert_eq!(v.n_routed_experts % GLM5_TP_RANKS, 0);
         let odd = Glm5TpModelView {
             kda_heads: 3,
             ..fixture_view()
         };
-        assert_ne!(odd.kda_heads % 2, 0);
+        assert_ne!(odd.kda_heads % GLM5_TP_RANKS, 0);
         let bad_dim = Glm5TpModelView {
             kda_head_dim: 64,
             ..fixture_view()
@@ -1622,9 +1334,7 @@ mod tests {
             n_routed_experts: 5,
             ..fixture_view()
         };
-        assert_ne!(odd_experts.n_routed_experts % 2, 0);
-        // TP-3 stays outside the qualified envelope (head padding not built).
-        assert!(!GLM5_TP_ALLOWED_RANKS.contains(&3));
+        assert_ne!(odd_experts.n_routed_experts % GLM5_TP_RANKS, 0);
     }
 
     #[test]
@@ -1633,13 +1343,7 @@ mod tests {
         // including a spec the parser would refuse — the co-armed program must not race the
         // loader's own refusal.
         // (Env-mutation-free: the predicate's contract is pure string classification.)
-        for (v, armed) in [
-            ("", false),
-            ("0", false),
-            ("all@0,1", true),
-            ("all@0,1,2,3", true),
-            ("junk", true),
-        ] {
+        for (v, armed) in [("", false), ("0", false), ("all@0,1", true), ("junk", true)] {
             let is_armed = !v.is_empty() && v != "0";
             assert_eq!(is_armed, armed);
         }
@@ -1661,9 +1365,8 @@ mod tests {
         }
         // All doors cold = no refusal.
         refuse_glm5_tp_door_composition(|_| false).expect("cold doors must pass");
-        // The verify-batch flag is DELIBERATELY not in the matrix (the gated spec x TP
-        // composition owns that pair — its admission REQUIRES the batched walk); arming
-        // it alone must not trip this law.
+        // The verify-batch flag is DELIBERATELY not in the matrix (spec co-refusal owns
+        // that pair); arming it alone must not trip this law.
         refuse_glm5_tp_door_composition(|f| f == "MEMRA_GLM5_VERIFY_BATCH")
             .expect("verify-batch is refused via the spec co-refusal, not here");
     }

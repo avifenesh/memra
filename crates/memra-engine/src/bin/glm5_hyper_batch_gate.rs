@@ -392,14 +392,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // it). Set before the OnceLock's first read.
     // SAFETY: single-threaded, before any engine exists.
     unsafe { std::env::set_var("MEMRA_HYPER_BATCH", "1") };
-    // DOOR-H ALIAS HYGIENE (lane/glm5-extract2). This gate's composed arms are driven from
-    // the SHELL with `MEMRA_GLM5_HTOD_DIET=1` (the matrix runners' `compose-*-doors-EDH`
-    // cells), and they assert BIT-IDENTITY — which passes whether the door armed or not. So a
-    // leaked `MEMRA_HTOD_DIET=0` in the runner's environment would DISAGREE with the alias,
-    // fall the door closed, and make those ON arms silently vacuous. The alias the caller set
-    // is left alone; only the general name is cleared, so it cannot outvote them.
-    // SAFETY: single-threaded, before any engine or runtime exists.
-    unsafe { std::env::remove_var("MEMRA_HTOD_DIET") };
     if stages > 1 {
         // Door on for the WHOLE process: reference AND batched arms both run split, so the
         // only axis under test is batching. Split-vs-unsplit is glm5-hyper-ppn-gate's job.

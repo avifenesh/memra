@@ -4,7 +4,7 @@ Lane: make the speculative-decoding DRAFT chain graph-captured on Step-3.7-Flash
 Named blocker in the brief: `fa_decode_dc` cannot express the MTP block's SWA view offset
 (the boot WARN "step35 has no captured draft chain ...").
 
-Box: the rented dev box (2x RTX PRO 6000 Blackwell), model `/root/models/step37-flash-nvfp4`,
+Box: the sbox dev box (2x RTX PRO 6000 Blackwell), model `/root/models/step37-flash-nvfp4`,
 prompt curve-0400 (real 613-token chat payload). Code: memra branch
 `lane/step37-mtp-masked-vocab-20260825` commits c460c747d9 + 2eb05f35cc + b22b411697
 (box twin: branch `lane/step37-draft-dcw-20260829`, tip dfe718016).

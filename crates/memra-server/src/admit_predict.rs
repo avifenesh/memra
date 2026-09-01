@@ -24,25 +24,8 @@
 //! - G5: [`ShadowConfig`] + [`shadow_verdict_line`]: the `[admit-predict]` receipt,
 //!   one line per request at its first decisive admission consideration, behind
 //!   `MEMRA_ADMIT_PREDICT_SHADOW` (default 0 = OFF). Computes the D2 contract's
-//!   P-tenant-p95 verdict (slot check first, then the KV book against the budget
-//!   arm) and LOGS it, joined to the request id. The budget arm is
-//!   `MEMRA_ADMIT_PREDICT_BUDGET_MB` when set (explicit operator override), else
-//!   DERIVED AT BOOT by the worker from the engine's own numbers
-//!   ([`DerivedShadowBudget`]): the stress-campaign-20260901 FINDING 3 root cause 1
-//!   was a hand-derived env value that went stale the moment another lane's deploy
-//!   changed the box config (box12 c32: 164 reject-kv against a pre-devpenalty
-//!   61,580 MiB arm on traffic that served 200). A config-changing redeploy now
-//!   re-derives automatically.
-//! - Dual book (FINDING 3 root cause 2, booked-vs-real calibration): every receipt
-//!   line carries BOTH `booked_bytes` (the predictive shadow book: each in-flight
-//!   request's full kv_hat, prompt + PREDICTED completion, charged up front and held
-//!   until retire) and `booked_real` (the engine-charge book: the request-cost
-//!   estimates the real VRAM gate actually used at each admit). The predictive book
-//!   overbooks by construction at saturation, it holds every in-flight request's
-//!   completion KV as if already grown, while the real gate re-reads live free VRAM
-//!   (ground truth, only growth-to-date) per arrival. Logging both, instead of
-//!   silently re-tuning, lets the D2 false-reject analysis read directly which arm
-//!   lied on each would-reject row.
+//!   P-tenant-p95 verdict (slot check first, then the KV book against
+//!   `MEMRA_ADMIT_PREDICT_BUDGET_MB`) and LOGS it, joined to the request id.
 //! - G6: the would-reject lines carry `retry_after_s=`, the value an enforcing 429
 //!   would send, computed by [`earliest_completion_retry_s`] from the in-flight
 //!   sessions' own predicted remainders and clamped to the shed contract's 1..=60 s
@@ -95,17 +78,11 @@ pub(crate) struct ShadowConfig {
     /// `MEMRA_ADMIT_PREDICT_SHADOW` != "0"/unset. OFF by design: shadow logging is
     /// a measurement act, and unmeasured behavior does not default ON.
     pub armed: bool,
-    /// The box KV budget arm the KV check compares against, in bytes.
-    /// `MEMRA_ADMIT_PREDICT_BUDGET_MB` when set: the explicit operator override.
-    /// When unset, the worker fills this in at boot via [`Self::resolve_budget`]
-    /// from the engine's own numbers (effective free VRAM at boot minus the device
-    /// prefix-cache budget minus the admission reserve): the values the VRAM gate
-    /// and prefix-cache init already read, so a config-changing redeploy re-derives
-    /// automatically instead of serving a stale hand-carried constant
-    /// (stress-campaign-20260901 FINDING 3 cause 1). Only when BOTH the env is
-    /// unset AND the boot derivation is unavailable (free-VRAM query failed) does
-    /// the KV arm stay unarmed (`verdict` can only be admit/reject-slot, the line
-    /// says `budget_bytes=unset`) so offline analysis can apply any arm to the
+    /// `MEMRA_ADMIT_PREDICT_BUDGET_MB`: the box KV budget arm the KV check compares
+    /// against, in bytes. This is DEPLOYMENT arithmetic (card minus warm floor minus
+    /// margin, darklanes LANE.md), not something the engine can honestly derive; when
+    /// unset the KV arm never fires (`verdict` can only be admit/reject-slot) and the
+    /// line says `budget_bytes=unset` so offline analysis can apply any arm to the
     /// logged books.
     pub budget_bytes: Option<u64>,
     /// `MEMRA_ADMIT_PREDICT_EXEMPT_TENANTS`: comma-separated tenant ids, sourced from the
@@ -125,48 +102,19 @@ impl ShadowConfig {
             .ok()
             .map(|v| Self::parse_exempt(&v))
             .unwrap_or_default();
+        if armed {
+            eprintln!(
+                "[admit-predict] shadow armed: budget_bytes={} exempt_tenants={} \
+                 (logging only, nothing is rejected; enforcement is a separate flip)",
+                budget_bytes.map_or("unset".into(), |b| b.to_string()),
+                exempt.len(),
+            );
+        }
         ShadowConfig {
             armed,
             budget_bytes,
             exempt,
         }
-    }
-
-    /// Resolve the KV budget arm at boot and emit the `[admit-predict] shadow armed:`
-    /// boot line (the receipt FLAGS.md points at). Call once, after boot calibration,
-    /// so the derivation sees the calibrated admission reserve. Precedence:
-    /// the env override wins outright; else the boot derivation; else the arm stays
-    /// unarmed with the reason stated. The boot line states the resolved value AND
-    /// its formula inputs, so a receipt reader can re-check the arithmetic against
-    /// the box without shell access.
-    pub(crate) fn resolve_budget(&mut self, derived: Option<DerivedShadowBudget>) {
-        if !self.armed {
-            return;
-        }
-        let source = if self.budget_bytes.is_some() {
-            "env-override(MEMRA_ADMIT_PREDICT_BUDGET_MB)".to_string()
-        } else {
-            match derived {
-                Some(d) => {
-                    self.budget_bytes = Some(d.budget_bytes());
-                    format!(
-                        "derived(effective_free_bytes={} - prefix_cache_budget_bytes={} \
-                         - admission_reserve_bytes={})",
-                        d.effective_free_bytes,
-                        d.prefix_cache_budget_bytes,
-                        d.admission_reserve_bytes,
-                    )
-                }
-                None => "unset(boot free-VRAM query failed; KV arm stays unarmed)".to_string(),
-            }
-        };
-        eprintln!(
-            "[admit-predict] shadow armed: budget_bytes={} budget_src={} exempt_tenants={} \
-             (logging only, nothing is rejected; enforcement is a separate flip)",
-            self.budget_bytes.map_or("unset".into(), |b| b.to_string()),
-            source,
-            self.exempt.len(),
-        );
     }
 
     fn parse_exempt(raw: &str) -> Vec<String> {
@@ -184,37 +132,6 @@ impl ShadowConfig {
     pub(crate) fn is_exempt(&self, tenant_row: &str) -> bool {
         let bare = tenant_row.strip_prefix("t:").unwrap_or(tenant_row);
         self.exempt.iter().any(|t| t == bare)
-    }
-}
-
-/// Boot inputs for the derived shadow budget (unset `MEMRA_ADMIT_PREDICT_BUDGET_MB`).
-/// All three are the engine's OWN boot numbers, read at the same seams the real
-/// admission machinery reads them, so they cannot go stale against the box the way
-/// a hand-derived deployment constant did (stress-campaign-20260901 FINDING 3
-/// cause 1: pre-devpenalty 61,580 MiB arm survived a config-changing redeploy).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DerivedShadowBudget {
-    /// Effective free VRAM at boot: driver free plus pool-cached, the same
-    /// quantity the VRAM admission gate reads (`effective_free_bytes`).
-    pub effective_free_bytes: u64,
-    /// The device prefix-cache byte budget (configured or derived at
-    /// `init_prefix_cache_budget`): bytes the cache may hold that session KV
-    /// therefore cannot count on.
-    pub prefix_cache_budget_bytes: u64,
-    /// The admission transient reserve the real gate charges on top of a request's
-    /// cost (calibrated per-deployment floor, never below the static constant;
-    /// the `MEMRA_ADMIT_RESERVE_MB` teeth door wins where set).
-    pub admission_reserve_bytes: u64,
-}
-
-impl DerivedShadowBudget {
-    /// `budget = effective_free - prefix_cache_budget - admission_reserve`,
-    /// saturating: the bytes session KV can actually claim once the prefix cache
-    /// and the transient floor take their shares.
-    pub(crate) fn budget_bytes(&self) -> u64 {
-        self.effective_free_bytes
-            .saturating_sub(self.prefix_cache_budget_bytes)
-            .saturating_sub(self.admission_reserve_bytes)
     }
 }
 
@@ -270,14 +187,6 @@ impl AdmissionBook {
             .values()
             .map(|row| row.shadow_booked_bytes)
             .sum()
-    }
-
-    /// The ENGINE-charge book, same summation shape: every in-flight request's real
-    /// admission charge (the cost the VRAM gate used at its admit). The `booked_real=`
-    /// column of the receipt: logged beside the predictive book so the false-reject
-    /// analysis reads which arm lied (FINDING 3 calibration, booked-vs-real).
-    pub(crate) fn booked_total(&self) -> u64 {
-        self.models.values().map(|row| row.booked_bytes).sum()
     }
 
     /// G2 metrics snapshots (operator scope): per-model in-flight and booked bytes.
@@ -498,38 +407,6 @@ pub(crate) fn earliest_completion_retry_s(
         })
 }
 
-/// Margin for the first-token deadline gate (`MEMRA_FIRST_TOKEN_DEADLINE_GATE`): the same
-/// 150% posture as the non-streaming feasibility gate's `DEADLINE_INFEASIBLE_MARGIN_PCT`:
-/// the floor rates are deliberately pessimistic, so only an estimate 1.5x past the
-/// remaining deadline refuses. A shared constant is NOT reused across the two gates on
-/// purpose: they judge different phases (whole response vs first token) and must be
-/// re-tunable independently when their GPU gates land.
-pub(crate) const FIRST_TOKEN_DEADLINE_MARGIN_PCT: u64 = 150;
-
-/// First-token deadline feasibility (lane/bench-debts-20260901, competitive-bench engine
-/// debt 3; the streaming analog the D2 report §7 named): can this request's FIRST token
-/// arrive inside its remaining wire deadline, given the prime backlog already admitted
-/// ahead of it? The estimate is the whole pending prefill demand (this prompt plus the
-/// sum of every active session's unprimed tokens) at the pessimistic single-stream
-/// prefill floor (`MEMRA_PREFILL_FLOOR_TOK_S`; the batched prime shares one card, so the
-/// aggregate rate is the same unit). Streaming and non-streaming alike: the wire deadline
-/// bounds exactly time-to-first-token for a stream and is a lower bound for a body.
-/// Returns `Some(estimated_ms)` when infeasible past the margin, `None` when the request
-/// may proceed. Pure arithmetic; the worker owns the inputs and the refusal.
-pub(crate) fn first_token_wait_infeasible(
-    prompt_tokens: u64,
-    backlog_tokens: u64,
-    remaining_ms: u64,
-    prefill_floor_tok_s: u64,
-) -> Option<u64> {
-    let est_ms = prompt_tokens
-        .saturating_add(backlog_tokens)
-        .saturating_mul(1_000)
-        / prefill_floor_tok_s.max(1);
-    let bound_ms = remaining_ms.saturating_mul(FIRST_TOKEN_DEADLINE_MARGIN_PCT) / 100;
-    (est_ms > bound_ms).then_some(est_ms)
-}
-
 /// Everything one receipt line says. Assembled by the worker at the request's first
 /// decisive admission consideration; formatted by [`shadow_verdict_line`].
 pub(crate) struct VerdictLine<'a> {
@@ -544,16 +421,8 @@ pub(crate) struct VerdictLine<'a> {
     pub predicted_completion: u64,
     /// This request's own kv_hat charge (None on slot rejects logged before tokenize).
     pub kv_hat_bytes: Option<u64>,
-    /// The in-flight shadow book at decision time, EXCLUDING this request:
-    /// the sum of predictive kv_hat charges (prompt + predicted completion,
-    /// booked in full at admit).
+    /// The in-flight shadow book at decision time, EXCLUDING this request.
     pub booked_bytes: u64,
-    /// The in-flight ENGINE-charge book at the same instant ([`AdmissionBook::
-    /// booked_total`]): the request-cost estimates the real VRAM gate used at each
-    /// admit. Carried beside `booked_bytes` so the D2 bar analysis sees both books
-    /// on every row and the false-reject read is direct, never a re-tuned guess
-    /// (FINDING 3: kv_hat booked 63.5-64 GB at c32 while reality served 200).
-    pub booked_real_bytes: u64,
     pub inflight: u64,
     pub cap: u64,
     pub budget_bytes: Option<u64>,
@@ -567,8 +436,8 @@ pub(crate) struct VerdictLine<'a> {
 pub(crate) fn shadow_verdict_line(line: &VerdictLine<'_>) -> String {
     format!(
         "[admit-predict] id={} tenant={:?} model={:?} verdict={} reason={} prompt={} \
-         predicted_completion={} kv_hat={} booked_bytes={} booked_real={} inflight={} \
-         cap={} budget_bytes={} retry_after_s={} exempt={}",
+         predicted_completion={} kv_hat={} booked_bytes={} inflight={} cap={} \
+         budget_bytes={} retry_after_s={} exempt={}",
         line.request_id,
         line.tenant_row,
         line.model,
@@ -578,7 +447,6 @@ pub(crate) fn shadow_verdict_line(line: &VerdictLine<'_>) -> String {
         line.predicted_completion,
         line.kv_hat_bytes.map_or("-".into(), |v| v.to_string()),
         line.booked_bytes,
-        line.booked_real_bytes,
         line.inflight,
         line.cap,
         line.budget_bytes.map_or("unset".into(), |v| v.to_string()),
@@ -591,41 +459,6 @@ pub(crate) fn shadow_verdict_line(line: &VerdictLine<'_>) -> String {
 mod tests {
     use super::*;
 
-    /// First-token deadline arithmetic (lane/bench-debts-20260901, competitive-bench
-    /// debt 3). The bench shape as concrete rows: at the 2,000 tok/s floor, a 60k-token
-    /// prompt behind a 500k-token prime backlog estimates 280 s: infeasible inside a
-    /// 90 s wire deadline; the same prompt on an idle box estimates 30 s and proceeds.
-    #[test]
-    fn first_token_wait_infeasible_arithmetic() {
-        // Idle box, 60k prompt, 90 s deadline: 30 s estimate <= 135 s bound -> feasible.
-        assert_eq!(first_token_wait_infeasible(60_000, 0, 90_000, 2_000), None);
-        // The bench's N56 thrash shape: 500k tokens of prime backlog ahead.
-        assert_eq!(
-            first_token_wait_infeasible(60_000, 500_000, 90_000, 2_000),
-            Some(280_000)
-        );
-        // The margin is real: an estimate just past the deadline but inside the x1.5
-        // band proceeds (floor rates are pessimistic)...
-        assert_eq!(first_token_wait_infeasible(200_000, 0, 90_000, 2_000), None);
-        // ...and just past the band refuses. 271k tok / 2k tok/s = 135.5 s > 135 s.
-        assert_eq!(
-            first_token_wait_infeasible(271_000, 0, 90_000, 2_000),
-            Some(135_500)
-        );
-        // A decayed deadline refuses what a fresh one admitted (defer-tick re-check).
-        assert_eq!(first_token_wait_infeasible(60_000, 0, 90_000, 2_000), None);
-        assert_eq!(
-            first_token_wait_infeasible(60_000, 0, 10_000, 2_000),
-            Some(30_000)
-        );
-        // Zero/absurd floor never divides by zero and never admits by overflow
-        // (saturating add+mul, floor clamped to 1).
-        assert_eq!(
-            first_token_wait_infeasible(u64::MAX, u64::MAX, 90_000, 0),
-            Some(u64::MAX)
-        );
-    }
-
     fn line(verdict: Verdict) -> VerdictLine<'static> {
         VerdictLine {
             request_id: "chatcmpl-abc123",
@@ -637,7 +470,6 @@ mod tests {
             predicted_completion: 2906,
             kv_hat_bytes: Some(130_000_000),
             booked_bytes: 9_000_000_000,
-            booked_real_bytes: 6_500_000_000,
             inflight: 7,
             cap: 32,
             budget_bytes: Some(35_423 << 20),
@@ -647,9 +479,8 @@ mod tests {
     }
 
     /// Locks the receipt's field NAMES and joinability: request id, verdict, reason,
-    /// predicted_completion, booked_bytes, booked_real (the fields the D2
-    /// confusion-matrix grep keys on; the dual book is the FINDING 3 calibration),
-    /// plus the shadow-Retry-After and exemption markers.
+    /// predicted_completion, booked_bytes (the fields the D2 confusion-matrix grep
+    /// keys on), plus the shadow-Retry-After and exemption markers.
     #[test]
     fn verdict_line_locks_fields() {
         let s = shadow_verdict_line(&line(Verdict::RejectKv));
@@ -664,7 +495,6 @@ mod tests {
             "predicted_completion=2906",
             "kv_hat=130000000",
             "booked_bytes=9000000000",
-            "booked_real=6500000000",
             "inflight=7",
             "cap=32",
             "budget_bytes=37143707648",
@@ -707,15 +537,12 @@ mod tests {
         assert_eq!(book.inflight("m"), 2);
         assert_eq!(book.booked_snapshot()["m"], 150);
         assert_eq!(book.inflight_snapshot()["m"], 2);
-        // Both books sum across models (one card, one budget arm): the predictive
-        // kv_hat book and the engine-charge (booked_real) book.
+        // The shadow decision sums across models (one card, one budget arm).
         assert_eq!(book.shadow_booked_total(), 53);
-        assert_eq!(book.booked_total(), 157);
         book.retire("m", 100, 40);
         assert_eq!(book.inflight("m"), 1);
         assert_eq!(book.booked_snapshot()["m"], 50);
         assert_eq!(book.shadow_booked_total(), 13);
-        assert_eq!(book.booked_total(), 57);
         book.retire("m", 50, 10);
         book.retire("other", 7, 3);
         assert_eq!(book.inflight("m"), 0);
@@ -815,71 +642,6 @@ mod tests {
             None,
             "no latency estimate yet"
         );
-    }
-
-    /// The derived-budget arithmetic (FINDING 3 cause 1 fix): effective free at boot
-    /// minus the prefix-cache budget minus the admission reserve, saturating.
-    #[test]
-    fn derived_budget_arithmetic() {
-        // box12-shaped numbers: 81,920 MiB effective free, 16,384 MiB prefix cache,
-        // 1,536 MiB reserve floor -> 64,000 MiB budget.
-        let d = DerivedShadowBudget {
-            effective_free_bytes: 81_920 << 20,
-            prefix_cache_budget_bytes: 16_384 << 20,
-            admission_reserve_bytes: 1_536 << 20,
-        };
-        assert_eq!(d.budget_bytes(), 64_000 << 20);
-        // A prefix cache + reserve larger than free saturates to 0 (an unarmed-in-
-        // practice budget, never an underflow panic in the serving loop).
-        let d = DerivedShadowBudget {
-            effective_free_bytes: 1 << 30,
-            prefix_cache_budget_bytes: 1 << 30,
-            admission_reserve_bytes: 1,
-        };
-        assert_eq!(d.budget_bytes(), 0);
-    }
-
-    /// The env override wins over the derivation; unset env + derivation fills in;
-    /// unset env + failed derivation leaves the KV arm unarmed.
-    #[test]
-    fn resolve_budget_precedence() {
-        let derived = DerivedShadowBudget {
-            effective_free_bytes: 10 << 30,
-            prefix_cache_budget_bytes: 2 << 30,
-            admission_reserve_bytes: 1 << 30,
-        };
-        // Env override present: derivation must not clobber it.
-        let mut cfg = ShadowConfig {
-            armed: true,
-            budget_bytes: Some(1234),
-            exempt: Vec::new(),
-        };
-        cfg.resolve_budget(Some(derived));
-        assert_eq!(cfg.budget_bytes, Some(1234));
-        // Unset env: the boot derivation arms the KV check.
-        let mut cfg = ShadowConfig {
-            armed: true,
-            budget_bytes: None,
-            exempt: Vec::new(),
-        };
-        cfg.resolve_budget(Some(derived));
-        assert_eq!(cfg.budget_bytes, Some(7 << 30));
-        // Unset env + no derivation (free-VRAM query failed): stays unarmed.
-        let mut cfg = ShadowConfig {
-            armed: true,
-            budget_bytes: None,
-            exempt: Vec::new(),
-        };
-        cfg.resolve_budget(None);
-        assert_eq!(cfg.budget_bytes, None);
-        // Disarmed shadow never resolves (no boot line, no budget).
-        let mut cfg = ShadowConfig {
-            armed: false,
-            budget_bytes: None,
-            exempt: Vec::new(),
-        };
-        cfg.resolve_budget(Some(derived));
-        assert_eq!(cfg.budget_bytes, None);
     }
 
     #[test]

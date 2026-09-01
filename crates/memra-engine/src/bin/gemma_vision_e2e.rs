@@ -62,7 +62,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ids.len()
     );
 
-    let overlay = memra_engine::vision::EmbedOverlay::new(&e, rows, vec![(span_start, 0, n_soft)]);
+    let overlay = memra_engine::vision::EmbedOverlay {
+        rows,
+        spans: vec![(span_start, 0, n_soft)],
+    };
     let causal_wrong_arm = std::env::var("MEMRA_GV_CAUSAL").as_deref() == Ok("1");
 
     let mut cache = memra_engine::cache::Cache::new(&e, &model.cfg, ids.len() + n_gen + 8)?;

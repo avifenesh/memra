@@ -1,0 +1,39 @@
+######## C0 TRACE BOOT (served plain, agentic-t1) ########
+[tpd] no pidfile, nothing to stop
+[tpd] launched pid=164393 boot=c0-ag-plain nonce=e7715817-4aa1-4f18-adbe-10fa1eaf12af
+[tpd] READY after 34s
+[tpd] GATES GREEN boot=c0-ag-plain
+[sample] ok=True wall=2.6s text="Let me parse what the user is asking for. They're describing a tool they want built:\n\n- Not Rust this time (so presumabl"
+[cell greedy k=None] d00-code wall=8.1s spec=None err=None
+[cell greedy k=None] d01-code wall=8.2s spec=None err=None
+[cell greedy k=None] d02-code wall=8.5s spec=None err=None
+[cell greedy k=None] d03-code wall=8.4s spec=None err=None
+[cell greedy k=None] d04-code wall=7.7s spec=None err=None
+[cell greedy k=None] d05-code wall=8.1s spec=None err=None
+[cell] done rows=6 errors=0
+[tpd] SIGTERM pid=164393 exe=/root/memra-tpd/target/release/memra-server
+[tpd] stopped
+--- trace receipts agentic-t1 ---
+   63714 /root/out-struct/traces/agentic-t1.ids
+   63714 /root/out-struct/traces/agentic-t1.w
+  127428 total
+06eccfd63c73ac13214f44015adf1c44b29443c3fe53d8ac2d229571e21708b3  /root/out-struct/traces/agentic-t1.ids
+9a5663ea67a3eca4eee4a1303eac7c82d82a7ebca68afd179fd315db55e0fcc1  /root/out-struct/traces/agentic-t1.w
+t=1 rows=63462
+t=192 rows=42
+t=239 rows=42
+t=289 rows=42
+t=453 rows=42
+t=520 rows=42
+t=563 rows=42
+=== LOOP-LAW SCREEN (c0 tapes; looped rows would bias the routing trace) ===
+[loop-law] screened=6 flagged=0
+######## C0 MINT (shared tool, ranks 2, entry-rank 0, expert-count 288, --decode-only) ########
+wrote /root/out-tpd/maps/agentic-t1-coactivation.json (42 layers, strategy=coactivation)
+wrote /root/out-tpd/maps/agentic-t1-even.json (42 layers, strategy=even)
+56dea5ca5a2502f2b7558e8339f5c49eac5259e5b7a1489c1b2843b7fe81e2d4  /root/out-tpd/maps/agentic-t1-coactivation.json
+e68b419f08ec22178755bb48e055f1f8708f026183b3b8be2b0be7501bd7e466  /root/out-tpd/maps/agentic-t1-even.json
+banked_sha=56dea5ca5a2502f2b7558e8339f5c49eac5259e5b7a1489c1b2843b7fe81e2d4
+minted_sha=56dea5ca5a2502f2b7558e8339f5c49eac5259e5b7a1489c1b2843b7fe81e2d4
+C0_MAP_SHA=REPRODUCED
+C0_DONE

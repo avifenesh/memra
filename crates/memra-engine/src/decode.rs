@@ -627,7 +627,6 @@ impl HybridModel {
         aux_layers: &[usize],
     ) -> Result<(Vec<f32>, Vec<CudaSlice<f32>>), Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_aux")?;
-        cache.ensure_usable("decode_step_aux")?;
         let (logits, aux, _) = self.decode_step_aux_inner(e, token, cache, aux_layers, false)?;
         Ok((logits, aux))
     }
@@ -642,7 +641,6 @@ impl HybridModel {
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, Hy3Layer0Stages), Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_hy3_layer0_stages")?;
-        cache.ensure_usable("decode_step_hy3_layer0_stages")?;
         if self.cfg.hy3.is_none() {
             return Err("decode_step_hy3_layer0_stages requires a Hy3 model".into());
         }
@@ -745,7 +743,6 @@ impl HybridModel {
         token: u32,
         cache: &mut Cache,
     ) -> Result<(Vec<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
-        cache.ensure_usable("decode_step_h")?;
         if self.hyper.is_some() {
             return self.decode_step_hyper(e, token, cache);
         }
@@ -763,8 +760,6 @@ impl HybridModel {
             if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Pipeline) {
                 return Err("pipeline rewrite is not qualified for this ModelPlan".into());
             }
-            let rt = crate::pp::PpNRt::get(e)?;
-            let _walk = rt.acquire_walk("decode_step_h_ppn")?;
             return self.decode_step_h_ppn(e, token, cache, &fence);
         }
         // Whole-token decode graph (step TP graph increment B, MEMRA_STEP_TP_GRAPH=1 +
@@ -1062,7 +1057,6 @@ impl HybridModel {
         samp: Option<&crate::decode_batch::DevSamp>,
     ) -> Result<Option<(Vec<u32>, Vec<f32>)>, Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_chain")?;
-        cache.ensure_usable("decode_step_chain")?;
         if !self.uses_sliding_gated_moe_program() {
             return Ok(None);
         }
@@ -1547,7 +1541,6 @@ impl HybridModel {
         cache: &mut Cache,
     ) -> Result<crate::pp::PendingLogits, Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_h_ppn_deferred")?;
-        cache.ensure_usable("decode_step_h_ppn_deferred")?;
         let fence = crate::pp::pp_cuts(self.layers.len())
             .ok_or("ppn deferred: pp door closed (MEMRA_PP_STAGES unset)")?;
         if crate::pp::pp2_streams_off() {
@@ -1569,7 +1562,6 @@ impl HybridModel {
             );
         }
         let rt = crate::pp::PpNRt::get(e)?;
-        let walk = rt.acquire_deferred_walk("decode_step_h_ppn_deferred")?;
         let n_st = fence.len() - 1;
         assert_eq!(
             rt.n_stages(),
@@ -1617,7 +1609,6 @@ impl HybridModel {
             logits,
             ev,
             rt.readback_stream().clone(),
-            walk,
         ))
     }
 
@@ -1635,9 +1626,6 @@ impl HybridModel {
         caches: &mut [Cache],
     ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_lockstep")?;
-        for cache in caches.iter() {
-            cache.ensure_usable("decode_step_lockstep")?;
-        }
         if tokens.len() != caches.len() || tokens.is_empty() {
             return Err("lockstep needs one token per stream cache".into());
         }
@@ -1876,7 +1864,6 @@ impl HybridModel {
         n_vocab: usize,
     ) -> Result<CudaSlice<u32>, Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_dc")?;
-        cache.ensure_usable("decode_step_dc")?;
         // Route gemma4 to ITS dc twin (mirrors decode_step_h): the generic walk below is the
         // qwen-class layer stack — running gemma weights through it produced the argmax-INIT
         // passthrough the round-45 g12 gate caught (first Hopper gating of this lane).
@@ -2023,7 +2010,6 @@ impl HybridModel {
         mask: Option<(&CudaSlice<u32>, usize)>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.refuse_hyper("decode_step_dc_cap_masked")?;
-        cache.ensure_usable("decode_step_dc_cap")?;
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
         let eps = cfg.rms_eps;
@@ -2385,7 +2371,6 @@ impl HybridModel {
         max_new: usize,
         mask_init: Option<&[u32]>,
     ) -> Result<(GraphSession, u32), Box<dyn std::error::Error>> {
-        cache.ensure_usable("graph_session_from_cache")?;
         if e.ctx().is_event_tracking() {
             return Err(
                 "graph_session_from_cache requires event tracking OFF (MEMRA_EVT unset)".into(),
@@ -2751,29 +2736,22 @@ impl HybridModel {
                 e.matmul_pre(&fa.wv, hq, hd, h, 1)?,
             ))
         };
-        let (qf, mut k, v) = if let Some(mut qkv) = self.full_attn_tp_qkv(e, fa, h, 1)? {
-            let v = qkv.pop().ok_or("full-attention TP QKV omitted V")?;
-            let k = qkv.pop().ok_or("full-attention TP QKV omitted K")?;
-            let q = qkv.pop().ok_or("full-attention TP QKV omitted Q")?;
-            if !qkv.is_empty() {
-                return Err("full-attention TP QKV returned extra projections".into());
-            }
-            (q, k, v)
-        } else if e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk) && e.uses_q8_1_fast(&fa.wv) {
-            match pre_q {
-                Some((hq, hd)) => qkv_fused(e, hq, hd)?,
-                None => {
-                    let (hq, hd) = e.quantize_q8_1(h, 1, n_embd)?;
-                    qkv_fused(e, &hq, &hd)?
+        let (qf, mut k, v) =
+            if e.uses_q8_1_fast(&fa.wq) && e.uses_q8_1_fast(&fa.wk) && e.uses_q8_1_fast(&fa.wv) {
+                match pre_q {
+                    Some((hq, hd)) => qkv_fused(e, hq, hd)?,
+                    None => {
+                        let (hq, hd) = e.quantize_q8_1(h, 1, n_embd)?;
+                        qkv_fused(e, &hq, &hd)?
+                    }
                 }
-            }
-        } else {
-            (
-                e.matmul(&fa.wq, h, 1)?,
-                e.matmul(&fa.wk, h, 1)?,
-                e.matmul(&fa.wv, h, 1)?,
-            )
-        };
+            } else {
+                (
+                    e.matmul(&fa.wq, h, 1)?,
+                    e.matmul(&fa.wk, h, 1)?,
+                    e.matmul(&fa.wv, h, 1)?,
+                )
+            };
         // M3/Hy3 have no attention output gate — wq out is exactly q; skip the split.
         let gated = geometry.attention_gate == memra_gguf::config::AttentionGateKind::FusedQ;
         let (mut q, gate) = if gated {
@@ -2895,10 +2873,7 @@ impl HybridModel {
             }
             None => attn,
         };
-        match self.full_attn_tp_o(e, fa, &attn_g, 1)? {
-            Some(output) => Ok(output),
-            None => Ok(e.matmul(&fa.wo, &attn_g, 1)?),
-        }
+        e.matmul(&fa.wo, &attn_g, 1)
     }
 
     /// Greedy generation: prime with prompt tokens (decode them in sequence to build state),
@@ -3603,34 +3578,6 @@ impl HybridModel {
         }
         let cfg = &self.cfg;
         let geometry = cfg.full_attention_geometry_at(il as u32);
-        if fa
-            .step_tp_qkv
-            .as_ref()
-            .is_some_and(|tp| tp.attention.is_some())
-        {
-            if pre_q.is_some() {
-                return Err(
-                    "rank-local generic TP attention preserves BF16 activations and refuses the \
-                     q8_1 pre-quantized decode path"
-                        .into(),
-                );
-            }
-            if geometry.attention_gate != memra_gguf::config::AttentionGateKind::None {
-                return Err(
-                    "rank-local generic TP attention currently requires an ungated attention \
-                     plan; fused-Q and separate-head gates retain their existing qualified paths"
-                        .into(),
-                );
-            }
-            if !crate::tp::step_tp_decode_v2_enabled()? {
-                return Err(
-                    "MEMRA_PARALLEL_TP_ATTENTION=1 requires MEMRA_STEP_TP_DECODE_V2=1 for \
-                     generic decode; the v1 driver is Step-gate-specific"
-                        .into(),
-                );
-            }
-            return self.step35_tp_decode_attn_resident_v2(e, fa, il, h, pos_d, cache);
-        }
         let n_head = geometry.n_head as usize;
         let n_head_kv = geometry.n_head_kv as usize;
         let head_dim = geometry.head_dim_k as usize;

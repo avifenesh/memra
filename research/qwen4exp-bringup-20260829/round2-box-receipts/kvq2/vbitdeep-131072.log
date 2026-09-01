@@ -1,5 +1,0 @@
-# qwen4exp_real_gate	label=r2vbitdeep-131072	binary_sha256=5f5f708eb0ed27829f35174a062e7234a4ebc8b11a3ad24690ff0642c40d1b3c	ckpt=/home/ubuntu/data/q48fn-yarn1m	host_bf16_banks=false	indexer_norm_raw=false	mtp_dev1=true	spec_opts=SpecOpts { dynk: None, adapt_k_lo: Some(1), pmin: 0.3, defer: false, defer_guard_sync: false, prefill_chunk: None, wide_ring: None }
-# timing lines are UNTUNED EAGER wall clocks under correctness-arm residency — NOT perf claims
-# cache	kv_quant=q8_0/q5_1	idxq=q8	golden_pin=false	seams_env=idxsel
-# vram	post-engine	0, 595 MiB, 97887 MiB | 1, 595 MiB, 97887 MiB
-Error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")

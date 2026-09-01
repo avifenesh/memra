@@ -72,10 +72,6 @@
 //!
 //! usage: glm5-tp-gate [P=16] [N=12] [TRACE_OUT (preserve arm T's fixture weight-trace)]
 
-// lane/clippy-zero-restore-20260901: the gate's comparison tuples are deliberately explicit;
-// naming them buys nothing in a one-file gate binary.
-#![allow(clippy::type_complexity)]
-
 use memra_engine::Engine;
 use memra_engine::forward::argmax;
 use memra_engine::hybrid::HybridModel;
@@ -95,22 +91,12 @@ const HIDDEN: usize = 128;
 const VOCAB: u32 = 32;
 const LAYERS: usize = 4;
 
-/// The hyper/spec ppN gates' mini glm5_next, with the ONE change this gate needs: the head
-/// counts, so a rank head shard is non-trivial on both mixer classes. KDA head_dim stays
-/// 128 (`memra_kda_scan_s128` is width-pinned); the indexer keeps ONE head (it is
-/// REPLICATED, never sharded, per the shard map).
-///
-/// Two instantiations:
-///   * `(2, 4)` — the ORIGINAL TP-2 fixture (2 KDA + 2 MLA heads, 4 experts top-2):
-///     heads_per_rank = 1 at two ranks. Every banked TP-2 verdict was minted on it and it
-///     stays byte-unchanged (pin-against-truth: the instrument does not move).
-///   * `(4, 8)` — the TP-4 fixture (lane/glm5-composition): 4 KDA + 4 MLA heads
-///     (heads_per_rank = 1 at four ranks) and 8 routed experts (EP-4 = 2 experts/rank, so
-///     a skewed map can give rank 0 more than one expert and the corrupt-map red has a
-///     table to reverse).
-fn mini_config_json(heads: usize, experts: usize) -> String {
-    format!(
-        r#"{{
+/// The hyper/spec ppN gates' mini glm5_next, with the ONE change this gate needs: TWO KDA
+/// heads and TWO MLA heads, so a 2-rank head shard is non-trivial on both mixer classes
+/// (heads_per_rank = 1). KDA head_dim stays 128 (`memra_kda_scan_s128` is width-pinned);
+/// the indexer keeps ONE head (it is REPLICATED, never sharded, per the shard map).
+fn mini_config_json() -> String {
+    r#"{
       "model_type": "glm5_next_text",
       "num_hidden_layers": 4,
       "num_nextn_predict_layers": 0,
@@ -131,16 +117,16 @@ fn mini_config_json(heads: usize, experts: usize) -> String {
       "mlp_layer_types": ["dense", "sparse", "sparse", "sparse"],
       "first_k_dense_replace": 1,
       "indexer_types": ["full", "full", "full", "full"],
-      "linear_attn_config": {{
-        "num_heads": {heads},
+      "linear_attn_config": {
+        "num_heads": 2,
         "head_dim": 128,
         "short_conv_kernel_size": 4,
         "gate_lower_bound": -5.0,
         "kda_layers": [0, 2],
         "full_attn_layers": [1, 3]
-      }},
-      "num_attention_heads": {heads},
-      "num_key_value_heads": {heads},
+      },
+      "num_attention_heads": 2,
+      "num_key_value_heads": 2,
       "q_lora_rank": 16,
       "kv_lora_rank": 16,
       "qk_head_dim": 16,
@@ -156,7 +142,7 @@ fn mini_config_json(heads: usize, experts: usize) -> String {
       "index_kpool_compress": true,
       "indexer_rope_interleave": true,
       "index_share_for_mtp_iteration": true,
-      "n_routed_experts": {experts},
+      "n_routed_experts": 4,
       "num_experts_per_tok": 2,
       "moe_intermediate_size": 64,
       "n_shared_experts": 1,
@@ -170,8 +156,8 @@ fn mini_config_json(heads: usize, experts: usize) -> String {
       "attention_bias": false,
       "moe_router_dtype": "float32",
       "dtype": "bfloat16"
-    }}"#
-    )
+    }"#
+    .to_string()
 }
 
 struct OwnedTensor {
@@ -371,15 +357,6 @@ fn max_rel_diff(a: &[Vec<f32>], b: &[Vec<f32>]) -> f32 {
 /// 10x margin over the measured worst; the reds land at 1.4e2..2.7e2 — SIX orders above
 /// the band — which is what proves the band distinguishes rather than absorbs.
 const PRIME_BAND: f32 = 2e-4;
-/// The QUAD fixture's prime-regime band (TP-4, lane/glm5-composition), calibrated the same
-/// way on ITS measured green class: four thinner shards select different K-reduction splits
-/// than two wider ones, and the quad fixture's green arms land at 4.013e-4 max relative
-/// (identical across host-canonical/peer-pull/diet/map-skew arms — one deterministic
-/// shard-shape difference, decode still BYTE-identical and the transport twin byte-identical
-/// at prime). Band = 10x margin over the measured worst, the PRIME_BAND precedent; the quad
-/// reds land at 1.5e2..4.0e3 — 4.6+ orders above — which is what proves this band
-/// distinguishes rather than absorbs.
-const PRIME_BAND_QUAD: f32 = 4e-3;
 /// A red must land at least this far out (orders above the band) or break the tape.
 const RED_FLOOR: f32 = 1e-3;
 
@@ -396,364 +373,6 @@ struct Verdict {
     name: String,
     pass: bool,
     detail: String,
-}
-
-/// The spec x TP composition arms (lane/glm5-composition): the verify + rollback +
-/// continue identity between the SHARDED walk and the plain walk, per fixture.
-///
-/// STATE BUILD IS THE DECODE REGIME ON PURPOSE: the trunk state is built with prime P=1 +
-/// t=1 decode steps (byte-identical between the arms by the banked decode-identity bar),
-/// so the comparison isolates the VERIFY WALK + ROLLBACK — a t>1 prime would fold the
-/// documented prime near-tie class into the state and turn a verify-walk bar into a band.
-///
-/// Per `keep` in {1, partial, full}: fresh cache, state build over `ids[..s]`, one
-/// `glm5_verify_rows` over `ids[s..s+4]` (K=3 -> t=4), `glm5_verify_rollback(keep)`, then
-/// M t=1 continue steps over `ids[s+keep..]` — verify logits, continue logits and tapes
-/// all BYTE-compared against the plain model's identical sequence (the accept-j-then-
-/// continue identity, the tparallel gate's own bar). The red arm SKIPS the rollback and
-/// must then diverge loudly (or trip a residency guard) — the proof the rollback is
-/// load-bearing, not decorative.
-#[allow(clippy::too_many_arguments)]
-fn spec_tp_verify_arms(
-    label: &str,
-    e: &Engine,
-    source: &FixtureSource,
-    plan: &ModelPlan,
-    ids: &[u32],
-    spec: &str,
-    verdicts: &mut Vec<Verdict>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    const S: usize = 12; // committed state rows before the verify round
-    const T: usize = 4; // verify rows (K=3 drafts + the anchor)
-    const M: usize = 6; // t=1 continue steps after the rollback
-    if ids.len() < S + T + M {
-        return Err(format!("{label}: token stream too short for the composition arm").into());
-    }
-    let max_ctx = ids.len() + 8;
-
-    // One walk of the protocol on one model; returns (verify logits, continue logits,
-    // continue tape). `keep = None` = the RED arm (rollback skipped).
-    let run = |m: &HybridModel,
-               keep: Option<usize>|
-     -> Result<(Vec<f32>, Vec<Vec<f32>>, Vec<u32>), Box<dyn std::error::Error>> {
-        let mut cache = memra_engine::cache::Cache::new_planned(e, &m.cfg, plan, max_ctx)?;
-        let (_lg, _seed, _h) = m.prime_cache(e, &ids[..1], &mut cache, 0)?;
-        for &tok in &ids[1..S] {
-            let _ = m.decode_step(e, tok, &mut cache)?;
-        }
-        let (vlog, _collapsed, ckpt) = m.glm5_verify_rows(e, &ids[S..S + T], &mut cache)?;
-        let vhost = e.dtoh(&vlog)?;
-        let kept = match keep {
-            Some(k) => {
-                m.glm5_verify_rollback(e, &mut cache, &ckpt, k)?;
-                k
-            }
-            None => {
-                // RED: no rollback. The trunk state holds all T verify rows but pos never
-                // moved; move pos as a keep=2 rollback would (the state build fixed
-                // ckpt-time pos at S) and continue — the chain must diverge from the
-                // plain reference (or a residency guard trips loudly; either is a bite).
-                let _ = &ckpt;
-                cache.pos = S + 2;
-                2
-            }
-        };
-        let mut clogs = Vec::with_capacity(M);
-        let mut tape = Vec::with_capacity(M);
-        for &tok in ids[S + kept..].iter().take(M) {
-            let lg = m.decode_step(e, tok, &mut cache)?;
-            tape.push(argmax(&lg) as u32);
-            clogs.push(lg);
-        }
-        Ok((vhost, clogs, tape))
-    };
-
-    // Plain references (door OFF — caller guarantees the env is cold here).
-    let m_plain = HybridModel::load_from_source_without_mtp(e, source)?;
-    let mut plain: Vec<(usize, (Vec<f32>, Vec<Vec<f32>>, Vec<u32>))> = Vec::new();
-    for keep in [1usize, 2, T] {
-        plain.push((keep, run(&m_plain, Some(keep))?));
-    }
-    drop(m_plain);
-
-    // TP twin: the raw verify/rollback walk needs no session flag (the flag gates the
-    // SESSION seam; the walk itself is wired unconditionally and reachable only through
-    // gates until the session admits it).
-    set_env("MEMRA_GLM5_TP", spec);
-    let m_tp = HybridModel::load_from_source_without_mtp(e, source)?;
-    rm_env("MEMRA_GLM5_TP");
-    // Non-vacuity anchor (run_tp_arm's own law): every green keep AND the RED below would
-    // pass on an accidentally-unsharded model (plain-vs-plain identity; a skipped rollback
-    // diverges unsharded too) — assert the shards actually armed.
-    let sharded = m_tp
-        .layers
-        .iter()
-        .filter(|l| match &l.mixer {
-            memra_engine::hybrid::Mixer::Kda(la) => la.tp.is_some(),
-            memra_engine::hybrid::Mixer::Mla(la) => la.tp.is_some(),
-            _ => false,
-        })
-        .count();
-    assert_eq!(
-        sharded, LAYERS,
-        "[{label}] {sharded} sharded mixers != {LAYERS} — the composition arms would be vacuous"
-    );
-    for (keep, (pv, pc, pt)) in &plain {
-        let (tv, tc, tt) = run(&m_tp, Some(*keep))?;
-        let v_ok = pv.len() == tv.len()
-            && pv
-                .iter()
-                .zip(tv.iter())
-                .all(|(a, b)| a.to_bits() == b.to_bits());
-        let c_diff = bit_equal(pc, &tc);
-        let pass = v_ok && c_diff.is_none() && pt == &tt;
-        verdicts.push(Verdict {
-            name: format!("{label} verify+rollback keep={keep}"),
-            pass,
-            detail: format!(
-                "verify logits byte_identical={v_ok}; continue {} / tape_match={} \
-                 (S={S} T={T} M={M}, decode-regime state build)",
-                match c_diff {
-                    None => "BYTE-IDENTICAL".to_string(),
-                    Some((s, i)) => format!("DIVERGES at step {s} logit {i}"),
-                },
-                pt == &tt,
-            ),
-        });
-    }
-
-    // RED: rollback skipped on the TP model — must diverge from the plain keep=2 arm.
-    let red = run(&m_tp, None);
-    let (_, (pv2, pc2, pt2)) = plain.iter().find(|(k, _)| *k == 2).expect("keep=2 banked");
-    let _ = pv2;
-    verdicts.push(match red {
-        Ok((_, rc, rt)) => {
-            let diverged = bit_equal(pc2, &rc).is_some() || &rt != pt2;
-            Verdict {
-                name: format!("{label} RED no-rollback"),
-                pass: diverged,
-                detail: if diverged {
-                    "skipped rollback DIVERGES from the plain accept-then-continue chain \
-                     (the rollback is load-bearing)"
-                        .into()
-                } else {
-                    "skipped rollback matched plain — the rollback arm is VACUOUS".into()
-                },
-            }
-        }
-        Err(err) => {
-            // Only the NAMED state guards count as a loud bite; any other error (alloc,
-            // prime, walk infrastructure) means the divergence comparison never executed
-            // and the arm FAILS rather than passing vacuously (#80 review finding).
-            let msg = err.to_string();
-            // The NAMED state guards only — 'blk.' prefixes 100+ non-guard per-layer
-            // errors (alloc, tensor-load, contract), so matching the prefix half-reopened
-            // the vacuous pass this arm exists to close (#82 review).
-            let named_guard = ["index_pools_ready", "KDA scan replay", "KDA rows rollback"]
-                .iter()
-                .any(|p| msg.contains(p));
-            Verdict {
-                name: format!("{label} RED no-rollback"),
-                pass: named_guard,
-                detail: if named_guard {
-                    format!("skipped rollback tripped a NAMED state guard: {msg}")
-                } else {
-                    format!(
-                        "RED arm errored OUTSIDE the named guards (comparison never ran): {msg}"
-                    )
-                },
-            }
-        }
-    });
-    Ok(())
-}
-
-/// Everything one TP arm needs from its fixture: the engine, the source/plan pair, the
-/// chosen token stream, and the banked plain references of BOTH regimes. Two instances
-/// exist — the original TP-2 fixture and the TP-4 quad fixture — running the SAME arm
-/// harness, which is what keeps the two rank counts' bars identical by construction.
-struct ArmCx<'a> {
-    e: &'a Engine,
-    source: &'a FixtureSource,
-    plan: &'a ModelPlan,
-    ids: &'a [u32],
-    p: usize,
-    max_ctx: usize,
-    ref_dec_logits: &'a [Vec<f32>],
-    ref_dec_tape: &'a [u32],
-    ref_pri_logits: &'a [Vec<f32>],
-    ref_pri_tape: &'a [u32],
-    /// The fixture's calibrated prime-regime near-tie band (PRIME_BAND / PRIME_BAND_QUAD).
-    prime_band: f32,
-}
-
-/// A TP arm loader + walk + compare, reused by every green/red arm at every rank count.
-/// `ep_map` arms MEMRA_GLM5_EP_MAP for the load (the measured-placement door).
-fn run_tp_arm(
-    cx: &ArmCx<'_>,
-    name: &str,
-    spec: &str,
-    red: Option<&str>,
-    ep_map: Option<&str>,
-    expect_diverge: bool,
-    verdicts: &mut Vec<Verdict>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (e, p) = (cx.e, cx.p);
-    eprintln!("[phase] arm {name}: MEMRA_GLM5_TP={spec} red={red:?} ep_map={ep_map:?}");
-    set_env("MEMRA_GLM5_TP", spec);
-    match red {
-        Some(r) => set_env("MEMRA_GLM5_TP_GATE_RED", r),
-        None => rm_env("MEMRA_GLM5_TP_GATE_RED"),
-    }
-    match ep_map {
-        Some(m) => set_env("MEMRA_GLM5_EP_MAP", m),
-        None => rm_env("MEMRA_GLM5_EP_MAP"),
-    }
-    let m_tp = HybridModel::load_from_source_without_mtp(e, cx.source)?;
-    rm_env("MEMRA_GLM5_TP");
-    rm_env("MEMRA_GLM5_EP_MAP");
-    // NOTE: the RED knob stays SET through the walks — `skip-peer-combine` acts at
-    // RUNTIME (the EP combine reads it per slot), unlike the two load-time shard
-    // mutations. It is removed at the end of this arm.
-
-    // Non-vacuity: the spec'd layers really carry shards/EP arms.
-    let mut sharded = 0usize;
-    let mut ep_armed = 0usize;
-    for layer in &m_tp.layers {
-        match &layer.mixer {
-            memra_engine::hybrid::Mixer::Kda(la) if la.tp.is_some() => sharded += 1,
-            memra_engine::hybrid::Mixer::Mla(la) if la.tp.is_some() => sharded += 1,
-            _ => {}
-        }
-        if let memra_engine::hybrid::Ffn::Moe(m) = &layer.ffn
-            && m.glm5_ep.is_some()
-        {
-            ep_armed += 1;
-        }
-    }
-    let expect_layers = if spec.starts_with("all@") {
-        LAYERS
-    } else {
-        spec.split(';').count()
-    };
-    assert_eq!(
-        sharded, expect_layers,
-        "[{name}] {sharded} sharded mixers != {expect_layers} spec'd layers — vacuous arm"
-    );
-    println!("[{name}] sharded mixers={sharded} ep_armed={ep_armed}");
-    let peer_slots_before = memra_engine::glm5_tp::glm5_ep_peer_slot_dispatches();
-
-    // ---- DECODE regime (P=1): byte identity, two repetitions ----
-    let (dec1, dec_tape1) = walk(e, &m_tp, cx.plan, cx.ids, 1, cx.max_ctx)?;
-    let (dec2, dec_tape2) = walk(e, &m_tp, cx.plan, cx.ids, 1, cx.max_ctx)?;
-    if let Some((s, i)) = bit_equal(&dec1, &dec2) {
-        verdicts.push(Verdict {
-            name: format!("{name} decode self-consistency"),
-            pass: false,
-            detail: format!("two repetitions diverge at step {s} logit {i}"),
-        });
-    } else {
-        assert_eq!(dec_tape1, dec_tape2);
-        verdicts.push(Verdict {
-            name: format!("{name} decode self-consistency"),
-            pass: true,
-            detail: "two repetitions bit-identical".into(),
-        });
-    }
-    let dec_diff = bit_equal(cx.ref_dec_logits, &dec1);
-    let dec_tape_ok = cx.ref_dec_tape == dec_tape1.as_slice();
-    let dec_rel = max_rel_diff(cx.ref_dec_logits, &dec1);
-    let (pass, detail) = if expect_diverge {
-        // The decode-side red report is informational: the BINDING red verdict is the
-        // prime-regime arm below, which exercises every shard surface (a t=1 token
-        // stream may legitimately never route a peer-owned expert on a small fixture).
-        // A decode-side bite is still reported when it happens.
-        (
-            true,
-            format!(
-                "red decode-side report: max_rel={dec_rel:.3e} tape_match={dec_tape_ok} \
-                 (binding verdict = prime-regime arm)"
-            ),
-        )
-    } else {
-        match dec_diff {
-            None if dec_tape_ok => (
-                true,
-                format!(
-                    "DECODE BYTE-IDENTICAL to plain: {} t=1 steps x {} logits + tape",
-                    cx.ref_dec_logits.len(),
-                    cx.ref_dec_logits[0].len()
-                ),
-            ),
-            None => (
-                false,
-                "logits identical but tape differs (harness bug)".into(),
-            ),
-            Some((st, i)) => {
-                let (a, b) = (cx.ref_dec_logits[st][i], dec1[st][i]);
-                (
-                    false,
-                    format!(
-                        "DECODE MISMATCH at step {st} logit {i}: plain={a:?} tp={b:?} \
-                         (max_rel={dec_rel:.3e})"
-                    ),
-                )
-            }
-        }
-    };
-    verdicts.push(Verdict {
-        name: format!("{name} decode-identity"),
-        pass,
-        detail,
-    });
-
-    // ---- PRIME regime (P=p, t>=2): band + tape (byte identity is a bonus receipt).
-    // Red arms run it too: a red whose mutated surface the decode tape never touches
-    // (e.g. peer-owned experts unrouted by the t=1 token stream) must still bite here.
-    let (pri, pri_tape) = walk(e, &m_tp, cx.plan, cx.ids, p, cx.max_ctx)?;
-    let pri_rel = max_rel_diff(cx.ref_pri_logits, &pri);
-    let pri_bytes = bit_equal(cx.ref_pri_logits, &pri).is_none();
-    let pri_tape_ok = cx.ref_pri_tape == pri_tape.as_slice();
-    if expect_diverge {
-        let loud = pri_rel > RED_FLOOR || !pri_tape_ok;
-        verdicts.push(Verdict {
-            name: format!("{name} prime-regime"),
-            pass: loud,
-            detail: if loud {
-                format!("RED bites LOUD in prime: max_rel={pri_rel:.3e} tape_match={pri_tape_ok}")
-            } else {
-                format!(
-                    "RED FAILED TO BITE in prime: max_rel={pri_rel:.3e} \
-                     tape_match={pri_tape_ok}"
-                )
-            },
-        });
-    } else {
-        let band = cx.prime_band;
-        let pass = pri_rel <= band && pri_tape_ok;
-        verdicts.push(Verdict {
-            name: format!("{name} prime-band"),
-            pass,
-            detail: format!(
-                "prime P={p} regime: max_rel={pri_rel:.3e} (band {band:.0e}) \
-                 tape_match={pri_tape_ok} byte_identical={pri_bytes} — t>=2 batched \
-                 GEMM widths are the documented shard-shape near-tie class"
-            ),
-        });
-    }
-    rm_env("MEMRA_GLM5_TP_GATE_RED");
-    // EP non-vacuity, evaluated over BOTH regimes' walks: at least one PEER-owned
-    // slot must have dispatched, or the arm's EP identity claim is vacuous.
-    if ep_armed > 0 {
-        let peer_slots = memra_engine::glm5_tp::glm5_ep_peer_slot_dispatches() - peer_slots_before;
-        assert!(
-            peer_slots > 0,
-            "[{name}] EP armed on {ep_armed} layer(s) but ZERO peer-owned slots were \
-             dispatched — the EP identity claim would be vacuous"
-        );
-        println!("[{name}] EP peer-slot dispatches: {peer_slots}");
-    }
-    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -783,37 +402,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // is asserted there.
     set_env("MEMRA_GLM5_EP_DIET", "0");
     set_env("MEMRA_GLM5_EP_GROUPED_PRIME", "0");
-    // TRANSPORT arm PINNED to the v1 host-staged walk for every banked arm (same reason:
-    // an unset variable inherits any future default flip; a pin does not). The peer-pull
-    // twins run after the diet arms, and the flat movement census across this whole battery
-    // is asserted there (lane/glm5-tp-transport).
-    set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
-    // The GENERAL names of the three doors above (lane/glm5-extract2): a leaked general name
-    // would DISAGREE with the alias pins and fall the door closed — correct for the OFF arms,
-    // but it would silently defeat the ON twins. Cleared here so the alias pins are the only
-    // voice; the general-name twins below set them deliberately.
-    rm_env("MEMRA_EP_DIET");
-    rm_env("MEMRA_EP_GROUPED_PRIME");
-    rm_env("MEMRA_TP_TRANSPORT");
-    // Door H's general name too. It is not armed anywhere in THIS gate, which is exactly why
-    // it is cleared: a leaked `MEMRA_HTOD_DIET=0` would disagree with any inherited
-    // `MEMRA_GLM5_HTOD_DIET=1` and fall the door closed, and the arms that drive door H from
-    // the shell assert BIT-IDENTITY — which passes whether the door armed or not. Vacuous, and
-    // silently so. Clearing it costs one line.
-    rm_env("MEMRA_HTOD_DIET");
     // A leaked route tap would trace every arm's walks before arm T banks its tap-cold
     // references (and would break run-to-run receipt comparability).
     rm_env("MEMRA_MOE_TRACE");
     rm_env("MEMRA_MOE_WEIGHT_TRACE");
     rm_env("MEMRA_GLM5_EP_MAP");
-    // The batched verify walk PINNED ON for the banked battery (the S2/Q-S4 arms depend
-    // on it and SF2/SW mutate it; a caller env carrying =0 would bank per-row references
-    // and abort the first TP verify at the walk-entry guard — the pin law's own words:
-    // an unset variable inherits any future default flip, a pin does not).
-    set_env("MEMRA_GLM5_VERIFY_BATCH", "1");
     set_env("MEMRA_GLM5_TP_GATE_SAME_DEV", "1");
 
-    let config = ModelConfig::from_hf(&HfConfig::parse(&mini_config_json(2, 4)));
+    let config = ModelConfig::from_hf(&HfConfig::parse(&mini_config_json()));
     let plan = memra_gguf::model_packs::for_config(&config)
         .expect("glm5_next model pack matches the mini config")
         .compile_plan(&config)
@@ -887,33 +483,177 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ref_dec_logits[0].len(),
     );
 
-    // The shared arm harness (run_tp_arm) bound to THIS fixture's references.
-    let cx2 = ArmCx {
-        e: &e,
-        source: &source,
-        plan: &plan,
-        ids: &ids,
-        p,
-        max_ctx,
-        ref_dec_logits: &ref_dec_logits,
-        ref_dec_tape: &ref_dec_tape,
-        ref_pri_logits: &ref_pri_logits,
-        ref_pri_tape: &ref_pri_tape,
-        prime_band: PRIME_BAND,
+    // A TP arm loader + walk + compare, reused by every green/red arm below. `ep_map`
+    // arms MEMRA_GLM5_EP_MAP for the load (the measured-placement door).
+    let tp_arm = |name: &str,
+                  spec: &str,
+                  red: Option<&str>,
+                  ep_map: Option<&str>,
+                  expect_diverge: bool,
+                  verdicts: &mut Vec<Verdict>|
+     -> Result<(), Box<dyn std::error::Error>> {
+        eprintln!("[phase] arm {name}: MEMRA_GLM5_TP={spec} red={red:?} ep_map={ep_map:?}");
+        set_env("MEMRA_GLM5_TP", spec);
+        match red {
+            Some(r) => set_env("MEMRA_GLM5_TP_GATE_RED", r),
+            None => rm_env("MEMRA_GLM5_TP_GATE_RED"),
+        }
+        match ep_map {
+            Some(p) => set_env("MEMRA_GLM5_EP_MAP", p),
+            None => rm_env("MEMRA_GLM5_EP_MAP"),
+        }
+        let m_tp = HybridModel::load_from_source_without_mtp(&e, &source)?;
+        rm_env("MEMRA_GLM5_TP");
+        rm_env("MEMRA_GLM5_EP_MAP");
+        // NOTE: the RED knob stays SET through the walks — `skip-peer-combine` acts at
+        // RUNTIME (the EP combine reads it per slot), unlike the two load-time shard
+        // mutations. It is removed at the end of this arm.
+
+        // Non-vacuity: the spec'd layers really carry shards/EP arms.
+        let mut sharded = 0usize;
+        let mut ep_armed = 0usize;
+        for layer in &m_tp.layers {
+            match &layer.mixer {
+                memra_engine::hybrid::Mixer::Kda(la) if la.tp.is_some() => sharded += 1,
+                memra_engine::hybrid::Mixer::Mla(la) if la.tp.is_some() => sharded += 1,
+                _ => {}
+            }
+            if let memra_engine::hybrid::Ffn::Moe(m) = &layer.ffn
+                && m.glm5_ep.is_some()
+            {
+                ep_armed += 1;
+            }
+        }
+        let expect_layers = if spec == "all@0,1" {
+            LAYERS
+        } else {
+            spec.split(';').count()
+        };
+        assert_eq!(
+            sharded, expect_layers,
+            "[{name}] {sharded} sharded mixers != {expect_layers} spec'd layers — vacuous arm"
+        );
+        println!("[{name}] sharded mixers={sharded} ep_armed={ep_armed}");
+        let peer_slots_before = memra_engine::glm5_tp::glm5_ep_peer_slot_dispatches();
+
+        // ---- DECODE regime (P=1): byte identity, two repetitions ----
+        let (dec1, dec_tape1) = walk(&e, &m_tp, &plan, &ids, 1, max_ctx)?;
+        let (dec2, dec_tape2) = walk(&e, &m_tp, &plan, &ids, 1, max_ctx)?;
+        if let Some((s, i)) = bit_equal(&dec1, &dec2) {
+            verdicts.push(Verdict {
+                name: format!("{name} decode self-consistency"),
+                pass: false,
+                detail: format!("two repetitions diverge at step {s} logit {i}"),
+            });
+        } else {
+            assert_eq!(dec_tape1, dec_tape2);
+            verdicts.push(Verdict {
+                name: format!("{name} decode self-consistency"),
+                pass: true,
+                detail: "two repetitions bit-identical".into(),
+            });
+        }
+        let dec_diff = bit_equal(&ref_dec_logits, &dec1);
+        let dec_tape_ok = ref_dec_tape == dec_tape1;
+        let dec_rel = max_rel_diff(&ref_dec_logits, &dec1);
+        let (pass, detail) = if expect_diverge {
+            // The decode-side red report is informational: the BINDING red verdict is the
+            // prime-regime arm below, which exercises every shard surface (a t=1 token
+            // stream may legitimately never route a peer-owned expert on a 4-expert
+            // fixture). A decode-side bite is still reported when it happens.
+            (
+                true,
+                format!(
+                    "red decode-side report: max_rel={dec_rel:.3e} tape_match={dec_tape_ok} \
+                     (binding verdict = prime-regime arm)"
+                ),
+            )
+        } else {
+            match dec_diff {
+                None if dec_tape_ok => (
+                    true,
+                    format!(
+                        "DECODE BYTE-IDENTICAL to plain: {} t=1 steps x {} logits + tape",
+                        ref_dec_logits.len(),
+                        ref_dec_logits[0].len()
+                    ),
+                ),
+                None => (
+                    false,
+                    "logits identical but tape differs (harness bug)".into(),
+                ),
+                Some((st, i)) => {
+                    let (a, b) = (ref_dec_logits[st][i], dec1[st][i]);
+                    (
+                        false,
+                        format!(
+                            "DECODE MISMATCH at step {st} logit {i}: plain={a:?} tp={b:?} \
+                             (max_rel={dec_rel:.3e})"
+                        ),
+                    )
+                }
+            }
+        };
+        verdicts.push(Verdict {
+            name: format!("{name} decode-identity"),
+            pass,
+            detail,
+        });
+
+        // ---- PRIME regime (P=p, t>=2): band + tape (byte identity is a bonus receipt).
+        // Red arms run it too: a red whose mutated surface the decode tape never touches
+        // (e.g. peer-owned experts unrouted by the t=1 token stream) must still bite here.
+        let (pri, pri_tape) = walk(&e, &m_tp, &plan, &ids, p, max_ctx)?;
+        let pri_rel = max_rel_diff(&ref_pri_logits, &pri);
+        let pri_bytes = bit_equal(&ref_pri_logits, &pri).is_none();
+        let pri_tape_ok = ref_pri_tape == pri_tape;
+        if expect_diverge {
+            let loud = pri_rel > RED_FLOOR || !pri_tape_ok;
+            verdicts.push(Verdict {
+                name: format!("{name} prime-regime"),
+                pass: loud,
+                detail: if loud {
+                    format!(
+                        "RED bites LOUD in prime: max_rel={pri_rel:.3e} tape_match={pri_tape_ok}"
+                    )
+                } else {
+                    format!(
+                        "RED FAILED TO BITE in prime: max_rel={pri_rel:.3e} \
+                         tape_match={pri_tape_ok}"
+                    )
+                },
+            });
+        } else {
+            let pass = pri_rel <= PRIME_BAND && pri_tape_ok;
+            verdicts.push(Verdict {
+                name: format!("{name} prime-band"),
+                pass,
+                detail: format!(
+                    "prime P={p} regime: max_rel={pri_rel:.3e} (band {PRIME_BAND:.0e}) \
+                     tape_match={pri_tape_ok} byte_identical={pri_bytes} — t>=2 batched \
+                     GEMM widths are the documented shard-shape near-tie class"
+                ),
+            });
+        }
+        rm_env("MEMRA_GLM5_TP_GATE_RED");
+        // EP non-vacuity, evaluated over BOTH regimes' walks: at least one PEER-owned
+        // slot must have dispatched, or the arm's EP identity claim is vacuous.
+        if ep_armed > 0 {
+            let peer_slots =
+                memra_engine::glm5_tp::glm5_ep_peer_slot_dispatches() - peer_slots_before;
+            assert!(
+                peer_slots > 0,
+                "[{name}] EP armed on {ep_armed} layer(s) but ZERO peer-owned slots were \
+                 dispatched — the EP identity claim would be vacuous"
+            );
+            println!("[{name}] EP peer-slot dispatches: {peer_slots}");
+        }
+        Ok(())
     };
 
     // ================= B/C/D. GREEN arms =================
-    run_tp_arm(
-        &cx2,
-        "B tp-all",
-        "all@0,1",
-        None,
-        None,
-        false,
-        &mut verdicts,
-    )?;
-    run_tp_arm(
-        &cx2,
+    tp_arm("B tp-all", "all@0,1", None, None, false, &mut verdicts)?;
+    tp_arm(
         "C tp-kda-only",
         "0@0,1;2@0,1",
         None,
@@ -921,8 +661,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         false,
         &mut verdicts,
     )?;
-    run_tp_arm(
-        &cx2,
+    tp_arm(
         "C0 tp-layer0-only",
         "0@0,1",
         None,
@@ -930,8 +669,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         false,
         &mut verdicts,
     )?;
-    run_tp_arm(
-        &cx2,
+    tp_arm(
         "C2 tp-layer2-only",
         "2@0,1",
         None,
@@ -939,8 +677,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         false,
         &mut verdicts,
     )?;
-    run_tp_arm(
-        &cx2,
+    tp_arm(
         "D tp-mla-only",
         "1@0,1;3@0,1",
         None,
@@ -1059,8 +796,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .render()
     };
     let skew_map = write_map("skew.map", &skew_map_text)?;
-    run_tp_arm(
-        &cx2,
+    tp_arm(
         "M map-skew",
         "all@0,1",
         None,
@@ -1192,8 +928,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ================= R1-R4. RED arms =================
-    run_tp_arm(
-        &cx2,
+    tp_arm(
         "R1 red-swap-wo",
         "all@0,1",
         Some("swap-wo"),
@@ -1201,8 +936,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         &mut verdicts,
     )?;
-    run_tp_arm(
-        &cx2,
+    tp_arm(
         "R2 red-swap-ep-gateup",
         "all@0,1",
         Some("swap-ep-gateup"),
@@ -1210,8 +944,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         &mut verdicts,
     )?;
-    run_tp_arm(
-        &cx2,
+    tp_arm(
         "R3 red-skip-peer-combine",
         "all@0,1",
         Some("skip-peer-combine"),
@@ -1221,8 +954,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     // R4: the corrupted-map red rides the SKEWED map (rank 0 owns three experts there, so
     // reversing its local-slot table misindexes real weights on the dominant rank).
-    run_tp_arm(
-        &cx2,
+    tp_arm(
         "R4 red-corrupt-ep-map",
         "all@0,1",
         Some("corrupt-ep-map"),
@@ -1230,131 +962,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         &mut verdicts,
     )?;
-
-    // ============ S. spec x TP composition arms (lane/glm5-composition) ============
-    spec_tp_verify_arms("S2", &e, &source, &plan, &ids, "all@0,1", &mut verdicts)?;
-    {
-        // SF1: WITHOUT the flag the session co-refusal holds verbatim (arm F's twin, kept
-        // here so the composition block carries its own OFF-arm receipt).
-        set_env("MEMRA_GLM5_TP", "all@0,1");
-        rm_env("MEMRA_GLM5_SPEC_TP");
-        let m_tp = HybridModel::load_from_source_without_mtp(&e, &source)?;
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF1 session co-refusal without the flag".into(),
-            pass: refused.is_err()
-                && msg.contains("co-refused")
-                && msg.contains("MEMRA_GLM5_SPEC_TP"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "a spec session opened on a TP model with the flag COLD".into()
-            },
-        });
-        // SF2: flag ON + per-row verify walk pinned = refuse by name (no TP rollback arm).
-        set_env("MEMRA_GLM5_SPEC_TP", "1");
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "0");
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF2 flag-on demands the batched walk".into(),
-            pass: refused.is_err() && msg.contains("BATCHED verify walk"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "a spec x TP session opened on the per-row walk".into()
-            },
-        });
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "1"); // restore the battery pin
-        // SF3: flag ON lifts ONLY the co-refusal — the fixture has no draft source, so
-        // the session must still refuse on THAT law (the flag is not a bypass).
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF3 flag-on still demands a draft source".into(),
-            pass: refused.is_err() && msg.contains("draft source"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "a draft-source-less session opened under the composition flag".into()
-            },
-        });
-        rm_env("MEMRA_GLM5_SPEC_TP");
-        // SF4: the co-refusal keys on MODEL TRUTH, not the env — unset MEMRA_GLM5_TP
-        // entirely (the set/load/unset bypass the #80 review confirmed) and the session
-        // on the SHARDED model must still refuse.
-        rm_env("MEMRA_GLM5_TP");
-        let refused = m_tp.glm5_spec_session_new(&e, &ids[..8], max_ctx, None);
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SF4 co-refusal survives env unsetting (model truth)".into(),
-            pass: refused.is_err() && msg.contains("co-refused"),
-            detail: if refused.is_err() {
-                format!("refused with the env COLD: {msg}")
-            } else {
-                "a spec session opened on a sharded model after the env was unset \
-                 (the set/load/unset bypass is back)"
-                    .into()
-            },
-        });
-        set_env("MEMRA_GLM5_TP", "all@0,1");
-        // SW: the WALK-level guard — a sharded trunk + MEMRA_GLM5_VERIFY_BATCH=0 refuses
-        // the t>1 verify walk itself by name (defense in depth under the session gate).
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "0");
-        let mut cache = memra_engine::cache::Cache::new_planned(&e, &m_tp.cfg, &plan, max_ctx)?;
-        let (_lg, _s, _h) = m_tp.prime_cache(&e, &ids[..1], &mut cache, 0)?;
-        let refused = m_tp.glm5_verify_rows(&e, &ids[1..5], &mut cache);
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "1"); // restore the battery pin
-        let msg = refused
-            .as_ref()
-            .err()
-            .map(|e| e.to_string())
-            .unwrap_or_default();
-        verdicts.push(Verdict {
-            name: "SW per-row walk guard on a sharded trunk".into(),
-            pass: refused.is_err() && msg.contains("no TP arm"),
-            detail: if refused.is_err() {
-                format!("refused: {msg}")
-            } else {
-                "the per-row verify walk ran over a sharded trunk".into()
-            },
-        });
-        rm_env("MEMRA_GLM5_TP");
-        // SD: DEFAULT-RESOLUTION tripwire (#82 review). Every other arm reads an explicit
-        // pin, so a future flip of glm5_verify_batch_on()'s default would keep the whole
-        // battery green while env-absent consumers silently reverted to the per-row walk.
-        // This arm runs with the variable GENUINELY ABSENT and asserts the batched walk is
-        // what a bare process gets — the ckpt's own stash-kind counters are the anchor.
-        rm_env("MEMRA_GLM5_VERIFY_BATCH");
-        let default_batched = memra_engine::glm_spec::glm5_verify_batch_on();
-        set_env("MEMRA_GLM5_VERIFY_BATCH", "1");
-        verdicts.push(Verdict {
-            name: "SD verify-batch default resolves ON (env absent)".into(),
-            pass: default_batched,
-            detail: format!(
-                "glm5_verify_batch_on() with the env unset = {default_batched} (the \
-                 composition's admission REQUIRES the batched walk; a default flip would \
-                 refuse every env-absent composed session)"
-            ),
-        });
-    }
 
     // ================= DIET arms (lane/glm5-ep-diet, MEMRA_GLM5_EP_DIET) =================
     // The doors were PINNED =0 for every banked arm above; a flat dispatch counter across
@@ -1380,8 +987,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             gtp::glm5_ep_diet_bulk_returns(),
             gtp::glm5_ep_diet_peer_roundtrips_avoided(),
         );
-        run_tp_arm(
-            &cx2,
+        tp_arm(
             "B2 tp-all-diet",
             "all@0,1",
             None,
@@ -1402,59 +1008,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                  avoided={dr} (all must be >0 or the identity claim above is vacuous)"
             ),
         });
-
-        // B2G: the SAME door armed through its GENERAL name (lane/glm5-extract2). The alias
-        // is what every banked script sets, so B2 above is the receipt-comparable arm; this
-        // twin is the only proof that `MEMRA_EP_DIET` actually reaches the walk — a rename
-        // whose general name is never exercised is a rename that only works on paper.
-        rm_env("MEMRA_GLM5_EP_DIET");
-        set_env("MEMRA_EP_DIET", "1");
-        let g0 = gtp::glm5_ep_diet_dispatches();
-        run_tp_arm(
-            &cx2,
-            "B2G tp-all-diet-general-name",
-            "all@0,1",
-            None,
-            None,
-            false,
-            &mut verdicts,
-        )?;
-        let gd = gtp::glm5_ep_diet_dispatches() - g0;
-        verdicts.push(Verdict {
-            name: "B2G general-name-engagement".into(),
-            pass: gd > 0,
-            detail: format!(
-                "MEMRA_EP_DIET=1 with the glm5 alias UNSET: diet layer-calls={gd} \
-                 (must be >0 — the general name is the door's primary name)"
-            ),
-        });
-
-        // B2X: the two names DISAGREEING. The flag-alias law falls the door CLOSED to the
-        // shipped program (no panic — an abort in the worker thread kills every session) and
-        // names both flags once on stderr. Asserted as a COUNTER, not a liveness check.
-        set_env("MEMRA_GLM5_EP_DIET", "0");
-        let x0 = gtp::glm5_ep_diet_dispatches();
-        run_tp_arm(
-            &cx2,
-            "B2X tp-all-diet-alias-disagree",
-            "all@0,1",
-            None,
-            None,
-            false,
-            &mut verdicts,
-        )?;
-        let xd = gtp::glm5_ep_diet_dispatches() - x0;
-        verdicts.push(Verdict {
-            name: "B2X alias-disagreement-falls-closed".into(),
-            pass: xd == 0,
-            detail: format!(
-                "MEMRA_EP_DIET=1 + MEMRA_GLM5_EP_DIET=0: diet layer-calls={xd} (must be 0 — \
-                 the door refuses to arm rather than pick a precedence winner; the \
-                 [flag-alias] line above is the operator's receipt)"
-            ),
-        });
-        rm_env("MEMRA_EP_DIET");
-        set_env("MEMRA_GLM5_EP_DIET", "1");
 
         // B3: grouped prime armed ON TOP of the diet. The fixture bank is Q8_0 — not
         // f16g-eligible — so the arm must FALL CLOSED (counter pinned 0) while the walk
@@ -1490,8 +1043,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // M2: the deliberately skewed measured map UNDER the diet — the diet is
         // placement-agnostic by construction (it consumes owner_of/local_of; the map moves
         // bytes, the diet changes how they move). Same bars as arm M.
-        run_tp_arm(
-            &cx2,
+        tp_arm(
             "M2 map-skew-diet",
             "all@0,1",
             None,
@@ -1503,8 +1055,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Reds THROUGH the dieted walk: the load-time wrong-expert-weights red and the
         // RUNTIME skip-peer-combine red (which now acts at the compact-staging site and
         // must still reach the combine loudly).
-        run_tp_arm(
-            &cx2,
+        tp_arm(
             "R2D red-swap-ep-gateup-diet",
             "all@0,1",
             Some("swap-ep-gateup"),
@@ -1512,8 +1063,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             true,
             &mut verdicts,
         )?;
-        run_tp_arm(
-            &cx2,
+        tp_arm(
             "R3D red-skip-peer-combine-diet",
             "all@0,1",
             Some("skip-peer-combine"),
@@ -1522,239 +1072,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut verdicts,
         )?;
         set_env("MEMRA_GLM5_EP_DIET", "0");
-    }
-
-    // ============ TRANSPORT arms (lane/glm5-tp-transport, MEMRA_GLM5_TP_TRANSPORT) ============
-    // The transport moves the SAME bytes by the same layout rules in both arms, so the class
-    // bars do not move: decode BYTE identity on the non-MoE classes, the calibrated prime
-    // band, the pre-registered EP band, reds orders above. What this block adds is the bar the
-    // class bars CANNOT express — transport-vs-transport byte identity at PRIME. Both arms sit
-    // inside the calibrated 2e-4 band by construction, so a transport that moved prime bits
-    // would hide inside it; only a direct arm-vs-arm comparison catches that.
-    //
-    // RIG SCOPE, stated in the log so no reader over-reads the PASS: the peer rank here is a
-    // second CUDA context on ONE device (MEMRA_GLM5_TP_GATE_SAME_DEV=1, LAW:rig-exactness-only).
-    // These arms prove the peer-pull program is BIT-PRESERVING and its counters non-vacuous.
-    // They prove NOTHING about a real PCIe fabric; that is the box window's arm, and the
-    // arm-time byte-integrity pull ladder plus tools/box-health.sh's simpleP2P-class kernel peer read are
-    // what qualify it there.
-    {
-        use memra_engine::tp_transport as gtx;
-
-        // The OFF-arm receipt: the transport was pinned =0 for the whole banked battery above,
-        // so the peer-pull counters must be FLAT and the host counters must be NON-ZERO. A pin
-        // that is not holding reads exactly like a passing gate otherwise.
-        let off_legs = gtx::tp_host_legs();
-        let off_syncs = gtx::tp_host_syncs();
-        let off_pulls = gtx::tp_peer_pulls();
-        let off_bytes = gtx::tp_xfer_bytes();
-        println!(
-            "{}",
-            gtx::transport_census_line("glm5-tp-transport", gtx::TpTransport::HostCanonical)
-        );
-        verdicts.push(Verdict {
-            name: "X0 transport pin held (=0 battery)".into(),
-            pass: off_pulls == 0 && off_syncs > 0 && off_legs > 0 && off_bytes > 0,
-            detail: format!(
-                "pinned-=0 battery census: host_legs={off_legs} host_syncs={off_syncs} \
-                 xfer_bytes={off_bytes} peer_pulls={off_pulls} (peer_pulls MUST be 0 or the pin \
-                 is not holding; host counters MUST be >0 or the arms moved nothing)"
-            ),
-        });
-
-        // X1: the whole trunk on the peer-pull transport, EP diet OFF — the same bars as arm B.
-        set_env("MEMRA_GLM5_TP_TRANSPORT", "peer-pull");
-        run_tp_arm(
-            &cx2,
-            "X1 tp-all-peer-pull",
-            "all@0,1",
-            None,
-            None,
-            false,
-            &mut verdicts,
-        )?;
-        let x1_legs = gtx::tp_host_legs() - off_legs;
-        let x1_syncs = gtx::tp_host_syncs() - off_syncs;
-        let x1_pulls = gtx::tp_peer_pulls() - off_pulls;
-        let x1_events = gtx::tp_pub_events();
-        verdicts.push(Verdict {
-            name: "X1 transport engagement".into(),
-            pass: x1_pulls > 0 && x1_legs == 0 && x1_syncs == 0,
-            detail: format!(
-                "peer_pulls={x1_pulls} (>0) host_legs={x1_legs} (==0) host_syncs={x1_syncs} \
-                 (==0) pub_events={x1_events} — a peer-pull arm that still took a host leg is \
-                 the failure this asserts against"
-            ),
-        });
-
-        // X2: peer-pull composed with the EP dispatch diet. The two axes are orthogonal by
-        // construction (the diet cuts hop COUNT, the transport cuts hop COST) and the
-        // composition must hold both sets of bars at once.
-        set_env("MEMRA_GLM5_EP_DIET", "1");
-        run_tp_arm(
-            &cx2,
-            "X2 tp-all-peer-pull-diet",
-            "all@0,1",
-            None,
-            None,
-            false,
-            &mut verdicts,
-        )?;
-        set_env("MEMRA_GLM5_EP_DIET", "0");
-
-        // X3: the RUNTIME red through the peer-pull walk. `skip-peer-combine` now drops rows
-        // that a peer READ delivered rather than rows a host bounce delivered; it must still
-        // bite loudly, which is also the non-vacuity proof that the peer rank's work is what
-        // the pull is carrying.
-        run_tp_arm(
-            &cx2,
-            "X3 red-skip-peer-combine-peer-pull",
-            "all@0,1",
-            Some("skip-peer-combine"),
-            None,
-            true,
-            &mut verdicts,
-        )?;
-
-        // XT: TRANSPORT-VS-TRANSPORT BYTE IDENTITY, decode AND prime. Load the same fixture
-        // twice — once per arm — and compare the two TP walks to EACH OTHER bit for bit. This
-        // is the bar the class bars cannot express (see the block header).
-        {
-            eprintln!("[phase] arm XT: transport-vs-transport byte identity (decode + prime)");
-            set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
-            set_env("MEMRA_GLM5_TP", "all@0,1");
-            let m_hc = HybridModel::load_from_source_without_mtp(&e, &source)?;
-            rm_env("MEMRA_GLM5_TP");
-            let (hc_dec, hc_dec_tape) = walk(&e, &m_hc, &plan, &ids, 1, max_ctx)?;
-            let (hc_pri, hc_pri_tape) = walk(&e, &m_hc, &plan, &ids, p, max_ctx)?;
-            drop(m_hc);
-
-            set_env("MEMRA_GLM5_TP_TRANSPORT", "peer-pull");
-            set_env("MEMRA_GLM5_TP", "all@0,1");
-            let m_pp = HybridModel::load_from_source_without_mtp(&e, &source)?;
-            rm_env("MEMRA_GLM5_TP");
-            let (pp_dec, pp_dec_tape) = walk(&e, &m_pp, &plan, &ids, 1, max_ctx)?;
-            let (pp_pri, pp_pri_tape) = walk(&e, &m_pp, &plan, &ids, p, max_ctx)?;
-            drop(m_pp);
-
-            let dec_diff = bit_equal(&hc_dec, &pp_dec);
-            let pri_diff = bit_equal(&hc_pri, &pp_pri);
-            let pass = dec_diff.is_none()
-                && pri_diff.is_none()
-                && hc_dec_tape == pp_dec_tape
-                && hc_pri_tape == pp_pri_tape;
-            verdicts.push(Verdict {
-                name: "XT transport-vs-transport byte identity".into(),
-                pass,
-                detail: format!(
-                    "decode {} / prime {} / tapes decode_match={} prime_match={} \
-                     (prime max_rel host-canonical-vs-peer-pull={:.3e} — MUST be exactly 0: the \
-                     transport moves bytes, it does not compute)",
-                    match dec_diff {
-                        None => "BYTE-IDENTICAL".to_string(),
-                        Some((s, i)) => format!("DIVERGES at step {s} logit {i}"),
-                    },
-                    match pri_diff {
-                        None => "BYTE-IDENTICAL".to_string(),
-                        Some((s, i)) => format!("DIVERGES at step {s} logit {i}"),
-                    },
-                    hc_dec_tape == pp_dec_tape,
-                    hc_pri_tape == pp_pri_tape,
-                    max_rel_diff(&hc_pri, &pp_pri),
-                ),
-            });
-        }
-
-        // XF: the transport flag is FAIL-CLOSED. An unknown spelling must refuse the LOAD by
-        // name rather than silently picking an arm — the failure mode a two-arm flag invites.
-        {
-            eprintln!("[phase] arm XF: unknown transport spelling must refuse by name");
-            set_env("MEMRA_GLM5_TP_TRANSPORT", "peer_pull");
-            set_env("MEMRA_GLM5_TP", "all@0,1");
-            let refused = HybridModel::load_from_source_without_mtp(&e, &source);
-            rm_env("MEMRA_GLM5_TP");
-            let msg = match &refused {
-                Err(err) => err.to_string(),
-                Ok(_) => String::new(),
-            };
-            verdicts.push(Verdict {
-                name: "XF unknown transport refuses by name".into(),
-                pass: refused.is_err()
-                    && msg.contains("MEMRA_GLM5_TP_TRANSPORT")
-                    && msg.contains("peer-pull")
-                    && msg.contains("host-canonical"),
-                detail: if refused.is_err() {
-                    format!("refused: {msg}")
-                } else {
-                    "LOADED — a misspelled transport silently picked an arm".into()
-                },
-            });
-        }
-
-        // XG: the SAME transport armed through its GENERAL name (lane/glm5-extract2), with the
-        // glm5 alias UNSET. Every arm above drives the alias, because that is what the banked
-        // tp-transport receipts set — so this is the only proof that `MEMRA_TP_TRANSPORT`
-        // reaches the seam at all.
-        {
-            eprintln!("[phase] arm XG: peer-pull armed through the GENERAL flag name");
-            rm_env("MEMRA_GLM5_TP_TRANSPORT");
-            set_env("MEMRA_TP_TRANSPORT", "peer-pull");
-            let g0 = gtx::tp_peer_pulls();
-            run_tp_arm(
-                &cx2,
-                "XG tp-all-peer-pull-general-name",
-                "all@0,1",
-                None,
-                None,
-                false,
-                &mut verdicts,
-            )?;
-            let gd = gtx::tp_peer_pulls() - g0;
-            verdicts.push(Verdict {
-                name: "XG general-name-engagement".into(),
-                pass: gd > 0,
-                detail: format!(
-                    "MEMRA_TP_TRANSPORT=peer-pull with the glm5 alias UNSET: peer_pulls={gd} \
-                     (must be >0 — the general name is the transport's primary name)"
-                ),
-            });
-        }
-
-        // XD: the two names DISAGREEING. A transport is a VALUED flag resolved once at ARM
-        // time, before any session exists, so the law refuses the LOAD naming both names —
-        // unlike the per-call boolean doors, which fall closed because an abort in the worker
-        // thread would kill live sessions. Asserted on the refusal message, not on liveness.
-        {
-            eprintln!("[phase] arm XD: disagreeing general/alias pair must refuse the load");
-            set_env("MEMRA_TP_TRANSPORT", "peer-pull");
-            set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
-            set_env("MEMRA_GLM5_TP", "all@0,1");
-            let refused = HybridModel::load_from_source_without_mtp(&e, &source);
-            rm_env("MEMRA_GLM5_TP");
-            let msg = match &refused {
-                Err(err) => err.to_string(),
-                Ok(_) => String::new(),
-            };
-            verdicts.push(Verdict {
-                name: "XD alias-disagreement refuses the load".into(),
-                pass: refused.is_err()
-                    && msg.contains("MEMRA_TP_TRANSPORT")
-                    && msg.contains("MEMRA_GLM5_TP_TRANSPORT")
-                    && msg.contains("disagree"),
-                detail: if refused.is_err() {
-                    format!("refused naming both: {msg}")
-                } else {
-                    "LOADED — a disagreeing pair silently picked a transport".into()
-                },
-            });
-            rm_env("MEMRA_TP_TRANSPORT");
-        }
-
-        println!(
-            "{}",
-            gtx::transport_census_line("glm5-tp-transport", gtx::TpTransport::PeerPull)
-        );
-        set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
     }
 
     // ================= T. Trace-tap identity (MEMRA_MOE_WEIGHT_TRACE) =================
@@ -1855,344 +1172,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     std::fs::remove_dir_all(&map_dir)?;
 
-    // ================= Q. TP-4 arms (lane/glm5-composition, 2026-09-01) =================
-    // The rank widening's own battery: the SAME arm harness (run_tp_arm — identical bars by
-    // construction) over the quad fixture (4 KDA + 4 MLA heads = heads_per_rank 1 at four
-    // ranks; 8 routed experts = EP-4 2/rank), same-device FOUR-context emulation. Plus the
-    // envelope refusals only the widening introduces: TP-3 (outside GLM5_TP_ALLOWED_RANKS),
-    // TP-4 on the 2-head fixture (dimension-derived geometry law), and a ranks=2 map on a
-    // TP-4 load (map/rank mismatch).
-    {
-        eprintln!("[phase] TP-4 arms: quad fixture (4 heads, 8 experts), 4-context emulation");
-        let config4 = ModelConfig::from_hf(&HfConfig::parse(&mini_config_json(4, 8)));
-        let plan4 = memra_gguf::model_packs::for_config(&config4)
-            .expect("glm5_next model pack matches the quad mini config")
-            .compile_plan(&config4)
-            .expect("quad mini glm5_next plan compiles");
-        assert_eq!(plan4.layers.len(), LAYERS);
-        let fixture4 = deterministic_fixture(&plan4).expect("deterministic quad fixture");
-        let source4 = fixture_source(&config4, &plan4, &fixture4.weights);
-        let spec4 = "all@0,1,2,3";
-
-        // Seed search at four ranks (even split of 8 experts = rank0 owns 0..1): the EP
-        // identity arms need peer-owned routing; M4 additionally needs >=3 distinct routed
-        // experts outside rank 0's even-split slice for the singleton owners of ranks 1..3.
-        set_env("MEMRA_GLM5_TP", spec4);
-        let m_probe4 = HybridModel::load_from_source_without_mtp(&e, &source4)?;
-        rm_env("MEMRA_GLM5_TP");
-        let mut ids4: Option<Vec<u32>> = None;
-        for seed in [
-            0x0915_5EEDu64,
-            0xDEAD_BEEF,
-            0x00C0_FFEE,
-            0x1234_5678,
-            0xA5A5_A5A5,
-            0x0BAD_F00D,
-        ] {
-            let cand = tokens(p + n, seed);
-            let before = memra_engine::glm5_tp::glm5_ep_peer_slot_dispatches();
-            let _ = walk(&e, &m_probe4, &plan4, &cand, p, max_ctx)?;
-            let dispatched = memra_engine::glm5_tp::glm5_ep_peer_slot_dispatches() - before;
-            println!("[seed-search-q4] seed={seed:#010x}: peer_slot_dispatches={dispatched}");
-            if dispatched > 0 {
-                ids4 = Some(cand);
-                break;
-            }
-        }
-        let ids4: Vec<u32> = ids4.ok_or(
-            "no candidate seed routes a peer-owned expert at four ranks — the TP-4 EP arms \
-             would be vacuous; extend the candidate list or the quad fixture",
-        )?;
-        memra_engine::moesd::begin_capture()?;
-        let _ = walk(&e, &m_probe4, &plan4, &ids4, 1, max_ctx)?;
-        let _ = walk(&e, &m_probe4, &plan4, &ids4, p, max_ctx)?;
-        let unions4 = memra_engine::moesd::finish_capture()?;
-        drop(m_probe4);
-
-        // Q-A: plain references on the quad fixture, both regimes.
-        eprintln!("[phase] arm Q-A: quad PLAIN references, door OFF");
-        let m_plain4 = HybridModel::load_from_source_without_mtp(&e, &source4)?;
-        assert!(
-            m_plain4.hyper.is_some(),
-            "the quad fixture must load as a HyperConnections trunk"
-        );
-        let (ref4_dec, ref4_dec_tape) = walk(&e, &m_plain4, &plan4, &ids4, 1, max_ctx)?;
-        let (ref4_pri, ref4_pri_tape) = walk(&e, &m_plain4, &plan4, &ids4, p, max_ctx)?;
-        drop(m_plain4);
-        let cx4 = ArmCx {
-            e: &e,
-            source: &source4,
-            plan: &plan4,
-            ids: &ids4,
-            p,
-            max_ctx,
-            ref_dec_logits: &ref4_dec,
-            ref_dec_tape: &ref4_dec_tape,
-            ref_pri_logits: &ref4_pri,
-            ref_pri_tape: &ref4_pri_tape,
-            prime_band: PRIME_BAND_QUAD,
-        };
-
-        // Q-B: the whole trunk at four ranks, host-canonical, diet OFF — v1's bars.
-        run_tp_arm(&cx4, "Q-B tp4-all", spec4, None, None, false, &mut verdicts)?;
-
-        // Q-BD: the EP dispatch diet at four ranks (multi-rank tail packing + per-rank bulk
-        // returns are NEW code in the widening — this arm is their identity gate).
-        set_env("MEMRA_GLM5_EP_DIET", "1");
-        run_tp_arm(
-            &cx4,
-            "Q-BD tp4-all-diet",
-            spec4,
-            None,
-            None,
-            false,
-            &mut verdicts,
-        )?;
-        set_env("MEMRA_GLM5_EP_DIET", "0");
-
-        // Q-X: peer-pull at four ranks (the N-rank gather/concat pulls + the per-pair
-        // publication chains are NEW code), then composed with the diet.
-        set_env("MEMRA_GLM5_TP_TRANSPORT", "peer-pull");
-        run_tp_arm(
-            &cx4,
-            "Q-X tp4-all-peer-pull",
-            spec4,
-            None,
-            None,
-            false,
-            &mut verdicts,
-        )?;
-        set_env("MEMRA_GLM5_EP_DIET", "1");
-        run_tp_arm(
-            &cx4,
-            "Q-XD tp4-peer-pull-diet",
-            spec4,
-            None,
-            None,
-            false,
-            &mut verdicts,
-        )?;
-        set_env("MEMRA_GLM5_EP_DIET", "0");
-        set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
-
-        // Q-XT: transport-vs-transport byte identity at four ranks, decode AND prime (the
-        // bar the class bars cannot express — see the two-rank XT block).
-        {
-            eprintln!("[phase] arm Q-XT: quad transport-vs-transport byte identity");
-            set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
-            set_env("MEMRA_GLM5_TP", spec4);
-            let m_hc = HybridModel::load_from_source_without_mtp(&e, &source4)?;
-            rm_env("MEMRA_GLM5_TP");
-            let (hc_dec, hc_dec_tape) = walk(&e, &m_hc, &plan4, &ids4, 1, max_ctx)?;
-            let (hc_pri, hc_pri_tape) = walk(&e, &m_hc, &plan4, &ids4, p, max_ctx)?;
-            drop(m_hc);
-            set_env("MEMRA_GLM5_TP_TRANSPORT", "peer-pull");
-            set_env("MEMRA_GLM5_TP", spec4);
-            let m_pp = HybridModel::load_from_source_without_mtp(&e, &source4)?;
-            rm_env("MEMRA_GLM5_TP");
-            let (pp_dec, pp_dec_tape) = walk(&e, &m_pp, &plan4, &ids4, 1, max_ctx)?;
-            let (pp_pri, pp_pri_tape) = walk(&e, &m_pp, &plan4, &ids4, p, max_ctx)?;
-            drop(m_pp);
-            set_env("MEMRA_GLM5_TP_TRANSPORT", "0");
-            let dec_diff = bit_equal(&hc_dec, &pp_dec);
-            let pri_diff = bit_equal(&hc_pri, &pp_pri);
-            let pass = dec_diff.is_none()
-                && pri_diff.is_none()
-                && hc_dec_tape == pp_dec_tape
-                && hc_pri_tape == pp_pri_tape;
-            verdicts.push(Verdict {
-                name: "Q-XT quad transport-vs-transport byte identity".into(),
-                pass,
-                detail: format!(
-                    "decode {} / prime {} (prime max_rel={:.3e} — MUST be exactly 0)",
-                    match dec_diff {
-                        None => "BYTE-IDENTICAL".to_string(),
-                        Some((s, i)) => format!("DIVERGES at step {s} logit {i}"),
-                    },
-                    match pri_diff {
-                        None => "BYTE-IDENTICAL".to_string(),
-                        Some((s, i)) => format!("DIVERGES at step {s} logit {i}"),
-                    },
-                    max_rel_diff(&hc_pri, &pp_pri),
-                ),
-            });
-        }
-
-        // Q-M / Q-R4: the measured-map door at four ranks. Skew: rank 0 owns everything
-        // except three ROUTED singletons for ranks 1..3 (so rank 0's local table has 5
-        // entries and the corrupt-map red has something to reverse; every rank owns >=1).
-        let map_dir4 =
-            std::env::temp_dir().join(format!("glm5-tp-gate-q4-epmap-{}", std::process::id()));
-        std::fs::create_dir_all(&map_dir4)?;
-        let moe_layers4: [usize; 3] = [1, 2, 3];
-        let skew4_text = {
-            let mut layers = std::collections::BTreeMap::new();
-            for &il in &moe_layers4 {
-                let u = unions4
-                    .iter()
-                    .find(|l| l.id as usize == il)
-                    .ok_or(format!("quad probe carries no routed union for layer {il}"))?;
-                let routed: Vec<usize> = u.experts.iter().map(|&x| x as usize).collect();
-                if routed.len() < 3 {
-                    return Err(format!(
-                        "layer {il} routed union {routed:?} carries fewer than 3 experts — \
-                         the quad skew arm would leave a rank vacuous; extend the seed list"
-                    )
-                    .into());
-                }
-                let singles = &routed[routed.len() - 3..];
-                println!("[map-skew-q4] layer {il}: routed_union={routed:?} singles={singles:?}");
-                let owners: Vec<u8> = (0..8)
-                    .map(|ex| match singles.iter().position(|&s| s == ex) {
-                        Some(i) => (i + 1) as u8,
-                        None => 0u8,
-                    })
-                    .collect();
-                layers.insert(il, owners);
-            }
-            memra_engine::ep_map::EpMap {
-                n_experts: 8,
-                ranks: 4,
-                entry_rank: 0,
-                layers,
-            }
-            .render()
-        };
-        let skew4_path = map_dir4.join("skew4.map");
-        std::fs::write(&skew4_path, &skew4_text)?;
-        let skew4 = skew4_path.to_string_lossy().into_owned();
-        run_tp_arm(
-            &cx4,
-            "Q-M map-skew-4rank",
-            spec4,
-            None,
-            Some(&skew4),
-            false,
-            &mut verdicts,
-        )?;
-
-        // Q-R1..Q-R4: the reds at four ranks (swap-wo is a ROTATION at N ranks — wrong on
-        // every rank by construction).
-        run_tp_arm(
-            &cx4,
-            "Q-R1 red-swap-wo",
-            spec4,
-            Some("swap-wo"),
-            None,
-            true,
-            &mut verdicts,
-        )?;
-        run_tp_arm(
-            &cx4,
-            "Q-R2 red-swap-ep-gateup",
-            spec4,
-            Some("swap-ep-gateup"),
-            None,
-            true,
-            &mut verdicts,
-        )?;
-        run_tp_arm(
-            &cx4,
-            "Q-R3 red-skip-peer-combine",
-            spec4,
-            Some("skip-peer-combine"),
-            None,
-            true,
-            &mut verdicts,
-        )?;
-        run_tp_arm(
-            &cx4,
-            "Q-R4 red-corrupt-ep-map",
-            spec4,
-            Some("corrupt-ep-map"),
-            Some(&skew4),
-            true,
-            &mut verdicts,
-        )?;
-
-        // Q-N3: TP-3 is OUTSIDE the qualified rank envelope and must refuse at load by name.
-        {
-            eprintln!("[phase] arm Q-N3: all@0,1,2 must refuse (rank envelope)");
-            set_env("MEMRA_GLM5_TP", "all@0,1,2");
-            let res = HybridModel::load_from_source_without_mtp(&e, &source4);
-            rm_env("MEMRA_GLM5_TP");
-            let msg = res
-                .as_ref()
-                .err()
-                .map(|e| e.to_string())
-                .unwrap_or_default();
-            verdicts.push(Verdict {
-                name: "Q-N3 tp3-envelope-refusal".into(),
-                pass: res.is_err() && msg.contains("qualified rank envelope"),
-                detail: if res.is_err() {
-                    format!("load refused: {msg}")
-                } else {
-                    "TP-3 loaded without refusing (the envelope law is not holding)".into()
-                },
-            });
-        }
-
-        // Q-N2H: TP-4 on the ORIGINAL 2-head fixture must refuse by geometry (2 KDA heads
-        // do not shard across 4 ranks) — the dimension-derived law, not a special case.
-        {
-            eprintln!("[phase] arm Q-N2H: all@0,1,2,3 on the 2-head fixture must refuse");
-            set_env("MEMRA_GLM5_TP", spec4);
-            let res = HybridModel::load_from_source_without_mtp(&e, &source);
-            rm_env("MEMRA_GLM5_TP");
-            let msg = res
-                .as_ref()
-                .err()
-                .map(|e| e.to_string())
-                .unwrap_or_default();
-            verdicts.push(Verdict {
-                name: "Q-N2H tp4-on-2head-geometry-refusal".into(),
-                pass: res.is_err() && msg.contains("do not shard across 4 ranks"),
-                detail: if res.is_err() {
-                    format!("load refused: {msg}")
-                } else {
-                    "TP-4 loaded on a 2-head geometry without refusing".into()
-                },
-            });
-        }
-
-        // Q-H6: a ranks=2 map on a TP-4 load refuses by name (map/rank mismatch).
-        {
-            eprintln!("[phase] arm Q-H6: ranks=2 map on a TP-4 load must refuse");
-            let two_rank_map = map_dir4.join("two-rank.map");
-            std::fs::write(
-                &two_rank_map,
-                "{\"format\": \"memra-ep-map-v1\", \"ranks\": 2, \"entry_rank\": 0, \
-                 \"expert_count\": 8, \"layers\": [\
-                 {\"layer\": 1, \"assignment\": [0, 0, 0, 0, 1, 1, 1, 1]}, \
-                 {\"layer\": 2, \"assignment\": [0, 0, 0, 0, 1, 1, 1, 1]}, \
-                 {\"layer\": 3, \"assignment\": [0, 0, 0, 0, 1, 1, 1, 1]}]}",
-            )?;
-            set_env("MEMRA_GLM5_TP", spec4);
-            set_env("MEMRA_GLM5_EP_MAP", &two_rank_map.to_string_lossy());
-            let res = HybridModel::load_from_source_without_mtp(&e, &source4);
-            rm_env("MEMRA_GLM5_EP_MAP");
-            rm_env("MEMRA_GLM5_TP");
-            let msg = res
-                .as_ref()
-                .err()
-                .map(|e| e.to_string())
-                .unwrap_or_default();
-            verdicts.push(Verdict {
-                name: "Q-H6 map-rank-mismatch-refusal".into(),
-                pass: res.is_err() && msg.contains("ranks=2") && msg.contains("TP-4"),
-                detail: if res.is_err() {
-                    format!("load refused: {msg}")
-                } else {
-                    "a 2-rank map armed a TP-4 load without refusing".into()
-                },
-            });
-        }
-        std::fs::remove_dir_all(&map_dir4)?;
-        // Q-S4: the spec x TP composition arms at FOUR ranks (same harness as S2) — after
-        // the scratch cleanup, so an arm failure cannot leak the map dir (tmp hygiene law).
-        spec_tp_verify_arms("Q-S4", &e, &source4, &plan4, &ids4, spec4, &mut verdicts)?;
-    }
-
     // ================= verdict =================
     println!("==========================================================");
     let mut fails = 0usize;
@@ -2210,9 +1189,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("==========================================================");
     if fails == 0 {
         println!(
-            "glm5-tp-gate: ALL ARMS PASS (P={p} N={n}; TP-2 fixture kda_heads=2 mla_heads=2 \
-             experts=4 top-2 + TP-4 quad fixture kda_heads=4 mla_heads=4 experts=8 top-2, \
-             same-device multi-context emulation, banked arms host-canonical)"
+            "glm5-tp-gate: ALL ARMS PASS (P={p} N={n}, fixture kda_heads=2 mla_heads=2 \
+             experts=4 top-2, same-device dual-context emulation, host-canonical transport)"
         );
         Ok(())
     } else {

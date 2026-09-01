@@ -1,0 +1,20 @@
+[tpd] arm=dietsub mode=tape prompts=/root/out-tpd/prompts-tiny run=tinykda2 extras=BOXP_FORCE_DIR=/root/out-tpd/plain1-tape-tinyref MEMRA_GLM5_TP=0-2@0,1 BOXP_MAX_NEW=32 bin=/root/memra-tpd/target/release/glm5-tp2-box-probe map=/root/out-tpd/maps/agentic-t1-coactivation.json
+1154750671914ee4774a90cb30bafd9994af0d485d92c6f8f97345663eabf3f9  /root/memra-tpd/target/release/glm5-tp2-box-probe
+[tpd] diet arm with moe_ep=0 (no EP layer sharded): diet announce not applicable, counters must be 0
+arm=dietsub mode=tape run=tinykda2 rc=0
+announce diet_engaged=0 grouped_prime_flag=0 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=0
+ep-diet-counters dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+[tpd] rc=0 arm=dietsub mode=tape run=tinykda2
+C1FIX_RC=0
+cmp_vs_plain_rc=0
+boot_determinism_rc=0
+[cmp] shared files=12 worst_f32_rel=0.000e+00 (None) fail=0
+cmp_vs_plain_rc=0
+[cmp] shared files=12 worst_f32_rel=0.000e+00 (None) fail=0
+boot_determinism_rc=0
+arm=dietsub mode=tape run=tinykda2 rc=0
+announce diet_engaged=0 grouped_prime_flag=0 grouped_prime_execute=0 ep_map_armed=0
+ep-peer-slot-dispatches=0
+ep-diet-counters dispatches=0 bulk_returns=0 roundtrips_avoided=0 fanout_uploads_avoided=0 grouped_prime_dispatches=0
+C1FIX_DONE

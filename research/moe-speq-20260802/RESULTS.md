@@ -42,9 +42,9 @@ signal, not noise.
 - Box: <bench-instance> 8x H100 80GB (Ohio, <aug2-box-ip>), devices 0-3 claimed per
   `~/receipts/gpu-assignment.txt`, one process per device, GPUs otherwise idle in-bracket,
   temps 34-46 C, all runs 2026-08-03 00:32Z-06:0xZ same-night regime.
-- Artifact: `/opt/scratch/nvme/models/hy3-layer103p5-bw24-runtime` (bw24-expert-overlay-v2,
+- Artifact: `/opt/dl-image/nvme/models/hy3-layer103p5-bw24-runtime` (bw24-expert-overlay-v2,
   103.5 arm, bytes untouched). Boot required restoring the expected sparse-source path:
-  `/data/ai-ml/hf-models/hy3-layer103p5-sparse-source -> /opt/scratch/nvme/models/hy3-sparse-source`
+  `/data/ai-ml/hf-models/hy3-layer103p5-sparse-source -> /opt/dl-image/nvme/models/hy3-sparse-source`
   (config.json sha256 663036ce… matches the manifest pin).
 - Binary: box M2-lane tree `~/memra` (binaries Aug 2 19:10) + a 21-line diagnostic patch
   (`tools/miss-trace.patch`): `MEMRA_MOE_MISS_TRACE=<path>` logs one `"<layer> <proj>

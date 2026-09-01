@@ -11,11 +11,6 @@
 //!    activation row must bite.
 //! X. `MEMRA_BF16_TCOLS_X1` — the one-row-per-block tcols grid twin vs the x4 form,
 //!    bitwise at t=2..=8. Red: swapped weight rows must bite.
-//! R. `MEMRA_BF16_TCOLS_RED_FUSED` (lane/glm5-door-r) — the `_rf` fused-reduce-tail twins
-//!    vs the standing tcols kernels, bitwise: both grid forms at t=2..=8, the tcols16 form
-//!    at t=9..=16, and the t=1 degenerate bounds vs the per-row t=1 program. Red: the
-//!    shifted-pairing twin (ascending shuffle offsets — a different association of the
-//!    same 32 partials) must bite.
 //! M. `MEMRA_MOE_VROWS_PACK` — the `_w4` warp-packed verify-rows MoE pair vs the unpacked
 //!    pair AND vs the sequential per-(token,expert) slab chain, on minted NVFP4 banks
 //!    with a LIVE macro plane. Reds: the vrest gate-4 swapped-pair and dropped-macro
@@ -77,16 +72,6 @@ fn without_flag<T>(key: &str, f: impl FnOnce() -> T) -> T {
     let r = f();
     unsafe { std::env::remove_var(key) };
     r
-}
-
-/// Run `f` with a door PINNED to "1" (`on`) or "0" (`!on`) — both arms explicit, per the
-/// same law [`without_flag`] restores.
-fn pinned<T>(key: &str, on: bool, f: impl FnOnce() -> T) -> T {
-    if on {
-        with_flag(key, f)
-    } else {
-        without_flag(key, f)
-    }
 }
 
 /// Deterministic non-trivial f32s (varied signs and magnitudes; an all-ones operand cannot
@@ -286,173 +271,6 @@ fn gpu_x1_tcols_matches_x4_bitwise() {
         "swapped-weight-row red arm produced identical outputs — the gate is vacuous"
     );
     println!("door X RED bites: {diffs} outputs differ with weight rows 0/1 swapped");
-}
-
-// ---------------------------------------------------------------------------------------------
-// Door R — the fused-t reduce-tail twins (lane/glm5-door-r).
-// ---------------------------------------------------------------------------------------------
-
-#[test]
-#[ignore = "needs a CUDA device, run under flock /tmp/memra-5090.lock"]
-fn gpu_red_fused_tcols_matches_standing_tree_bitwise() {
-    let _gpu = gpu_guard();
-    force_true_f32();
-    let e = Engine::new(0).expect("CUDA engine on device 0");
-    // in_f = 2048: in_f/8 = 256 >= the default 128-thread block, so EVERY lane's partial is
-    // nonzero and the pairing bar is live across the whole tree — with a short in_f the top
-    // lanes hold +0.0f and a shifted association over zeros cannot round differently (a+0
-    // is exact), which would make the red arm below vacuous. out_f = 133: ragged 4-row tail.
-    let (in_f, out_f) = (2048usize, 133usize);
-    let w_host = varied(out_f * in_f, 0xD00E, 2.0);
-    let w = e.htod_bytes(&bf16_bytes(&w_host)).expect("weight upload");
-
-    // Both grid forms at t=2..=8 through the REAL launcher: door R composes with door X
-    // (grid choice first, tail twin second), so each form is compared against ITS OWN
-    // standing tree. Every OFF/reference arm is PINNED =0, never merely unset (§without_flag).
-    for t in 2..=8usize {
-        let x_host = varied(t * in_f, 0x5EED + t as u64, 2.0);
-        let x = e.htod(&x_host).expect("activation upload");
-        for (x1_arm, form) in [(true, "x1"), (false, "x4")] {
-            let mut y_ref = e.uninit(t * out_f).expect("y ref");
-            let d0 = memra_engine::bf16_tcols_red_fused_dispatches();
-            pinned("MEMRA_BF16_TCOLS_X1", x1_arm, || {
-                without_flag("MEMRA_BF16_TCOLS_RED_FUSED", || {
-                    e.matvec_bf16_tcols_into(&w, &x, &mut y_ref, in_f, out_f, t)
-                        .expect("standing launch");
-                });
-            });
-            assert_eq!(
-                memra_engine::bf16_tcols_red_fused_dispatches(),
-                d0,
-                "t={t} {form}: the R=0 arm moved the fused-tail dispatch counter"
-            );
-            let mut y_rf = e.uninit(t * out_f).expect("y rf");
-            pinned("MEMRA_BF16_TCOLS_X1", x1_arm, || {
-                with_flag("MEMRA_BF16_TCOLS_RED_FUSED", || {
-                    e.matvec_bf16_tcols_into(&w, &x, &mut y_rf, in_f, out_f, t)
-                        .expect("rf launch");
-                });
-            });
-            assert!(
-                memra_engine::bf16_tcols_red_fused_dispatches() > d0,
-                "t={t} {form}: the fused-tail door did not engage"
-            );
-            let diffs = bit_diffs(&e.dtoh(&y_rf).expect("rf"), &e.dtoh(&y_ref).expect("ref"));
-            assert_eq!(
-                diffs,
-                0,
-                "t={t} {form}: the _rf fused tail diverged from the standing tree in {diffs}/{} outputs",
-                t * out_f
-            );
-            println!(
-                "door R PASS t={t} {form}: {} outputs bit-identical",
-                t * out_f
-            );
-        }
-    }
-
-    // The wide-t twin at t=9..=16 (the drafter head's t=15 = 135 barriers is in-range).
-    for t in 9..=16usize {
-        let x_host = varied(t * in_f, 0x16ED + t as u64, 2.0);
-        let x = e.htod(&x_host).expect("wide activation upload");
-        let mut y_ref = e.uninit(t * out_f).expect("y ref16");
-        without_flag("MEMRA_BF16_TCOLS_RED_FUSED", || {
-            e.matvec_bf16_tcols16_into(&w, &x, &mut y_ref, in_f, out_f, t)
-                .expect("standing tcols16 launch");
-        });
-        let mut y_rf = e.uninit(t * out_f).expect("y rf16");
-        let d0 = memra_engine::bf16_tcols_red_fused_dispatches();
-        with_flag("MEMRA_BF16_TCOLS_RED_FUSED", || {
-            e.matvec_bf16_tcols16_into(&w, &x, &mut y_rf, in_f, out_f, t)
-                .expect("rf tcols16 launch");
-        });
-        assert!(
-            memra_engine::bf16_tcols_red_fused_dispatches() > d0,
-            "t={t}: the fused-tail door did not engage on the tcols16 route"
-        );
-        let diffs = bit_diffs(
-            &e.dtoh(&y_rf).expect("rf16"),
-            &e.dtoh(&y_ref).expect("ref16"),
-        );
-        assert_eq!(
-            diffs,
-            0,
-            "t={t}: the _rf tcols16 tail diverged from the standing tree in {diffs}/{} outputs",
-            t * out_f
-        );
-        println!(
-            "door R PASS t={t} tcols16: {} outputs bit-identical",
-            t * out_f
-        );
-    }
-
-    // t=1 — the routed launchers refuse t<2, but the door-R bar covers t=1..=16: the three
-    // _rf twins at the degenerate column-loop bounds vs the per-row t=1 program (the same
-    // reference the door T gate names). Gate-only launcher; never a serving route.
-    {
-        let t = 1usize;
-        let x_host = varied(in_f, 0x0071, 2.0);
-        let x = e.htod(&x_host).expect("t1 activation");
-        let mut y_ref = e.uninit(out_f).expect("y t1 ref");
-        without_flag("MEMRA_BF16_TCOLS_WIDE", || {
-            e.matvec_bf16_rows_into(&w, &x, &mut y_ref, in_f, out_f, 1)
-                .expect("t=1 rows launch");
-        });
-        let want = e.dtoh(&y_ref).expect("t1 ref back");
-        for kernel in [
-            "matvec_bf16_f32acc_x1_tcols_rf",
-            "matvec_bf16_f32acc_x4_tcols_rf",
-            "matvec_bf16_f32acc_x4_tcols16_rf",
-        ] {
-            let mut y_rf = e.uninit(out_f).expect("y t1 rf");
-            e.matvec_bf16_tcols_gate_kernel_into(kernel, &w, &x, &mut y_rf, in_f, out_f, t)
-                .expect("t=1 rf gate launch");
-            let got = e.dtoh(&y_rf).expect("t1 rf back");
-            let diffs = bit_diffs(&got, &want);
-            assert_eq!(
-                diffs, 0,
-                "t=1 {kernel}: diverged from the per-row t=1 program in {diffs}/{out_f} outputs"
-            );
-        }
-        println!("door R PASS t=1: all three _rf twins match the per-row t=1 program");
-    }
-
-    // RED ARM — the pairing bar itself: the `_rf_redshift` twin runs the warp phase with
-    // ASCENDING shuffle offsets (1,2,4,8,16) — the same 32 partials under a DIFFERENT
-    // association. If the bit compare above could not see a pairing change, this arm would
-    // pass silently; it must bite.
-    let t = 4usize;
-    let x_host = varied(t * in_f, 0x4ED0, 2.0);
-    let x = e.htod(&x_host).expect("red x");
-    let mut y_a = e.uninit(t * out_f).expect("y pair");
-    let mut y_b = e.uninit(t * out_f).expect("y shifted");
-    e.matvec_bf16_tcols_gate_kernel_into(
-        "matvec_bf16_f32acc_x1_tcols_rf",
-        &w,
-        &x,
-        &mut y_a,
-        in_f,
-        out_f,
-        t,
-    )
-    .expect("rf launch");
-    e.matvec_bf16_tcols_gate_kernel_into(
-        "matvec_bf16_f32acc_x1_tcols_rf_redshift",
-        &w,
-        &x,
-        &mut y_b,
-        in_f,
-        out_f,
-        t,
-    )
-    .expect("redshift launch");
-    let diffs = bit_diffs(&e.dtoh(&y_a).expect("a"), &e.dtoh(&y_b).expect("b"));
-    assert!(
-        diffs > 0,
-        "shifted-pairing red arm produced identical outputs — the door-R bit bar cannot \
-         see an association change and every PASS above is unproven"
-    );
-    println!("door R RED bites: {diffs} outputs differ under the shifted pairing");
 }
 
 // ---------------------------------------------------------------------------------------------

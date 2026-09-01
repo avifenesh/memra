@@ -16,7 +16,7 @@ survivorship-biased.
 ## The honest constraint: ~65 records still train almost nothing
 
 Current corpus (all rig files, `research/tune-data/*.jsonl`): **65 records**
-across **3 rigs** — `rtx5090-laptop-sm120a` (62), `cloud-rtx6000-sm120-188sm` (2),
+across **3 rigs** — `rtx5090-laptop-sm120a` (62), `sbox-rtx6000-sm120-188sm` (2),
 `l40s-sm89-cloud` (1) — labels `{positive: 34, neutral: 18, negative: 13}`,
 headline speedup ratio present in only 34. Component mix is still dominated by
 one cluster (`spec-decode` 33, `flash-attn` 9). This is a design *seed*, not a
@@ -182,9 +182,9 @@ Ranked by expected impact on the prior's usefulness:
    which caps the speedup-sign head — that is the metric still stuck at/below
    majority.
 2. **More rigs (partly done).** The corpus now spans 3 rigs
-   (`rig5090` 62, `cloud-rtx6000` 2, `l40s-sm89` 1) and `rig` is a real
+   (`rig5090` 62, `sbox-rtx6000` 2, `l40s-sm89` 1) and `rig` is a real
    multi-value conditioning feature — but the two new rigs contribute 3 rows, so
-   cross-rig transfer is not yet measurable. Grow cloudbox/l40s (and add rigs) to make
+   cross-rig transfer is not yet measurable. Grow sbox/l40s (and add rigs) to make
    `rig` earn its place instead of being ~constant.
 3. **Normalized baseline metrics.** Metric names are per-row free-form
    (`pp512_clock_locked`, `tg128_graph`, …). A small canonicalization pass

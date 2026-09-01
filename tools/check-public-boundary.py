@@ -36,7 +36,7 @@ bytes rather than argued from:
   * A blob reports EVERY rule it matches, ordered worst-rule-first by the policy's severity
     ranks. First-match-only was correct for the enforce/don't-enforce decision and wrong for
     triage: it labelled the worst file in the repo — a cloud account id plus a privilege level
-    plus an identity principal — `personal_email`, one line inside 56 other `personal_email` hits.
+    plus an IAM principal — `personal_email`, one line inside 56 other `personal_email` hits.
 """
 
 from __future__ import annotations
@@ -562,23 +562,6 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
-def worktree_blob_bytes(path: Path) -> bytes:
-    """Read the bytes Git publishes for one tracked worktree entry.
-
-    A symlink is a Git blob whose content is its target string. Following it is both wrong and
-    non-portable: an absolute receipt link may resolve on the machine that committed it, fail on a
-    clean clone, or raise PermissionError while pathlib asks whether the target is a file. Scan the
-    link text itself, exactly as the commit/ref modes already scan the blob from git cat-file.
-    """
-    if path.is_symlink():
-        return os.readlink(path).encode("utf-8", errors="surrogateescape")
-    try:
-        return path.read_bytes()
-    except OSError as exc:
-        rel = path.relative_to(ROOT)
-        raise RuntimeError(f"cannot read tracked worktree entry {rel}: {exc}") from exc
-
-
 def changed_blobs(commits: Iterable[str]) -> List[Tuple[str, str]]:
     """Return each changed (path, blob oid) version reachable through the commits."""
     blobs: List[Tuple[str, str]] = []
@@ -675,7 +658,7 @@ def scan_secret_bytes(
     Reporting one rule per file was correct for the enforce/don't-enforce decision — one hit is
     enough to make a blob a violation — and it is why the worst file in this repo read as
     authorship noise: `personal_email` matched 189 bytes before the account id did, so the
-    account id, the AdministratorAccess assertion and the identity principal beside it were never
+    account id, the AdministratorAccess assertion and the IAM principal beside it were never
     named in any report. Enforcement takes one rule; triage needs all of them.
     """
     text = data.decode("utf-8", errors="ignore")
@@ -765,40 +748,8 @@ def evaluate(policy: Policy) -> List[Violation]:
     secret_candidates = secret_candidate_files(policy.secret_sources)
     for rel in tracked_files():
         full = ROOT / rel
-        # Do not ask is_file() to follow a symlink. Python 3.12 raises PermissionError when an
-        # absolute target crosses an unreadable parent (the hosted-runner failure that motivated
-        # this guard); the tracked object is still a perfectly readable symlink blob.
-        is_link = full.is_symlink()
-        if not is_link:
-            # A NON-symlink we cannot stat is REPORTED, never raised and never skipped
-            # (lane/glm5-accrace, merged with the symlink guard above). Raising kills the
-            # scan for every LATER tracked file — the exact shape of the CI failure both
-            # halves of this guard exist to fix — and a silent `continue` would let an
-            # unreadable tracked path hide anything at all. So it becomes its own finding
-            # and the census runs to the end of the tree. Teeth: `UnstatablePathTests`.
-            try:
-                is_file = full.is_file()
-            except OSError as err:
-                # Built directly rather than through `build_violation`: that helper derives
-                # `detail` from matched RULE NAMES and line numbers, and the one fact worth
-                # reporting here is the errno text. `detail` keeps the allowlist's
-                # long-standing "rules (note)" shape, so this category needs no migration.
-                violations.append(
-                    Violation(
-                        path=rel,
-                        sha256="unstatable",
-                        category="unstatable_path",
-                        detail=(
-                            f"unstatable_path ({type(err).__name__}: "
-                            f"{err.strerror or err})"
-                        ),
-                        rules=("unstatable_path",),
-                        severity=policy.rank("unstatable_path"),
-                    )
-                )
-                continue
-            if not is_file:
-                continue
+        if not full.is_file():
+            continue
         bypass = is_bypass(rel, policy.bypass_paths)
         # Path glob rule (private serving material).
         matched_globs = [
@@ -811,32 +762,21 @@ def evaluate(policy: Policy) -> List[Violation]:
                 build_violation(
                     policy,
                     rel,
-                    hashlib.sha256(worktree_blob_bytes(full)).hexdigest(),
+                    sha256_of(full),
                     "private_path",
                     [(name, 0, "") for name in matched_globs],
                 )
             )
             continue  # one violation per file — path glob wins over secret hits.
         # Secret regex rule.
-        # git grep does not prefilter symlink blobs, so the small tracked-symlink set is scanned
-        # directly. This keeps the fast prefilter for ordinary files without making links a blind
-        # spot.
-        if not bypass and (rel in secret_candidates or is_link):
-            data = worktree_blob_bytes(full)
-            hits = scan_secret_bytes(
-                data,
-                policy.secret_union,
-                policy.secret_groups,
-                policy.secret_patterns,
+        if not bypass and rel in secret_candidates:
+            hits = scan_secrets(
+                full, policy.secret_union, policy.secret_groups, policy.secret_patterns
             )
             if hits:
                 violations.append(
                     build_violation(
-                        policy,
-                        rel,
-                        hashlib.sha256(data).hexdigest(),
-                        "secret_pattern",
-                        hits,
+                        policy, rel, sha256_of(full), "secret_pattern", hits
                     )
                 )
     return violations

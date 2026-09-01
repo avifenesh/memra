@@ -196,4 +196,4 @@ prefill argmax=268  decode argmax=268 ... MATCH (run-gen q9 naked)
    implementation yet; requires batched residual slots and a batched deferred API.
 2. Root-cause the singledev pipelined intermittent (mempool cross-stream reuse is the
    lead suspect); until closed, single-device multi-stage stays serial-arm-only guidance.
-3. 5090-rig re-gate before any runtime default moves (cloudbox/H100 evidence ≠ default flip).
+3. 5090-rig re-gate before any runtime default moves (Sbox/H100 evidence ≠ default flip).

@@ -1,0 +1,17 @@
+v1       decode boot-medians [22.654, 22.658, 22.654] median 22.654 spread 0.015% | prime med 4.617s | pool TTFT med 4.664s | vendor [22.57, 22.61, 22.63]
+         counters {'peer_slots': 1012568, 'dispatches': 0, 'bulk_returns': 0, 'roundtrips_avoided': 0, 'fanout_uploads_avoided': 0, 'grouped_prime_dispatches': 0, 'boot': 'v1-timed-t1'}
+         counters {'peer_slots': 1012568, 'dispatches': 0, 'bulk_returns': 0, 'roundtrips_avoided': 0, 'fanout_uploads_avoided': 0, 'grouped_prime_dispatches': 0, 'boot': 'v1-timed-t2'}
+         counters {'peer_slots': 1012568, 'dispatches': 0, 'bulk_returns': 0, 'roundtrips_avoided': 0, 'fanout_uploads_avoided': 0, 'grouped_prime_dispatches': 0, 'boot': 'v1-timed-t3'}
+diet     decode boot-medians [24.647, 24.642, 24.559] median 24.642 spread 0.359% | prime med 5.995s | pool TTFT med 6.037s | vendor [24.64, 24.61, 24.56]
+         counters {'peer_slots': 1012568, 'dispatches': 114786, 'bulk_returns': 114382, 'roundtrips_avoided': 1012568, 'fanout_uploads_avoided': 137366, 'grouped_prime_dispatches': 0, 'boot': 'diet-timed-t1'}
+         counters {'peer_slots': 1012568, 'dispatches': 114786, 'bulk_returns': 114382, 'roundtrips_avoided': 1012568, 'fanout_uploads_avoided': 137366, 'grouped_prime_dispatches': 0, 'boot': 'diet-timed-t2'}
+         counters {'peer_slots': 1012568, 'dispatches': 114786, 'bulk_returns': 114382, 'roundtrips_avoided': 1012568, 'fanout_uploads_avoided': 137366, 'grouped_prime_dispatches': 0, 'boot': 'diet-timed-t3'}
+dietmap  decode boot-medians [22.103, 22.138, 22.114] median 22.114 spread 0.156% | prime med 6.020s | pool TTFT med 6.068s | vendor [22.02, 22.05, 22.04]
+         counters {'peer_slots': 445157, 'dispatches': 114786, 'bulk_returns': 73944, 'roundtrips_avoided': 445157, 'fanout_uploads_avoided': 177804, 'grouped_prime_dispatches': 0, 'boot': 'dietmap-timed-t1'}
+         counters {'peer_slots': 445157, 'dispatches': 114786, 'bulk_returns': 73944, 'roundtrips_avoided': 445157, 'fanout_uploads_avoided': 177804, 'grouped_prime_dispatches': 0, 'boot': 'dietmap-timed-t2'}
+         counters {'peer_slots': 445157, 'dispatches': 114786, 'bulk_returns': 73944, 'roundtrips_avoided': 445157, 'fanout_uploads_avoided': 177804, 'grouped_prime_dispatches': 0, 'boot': 'dietmap-timed-t3'}
+
+pooled spread (max within-arm range) = 0.088 tok/s
+diet/v1 = 1.0877  (gap +1.987 tok/s)
+dietmap/v1 = 0.9761  (gap -0.541 tok/s)
+PLACEMENT SIGN ON THE DIETED WALK: dietmap/diet = 0.8974 (gap -2.528 tok/s; struct-battery measured 0.9686 on the v1 walk)
