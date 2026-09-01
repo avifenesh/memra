@@ -65,7 +65,13 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1
 
+      # Release binaries build on the repo-root rust-toolchain.toml pin, named explicitly
+      # here so the exact toolchain is pre-installed. Floating stable meant the same tag's
+      # rebuild depended on whatever stable the runner had that day — which is what the
+      # artifact registry's DERIVABLE rows quietly assumed away.
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.os }}-sm${{ matrix.cuda_arch }}

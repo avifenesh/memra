@@ -228,12 +228,15 @@ jobs:
       # in a deliberate lane, and take the new toolchain's lints as part of that bump.
       # `components: clippy` here because the action installs the minimal profile, and a
       # workflow that calls a missing cargo-clippy fails on the tool, not the lints; only
-      # this job lints, so only this job asks for it. The stable channel still compiles this
-      # tree in the publish-dryrun job (120a) and both release-arch-mirror cells, so newest-
-      # stable compile coverage is not lost by pinning here.
+      # this job lints, so only this job asks for it. Newest-stable compile coverage lives
+      # in the publish-dryrun job (120a), which floats on purpose; release-arch-mirror
+      # builds on the pin because release.yml now does. The pin itself is
+      # rust-toolchain.toml at the repo root (which rustup resolves ahead of any default,
+      # so it also governs rig checkouts); the explicit input here just pre-installs the
+      # exact toolchain instead of relying on rustup auto-install.
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.97"
+          toolchain: "1.97.1"
           components: clippy
 
       - uses: Swatinem/rust-cache@v2
@@ -395,7 +398,12 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1 cuda-cuobjdump-13-1
 
+      # Mirrors the release exactly, so it builds on the release's toolchain: the repo-root
+      # rust-toolchain.toml pin (which release.yml now names explicitly too). Floating
+      # stable here stopped mirroring anything the day releases were pinned.
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@v2
         with:
           key: ci-arch-sm${{ matrix.cuda_arch }}
@@ -449,6 +457,12 @@ jobs:
   # resolves, and lock drift is otherwise a tag-time-only failure (release.yml does not use it).
   publish-dryrun:
     runs-on: ubuntu-24.04
+    # The ONE job that floats on newest stable, on purpose: its coverage target is
+    # external crates.io consumers, who build on whatever toolchain they have. The env
+    # var beats the repo-root rust-toolchain.toml pin (rustup precedence: env >
+    # directory-override file), which would otherwise silently pin this job too.
+    env:
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@v4
 

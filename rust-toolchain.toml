@@ -1,0 +1,18 @@
+# One toolchain for every implicit rust context: rig checkouts, boxes, and CI jobs
+# that never named one all resolve this file, so none can drift from the clippy bar
+# again (darklanes issue #10: rustup stable auto-updated to 1.98 while ci.yml pinned
+# 1.97, every lane's local clippy reported lints CI does not have — unfixable with
+# #[allow], the older toolchain reds unknown_lints — and two agents started "fixing"
+# non-defects).
+#
+# publish-dryrun deliberately escapes this pin with RUSTUP_TOOLCHAIN=stable (env
+# beats the file): its coverage target is external crates.io consumers on arbitrary
+# toolchains. Everything that ships or mirrors shipping builds on this pin.
+#
+# Bump TOGETHER, one deliberate lane, taking the new toolchain's lints as part of
+# the bump: this file + the ci.yml/release.yml/publish.yml toolchain inputs +
+# Cargo.toml rust-version + the darklanes twin (rust-toolchain.toml there, plus its
+# builder image tag).
+[toolchain]
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]
