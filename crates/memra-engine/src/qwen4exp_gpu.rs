@@ -30,29 +30,6 @@
 //! `linear_attn.norm` (the qwen35 receipt: hf_mapping.rs qwen.py:302-303 exempts exactly
 //! that row; SEMANTICS.md §GDN says the GDN program is qwen3_5's except the sigmoid gate).
 
-// Shape lints allowed module-wide (lane/clippy-zero-restore-20260901): this is the qwen4exp
-// bring-up lane's kernel-adjacent host code — host twins pinned line-for-line to their
-// reference functions — and its just-gated shape is load-bearing, so index loops, control
-// flow, and `% == 0` idioms are not reshaped here (is_multiple_of also changes zero-divisor
-// semantics from panic to defined). The last four rows (unwrap/question-mark/as_deref/drain)
-// are allowed for the same reason, not because they are harmless: their fixes rewrite
-// control flow and expression order in the pinned twins. Truly mechanical lints (unused
-// imports/mut, no-op casts, needless borrows, doc shape) stay live. NOTE: a module-wide
-// allow exempts FUTURE code in this file too, not just the banked sites — when the bring-up
-// lanes close, narrowing these to per-site allows is fair game.
-#![allow(
-    clippy::manual_is_multiple_of,
-    clippy::collapsible_if,
-    clippy::needless_range_loop,
-    clippy::too_many_arguments,
-    clippy::unnecessary_unwrap,
-    clippy::needless_question_mark,
-    clippy::needless_option_as_deref,
-    clippy::extend_with_drain,
-    clippy::type_complexity,
-    clippy::large_enum_variant
-)]
-
 use std::os::raw::c_void;
 
 use cudarc::driver::{CudaSlice, CudaView, DevicePtr, DevicePtrMut, LaunchConfig, PushKernelArg};
@@ -1515,8 +1492,8 @@ fn proj_stack_on() -> bool {
 /// Hyper-gate diet (perf round 4): the read gate's 7-launch serial chain (norm, batched
 /// down GEMV, lowrank reduce, batched up GEMV, mix epilogue, inject partials + reduce)
 /// re-fuses into THREE launches at t == 1 — stage 1 (per-stream RMS recompute + normed
-/// smem row + down/inject rows), stage 2 (silu mean + inject sigmoid), stage 3 (up dots +
-/// mix epilogue from the stage-1 inv scalars). ACCUMULATION CLASS (new reduce widths);
+/// smem row + down/inject rows), stage 2 (silu mean + inject sigmoid), stage 3 (up dots
+/// + mix epilogue from the stage-1 inv scalars). ACCUMULATION CLASS (new reduce widths);
 /// gated by `gate_hc_diet_kernels` (real geometry vs the classic fused chain) + the real
 /// gates. Requires the bf16 trunk twins + hcmicro inject posture (the Slab inject form);
 /// geometry guards hidden % 8 == 0 && rank % 8 == 0 (tiny plans fall back). Default ON
@@ -2993,6 +2970,7 @@ fn score_blocks(
 /// (see the helper docs above); rows are computed in PARALLEL when the work is large
 /// (rows are independent; single-row chunks parallelize across block ranges instead).
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn indexer_select_rows(
     overlay: &MicroBlockIndexPlan,
     rope_base: f32,
@@ -3788,9 +3766,6 @@ fn route_topk_device(
 
 /// The historical mask-producing entry point, now select + render (byte-identical mask;
 /// the TP2 decode path and the masked-kernel arm consume it).
-// dead_code: bring-up scaffolding the in-flight qwen4exp lanes still call; not deleted in
-// the clippy-zero lane (bit-neutral by construction).
-#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 fn indexer_mask_rows(
     overlay: &MicroBlockIndexPlan,
@@ -4878,6 +4853,7 @@ fn launch_hc_inject_two_stage(
 /// from the raw plane, normed row in smem, this chunk's down rows + inject partial rows.
 /// Emits parts [S, rank], inj_parts [n_inj, S], inv [S].
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn launch_hc_diet_stage1(
     e: &Engine,
     ptrs: &CudaSlice<u64>,
@@ -4946,6 +4922,7 @@ fn launch_hc_diet_stage1(
 
 /// hc-diet stage 2 (`hc_diet_stage2_f32`): low_act = silu(mean_s parts) (the
 /// hc_lowrank_reduce association verbatim) + inj = 2*sigmoid(mean_s2 inj_parts).
+#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn launch_hc_diet_stage2(
     e: &Engine,
@@ -5760,6 +5737,7 @@ fn launch_nvfp4_sel_matvec(
 /// the shared activation row. `sel`/`pack_raw` pick the addressing mode (host sel
 /// array vs the TP2 count-gated pack blob). Bit-identical to the v3 gate + v3 up +
 /// silu_mul chain (kernel doc).
+#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn launch_nvfp4_sel_gu_silu(
     e: &Engine,
@@ -7099,7 +7077,7 @@ pub fn gate_sdpa_blocklist(e: &Engine) -> Res<String> {
 /// Caveat, stated: blocks mixing +0.0 and -0.0 are outside the pin (fminf/fmaxf zero
 /// sign order is unspecified); projection outputs do not produce signed-zero ties.
 pub fn gate_kvq_kernels(e: &Engine) -> Res<String> {
-    let mut lcg = 0x6b_7671_5eed_u64; // "kvq"-seeded LCG
+    let mut lcg = 0x6b76_715ee_du64; // "kvq"-seeded LCG
     let mut next_f32 = move || -> f32 {
         lcg = lcg
             .wrapping_mul(6364136223846793005)
@@ -7566,7 +7544,7 @@ pub fn gate_ple_ngram_cache() -> Res<String> {
         ((lcg >> 33) as u32) % 250_000
     };
     let mut checks = 0usize;
-    let run = |label: &str, steps: Vec<Vec<u32>>| -> Res<usize> {
+    let mut run = |label: &str, steps: Vec<Vec<u32>>| -> Res<usize> {
         // `steps` are cumulative sequences fed to ONE cache, in order.
         let (mut ci, mut ch, mut ce) = (Vec::new(), Vec::new(), -1i64);
         let mut n = 0usize;
@@ -8555,7 +8533,7 @@ fn build_layer_w(
     let attn_gate = load_gate(
         e,
         weights,
-        prefix,
+        &prefix,
         "attn_hyper_connection.",
         streams,
         hidden,
@@ -8565,7 +8543,7 @@ fn build_layer_w(
     let mlp_gate = load_gate(
         e,
         weights,
-        prefix,
+        &prefix,
         "mlp_hyper_connection.",
         streams,
         hidden,
@@ -8775,6 +8753,7 @@ fn build_layer_w(
                     .into_iter()
                     .map(|v| e.htod(&v))
                     .collect::<Result<_, _>>()
+                    .map_err(Into::into)
             };
             let ints = |name: &str| -> Res<Vec<i64>> {
                 let t = expect(
@@ -9888,6 +9867,7 @@ impl Qwen4ExpGpu {
     /// RMSNorm per stream, `w = sigmoid(up(silu(down(normed)/S)))`, `mixed = mean_s(w ⊙
     /// normed_s)`, inject scalars `2*sigmoid(block_inject(normed)/S)` per stream.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn gate_read(
         &self,
         e: &Engine,
@@ -9902,6 +9882,7 @@ impl Qwen4ExpGpu {
         self.gate_read_inner(e, ws, ptrs, gate, planes, t, eps, true, exact)
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn gate_read_inner(
         &self,
@@ -10333,6 +10314,7 @@ impl Qwen4ExpGpu {
     /// semantics of the eager `forward` loop body up to `moe_forward`; device-only for
     /// GDN layers without PLE, which is what makes those capturable.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn layer_interior(
         &self,
         e: &Engine,
@@ -10683,7 +10665,10 @@ impl Qwen4ExpGpu {
 
     /// QSA layer: fused [q|gate] projection, q/k RMSNorm, partial rope, KV append, the
     /// host indexer-selection twin, dense masked attention, sigmoid fused output gate.
-    ///
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
+
     /// Indexer update + selection for one chunk (factored from `qsa_forward` so the
     /// TP2 route shares it verbatim): idx projection, the idxcache device raw-key
     /// cache maintenance, host/pooled cache updates, the device-scorer selection, and
@@ -12503,6 +12488,7 @@ impl Qwen4ExpGpu {
     /// PLE block (`ple_block` twin): host n-gram hashing + host gather from the
     /// host-resident table, H2D of the gathered rows, device projections / grouped norms /
     /// dilated depthwise conv, host signed-sqrt sigmoid gate scalars.
+    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn ple_block(
         &self,
@@ -15736,9 +15722,9 @@ struct Tp2State {
 }
 
 /// Captured TP2 decode segments per card (the single-card StepGraphs pattern applied
-/// per rank): `a[d][li]` = attn gate_read + GDN half + join push, `b[d][li]` = join add +
-/// gate_write + mlp gate_read (+ card1 shared-half prestage), `exit[d]` = exit mixer +
-/// lm_head half. GDN layers without PLE only; QSA/PLE layers, the router boundary,
+/// per rank): `a[d][li]` = attn gate_read + GDN half + join push, `b[d][li]` = join add
+/// + gate_write + mlp gate_read (+ card1 shared-half prestage), `exit[d]` = exit mixer
+/// + lm_head half. GDN layers without PLE only; QSA/PLE layers, the router boundary,
 /// the variable-shape MoE tail, and the MoE join stay eager. Event records/waits sit
 /// BETWEEN segment launches (not capturable) — same choreography in warm and replay
 /// modes. The first TP2 decode step runs fully eager to park every slot (allocations
@@ -15881,6 +15867,7 @@ fn build_ple_replica(
             .into_iter()
             .map(|v| e.htod(&v))
             .collect::<Result<_, _>>()
+            .map_err(Into::into)
     };
     let ints = |name: &str| -> Res<Vec<i64>> {
         let t = expect(
@@ -16290,7 +16277,10 @@ pub fn build_tp2_shard(e0: &Engine, e1: &Engine, ckpt: &LoadedCheckpoint) -> Res
     let ev1 = [e1.ctx().new_event(None)?, e1.ctx().new_event(None)?];
     let stage1_raw = {
         let s = e1.gpu.stream();
-        [stage1[0].device_ptr(&s).0, stage1[1].device_ptr(&s).0]
+        [
+            stage1[0].device_ptr(&s).0 as u64,
+            stage1[1].device_ptr(&s).0 as u64,
+        ]
     };
     drop(_g1);
     let _g0 = e0.gpu.enter_main()?;
@@ -16298,7 +16288,10 @@ pub fn build_tp2_shard(e0: &Engine, e1: &Engine, ckpt: &LoadedCheckpoint) -> Res
     let ev0 = [e0.ctx().new_event(None)?, e0.ctx().new_event(None)?];
     let stage0_raw = {
         let s = e0.gpu.stream();
-        [stage0[0].device_ptr(&s).0, stage0[1].device_ptr(&s).0]
+        [
+            stage0[0].device_ptr(&s).0 as u64,
+            stage0[1].device_ptr(&s).0 as u64,
+        ]
     };
     Ok(Tp2Shard {
         layers,
@@ -16921,9 +16914,6 @@ impl Qwen4ExpGpu {
 
     /// The QSA indexer host twin factored for TP2 (runs on card 0's projection; the mask
     /// bytes feed BOTH cards' masked SDPA halves).
-    // dead_code: bring-up scaffolding the in-flight qwen4exp lanes still call; not deleted in
-    // the clippy-zero lane (bit-neutral by construction).
-    #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     fn qsa_indexer_mask(
         &self,
@@ -17956,14 +17946,14 @@ impl Qwen4ExpGpu {
                 let _g = e1.gpu.enter_main()?;
                 let s1 = [e1.zeros(t * hidden)?, e1.zeros(t * hidden)?];
                 let s = e1.gpu.stream();
-                tp2s.pf_stage1_raw = [s1[0].device_ptr(&s).0, s1[1].device_ptr(&s).0];
+                tp2s.pf_stage1_raw = [s1[0].device_ptr(&s).0 as u64, s1[1].device_ptr(&s).0 as u64];
                 tp2s.pf_stage1 = Some(s1);
             }
             {
                 let _g = e0.gpu.enter_main()?;
                 let s0 = [e0.zeros(t * hidden)?, e0.zeros(t * hidden)?];
                 let s = e0.gpu.stream();
-                tp2s.pf_stage0_raw = [s0[0].device_ptr(&s).0, s0[1].device_ptr(&s).0];
+                tp2s.pf_stage0_raw = [s0[0].device_ptr(&s).0 as u64, s0[1].device_ptr(&s).0 as u64];
                 tp2s.pf_stage0 = Some(s0);
             }
             tp2s.pf_rows = t;

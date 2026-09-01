@@ -22,7 +22,7 @@ insurance for the spot box; public-repo hygiene keeps binaries out of git).
 | BF16 artifact | ~/data/q48fn-bf16 (Qwen/Qwen3.8-Flash-Next @ de4b8e4d, 131 shards, 336 GiB) |
 | NVFP4 artifact | ~/data/q48fn-nvfp4 (Avifenesh/Qwen3.8-Flash-Next-NVFP4 mint, 9 shards + mtp bf16 graft, 174 GB) |
 | goldens | ~/goldens/{hidden-goldens.pt, greedy-goldens.json} — transformers main, bf16 forward on the BF16 (make-goldens.py) |
-| box | cloud-eval frankfurt: 2× RTX PRO 6000 Blackwell 96 GB (sm_120a), 48 vCPU, 499 GB RAM, driver 595.91.07 |
+| box | sbox-eval Frankfurt: 2× RTX PRO 6000 Blackwell 96 GB (sm_120a), 48 vCPU, 499 GB RAM, driver 595.91.07 |
 | toolchain | rustc 1.98.0, nvcc auto-picked CUDA 13.2 (/usr/local/cuda-13.2), MEMRA_CUDA_ARCH auto 120a, `cargo build --release` |
 | binaries (sha256 prefix) | bf16 run 4d87daf0c12bbfab (pre-fix build @ aa9b9e67eb); nvfp4 run 950052cf339019f3 (@ 0c57fc75ea) |
 | probe | "The quick brown fox jumps over the lazy dog." → T=10 ids [760, 3841, 13477, 37550, 33075, 888, 279, 15217, 5388, 13] (from hidden-goldens.pt, never re-tokenized) |

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# devtwin battery v2 (consolidated, post the route-kernel v2 fix) — runs ON cloud-eval.
+# devtwin battery v2 (consolidated, post the route-kernel v2 fix) — runs ON sbox-eval.
 # v1 postmortem: the v1 route kernel ran every phase on thread 0 over GLOBAL memory
 # (~39 us/launch); the plain-decode A/B caught it at +12.5% (ab-routerdev-dt-plain.tsv)
 # and the battery was stopped rather than spend GPU-hours measuring a known-slow

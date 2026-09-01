@@ -5,7 +5,7 @@ not to simply rate limit when we can take more, and my oom was on single session
 Predecessor: the step37 capacity lane (private ops repo), whose three measured defects this
 lane fixes; every number cited below was re-measured here on the public battery.
 
-Box: the rented dev box (2x RTX PRO 6000 Blackwell Server, 97,887 MiB each; provisioning
+Box: the sbox dev box (2x RTX PRO 6000 Blackwell Server, 97,887 MiB each; provisioning
 receipts live in the private ops repo). Artifact `/data/models/step37-flash-nvfp4` verified
 shard-by-shard against HF `stepfun-ai/Step-3.7-Flash-NVFP4` rev
 `4275532ffd9a9496ff36b7a2dc4a9db1048da438` (14/14 sha256 OK, banked by the postthink lane

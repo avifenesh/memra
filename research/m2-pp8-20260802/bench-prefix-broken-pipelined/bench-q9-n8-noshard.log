@@ -1,4 +1,4 @@
-ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 stage4=dev4 stage5=dev5 stage6=dev6 stage7=dev7 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3, 4, 5, 6, 7]; weight home: dev0 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 4, 8, 12, 16, 20, 24, 28, 32] over 32 layers
@@ -7,7 +7,7 @@ stage fence: [0, 4, 8, 12, 16, 20, 24, 28, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 25319.49 us/tok (39.50 tok/s)  all=[25319.49]
 pipelined-pp: median 21701.03 us/tok (46.08 tok/s)  all=[21701.03]
-ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 stage4=dev4 stage5=dev5 stage6=dev6 stage7=dev7 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3, 4, 5, 6, 7]; weight home: dev0 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 4, 8, 12, 16, 20, 24, 28, 32] over 32 layers
@@ -16,7 +16,7 @@ stage fence: [0, 4, 8, 12, 16, 20, 24, 28, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 25314.65 us/tok (39.50 tok/s)  all=[25314.65]
 pipelined-pp: median 21634.98 us/tok (46.22 tok/s)  all=[21634.98]
-ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 stage4=dev4 stage5=dev5 stage6=dev6 stage7=dev7 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3, 4, 5, 6, 7]; weight home: dev0 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 4, 8, 12, 16, 20, 24, 28, 32] over 32 layers
@@ -25,7 +25,7 @@ stage fence: [0, 4, 8, 12, 16, 20, 24, 28, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 25324.77 us/tok (39.49 tok/s)  all=[25324.77]
 pipelined-pp: median 21649.87 us/tok (46.19 tok/s)  all=[21649.87]
-ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 stage4=dev4 stage5=dev5 stage6=dev6 stage7=dev7 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3, 4, 5, 6, 7]; weight home: dev0 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 4, 8, 12, 16, 20, 24, 28, 32] over 32 layers
@@ -34,7 +34,7 @@ stage fence: [0, 4, 8, 12, 16, 20, 24, 28, 32] over 32 layers
 ---- medians (us/token over 128 gen steps, N=1 reps, interleaved) ----
 serial-pp: median 25315.33 us/tok (39.50 tok/s)  all=[25315.33]
 pipelined-pp: median 21659.84 us/tok (46.17 tok/s)  all=[21659.84]
-ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/scratch/nvme/models/Qwen3.5-9B-Q8_0.gguf
+ppn-bench M2 config: stages=8 devices=0,1,2,3,4,5,6,7 splits=default(even) shard=OFF streams=per-stage P=32 G=128 reps=1 model=/opt/dl-image/nvme/models/Qwen3.5-9B-Q8_0.gguf
 [q8rp] split-plane decode mirrors built: 249 tensors
 [pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 stage4=dev4 stage5=dev5 stage6=dev6 stage7=dev7 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3, 4, 5, 6, 7]; weight home: dev0 (MEMRA_PP_SHARD=0 bring-up placement))
 stage fence: [0, 4, 8, 12, 16, 20, 24, 28, 32] over 32 layers

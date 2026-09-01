@@ -1158,7 +1158,7 @@ fn add_ple_fixture(
         || kernel == 0
         || max_ngram < 2
         || embed_dim != heads * head_dim
-        || !heads.is_multiple_of(max_ngram - 1)
+        || heads % (max_ngram - 1) != 0
     {
         return Err(ReferenceError::InvalidPlan {
             layer: Some(layer),
@@ -5075,7 +5075,7 @@ fn ple_block(
         || kernel == 0
         || max_ngram < 2
         || embed_dim != heads * head_dim
-        || !heads.is_multiple_of(max_ngram - 1)
+        || heads % (max_ngram - 1) != 0
     {
         return Err(ReferenceError::InvalidPlan {
             layer: Some(layer),
@@ -5500,9 +5500,6 @@ pub fn execute_mtp_standalone(
     )
 }
 
-// too_many_arguments: the MTP executor takes exactly the seams the trunk hands it;
-// bundling them into a struct would reshape the oracle's call surface for a lint.
-#[allow(clippy::too_many_arguments)]
 fn execute_mtp(
     plan: &ModelPlan,
     weights: &ReferenceWeights,
@@ -8719,8 +8716,6 @@ mod tests {
     /// Every expected number below is hand-derived from the modular_qwen4_exp.py math
     /// (SEMANTICS.md §Gated residual), NOT read back from the code under test.
     #[test]
-    // excessive_precision: the assert literals quote the hand derivation digits verbatim.
-    #[allow(clippy::excessive_precision)]
     fn gated_residual_read_and_write_match_hand_derived_two_stream_toy() {
         let (streams, hidden, rank, tokens) = (2usize, 2usize, 1usize, 1usize);
         let wide = streams * hidden;
@@ -8825,8 +8820,6 @@ mod tests {
     ///   rms_norm => (1.41420992, 0); out = norm * act(2).
     /// Hand: sigmoid arm (1.24563196, 0); silu arm would be (2.49126392, 0).
     #[test]
-    // excessive_precision: the assert literals quote the hand derivation digits verbatim.
-    #[allow(clippy::excessive_precision)]
     fn gdn_sigmoid_gate_matches_hand_derived_single_token() {
         use memra_gguf::model_plan::GatedDeltaNetPlan;
 
@@ -9097,8 +9090,6 @@ mod tests {
     /// out[2] = 11.5068593 instead of 8.8685460, so this pins conv orientation AND the
     /// dilation reach (t-2, not t-1).
     #[test]
-    // excessive_precision: the assert literals quote the hand derivation digits verbatim.
-    #[allow(clippy::excessive_precision)]
     fn ple_block_matches_hand_derived_scalar_gather_gate_and_dilated_conv() {
         let prefix = "trunk.layers.1.";
         let mut weights = ReferenceWeights::new();

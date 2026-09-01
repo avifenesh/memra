@@ -1,7 +1,7 @@
 # Attempt 7 diagnosis — Q27 restored-hit early EOS
 
 This directory is the byte-for-byte copy of the interrupted remote
-`/opt/scratch/nvme/cx-cachesize/raw/scored/` segment recovered after the harness
+`/opt/dl-image/nvme/cx-cachesize/raw/scored/` segment recovered after the harness
 process-group sweep. The remote source remains untouched.
 
 ## Reusable completed boots

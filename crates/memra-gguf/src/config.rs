@@ -895,7 +895,7 @@ impl Qwen4ExpConfig {
     pub fn ngram_head_embed_dim(&self) -> u32 {
         let heads = self.ngram_heads();
         assert!(
-            heads > 0 && self.ple_embed_dim.is_multiple_of(heads),
+            heads > 0 && self.ple_embed_dim % heads == 0,
             "qwen4_exp ple_embed_dim {} not divisible by ngram heads {heads}",
             self.ple_embed_dim
         );
@@ -923,9 +923,7 @@ impl Qwen4ExpConfig {
     pub fn indexer_budget_blocks(&self) -> u32 {
         assert!(
             self.indexer_compress_ratio > 0
-                && self
-                    .indexer_budget
-                    .is_multiple_of(self.indexer_compress_ratio),
+                && self.indexer_budget % self.indexer_compress_ratio == 0,
             "qwen4_exp indexer_budget {} not divisible by compress ratio {}",
             self.indexer_budget,
             self.indexer_compress_ratio
@@ -1942,9 +1940,6 @@ impl ModelConfig {
                     c.num_hidden_layers
                 );
                 for (il, kind) in layer_types.iter().enumerate() {
-                    // manual_is_multiple_of: `interval` is a raw config value; `% 0` must
-                    // keep panicking rather than take is_multiple_of's defined-result arm.
-                    #[allow(clippy::manual_is_multiple_of)]
                     let full = (il as u32 + 1) % interval == 0;
                     let ok = if full {
                         kind == "full_attention" || kind == "qwen_sparse_attention"

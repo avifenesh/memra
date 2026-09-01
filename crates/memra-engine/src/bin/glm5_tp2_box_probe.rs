@@ -235,7 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let k = env_usize("BOXP_SPEC_K", 3);
             for &arm in arms {
                 let max_ctx = ids.len() + max_new + k + 16;
-                let sampling = (arm == "vendor").then_some(memra_engine::spec::SpecSampling {
+                let sampling = (arm == "vendor").then(|| memra_engine::spec::SpecSampling {
                     temp,
                     seed: seed ^ 0x5ec5_0000 ^ pi as u64,
                     top_k: 0,

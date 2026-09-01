@@ -57,15 +57,6 @@
 //!    continuation off the primed cache. RED ARM: `MEMRA_GLM5V_GATE_RED=span-shift` moves
 //!    every span one position right — a broken splice placement — and the gate MUST fail;
 //!    the runner banks that exit code.
-//! 6. PUBLISHED OVERLAY, arms 5d/5e (lane/glm53-vision-ppn, 2026-09-01) — the same
-//!    substituted-token truth, spliced from an overlay whose rows were PUBLISHED into the
-//!    engine that owns embedding intake (`EmbedOverlay::new_published`, forced on with
-//!    `MEMRA_VISION_OVERLAY_PUBLISH=force` so the path runs on a one-card rig at all). The
-//!    publication is a host round trip of f32 bytes, so the bar is bit identity, monolithic
-//!    (5d) and windowed (5e, the serve prefill-tick shape). Non-vacuity is ASSERTED against
-//!    `vision::overlay_publications()`: the arm refuses to pass if no publication happened.
-//!    These arms cannot prove cross-CONTEXT dereferenceability — one card has one context;
-//!    that half is the multi-card serving-shape can't-hallucinate probe's job.
 //!
 //!
 //! NON-VACUITY IS ENFORCED, NOT ASSUMED (the wiring-assertions-match-prose law). Before any
@@ -645,24 +636,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ids_sub[pos + r] = subs[row_off + r];
         }
     }
-    let overlay =
-        memra_engine::vision::EmbedOverlay::new(&e, m.embed(&e, &subs)?, overlay_spans.clone());
+    let overlay = memra_engine::vision::EmbedOverlay {
+        rows: m.embed(&e, &subs)?,
+        spans: overlay_spans.clone(),
+    };
     let red_shift = std::env::var("MEMRA_GLM5V_GATE_RED").as_deref() == Ok("span-shift");
     let arm_overlay = if red_shift {
         println!(
             "glm5-hyper-ppn-gate RED ARM: MEMRA_GLM5V_GATE_RED=span-shift — every overlay \
              span moved +1; this run MUST fail"
         );
-        memra_engine::vision::EmbedOverlay::new(
-            &e,
-            overlay.rows.clone(),
-            overlay_spans
+        memra_engine::vision::EmbedOverlay {
+            rows: overlay.rows.clone(),
+            spans: overlay_spans
                 .iter()
                 .map(|&(pos, row_off, n_rows)| (pos + 1, row_off, n_rows))
                 .collect(),
-        )
+        }
     } else {
-        memra_engine::vision::EmbedOverlay::new(&e, overlay.rows.clone(), overlay.spans.clone())
+        memra_engine::vision::EmbedOverlay {
+            rows: overlay.rows.clone(),
+            spans: overlay.spans.clone(),
+        }
     };
 
     eprintln!("[phase] reference D: door OFF, substituted-token prime + decode (overlay truth)");
@@ -811,115 +806,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // ============ arm 5d/5e (PUBLISHED OVERLAY TWIN): door ON ============
-    // lane/glm53-vision-ppn, 2026-09-01. The serving shape the launch found unservable has
-    // the overlay rows in a DIFFERENT CUDA context from stage 0's embedding intake (the
-    // worker's primary engine follows the LAST pp stage, so with MEMRA_PP_DEVICES=0,1,2 the
-    // tower runs on dev2 and intake is dev0). The fix publishes the rows into the intake
-    // engine's context; these arms hold that publication to BIT IDENTITY.
-    //
-    // WHAT THESE ARMS PROVE, AND WHAT THEY DO NOT. On a one-card rig the intake engine IS
-    // the primary engine, so `MEMRA_VISION_OVERLAY_PUBLISH=force` is what makes the
-    // publication path run at all — and the counter assertion below is what stops this from
-    // being a vacuous re-run of arm 5b. What they prove: the publication moves the rows
-    // WITHOUT changing a byte (f32 through the host is exact), spans survive it, and a
-    // published overlay splices identically under both the monolithic and the windowed
-    // (serve prefill-tick) shapes. What they CANNOT prove on one card: that a pointer
-    // published across two CUDA contexts is dereferenceable by the other stage — that needs
-    // a multi-card box and is receipted by the serving-shape can't-hallucinate probe.
-    eprintln!("[phase] arm 5d: door ON, PUBLISHED overlay, monolithic splice");
-    let intake = m.vision_intake_engine(&e)?;
-    let published = {
-        // SAFETY: single-threaded (same contract as the MEMRA_PP_STAGES set_var above).
-        unsafe { std::env::set_var("MEMRA_VISION_OVERLAY_PUBLISH", "force") };
-        let before = memra_engine::vision::overlay_publications();
-        let rows = e.clone_dtod(&arm_overlay.rows)?;
-        let ov = memra_engine::vision::EmbedOverlay::new_published(
-            &e,
-            intake,
-            rows,
-            arm_overlay.spans.clone(),
-        )?;
-        let after = memra_engine::vision::overlay_publications();
-        // SAFETY: single-threaded.
-        unsafe { std::env::remove_var("MEMRA_VISION_OVERLAY_PUBLISH") };
-        assert_eq!(
-            after,
-            before + 1,
-            "arm 5d is VACUOUS: MEMRA_VISION_OVERLAY_PUBLISH=force performed no publication \
-             (overlay_publications stayed at {before}) — the arm would re-run arm 5b under a \
-             different name"
-        );
-        assert!(
-            ov.resident_in(intake),
-            "a published overlay must be resident in the intake engine it was published to"
-        );
-        println!(
-            "glm5-hyper-ppn-gate overlay publication: {} performed, rows resident dev{} \
-             (intake dev{})",
-            after - before,
-            ov.ctx().ordinal(),
-            intake.ctx().ordinal()
-        );
-        ov
-    };
-    let mut overlay_pub_arm = ArmCheck::new("overlay-ppn-published");
-    {
-        let mut cache = memra_engine::pp::new_cache_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let (primed, _seed, _hiddens) =
-            m.prime_cache_overlaid(&e, &ids_ph[..p], &mut cache, 0, Some(&published))?;
-        overlay_pub_arm.check(
-            0,
-            "published overlay prime last row",
-            &primed,
-            &ref_ov_prime,
-        );
-        for (k, &tok) in ids_sub[p..].iter().enumerate() {
-            let ll = m.decode_step(&e, tok, &mut cache)?;
-            overlay_pub_arm.check(
-                k + 1,
-                "decode after published overlay prime",
-                &ll,
-                &ref_ov_cont[k],
-            );
-        }
-    }
-
-    // The serving shape end to end: publish ONCE per session (as `build_vision_overlay`
-    // does), then window per prefill tick. `window()` carries the parent's residency, so a
-    // window of a published overlay must splice on the intake engine too.
-    eprintln!("[phase] arm 5e: door ON, PUBLISHED overlay, two-call windowed splice");
-    let mut overlay_pub_win_arm = ArmCheck::new("overlay-ppn-published-windowed");
-    {
-        let mut cache = memra_engine::pp::new_cache_planned(&e, &m.cfg, &plan, max_ctx)?;
-        let w0 = published.window(0, split_at);
-        let _ = m.prime_cache_overlaid(
-            &e,
-            &ids_ph[..split_at],
-            &mut cache,
-            p - split_at,
-            w0.as_ref(),
-        )?;
-        let w1 = published.window(split_at, p - split_at);
-        let (primed, _seed, _hiddens) =
-            m.prime_cache_overlaid(&e, &ids_ph[split_at..p], &mut cache, 0, w1.as_ref())?;
-        overlay_pub_win_arm.check(
-            0,
-            "published windowed overlay prime last row",
-            &primed,
-            &ref_ov2_prime,
-        );
-        for (k, &tok) in ids_sub[p..].iter().enumerate() {
-            let ll = m.decode_step(&e, tok, &mut cache)?;
-            overlay_pub_win_arm.check(
-                k + 1,
-                "decode after published windowed prime",
-                &ll,
-                &ref_ov2_cont[k],
-            );
-        }
-    }
-
     // ================= verdicts =================
     let mut fail = false;
     for arm in [
@@ -929,8 +815,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &overlay_serial_arm,
         &overlay_ppn_arm,
         &overlay_win_arm,
-        &overlay_pub_arm,
-        &overlay_pub_win_arm,
     ] {
         assert!(
             arm.checked_steps > 0,

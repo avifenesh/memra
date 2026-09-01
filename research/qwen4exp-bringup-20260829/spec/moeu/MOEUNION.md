@@ -1,6 +1,6 @@
 # mtp13: the MoE routed-union gather, priced (`moeu`)
 
-Lane `lane/q4e-moe-union-20260901`. Box cloud-eval (RTX PRO 6000 Blackwell Server Edition,
+Lane `lane/q4e-moe-union-20260901`. Box sbox-eval (RTX PRO 6000 Blackwell Server Edition,
 188 SM, 97,887 MiB, **L2 = 128 MiB**), rig sm_120a laptop 5090 for exactness and harness
 validation only. Owner target: 200+ tok/s single-request spec decode; current best
 **136.2 tok/s** raw shape, K=5 (`devtwin/ab-devtwin-k5-dt4-raw.tsv`: reps=5,

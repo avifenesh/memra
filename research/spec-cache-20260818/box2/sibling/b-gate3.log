@@ -1,15 +1,15 @@
 + date -u
 Wed Aug 19 01:21:15 UTC 2026
-+ cd /opt/scratch/nvme/b/memra
++ cd /opt/dl-image/nvme/b/memra
 + export MEMRA_PREFIX_CACHE_MB=16384
 + MEMRA_PREFIX_CACHE_MB=16384
 + export CUDA_VISIBLE_DEVICES=1
 + CUDA_VISIBLE_DEVICES=1
 + export MEMRA_GPU_LOCK=/tmp/memra-b.lock
 + MEMRA_GPU_LOCK=/tmp/memra-b.lock
-+ rm -rf /opt/scratch/nvme/receipts/b/qwen-mixed-v2
++ rm -rf /opt/dl-image/nvme/receipts/b/qwen-mixed-v2
 + MEMRA_GATE_PORT=18098
-+ tools/spec-cache-mixed-gate.sh /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/scratch/nvme/receipts/b/qwen-mixed-v2
++ tools/spec-cache-mixed-gate.sh /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/dl-image/nvme/receipts/b/qwen-mixed-v2
 == mixed arm: production config (spec on) ==
 [mixed-on] window 30.1s batch agg 127.8 tok/s (64 batch rows)
 == mixed arm: spec-off reference ==
@@ -21,8 +21,8 @@ Wed Aug 19 01:21:15 UTC 2026
 SPEC-CACHE MIXED GATE: ALL GREEN
 + echo QWEN_MIXED_V2_RC=0
 QWEN_MIXED_V2_RC=0
-+ rm -rf /opt/scratch/nvme/receipts/b/qwen-sold-shape
-+ tools/spec-cache-gate.sh /opt/scratch/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/scratch/nvme/receipts/b/qwen-sold-shape
++ rm -rf /opt/dl-image/nvme/receipts/b/qwen-sold-shape
++ tools/spec-cache-gate.sh /opt/dl-image/nvme/models/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf target/release/memra-server /opt/dl-image/nvme/receipts/b/qwen-sold-shape
 == pass 1 arm off ==
 {"arm": "off", "pass": 1, "ok": 16, "req_s": 1.468, "hit_rate": 0.987, "anchor": "07785b718976217b7acc2ec744649d59313fc87bb994e28697b254573e076b4e", "wall_s": 10.9}
 == pass 1 arm on-gate ==

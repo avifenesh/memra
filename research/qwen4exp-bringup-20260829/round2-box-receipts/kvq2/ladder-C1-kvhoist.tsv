@@ -14,13 +14,3 @@ rung	prefill_seg_s	prefill_cum_s	chunks	decode_warm_mean_ms	decode_median_ms	dec
 # ladder-ab	rung=32768	seam=kvhoist	arm=on	median_ms=25.44	tok_per_s=39.31	reps=3	medians=[25.43, 25.45, 25.44]	spread=0.07%	n=48 mean=25.44 med=25.44 sd=0.032 cv=0.12% p99=25.55 max=25.55 outliers_1.5x=0
 # ladder-ab-verdict	rung=32768	seam=kvhoist	off_ms=26.16	on_ms=25.44	speedup=1.0284x	delta_pct=2.76%	reps_per_arm=3	host_probe=false	vol_cs=57	nonvol_cs=9	threads=4	launch_cpu_migrations=0	launch_cpus_seen=0
 # ladder-ab-restore	seam=kvhoist	arm=off
-# measure-lock	what=rung-timing-131072	path=/tmp/q48fn-measure.lock	waited_s=0.0
-131072	524.8	694.6	48	33.1	32.1	32.2	30.20	rounds=3x12 medians=[32.1, 32.1, 32.1] spread=0.16%	false	166317	0, 94013 MiB, 97887 MiB | 1, 95515 MiB, 97887 MiB	198,388,328,74614,1500,4535,2984,4881,27376,440,3817,1698,487,198,388,1500,6333,478,220,16,198,309,847,198,309,641,17583,13039,198,285,333,198,285,13139,2470,5136,1264
-# ladder-jitter	rung=131072	arm=rung-default	n=34 mean=33.11 med=32.10 sd=5.742 cv=17.34% p99=66.09 max=66.09 outliers_1.5x=1
-# measure-lock	what=ab-rep-131072-kvhoist-0	path=/tmp/q48fn-measure.lock	waited_s=0.0
-# measure-lock	what=ab-rep-131072-kvhoist-1	path=/tmp/q48fn-measure.lock	waited_s=0.0
-# measure-lock	what=ab-rep-131072-kvhoist-2	path=/tmp/q48fn-measure.lock	waited_s=0.0
-# ladder-ab	rung=131072	seam=kvhoist	arm=off	median_ms=32.11	tok_per_s=31.14	reps=3	medians=[32.11, 32.16, 32.11]	spread=0.14%	n=48 mean=32.11 med=32.11 sd=0.056 cv=0.18% p99=32.26 max=32.26 outliers_1.5x=0
-# ladder-ab	rung=131072	seam=kvhoist	arm=on	median_ms=31.40	tok_per_s=31.85	reps=3	medians=[31.41, 31.4, 31.4]	spread=0.05%	n=48 mean=31.41 med=31.40 sd=0.050 cv=0.16% p99=31.52 max=31.52 outliers_1.5x=0
-# ladder-ab-verdict	rung=131072	seam=kvhoist	off_ms=32.11	on_ms=31.40	speedup=1.0226x	delta_pct=2.21%	reps_per_arm=3	host_probe=false	vol_cs=70	nonvol_cs=14	threads=4	launch_cpu_migrations=0	launch_cpus_seen=0
-# ladder-ab-restore	seam=kvhoist	arm=off

@@ -13,7 +13,7 @@ the two structural blockers this lane removes:
    are temp 0.5 / top_p 0.9 - so even a 1-head boot never launched a captured chain for a
    vendor-default request.
 
-Box: the rented dev box (2x RTX PRO 6000 Blackwell; provisioning receipts live in the private ops repo), artifact
+Box: the sbox dev box (2x RTX PRO 6000 Blackwell; provisioning receipts live in the private ops repo), artifact
 `/data/models/step37-flash-nvfp4` verified shard-by-shard against HF
 `stepfun-ai/Step-3.7-Flash-NVFP4` rev `4275532ffd9a9496ff36b7a2dc4a9db1048da438`:
 all 14 LFS sha256 match (`raw/shards receipt inside raw/runspec.txt` header line).

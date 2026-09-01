@@ -5,10 +5,10 @@ set -euo pipefail
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
 export TMPDIR=${SPLITISO_TMPDIR:-/home/ubuntu/tmp-lanes}
 
-ROOT=${SPLITISO_ROOT:-/opt/scratch/nvme/cx-splitiso}
+ROOT=${SPLITISO_ROOT:-/opt/dl-image/nvme/cx-splitiso}
 REPO=${SPLITISO_REPO:-$ROOT/memra}
 SERVER=${SPLITISO_SERVER:-$REPO/target/release/memra-server}
-MODEL=${SPLITISO_MODEL:-/opt/scratch/nvme/cx-lcprestore/models/gemma-4-12b-it-qat-q4_0.gguf}
+MODEL=${SPLITISO_MODEL:-/opt/dl-image/nvme/cx-lcprestore/models/gemma-4-12b-it-qat-q4_0.gguf}
 EXPECTED_SOURCE=${SPLITISO_EXPECTED_SOURCE:?set SPLITISO_EXPECTED_SOURCE}
 OUT=${SPLITISO_OUT:?set SPLITISO_OUT to a new cell directory}
 SPLITS=${SPLITISO_SPLITS:?set SPLITISO_SPLITS}

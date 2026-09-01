@@ -27,11 +27,6 @@
 //!
 //! Usage: qwen4exp-gpu-gate <receipt.tsv>
 
-// lane/clippy-zero-restore-20260901: the gate's comparison tuples are deliberately explicit
-// (naming them buys nothing in a one-file gate binary), and the summaries vec is built by
-// pushes because each push is a named gate arm carrying its own comment block.
-#![allow(clippy::type_complexity, clippy::vec_init_then_push)]
-
 use memra_engine::Engine;
 use memra_engine::qwen4exp_gpu::{LoadOptions, Qwen4ExpGpu, read_checkpoint, read_checkpoint_with};
 use memra_gguf::config::{HfConfig, ModelConfig};
@@ -123,7 +118,7 @@ fn gen_f32(name: &str, elements: usize, center: f32, scale: f32) -> Vec<f32> {
         .map(|index| {
             let mut value = index as u64 ^ salt.wrapping_mul(0x9e37_79b9);
             value ^= value >> 16;
-            value = value.wrapping_mul(0x045d_9f3b);
+            value = value.wrapping_mul(0x45d9_f3b);
             value ^= value >> 16;
             let unit = (value as u32) as f32 / u32::MAX as f32;
             center + (2.0 * unit - 1.0) * scale
@@ -137,7 +132,7 @@ fn gen_bytes(name: &str, elements: usize, lo: u8, hi: u8) -> Vec<u8> {
         .map(|index| {
             let mut value = index as u64 ^ salt.wrapping_mul(0x9e37_79b9);
             value ^= value >> 13;
-            value = value.wrapping_mul(0x045d_9f3b);
+            value = value.wrapping_mul(0x45d9_f3b);
             (lo as u64 + value % (hi as u64 - lo as u64 + 1)) as u8
         })
         .collect()
@@ -531,13 +526,13 @@ fn run_mtp_arm(
     let wide = trunk_wide.len() / t;
     let wide_dev = e.htod(trunk_wide)?;
     let mut worst = (0.0f32, 0.0f32);
-    let record = |phase: &str,
-                  row: usize,
-                  stats: &RowStats,
-                  with_argmax: bool,
-                  worst: &mut (f32, f32),
-                  failures: &mut usize,
-                  lines: &mut Vec<String>| {
+    let mut record = |phase: &str,
+                      row: usize,
+                      stats: &RowStats,
+                      with_argmax: bool,
+                      worst: &mut (f32, f32),
+                      failures: &mut usize,
+                      lines: &mut Vec<String>| {
         let passed = stats.max_abs <= MAX_ABS
             && stats.max_rel <= MAX_REL
             && (!with_argmax || stats.argmax_match);
@@ -693,7 +688,7 @@ fn run_defer_arm(
         }
         Ok(())
     };
-    let check_config =
+    let mut check_config =
         |model: &Qwen4ExpGpu,
          cfg_name: &str,
          arms: &[(&str, SpecOpts)],
@@ -1812,7 +1807,7 @@ fn main() -> Res<()> {
         let chunked = model.prefill_extend(&engine, &prompt, &mut chunk_state, 5)?;
         let mut worst = (0.0f32, 0.0f32);
         let mut ok = chunked.len() == vocab;
-        let fold = |s: RowStats, ok: &mut bool, worst: &mut (f32, f32)| {
+        let mut fold = |s: RowStats, ok: &mut bool, worst: &mut (f32, f32)| {
             worst.0 = worst.0.max(s.max_abs);
             worst.1 = worst.1.max(s.max_rel);
             *ok &= s.max_abs <= 0.01 && s.max_rel <= 0.01 && s.argmax_match;

@@ -978,7 +978,7 @@ rather than a different expert set.
 router remains authoritative, every miss demand-fetches the selected expert, and no predictor may
 reroute or skip execution. Verdict: **default-OFF spill research arm**, contrasting the current
 fixed window with adaptive layer-wise allocation. Measure prefetch recall and miss-bytes on the
-byte-identical artifact staged to the cloudbox `/scratch` path; the five public-eval arms and their
+byte-identical artifact staged to the Sbox `/scratch` path; the five public-eval arms and their
 frozen routing remain unchanged.
 
 ### EVICT + JetSpec — verify-budget selection and parallel causal drafting

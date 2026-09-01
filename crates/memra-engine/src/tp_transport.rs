@@ -80,10 +80,6 @@
 //! lane/glm5-composition keeps its exact bytes while a second family gets its own marker.
 //! Counters below are the per-token instrument and are the TRANSPORT's, not the family's.
 
-// lane/clippy-zero-restore-20260901: this transport's exact code shape is receipt-bound
-// (lane/glm5-composition keeps its exact bytes, header above); index loops stay as gated.
-#![allow(clippy::needless_range_loop)]
-
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use cudarc::driver::{CudaEvent, CudaSlice};

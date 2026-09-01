@@ -53,7 +53,7 @@ affinity warm path was the panic path).
 
 ## Cross-box note (unresolved)
 
-The rented dev box measured 15.31 s cold @39,546 on the same merged code (rank-spans
+The sbox dev box measured 15.31 s cold @39,546 on the same merged code (rank-spans
 re-baseline, darklanes lane); this box measures ~33.5 s. Joins are 50% of long-prompt
 TTFT and the boxes differ in interconnect; the 2x gap needs its own cell before any
 public 32k TTFT claim (vLLM's receipted comparable: 11.2 s @32K).

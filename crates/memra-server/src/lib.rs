@@ -84,11 +84,6 @@ mod affinity;
 /// rendering differs. `surfaces` is the shared admission driver; the other two are the
 /// per-dialect request translations and response renderers.
 mod anthropic;
-/// The `system_fingerprint` identity, shared with `build.rs` (which `include!`s this same
-/// file to bake the value). Compiled into the crate so the fingerprint tests can re-derive
-/// the id from the working tree instead of pinning a second copy of the algorithm.
-#[allow(dead_code)] // one implementation, two callers: each uses a subset.
-mod build_id;
 mod dsv4_serve;
 mod embed_api;
 /// The admission/accounting seam: the server admits, denies, and reports counts;
@@ -1818,7 +1813,7 @@ pub(crate) fn deadline_exceeded_response(ms: u64, stream: bool) -> Response {
 // INDUSTRY CHECK (owner: "check how other enddoints handle non streaming answers"):
 // Anthropic enforces the same idea client-side — its SDK raises
 // "Streaming is required for operations that may take longer than 10 minutes" BEFORE
-// sending — and OpenAI, Google, Azure and the hosted resellers all decline to publish a server-side duration
+// sending — and OpenAI/Google/Bedrock/Azure all decline to publish a server-side duration
 // ceiling and push long work to streaming or an async/batch surface. Refusing early with
 // an actionable message is the precedented behaviour; silently truncating is not.
 
@@ -1856,7 +1851,7 @@ fn env_flag_on(name: &'static str, default_on: bool) -> bool {
 
 /// A POSITIVE numeric knob (a rate): zero and garbage fall back to the default, because a
 /// zero rate would divide by zero in the estimate. NEVER read a boolean through this.
-pub(crate) fn env_u64(name: &'static str, default: u64) -> u64 {
+fn env_u64(name: &'static str, default: u64) -> u64 {
     std::env::var(name)
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -2837,50 +2832,10 @@ fn usage_json(
 // convention, serving_engine.py) for support/tracing. The memra-native response shape
 // (non-chat, MEMRA_COMPAT unset) is untouched — validation harnesses depend on it.
 
-/// Backend-config fingerprint: `memra-<crate version>-<content id>`, baked by `build.rs`
-/// from the crate version plus a digest of the workspace's compiled inputs. Together with
+/// Backend-config fingerprint: the build's git SHA (baked by build.rs). Together with
 /// `seed`, responses are checkable for determinism across deploys — the OpenAI
 /// `system_fingerprint` contract.
-///
-/// It is derived from file CONTENT, not from git history, and that is the whole point:
-///
-/// - **It cannot degrade to a label.** The old form was `concat!("memra-", <git sha>)`, and
-///   a git failure inside darklanes' release container silently baked the literal
-///   `unknown`. Prod served `system_fingerprint: memra-unknown` to every request for a
-///   deploy generation, which also meant darklanes' `tools/check-claim-builds.mjs --live`
-///   had nothing to verify published performance pins against. See `build.rs` for the
-///   receipt chain.
-/// - **It survives a history rewrite.** Rewriting commits changes every SHA while the bytes
-///   of the tree stay put, so a fingerprint quoted in a published claim, a research
-///   receipt, or a customer's own response keeps naming the same build afterwards.
-///
-/// Deliberately NOT in the value: a build timestamp. Two builds of the same source must
-/// produce the same fingerprint, because `check-claim-builds` compares it for EQUALITY
-/// against a published pin and a per-rebuild value would churn every pin. Build time is an
-/// artifact-registry fact (the filename and the file's mtime), not an identity.
-pub const SYSTEM_FINGERPRINT: &str = concat!(
-    "memra-",
-    env!("CARGO_PKG_VERSION"),
-    "-",
-    env!("MEMRA_BUILD_ID")
-);
-
-/// How `SYSTEM_FINGERPRINT`'s id was derived: `source-tree` (real) or `degraded`.
-pub const BUILD_ID_SRC: &str = env!("MEMRA_BUILD_ID_SRC");
-
-/// Why the id is degraded. Empty when it is not.
-pub const BUILD_ID_NOTE: &str = env!("MEMRA_BUILD_ID_NOTE");
-
-/// The build's git sha when the build could read a repo, else `unknown`. An EXTRA
-/// provenance field: convenient, never the identity. A shipped binary outlives the commit it
-/// was cut from, and after an authorized history rewrite the sha names nothing at all.
-pub const BUILD_GIT_SHA: &str = env!("MEMRA_BUILD_SHA");
-
-/// One line of build provenance, printed at boot by EVERY binary that links this server
-/// (the stock bin and darklanes' deployment bin both enter through `serve_with`).
-pub fn build_identity_line() -> String {
-    format!("[server] build: {SYSTEM_FINGERPRINT} (id: {BUILD_ID_SRC}, git: {BUILD_GIT_SHA})")
-}
+const SYSTEM_FINGERPRINT: &str = concat!("memra-", env!("MEMRA_BUILD_SHA"));
 
 /// 128 random-ish hex bits: two RandomState-seeded hashes over a process counter + time.
 /// Uniqueness class (request ids), not crypto.
@@ -4440,12 +4395,6 @@ pub struct RuntimeHandles {
     /// Tenant lifecycle purge (lane/kv-tenancy-compaction-20260831): the deployment
     /// admin surface calls this from its key-revocation and tenant-deletion paths.
     pub purge: PurgeHandle,
-    /// Host-tier deploy handoff (lane/host-tier-deploy-warmth-20260901): the deployment
-    /// admin surface exposes these as `POST /admin/kv-host/export` (called by
-    /// serve-deploy on the DRAINED old slot after the edge flip) and
-    /// `POST /admin/kv-host/import` (called on the promoted slot right after). Both are
-    /// inert unless MEMRA_KV_HOST_HANDOFF names a path on the slot.
-    pub kv_handoff: HostHandoffHandle,
     /// Flips to `true` when the graceful drain completes (the moment the in-tree
     /// admin listener stops). A deployment-side surface MUST end and drop its
     /// [`TrimHandle`] AND [`PurgeHandle`] on this signal: each handle wraps a worker
@@ -4505,87 +4454,12 @@ impl PurgeHandle {
     }
 }
 
-/// Host-tier deploy handoff (lane/host-tier-deploy-warmth-20260901): the engine half of a
-/// deployment admin `POST /admin/kv-host/export` / `POST /admin/kv-host/import` pair.
-/// Contract notes for the deployment surface: export is called ONLY on the drained old
-/// slot (it refuses under traffic unless `force`, and the write stalls that slot's ticks
-/// for its duration, expected and harmless when drained); import answers as soon as the
-/// file header validates, then re-materializes entries one per tick in the background
-/// (watch `prefix_host_handoff_*` in /metrics for completion). Same lifetime contract as
-/// [`TrimHandle`]: drop it on the shutdown signal.
-#[derive(Clone)]
-pub struct HostHandoffHandle {
-    cmd_tx: Sender<Cmd>,
-}
-
-impl HostHandoffHandle {
-    /// Errors as strings: worker down, refused, or no answer. The timeout is generous by
-    /// design: tens of GB of drain-demote + NVMe write happen inside the reply.
-    pub async fn export(&self, force: bool) -> Result<serde_json::Value, String> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        if self
-            .cmd_tx
-            .send(Cmd::ExportHostHandoff { force, tx })
-            .is_err()
-        {
-            return Err("worker is down".into());
-        }
-        match tokio::time::timeout(std::time::Duration::from_secs(900), rx).await {
-            Ok(Ok(Ok(report))) => Ok(json!(report)),
-            Ok(Ok(Err(refused))) => Err(refused),
-            _ => Err("worker did not answer the export within 900s".into()),
-        }
-    }
-
-    /// Begin the drip import; answers with the validated header (fast: no entry bytes are
-    /// read yet) or the refusal reason.
-    pub async fn import(&self) -> Result<serde_json::Value, String> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        if self.cmd_tx.send(Cmd::ImportHostHandoff { tx }).is_err() {
-            return Err("worker is down".into());
-        }
-        match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
-            Ok(Ok(Ok(start))) => Ok(json!(start)),
-            Ok(Ok(Err(refused))) => Err(refused),
-            _ => Err("worker did not answer the import within 30s".into()),
-        }
-    }
-}
-
 pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::Error>> {
     // Key lifecycle CLI (lane/api-keys): `--gen-key <tenant>` / `--revoke-key <prefix>`
     // manage the keyring and exit — no engine, no GPU, no model load.
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // `--version` prints the build identity and exits: no engine, no GPU, no model load. So
-    // the fingerprint of a DEPLOYED artifact is checkable on any box, and in the release
-    // container that produced it, without touching a serving stack. That check is the one
-    // that would have caught `memra-unknown` before it reached a customer.
-    if args.iter().any(|a| a == "--version" || a == "-V") {
-        println!("memra-server {}", env!("CARGO_PKG_VERSION"));
-        println!("system_fingerprint {SYSTEM_FINGERPRINT}");
-        println!("build_id_src {BUILD_ID_SRC}");
-        println!("git_sha {BUILD_GIT_SHA}");
-        if !BUILD_ID_NOTE.is_empty() {
-            println!("degraded {BUILD_ID_NOTE}");
-        }
-        return Ok(());
-    }
     if let Some(code) = auth::run_cli(&args) {
         std::process::exit(code);
-    }
-    // Build provenance is the FIRST line of every boot. An unknown fingerprint is how this
-    // defect hid: a build with a meaningless identity looked exactly like a good one, on
-    // both sides of the deploy.
-    eprintln!("{}", build_identity_line());
-    if BUILD_ID_SRC != build_id::BUILD_ID_SRC_TREE {
-        eprintln!(
-            "[server] WARNING: build identity is DEGRADED: {BUILD_ID_NOTE}. \
-             system_fingerprint {SYSTEM_FINGERPRINT} carries a version-only id, so it does \
-             NOT identify the source this binary was compiled from and published \
-             performance pins cannot be verified against it (darklanes \
-             tools/check-claim-builds.mjs --live). Rebuild where the workspace source tree \
-             is readable."
-        );
     }
     // Keyring (MEMRA_API_KEYS): parsed once here so a bad config is a startup FATAL,
     // not a per-request surprise. Absent = single-key/open behavior, unchanged.
@@ -4738,9 +4612,6 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
                 cmd_tx: cmd_tx.clone(),
             },
             purge: PurgeHandle {
-                cmd_tx: cmd_tx.clone(),
-            },
-            kv_handoff: HostHandoffHandle {
                 cmd_tx: cmd_tx.clone(),
             },
             shutdown: drain_shutdown_rx.clone(),
@@ -5443,11 +5314,6 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         // candidates whose session returned before the timer (or left nothing demotable).
         body["prefix_host_pause_demotes"] = json!(m.prefix_host_pause_demotes);
         body["prefix_host_pause_cancels"] = json!(m.prefix_host_pause_cancels);
-        body["prefix_host_handoff_exports"] = json!(m.prefix_host_handoff_exports);
-        body["prefix_host_handoff_imported_entries"] =
-            json!(m.prefix_host_handoff_imported_entries);
-        body["prefix_host_handoff_imported_bytes"] = json!(m.prefix_host_handoff_imported_bytes);
-        body["prefix_host_handoff_skips"] = json!(m.prefix_host_handoff_skips);
         // KV budget flex (MEMRA_KV_FLEX, lane/kv-flex-20260831, tiering spec Arc G):
         // borrowed_bytes = current device prefix-cache residency above its configured
         // floor; sheds/shed_ms = borrowed-slice reclaims and their CUMULATIVE wall-time
@@ -6416,7 +6282,6 @@ fn build_request_with_trace(
         glm5_images: Vec::new(),
         step_images: Vec::new(),
         vision_memory: None,
-        wire_deadline: None, // stamped by the handler at submission (with request_id)
         ttft,
         tx,
     }
@@ -6916,7 +6781,6 @@ fn build_chat_request_with_trace(
             step_images: Vec::new(),
             capture: None, // set only by the embeddings/rerank routes
             vision_memory: None,
-            wire_deadline: None, // stamped by the handler at submission (with request_id)
             ttft,
             tx,
         },
@@ -7910,9 +7774,6 @@ async fn completions(
     );
     request.cache_ns = cache_ns;
     request.request_id = env.id.clone();
-    // The wire deadline rides to the worker beside the receipt identity, so the
-    // first-token deadline gate judges the REMAINING deadline at its own tick.
-    request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = apply_model_request_limits(
         &mut request,
         st.openrouter_metadata.get(&model),
@@ -8237,7 +8098,6 @@ async fn chat_completions(
     };
     plan.request.cache_ns = cache_ns;
     plan.request.request_id = env.id.clone();
-    plan.request.wire_deadline = Some(deadline.at.into_std());
     if let Err((message, param)) = apply_model_request_limits(
         &mut plan.request,
         st.openrouter_metadata.get(&model),
@@ -9049,7 +8909,7 @@ fn blocking_payload(p: BlockingPayload<'_>) -> Response {
 /// `error_type: "timeout"`), and billed for the tokens the caller actually received.
 ///
 /// `finish_reason: "length"` would have been the cheaper lie: no provider's finish-reason
-/// enum has a time value (OpenAI, Anthropic, Google and the hosted resellers all mean max_tokens by
+/// enum has a time value (OpenAI/Anthropic/Bedrock/Google all mean max_tokens by
 /// "length"/MAX_TOKENS), so reporting a time cut as "length" tells the caller to ask for
 /// more tokens when the truth is that it needs to stream. Only a zero-token miss still
 /// answers 408 unbilled — there is nothing to deliver.
@@ -11478,13 +11338,11 @@ mod tests {
         // OpenAI envelope (gap-scan F1): the official SDK pydantic-REQUIRES id + created.
         assert!(payload["id"].as_str().unwrap().starts_with("chatcmpl-"));
         assert!(payload["created"].as_u64().unwrap() > 1_700_000_000);
-        // Shape, not prefix: `starts_with("memra-")` is what this line used to assert, and
-        // `memra-unknown` passes that, which is how a meaningless fingerprint sat inside a
-        // tested surface all the way to prod.
-        let fingerprint = payload["system_fingerprint"].as_str().unwrap();
         assert!(
-            build_id::fingerprint_is_well_formed(fingerprint),
-            "system_fingerprint {fingerprint:?} is not memra-<version>-<12 hex>"
+            payload["system_fingerprint"]
+                .as_str()
+                .unwrap()
+                .starts_with("memra-")
         );
         assert_eq!(payload["choices"][0]["message"]["role"], "assistant");
         assert_eq!(payload["choices"][0]["message"]["content"], "hello");
@@ -13775,10 +13633,11 @@ default_reasoning_effort = "always"
         for c in &chunks {
             assert_eq!(c["id"], id.as_str());
             assert!(c["created"].as_u64().unwrap() > 1_700_000_000);
-            let fingerprint = c["system_fingerprint"].as_str().unwrap();
             assert!(
-                build_id::fingerprint_is_well_formed(fingerprint),
-                "chunk system_fingerprint {fingerprint:?} is not memra-<version>-<12 hex>"
+                c["system_fingerprint"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("memra-")
             );
             assert_eq!(c["object"], "chat.completion.chunk");
         }
@@ -18918,7 +18777,7 @@ is_ready = true
 is_free = false
 discount_to_user = 0.1
 openrouter_slug = "qwen/qwen3.6-27b"
-datacenters = [{ country_code = "US", region = "us-east" }]
+datacenters = [{ country_code = "US", region = "N-Virginia" }]
 zdr = true
 hipaa = false
 
@@ -19682,166 +19541,5 @@ request = "0"
             {"type": "image_url", "image_url": {"url": "http://example.com/x.png"}}
         ]);
         assert!(content_to_text_vision_step(&http, &mut Vec::new()).is_err());
-    }
-}
-
-/// The `system_fingerprint` identity gates (lane/real-system-fingerprint-20260901).
-///
-/// These exist because the field's only assertion used to be `starts_with("memra-")`, which
-/// `memra-unknown` satisfies. Prod served that literal to every customer request for a
-/// deploy generation and the test suite was green the whole time.
-#[cfg(test)]
-mod build_identity_tests {
-    use super::{BUILD_GIT_SHA, BUILD_ID_NOTE, BUILD_ID_SRC, SYSTEM_FINGERPRINT, build_id};
-
-    /// The baked fingerprint a customer sees: present, shaped, and not the degraded label.
-    #[test]
-    fn baked_fingerprint_is_real_and_well_formed() {
-        assert!(!SYSTEM_FINGERPRINT.is_empty());
-        assert_ne!(SYSTEM_FINGERPRINT, "memra-unknown");
-        assert!(
-            !SYSTEM_FINGERPRINT.contains("unknown"),
-            "fingerprint {SYSTEM_FINGERPRINT:?} still carries the degraded literal"
-        );
-        assert!(
-            build_id::fingerprint_is_well_formed(SYSTEM_FINGERPRINT),
-            "fingerprint {SYSTEM_FINGERPRINT:?} is not memra-<version>-<12 hex>"
-        );
-        // The documented shape names the crate version, so a version bump is visible in the
-        // field without reading the id.
-        assert!(
-            SYSTEM_FINGERPRINT.starts_with(concat!("memra-", env!("CARGO_PKG_VERSION"), "-")),
-            "fingerprint {SYSTEM_FINGERPRINT:?} does not name this crate version"
-        );
-    }
-
-    /// Regression pin on the exact value that shipped, plus the OLD shape it replaced:
-    /// `memra-<sha>` must not validate either, or a stale-git build could pass the gate.
-    #[test]
-    fn the_shape_check_rejects_what_shipped_to_prod() {
-        assert!(!build_id::fingerprint_is_well_formed("memra-unknown"));
-        assert!(!build_id::fingerprint_is_well_formed(
-            "memra-0.123.0-unknown"
-        ));
-        // The pre-lane form: bare 12-hex git sha, no version component. Assembled rather
-        // than written out because `tools/public-boundary-policy.toml`'s `live_fingerprint`
-        // rule treats a literal `memra-<12 hex>` as deployment identity leaking into the
-        // public repo, and it is right to: that shape used to BE a serving build's id.
-        let old_form = format!("memra-{}", "0".repeat(12));
-        assert!(!build_id::fingerprint_is_well_formed(&old_form));
-        assert!(!build_id::fingerprint_is_well_formed(""));
-        assert!(!build_id::fingerprint_is_well_formed("memra-"));
-        assert!(!build_id::fingerprint_is_well_formed("memra-0.123.0-"));
-        // Wrong id width, and uppercase hex (the renderer emits lowercase).
-        assert!(!build_id::fingerprint_is_well_formed("memra-0.123.0-abc"));
-        assert!(!build_id::fingerprint_is_well_formed(
-            "memra-0.123.0-ABCDEF012345"
-        ));
-        assert!(!build_id::fingerprint_is_well_formed(
-            "memra-0.123.0-zzzzzzzzzzzz"
-        ));
-        // ...and accepts the real shape.
-        assert!(build_id::fingerprint_is_well_formed(
-            "memra-0.123.0-4b1f9c02d7a3"
-        ));
-    }
-
-    /// The identity is a FUNCTION OF THE SOURCE, so two builds of the same tree agree.
-    ///
-    /// A test cannot run cargo twice, so it does the equivalent and stronger thing: it
-    /// re-derives the id from the working tree with the same implementation `build.rs`
-    /// used, in a different process, at a different time, from a different working
-    /// directory. If the baked id were a function of the build ENVIRONMENT (which a git
-    /// lookup is) this would not match.
-    #[test]
-    fn build_id_is_rederivable_from_the_source_tree() {
-        let root = build_id::workspace_root(env!("CARGO_MANIFEST_DIR"));
-        let scan = root.as_deref().and_then(build_id::content_id);
-        match scan {
-            Some(scan) => {
-                assert_eq!(
-                    BUILD_ID_SRC,
-                    build_id::BUILD_ID_SRC_TREE,
-                    "the source tree is readable, so the baked id must come from it"
-                );
-                assert!(BUILD_ID_NOTE.is_empty(), "note set on a non-degraded build");
-                let expected =
-                    format!(concat!("memra-", env!("CARGO_PKG_VERSION"), "-{}"), scan.id);
-                assert_eq!(
-                    SYSTEM_FINGERPRINT,
-                    expected,
-                    "baked fingerprint disagrees with a re-derivation over {} files: the id \
-                     is not a pure function of the source tree, or the build script did not \
-                     re-run after an edit",
-                    scan.files.len()
-                );
-                assert!(scan.files.len() > 100, "suspiciously small hashed file set");
-            }
-            None => {
-                // Not a pass by omission: an unreadable tree MUST have produced the
-                // degraded marker and a stated reason, and the fingerprint must still be
-                // shaped (asserted by baked_fingerprint_is_real_and_well_formed).
-                assert_eq!(BUILD_ID_SRC, build_id::BUILD_ID_SRC_DEGRADED);
-                assert!(
-                    !BUILD_ID_NOTE.is_empty(),
-                    "a degraded build must state its reason so the boot WARN can print it"
-                );
-            }
-        }
-    }
-
-    /// The id is not the git sha, in either direction: the identity must not be history, and
-    /// the sha must stay available as a separate extra field.
-    #[test]
-    fn identity_is_independent_of_git_history() {
-        let id = SYSTEM_FINGERPRINT.rsplit_once('-').unwrap().1;
-        assert_ne!(
-            id, BUILD_GIT_SHA,
-            "the content id equals the git sha; the identity must not be history, it has to \
-             survive a rewrite that changes every commit"
-        );
-        assert!(
-            !SYSTEM_FINGERPRINT.contains(BUILD_GIT_SHA),
-            "the git sha leaked into the customer-visible fingerprint {SYSTEM_FINGERPRINT:?}"
-        );
-        // The extra field is still populated: either a repo was visible to this build, or it
-        // honestly reads `unknown`. Never empty, and never the identity.
-        assert!(!BUILD_GIT_SHA.is_empty());
-    }
-
-    /// Determinism of the digest itself: same bytes in, same id out, and any change in
-    /// content, path, or ordering-relevant input changes it.
-    #[test]
-    fn content_digest_is_deterministic_and_change_sensitive() {
-        let a = build_id::degraded_build_id("memra-server", "0.123.0");
-        let b = build_id::degraded_build_id("memra-server", "0.123.0");
-        assert_eq!(a, b, "the digest is not deterministic");
-        assert_eq!(a.len(), build_id::BUILD_ID_HEX);
-        assert!(
-            a.chars()
-                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
-        );
-        assert_ne!(a, build_id::degraded_build_id("memra-server", "0.123.1"));
-        assert_ne!(a, build_id::degraded_build_id("memra-serve", "r0.123.0"));
-        // Fixed width even when the leading nibbles are zero.
-        assert_eq!(build_id::render_build_id(0).len(), build_id::BUILD_ID_HEX);
-        assert_eq!(
-            build_id::render_build_id(0),
-            "0".repeat(build_id::BUILD_ID_HEX)
-        );
-    }
-
-    /// Two scans of the same unchanged tree in one process agree: the in-process half of
-    /// "stable across two builds of the same source".
-    #[test]
-    fn two_scans_of_one_tree_agree() {
-        let Some(root) = build_id::workspace_root(env!("CARGO_MANIFEST_DIR")) else {
-            assert_eq!(BUILD_ID_SRC, build_id::BUILD_ID_SRC_DEGRADED);
-            return;
-        };
-        let first = build_id::content_id(&root).expect("first scan");
-        let second = build_id::content_id(&root).expect("second scan");
-        assert_eq!(first.id, second.id);
-        assert_eq!(first.files.len(), second.files.len());
     }
 }

@@ -26,10 +26,6 @@
 //!
 //! Usage: qwen4exp_real_gate <ckpt_dir> <out_dir> --label <label> [flags above]
 
-// lane/clippy-zero-restore-20260901: active-lane gate binary — its banked receipts were
-// produced by this exact shape; control flow and `% == 0` idioms stay as gated.
-#![allow(clippy::manual_is_multiple_of, clippy::collapsible_if)]
-
 use memra_engine::Engine;
 use memra_engine::qwen4exp_gpu::{LoadOptions, Qwen4ExpGpu, read_checkpoint_with};
 use sha2::{Digest, Sha256};
@@ -2419,16 +2415,16 @@ fn main() -> Res<()> {
             let mut tape_ok = true;
             let mut rows = 0usize;
             let mut argmax_matches = 0usize;
-            let record = |regime: &str,
-                          label: i64,
-                          fed: u32,
-                          ra: &[f32],
-                          rb: &[f32],
-                          receipt: &mut String,
-                          rows: &mut usize,
-                          argmax_matches: &mut usize,
-                          tape_ok: &mut bool,
-                          worst_elemrel: &mut f32|
+            let mut record = |regime: &str,
+                              label: i64,
+                              fed: u32,
+                              ra: &[f32],
+                              rb: &[f32],
+                              receipt: &mut String,
+                              rows: &mut usize,
+                              argmax_matches: &mut usize,
+                              tape_ok: &mut bool,
+                              worst_elemrel: &mut f32|
              -> f32 {
                 let (ma, mr, er) = max_rel_of(ra, rb);
                 let (ta, tb) = (argmax(ra), argmax(rb));

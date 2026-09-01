@@ -10665,82 +10665,6 @@ impl Engine {
         Ok(())
     }
 
-    /// Known-good paired gate+up Q8 schedule: one CTA owns the same output row in both banks,
-    /// shares the activation bytes, and retains one independent accumulator/reduction per bank.
-    #[allow(clippy::too_many_arguments)]
-    pub fn qmatvec_nvfp4_q8_ep_paired_slots_into(
-        &self,
-        gate_bank: &CudaSlice<u8>,
-        up_bank: &CudaSlice<u8>,
-        sel: &CudaSlice<i32>,
-        aq: &CudaSlice<i8>,
-        ad: &CudaSlice<f32>,
-        gate_out: &mut CudaSlice<f32>,
-        up_out: &mut CudaSlice<f32>,
-        n_pairs: usize,
-        top_k: usize,
-        in_f: usize,
-        out_f: usize,
-        owner_start: usize,
-        owner_end: usize,
-        row_bytes: usize,
-        expert_stride: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let tokens = n_pairs.div_ceil(top_k);
-        if top_k == 0
-            || owner_start >= owner_end
-            || !in_f.is_multiple_of(64)
-            || sel.len() < n_pairs
-            || aq.len() < tokens * in_f
-            || ad.len() < tokens * (in_f / 32)
-            || gate_out.len() < n_pairs * out_f
-            || up_out.len() < n_pairs * out_f
-        {
-            return Err(format!(
-                "W4A8 NVFP4 paired gate/up geometry sel={} aq={} ad={} gate={} up={} \
-                 pairs={n_pairs} top_k={top_k} in={in_f} out={out_f} \
-                 owner={owner_start}..{owner_end}",
-                sel.len(),
-                aq.len(),
-                ad.len(),
-                gate_out.len(),
-                up_out.len(),
-            )
-            .into());
-        }
-        let f = self.func("qmatvec_nvfp4_q8_ep_paired_slots");
-        let threads = ((in_f / 32).div_ceil(32) * 32).clamp(32, 256) as u32;
-        let cfg = LaunchConfig {
-            grid_dim: (out_f as u32, 1, 1),
-            block_dim: (threads, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let (inf, outf, np, tk) = (in_f as i32, out_f as i32, n_pairs as i32, top_k as i32);
-        let (os, oe) = (owner_start as i32, owner_end as i32);
-        let (rb, es) = (row_bytes as i64, expert_stride as i64);
-        let __s_b = self.gpu.stream();
-        let mut b = __s_b.launch_builder(&f);
-        b.arg(gate_bank)
-            .arg(up_bank)
-            .arg(sel)
-            .arg(aq)
-            .arg(ad)
-            .arg(gate_out)
-            .arg(up_out)
-            .arg(&inf)
-            .arg(&outf)
-            .arg(&np)
-            .arg(&tk)
-            .arg(&os)
-            .arg(&oe)
-            .arg(&rb)
-            .arg(&es);
-        unsafe {
-            b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
     /// W4A16 selected down rows scattered into canonical global pair positions on the root.
     #[allow(clippy::too_many_arguments)]
     pub fn qmatvec_nvfp4_bf16_sel_down_rows_raw(
@@ -20009,23 +19933,10 @@ impl Engine {
         if cfg!(memra_portable_cuda) {
             return Ok(None);
         }
-        // MEMRA_FP4 reaches qmatvec_gemm_nvfp4_fp4, which ONLY the sm_120a fatbin contains:
-        // cu/qmatvec_gemm.cu omits it on portable builds (MEMRA_PORTABLE_CUDA) AND on sm_100a
-        // (build.rs passes -DMEMRA_DISABLE_NATIVE_FP4=1 there — the mxf4 block-scale MMA is an
-        // sm_120a instruction encoding). Refuse at the door on EVERY build that lacks it. The
-        // portable refusal alone was an enumeration, not a property: a 100a build is not
-        // portable, so `MEMRA_FP4=1` sailed past it into Engine::func's "kernel not in any
-        // fatbin" panic — found by the 100a fatbin-lookup census, lane/glm5-b200-prep-20260901
-        // (same enumeration-vs-property class as the 2026-08-23 stub-polarity fixes in build.rs).
+        // MEMRA_FP4 reaches qmatvec_gemm_nvfp4_fp4, which cu/qmatvec_gemm.cu:1234 omits on a
+        // portable build (the mxf4 block-scale MMA is sm_120a-only). Refuse at the door.
         if std::env::var("MEMRA_FP4").is_ok() {
             refuse_portable_force("MEMRA_FP4", "the sm_120a mxf4 block-scale MMA");
-            assert!(
-                konst_eq(env!("MEMRA_BUILT_CUDA_ARCH"), "120a"),
-                "MEMRA_FP4 forces the native mxf4 block-scale GEMM (qmatvec_gemm_nvfp4_fp4), \
-                 which only the sm_120a fatbin contains — this is an sm_{} build. Unset \
-                 MEMRA_FP4; the W4A8 int8 path is the correct default for NVFP4 weights.",
-                env!("MEMRA_BUILT_CUDA_ARCH")
-            );
         }
         if std::env::var("MEMRA_FP4").is_err() {
             return Ok(None);

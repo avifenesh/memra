@@ -49,10 +49,6 @@
 //! tp2-battery greps `transport=` on all four seams, and a hardcoded value would have made a
 //! transport A/B unreadable from the boot log).
 
-// lane/clippy-zero-restore-20260901: perf-gated TP2 host code (fresh lane receipts);
-// index loops stay in their gated shape — iterator reshapes are not bit-neutral by inspection.
-#![allow(clippy::needless_range_loop)]
-
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -891,7 +887,7 @@ fn kda_tp_core(
     cache: &mut Cache,
     il: usize,
     arm: ConvArm,
-    verify_stash: Option<&mut Glm5TpKdaVerifyStash>,
+    mut verify_stash: Option<&mut Glm5TpKdaVerifyStash>,
     mut scan_clock: Option<&mut u64>,
 ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
     let tp = la_root
@@ -970,7 +966,7 @@ fn kda_tp_core(
         }
         gated[r] = Some(out);
     }
-    if let Some(stash_vec) = verify_stash {
+    if let Some(stash_vec) = verify_stash.as_deref_mut() {
         stash_vec.clear();
         for c in captured {
             stash_vec.push(c.expect("every rank captured on the verify arm"));

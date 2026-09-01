@@ -1,10 +1,5 @@
 # Composition-lane VERDICT: the composed TP route does NOT reach the 100 tok/s bar
 
-> FRAMING SUPERSEDED 2026-09-01 (owner pivot): the 100@262k bar is RETIRED as a launch
-> gate — the qualified 3-card PP3 shape serves. Every MEASUREMENT below stands; the bar
-> framing is historical. The current reading (upgrade path) and the follow-on-arc handoff
-> live in `B200-TRANSFER.md` + the LANE.md close entry.
-
 Charter: prove or refute the composed route to the owner's serving bar — 100 tok/s decode
 for GLM-5.3-Flash — by composing TP × speculative decode (DFlash2) × the matvec doors.
 

@@ -72,10 +72,6 @@
 //!
 //! usage: glm5-tp-gate [P=16] [N=12] [TRACE_OUT (preserve arm T's fixture weight-trace)]
 
-// lane/clippy-zero-restore-20260901: the gate's comparison tuples are deliberately explicit;
-// naming them buys nothing in a one-file gate binary.
-#![allow(clippy::type_complexity)]
-
 use memra_engine::Engine;
 use memra_engine::forward::argmax;
 use memra_engine::hybrid::HybridModel;
@@ -2168,7 +2164,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                  {\"layer\": 3, \"assignment\": [0, 0, 0, 0, 1, 1, 1, 1]}]}",
             )?;
             set_env("MEMRA_GLM5_TP", spec4);
-            set_env("MEMRA_GLM5_EP_MAP", &two_rank_map.to_string_lossy());
+            set_env(
+                "MEMRA_GLM5_EP_MAP",
+                &two_rank_map.to_string_lossy().into_owned(),
+            );
             let res = HybridModel::load_from_source_without_mtp(&e, &source4);
             rm_env("MEMRA_GLM5_EP_MAP");
             rm_env("MEMRA_GLM5_TP");

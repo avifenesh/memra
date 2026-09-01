@@ -226,7 +226,7 @@ which still passes with the permute made `pub` and the new `in_features % 64` as
   on this box, so the door-era 100 GB cache is already gone with its ephemeral NVMe.
   **CORRECTION, 2026-09-01 (milestone 4):** that last sentence was wrong, and the search depth is
   why. The cache is very much present, at
-  `/opt/scratch/nvme/data/models/step37-flash-nvfp4/.memra-repack` (100 GB, mtime 2026-08-28 20:10),
+  `/opt/dl-image/nvme/data/models/step37-flash-nvfp4/.memra-repack` (100 GB, mtime 2026-08-28 20:10),
   which is 7 levels down and behind the `/data` symlink `-maxdepth 6` never followed. The 126 GB
   step37 checkpoint sits beside it. Nothing in milestone 2 read either, so no milestone-1/2 receipt
   is affected — but the conclusion "already gone" was a false negative from a too-shallow find, and

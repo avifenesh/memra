@@ -1,6 +1,6 @@
 # qwen4_exp decode PROFILE-0 — untuned eager NVFP4 arm, before any optimization (2026-08-29)
 
-Perf lane phase 1 deliverable. Box: cloud-eval frankfurt, 2× RTX PRO 6000 Blackwell 96 GB
+Perf lane phase 1 deliverable. Box: sbox-eval Frankfurt, 2× RTX PRO 6000 Blackwell 96 GB
 (sm_120a); single-card arm (GPU0), NVFP4 mint `~/data/q48fn-nvfp4`, memra
 qwen4exp-bringup-20260829 @ a70f8a1ec8 (profiler instrumentation commit; forward math
 identical to the REAL-CHECKPOINT-GATE run @ 0c57fc75ea). Greedy is the instrument here

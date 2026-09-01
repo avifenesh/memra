@@ -2,10 +2,6 @@
 //! linear-attention (Gated DeltaNet) or full-attention mixer, then SwiGLU FFN. Matches
 //! llama.cpp src/models/qwen35.cpp node-for-node.
 
-// lane/clippy-zero-restore-20260901: index loops here mirror the llama.cpp reference
-// node-for-node (header above); iterator reshapes are not bit-neutral by inspection.
-#![allow(clippy::needless_range_loop)]
-
 use crate::Engine;
 use crate::cache::Cache;
 use cudarc::driver::CudaSlice;
@@ -2710,42 +2706,18 @@ impl HybridModel {
             );
             let caller_stream = e.stream();
             rt.fence_stages_behind(&caller_stream)?;
-            // OVERLAY RESIDENCY LAW (rewritten in lane/glm53-vision-ppn, 2026-09-01; was the
-            // OVERLAY DEVICE LAW). The splice reads `overlay.rows` through stage 0's engine,
-            // so those rows must live in STAGE 0's CUDA context. That is the real invariant,
-            // and it is what is checked.
-            //
-            // The pre-lane check was `!std::ptr::eq(rt.engine(0, e), e)` — "stage 0 must BE
-            // the primary engine". It refused the deployed 3-card shape outright: the worker's
-            // primary engine follows the LAST pp stage (`worker::worker_device`, and that is
-            // load-bearing — pinning the primary to stage 0 was the v0.72 tag-blocker-2
-            // regressor, 112.5 -> 17.5 tok/s on spec+PP), so with MEMRA_PP_DEVICES=0,1,2 the
-            // primary is dev2 while stage 0 owns dev0 and `PpNRt::build` hands stage 0 its
-            // own Engine. Vision was therefore unservable on the ppN shape with the only
-            // in-tag rollback costing ~3x decode (MEMRA_PP_STREAMS=0). The fix is to PUBLISH
-            // the overlay into stage 0's context at construction
-            // (`EmbedOverlay::new_published`, driven by `vision_intake_engine` below), never
-            // to relax the check: the identity now passes because the pointers ARE in the
-            // right domain.
-            //
-            // ORDERING, the seam the accrace lane taught (MEMRA_PP_EXIT_PUBLISH): rows built
-            // on the caller's stream are covered by `fence_stages_behind` above, which orders
-            // every stage stream behind the caller before stage 0 issues its splice; rows
-            // published onto the intake engine were host-synchronized when they were uploaded.
-            // Both producers are ordered before this body's first stage-0 kernel.
-            if let Some(ov) = overlay
-                && !ov.resident_in(rt.engine(0, e))
-            {
-                return Err(format!(
-                    "vision embedding overlay rows are resident on dev{} but pp stage 0's \
-                     embedding intake runs on dev{}: the overlay must be published into the \
-                     intake engine's context (build it with EmbedOverlay::new_published; \
-                     MEMRA_VISION_OVERLAY_PUBLISH=0 pins the pre-publication program, whose \
-                     only vision-capable shape is MEMRA_PP_STREAMS=0)",
-                    ov.ctx().ordinal(),
-                    rt.engine(0, e).ctx().ordinal(),
-                )
-                .into());
+            // OVERLAY DEVICE LAW: the overlay rows are built by the caller on the PRIMARY
+            // engine (build_vision_overlay runs the tower there). Stage 0 keeps the primary
+            // engine whenever it lives on the primary device (pp::PpNRt::build); a placement
+            // that moves stage 0 to another device would make the splice a cross-device copy
+            // with no receipts — refuse loudly instead of silently peer-reading.
+            if overlay.is_some() && !std::ptr::eq(rt.engine(0, e), e) {
+                return Err(
+                    "vision embedding overlay requires stage 0 on the primary device \
+                     (overlay rows are primary-resident); place stage 0 on the primary \
+                     or run MEMRA_PP_STREAMS=0"
+                        .into(),
+                );
             }
             let mut slot = {
                 let _st0 = rt.enter(0);
@@ -3375,34 +3347,6 @@ impl HybridModel {
         queued_after: usize,
     ) -> Result<(Vec<f32>, CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
         self.prime_cache_overlaid(e, tokens, cache, queued_after, None)
-    }
-
-    /// The engine that owns EMBEDDING INTAKE for the current placement — the engine whose
-    /// context a vision overlay's rows must live in (`EmbedOverlay::new_published`).
-    ///
-    /// It is NOT always the primary engine. Under a per-stage-stream ppN split the embedding
-    /// happens on stage 0 (`prime_cache_hyper_ppn` embeds inside the stage-0 scope and every
-    /// later stage sees only the expanded stream state), and stage 0 gets its own Engine
-    /// whenever its device differs from the primary's — which is the deployed 3-card shape,
-    /// because the worker's primary engine follows the LAST stage. On a single-device
-    /// placement, with the door shut, or on the `MEMRA_PP_STREAMS=0` seam, intake is the
-    /// primary engine and this returns `e` unchanged (byte-identical to the pre-lane path).
-    ///
-    /// This mirrors `prime_cache_hyper`'s own door test deliberately, and the ppN prime's
-    /// residency refusal is the enforcement: if this ever picks the wrong engine, the prime
-    /// fails CLOSED with a named error instead of peer-reading an overlay.
-    pub fn vision_intake_engine<'a>(
-        &self,
-        e: &'a Engine,
-    ) -> Result<&'a Engine, Box<dyn std::error::Error>> {
-        if self.hyper.is_some()
-            && !crate::pp::pp2_streams_off()
-            && crate::pp::pp_cuts(self.layers.len()).is_some()
-        {
-            let rt = crate::pp::PpNRt::get(e)?;
-            return Ok(rt.engine(0, e));
-        }
-        Ok(e)
     }
 
     /// `prime_cache` with a vision embedding overlay (lane/vision): image merger outputs
@@ -4385,12 +4329,23 @@ impl HybridModel {
             // Mixed-embedding splice: image rows overwrite the pad-token embeddings that
             // fall inside this chunk's prompt-relative window [chunk_off, chunk_off+t).
             // Images larger than one prime chunk straddle boundaries, hence the clipping.
-            //
-            // Through the SHARED `EmbedOverlay::splice_into` (lane/glm53-vision-ppn): this
-            // site used to carry its own byte-identical copy of that loop, which meant the
-            // overlay residency law had to be re-stated per call site. One implementation,
-            // one law, and the splice point cannot drift between arms.
-            ov.splice_into(e, &mut x_embed, chunk_off, t, self.cfg.n_embd as usize)?;
+            let n_embd = self.cfg.n_embd as usize;
+            for &(pos, row_off, n_rows) in &ov.spans {
+                let lo = pos.max(chunk_off);
+                let hi = (pos + n_rows).min(chunk_off + t);
+                if lo < hi {
+                    let src_row = row_off + (lo - pos);
+                    let view = ov
+                        .rows
+                        .slice(src_row * n_embd..(src_row + (hi - lo)) * n_embd);
+                    e.copy_view_into(
+                        &mut x_embed,
+                        (lo - chunk_off) * n_embd,
+                        &view,
+                        (hi - lo) * n_embd,
+                    )?;
+                }
+            }
         }
         let x = self.prime_layers(
             e,
@@ -9185,10 +9140,6 @@ impl HybridModel {
             let automatic_ep_device_router = crate::tp::parallel_ep_device_router_enabled()?;
             let automatic_ep_q8_act = crate::tp::parallel_ep_q8_act_enabled()?;
             let automatic_ep_q8_scope = crate::tp::parallel_ep_q8_scope()?;
-            crate::tp::parallel_ep_q8_gu_paired_enabled(
-                automatic_ep_q8_act,
-                automatic_ep_q8_scope,
-            )?;
             let automatic_ep_q8_active =
                 automatic_ep_q8_act && t <= crate::tp::NVFP4_EP_Q8_BATCH_CAP;
             if automatic_ep_q8_scope.is_some() && !automatic_ep_q8_act {
@@ -18486,10 +18437,6 @@ impl HybridModel {
         // reference's llama_set_causal_attn(false) image batch exactly.
         let island: Option<CudaSlice<i32>> = match overlay {
             Some(ov) => {
-                // The residency law reaches this arm too (lane/glm53-vision-ppn): the splice
-                // arithmetic below differs from the shared helper on purpose (post-scale
-                // placement + island ids), but the pointer it reads obeys the same rule.
-                ov.require_resident(e)?;
                 let mut span_id = vec![-1i32; t];
                 for (i, &(pos, row_off, n_rows)) in ov.spans.iter().enumerate() {
                     if pos + n_rows > t {
@@ -25099,9 +25046,6 @@ mod prime_chunk_schedule_tests {
     /// a prime range wider than the CUDA grid.y limit, and must stay byte-identical
     /// (single monolithic range) for every prompt the limit allows.
     #[test]
-    // assertions_on_constants: the constant relation (cap + fold headroom fits the CUDA
-    // grid wall) IS the invariant under test; a red here means someone moved a constant.
-    #[allow(clippy::assertions_on_constants)]
     fn monolithic_prime_chunk_caps_at_the_cuda_launch_wall() {
         // Ring OFF (ornith serving shape): 0 maps to the launch cap, larger explicit
         // values cap there too, workable explicit values pass through untouched.

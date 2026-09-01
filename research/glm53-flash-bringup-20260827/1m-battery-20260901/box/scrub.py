@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Scrub box identity from banked receipts before they enter git.
 
-The box is a rented spot box; its IP, ssh port, instance id and hostname are FLEET STATE
+The box is a rented spot instance; its IP, ssh port, instance id and hostname are FLEET STATE
 and belong in darklanes, never in the public engine repo (public-boundary law).
 
 This script deliberately contains NO literal host or port. Hardcoding them would make the

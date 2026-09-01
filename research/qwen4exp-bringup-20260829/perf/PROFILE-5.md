@@ -1,8 +1,8 @@
 # qwen4_exp decode PROFILE-5 — the MTP spec-decode round (2026-08-30)
 
 Lane: mtp-spec (spec/MTP-SPEC.md carries the semantics, gates, and per-battery
-receipts; this file is the perf ledger in the PROFILE series). Box: cloud-eval
-frankfurt, 2× RTX PRO 6000 Blackwell 96 GB; artifact ~/data/q48fn-nvfp4 (NVFP4
+receipts; this file is the perf ledger in the PROFILE series). Box: sbox-eval
+Frankfurt, 2× RTX PRO 6000 Blackwell 96 GB; artifact ~/data/q48fn-nvfp4 (NVFP4
 mint + BF16 mtp graft). Baselines from PROFILE-4: plain single-card 14.5 ms/token
 (69.16 tok/s), plain TP2 12.9 ms (77.27) — the 90 tok/s owner line was NOT crossable
 by shaves and PROFILE-4 named MTP/spec as the multiplier. It is.

@@ -370,7 +370,7 @@ fi
 
 # ---- profile-blob / secret guard (2026-08-06) ----
 # nsys full profiles (.nsys-rep/.qdrep/.qdstrm) embed the ENTIRE process environment —
-# a committed one leaked a live GH_TOKEN + hosted-provider API key (caught by GitHub push protection,
+# a committed one leaked a live GH_TOKEN + Bedrock key (caught by GitHub push protection,
 # scrubbed via filter-repo). Refuse any push whose new commits add one. No override:
 # export the kern-sum CSV instead (nsys stats --report cuda_gpu_kern_sum).
 blobs=$(

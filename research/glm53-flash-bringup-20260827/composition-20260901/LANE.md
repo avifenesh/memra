@@ -129,19 +129,3 @@ Known numbers going in (sources: corpus card + lane docs, quoted verbatim):
   STAGING-INCOMPLETE instead of DISQUALIFIED; the TC FLAGS row documents the shard decline;
   CELLS.md states how to actually OBSERVE that decline (it cannot print on a pinned=0 arm).
   Gate ALL ARMS PASS post-hardening (rig-gates/07).
-- 2026-09-01: OWNER PIVOT acknowledged at close — the qualified 3-card PP3 shape is the
-  serving shape and the 100@262k bar is retired as a launch gate. This lane's verdict is
-  re-framed as the serving UPGRADE path: composed TP does NOT price better than the shipped
-  shape's battery rows (spec 45.654 greedy / 46.66 vendor; best single-stream 71.489 greedy
-  / 61.82 vendor — same arm's two medians, never a greedy range; the SERVED class is banked
-  separately at 35.36-35.42), so there is no blue/green candidate here —
-  the upgrade levers with receipts are the EP-aware vrows arm, graph capture, and the
-  batched-EP prime. The follow-on arc (2xB200 + 1M) handoff is banked in B200-TRANSFER.md:
-  the transport seam, rank envelope, spec x TP wiring and diet transfer as machinery; the
-  dispatch-structure laws (launch-bound TP walk, vrows preemption, acceptance-parity gate,
-  per-arch prime bands) transfer as LAW; every multiplier and every kernel class contract
-  must be re-measured on SM100; and the residency premise inverts on 380 GB of HBM —
-  single-B200-resident may beat TP-2-NVLink at 262k, TP-2-NVLink's real role is 1M.
-  Box coordination: this lane never touched the serving box; every cell ran on a shared
-  dev box's idle window, released clean beforehand (prod-untouchable satisfied by
-  construction; box identities live in the private ops repo).
