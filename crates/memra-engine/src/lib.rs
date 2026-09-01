@@ -686,47 +686,6 @@ pub(crate) fn w8_view_on() -> bool {
     *ON.get_or_init(|| std::env::var("MEMRA_W8_VIEW").as_deref() == Ok("1"))
 }
 
-/// `MEMRA_PARALLEL_TP_SHEXP=1`: TP2 row-parallel shared-expert decode over an owner-first
-/// native-P2P pair. This is a new arithmetic class, so it stays default OFF until its
-/// real-artifact full-logit, teacher-forcing, and sampled-serving profile gates are banked.
-fn parse_parallel_tp_shexp(value: Option<&str>) -> Result<bool, String> {
-    match value {
-        None | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_TP_SHEXP={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-pub(crate) fn parallel_tp_shexp_on() -> Result<bool, String> {
-    static VALUE: std::sync::OnceLock<Result<bool, String>> = std::sync::OnceLock::new();
-    match VALUE.get_or_init(|| match std::env::var("MEMRA_PARALLEL_TP_SHEXP") {
-        Err(std::env::VarError::NotPresent) => parse_parallel_tp_shexp(None),
-        Ok(value) => parse_parallel_tp_shexp(Some(&value)),
-        Err(error) => Err(format!("cannot read MEMRA_PARALLEL_TP_SHEXP: {error}")),
-    }) {
-        Ok(value) => Ok(*value),
-        Err(error) => Err(error.clone()),
-    }
-}
-
-#[cfg(test)]
-mod parallel_tp_shexp_flag_tests {
-    #[test]
-    fn strict_default_off_flag() {
-        use super::parse_parallel_tp_shexp;
-
-        assert!(!parse_parallel_tp_shexp(None).unwrap());
-        assert!(!parse_parallel_tp_shexp(Some("0")).unwrap());
-        assert!(parse_parallel_tp_shexp(Some("1")).unwrap());
-        for invalid in ["", "true", "2", "on"] {
-            let error = parse_parallel_tp_shexp(Some(invalid)).unwrap_err();
-            assert!(error.contains("expected 0 or 1"), "{error}");
-        }
-    }
-}
-
 /// MEMRA_Q8T_WONCE=1: the q8 t-column verify kernels take their weight-once `_tw` twins — one
 /// row grid, each weight int4 loaded once and dotted against all t columns — instead of the `_t`
 /// forms, whose column grid axis plus __ldcs (streaming, evict-first) re-reads the fully-shared
