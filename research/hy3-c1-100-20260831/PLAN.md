@@ -242,3 +242,72 @@ retains the generic, hardware-gated TP2 replicated-row join and compact BF16 K-r
 Next work must remove a whole dependency group without graph serialization. The live profile says
 the four-rank expert preparation/gate-up/activation/down issue stream and the remaining TP
 attention boundaries are the candidates; deleting launch count alone is not a wall result.
+
+## 2026-09-01 exact-geometry sm120 NCU closure
+
+A standalone profiler instrument now constructs the exact automatic-EP c1 geometry without a
+model load: hidden 4096, expert width 1536, top-8 slots, two contiguous owner-local experts, and
+the shipped paired gate/up, q8 activation, and down kernels. It is intentionally not a serving
+path. On the rig's 175 W RTX 5090 Laptop GPU, the unprofiled baseline was:
+
+| phase | us/call |
+|---|---:|
+| paired gate/up | 12.070 |
+| q8 activation | 1.720 |
+| down | 8.638 |
+| queued chain | 25.857 |
+
+NCU replay durations are clock-perturbed and excluded from wall rows. The counters still identify
+the mechanism:
+
+- gate/up: 1,536 x 128-thread CTAs, 48 registers/thread, 1.87 waves/SM, 47.45% DRAM,
+  48.32% compute, 16.49% L2 hit, 43.80% cycles with no eligible warp, and 42.84%
+  long-scoreboard stalls;
+- down: 2,048 x 64-thread CTAs, 40 registers/thread, 1.04 waves/SM, 32.03% DRAM,
+  37.22% compute, 25.56% L2 hit, 48.34% cycles with no eligible warp, and 51.21%
+  long-scoreboard stalls.
+
+The counter-selected experiment grouped two gate/up output rows and four down rows per CTA to
+raise independent weight-load ILP while retaining each output's reduction tree. It was bit-exact
+against the shipped kernels: zero gate, up, or down bit mismatches. Five interleaved 3,000-call
+rounds nevertheless rejected it:
+
+| phase | shipped median us | multi-row median us | verdict |
+|---|---:|---:|---|
+| paired gate/up | 11.929 | 12.142 | -1.8% |
+| down | 8.583 | 8.291 | +3.5% |
+| full chain | 26.110 | 25.427 | +2.7% |
+
+This misses the 1.5x isolated-kernel retention bar by a wide margin. The candidate kernels and
+wrappers were removed; only the reusable probe and raw NCU reports remain. Reports:
+
+`/home/avifenesh/projects/runpod-receipts/hy3-c1-100-20260901/local-sm120-probe/`
+
+The exact PRO 6000 profile independently bounds this arc. On root device 0, paired gate/up plus
+down totaled 223.809 ms in the captured request, while the adjacent root costs were scalar FA
+178.442 ms, shared BF16 dual-SiLU 173.599 ms, Q8 QKV 161.035 ms, Q8 output projection
+127.764 ms, and vector FA 70.289 ms. Expert-row ILP cannot supply the remaining 3.90 ms/token.
+The next paid cell profiles and attacks the attention/shared-dense dependency groups; another
+expert-row layout is not justified by these counters.
+
+### Shared-expert BF16 closure
+
+The same probe covers HY3's root shared expert at its exact per-layer shapes: gate/up
+4096->1536 and down 1536->4096. An existing unwired interleaved gate/up kernel was bit-exact,
+but five interleaved 2,000-call rounds were flat: both the shipped and interleaved medians were
+8.350 us. `MEMRA_DOWN_X4=1`, already a documented off-by-default adjacent arm, regressed the down
+median from 7.570 to 8.356 us (-9.4%). The full shipped chain was 16.282 us; interleaved gate/up
+with the normal down was 16.164 us (+0.7%, noise and far below retention).
+
+NCU explains why another BF16 schedule is not the commercial lever:
+
+- dual gate/up already reaches 80.52% DRAM throughput; 84.21% long-scoreboard stalls reflect a
+  streamed 24 MiB weight pair, not missing arithmetic parallelism. The interleaved twin did not
+  move its wall;
+- down reaches 62.93% DRAM with 4.16 waves/SM. Its remaining stalls are 47.94%
+  long-scoreboard and 22.55% barrier; serial four-row grouping makes both worse in wall time.
+
+The unwired interleaved wrapper was removed and `DOWN_X4` remains off. The retained next rung is
+the existing q8 mirror numeric class (`MEMRA_W8_HYBRID`) for shared down, dense layer 0, and the
+LM head, combined with attention profiling. Halving streamed bytes is supported by adjacent
+receipts; rescheduling the same BF16 bytes is now falsified for HY3's exact shape.
