@@ -62,41 +62,6 @@ use memra_engine::hybrid::HybridModel;
 use memra_gguf::GgufFile;
 use sha2::{Digest, Sha256};
 
-/// Restore a process environment variable when a temporary in-process gate arm exits. Rust drops
-/// the guard on both `Ok` and `?`, so a failed decode cannot leak a diagnostic route into the next
-/// arm.
-struct EnvVarRestore {
-    key: &'static str,
-    value: Option<std::ffi::OsString>,
-}
-
-impl EnvVarRestore {
-    fn set(key: &'static str, value: &str) -> Self {
-        let restore = Self {
-            key,
-            value: std::env::var_os(key),
-        };
-        // SAFETY: decode-batch-gate owns its process environment. PP wave workers are scoped
-        // inside the guarded decode call and finish before this guard restores the variable.
-        unsafe {
-            std::env::set_var(key, value);
-        }
-        restore
-    }
-}
-
-impl Drop for EnvVarRestore {
-    fn drop(&mut self) {
-        // SAFETY: see `set`; no gate worker outlives the decode call guarded by this value.
-        unsafe {
-            match &self.value {
-                Some(value) => std::env::set_var(self.key, value),
-                None => std::env::remove_var(self.key),
-            }
-        }
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let path = args
@@ -996,34 +961,28 @@ struct BitCheck {
     compared: usize,
 }
 
-/// Serial oracle for a worker-combined PP tick. Widths that fit one exact wave retain the historic
-/// one-call reference. Wider widths run the live schedule's row ranges sequentially with the PP
-/// door unavailable, then concatenate in request order. This isolates the pipeline schedule from
-/// numeric-width changes: each oracle call and each live wave use the same exact kernel tier.
+/// Serial oracle for a worker-combined dual tick. Widths that fit one exact wave retain the
+/// historic one-call reference. Wider widths run the same ceil/floor waves sequentially with the
+/// PP door/dual walker unavailable, then concatenate in request order. This isolates the dual
+/// schedule from numeric-width changes: each oracle call and each live wave use the same exact
+/// kernel tier.
 fn decode_batch_serial_waves(
     e: &Engine,
     model: &HybridModel,
     toks: &[u32],
     caches: &mut [Cache],
-    wave_ranges: Option<&[(usize, usize)]>,
+    mid: Option<usize>,
 ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
-    let Some(wave_ranges) = wave_ranges else {
+    let Some(mid) = mid else {
         let mut refs: Vec<&mut Cache> = caches.iter_mut().collect();
         return model.decode_step_batch(e, toks, &mut refs);
     };
-    let mut rows = Vec::with_capacity(toks.len());
-    let mut cache_tail = caches;
-    for &(lo, hi) in wave_ranges {
-        let width = hi - lo;
-        let (wave_caches, tail) = cache_tail.split_at_mut(width);
-        cache_tail = tail;
-        let mut refs: Vec<&mut Cache> = wave_caches.iter_mut().collect();
-        rows.extend(model.decode_step_batch(e, &toks[lo..hi], &mut refs)?);
-    }
-    assert!(
-        cache_tail.is_empty(),
-        "serial PP oracle did not consume every cache row"
-    );
+    let (toks_a, toks_b) = toks.split_at(mid);
+    let (caches_a, caches_b) = caches.split_at_mut(mid);
+    let mut refs_a: Vec<&mut Cache> = caches_a.iter_mut().collect();
+    let mut rows = model.decode_step_batch(e, toks_a, &mut refs_a)?;
+    let mut refs_b: Vec<&mut Cache> = caches_b.iter_mut().collect();
+    rows.extend(model.decode_step_batch(e, toks_b, &mut refs_b)?);
     Ok(rows)
 }
 
@@ -1090,335 +1049,6 @@ impl BitCheck {
             1
         }
     }
-}
-
-/// PP3/PP4 wavefront serving-tail qualification. Compare the live sampled/masked batch call with
-/// only `MEMRA_PP_WAVE` changed: both arms retain the same PP placement, numeric-width cap,
-/// inputs, and independently primed cache state.
-#[allow(clippy::too_many_arguments)]
-fn pp_wave_sampled_masked_arm(
-    e: &Engine,
-    model: &HybridModel,
-    stages: usize,
-    steps: usize,
-    seed: u32,
-    plen: u32,
-    ctx: usize,
-    exact_wave_cap: usize,
-) -> Result<usize, Box<dyn std::error::Error>> {
-    assert!(matches!(stages, 3 | 4));
-    let b = exact_wave_cap;
-    let n_s = steps.clamp(2, 8);
-    let n_vocab = model.cfg.n_vocab as usize;
-    if b < 8 || n_vocab < 32 {
-        return Err(format!(
-            "PP wave sampled/masked gate requires B>=8 and vocab>=32 (B={b}, vocab={n_vocab})"
-        )
-        .into());
-    }
-
-    // Eight deliberately heterogeneous rows, repeated once when the dense exact tier is B=16:
-    // greedy; vendor-like .7/20/.8; min-p; sampled all-three penalties; two host rows; and two
-    // grammar rows. Filtered/penalized rows stay unmasked, matching the server's admitted device
-    // composition; masks exercise greedy and pure-temperature device sampling.
-    let prompt_vocab = model.cfg.n_vocab.saturating_sub(16).max(1) as u64;
-    let prompts: Vec<Vec<u32>> = (0..b)
-        .map(|bi| {
-            (0..plen + bi as u32 * 5)
-                .map(|j| {
-                    ((55u64 + seed as u64 * 13 + bi as u64 * 97 + j as u64 * 31) % prompt_vocab)
-                        as u32
-                })
-                .collect()
-        })
-        .collect();
-
-    // Prime both cache herds under the same serial PP setting. The guard restores the caller's
-    // MEMRA_PP_WAVE=1 even if allocation or prime returns early through `?`.
-    let (mut serial_caches, mut wave_caches) = {
-        let _wave_env = EnvVarRestore::set("MEMRA_PP_WAVE", "0");
-        let mut serial_caches = Vec::with_capacity(b);
-        let mut wave_caches = Vec::with_capacity(b);
-        for prompt in &prompts {
-            let mut serial = memra_engine::pp::new_cache(e, &model.cfg, ctx)?;
-            let _ = model.prime_cache(e, prompt, &mut serial, 0)?;
-            let mut wave = memra_engine::pp::new_cache(e, &model.cfg, ctx)?;
-            let _ = model.prime_cache(e, prompt, &mut wave, 0)?;
-            serial_caches.push(serial);
-            wave_caches.push(wave);
-        }
-        (serial_caches, wave_caches)
-    };
-
-    let mut semantic_bad = 0usize;
-    for bi in 0..b {
-        if serial_caches[bi].pos != wave_caches[bi].pos {
-            println!(
-                "pp wave sampled/masked row {bi}: identically primed cache positions differ: serial={} wave={} FAIL",
-                serial_caches[bi].pos, wave_caches[bi].pos
-            );
-            semantic_bad += 1;
-        }
-    }
-    let mut toks: Vec<u32> = prompts
-        .iter()
-        .map(|prompt| *prompt.last().unwrap())
-        .collect();
-    let mut logits = BitCheck::new(format!(
-        "wave sampled/masked serial-vs-wave PP-{stages} B={b}"
-    ));
-    let mask_words = n_vocab.div_ceil(32);
-    let filter_survivor_ok = |row: &[f32], token: usize, meta: &DevSamp| -> bool {
-        if token >= row.len()
-            || meta.temp <= 0.0
-            || (meta.top_k == 0 && meta.top_p >= 1.0 && meta.min_p <= 0.0)
-        {
-            return token < row.len();
-        }
-        let max = row.iter().copied().fold(f32::NEG_INFINITY, f32::max) as f64;
-        let exp: Vec<f64> = row
-            .iter()
-            .map(|&value| ((value as f64 - max) / meta.temp as f64).exp())
-            .collect();
-        let z: f64 = exp.iter().sum();
-        let probabilities: Vec<f64> = exp.iter().map(|value| value / z).collect();
-        let p_token = probabilities[token];
-        if meta.top_k > 0
-            && probabilities.iter().filter(|&&p| p > p_token).count() >= meta.top_k as usize
-        {
-            return false;
-        }
-        if meta.min_p > 0.0 {
-            let p_max = probabilities.iter().copied().fold(0.0f64, f64::max);
-            if p_token < 0.999 * meta.min_p as f64 * p_max {
-                return false;
-            }
-        }
-        if meta.top_p < 1.0 {
-            let mass_above: f64 = probabilities.iter().filter(|&&p| p > p_token).sum();
-            if mass_above >= meta.top_p as f64 + 1.0e-4 {
-                return false;
-            }
-        }
-        true
-    };
-
-    for step in 0..n_s {
-        let mut mask_hosts: Vec<Option<Vec<u32>>> = Vec::with_capacity(b);
-        for bi in 0..b {
-            if !matches!(bi % 8, 5 | 6) {
-                mask_hosts.push(None);
-                continue;
-            }
-            // Eleven allowed ids spread across the vocabulary: neither an all-ones pass-through
-            // nor a one-token degenerate mask. Row and step offsets make every grammar row's
-            // packed bitset distinct while preserving deterministic replay between the arms.
-            let allowed = 11usize.min(n_vocab);
-            let stride = (n_vocab / allowed).max(1);
-            let offset = (seed as usize % n_vocab + bi + step * b) % n_vocab;
-            let mut words = vec![0u32; mask_words];
-            for slot in 0..allowed {
-                let id = (offset + slot * stride) % n_vocab;
-                words[id / 32] |= 1u32 << (id % 32);
-            }
-            let set_bits: usize = words.iter().map(|word| word.count_ones() as usize).sum();
-            assert!(
-                set_bits > 1 && set_bits < n_vocab,
-                "grammar mask must be sparse and non-degenerate"
-            );
-            mask_hosts.push(Some(words));
-        }
-        let masked: Vec<&Vec<u32>> = mask_hosts.iter().flatten().collect();
-        assert!(masked.len() >= 2, "gate must carry multiple grammar rows");
-        assert!(
-            masked.windows(2).all(|pair| pair[0] != pair[1]),
-            "grammar masks must be distinct per row"
-        );
-
-        // Allocate through the primary engine, exactly like worker-side grammar staging. The
-        // PP epilogue consumes these buffers on the last stage through the live UVA/peer seam.
-        let mut mask_devs = Vec::with_capacity(b);
-        for words in &mask_hosts {
-            mask_devs.push(match words {
-                Some(words) => Some(e.htod_u32_v(words)?),
-                None => None,
-            });
-        }
-        let masks: Vec<Option<(&cudarc::driver::CudaSlice<u32>, usize)>> = mask_devs
-            .iter()
-            .map(|mask| mask.as_ref().map(|mask| (mask, mask_words)))
-            .collect();
-
-        let mut samp = Vec::with_capacity(b);
-        for bi in 0..b {
-            let row_seed = 0x6000_0000_0000_0000u64 ^ ((seed as u64) << 16) ^ bi as u64;
-            let ctr = u32::try_from(step * b + bi).expect("bounded gate counter fits u32");
-            let meta = match bi % 8 {
-                0 => Some(DevSamp::new(0.0, row_seed, ctr, 0, 1.0, 0.0)),
-                1 => Some(DevSamp::new(0.7, row_seed, ctr, 20, 0.8, 0.0)),
-                2 => Some(DevSamp::new(0.9, row_seed, ctr, 0, 1.0, 0.05)),
-                3 => {
-                    let first = toks[bi];
-                    let mut second = prompts[bi][(step + bi) % prompts[bi].len()];
-                    if second == first {
-                        second = (second + 1) % model.cfg.n_vocab;
-                    }
-                    let penalty = DevPenalty::try_new(
-                        1.1,
-                        0.5,
-                        0.25,
-                        vec![(first, (step % 3 + 1) as u32), (second, 2)],
-                    )
-                    .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
-                    Some(DevSamp::new(0.7, row_seed, ctr, 20, 0.8, 0.0).with_penalty(penalty))
-                }
-                4 | 7 => None,
-                5 => Some(DevSamp::new(0.0, row_seed, ctr, 0, 1.0, 0.0)),
-                6 => Some(DevSamp::new(0.75, row_seed, ctr, 0, 1.0, 0.0)),
-                _ => unreachable!(),
-            };
-            samp.push(meta);
-        }
-
-        let serial_before: Vec<usize> = serial_caches.iter().map(|cache| cache.pos).collect();
-        let wave_before: Vec<usize> = wave_caches.iter().map(|cache| cache.pos).collect();
-        let serial_result = {
-            let _wave_env = EnvVarRestore::set("MEMRA_PP_WAVE", "0");
-            let mut refs: Vec<&mut Cache> = serial_caches.iter_mut().collect();
-            model.decode_step_batch_sampled_lean_masked(e, &toks, &mut refs, &samp, &masks, false)
-        };
-        let (serial_rows, serial_next) = match serial_result {
-            Ok(result) => result,
-            Err(error) => {
-                println!(
-                    "pp wave sampled/masked FAIL [serial PP-{stages} B={b} step={step}]: {error}"
-                );
-                return Ok(1);
-            }
-        };
-        let wave_liveness_before = memra_engine::pp::pp_wave_snapshot();
-        let wave_result = {
-            let _wave_env = EnvVarRestore::set("MEMRA_PP_WAVE", "1");
-            let mut refs: Vec<&mut Cache> = wave_caches.iter_mut().collect();
-            model.decode_step_batch_sampled_lean_masked(e, &toks, &mut refs, &samp, &masks, false)
-        };
-        let (wave_rows, wave_next) = match wave_result {
-            Ok(result) => result,
-            Err(error) => {
-                println!(
-                    "pp wave sampled/masked FAIL [wave PP-{stages} B={b} step={step}]: {error}"
-                );
-                return Ok(1);
-            }
-        };
-        let wave_liveness_after = memra_engine::pp::pp_wave_snapshot();
-        let ticks = wave_liveness_after.0 - wave_liveness_before.0;
-        let cells = wave_liveness_after.1 - wave_liveness_before.1;
-        let overlaps = wave_liveness_after.2 - wave_liveness_before.2;
-        if ticks != 1 || cells < stages || overlaps == 0 {
-            println!(
-                "pp wave sampled/masked FAIL [wave PP-{stages} B={b} step={step}]: liveness ticks=+{ticks} cells=+{cells} overlaps=+{overlaps}"
-            );
-            semantic_bad += 1;
-        }
-        if serial_rows.len() != b
-            || wave_rows.len() != b
-            || serial_next.len() != b
-            || wave_next.len() != b
-        {
-            println!(
-                "pp wave sampled/masked FAIL [PP-{stages} B={b} step={step}]: result shape serial rows/tokens={}/{} wave rows/tokens={}/{}",
-                serial_rows.len(),
-                serial_next.len(),
-                wave_rows.len(),
-                wave_next.len()
-            );
-            return Ok(1);
-        }
-
-        for bi in 0..b {
-            // Indexed comparison is also the row-order gate: prompts, seeds, counters, masks,
-            // penalties, and cache depths are all row-distinct, so a wave concatenation reorder
-            // cannot hide behind equal metadata.
-            logits.check(step, bi, &wave_rows[bi], &serial_rows[bi]);
-            if serial_next[bi] != wave_next[bi] {
-                println!(
-                    "pp wave sampled/masked row {bi} step {step}: sampled token serial={:?} wave={:?} FAIL",
-                    serial_next[bi], wave_next[bi]
-                );
-                semantic_bad += 1;
-            }
-            match (&samp[bi], serial_next[bi], wave_next[bi]) {
-                (None, None, None) => {
-                    toks[bi] = argmax(&serial_rows[bi]) as u32;
-                }
-                (None, _, _) => {
-                    println!(
-                        "pp wave sampled/masked row {bi} step {step}: unsampled row returned a device token FAIL"
-                    );
-                    semantic_bad += 1;
-                    toks[bi] = argmax(&serial_rows[bi]) as u32;
-                }
-                (Some(_), Some(serial_token), Some(wave_token)) => {
-                    if let Some(meta) = &samp[bi]
-                        && meta.penalty.is_none()
-                        && (meta.top_k != 0 || meta.top_p < 1.0 || meta.min_p > 0.0)
-                        && (!filter_survivor_ok(&serial_rows[bi], serial_token as usize, meta)
-                            || !filter_survivor_ok(&wave_rows[bi], wave_token as usize, meta))
-                    {
-                        println!(
-                            "pp wave sampled/masked row {bi} step {step}: filtered draw escaped its top-k/top-p/min-p survivor set FAIL"
-                        );
-                        semantic_bad += 1;
-                    }
-                    if let Some(words) = &mask_hosts[bi] {
-                        let allows = |token: u32| {
-                            let token = token as usize;
-                            token < n_vocab && words[token / 32] & (1u32 << (token % 32)) != 0
-                        };
-                        if !allows(serial_token) || !allows(wave_token) {
-                            println!(
-                                "pp wave sampled/masked row {bi} step {step}: grammar emitted disallowed token serial={serial_token} wave={wave_token} FAIL"
-                            );
-                            semantic_bad += 1;
-                        }
-                    }
-                    // Replay the serial stream into both cache herds. A sampled-id mismatch is
-                    // already recorded above; keeping future inputs equal localizes later steps.
-                    toks[bi] = serial_token;
-                }
-                (Some(_), _, _) => {
-                    println!(
-                        "pp wave sampled/masked row {bi} step {step}: sampled row omitted a device token (serial={:?}, wave={:?}) FAIL",
-                        serial_next[bi], wave_next[bi]
-                    );
-                    semantic_bad += 1;
-                    toks[bi] = argmax(&serial_rows[bi]) as u32;
-                }
-            }
-
-            let expected_serial = serial_before[bi] + 1;
-            let expected_wave = wave_before[bi] + 1;
-            if serial_caches[bi].pos != expected_serial
-                || wave_caches[bi].pos != expected_wave
-                || serial_caches[bi].pos != wave_caches[bi].pos
-            {
-                println!(
-                    "pp wave sampled/masked row {bi} step {step}: cache pos serial={} (expected {expected_serial}) wave={} (expected {expected_wave}) FAIL",
-                    serial_caches[bi].pos, wave_caches[bi].pos
-                );
-                semantic_bad += 1;
-            }
-        }
-    }
-
-    let logit_bad = logits.verdict() != 0;
-    let failed = logit_bad || semantic_bad != 0;
-    println!(
-        "pp wave sampled/masked {} [serial-vs-wave PP-{stages} B={b} steps={n_s}]: pristine logits, sampled ids, cache positions, and original row order; greedy + vendor(.7/20/.8) + min-p + checked repeat/frequency/presence penalty + unsampled + per-row packed masks",
-        if failed { "FAIL" } else { "PASS" }
-    );
-    Ok(usize::from(failed))
 }
 
 /// THE BATCHED STAGE-SPLIT EXACTNESS GATE (`--mode pp`, pp2-batch 2026-08-06).
@@ -1527,10 +1157,7 @@ fn pp_battery(
     let rewrite_receipt_path = std::env::var_os("MEMRA_REWRITE_RECEIPT");
     let mut rewrite_reference = Vec::new();
     let mut rewrite_candidate = Vec::new();
-    let dual = stages == 2 && memra_engine::pp::dual_pp_on();
-    let wave = matches!(stages, 3 | 4)
-        && memra_engine::pp::pp_wave_on()
-            .map_err(|reason| -> Box<dyn std::error::Error> { reason.into() })?;
+    let dual = memra_engine::pp::dual_pp_on();
     let exact_wave_cap = if model.uses_sliding_gated_moe_program() {
         8
     } else if model.decode_batch_exact16_ok() {
@@ -1649,19 +1276,14 @@ fn pp_battery(
     }
 
     for &b in batches {
-        let oracle_ranges = if (dual || wave) && b > exact_wave_cap {
-            let ranges = if dual {
-                let mid = memra_engine::pp::dual_pp_wave_mid(b)
-                    .expect("a width above the exact wave cap must have two waves");
-                vec![(0, mid), (mid, b)]
-            } else {
-                memra_engine::pp::pp_wave_ranges(b, stages)
-            };
+        let oracle_mid = if dual && b > exact_wave_cap {
+            let mid = memra_engine::pp::dual_pp_wave_mid(b)
+                .expect("a width above the exact wave cap must have two waves");
             assert!(
-                ranges.iter().all(|(lo, hi)| hi - lo <= exact_wave_cap),
-                "B={b} cannot fit exact oracle waves capped at {exact_wave_cap}: {ranges:?}"
+                mid <= exact_wave_cap && b - mid <= exact_wave_cap,
+                "B={b} cannot fit two exact oracle waves capped at {exact_wave_cap}"
             );
-            Some(ranges)
+            Some(mid)
         } else {
             None
         };
@@ -1695,13 +1317,7 @@ fn pp_battery(
             let mut toks: Vec<u32> = prompts.iter().map(|p| *p.last().unwrap()).collect();
             for _ in 0..steps {
                 inputs.push(toks.clone());
-                let rows = decode_batch_serial_waves(
-                    e,
-                    model,
-                    &toks,
-                    &mut caches,
-                    oracle_ranges.as_deref(),
-                )?;
+                let rows = decode_batch_serial_waves(e, model, &toks, &mut caches, oracle_mid)?;
                 for (bi, l) in rows.iter().enumerate() {
                     toks[bi] = argmax(l) as u32;
                 }
@@ -1712,18 +1328,8 @@ fn pp_battery(
         println!(
             "-- B={b}: reference recorded ({steps} steps x {b} rows x {n_vocab} f32, \
                   door OFF over the sharded placement{})",
-            oracle_ranges
-                .as_ref()
-                .map(|ranges| {
-                    format!(
-                        ", serial waves {}",
-                        ranges
-                            .iter()
-                            .map(|(lo, hi)| (hi - lo).to_string())
-                            .collect::<Vec<_>>()
-                            .join("+")
-                    )
-                })
+            oracle_mid
+                .map(|mid| format!(", serial waves {mid}+{}", b - mid))
                 .unwrap_or_default()
         );
 
@@ -1733,7 +1339,6 @@ fn pp_battery(
         }
         for rep in 0..reps.max(1) {
             let overlaps0 = memra_engine::pp::dual_pp_overlaps();
-            let wave0 = memra_engine::pp::pp_wave_snapshot();
             let mut chk = BitCheck::new(format!("split B={b} rep{rep}"));
             let mut caches: Vec<Cache> = Vec::with_capacity(b);
             for p in prompts.iter() {
@@ -1766,22 +1371,6 @@ fn pp_battery(
                     );
                 }
             }
-            if wave && b >= 2 {
-                let wave1 = memra_engine::pp::pp_wave_snapshot();
-                let ticks = wave1.0 - wave0.0;
-                let cells = wave1.1 - wave0.1;
-                let overlaps = wave1.2 - wave0.2;
-                if ticks == 0 || cells < stages || overlaps == 0 {
-                    println!(
-                        "pp wave liveness FAIL [B={b} rep{rep}]: ticks=+{ticks} cells=+{cells} overlaps=+{overlaps}"
-                    );
-                    fails += 1;
-                } else {
-                    println!(
-                        "pp wave liveness PASS [B={b} rep{rep}]: ticks=+{ticks} cells=+{cells} overlaps=+{overlaps}"
-                    );
-                }
-            }
         }
 
         // ---- ARM 2: UNSPLIT WALK over the SAME ppN cache placement (the localizer) ----
@@ -1802,13 +1391,7 @@ fn pp_battery(
             }
             let r = (|| -> Result<(), Box<dyn std::error::Error>> {
                 for (s, toks) in inputs.iter().enumerate() {
-                    let rows = decode_batch_serial_waves(
-                        e,
-                        model,
-                        toks,
-                        &mut caches,
-                        oracle_ranges.as_deref(),
-                    )?;
+                    let rows = decode_batch_serial_waves(e, model, toks, &mut caches, oracle_mid)?;
                     for (bi, l) in rows.iter().enumerate() {
                         chk.check(s, bi, l, &ref_logits[s][bi]);
                     }
@@ -1822,11 +1405,6 @@ fn pp_battery(
             r?;
             fails += chk.verdict();
         }
-    }
-
-    if wave {
-        fails +=
-            pp_wave_sampled_masked_arm(e, model, stages, steps, seed, plen, ctx, exact_wave_cap)?;
     }
 
     // ---- ARM 4: B=1 PER-STAGE FAST PATH vs the EAGER stage-split (decode_step_h_ppn) ----

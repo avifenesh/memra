@@ -180,17 +180,13 @@ pub fn n_soft_for_grid(gw: usize, gh: usize) -> usize {
 }
 
 /// Decode a base64 `data:` URI to raw image bytes (mirrors vision_pre::decode_data_uri;
-/// http(s) fetch stays off for SSRF). Carries the same per-image raw cap
-/// (`vision_pre::IMG_MAX_RAW_BYTES`), refused by encoded length before any allocation.
+/// http(s) fetch stays off for SSRF).
 pub fn gemma_decode_data_uri(uri: &str) -> Result<Vec<u8>, String> {
     let comma = uri.find(',').ok_or("data URI has no comma")?;
     let meta = &uri[..comma];
     let body = &uri[comma + 1..];
     if !meta.contains(";base64") {
         return Err("only base64 data URIs are supported".into());
-    }
-    if let Some(err) = crate::vision_pre::data_uri_payload_over_cap(body) {
-        return Err(err);
     }
     use base64::Engine as _;
     base64::engine::general_purpose::STANDARD

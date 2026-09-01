@@ -16,7 +16,7 @@ The numeric surfaces in `current-board.json` are the RTX 5090 Laptop
 `supported_models` section is intentionally numbers-free. There is no tracked
 RTX PRO 6000 pair serving board or Step semantic-mix microbenchmark cell.
 
-- The dual-PP flip result is a rented cloud 2x RTX PRO 6000 Server Edition **serving**
+- The dual-PP flip result is an hyperscaler 2x RTX PRO 6000 Server Edition **serving**
   receipt: Step-3.7 c=8 aggregate throughput moved from 133.553 tok/s on the
   serial rollback to 158.065 tok/s on the naked dual-active default
   (+18.354%, N=5/arm interleaved). Putting that value into a tracked 5090 or

@@ -19,7 +19,7 @@ unmerged commits, plus fa-fp8-pv-cpasync (unique kernel work).
 | sv-draft-head | d433c17c (Jul 12) | 1 / 1 | SUPERSEDED | deleted local + origin (PR #7 MERGED) |
 | feat/per-expert-quant | a62e8784 (Jul 10) | 48 / 48 | SUPERSEDED (44/48 patch-equivalent) | KEPT — checked out in codex worktree; report only |
 | lane/q6krp | 70cfdb22 (Jul 8) | 1 / 1 | ABANDONED-NEGATIVE (neutral) | tagged `archive/lane/q6krp`, deleted (local only) |
-| lane/cloudbox | a38f4df6 (Jul 4) | 9 / 9 | SUPERSEDED | tagged `archive/lane/cloudbox`, deleted (local only) |
+| lane/sbox | a38f4df6 (Jul 4) | 9 / 9 | SUPERSEDED | tagged `archive/lane/sbox`, deleted (local only) |
 | fa-fp8-pv-cpasync | a0555f3d (Jun 28) | 1 / 1 | SUPERSEDED | tagged `archive/fa-fp8-pv-cpasync`, deleted (local only) |
 
 No LIVE-VALUE branch found; nothing escalated as unbanked work.
@@ -96,19 +96,19 @@ instruction-ISSUE bound not addressing-bound; branch kept unmerged)", with the l
 banked in the same row. Per flags doctrine the jsonl row is the record, not dead code.
 Kernel code preserved at `archive/lane/q6krp`. Local-only; deleted.
 
-### lane/cloudbox — SUPERSEDED, archived + deleted
-9 commits: the July-4/5 cloud RTX 6000 decode campaign (A2 expert-grouped prefill,
+### lane/sbox — SUPERSEDED, archived + deleted
+9 commits: the July-4/5 Sbox RTX 6000 decode campaign (A2 expert-grouped prefill,
 staging-elision triple, stage-2 grouped decode, FA split-32 default, T=1 rows routing,
 shared-K negative). Supersession record on main: rig5090.jsonl row 70 (2026-07-05,
-"landed cloudbox-lane work on main: T=1 rows routing + split-32 default + pmin 0.15 +
+"landed Sbox-lane work on main: T=1 rows routing + split-32 default + pmin 0.15 +
 shared-K negative + NO_EVT defa…") plus the merged main lineage (expert-grouped/
-grouped-GEMM merges, e.g. 245ca2ef/0e949b43). The branch's 12 cloud-rtx6000.jsonl rows are
+grouped-GEMM merges, e.g. 245ca2ef/0e949b43). The branch's 12 sbox-rtx6000.jsonl rows are
 a subset of main's 39-row file except one (fa-split-32-default row) whose content is
 duplicated by main's row 11 (same ts/commit/change, minor wording drift) and by the
-rig5090.jsonl landing row. cloudbox remote-tracking refs (`cloudbox/lane/cloudbox` etc.) belong to the
-DEAD cloud host — unreachable for push deletes; harmless, prune with
-`git remote remove cloudbox` if/when the remote is retired (owner call, not taken here).
-Tagged `archive/lane/cloudbox`; local branch deleted.
+rig5090.jsonl landing row. Sbox remote-tracking refs (`sbox/lane/sbox` etc.) belong to the
+DEAD sbox host — unreachable for push deletes; harmless, prune with
+`git remote remove sbox` if/when the remote is retired (owner call, not taken here).
+Tagged `archive/lane/sbox`; local branch deleted.
 
 ### fa-fp8-pv-cpasync — SUPERSEDED, archived + deleted
 1 commit (Jun 28, pre-resurrection era): cp.async double-buffered FA + native sm_120
@@ -125,7 +125,7 @@ deleted.
 ## Tags created
 
 - `archive/kv-fp4` -> f8cda266 (pushed to origin — 12 commits incl. raw battery logs)
-- `archive/lane/cloudbox` -> a38f4df6 (local)
+- `archive/lane/sbox` -> a38f4df6 (local)
 - `archive/lane/q6krp` -> 70cfdb22 (local)
 - `archive/fa-fp8-pv-cpasync` -> a0555f3d (local)
 

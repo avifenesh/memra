@@ -139,8 +139,6 @@ fn one_kda_layer_plan() -> ModelPlan {
                 activation: ActivationPlan::Silu,
             }),
             residual: ResidualTopology::Serial,
-            ple: None,
-            sparse_overlay: None,
             state: StatePlan::Recurrent {
                 conv_width: CONV_WIDTH as u32,
                 conv_kernel: CONV_KERNEL,
@@ -151,7 +149,6 @@ fn one_kda_layer_plan() -> ModelPlan {
         logits: Vec::new(),
         mtp_blocks: Vec::new(),
         drafter: None,
-        exit_mixer: None,
         draft_source: DraftSourcePlan::Embedded,
         sampling_defaults: None,
         partition_boundaries: Vec::new(),

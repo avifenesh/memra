@@ -1,0 +1,146 @@
+2026-08-29T01:17:41Z
+=== 0. stop any running server first: the fixture gates need the cards ===
+0, 0 MiB
+1, 0 MiB
+2, 0 MiB
+3, 0 MiB
+=== 0a. fixture gate, stages=4 cross-device, MONOLITHIC ppN path (one chunk) ===
+[phase] reference A: door OFF, step-by-step decode over the whole sequence
+[phase] reference C: door OFF, stateless prefill (forward / forward_last)
+[phase] reference B: door OFF, prime + decode continuation
+[phase] arm 1: door ON, decode-serial split walk
+[decode-serial] greedy tape MATCH: 14 tokens, fnv1a=0xa7972b1e01ff1f76
+[phase] arm 2: door ON, prime-twin split walk
+[prime-twin] greedy tape MATCH: 8 tokens, fnv1a=0x50ad4c8f01bf7247
+[phase] arm 3: door ON, prefill-twin split walk
+glm5-hyper-ppn-gate NOTE:/root/lane-1mdemo-vast-20260829/serve-1m.sh: line 80: syntax error near unexpected token `('
+/root/lane-1mdemo-vast-20260829/serve-1m.sh: line 80: `echo "--- prefix-cache line (MUST say off / budget 0) ---"'
+ned arm.
+glm5-hyper-ppn gate PASS [decode-serial]: 14 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,2,3 splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prime-twin]: 9 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,2,3 splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prefill-twin]: 2 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,2,3 splits=default(even) shard=per-stage)
+
+=== 0b. fixture gate, stages=4 cross-device, CHUNK LOOP engaged (chunk=2 over P=6) ===
+[phase] reference A: door OFF, step-by-step decode over the whole sequence
+[phase] reference C: door OFF, stateless prefill (forward / forward_last)
+[phase] reference B: door OFF, prime + decode continuation
+[phase] arm 1: door ON, decode-serial split walk
+[decode-serial] greedy tape MATCH: 14 tokens, fnv1a=0xa7972b1e01ff1f76
+[phase] arm 2: door ON, prime-twin split walk
+[prime-twin] greedy tape MATCH: 8 tokens, fnv1a=0x50ad4c8f01bf7247
+[phase] arm 3: door ON, prefill-twin split walk
+glm5-hyper-ppn-gate NOTE: pipelined arm skipped — `decode_step_h_ppn_deferred` calls refuse_hyper(), so deferred readback is not wired for the mHC residual. This gate covers the serial split walk only; do not cite it for the pipelined arm.
+glm5-hyper-ppn gate PASS [decode-serial]: 14 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,2,3 splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prime-twin]: 9 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,2,3 splits=default(even) shard=per-stage)
+glm5-hyper-ppn gate PASS [prefill-twin]: 2 comparisons BIT-IDENTICAL vs the unsplit hc walk (n_vocab=32, P=6 N=8, fence=[0, 1, 2, 3, 4]; stages=4 streams=per-stage overlap=1(double-buffered) devices=0,1,2,3 splits=default(even) shard=per-stage)
+
+=== 1. BOOT PP4-1M (chunked-ppN binary) ===
+LOAD PP4-1M-C ready after ~198s  binary=/root/wt-1mdemo/target/release/memra-server
+  pid=29163 exe=/root/wt-1mdemo/target/release/memra-server sha=7d146c460f25da3e
+--- prefix-cache line (MUST say off / budget 0) ---
+--- caps line ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / residency lines ---
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+--- vram after load ---
+0, 6421 MiB
+1, 5845 MiB
+2, 5845 MiB
+3, 8853 MiB
+vramwatch pid 29922
+
+=== identity rung: 6k greedy, PP4-chunked vs banked door-off-chunked ===
+vramwatch pid 29922 -> /root/lane-1mdemo-vast-20260829/phase3-vram.csv every 20s
+[C-6k] mode=greedy status=200 prompt_tokens=6466 completion_tokens=64
+  prefill=45.202s (143.05 tok/s)  decode=24.79 tok/s  wall=47.8s  chunks=63
+  reasoning[:200]: ''
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace* (translated by Aylmer and Louise Maude), which follows aristocratic Russian families through the Napoleonic Wars. A central theme is the tension between private life and sweeping historical forces—personal ambitions, romances, and social rituals (as in"
+6k rung: doorOFF-chunked vs PP4-chunked byte-identical = True
+
+=== R16K ===
+2026-08-29T01:23:30Z
+[R16K] mode=greedy status=200 prompt_tokens=15766 completion_tokens=64
+  prefill=91.303s (172.68 tok/s)  decode=24.47 tok/s  wall=93.9s  chunks=63
+  reasoning[:200]: "The corpus contains only War and Peace. The user asks to name two works it contains — but it's just one work. I should note that."
+  output[:400]: "The corpus you've provided actually contains only one work: **War and Peace** by Leo Tolstoy (translated by Aylmer and Louise Maude), so"
+
+=== R131K ===
+2026-08-29T01:25:04Z
+[R131K] mode=greedy status=200 prompt_tokens=128566 completion_tokens=116
+  prefill=749.729s (171.48 tok/s)  decode=22.82 tok/s  wall=754.8s  chunks=114
+  reasoning[:200]: ''
+  output[:400]: 'The corpus contains Leo Tolstoy\'s *War and Peace* (the entire text shown, translated by Aylmer and Louise Maude). A second work referenced within it is Rousseau\'s *The Social Contract* ("Rousseau\'s Contrat Social"), mentioned by the vicomte during the salon debate. A theme they share is the tension between individual freedom and social/political order—Pierre\'s passionate defense of revolutionary i'
+2026-08-29T01:37:39Z
+0, 81049 MiB
+1, 81401 MiB
+2, 81657 MiB
+3, 84505 MiB
+
+=== R262K ===
+2026-08-29T01:37:39Z
+[R262K] mode=greedy status=200 prompt_tokens=257775 completion_tokens=128
+  prefill=1519.864s (169.6 tok/s)  decode=21.13 tok/s  wall=1525.9s  chunks=128
+  reasoning[:200]: 'The user wants me to identify two works from the provided text and one shared theme, in a short paragraph.\n\nThe text is clearly from Leo Tolstoy\'s "War and Peace" (translated by Aylmer and Louise Maud'
+  output[:400]: ''
+2026-08-29T02:03:05Z
+0, 82297 MiB
+1, 82937 MiB
+2, 83225 MiB
+3, 88665 MiB
+
+=== R1M greedy (chars=4264657 from R262K ratio) ===
+2026-08-29T02:03:05Z
+[R1M] mode=greedy status=200 prompt_tokens=None completion_tokens=None
+  prefill=Nones (None tok/s)  decode=None tok/s  wall=2.1s  chunks=0
+  ERROR: prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  reasoning[:200]: ''
+  output[:400]: ''
+2026-08-29T02:03:07Z
+R1M failed; ONE retry at chars=4200687
+2026-08-29T02:03:07Z
+[R1M-retry] mode=greedy status=200 prompt_tokens=None completion_tokens=None
+  prefill=Nones (None tok/s)  decode=None tok/s  wall=1.8s  chunks=0
+  ERROR: prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  reasoning[:200]: ''
+  output[:400]: ''
+2026-08-29T02:03:09Z
+0, 83321 MiB
+1, 86233 MiB
+2, 86425 MiB
+3, 97241 MiB
+--- serve log tail after R1M ---
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 15766 prompt tokens; model zai/glm-5.3-flash)
+[moe-fused-epi] snapshot dispatches=939120
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 128566 prompt tokens; model zai/glm-5.3-flash)
+[moe-fused-epi] snapshot dispatches=6343722
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 257775 prompt tokens; model zai/glm-5.3-flash)
+[moe-fused-epi] snapshot dispatches=17175648
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 1030761 prompt tokens; model zai/glm-5.3-flash)
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[moe-fused-epi] snapshot dispatches=17175648
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 1014819 prompt tokens; model zai/glm-5.3-flash)
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[moe-fused-epi] snapshot dispatches=17175648
+
+=== R1M vendor-default sampled twin ===
+2026-08-29T02:03:09Z
+[R1M-V] mode=vendor status=200 prompt_tokens=None completion_tokens=None
+  prefill=Nones (None tok/s)  decode=None tok/s  wall=1.8s  chunks=0
+  ERROR: prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  reasoning[:200]: ''
+  output[:400]: ''
+2026-08-29T02:03:11Z
+0, 83321 MiB
+1, 86233 MiB
+2, 86425 MiB
+3, 97241 MiB
+vramwatch 29922 stopped
+--- per-card VRAM peak over phase 3 ---
+  gpu0: peak 83321 MiB
+  gpu1: peak 86233 MiB
+  gpu2: peak 86425 MiB
+  gpu3: peak 97241 MiB
+--- OOM/panic/error census of the serve log ---
+3
+2026-08-29T02:03:11Z
+PHASE3DONE

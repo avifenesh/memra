@@ -31,8 +31,8 @@ Legend:
   PIX  = Connection traversing at most a single PCIe bridge
   NV#  = Connection traversing a bonded set of # NVLinks
 Filesystem                      Size  Used Avail Use% Mounted on
-/dev/mapper/vg.01-lv_ephemeral  3.5T  149G  3.1T   5% /opt/scratch/nvme
-/dev/mapper/vg.01-lv_ephemeral  3.5T  149G  3.1T   5% /opt/scratch/nvme
+/dev/mapper/vg.01-lv_ephemeral  3.5T  149G  3.1T   5% /opt/dl-image/nvme
+/dev/mapper/vg.01-lv_ephemeral  3.5T  149G  3.1T   5% /opt/dl-image/nvme
 serve_shape=one target-only plain server per physical GPU; both active
 draft_shape=external drafters are exactness-gate inputs, not loaded by cache serving
 MEMRA_SERVE_SPEC=0 (cross-request prefix cache excludes spec sessions)

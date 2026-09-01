@@ -1,9 +1,0 @@
-[server] starting; models config = [("gate", "/data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
-[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
-[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
-[worker] Engine ready (device=0, MEMRA_FAST=true)
-[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
-[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
-[worker] loading model "gate" <- /data/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
-[mtp-skip] MEMRA_MTP_SKIP=1: skipping 1 embedded MTP/NextN block(s) blk.64..=blk.64 (~227 MiB of weights not loaded); MTP spec decode is unavailable for this model (dspark/DFlash2 drafting keeps its trimmed head via the MEMRA_FRSPEC_TRIM stub)
-[server] FATAL: worker init failed: load gate: MEMRA_MTP_SKIP=1 with MEMRA_FRSPEC_TRIM=/tmp/mtp-skip-gate/empty-ranks.txt: the rank artifact yields an EMPTY d2t list, so no stub draft head can be built; fix the artifact or unset MEMRA_MTP_SKIP

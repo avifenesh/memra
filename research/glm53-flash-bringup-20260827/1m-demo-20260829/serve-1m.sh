@@ -30,6 +30,10 @@ stop() {
     exe=$(readlink -f /proc/$pid/exe 2>/dev/null) || continue
     case "$exe" in
       */memra-server) ;;
+      # a rebuild unlinks the running binary and readlink reports "... (deleted)";
+      # that process IS our server and must still be stopped (learned 2026-08-29:
+      # the skip left a 90 GB-holding stale server alive under a fresh boot)
+      */memra-server\ \(deleted\)) ;;
       *) echo "  skip pid $pid: exe=$exe is not a memra-server"; continue ;;
     esac
     echo "  stopping pid $pid exe=$exe"

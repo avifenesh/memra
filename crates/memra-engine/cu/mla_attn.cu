@@ -255,97 +255,6 @@ extern "C" int memra_mla_decompress_v_f32(const float* o_lat, const float* wv_b,
     return 0;
 }
 
-// ---------------------------------------------------- decode-split twins (lane/glm5-decode-diet)
-//
-// PURE LAUNCH-GEOMETRY RESTRUCTURE, BIT-GATED (lever 4 of the decode diet, 2026-08-31). At
-// decode widths the absorb/decompress launchers above put t_q*n_head blocks on the grid — 64
-// blocks at t=1 on the glm5 geometry, single-digit-percent occupancy on a ~170-SM card, and
-// the census priced the pair at ~211 us/layer (104 absorb + 107 decompress; weights are only
-// ~0.7 ms of the whole 4.76 ms family). The twins below split each (token, head) block's
-// OUTPUT RANGE across `split` blocks: every output element is still ONE thread's serial
-// ascending-index dot — the same expression, the same order, the same bits — only WHICH block
-// computes it changes, so bit identity to the unsplit kernels is by construction and asserted
-// bytewise by crates/memra-engine/tests/mla_decode_split_gpu.rs (including split values that
-// do not divide the output width). The smem stage is the same loads with the same values.
-// Host seam MEMRA_MLA_DECODE_SPLIT (default OFF, read per call in mla_ffi.rs).
-
-extern "C" __global__ void memra_mla_absorb_q_split_kernel(const float* __restrict__ q_nope,
-                                                           const float* __restrict__ wk_b,
-                                                           float* __restrict__ q_lat,
-                                                           int n_head, int d_nope, int kv_rank,
-                                                           int split) {
-    extern __shared__ float smem[];
-    int blk = blockIdx.x / split;   // i * n_head + h
-    int chunk = blockIdx.x % split; // this block's output slice
-    int h = blk % n_head;
-    const float* qn = q_nope + (long)blk * d_nope;
-    for (int p = threadIdx.x; p < d_nope; p += blockDim.x) smem[p] = qn[p];
-    __syncthreads();
-    const float* w = wk_b + (long)h * kv_rank * d_nope;
-    int per = (kv_rank + split - 1) / split;
-    int lo = chunk * per;
-    int hi = lo + per < kv_rank ? lo + per : kv_rank;
-    for (int l = lo + threadIdx.x; l < hi; l += blockDim.x) {
-        const float* row = w + (long)l * d_nope;
-        float acc = 0.0f;
-        for (int p = 0; p < d_nope; ++p) acc += smem[p] * row[p];
-        q_lat[(long)blk * kv_rank + l] = acc;
-    }
-}
-
-extern "C" int memra_mla_absorb_q_split_f32(const float* q_nope, const float* wk_b,
-                                            float* q_lat, int t_q, int n_head, int d_nope,
-                                            int kv_rank, int split, void* stream_v) {
-    if (split < 1 || split > kv_rank) return 40003;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    long blocks = (long)t_q * n_head * split;
-    if (blocks == 0) return 0;
-    memra_mla_absorb_q_split_kernel<<<(unsigned)blocks, MLA_THREADS, d_nope * sizeof(float),
-                                      stream>>>(q_nope, wk_b, q_lat, n_head, d_nope, kv_rank,
-                                                split);
-    MLA_ERR();
-    return 0;
-}
-
-extern "C" __global__ void memra_mla_decompress_v_split_kernel(const float* __restrict__ o_lat,
-                                                               const float* __restrict__ wv_b,
-                                                               float* __restrict__ out,
-                                                               int n_head, int d_v, int kv_rank,
-                                                               int split) {
-    extern __shared__ float smem[];
-    int blk = blockIdx.x / split;
-    int chunk = blockIdx.x % split;
-    int h = blk % n_head;
-    const float* ol = o_lat + (long)blk * kv_rank;
-    for (int l = threadIdx.x; l < kv_rank; l += blockDim.x) smem[l] = ol[l];
-    __syncthreads();
-    const float* w = wv_b + (long)h * d_v * kv_rank;
-    int per = (d_v + split - 1) / split;
-    int lo = chunk * per;
-    int hi = lo + per < d_v ? lo + per : d_v;
-    for (int j = lo + threadIdx.x; j < hi; j += blockDim.x) {
-        const float* row = w + (long)j * kv_rank;
-        float acc = 0.0f;
-        for (int l = 0; l < kv_rank; ++l) acc += row[l] * smem[l];
-        out[(long)blk * d_v + j] = acc;
-    }
-}
-
-extern "C" int memra_mla_decompress_v_split_f32(const float* o_lat, const float* wv_b,
-                                                float* out, int t_q, int n_head, int d_v,
-                                                int kv_rank, int split, void* stream_v) {
-    if (kv_rank > MLA_MAX_RANK) return 40002;
-    if (split < 1 || split > d_v) return 40003;
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    long blocks = (long)t_q * n_head * split;
-    if (blocks == 0) return 0;
-    memra_mla_decompress_v_split_kernel<<<(unsigned)blocks, MLA_THREADS,
-                                          kv_rank * sizeof(float), stream>>>(
-        o_lat, wv_b, out, n_head, d_v, kv_rank, split);
-    MLA_ERR();
-    return 0;
-}
-
 // ------------------------------------------------------------------ absorbed MQA attention
 
 // One block per (query i, head h). Streams the latent cache one timestep per warp per tile, with an
@@ -683,7 +592,7 @@ extern "C" int memra_mla_kpool_score_ref_f32(const float* q, const float* pool_k
 //   * the head mix is 32 serial adds executed by thread 0 with 31 threads parked;
 //   * the grid is `t_q * n_pools` = 134M blocks of 32 threads, so per-block launch and
 //     __syncthreads overhead is paid 134M times for 4096 FMAs of real work each.
-// MEASURED (2x RTX PRO 6000 Blackwell Server, release, kpool-bench-frankfurt.txt): 1294.5 ms
+// MEASURED (2x RTX PRO 6000 Blackwell Server, release, kpool-bench-Frankfurt.txt): 1294.5 ms
 // per MLA layer for one 512-token prefill chunk at 1M context — ~425 GFLOP/s of a card that
 // carries ~100 TFLOP/s of f32 FMA. x12 MLA layers that is 15.5 s per chunk, and scoring is the
 // dominant stage at EVERY shape on the ladder.
@@ -866,7 +775,7 @@ static int memra_kpool_score_launch(const float* q, const float* pool_keys, cons
 // Thresholds sit at the tile heights so a shape never runs a tile it cannot half-fill.
 //
 // SMALL-TILE CROSSOVER, measured (2x RTX PRO 6000 Blackwell Server, release, 11 trials,
-// research/glm53-flash-bringup-20260827/kpool-bench-frankfurt-tiled.txt): at t_q=1 the
+// research/glm53-flash-bringup-20260827/kpool-bench-Frankfurt-tiled.txt): at t_q=1 the
 // tiled path is SLOWER than the reference kernel below ~16k pools -- 0.140 vs 0.021 ms at
 // 1024 pools (6.5x), 0.141 vs 0.052 ms at 4096 (2.7x) -- and only wins from ~16k pools up
 // (0.151 vs 0.171, then 1.560 vs 2.537 at 262144). The tile's fixed setup dominates when

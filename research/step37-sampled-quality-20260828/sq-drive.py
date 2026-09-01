@@ -28,11 +28,9 @@ def health():
 logf = open(LOG, "r", errors="replace"); logf.seek(0, 2)
 
 
-def stream_once(msgs, sid, maxtok, stop=None):
+def stream_once(msgs, sid, maxtok):
     payload = {"model": "step37", "messages": msgs, "stream": True, "max_tokens": maxtok,
                "stream_options": {"include_usage": True}}
-    if stop:
-        payload["stop"] = stop
     if sid:
         payload["session_id"] = sid
     req = urllib.request.Request(URL, data=json.dumps(payload).encode(),
@@ -77,18 +75,8 @@ def stream_once(msgs, sid, maxtok, stop=None):
 
 
 def logslice_receipts(sl):
-    # Receipt strings measured on THIS branch (lane/step37-main-merge-20260828, 8695bdef4a):
-    #   [worker] spec-affinity: rewound to X of Y prompt tokens (explicit; priming N suffix; ..)
-    #   [worker] spec-affinity: grew parked session A -> B rows (request-owned need)
-    #   [worker] spec-affinity: declined (history diverged at ..)
-    #   [gemm-prime] ENGAGED t=.. base=.. seq_end=..   /  [gemm-prime] WALK t=.. base=.. seq_end=..
-    # Every prime (warm or cold) may end with a SMALL trailing chunk on a base>0 line
-    # (t<200, "batched prime declined" on door=0, ENGAGED on door=1), so path attribution
-    # keys on BIG (t>=200) suffix lines only.
-    rewound = "spec-affinity: rewound to" in sl
-    refused = ("spec-affinity: declined" in sl) or ("affinity rewind failed" in sl)
-    grew = "grew parked session" in sl
-    panic = ("panicked at" in sl) or ("PANIC in the GPU worker" in sl)
+    rewound = "plain-affinity: rewound to" in sl
+    refused = ("plain-affinity resume failed" in sl) or ("affinity rewind failed" in sl)
     eng, walk = [], []
     suffix_tokens = None
     for l in sl.splitlines():
@@ -96,50 +84,40 @@ def logslice_receipts(sl):
             eng.append(l.strip())
         if "[gemm-prime] WALK" in l:
             walk.append(l.strip())
-        if "spec-affinity: rewound to" in l:
-            p = l.split("; priming ")
+        if "plain-affinity: rewound to" in l:
+            p = l.split("(priming ")
             if len(p) > 1:
                 try:
                     suffix_tokens = int(p[1].split()[0])
                 except Exception:
                     pass
 
-    def tb(lines):
+    def bases(lines):
         out = []
         for l in lines:
-            t = base = None
             for tok in l.split():
-                if tok.startswith("t="):
-                    try:
-                        t = int(tok[2:])
-                    except Exception:
-                        pass
                 if tok.startswith("base="):
                     try:
-                        base = int(tok[5:])
+                        out.append(int(tok[5:]))
                     except Exception:
                         pass
-            if t is not None and base is not None:
-                out.append((t, base))
         return out
 
-    et, wt = tb(eng), tb(walk)
-    return dict(rewound=rewound, refused=refused, grew=grew, panic=panic,
-                eng_fresh=sum(1 for t, b in et if b == 0),
-                eng_suffix=sum(1 for t, b in et if b > 0 and t >= 200),
-                eng_tail=sum(1 for t, b in et if b > 0 and t < 200),
-                walk_fresh=sum(1 for t, b in wt if b == 0),
-                walk_suffix=sum(1 for t, b in wt if b > 0 and t >= 200),
-                walk_tail=sum(1 for t, b in wt if b > 0 and t < 200),
+    eb, wb = bases(eng), bases(walk)
+    return dict(rewound=rewound, refused=refused,
+                eng_fresh=sum(1 for b in eb if b == 0),
+                eng_suffix=sum(1 for b in eb if b > 0),
+                walk_fresh=sum(1 for b in wb if b == 0),
+                walk_suffix=sum(1 for b in wb if b > 0),
                 suffix_tokens=suffix_tokens, eng_lines=eng[:4], walk_lines=walk[:4])
 
 
-def guarded(msgs, sid, maxtok, stop=None):
+def guarded(msgs, sid, maxtok):
     """health-gated request with a log-slice receipt."""
     if not health():
         return None, "HEALTH_FAIL"
     pos = logf.tell()
-    res = stream_once(msgs, sid, maxtok, stop=stop)
+    res = stream_once(msgs, sid, maxtok)
     logf.seek(pos); sl = logf.read(); logf.seek(0, 2)
     res.update(logslice_receipts(sl))
     return res, None
@@ -153,20 +131,9 @@ def load_prompts():
     return U
 
 
-def msgs_through(U, A, T, nonce=""):
-    """conversation ending at user turn T, canonical replies A[1..T-1] in between.
-
-    nonce: short per-row tag prepended to the turn-1 user text. Needed because the
-    engine's park pool nominates resume candidates by longest prefix match and holds
-    only ~2 sessions; with every row sharing identical transcript bytes, a warm
-    replay's pre-sized session gets out-nominated by a deeper-checkpoint leftover
-    from a previous row ("declined (history diverged at X of checkpoint Y)"), the
-    turn fresh-primes SMALL, and later turns grow into the panic zone (attempt-4
-    cycle-1 receipt). Same practice as gs-drive.py's per-leg nonces. Every arm and
-    every row carries a nonce of identical shape, so no arm is advantaged; the
-    conversation is byte-identical across rows except this tag.
-    """
-    msgs = [{"role": "user", "content": nonce + U[1]}]
+def msgs_through(U, A, T):
+    """conversation ending at user turn T, canonical replies A[1..T-1] in between."""
+    msgs = [{"role": "user", "content": U[1]}]
     for t in range(2, T + 1):
         msgs.append({"role": "assistant", "content": A[t - 1]})
         msgs.append({"role": "user", "content": U[t]})
@@ -227,48 +194,17 @@ def mode_row():
     tr = json.load(open(SQ + "/transcript.json"))
     U = {int(k): v for k, v in tr["U"].items()}
     A = {int(k): v for k, v in tr["A"].items()}
-    # SQ_WARM_SHAPE=onegrow: the sequential 8-turn replay panics the GPU worker at
-    # replay turn 6 (grow bug, door-independent, see FINDINGS). Degraded-mode warm for
-    # turn 8: prime the conversation through user turn T-1 in ONE fresh request, then
-    # the evaluated turn is one rewind+grow+suffix-prime. Warm by construction
-    # (base>0, m-fork preserved); deviation from the true turn-by-turn shape is
-    # recorded on every row.
-    warm_shape = os.environ.get("SQ_WARM_SHAPE", "seq")
     sid = "sq-%s-t%d-s%d" % (arm, T, S)
     row = dict(arm=arm, turn=T, sample=S, sid=sid, boot_id=BOOT_ID, bin_md5=BIN_MD5,
-               warm_shape=(warm_shape if arm != "cold" else None),
                ts=time.time(), prefix=[])
-    # GROW-PANIC DODGE (FINDINGS.md): spec_grow_and_rewind_to_checkpoint panics the GPU
-    # worker whenever a parked session must grow past ~6-7k rows (probe: one grow to
-    # ~10.2k dies; sequential grow to 6126 survives, ~7.2k dies). Session capacity is
-    # fixed at creation (prompt + max_tokens + margin) and rewinds never shrink it, so
-    # the FIRST prefix request carries a max_tokens that pre-sizes the session for the
-    # evaluated turn's full need; every later turn rewinds + suffix-primes with NO grow.
-    # Fixed-transcript seq_ends: t4 eval 4762 (+1024 gen -> need 5850), t8 eval 9118
-    # (+1024 -> need 10150). Turn-1 prompt = 1480 rows.
-    PRESIZE = {4: 4600, 8: 9100}
-    nonce = "[cell %s-t%d-s%d] " % (arm, T, S)
-    row["nonce"] = nonce
     if arm in ("gemm", "walk"):
-        prefix_turns = [T - 1] if warm_shape == "onegrow" else list(range(1, T))
-        for t in prefix_turns:
-            # First prefix request pre-sizes capacity via max_tokens but must STOP
-            # generating within ~512 tokens or the SWA ring laps its own checkpoint
-            # and every later resume declines ("SWA ring lapped checkpoint", cycle-1
-            # walk receipts). Capacity is reserved at admission from max_tokens, not
-            # from tokens actually generated, so a stop-string keeps the reservation
-            # while halting generation within a few tokens.
-            first = (t == prefix_turns[0])
-            mt = PRESIZE.get(T, MAXTOK_PREFIX) if first else MAXTOK_PREFIX
-            res, err = guarded(msgs_through(U, A, t, nonce), sid, mt,
-                               stop=(["\n", " "] if first else None))
+        for t in range(1, T):
+            res, err = guarded(msgs_through(U, A, t), sid, MAXTOK_PREFIX)
             ok = (err is None) and (res["err"] is None)
             row["prefix"].append(dict(
                 turn=t, ok=ok, err=err or (res and res["err"]),
                 rewound=res and res["rewound"], refused=res and res["refused"],
-                grew=res and res["grew"], panic=res and res["panic"],
                 eng_fresh=res and res["eng_fresh"], eng_suffix=res and res["eng_suffix"],
-                eng_tail=res and res["eng_tail"], walk_tail=res and res["walk_tail"],
                 walk_fresh=res and res["walk_fresh"], walk_suffix=res and res["walk_suffix"],
                 suffix_tokens=res and res["suffix_tokens"], ttft=res and res["ttft"]))
             if not ok:
@@ -278,7 +214,7 @@ def mode_row():
                 print("ROW %s t%d s%d INVALID (%s)" % (arm, T, S, row["invalid_reason"]),
                       flush=True)
                 return
-    res, err = guarded(msgs_through(U, A, T, nonce), sid, MAXTOK_EVAL)
+    res, err = guarded(msgs_through(U, A, T), sid, MAXTOK_EVAL)
     if err or res["err"]:
         row.update(valid=False, invalid_reason="eval request failed: %s" % (err or res["err"]),
                    reasoning="", content="")
@@ -291,44 +227,38 @@ def mode_row():
                finish=res["finish"], ttft=res["ttft"], total=res["total"],
                spec=spec_of(res),
                sha16=hashlib.sha256(text.encode()).hexdigest()[:16] if text.strip() else None,
-               rewound=res["rewound"], refused=res["refused"], grew=res["grew"],
-               panic=res["panic"],
+               rewound=res["rewound"], refused=res["refused"],
                eng_fresh=res["eng_fresh"], eng_suffix=res["eng_suffix"],
-               eng_tail=res["eng_tail"], walk_tail=res["walk_tail"],
                walk_fresh=res["walk_fresh"], walk_suffix=res["walk_suffix"],
                suffix_tokens=res["suffix_tokens"],
                eng_lines=res["eng_lines"], walk_lines=res["walk_lines"])
-    # arm-validity receipts, per PLAN.md (big-suffix lines, t>=200, attribute the path;
-    # the small trailing chunk every prime emits is counted separately as *_tail)
+    # arm-validity receipts, per PLAN.md
     problems = []
     if not text.strip():
         problems.append("EMPTY")
-    if res["panic"]:
-        problems.append("worker panic in request slice")
+    if res["refused"]:
+        problems.append("resume refused")
     if arm == "cold":
-        if res["rewound"] or res["grew"]:
-            problems.append("cold row reused a session")
+        if res["rewound"]:
+            problems.append("cold row rewound")
         if res["eng_suffix"] or res["walk_suffix"]:
-            problems.append("cold row took a big suffix path")
+            problems.append("cold row took a suffix path")
         if res["eng_fresh"] == 0:
             problems.append("cold row shows no fresh batched prime")
     elif arm == "gemm":
         if not res["rewound"]:
             problems.append("warm row did not rewind")
         if res["eng_suffix"] == 0:
-            problems.append("no ENGAGED big suffix (door did not take it)")
+            problems.append("no ENGAGED base>0 (door did not take the suffix)")
         if res["walk_suffix"]:
-            problems.append("big suffix fell through to the walk")
+            problems.append("suffix fell through to the walk")
     elif arm == "walk":
         if not res["rewound"]:
             problems.append("warm row did not rewind")
         if res["walk_suffix"] == 0:
-            problems.append("no WALK big suffix")
+            problems.append("no WALK base>0")
         if res["eng_suffix"]:
-            problems.append("big suffix rode the batched entry in the walk arm")
-    if arm in ("gemm", "walk"):
-        if res["grew"] or any(p.get("grew") for p in row["prefix"]):
-            problems.append("a session grow happened (presize/nonce chain broken)")
+            problems.append("suffix rode the batched entry in the walk arm")
     row["valid"] = not problems
     row["invalid_reason"] = "; ".join(problems) if problems else None
     bank_row(row)

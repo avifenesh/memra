@@ -462,7 +462,6 @@ So:
   arch guard, dispatch flag, and FFI binding (derived from code 2026-08-21). Update the affected
   rows in the same change that touches a `.cu` file or FFI shim. FLAGS.md stays the flag catalog;
   MODELS.md the model board.
-- **Doc router**: read `docs/ROUTER.md` FIRST when hunting where a question lives. One line per question shape, routing to the owning registry doc and to the darklanes corpus below; addresses only, no content.
 - **Cross-repo lesson corpus (machine-local)** — distilled engine lessons, kill criteria,
   per-model quirk cards, and measurement laws are curated in the private repo at
   `~/projects/darklanes/agent-knowledge/gpu/` (index: `gpu/README.md`). Read it before designing

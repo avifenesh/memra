@@ -1,0 +1,16 @@
+[B16K] mode=greedy status=200 prompt_tokens=15766 completion_tokens=32
+  prefill=Nones (None tok/s)  decode=None tok/s  wall=92.6s  chunks=0
+  output[:400]: ''
+[B32K] mode=greedy status=200 prompt_tokens=None completion_tokens=None
+  prefill=Nones (None tok/s)  decode=None tok/s  wall=0.2s  chunks=0
+  ERROR: prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  output[:400]: ''
+[B64K] mode=greedy status=200 prompt_tokens=None completion_tokens=None
+  prefill=Nones (None tok/s)  decode=None tok/s  wall=3.5s  chunks=0
+  ERROR: prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  output[:400]: ''
+[B66K] mode=greedy status=200 prompt_tokens=None completion_tokens=None
+  prefill=Nones (None tok/s)  decode=None tok/s  wall=0.2s  chunks=0
+  ERROR: prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  output[:400]: ''
+BRACKETDONE

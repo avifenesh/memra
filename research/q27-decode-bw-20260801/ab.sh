@@ -4,7 +4,7 @@
 cd $HOME/lane1
 LOGD=$HOME/lane1/research/q27-decode-bw-20260801/ab-logs
 mkdir -p $LOGD
-M=/opt/scratch/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
+M=/opt/dl-image/nvme/models/Qwen3.6-27B-Q4_K_M.gguf
 for r in 1 2 3; do
   for bin in base new; do
     B=./target/release/run-spec

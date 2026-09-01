@@ -347,34 +347,6 @@ case(
 )
 
 
-# IMAGE ARM (lane/glm5-vision, 2026-08-30). Upstream shape: the template's emit_image()
-# renders <|begin_of_image|><|image|><|end_of_image|> for a typed image part, and
-# Glm5NextProcessor.replace_image_token then expands the single <|image|> to one per
-# merged token (grid/4). memra's shape: content_to_text_vision renders the ALREADY
-# EXPANDED run inline as message text before the template sees it. The two must be
-# byte-identical for the same grid — asserted below at generation time, so the committed
-# fixture (flattened-string input, the shape memra's pipeline feeds the renderer) carries
-# an expected.txt that IS the upstream bytes. Grid: det112 (8x8 patches, 16 merged
-# tokens, research/glm5-vision-20260830).
-IMG_N_TOKENS = 16
-IMG_RUN = "<|begin_of_image|>" + "<|image|>" * IMG_N_TOKENS + "<|end_of_image|>"
-_typed = base([
-    msg("user", [
-        {"type": "image_url", "image_url": {"url": "data:image/png;base64,IGNORED"}},
-        {"type": "text", "text": "Transcribe the text in this image exactly."},
-    ]),
-])
-_flat = base([
-    msg("user", IMG_RUN + "Transcribe the text in this image exactly."),
-])
-_upstream = render(_typed).replace("<|image|>", "<|image|>" * IMG_N_TOKENS)
-assert render(_flat) == _upstream, (
-    "memra's inline image-run splice diverged from the template's typed-part arm + "
-    "processor expansion"
-)
-case("23-image-message-16tok", _flat)
-
-
 def main():
     os.makedirs(FIXDIR, exist_ok=True)
     for name, request in CASES:

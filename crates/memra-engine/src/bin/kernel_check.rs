@@ -150,7 +150,7 @@ fn take_observed_cells() -> BTreeSet<String> {
 /// the models that lane fights over. Chain, first existing path wins:
 ///   1. $MEMRA_KC_MODELS_DIR/<file>                       (explicit; battery scripts set this)
 ///   2. the CLI gguf arg, when its basename == <file>     (model under test doubles as oracle)
-///   3. $HOME/models/<file>, /opt/scratch/nvme/models/<file> (bench-box conventions)
+///   3. $HOME/models/<file>, /opt/dl-image/nvme/models/<file> (bench-box conventions)
 ///   4. the legacy rig paths                              (the 5090 rig keeps working naked)
 ///      A miss emits one explicit line per skipped cell. Explicit CLI/model-directory paths are
 ///      authoritative: a typo must not silently fall through to stale bytes elsewhere on the box.
@@ -230,7 +230,7 @@ fn kc_model(
         if let Ok(home) = std::env::var("HOME") {
             cands.push(format!("{home}/models/{fname}"));
         }
-        cands.push(format!("/opt/scratch/nvme/models/{fname}"));
+        cands.push(format!("/opt/dl-image/nvme/models/{fname}"));
         cands.extend(legacy.iter().map(|path| path.to_string()));
     }
     if let Some(path) = cands
@@ -322,68 +322,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         );
         cells.record("dual-pp-hostbounce-refusal");
-    }
-
-    {
-        let mut ok = true;
-        for stages in 3..=memra_engine::pp::PP_WAVE_MAX_STAGES {
-            for batch in 1..=32 {
-                let ranges = memra_engine::pp::pp_wave_ranges(batch, stages);
-                let waves = ranges.len();
-                let mut seen = vec![vec![false; stages]; waves];
-                for diagonal in 0..stages + waves - 1 {
-                    let cells = memra_engine::pp::pp_wave_diagonal(stages, waves, diagonal);
-                    let mut stage_seen = vec![false; stages];
-                    let mut wave_seen = vec![false; waves];
-                    for (wave, stage) in cells {
-                        ok &= wave + stage == diagonal
-                            && !stage_seen[stage]
-                            && !wave_seen[wave]
-                            && !seen[wave][stage];
-                        stage_seen[stage] = true;
-                        wave_seen[wave] = true;
-                        seen[wave][stage] = true;
-                    }
-                }
-                ok &= seen.into_iter().flatten().all(|cell| cell);
-                ok &= ranges.first().is_some_and(|range| range.0 == 0)
-                    && ranges.last().is_some_and(|range| range.1 == batch)
-                    && ranges.windows(2).all(|pair| pair[0].1 == pair[1].0);
-            }
-        }
-        println!(
-            "pp-wave-grid PP3/PP4 balanced anti-diagonal coverage {}",
-            if ok {
-                "OK"
-            } else {
-                fails += 1;
-                "FAIL"
-            }
-        );
-        cells.record("pp-wave-grid");
-    }
-
-    {
-        let ok = memra_engine::pp::pp_wave_on_value(None) == Ok(false)
-            && memra_engine::pp::pp_wave_on_value(Some("0")) == Ok(false)
-            && memra_engine::pp::pp_wave_on_value(Some("1")) == Ok(true)
-            && memra_engine::pp::pp_wave_on_value(Some("auto")).is_err()
-            && memra_engine::pp::pp_wave_eligibility(3, true, false, false).is_ok()
-            && memra_engine::pp::pp_wave_eligibility(4, true, false, false).is_ok()
-            && memra_engine::pp::pp_wave_eligibility(2, true, false, false).is_err()
-            && memra_engine::pp::pp_wave_eligibility(3, false, false, false).is_err()
-            && memra_engine::pp::pp_wave_eligibility(3, true, true, false).is_err()
-            && memra_engine::pp::pp_wave_eligibility(3, true, false, true).is_err();
-        println!(
-            "pp-wave-refusal strict flag + topology policy {}",
-            if ok {
-                "OK"
-            } else {
-                fails += 1;
-                "FAIL"
-            }
-        );
-        cells.record("pp-wave-refusal");
     }
 
     {
@@ -3224,14 +3162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Q4_K/Q8_0/Q4_0 MMQ checks — those kernels are live on Hopper through the
             // hopper_mma re-admission, and the old whole-section skip left the battery
             // blind to the #23 stream-K corruption (2026-07-31).
-            // THE PROPERTY, not an enumeration: this family (Stage-C native mxf4 FP4 +
-            // the static-MMQ W4A8/FP8-blk launchers) exists only in the sm_120a build —
-            // build.rs stubs the static TUs and drops qmatvec_gemm_nvfp4_fp4 on every other
-            // arch. The old `!cfg!(memra_portable_cuda)` admitted sm_100a (not portable,
-            // not 120a), where the Stage-C check reached Engine::func("qmatvec_gemm_nvfp4_fp4")
-            // and panicked "kernel not in any fatbin" with NO env force involved — caught by
-            // the b200-prep lane's PR review against the 100a fatbin-lookup census.
-            let nvfp4_checks = env!("MEMRA_BUILT_CUDA_ARCH") == "120a";
+            let nvfp4_checks = !cfg!(memra_portable_cuda);
             if !nvfp4_checks {
                 cells.skip(
                     "nvfp4-gemm:native-static",

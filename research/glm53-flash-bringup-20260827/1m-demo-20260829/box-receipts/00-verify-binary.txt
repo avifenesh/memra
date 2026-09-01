@@ -1,0 +1,23 @@
+=== git log -1 of the tree ===
+7cc36698cc58d993b924d9eff87b602e2387f7a0
+1m demo cell: MEMRA_TIMEOUT_MS_MAX measurement-cell deadline override, and the cell scripts
+2026-08-29 03:06:00 +0300
+  dirty files: 0
+
+=== binary identity ===
+-rwxr-xr-x 2 root root 67745952 2026-08-29 00:14:37.445729551 +0000 /root/wt-1mdemo/target/release/memra-server
+  sha256 6e3f7e32bbea7c9cf248c7d06765c1d657c09385f8c5bbaf5600e23b5fd71ee9
+
+=== FRESHNESS: binary mtime vs newest source mtime ===
+  newest source: /root/wt-1mdemo/crates/memra-server/src/main.rs at 2026-08-29T00:08:12Z
+  binary at 2026-08-29T00:14:37Z
+  FRESH: binary is newer than every source
+
+=== strings census ===
+  MEMRA_TIMEOUT_MS_MAX                   1
+  MEMRA_DSA_INDEX_RING                   3
+  rows still owed to unbuilt pools       1
+  cannot cover pools from row            0
+  MEMRA_MOE_FUSED_EPI                    1
+  MEMRA_PP_STAGES                        9
+  expected: override>0 ring>0 post-fix>0 pre-fix=0 epi>0 pp>0

@@ -1,0 +1,48 @@
+2026-08-29T00:22:00Z
+=== ARM A: DOOROFF-8K (ring-lane receipted config, cell binary) ===
+LOAD DOOROFF-8K ready after ~190s  binary=/root/wt-1mdemo/target/release/memra-server
+  pid=25812 exe=/root/wt-1mdemo/target/release/memra-server sha=6e3f7e32bbea7c9c
+--- prefix-cache line (MUST say off / budget 0) ---
+--- caps line ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / residency lines ---
+--- vram after load ---
+0, 23955 MiB
+1, 3 MiB
+2, 0 MiB
+3, 0 MiB
+[A-smoke-1k] mode=greedy status=200 prompt_tokens=1108 completion_tokens=64
+  prefill=9.936s (111.51 tok/s)  decode=16.39 tok/s  wall=13.8s  chunks=63
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace*, a sweeping novel following Russian aristocratic families through the Napoleonic Wars. A major theme it shares with other classic literature of this kind is the tension between individual personal life and the vast forces of history—Tolstoy explores how private loves,"
+[A-smoke-6k] mode=greedy status=200 prompt_tokens=6466 completion_tokens=64
+  prefill=42.676s (151.51 tok/s)  decode=15.39 tok/s  wall=46.8s  chunks=63
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace* (translated by Aylmer and Louise Maude), which follows aristocratic Russian families through the Napoleonic Wars. A central theme is the tension between private life and sweeping historical forces—personal ambitions, romances, and social rituals (as in"
+
+=== ARM B: PP4-8K (all four cards, pp door open, residency default) ===
+  stopping pid 25812 exe=/root/wt-1mdemo/target/release/memra-server
+LOAD PP4-8K ready after ~216s  binary=/root/wt-1mdemo/target/release/memra-server
+  pid=26307 exe=/root/wt-1mdemo/target/release/memra-server sha=6e3f7e32bbea7c9c
+--- prefix-cache line (MUST say off / budget 0) ---
+--- caps line ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / residency lines ---
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+--- vram after load ---
+0, 6421 MiB
+1, 5845 MiB
+2, 5845 MiB
+3, 8853 MiB
+[B-smoke-1k] mode=greedy status=200 prompt_tokens=1108 completion_tokens=64
+  prefill=13.73s (80.7 tok/s)  decode=26.29 tok/s  wall=16.2s  chunks=63
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace*, a sweeping novel following Russian aristocratic families through the Napoleonic Wars. A major theme it shares with other classic literature of this kind is the tension between individual personal life and the vast forces of history—Tolstoy explores how private loves,"
+[B-smoke-6k] mode=greedy status=200 prompt_tokens=6466 completion_tokens=64
+  prefill=37.757s (171.25 tok/s)  decode=25.05 tok/s  wall=40.3s  chunks=63
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace* (translated by Aylmer and Louise Maude), which follows aristocratic Russian families—such as the Bezúkhovs, Bolkónskis, and Kurágins—during the Napoleonic Wars. A shared theme in classic"
+
+=== IDENTITY VERDICT ===
+rung 1k: doorOFF vs PP4 byte-identical = True  (A 318 chars, B 318 chars, prompt_tokens A=1108 B=1108)
+rung 6k: doorOFF vs PP4 byte-identical = False  (A 302 chars, B 236 chars, prompt_tokens A=6466 B=6466)
+  A: "The corpus contains Leo Tolstoy's *War and Peace* (translated by Aylmer and Louise Maude), which follows aristocratic Russian families through the Napoleonic Wars. A central theme is the tension betwe"
+  B: "The corpus contains Leo Tolstoy's *War and Peace* (translated by Aylmer and Louise Maude), which follows aristocratic Russian families—such as the Bezúkhovs, Bolkónskis, and Kurágins—during the Napole"
+2026-08-29T00:31:27Z
+PHASE1DONE

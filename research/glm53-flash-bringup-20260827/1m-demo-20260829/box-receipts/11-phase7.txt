@@ -1,0 +1,71 @@
+2026-08-29T03:34:14Z
+=== BOOT PP4-1M splits 13,26,39 ===
+  stopping pid 33217 exe=/root/wt-1mdemo/target/release/memra-server
+  escalating SIGKILL on 33217 (same pid, same exe)
+LOAD PP4-1M-G ready after ~248s  binary=/root/wt-1mdemo/target/release/memra-server
+  pid=34018 exe=/root/wt-1mdemo/target/release/memra-server sha=7d146c460f25da3e
+--- prefix-cache line (MUST say off / budget 0) ---
+--- caps line ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / residency lines ---
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+--- vram after load ---
+0, 7125 MiB
+1, 6933 MiB
+2, 6933 MiB
+3, 5941 MiB
+vramwatch pid 34549
+
+=== warm rung (1k, greedy): slab populate + sanity on the splits ===
+vramwatch pid 34549 -> /root/lane-1mdemo-vast-20260829/phase7-vram.csv every 20s
+[W1K] mode=greedy status=200 prompt_tokens=1108 completion_tokens=32
+  prefill=12.924s (85.73 tok/s)  decode=27.5 tok/s  wall=14.1s  chunks=31
+  reasoning[:200]: ''
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace*, a sweeping novel following Russian aristocratic families through the Napoleonic Wars. A major theme"
+0, 63161 MiB
+1, 61817 MiB
+2, 61817 MiB
+3, 60761 MiB
+
+=== R1M greedy (chars=4282700) ===
+2026-08-29T03:39:39Z
+[R1M] mode=greedy status=200 prompt_tokens=1035357 completion_tokens=88
+  prefill=6419.765s (161.28 tok/s)  decode=16.04 tok/s  wall=6425.3s  chunks=86
+  reasoning[:200]: ''
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace* and Alexandre Dumas's *The Count of Monte Cristo*. A theme they share is the transformative power of suffering and adversity: both novels follow protagonists—Pierre Bezukhov and Edmond Dantès—whose trials (captivity, betrayal, loss) fundamentally reshape their characters and understanding of life, whether through spiritual awakening or a quest for "
+2026-08-29T05:26:45Z
+0, 75481 MiB
+1, 73561 MiB
+2, 73561 MiB
+3, 88249 MiB
+--- serve log tail ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[server] worker ready; serving models: ["zai/glm-5.3-flash"]
+[server] listening on http://127.0.0.1:18500
+[moe-fused-epi] snapshot dispatches=47880
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 1035357 prompt tokens; model zai/glm-5.3-flash)
+[moe-fused-epi] snapshot dispatches=43536528
+
+=== R1M vendor-default sampled twin ===
+2026-08-29T05:26:45Z
+[R1M-V] mode=vendor status=200 prompt_tokens=1035357 completion_tokens=98
+  prefill=6420.321s (161.26 tok/s)  decode=15.89 tok/s  wall=6426.5s  chunks=96
+  reasoning[:200]: ''
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace* and Alexandre Dumas's *The Count of Monte Cristo*. Both works share the theme of fate and vengeance: Tolstoy explores how individual lives are swept along by vast historical forces beyond personal control, while Dumas charts Edmond Dantès's obsessive quest to punish those who wronged him—yet both novels ultimately question whether human beings, how"
+2026-08-29T07:13:51Z
+0, 81945 MiB
+1, 80121 MiB
+2, 80089 MiB
+3, 94905 MiB
+vramwatch 34549 stopped
+--- per-card VRAM peak over phase 5 ---
+  gpu0: peak 81945 MiB
+  gpu1: peak 80121 MiB
+  gpu2: peak 80089 MiB
+  gpu3: peak 94905 MiB
+--- error census of the serve log ---
+0
+2026-08-29T07:13:51Z
+PHASE5DONE

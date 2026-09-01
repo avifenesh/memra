@@ -196,7 +196,7 @@ head fine-tune) — artifact/training axis. Runtime-side spec work on this head 
 
 Frozen selection (tail-q2k-demote-set.json, frequency-cold non-resident experts): 4,841
 experts / 12,262 projections requantized IQ3_S/IQ4_XS/Q4_K/Q8_0 -> Q2_K from the pinned BF16
-source (streaming shard fetch, no imatrix — cloudbox sidecars unavailable locally; the screen is
+source (streaming shard fetch, no imatrix — Sbox sidecars unavailable locally; the screen is
 the gate). Overlay surgery: kept experts byte-copied, payload 78.5 -> 64.4 GB.
 
 Dual-NVMe pairs (both orders, fresh rewarm profiles): base 4.72/5.00 vs **tailq2k 6.20/5.78

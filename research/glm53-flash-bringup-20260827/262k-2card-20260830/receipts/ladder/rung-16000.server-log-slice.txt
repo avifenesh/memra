@@ -1,6 +1,0 @@
-[meter] admit id=chatcmpl-b0fb5cb6a646ed41eb9048798ecd428e tenant=default lane=interactive model="zai/glm-5.3-flash"
-[admission] request cost: model="zai/glm-5.3-flash" ctx=16543 path=plain = 0 B/token x ctx + 155MB fixed = 155MB
-[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 16447 prompt tokens; model zai/glm-5.3-flash)
-[admission] fixed residual high-water: model="zai/glm-5.3-flash" 373MB (observed 373MB at ctx 16487 path=plain)
-[bf16-tc] ENGAGED m=16447 n=8192 k=4096 (bf16 tensor-core GEMM on resident checkpoint bytes)
-[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")

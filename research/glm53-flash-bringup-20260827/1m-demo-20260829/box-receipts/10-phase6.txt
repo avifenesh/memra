@@ -1,0 +1,30 @@
+2026-08-29T03:21:48Z
+=== BOOT PP4-1M splits 13,26,39 ===
+  stopping pid 32648 exe=/root/wt-1mdemo/target/release/memra-server
+LOAD PP4-1M-F ready after ~210s  binary=/root/wt-1mdemo/target/release/memra-server
+  pid=33217 exe=/root/wt-1mdemo/target/release/memra-server sha=7d146c460f25da3e
+--- prefix-cache line (MUST say off / budget 0) ---
+--- caps line ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / residency lines ---
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+--- vram after load ---
+0, 7125 MiB
+1, 6933 MiB
+2, 6933 MiB
+3, 5941 MiB
+vramwatch pid 33689
+
+=== warm rung (1k, greedy): slab populate + sanity on the splits ===
+vramwatch pid 33689 -> /root/lane-1mdemo-vast-20260829/phase6-vram.csv every 20s
+[W1K] mode=greedy status=200 prompt_tokens=1108 completion_tokens=32
+  prefill=27.574s (40.18 tok/s)  decode=8.2 tok/s  wall=31.5s  chunks=31
+  reasoning[:200]: ''
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace*, a sweeping novel following Russian aristocratic families through the Napoleonic Wars. A major theme"
+0, 10327 MiB
+1, 8951 MiB
+2, 8983 MiB
+3, 7927 MiB
+
+=== R1M greedy (chars=4282700) ===
+2026-08-29T03:26:43Z

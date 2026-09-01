@@ -1033,12 +1033,6 @@ fn run_arm_at(arm: Arm, mutation: FixtureMutation, placement: Placement) -> Run 
             Arm::Unfused => std::env::set_var("MEMRA_MOE_FUSED_EPI", "0"),
             Arm::Fused => std::env::set_var("MEMRA_MOE_FUSED_EPI", "1"),
         }
-        // MEMRA_MOE_GROUPED_PREFILL went DEFAULT ON on 2026-08-29 and takes the T=65 prefill
-        // row at t > 16, which would silently subtract those token-layer opportunities from the
-        // fused-epilogue engagement this gate asserts (GATE D counts 89/89 on slabs). This gate
-        // measures the fused-epi seam in ISOLATION, so the grouped-prefill seam is pinned off
-        // in both arms, exactly as `glm5_moe_grouped_prefill_gpu.rs` pins MEMRA_MOE_FUSED_EPI=0.
-        std::env::set_var("MEMRA_MOE_GROUPED_PREFILL", "0");
     }
 
     let config = mini_config();

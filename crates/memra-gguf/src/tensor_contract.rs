@@ -145,11 +145,6 @@ pub enum MtpTensor {
     EmbeddingNorm,
     HiddenNorm,
     FusionProjection,
-    /// qwen4_exp `mtp.fc_embedding` — one of the TWO separate draft-input projections
-    /// (MtpFusionPlan::SeparateProjections), not the concat FusionProjection program.
-    EmbeddingProjection,
-    /// qwen4_exp `mtp.fc_hidden`, applied per stream to the grouped-normed WIDE hidden.
-    HiddenProjection,
     OutputNorm,
     OutputProjection,
 }
@@ -305,9 +300,6 @@ pub struct TensorCensusEntry {
     /// Checkpoint-native dimension order: safetensors outer-to-inner, GGUF inner-to-outer.
     pub shape: Vec<u64>,
     pub storage: StorageLayout,
-    /// Exact checkpoint bytes represented by this row. Quantized safetensors rows include the
-    /// recognized auxiliary scale planes carried by `storage`; GGUF auxiliaries are separate rows.
-    pub physical_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,7 +346,6 @@ pub struct BoundTensor {
     pub checkpoint_names: Vec<String>,
     pub shapes: Vec<Vec<u64>>,
     pub storage: Vec<StorageLayout>,
-    pub physical_bytes: u64,
     pub owner: TensorOwner,
     pub transform: TensorTransform,
 }
@@ -400,9 +391,6 @@ pub enum TensorContractError {
         name: String,
         expected: Vec<String>,
         actual: Vec<String>,
-    },
-    PhysicalBytesOverflow {
-        id: TensorId,
     },
     Extra {
         names: Vec<String>,
@@ -464,9 +452,6 @@ impl std::fmt::Display for TensorContractError {
                 f,
                 "tensor {id:?} ({name}) auxiliary planes mismatch: expected {expected:?}, got {actual:?}"
             ),
-            Self::PhysicalBytesOverflow { id } => {
-                write!(f, "tensor {id:?} physical byte total overflows u64")
-            }
             Self::Extra { names } => write!(f, "extra checkpoint tensors: {names:?}"),
         }
     }
@@ -636,20 +621,12 @@ impl TensorContract {
                     });
                 }
             }
-            let physical_bytes = matched.iter().try_fold(0u64, |total, entry| {
-                total.checked_add(entry.physical_bytes).ok_or_else(|| {
-                    TensorContractError::PhysicalBytesOverflow {
-                        id: requirement.id.clone(),
-                    }
-                })
-            })?;
             tensors.insert(
                 requirement.id.clone(),
                 BoundTensor {
                     checkpoint_names: matched.iter().map(|entry| entry.name.clone()).collect(),
                     shapes: matched.iter().map(|entry| entry.shape.clone()).collect(),
                     storage: matched.iter().map(|entry| entry.storage.clone()).collect(),
-                    physical_bytes,
                     owner: requirement.owner,
                     transform: requirement.transform,
                 },
@@ -2088,25 +2065,12 @@ fn add_moe_mlp(
         Arch::Hy3 => "mlp.router.gate.weight",
         _ => "mlp.gate.weight",
     };
-    let router_names = match (builder.dialect, &plan.arch) {
-        (CheckpointDialect::HfSafetensors, Arch::Hy3) => vec![
-            format!("model.layers.{index}.mlp.router.gate.weight"),
-            format!("model.layers.{index}.mlp.gate.weight"),
-        ],
-        _ => vec![layer_name(
-            builder.dialect,
-            index,
-            "ffn_gate_inp.weight",
-            router_hf,
-        )],
-    };
-    builder.weight_aliases(
+    builder.weight(
         layer_id(index, LayerTensor::MoeRouter),
-        router_names,
+        layer_name(builder.dialect, index, "ffn_gate_inp.weight", router_hf),
         matrix_shape(builder.dialect, moe.expert_count, plan.hidden_size),
         owner,
         TensorTransform::Identity,
-        true,
     );
 
     let selection_bias = matches!(
@@ -2128,7 +2092,6 @@ fn add_moe_mlp(
             CheckpointDialect::HfSafetensors if plan.arch == Arch::Hy3 => vec![
                 format!("model.layers.{index}.mlp.expert_bias"),
                 format!("model.layers.{index}.mlp.router.expert_bias"),
-                format!("model.layers.{index}.mlp.e_score_correction_bias"),
             ],
             // glm5_next nests the bias under the router module (mlp.gate.*), the
             // DeepSeek-V3 spelling keeps it on mlp directly — accept both.
@@ -2149,6 +2112,9 @@ fn add_moe_mlp(
 
     match builder.dialect {
         CheckpointDialect::Gguf => add_gguf_expert_banks(builder, plan, index, moe, owner),
+        CheckpointDialect::HfSafetensors if plan.arch == Arch::Hy3 => {
+            add_hy3_expert_banks(builder, plan, index, moe, owner)
+        }
         CheckpointDialect::HfSafetensors => add_hf_expert_groups(builder, plan, index, moe, owner),
     }
 
@@ -2199,25 +2165,12 @@ fn add_moe_mlp(
                 shared.intermediate_size,
             ),
         ] {
-            let names =
-                if builder.dialect == CheckpointDialect::HfSafetensors && plan.arch == Arch::Hy3 {
-                    vec![
-                        format!("model.layers.{index}.{hf}"),
-                        format!(
-                            "model.layers.{index}.{}",
-                            hf.replace("mlp.shared_mlp.", "mlp.shared_experts.")
-                        ),
-                    ]
-                } else {
-                    vec![layer_name(builder.dialect, index, gguf, hf)]
-                };
-            builder.weight_aliases(
+            builder.weight(
                 layer_id(index, tensor),
-                names,
+                layer_name(builder.dialect, index, gguf, hf),
                 matrix_shape(builder.dialect, out, input),
                 owner,
                 TensorTransform::Identity,
-                true,
             );
         }
         if shared.gated {
@@ -2278,6 +2231,52 @@ fn add_gguf_expert_banks(
         builder.weight(
             layer_id(index, tensor),
             format!("blk.{index}.{suffix}"),
+            shape,
+            owner,
+            TensorTransform::Identity,
+        );
+    }
+}
+
+fn add_hy3_expert_banks(
+    builder: &mut ContractBuilder,
+    plan: &ModelPlan,
+    index: u32,
+    moe: &MoeMlpPlan,
+    owner: TensorOwner,
+) {
+    for (tensor, suffix, shape) in [
+        (
+            LayerTensor::MoeExpertGateBank,
+            "mlp.switch_mlp.gate_proj.weight",
+            vec![
+                moe.expert_count as u64,
+                moe.expert_intermediate_size as u64,
+                plan.hidden_size as u64,
+            ],
+        ),
+        (
+            LayerTensor::MoeExpertUpBank,
+            "mlp.switch_mlp.up_proj.weight",
+            vec![
+                moe.expert_count as u64,
+                moe.expert_intermediate_size as u64,
+                plan.hidden_size as u64,
+            ],
+        ),
+        (
+            LayerTensor::MoeExpertDownBank,
+            "mlp.switch_mlp.down_proj.weight",
+            vec![
+                moe.expert_count as u64,
+                plan.hidden_size as u64,
+                moe.expert_intermediate_size as u64,
+            ],
+        ),
+    ] {
+        builder.weight(
+            layer_id(index, tensor),
+            format!("model.layers.{index}.{suffix}"),
             shape,
             owner,
             TensorTransform::Identity,
@@ -2407,20 +2406,6 @@ mod tests {
         ModelPlan::compile(&cfg).unwrap()
     }
 
-    fn hy3_plan() -> ModelPlan {
-        let cfg = ModelConfig::from_hf(&HfConfig::parse(
-            r#"{"model_type":"hy_v3","num_hidden_layers":2,
-            "num_nextn_predict_layers":1,"hidden_size":8,
-            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":4,
-            "intermediate_size":16,"vocab_size":32,"max_position_embeddings":32,
-            "first_k_dense_replace":1,"num_experts":4,"num_experts_per_tok":2,
-            "moe_intermediate_size":8,"num_shared_experts":1,
-            "moe_router_use_sigmoid":true,"moe_router_enable_expert_bias":true,
-            "route_norm":true,"router_scaling_factor":2.826,"qk_norm":true}"#,
-        ));
-        ModelPlan::compile(&cfg).unwrap()
-    }
-
     fn gemma4_dense_plan() -> ModelPlan {
         let cfg = ModelConfig::from_hf(&HfConfig::parse(
             r#"{"model_type":"gemma4","num_hidden_layers":2,"hidden_size":8,
@@ -2457,42 +2442,9 @@ mod tests {
                             auxiliaries: Vec::new(),
                         })
                     },
-                    physical_bytes: 1,
                 })
             })
             .collect()
-    }
-
-    #[test]
-    fn bound_tensor_preserves_checked_physical_byte_total() {
-        let contract = TensorContract {
-            dialect: CheckpointDialect::Gguf,
-            requirements: vec![TensorRequirement {
-                id: TensorId::OutputNorm,
-                names: vec!["a".to_string(), "b".to_string()],
-                match_mode: TensorMatch::All,
-                shape: vec![1],
-                owner: TensorOwner::Global,
-                transform: TensorTransform::Identity,
-                quant: QuantConstraint::FloatOnly,
-                auxiliaries: None,
-                required: true,
-            }],
-        };
-        let entry = |name: &str, physical_bytes| TensorCensusEntry {
-            name: name.to_string(),
-            shape: vec![1],
-            storage: StorageLayout::Float(FloatType::F32),
-            physical_bytes,
-        };
-        let bound = contract.bind(&[entry("a", 3), entry("b", 5)]).unwrap();
-        assert_eq!(bound.tensors[&TensorId::OutputNorm].physical_bytes, 8);
-        assert_eq!(
-            contract.bind(&[entry("a", u64::MAX), entry("b", 1)]),
-            Err(TensorContractError::PhysicalBytesOverflow {
-                id: TensorId::OutputNorm,
-            })
-        );
     }
 
     #[test]
@@ -2547,7 +2499,6 @@ mod tests {
             name: "unexpected.weight".to_string(),
             shape: vec![1],
             storage: StorageLayout::Float(FloatType::F32),
-            physical_bytes: 1,
         });
         assert_eq!(
             contract.bind(&census),
@@ -2604,13 +2555,11 @@ mod tests {
                 name: ambiguous.requirements[0].names[0].clone(),
                 shape: vec![64],
                 storage: StorageLayout::Float(FloatType::Bf16),
-                physical_bytes: 128,
             },
             TensorCensusEntry {
                 name: ambiguous.requirements[0].names[1].clone(),
                 shape: vec![64],
                 storage: StorageLayout::Float(FloatType::Bf16),
-                physical_bytes: 128,
             },
         ];
         assert!(matches!(
@@ -2741,52 +2690,6 @@ mod tests {
     }
 
     #[test]
-    fn hy3_contract_binds_modelopt_router_bias_and_shared_expert_aliases() {
-        let contract = TensorContract::for_plan(
-            &hy3_plan(),
-            CheckpointDialect::HfSafetensors,
-            ContractOptions::default(),
-        )
-        .unwrap();
-        let mut census = census_for(&contract);
-
-        for (tensor, alias) in [
-            (LayerTensor::MoeRouter, "model.layers.1.mlp.gate.weight"),
-            (
-                LayerTensor::MoeRouterBias,
-                "model.layers.1.mlp.e_score_correction_bias",
-            ),
-            (
-                LayerTensor::SharedMlpGate,
-                "model.layers.1.mlp.shared_experts.gate_proj.weight",
-            ),
-            (
-                LayerTensor::SharedMlpUp,
-                "model.layers.1.mlp.shared_experts.up_proj.weight",
-            ),
-            (
-                LayerTensor::SharedMlpDown,
-                "model.layers.1.mlp.shared_experts.down_proj.weight",
-            ),
-        ] {
-            let requirement = contract
-                .requirements
-                .iter()
-                .find(|requirement| requirement.id == layer_id(1, tensor))
-                .unwrap();
-            assert!(requirement.names.iter().any(|name| name == alias));
-            let canonical = &requirement.names[0];
-            census
-                .iter_mut()
-                .find(|entry| &entry.name == canonical)
-                .unwrap()
-                .name = alias.to_string();
-        }
-
-        contract.bind(&census).unwrap();
-    }
-
-    #[test]
     fn mtp_contract_reuses_block_schema_and_rewrites_hf_namespace() {
         let plan = qwen35_mtp_plan();
         let contract = TensorContract::for_plan(
@@ -2870,7 +2773,6 @@ mod tests {
                         auxiliaries: Vec::new(),
                     }),
                 },
-                physical_bytes: tensor.n_bytes,
             })
             .collect();
         let bound = contract.bind(&census).unwrap();

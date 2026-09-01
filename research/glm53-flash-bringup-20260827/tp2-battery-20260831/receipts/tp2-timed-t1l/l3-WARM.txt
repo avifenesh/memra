@@ -1,7 +1,0 @@
-The user is showing me grep output from some wiki files about a project called "hqmtp-project". They want a one-paragraph summary of the state of the work. Let me parse the content carefully.
-
-Key facts from the text:
-
-1. **il head distillation (task #9)** — a novel thread per lit-check: nobody shrinks a co-trained MTP head, nobody trains vs quantized hiddens (DFlash-on-Q4 −44.6% documented unsolved). Direction set by the owner's llama.cpp issue #25187: FR-Spec trim-at-load gives −85% draft lm_head kernel cost but only +1-3% e2e (because block untouched, acceptance capped by coverage); the real target is "il" — trained s... (truncated, likely "trained small head" or similar).
-
-2. **Results**: 1/3 the cost; heads train only on the model's own generations. KD (knowledge distillation) was revived after a subset-KL loss bug fix — top-64 gathered KL left ~32k logits unconstrained, and pure-KD argmax had collapsed to 0.000. The locked recipe: naked KD → CE reinforce, reaches chain 0.50

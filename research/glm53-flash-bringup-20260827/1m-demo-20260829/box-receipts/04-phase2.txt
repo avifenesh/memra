@@ -1,0 +1,109 @@
+2026-08-29T00:39:03Z
+=== BOOT: PP4-1M (MEMRA_CTX=1048576, 4 stages, 4 cards) ===
+  stopping pid 26307 exe=/root/wt-1mdemo/target/release/memra-server
+LOAD PP4-1M ready after ~210s  binary=/root/wt-1mdemo/target/release/memra-server
+  pid=26929 exe=/root/wt-1mdemo/target/release/memra-server sha=6e3f7e32bbea7c9c
+--- prefix-cache line (MUST say off / budget 0) ---
+--- caps line ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / residency lines ---
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+--- vram after load ---
+0, 6421 MiB
+1, 5845 MiB
+2, 5845 MiB
+3, 8853 MiB
+vramwatch pid 27401
+
+=== R1K: sanity rung ===
+vramwatch pid 27401 -> /root/lane-1mdemo-vast-20260829/phase2-vram.csv every 20s
+[R1K] mode=greedy status=200 prompt_tokens=1108 completion_tokens=64
+  prefill=13.617s (81.37 tok/s)  decode=26.95 tok/s  wall=16.0s  chunks=63
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace*, a sweeping novel following Russian aristocratic families through the Napoleonic Wars. A major theme it shares with other classic literature of this kind is the tension between individual personal life and the vast forces of history—Tolstoy explores how private loves,"
+
+=== R131K: timing + calibration rung ===
+2026-08-29T00:43:36Z
+[R131K] mode=greedy status=200 prompt_tokens=None completion_tokens=None
+  prefill=Nones (None tok/s)  decode=None tok/s  wall=0.3s  chunks=0
+  ERROR: prefill error: DriverError(CUDA_ERROR_INVALID_VALUE, "invalid argument")
+  output[:400]: ''
+2026-08-29T00:43:36Z
+--- vram after R131K ---
+0, 81465 MiB
+1, 79353 MiB
+2, 79417 MiB
+3, 80313 MiB
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+TypeError: 'NoneType' object is not subscriptable
+
+=== R1M: the demonstration prime, greedy (chars= from R131K ratio) ===
+2026-08-29T00:43:36Z
+Traceback (most recent call last):
+  File "/root/lane-1mdemo-vast-20260829/primeprobe.py", line 26, in <module>
+    sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), sys.argv[5], sys.argv[6])
+                              ^^^^^^^^^^^^^^^^
+ValueError: invalid literal for int() with base 10: ''
+2026-08-29T00:43:36Z
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: '/root/lane-1mdemo-vast-20260829/phase2-R1M.json'
+R1M non-200; ONE retry at chars=0
+2026-08-29T00:43:36Z
+[R1M-retry] mode=greedy status=200 prompt_tokens=42 completion_tokens=76
+  prefill=1.08s (38.89 tok/s)  decode=43.85 tok/s  wall=2.8s  chunks=52
+  output[:400]: "It looks like no corpus was actually included in your message—there's no text above for me to analyze. If you paste the passage or list of works you have in mind, I'd be happy to identify two works from it and a theme they share."
+2026-08-29T00:43:39Z
+--- vram after R1M ---
+0, 81465 MiB
+1, 79353 MiB
+2, 79417 MiB
+3, 80313 MiB
+--- serve log tail after R1M ---
+[slab-populate] blk43-down: 1296 MiB in 0.3s (4199 MiB/s)
+[slab-populate] blk44-gate: 1296 MiB in 0.3s (4157 MiB/s)
+[slab-populate] blk44-up: 1296 MiB in 0.3s (4086 MiB/s)
+[slab-populate] blk44-down: 1296 MiB in 0.3s (4100 MiB/s)
+[worker]   loaded "zai/glm-5.3-flash": 46 layers, eos=154820, stop=[154820, 154827, 154829]
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[admission] "zai/glm-5.3-flash": plain 0 B/token, spec 0 B/token; fixed residual learns from effective-free deltas
+[server] worker ready; serving models: ["zai/glm-5.3-flash"]
+[server] listening on http://127.0.0.1:18500
+[meter] admit id=chatcmpl-8ecd4a965ba59d94790fa04997627260 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=1236 path=plain = 0 B/token x ctx + 0MB fixed = 0MB
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 93MB (observed 93MB at ctx 1180 path=plain)
+[moe-fused-epi] snapshot dispatches=49224
+[meter] admit id=chatcmpl-07472370df118de9d1beb253c2540f12 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=128758 path=plain = 0 B/token x ctx + 93MB fixed = 93MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 128566 prompt tokens; model zai/glm-5.3-flash)
+[admission] fixed residual high-water: model="zai/glm-5.3-flash" 1153MB (observed 1153MB at ctx 128702 path=plain)
+[engine-error] class=Engine prefill error: DriverError(CUDA_ERROR_INVALID_VALUE, "invalid argument")
+[moe-fused-epi] snapshot dispatches=49224
+[meter] admit id=chatcmpl-0b1ddaa1e5fa4c88596382863e2d9fa7 tenant=default lane=interactive model="zai/glm-5.3-flash"
+[admission] request cost: model="zai/glm-5.3-flash" ctx=362 path=plain = 0 B/token x ctx + 1153MB fixed = 1153MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 42 prompt tokens; model zai/glm-5.3-flash)
+[moe-fused-epi] snapshot dispatches=54138
+
+=== R1M-V: vendor-default sampled twin ===
+2026-08-29T00:43:39Z
+[R1M-V] mode=vendor status=200 prompt_tokens=42 completion_tokens=81
+  prefill=1.028s (40.86 tok/s)  decode=41.55 tok/s  wall=3.0s  chunks=58
+  output[:400]: "It looks like no text was actually included in your message — I only see the instruction, not the corpus itself. If you paste the passage or collection of texts you'd like me to work with, I'll gladly identify two works it contains and a theme they share in a short paragraph."
+2026-08-29T00:43:42Z
+--- vram after R1M-V ---
+0, 81465 MiB
+1, 79353 MiB
+2, 79417 MiB
+3, 80313 MiB
+vramwatch 27401 stopped
+--- per-card VRAM peak over phase 2 ---
+  gpu0: peak 81465 MiB
+  gpu1: peak 79353 MiB
+  gpu2: peak 79417 MiB
+  gpu3: peak 80313 MiB
+--- OOM/panic census of the serve log ---
+1
+2026-08-29T00:43:42Z
+PHASE2DONE

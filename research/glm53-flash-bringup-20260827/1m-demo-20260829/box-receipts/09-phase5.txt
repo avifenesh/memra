@@ -1,0 +1,59 @@
+2026-08-29T03:10:58Z
+=== BOOT PP4-1M splits 13,26,39 ===
+  stopping pid 30938 exe=/root/wt-1mdemo/target/release/memra-server
+LOAD PP4-1M-S ready after ~178s  binary=/root/wt-1mdemo/target/release/memra-server
+  pid=32648 exe=/root/wt-1mdemo/target/release/memra-server sha=7d146c460f25da3e
+--- prefix-cache line (MUST say off / budget 0) ---
+--- caps line ---
+[worker] zai/glm-5.3-flash: template caps tools=true think=true think_switch=false chat_ok=true effort_levels=true qwen_effort=false gemma_think=false dsv4=false glm5=true ctx=1048576 tok="glm4" instruct=Some("glm") chat_defaults=None/None
+--- pp / residency lines ---
+[pp] cross-device transport: stage0=dev0 stage1=dev1 stage2=dev2 stage3=dev3 (cudaMemcpyPeerAsync per cross boundary; peer + default-pool access granted all pairs over [0, 1, 2, 3]; weight home: per-stage (sharded loader))
+--- vram after load ---
+0, 7125 MiB
+1, 6933 MiB
+2, 6933 MiB
+3, 5941 MiB
+vramwatch pid 33070
+
+=== warm rung (1k, greedy): slab populate + sanity on the splits ===
+vramwatch pid 33070 -> /root/lane-1mdemo-vast-20260829/phase5-vram.csv every 20s
+[W1K] mode=greedy status=200 prompt_tokens=1108 completion_tokens=32
+  prefill=13.536s (81.86 tok/s)  decode=27.47 tok/s  wall=14.7s  chunks=31
+  reasoning[:200]: ''
+  output[:400]: "The corpus contains Leo Tolstoy's *War and Peace*, a sweeping novel following Russian aristocratic families through the Napoleonic Wars. A major theme"
+0, 79673 MiB
+1, 79481 MiB
+2, 79481 MiB
+3, 79193 MiB
+
+=== R1M greedy (chars=4282700) ===
+2026-08-29T03:15:02Z
+[R1M] mode=greedy status=200 prompt_tokens=None completion_tokens=None
+  prefill=Nones (None tok/s)  decode=None tok/s  wall=2.0s  chunks=0
+  ERROR: prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+  reasoning[:200]: ''
+  output[:400]: ''
+2026-08-29T03:15:04Z
+0, 85177 MiB
+1, 84985 MiB
+2, 84985 MiB
+3, 97241 MiB
+--- serve log tail ---
+[worker] zai/glm-5.3-flash: decode wave cap 1; scheduler tick cap 1
+[worker] zai/glm-5.3-flash: EAGER-ONLY serving (hyper-connections residual — no batched decode arm): per-session eager decode, monolithic prefill, no graph promotion, no prime batching
+[server] worker ready; serving models: ["zai/glm-5.3-flash"]
+[server] listening on http://127.0.0.1:18500
+[moe-fused-epi] snapshot dispatches=47880
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 1035357 prompt tokens; model zai/glm-5.3-flash)
+[engine-error] class=Overloaded prefill error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[moe-fused-epi] snapshot dispatches=47880
+vramwatch 33070 stopped
+--- per-card VRAM peak over phase 5 ---
+  gpu0: peak 7125 MiB
+  gpu1: peak 6933 MiB
+  gpu2: peak 6933 MiB
+  gpu3: peak 5941 MiB
+--- error census of the serve log ---
+1
+2026-08-29T03:15:04Z
+PHASE5DONE

@@ -3,7 +3,7 @@
 ## 2026-08-10 — lane opened
 
 - Branch/worktree: `lane/cx-eagerpar` in `wt-cx-eagerpar`, base `dc77de73`.
-- Target rig: box1 cloud pair, 2x RTX PRO 6000 Server Edition; every bounded GPU block holds `/tmp/memra-gpu.lock`.
+- Target rig: box1 hyperscaler pair, 2x RTX PRO 6000 Server Edition; every bounded GPU block holds `/tmp/memra-gpu.lock`.
 - Fixed serve shape: PP-2 on devices 0,1; context 262144; grouped MoE on; prefill tick 2048; Step-3.7 Flash IQ4_XS + MTP.
 - Starting receipt: the b1fix default sends Step3.5/3.7 B=1 through `step35_decode_batch_layers`, producing golden completion SHA-256 `21b8293f2298978c74fb89f32d9b14e3ea921f39924cfce88c73b01f445bb6de` across 35 fresh boots / 150 requests. N=5 c=1 sustained decode fell from eager 85.423 tok/s to batched 81.399 tok/s (-4.710%).
 - Objective: recover most of that loss with a B=1-specialized entry into the same batched arithmetic, without creating another numeric class.

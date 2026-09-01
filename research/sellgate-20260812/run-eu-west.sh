@@ -9,10 +9,10 @@ case "$MODE" in
 esac
 
 export PATH=/home/ubuntu/.cargo/bin:/usr/local/cuda-13.2/bin:$PATH
-ROOT=${SELLGATE_ROOT:-/opt/scratch/nvme/cx-sellgate}
+ROOT=${SELLGATE_ROOT:-/opt/dl-image/nvme/cx-sellgate}
 REPO=${SELLGATE_REPO:-$ROOT/memra}
 HARNESS=${SELLGATE_HARNESS:-$ROOT/harness}
-MODELS=${SELLGATE_MODELS:-/opt/scratch/nvme/cx-percard/models}
+MODELS=${SELLGATE_MODELS:-/opt/dl-image/nvme/cx-percard/models}
 RAW_ROOT=$ROOT/raw
 STAMP=${SELLGATE_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}
 OUT=${SELLGATE_OUT:-$RAW_ROOT/$MODE-$STAMP}
