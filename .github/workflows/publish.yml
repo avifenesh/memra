@@ -61,7 +61,12 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1
 
+      # The publish verify-compile runs on the repo-root rust-toolchain.toml pin (named
+      # explicitly to pre-install it). Consumer-side floating-stable coverage lives in
+      # ci.yml's publish-dryrun job, which escapes the pin on purpose.
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@v2
         with:
           key: publish-sm120a
