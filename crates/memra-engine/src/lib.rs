@@ -11631,11 +11631,6 @@ impl Engine {
         self.gpu.stream().synchronize()?;
         Ok(v)
     }
-    pub fn dtoh_i8(&self, d: &CudaSlice<i8>) -> Result<Vec<i8>, Box<dyn std::error::Error>> {
-        let v = self.gpu.stream().clone_dtoh(d)?;
-        self.gpu.stream().synchronize()?;
-        Ok(v)
-    }
     /// Device-to-host copy of a u8 buffer (used to read back the quantized KV cache for validation).
     pub fn dtoh_u8(&self, d: &CudaSlice<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let v = self.gpu.stream().clone_dtoh(d)?;
@@ -13477,68 +13472,6 @@ impl Engine {
         b.arg(x).arg(&mut *q).arg(&mut *d).arg(&inf).arg(&mi);
         unsafe {
             b.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// One-launch automatic-EP preparation: byte-identical `quantize_q8_1_into` plus the
-    /// byte-for-byte `moe_sel_w_mirror` copy over an independent coordinate prefix.
-    #[allow(clippy::too_many_arguments)]
-    pub fn quantize_q8_1_mirror_routes_into(
-        &self,
-        x: &CudaSlice<f32>,
-        m: usize,
-        in_f: usize,
-        q: &mut CudaSlice<i8>,
-        d: &mut CudaSlice<f32>,
-        sel_src: &CudaSlice<i32>,
-        w_src: &CudaSlice<f32>,
-        sel_dst: &mut CudaSlice<i32>,
-        w_dst: &mut CudaSlice<f32>,
-        pairs: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let nblk = in_f / 32;
-        let values = m
-            .checked_mul(in_f)
-            .ok_or("quantize_q8_1_mirror_routes value count overflow")?;
-        if m == 0
-            || in_f == 0
-            || !in_f.is_multiple_of(32)
-            || pairs == 0
-            || m > i32::MAX as usize
-            || in_f > i32::MAX as usize
-            || pairs > i32::MAX as usize
-            || x.len() < values
-            || q.len() < values
-            || d.len() < m * nblk
-            || sel_src.len() < pairs
-            || w_src.len() < pairs
-            || sel_dst.len() < pairs
-            || w_dst.len() < pairs
-        {
-            return Err(format!(
-                "quantize_q8_1_mirror_routes geometry m={m} in={in_f} pairs={pairs}"
-            )
-            .into());
-        }
-        let config = LaunchConfig::for_num_elems(values.max(pairs) as u32);
-        let (in_f, m, pairs) = (in_f as i32, m as i32, pairs as i32);
-        let function = self.func("quantize_q8_1_mirror_routes");
-        let stream = self.gpu.stream();
-        let mut launch = stream.launch_builder(&function);
-        launch
-            .arg(x)
-            .arg(q)
-            .arg(d)
-            .arg(&in_f)
-            .arg(&m)
-            .arg(sel_src)
-            .arg(w_src)
-            .arg(sel_dst)
-            .arg(w_dst)
-            .arg(&pairs);
-        unsafe {
-            launch.launch(config)?;
         }
         Ok(())
     }

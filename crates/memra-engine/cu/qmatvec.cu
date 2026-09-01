@@ -604,38 +604,6 @@ extern "C" __global__ void quantize_q8_1(const float* __restrict__ x, signed cha
     if (lane == 0) out_d[(size_t)t * nblk_row + b] = d;
 }
 
-// Automatic-EP decode preparation: quantize the shared input with quantize_q8_1's program
-// VERBATIM while the first `pairs` threads mirror the device router's selected ids and route
-// weights. The coordinate sets are independent, so fusing them changes no operand or ordering;
-// it removes one launch per rank per MoE layer from the c1 critical issue stream.
-extern "C" __global__ void quantize_q8_1_mirror_routes(
-        const float* __restrict__ x, signed char* __restrict__ out_q,
-        float* __restrict__ out_d, int in_f, int m,
-        const int* __restrict__ sel_src, const float* __restrict__ w_src,
-        int* __restrict__ sel_dst, float* __restrict__ w_dst, int pairs) {
-    MEMRA_PDL_ENTRY();
-    const long long tid = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid < pairs) {
-        sel_dst[tid] = sel_src[tid];
-        w_dst[tid] = w_src[tid];
-    }
-    const long long blk = tid >> 5;
-    const int lane = threadIdx.x & 31;
-    const int nblk_row = in_f / 32;
-    if (blk >= (long long)m * nblk_row) return;
-    const int t = (int)(blk / nblk_row);
-    const int b = (int)(blk % nblk_row);
-    const size_t off = (size_t)t * in_f + b * 32 + lane;
-    const float v = x[off];
-    float amax = fabsf(v);
-    #pragma unroll
-    for (int o = 16; o > 0; o >>= 1) amax = fmaxf(amax, __shfl_xor_sync(0xffffffffu, amax, o));
-    const float d = amax / 127.0f;
-    const float id = d > 0.0f ? 1.0f / d : 0.0f;
-    out_q[off] = (signed char)__float2int_rn(v * id);
-    if (lane == 0) out_d[(size_t)t * nblk_row + b] = d;
-}
-
 // ================= Stage-C: FP4 (e2m1) activation quantize for the mxf4 block-scale GEMM =========
 // Quantize an [m, in] f32 activation to NVFP4-style e2m1 nibbles + per-16 UE4M3 scale, in the EXACT
 // layout the mxf4nvf4 GEMM B-fragment gather wants (verified by probe/fp4_4x_*.cu):
