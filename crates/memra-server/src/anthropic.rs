@@ -726,11 +726,19 @@ async fn messages_with_admission(
     };
     let model = req.model.clone();
     let stream = req.stream;
-    let admitted =
-        surfaces::admit_translated(&st, &headers, &env, &tenant, req, "/v1/messages", ttft).await;
-    if let Some(Extension(admission)) = body_admission.as_ref() {
-        admission.release();
-    }
+    let admitted = surfaces::admit_translated(
+        &st,
+        &headers,
+        &env,
+        &tenant,
+        req,
+        "/v1/messages",
+        ttft,
+        body_admission
+            .as_ref()
+            .map(|Extension(admission)| admission),
+    )
+    .await;
     let admission = match admitted {
         Ok(a) => a,
         Err(resp) => {

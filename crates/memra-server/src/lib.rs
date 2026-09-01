@@ -225,6 +225,10 @@ impl BodyAdmissionLease {
             admission.release();
         }
     }
+
+    pub(crate) fn guard(&self) -> Option<&BodyAdmissionGuard> {
+        self.0.as_ref()
+    }
 }
 
 impl Drop for BodyAdmissionLease {

@@ -107,6 +107,7 @@ async fn run_capture(
     capture: CaptureSpec,
     route: &'static str,
     deadline: &crate::RequestDeadline,
+    body_admission: Option<&crate::BodyAdmissionGuard>,
 ) -> Result<CaptureOutcome, Response> {
     let cache_ns = match crate::tenant_namespace(tenant, &None::<String>) {
         Ok(ns) => ns,
@@ -234,6 +235,9 @@ async fn run_capture(
             ));
         }
     };
+    if let Some(admission) = body_admission {
+        admission.release();
+    }
     let pending_admit = match crate::reserve_pending_admit(st, lane, &rl, *deadline) {
         Ok(guard) => guard,
         Err((resp, outcome)) => {
@@ -406,15 +410,16 @@ fn l2_normalize(v: &mut [f32]) {
 pub(crate) async fn embeddings_admitted(
     state: State<AppState>,
     headers: HeaderMap,
-    crate::AdmittedJson(req, _admission): crate::AdmittedJson<EmbeddingsReq>,
+    crate::AdmittedJson(req, admission): crate::AdmittedJson<EmbeddingsReq>,
 ) -> Response {
-    embeddings(state, headers, Json(req)).await
+    embeddings_with_admission(state, headers, Json(req), Some(admission)).await
 }
 
-pub(crate) async fn embeddings(
+async fn embeddings_with_admission(
     State(st): State<AppState>,
     headers: HeaderMap,
     Json(mut req): Json<EmbeddingsReq>,
+    body_admission: Option<crate::BodyAdmissionLease>,
 ) -> Response {
     let env = Envelope::new(false);
     match crate::canonical_model_id(&st.models, &req.model) {
@@ -481,6 +486,9 @@ pub(crate) async fn embeddings(
             },
             "/v1/embeddings",
             &deadline,
+            body_admission
+                .as_ref()
+                .and_then(|admission| admission.guard()),
         )
         .await
         {
@@ -532,15 +540,16 @@ pub(crate) async fn embeddings(
 pub(crate) async fn rerank_admitted(
     state: State<AppState>,
     headers: HeaderMap,
-    crate::AdmittedJson(req, _admission): crate::AdmittedJson<RerankReq>,
+    crate::AdmittedJson(req, admission): crate::AdmittedJson<RerankReq>,
 ) -> Response {
-    rerank(state, headers, Json(req)).await
+    rerank_with_admission(state, headers, Json(req), Some(admission)).await
 }
 
-pub(crate) async fn rerank(
+async fn rerank_with_admission(
     State(st): State<AppState>,
     headers: HeaderMap,
     Json(mut req): Json<RerankReq>,
+    body_admission: Option<crate::BodyAdmissionLease>,
 ) -> Response {
     let env = Envelope::new(false);
     match crate::canonical_model_id(&st.models, &req.model) {
@@ -593,6 +602,9 @@ pub(crate) async fn rerank(
             },
             "/v1/rerank",
             &deadline,
+            body_admission
+                .as_ref()
+                .and_then(|admission| admission.guard()),
         )
         .await
         {

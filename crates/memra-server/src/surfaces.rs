@@ -82,6 +82,7 @@ pub(crate) fn authenticate_candidates(
 /// wait -> admission peek. Every rejection settles its receipt through `ledger_rejected`
 /// (same status/error-code rows the chat surface writes) and returns the OpenAI-shaped
 /// response for the surface to reshape.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn admit_translated(
     st: &AppState,
     headers: &HeaderMap,
@@ -90,6 +91,7 @@ pub(crate) async fn admit_translated(
     req: ChatCompletionReq,
     route: &'static str,
     ttft: Option<std::sync::Arc<crate::ttft::Trace>>,
+    body_admission: Option<&crate::BodyAdmissionGuard>,
 ) -> Result<Admission, Response> {
     let cache_ns = match crate::tenant_namespace(tenant, &req.cache_salt) {
         Ok(ns) => ns,
@@ -270,6 +272,9 @@ pub(crate) async fn admit_translated(
             ));
         }
     };
+    if let Some(admission) = body_admission {
+        admission.release();
+    }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
     let pending_admit = match crate::reserve_pending_admit(st, lane, &rl, deadline) {

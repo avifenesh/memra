@@ -113,6 +113,25 @@ fn validate_aux_layers(aux_layers: &[usize]) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_eagle_attention_geometry(
+    n_head: usize,
+    n_head_kv: usize,
+    head_dim: usize,
+) -> Result<(), String> {
+    if n_head == 0 || n_head_kv == 0 || head_dim == 0 || !n_head.is_multiple_of(n_head_kv) {
+        return Err(format!(
+            "EAGLE3 attention geometry requires nonzero n_head divisible by n_head_kv; got n_head={n_head}, n_head_kv={n_head_kv}, head_dim={head_dim}"
+        ));
+    }
+    n_head
+        .checked_mul(head_dim)
+        .ok_or("EAGLE3 query-head geometry overflow")?;
+    n_head_kv
+        .checked_mul(head_dim)
+        .ok_or("EAGLE3 key/value-head geometry overflow")?;
+    Ok(())
+}
+
 fn validate_d2t_map(
     d2t: &[i64],
     draft_vocab: usize,
@@ -180,6 +199,7 @@ impl Eagle3Draft {
         };
         let cfg = EagleConfig::from_json(&dir.join("config.json"))?;
         validate_aux_layers(&cfg.aux_layers)?;
+        validate_eagle_attention_geometry(cfg.n_head, cfg.n_head_kv, cfg.head_dim)?;
         let m = StModel::open(path)?;
 
         let d2t = read_i64(&m, "d2t")?;
@@ -720,7 +740,10 @@ fn read_i64(m: &StModel, name: &str) -> Result<Vec<i64>, Box<dyn std::error::Err
 /// a drifted fixture fails loudly instead of testing a config that no longer exists.
 #[cfg(test)]
 mod tensor_contract_tests {
-    use super::{validate_aux_layers, validate_d2t_map, validate_eagle_tensor};
+    use super::{
+        validate_aux_layers, validate_d2t_map, validate_eagle_attention_geometry,
+        validate_eagle_tensor,
+    };
     use memra_gguf::safetensors::StInfo;
 
     #[test]
@@ -762,6 +785,10 @@ mod tensor_contract_tests {
         assert!(validate_d2t_map(&[i64::MAX], 1, None).is_err());
         let err = validate_d2t_map(&[4], 1, Some(4)).unwrap_err();
         assert!(err.contains("target vocabulary of 4 entries"), "{err}");
+        assert!(validate_eagle_attention_geometry(32, 8, 128).is_ok());
+        assert!(validate_eagle_attention_geometry(7, 8, 128).is_err());
+        assert!(validate_eagle_attention_geometry(8, 0, 128).is_err());
+        assert!(validate_eagle_attention_geometry(usize::MAX, 1, 2).is_err());
     }
 }
 
