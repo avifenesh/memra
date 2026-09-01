@@ -1179,20 +1179,6 @@ fn parallel_ep_q8_prep_fused_enabled() -> Result<bool, String> {
     )
 }
 
-fn parse_parallel_ep_q8_graph(value: Option<&str>) -> Result<bool, String> {
-    match value {
-        None | Some("") | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(value) => Err(format!(
-            "MEMRA_PARALLEL_EP_Q8_GRAPH={value:?} is invalid; expected 0 or 1"
-        )),
-    }
-}
-
-fn parallel_ep_q8_graph_enabled() -> Result<bool, String> {
-    parse_parallel_ep_q8_graph(std::env::var("MEMRA_PARALLEL_EP_Q8_GRAPH").ok().as_deref())
-}
-
 fn parse_step_layer_specs(
     flag: &str,
     value: Option<&str>,
@@ -12171,80 +12157,12 @@ impl TpE4m3HostBounce {
         let scope = parallel_ep_q8_scope()?.unwrap_or(ParallelEpQ8Scope::All);
         let gate_up_paired = parallel_ep_q8_gu_paired_enabled(true, Some(scope))?;
         let prep_fused = parallel_ep_q8_prep_fused_enabled()?;
-        let q8_graph = parallel_ep_q8_graph_enabled()?;
         if prep_fused && scope == ParallelEpQ8Scope::Down {
             return Err(
                 "MEMRA_PARALLEL_EP_Q8_PREP_FUSED=1 requires Q8 gate/up input preparation; \
                  MEMRA_PARALLEL_EP_Q8_SCOPE=down keeps that input BF16"
                     .into(),
             );
-        }
-        if q8_graph
-            && (tokens != 1
-                || scope != ParallelEpQ8Scope::All
-                || !gate_up_paired
-                || !prep_fused
-                || timing
-                || pre_join.is_some())
-        {
-            return Err(
-                "MEMRA_PARALLEL_EP_Q8_GRAPH=1 requires t=1, Q8 scope=all, paired gate/up, \
-                 MEMRA_PARALLEL_EP_Q8_PREP_FUSED=1, timing off, and no PREJOIN shared-expert \
-                 hook"
-                    .into(),
-            );
-        }
-
-        if q8_graph
-            && let Some(graph_exec) = workspace.graphs[tokens].as_ref().map(|graph| graph.exec)
-        {
-            use cudarc::driver::DevicePtr;
-            let root_stream = e.stream();
-            let (selected_ptr, _selected_guard) = selected_dev.device_ptr(&root_stream);
-            let (weights_ptr, _weights_guard) = route_weights_dev.device_ptr(&root_stream);
-            let route_ptrs = (selected_ptr, weights_ptr);
-            if workspace.graph_routes != Some(route_ptrs) {
-                return Err(format!(
-                    "W4A8 EP graph route buffers moved: built={:?} current={route_ptrs:?}",
-                    workspace.graph_routes,
-                )
-                .into());
-            }
-            let _main = e.gpu.enter_main()?;
-            e.stream().memcpy_dtod(
-                &input_dev.slice(0..input_values),
-                &mut workspace.graph_input.slice_mut(0..input_values),
-            )?;
-            e.memset_zeros_view(
-                &mut workspace
-                    .slot_rows
-                    .slice_mut(0..pairs * experts.input_width),
-            )?;
-            unsafe {
-                let result = cudarc::driver::sys::cuGraphLaunch(
-                    graph_exec,
-                    e.stream().cu_stream() as cudarc::driver::sys::CUstream,
-                );
-                if result != cudarc::driver::sys::CUresult::CUDA_SUCCESS {
-                    return Err(format!("W4A8 EP graph launch: {result:?}").into());
-                }
-            }
-            let mut output = e.uninit(input_values)?;
-            e.stream().memcpy_dtod(
-                &workspace.graph_output.slice(0..input_values),
-                &mut output.slice_mut(0..input_values),
-            )?;
-            static REPLAY_LOGGED: std::sync::atomic::AtomicBool =
-                std::sync::atomic::AtomicBool::new(false);
-            if !REPLAY_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                eprintln!(
-                    "[parallel-ep-q8-graph] replay devices={:?} tokens={tokens} \
-                     rank_chains=4x(prep,gate-up,activation,down) combine=graph \
-                     performance_claim=false",
-                    self.devices,
-                );
-            }
-            return Ok(output);
         }
 
         {
@@ -12562,208 +12480,7 @@ impl TpE4m3HostBounce {
                 },
             );
         }
-        if q8_graph && workspace.graphs[tokens].is_none() {
-            e.stream().synchronize()?;
-            let graph = self.build_nvfp4_ep_q8_routes_graph(
-                experts,
-                e,
-                workspace,
-                selected_dev,
-                route_weights_dev,
-                tokens,
-                experts_per_token,
-                activation_limit,
-            )?;
-            workspace.graphs[tokens] = Some(graph);
-            eprintln!(
-                "[parallel-ep-q8-graph] captured devices={:?} tokens={tokens} \
-                 prep=fused gate_up=paired activation=q8 down=q8 combine=slot-order \
-                 performance_claim=false",
-                self.devices,
-            );
-        }
         Ok(output)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn build_nvfp4_ep_q8_routes_graph(
-        &self,
-        experts: &ResidentNvfp4ExpertParallel,
-        e: &Engine,
-        workspace: &mut Nvfp4EpDeviceWorkspace,
-        selected_dev: &crate::CudaSlice<i32>,
-        route_weights_dev: &crate::CudaSlice<f32>,
-        tokens: usize,
-        experts_per_token: usize,
-        activation_limit: Option<f32>,
-    ) -> Result<RoutesGraph, Box<dyn std::error::Error>> {
-        use cudarc::driver::DevicePtr;
-        use cudarc::driver::sys;
-
-        fn cu_try(result: sys::CUresult, context: &str) -> Result<(), Box<dyn std::error::Error>> {
-            if result == sys::CUresult::CUDA_SUCCESS {
-                Ok(())
-            } else {
-                Err(format!("{context}: {result:?}").into())
-            }
-        }
-
-        let world = self.ranks.len();
-        if world != experts.ranks.len() || !(2..=PRODUCT_MAX_CARDS).contains(&world) || tokens != 1
-        {
-            return Err(format!(
-                "W4A8 EP graph requires one token and matching 2..={PRODUCT_MAX_CARDS} ranks, \
-                 got tokens={tokens} runtime={world} experts={}",
-                experts.ranks.len(),
-            )
-            .into());
-        }
-        let width = experts.input_width;
-        let pairs = tokens
-            .checked_mul(experts_per_token)
-            .ok_or("W4A8 EP graph pair count overflow")?;
-        let input_values = tokens
-            .checked_mul(width)
-            .ok_or("W4A8 EP graph input size overflow")?;
-        let root_stream = e.stream();
-        let (selected_ptr, _selected_guard) = selected_dev.device_ptr(&root_stream);
-        let (weights_ptr, _weights_guard) = route_weights_dev.device_ptr(&root_stream);
-        let route_ptrs = (selected_ptr, weights_ptr);
-
-        let mut children = Vec::with_capacity(world + 1);
-        for rank_index in 0..world {
-            let engine = &self.ranks[rank_index];
-            let rank = &experts.ranks[rank_index];
-            let owner_start = rank.expert_range.start;
-            let owner_end = rank.expert_range.end;
-            let _main = engine.gpu.enter_main()?;
-            let (child, _retained) = engine.capture_graph_retained(|_| {
-                engine.quantize_q8_1_mirror_routes_into(
-                    &workspace.graph_input,
-                    tokens,
-                    width,
-                    &mut workspace.input_q8[rank_index],
-                    &mut workspace.input_q8_scales[rank_index],
-                    selected_dev,
-                    route_weights_dev,
-                    &mut workspace.sel[rank_index],
-                    &mut workspace.route_w[rank_index],
-                    pairs,
-                )?;
-                engine.qmatvec_nvfp4_q8_ep_paired_slots_into(
-                    &rank.gate,
-                    &rank.up,
-                    &workspace.sel[rank_index],
-                    &workspace.input_q8[rank_index],
-                    &workspace.input_q8_scales[rank_index],
-                    &mut workspace.gate_out[rank_index],
-                    &mut workspace.up_out[rank_index],
-                    pairs,
-                    experts_per_token,
-                    width,
-                    experts.expert_width,
-                    owner_start,
-                    owner_end,
-                    experts.gate_row_bytes,
-                    rank.gate_expert_bytes,
-                )?;
-                engine.silu_mul_scaled_host_expf_q8_ep_slots_into(
-                    &workspace.gate_out[rank_index],
-                    &workspace.up_out[rank_index],
-                    &rank.macros_gate,
-                    &rank.macros_up,
-                    &workspace.sel[rank_index],
-                    owner_start,
-                    owner_end,
-                    activation_limit,
-                    &mut workspace.activation_q8[rank_index],
-                    &mut workspace.activation_q8_scales[rank_index],
-                    experts.expert_width,
-                    pairs,
-                )?;
-                engine.qmatvec_nvfp4_q8_ep_down_slots_raw(
-                    &rank.down,
-                    &workspace.sel[rank_index],
-                    &workspace.activation_q8[rank_index],
-                    &workspace.activation_q8_scales[rank_index],
-                    &rank.macros_down,
-                    workspace.slot_rows_raw,
-                    pairs,
-                    experts.expert_width,
-                    width,
-                    owner_start,
-                    owner_end,
-                    experts.down_row_bytes,
-                    rank.down_expert_bytes,
-                )?;
-                Ok(())
-            })?;
-            children.push(child);
-        }
-
-        {
-            let _main = e.gpu.enter_main()?;
-            let (child, _retained) = e.capture_graph_retained(|_| {
-                e.axpy_rows_seq_tokens_into(
-                    &workspace.slot_rows,
-                    route_weights_dev,
-                    &mut workspace.graph_output,
-                    width,
-                    experts_per_token,
-                    tokens,
-                )
-            })?;
-            children.push(child);
-        }
-
-        let mut parent: sys::CUgraph = std::ptr::null_mut();
-        unsafe {
-            cu_try(sys::cuGraphCreate(&mut parent, 0), "W4A8 EP cuGraphCreate")?;
-        }
-        let mut rank_nodes = Vec::with_capacity(world);
-        for (rank_index, child) in children.iter().take(world).enumerate() {
-            let mut node: sys::CUgraphNode = std::ptr::null_mut();
-            unsafe {
-                cu_try(
-                    sys::cuGraphAddChildGraphNode(
-                        &mut node,
-                        parent,
-                        std::ptr::null(),
-                        0,
-                        child.cu_graph(),
-                    ),
-                    &format!("W4A8 EP graph rank {rank_index}"),
-                )?;
-            }
-            rank_nodes.push(node);
-        }
-        let mut combine_node: sys::CUgraphNode = std::ptr::null_mut();
-        unsafe {
-            cu_try(
-                sys::cuGraphAddChildGraphNode(
-                    &mut combine_node,
-                    parent,
-                    rank_nodes.as_ptr(),
-                    rank_nodes.len(),
-                    children[world].cu_graph(),
-                ),
-                "W4A8 EP graph combine",
-            )?;
-        }
-        let mut exec: sys::CUgraphExec = std::ptr::null_mut();
-        unsafe {
-            cu_try(
-                sys::cuGraphInstantiateWithFlags(&mut exec, parent, 0),
-                "W4A8 EP graph instantiate",
-            )?;
-        }
-        workspace.graph_routes = Some(route_ptrs);
-        debug_assert_eq!(input_values, width);
-        Ok(RoutesGraph {
-            exec,
-            parent,
-            _children: children,
-        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -16376,10 +16093,6 @@ mod tests {
         assert!(!parse_parallel_ep_q8_prep_fused(Some("0")).unwrap());
         assert!(parse_parallel_ep_q8_prep_fused(Some("1")).unwrap());
         assert!(parse_parallel_ep_q8_prep_fused(Some("true")).is_err());
-        assert!(!parse_parallel_ep_q8_graph(None).unwrap());
-        assert!(!parse_parallel_ep_q8_graph(Some("0")).unwrap());
-        assert!(parse_parallel_ep_q8_graph(Some("1")).unwrap());
-        assert!(parse_parallel_ep_q8_graph(Some("true")).is_err());
     }
 
     #[test]
