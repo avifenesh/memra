@@ -29,7 +29,9 @@ here would have made the run a VOID rather than a pass.
 
 **A — fix arm: PASS.** `10-cant-hallucinate-greedy` and `11-cant-hallucinate-sampled-vendor-default`
 both 200 with **codes 3/3 exact** (`ZK5465`, `QV4655`, `XR0818`). Negatives refused by name: video
-400, faked pad 400; the literal `<|image|>` stays plain text. Publication receipt, once per request:
+400, faked pad 400; the literal `<|image|>` stays plain text. Publication receipt — once per
+SESSION, which in this probe is also once per request because each probe request is its own
+session (the engine builds the overlay on a session's first prefill tick and reuses it after):
 `overlay published to the intake engine: dev2 -> dev0 rows=256 elems=1048576 MiB=4.00 mode=Auto` —
 4 MiB, matching the ~5 MiB the design predicted. Spec engaged (33 `[glm5-acc]` bursts).
 
