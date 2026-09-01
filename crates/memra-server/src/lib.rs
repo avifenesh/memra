@@ -2213,13 +2213,33 @@ fn max_queue_depth(cap: usize) -> usize {
     .unwrap_or(cap.saturating_mul(4))
 }
 
+/// Absolute queue-wait ceiling for the interactive lane: `MEMRA_QUEUE_WAIT_CEILING_S`
+/// (default **0 = OFF by design**, darklanes#5). At `N > 0`, an interactive request whose
+/// estimated queue wait exceeds `N` seconds sheds 429 (`shed_queue_wait`, never billed)
+/// with `Retry-After` = the estimate, even when the caller's own deadline could absorb the
+/// wait. `0`, absent, or unparsable = off (today's silent-queue behavior). Read once.
+/// Full doc: docs/FLAGS.md row.
+fn queue_wait_ceiling_s() -> u64 {
+    static S: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *S.get_or_init(|| {
+        std::env::var("MEMRA_QUEUE_WAIT_CEILING_S")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    })
+}
+
 /// Deadline-aware admission for the interactive lane, which QUEUES beyond the session cap
 /// (never sheds) — so before this gate a saturated box accepted every request and simply
 /// answered late. At submission time (never after — an admitted request is never shed):
 ///
 ///   (a) absolute bound: backlog >= `max_queue_depth` => 429 `shed_queue`;
 ///   (b) deadline test: estimated queue wait > the request's remaining deadline =>
-///       429 `shed_deadline`, Retry-After = the estimate.
+///       429 `shed_deadline`, Retry-After = the estimate;
+///   (c) wait ceiling (opt-in, darklanes#5): `MEMRA_QUEUE_WAIT_CEILING_S` set to N > 0
+///       and estimated queue wait > N => 429 `shed_queue_wait`, Retry-After = the
+///       estimate. Independent of the caller's deadline: (b) never fires for a patient
+///       caller, which is exactly how prod queued 133-137 s in silence.
 ///
 /// The estimate reuses the SAME machinery as X-RateLimit-Reset (mean tokens/request x p50
 /// step latency), scaled by how many cap-wide waves of queued requests are ahead. Honestly
@@ -2259,6 +2279,20 @@ pub(crate) fn reserve_pending_admit(
     lane: lanes::Lane,
     rl: &RateLimit,
     deadline: RequestDeadline,
+) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+    reserve_pending_admit_with_ceiling(st, lane, rl, deadline, queue_wait_ceiling_s())
+}
+
+/// `reserve_pending_admit` with the queue-wait ceiling passed explicitly, so both arms of
+/// the flag are unit-testable in one process (the env read above is a OnceLock). Every
+/// production ingress goes through the wrapper; only tests call this directly.
+#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
+fn reserve_pending_admit_with_ceiling(
+    st: &AppState,
+    lane: lanes::Lane,
+    rl: &RateLimit,
+    deadline: RequestDeadline,
+    ceiling_s: u64,
 ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
     // The queue bound is a capacity safety property, not a quota-only feature. A key with
     // remaining rate-limit headroom can still open hundreds of concurrent requests; applying
@@ -2326,6 +2360,38 @@ pub(crate) fn reserve_pending_admit(
                 Some(est_wait_s),
             );
             return Err((resp, "shed_deadline"));
+        }
+        // QUEUE-WAIT CEILING (darklanes#5, opt-in): the deadline test above never fires
+        // for a patient caller, so a burst past the session cap queued interactively for
+        // 133-137 s of pre-header silence on prod (2026-09-01) without a single 429. With
+        // `MEMRA_QUEUE_WAIT_CEILING_S` = N > 0, a projected wait past N sheds here with the
+        // same retry contract instead of making the caller discover the wait by enduring
+        // it. Same trigger posture as (b): only a request that actually waits is judged
+        // (a free slot with an empty lane admits immediately, estimate not applied).
+        if lane == lanes::Lane::Interactive
+            && waits_for_capacity
+            && ceiling_s > 0
+            && est_wait_s > ceiling_s
+        {
+            let msg = format!(
+                "estimated queue wait ~{est_wait_s}s exceeds this deployment's queue-wait \
+                 ceiling ({ceiling_s}s); this request was not admitted and is not billed; \
+                 retry after ~{est_wait_s}s (a coarse estimate, not a promise)"
+            );
+            let resp = retry_contract_response(
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(error_body(
+                        &msg,
+                        "rate_limit_error",
+                        None,
+                        Some("shed_queue_wait"),
+                    )),
+                )
+                    .into_response(),
+                Some(est_wait_s),
+            );
+            return Err((resp, "shed_queue_wait"));
         }
         if reservations_for_lane
             .compare_exchange(
@@ -8138,7 +8204,7 @@ fn ledger_rejected(
 }
 
 /// Settle a receipt with a NAMED zero-debit outcome (`deadline_exceeded`, `shed_deadline`,
-/// `shed_queue`) — `ledger_rejected`'s twin for terminal rows whose outcome the billing
+/// `shed_queue`, `shed_queue_wait`) — `ledger_rejected`'s twin for terminal rows whose outcome the billing
 /// census distinguishes from a plain rejection. Never bills (enforced again in
 /// `ledger::PendingReceipt::finalize`).
 fn ledger_unbilled(
@@ -15257,6 +15323,239 @@ default_reasoning_effort = "always"
             );
             drop(g);
         }
+    }
+
+    /// THE DEFECT SHAPE, kept as the flag-off contract (darklanes#5; prod measured
+    /// 2026-09-01: 133-137 s of pre-header silence, never a 429). The engine queue is
+    /// saturated (a full wave of reservations ahead), the HTTP lane still has slots,
+    /// and the caller's deadline can absorb the estimated wait: no arm sheds, the
+    /// request queues silently. With `MEMRA_QUEUE_WAIT_CEILING_S` absent or 0 this is
+    /// today's behavior byte-for-byte, and this test is what holds that line.
+    #[test]
+    fn a_saturated_queue_with_free_http_slots_queues_silently_without_a_ceiling() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let cap = lane_cap(lane);
+        {
+            let mut m = st.metrics.lock().unwrap();
+            m.completed = 10;
+            m.tokens_out = 1_000; // mean 100 tok/request...
+            m.step_p50_ms = 100.0; // ...x 100 ms = ~10 s/wave; one wave ahead => ~20 s
+        }
+        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel); // one wave ahead
+        let _restore = CounterRestore(counter, prev);
+        // The HTTP lane is NOT full: a free slot remains, but the wave ahead means this
+        // request still waits ~20 s for engine capacity.
+        let free = RateLimit {
+            limit: cap,
+            remaining: 1,
+            reset_s: 0,
+        };
+        let g = reserve_pending_admit(
+            &st,
+            lane,
+            &free,
+            RequestDeadline::starting_now(TIMEOUT_MS_MAX),
+        );
+        assert!(
+            g.is_ok(),
+            "flag off: a ~20 s projected wait whose deadline can absorb it queues \
+             silently (no 429) - the darklanes#5 defect shape, preserved by default"
+        );
+        drop(g);
+    }
+
+    /// QUEUE-WAIT CEILING, shed arm: the exact defect shape above (saturated engine
+    /// queue, free HTTP slot, patient deadline), but with a ceiling below the estimate:
+    /// 429, `code: shed_queue_wait`, Retry-After = the estimate (with its ms twin), and
+    /// the X-RateLimit trio rides the shed like every other 429 on this surface.
+    #[test]
+    fn the_queue_wait_ceiling_sheds_with_429_retry_after_and_the_ratelimit_trio() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let cap = lane_cap(lane);
+        {
+            let mut m = st.metrics.lock().unwrap();
+            m.completed = 10;
+            m.tokens_out = 1_000; // mean 100 tok/request...
+            m.step_p50_ms = 100.0; // ...x 100 ms = ~10 s/wave; one wave ahead => ~20 s
+        }
+        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel); // one wave ahead
+        let _restore = CounterRestore(counter, prev);
+        let free = RateLimit {
+            limit: cap,
+            remaining: 1,
+            reset_s: 0,
+        };
+        let (resp, outcome) = reserve_pending_admit_with_ceiling(
+            &st,
+            lane,
+            &free,
+            RequestDeadline::starting_now(TIMEOUT_MS_MAX),
+            5, // ceiling 5 s, estimate ~20 s
+        )
+        .map(|_| ())
+        .expect_err("a projected wait past the ceiling must shed");
+        assert_eq!(outcome, "shed_queue_wait");
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            retry_after(&resp).as_deref(),
+            Some("20"),
+            "Retry-After must carry the estimate (~10 s/wave x 2 waves)"
+        );
+        assert_eq!(
+            resp.headers()
+                .get("retry-after-ms")
+                .and_then(|v| v.to_str().ok()),
+            Some("20000"),
+            "the ms twin must match"
+        );
+        let stamped = free.attach(resp);
+        for h in [
+            "x-ratelimit-limit",
+            "x-ratelimit-remaining",
+            "x-ratelimit-reset",
+        ] {
+            assert!(stamped.headers().get(h).is_some(), "missing {h}");
+        }
+    }
+
+    /// QUEUE-WAIT CEILING, admit arm + lane scope: an estimate UNDER the ceiling still
+    /// queues exactly as before (the ceiling is a ceiling, not a load switch), and the
+    /// dark lanes are never judged by it (the worker's own lane gate owns those).
+    #[test]
+    fn the_queue_wait_ceiling_admits_under_it_and_never_touches_dark_lanes() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let cap = lane_cap(lane);
+        {
+            let mut m = st.metrics.lock().unwrap();
+            m.completed = 10;
+            m.tokens_out = 1_000;
+            m.step_p50_ms = 100.0; // ~10 s/wave; one wave ahead => ~20 s
+        }
+        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel);
+        let _restore = CounterRestore(counter, prev);
+        let free = RateLimit {
+            limit: cap,
+            remaining: 1,
+            reset_s: 0,
+        };
+        let g = reserve_pending_admit_with_ceiling(
+            &st,
+            lane,
+            &free,
+            RequestDeadline::starting_now(TIMEOUT_MS_MAX),
+            60, // ceiling 60 s, estimate ~20 s
+        );
+        assert!(
+            g.is_ok(),
+            "an estimate under the ceiling must admit and queue as before"
+        );
+        drop(g);
+        // Dark lanes: a backlog and a 1 s ceiling, and still no shed from this gate.
+        let full = RateLimit {
+            limit: cap,
+            remaining: 0,
+            reset_s: 5,
+        };
+        for dark in [lanes::Lane::Judge, lanes::Lane::Harvest] {
+            let counter = &worker::ADMISSION_RESERVATIONS[dark.idx()];
+            let prev = counter.swap(1, std::sync::atomic::Ordering::AcqRel); // backlog > 0
+            let _restore = CounterRestore(counter, prev);
+            let g = reserve_pending_admit_with_ceiling(
+                &st,
+                dark,
+                &full,
+                RequestDeadline::starting_now(TIMEOUT_MS_MAX),
+                1,
+            );
+            assert!(
+                g.is_ok(),
+                "{dark:?} must not be shed by the interactive queue-wait ceiling"
+            );
+            drop(g);
+        }
+    }
+
+    /// QUEUE-WAIT CEILING, arm precedence: with the ceiling set, the existing arms still
+    /// answer first and unchanged. A backlog at the absolute bound stays `shed_queue`;
+    /// a deadline shorter than the estimate stays `shed_deadline`.
+    #[test]
+    fn the_queue_wait_ceiling_leaves_the_existing_shed_arms_first_and_unchanged() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let cap = lane_cap(lane);
+        {
+            let mut m = st.metrics.lock().unwrap();
+            m.completed = 10;
+            m.tokens_out = 1_000;
+            m.step_p50_ms = 100.0;
+        }
+        let rl = RateLimit {
+            limit: cap,
+            remaining: 0,
+            reset_s: 1,
+        };
+        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        // At the absolute bound: shed_queue wins even with a 1 s ceiling armed.
+        let prev = counter.swap(max_queue_depth(cap), std::sync::atomic::Ordering::AcqRel);
+        let _restore = CounterRestore(counter, prev);
+        assert!(matches!(
+            reserve_pending_admit_with_ceiling(
+                &st,
+                lane,
+                &rl,
+                RequestDeadline::starting_now(TIMEOUT_MS_MAX),
+                1,
+            ),
+            Err((_, "shed_queue"))
+        ));
+        // Below the bound with a too-short deadline: shed_deadline wins over the ceiling.
+        counter.store(cap, std::sync::atomic::Ordering::Release);
+        assert!(matches!(
+            reserve_pending_admit_with_ceiling(
+                &st,
+                lane,
+                &rl,
+                RequestDeadline::starting_now(TIMEOUT_MS_MIN),
+                1,
+            ),
+            Err((_, "shed_deadline"))
+        ));
+    }
+
+    /// QUEUE-WAIT CEILING wiring: the production wrapper feeds the OnceLock env read into
+    /// the judged path (wiring-assertions law: anchored on the INVOCATION in
+    /// comment-stripped text, scoped to the wrapper body so this test's own literals
+    /// cannot satisfy it).
+    #[test]
+    fn the_queue_wait_ceiling_is_wired_through_the_production_wrapper() {
+        let src = include_str!("lib.rs");
+        let code: String = src
+            .lines()
+            .map(|l| l.split("//").next().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let start = code
+            .find("pub(crate) fn reserve_pending_admit(")
+            .expect("the production wrapper exists");
+        let rest = &code[start..];
+        let end = rest.find("\nfn ").unwrap_or(rest.len());
+        let wrapper = &rest[..end];
+        assert!(
+            wrapper.contains(
+                "reserve_pending_admit_with_ceiling(st, lane, rl, deadline, queue_wait_ceiling_s())"
+            ),
+            "every production ingress must judge the ceiling the env read armed"
+        );
     }
 
     #[test]
