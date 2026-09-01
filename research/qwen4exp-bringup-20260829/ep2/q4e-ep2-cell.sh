@@ -341,7 +341,7 @@ cell_decode_ab(){
 #
 # WHAT THIS CELL STILL DOES NOT COLLECT, stated so nobody reads a partial trace as a full one:
 # PREFILL-chunk lines. The host-routed per-expert prefill executor has no trace call, and the
-# TP2 prefill tap (the `trace_moe_routes` call inside `prefill_extend_tp2`) fires only under that path, which this
+# TP2 prefill tap (the `trace_moe_routes` call inside `forward_tp2`, which `prefill_extend_tp2` chunks into and which the `--tp2-prefill-gate` prime arm also calls directly) fires only under those TP2 paths, which this
 # invocation never reaches. Decode and verify lines are collected; prefill co-activation would
 # need --tp2 PLUS an instrument that actually routes prefill through the TP2 path.
 #

@@ -10,10 +10,11 @@ number below is either (a) read off a banked box receipt already in this repo, o
 arithmetic over such rows, labelled as arithmetic. No two-card number is fabricated and
 no new perf claim is made.
 
-**Landing order, because two citations below point at sibling lanes that are still open.**
-`spec/downsel/DOWNSEL.md` is PR #27 and `spec/ROUND-BUDGET-COMPOSITION.md` is PR #26; neither
-is on `main` at this branch point, so those two paths dangle for anyone who reads the merge
-result before those land. Nothing in the verdict depends on them resolving: the primary
+**Landing order (updated at the rebase).** `spec/downsel/DOWNSEL.md` (PR #27) and
+`spec/ROUND-BUDGET-COMPOSITION.md` (PR #26) were open sibling lanes when this lane branched;
+both are on `main` at the branch point this head sits on, so every citation below resolves in
+the merge result (and this PR edits ROUND-BUDGET-COMPOSITION.md in place, which is only possible
+because it is in the base). Nothing in the verdict depends on them resolving: the primary
 attribution is re-derivable from a receipt that IS in this tree, namely
 `spec/mtp10/nsys/win-spec_cuda_gpu_kern_sum.csv` (median 111,008 ns x 48 layers = 5.328 ms for
 `qmatvec_nvfp4_modelopt_sel_gu_silu_f32` and 64,576 ns x 48 = 3.100 ms for
