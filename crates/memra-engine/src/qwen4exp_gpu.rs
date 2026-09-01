@@ -1460,7 +1460,7 @@ fn sel_v3_on() -> bool {
 // idle lanes is worth ~5-7% of the K=5 round, 136.2 -> ~144-146 tok/s) and the exactness
 // arms are green on the rig, but this lane had NO timing hardware — the rig is
 // exactness-only (LAW:rig-gpu-exactness-only) and no cloud box was approved. A default
-// flip needs the interleaved A/B rows the three banked cells in
+// flip needs the interleaved A/B rows the three OWED (scripted, none ran) cells in
 // `spec/downsel/` produce; until those exist, ON would be an unmeasured default.
 //
 // Arm: `MEMRA_Q4E_SEAMS=selgroup` (both families AUTO). Per-family shapes for the A/B
@@ -7028,7 +7028,12 @@ fn gate_nvfp4_sel_group_inner(e: &Engine) -> Res<String> {
         };
         // The shipped arm (seam OFF) and the host reference, built once per geometry. The
         // shipped arm is not just a bit-identity control: its OWN deviation from the host
-        // chain is this geometry's calibration (see `class_tol` below).
+        // chain is this geometry's calibration (see `class_tol` below). PIN sel_v3 rather
+        // than inheriting ambient seam state (revuto, PR #27): under `selv3=0` in
+        // MEMRA_Q4E_SEAMS the "shipped" control would silently become the v2 kernel and
+        // the calibration would be measured against the wrong program — mirror the fused
+        // family, which pins its control the same way.
+        set_sel_v3(true);
         let shipped = run("off")?;
         let wbytes = out_f * in_f / 2;
         let sbytes = out_f * in_f / 16;
