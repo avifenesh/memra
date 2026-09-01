@@ -1,0 +1,12 @@
+# sel_shape_probe (SYNTHETIC banks, no checkpoint — latency only, no oracle)
+# geometry experts=512 hidden=2560 ff=640 selected=10 t=6 reps=25 slots=60
+# pairs: gate+up in_f=2560 -> 80 (32-lane loop: 83.3% occupancy); down in_f=640 -> 20 (62.5% occupancy)
+# per-expert bytes gate+up=1843200 down=921600 (chunk gate+up working set 105.5 MiB)
+arm	t	slots	gu_shape	gu_gridx	dn_shape	dn_gridx	gu_us	down_us	section_us	gu_spread	dn_spread	section_vs_off	section_vs_ctl	gu_vs_ctl	dn_vs_ctl
+off	6	60	shipped	160	shipped	640	243.1	154.5	397.6	17.3%	20.4%	1.0000	0.9806	0.9773	0.9857
+dn:32:4+gu:32:4	6	60	g32r4/rpw4	160	g32r4/rpw4	640	237.6	152.3	389.9	13.1%	17.8%	1.0198	1.0000	1.0000	1.0000
+auto	6	60	g16r4/rpw8	80	g4r4/rpw32	80	218.1	112.0	330.0	15.7%	18.8%	1.2047	1.1813	1.0894	1.3603
+dn:4:4+gu:off	6	60	shipped	160	g4r4/rpw32	80	249.6	113.5	363.1	15.0%	18.9%	1.0952	1.0739	0.9518	1.3424
+dn:off+gu:16:4	6	60	g16r4/rpw8	80	shipped	640	222.1	153.0	375.1	14.8%	17.1%	1.0601	1.0395	1.0699	0.9953
+dn:4:2+gu:16:2	6	60	g16r2/rpw4	160	g4r2/rpw16	160	272.7	118.0	390.7	13.3%	22.1%	1.0177	0.9979	0.8712	1.2909
+dn:8:1+gu:16:2	6	60	g16r2/rpw4	160	g8r1/rpw4	640	273.8	209.9	483.7	14.0%	17.5%	0.8220	0.8061	0.8678	0.7255

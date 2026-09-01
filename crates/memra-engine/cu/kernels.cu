@@ -4722,6 +4722,237 @@ extern "C" __global__ void qmatvec_nvfp4_modelopt_sel_gu_silu_f32(
 }
 
 // ===================================================================== //
+//  qwen4_exp sel matvec: SUB-WARP pair groups (downsel lane, mtp14)     //
+// ===================================================================== //
+// THE DEFECT. v3/gufuse partition the pair loop over all 32 lanes —
+// `for (p = lane; p < pairs; p += 32)` with `pairs = in_f/32` — and then reduce with a
+// full 5-step shfl tree. At this artifact's geometry that partition does not fill a warp:
+//
+//   down  (in_f = expert ff = 640):   pairs = 20  -> lanes 20-31 hold NO pair for the
+//                                     whole kernel (62.5% lane occupancy), and each
+//                                     active lane runs exactly ONE loop iteration.
+//   gate+up (in_f = hidden = 2560):   pairs = 80  -> ceil(80/32) = 3 warp iterations for
+//                                     80 lane-iterations of work (83.3% occupancy: a
+//                                     3-vs-2 tail).
+//
+// KNEE:q4e-sel-slots-not-bytes measured the consequence: the section scales with SLOT
+// COUNT (10 -> 60 slots costs 4.13x at fixed bytes) and barely at all with weight traffic
+// (a 6x distinct-byte cut buys 1.101x), i.e. it is per-slot-work bound, and per-slot work
+// is what an idle lane wastes.
+//
+// THE SHAPE. The pair loop becomes a SUB-WARP of `g` lanes. The warp carries `32/g`
+// groups; group `gi` owns `ROWS` consecutive output rows starting at
+// `o0 + gi*ROWS`; lane `s = lane & (g-1)` walks `p = s, s+g, s+2g, ...`; the reduce is
+// log2(g) `shfl_down` steps INSIDE the group and the group's lane `s == 0` writes. Rows
+// per warp is therefore `(32/g) * ROWS` and the launcher tiles `out_f` by it.
+//
+// `g == 32` with `ROWS == 4` is the v3 / gufuse program EXACTLY — same per-lane pair set
+// (`p = lane; p += 32`), same 5-step tree (`off = 16 -> 1`), same write lane, same
+// per-row expression tree. That arm is BYTE-COMPARED to the shipped kernels in
+// `gate_nvfp4_sel_matvec`, which is what makes this kernel a strict generalization and
+// the seam a safe rollback.
+//
+// Every other `g` changes the ORDER the pairs are summed in (a lane now chains several
+// pairs into its accumulator, and the tree is shallower), so it is an ACCUMULATION-CLASS
+// change like v3 was against v2 — gated against the host decoder chain on tolerance, not
+// against v3 on bits.
+//
+// `g` must be a power of two in [1, 32]; the launcher enforces that and the exact tiling.
+// A group whose rows fall past `out_f` still runs the reduce with zeroed accumulators
+// rather than returning early: groups inside ONE warp have different `o0`, so an early
+// return would leave `__shfl_down_sync(0xffffffff, ...)` with an incomplete mask.
+
+// Accumulate `ROWS` consecutive rows of ONE bank into `acc[]`, pairs strided by `g` from
+// `s`. `q4e_gu_rows4`'s body VERBATIM per row (same LUT extracts, same
+// `acc += scale*group_dot` chaining) — only the p-partition moved.
+template <int ROWS>
+__device__ __forceinline__ void q4e_sel_rows_g(
+        const unsigned char* __restrict__ codes, const unsigned char* __restrict__ scales,
+        const float* e2m1, size_t bank_row_off, int o0, int in_f,
+        const float* __restrict__ xrow, int pairs, int s, int g, float* acc /*[ROWS]*/) {
+    size_t row_codes = (size_t)in_f / 2;
+    size_t row_scales = (size_t)in_f / 16;
+    const uint4* c[ROWS];
+    const unsigned short* sc[ROWS];
+    #pragma unroll
+    for (int r = 0; r < ROWS; r++) {
+        c[r] = reinterpret_cast<const uint4*>(codes + (bank_row_off + o0 + r) * row_codes);
+        // row_scales is even (in_f % 32 == 0), so every scale row starts u16-aligned: one
+        // 2-byte load fetches both group scales of a uint4's worth of codes.
+        sc[r] = reinterpret_cast<const unsigned short*>(
+            scales + (bank_row_off + o0 + r) * row_scales);
+    }
+    for (int p = s; p < pairs; p += g) {
+        const float* xp = xrow + (size_t)p * 32;
+        uint4 cw[ROWS];
+        unsigned short sw[ROWS];
+        #pragma unroll
+        for (int r = 0; r < ROWS; r++) {
+            cw[r] = c[r][p];
+            sw[r] = sc[r][p];
+        }
+        #pragma unroll
+        for (int r = 0; r < ROWS; r++) {
+            float d0 = q4e_dot8(e2m1, cw[r].x, xp) + q4e_dot8(e2m1, cw[r].y, xp + 8);
+            float d1 = q4e_dot8(e2m1, cw[r].z, xp + 16) + q4e_dot8(e2m1, cw[r].w, xp + 24);
+            acc[r] += q4e_ue4m3((unsigned char)(sw[r] & 0xFF)) * d0
+                    + q4e_ue4m3((unsigned char)(sw[r] >> 8)) * d1;
+        }
+    }
+}
+
+// Sub-warp reduce: log2(g) shfl_down steps. Lanes at `s >= g/2` read across the group
+// boundary and their results are discarded (only `s == 0` is read), which is the standard
+// butterfly-down: at every step the lanes that still matter read in-group partials.
+template <int ROWS>
+__device__ __forceinline__ void q4e_sel_reduce_g(float* acc /*[ROWS]*/, int g) {
+    for (int off = g >> 1; off > 0; off >>= 1) {
+        #pragma unroll
+        for (int r = 0; r < ROWS; r++) {
+            acc[r] += __shfl_down_sync(0xffffffff, acc[r], off);
+        }
+    }
+}
+
+template <int ROWS>
+__device__ __forceinline__ void q4e_sel_g_body(
+        const unsigned char* __restrict__ codes, const unsigned char* __restrict__ scales,
+        const float* __restrict__ macros, const int* __restrict__ sel,
+        const float* __restrict__ x, float* __restrict__ y,
+        int in_f, int out_f, long x_stride, int g) {
+    const float e2m1[16] = {0.0f, 0.5f, 1.0f, 1.5f, 2.0f,  3.0f,  4.0f,  6.0f,
+                            -0.0f, -0.5f, -1.0f, -1.5f, -2.0f, -3.0f, -4.0f, -6.0f};
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int s = lane & (g - 1);
+    int gi = lane >> (__ffs(g) - 1);
+    int rows_per_warp = (32 / g) * ROWS;
+    int o0 = (blockIdx.x * (int)(blockDim.x >> 5) + warp) * rows_per_warp + gi * ROWS;
+    int slot = blockIdx.y;
+    int e = sel[slot];
+    const float* xrow = x + (size_t)slot * (size_t)x_stride;
+    int pairs = in_f / 32;
+    float acc[ROWS];
+    #pragma unroll
+    for (int r = 0; r < ROWS; r++) acc[r] = 0.0f;
+    bool live = (o0 + ROWS <= out_f);
+    if (live) {
+        q4e_sel_rows_g<ROWS>(codes, scales, e2m1, (size_t)e * out_f, o0, in_f, xrow, pairs,
+                             s, g, acc);
+    }
+    q4e_sel_reduce_g<ROWS>(acc, g);
+    if (live && s == 0) {
+        float m = macros[e];
+        #pragma unroll
+        for (int r = 0; r < ROWS; r++) y[(size_t)slot * out_f + o0 + r] = acc[r] * m;
+    }
+}
+
+// grid (out_f / rows_per_warp, n_sel), block 32*warps. `g` power of two in [1,32];
+// `rows` in {1,2,4}. (g=32, rows=4) is qmatvec_nvfp4_modelopt_sel_f32_v3 verbatim.
+extern "C" __global__ void qmatvec_nvfp4_modelopt_sel_g_f32(
+        const unsigned char* __restrict__ codes, const unsigned char* __restrict__ scales,
+        const float* __restrict__ macros, const int* __restrict__ sel,
+        const float* __restrict__ x, float* __restrict__ y,
+        int in_f, int out_f, long x_stride, int g, int rows) {
+    // Grid-uniform branch (no divergence): the launcher picks one (g, rows) per launch.
+    if (rows == 4) {
+        q4e_sel_g_body<4>(codes, scales, macros, sel, x, y, in_f, out_f, x_stride, g);
+    } else if (rows == 2) {
+        q4e_sel_g_body<2>(codes, scales, macros, sel, x, y, in_f, out_f, x_stride, g);
+    } else {
+        q4e_sel_g_body<1>(codes, scales, macros, sel, x, y, in_f, out_f, x_stride, g);
+    }
+}
+
+template <int ROWS>
+__device__ __forceinline__ void q4e_gu_g_body(
+        const unsigned char* __restrict__ gcodes, const unsigned char* __restrict__ gscales,
+        const float* __restrict__ gmacros,
+        const unsigned char* __restrict__ ucodes, const unsigned char* __restrict__ uscales,
+        const float* __restrict__ umacros,
+        const int* __restrict__ sel, unsigned long long pack, int max_sel,
+        const float* __restrict__ x, float* __restrict__ act, int in_f, int ff,
+        unsigned long long tok_map, long x_tstride, int g) {
+    const float e2m1[16] = {0.0f, 0.5f, 1.0f, 1.5f, 2.0f,  3.0f,  4.0f,  6.0f,
+                            -0.0f, -0.5f, -1.0f, -1.5f, -2.0f, -3.0f, -4.0f, -6.0f};
+    int slot = blockIdx.y;
+    int e;
+    if (pack != 0) {
+        const int* meta = reinterpret_cast<const int*>((size_t)pack);
+        if (slot >= meta[2 * max_sel]) return; // live count (count-gated TP2 twin)
+        e = meta[slot];
+    } else {
+        e = sel[slot];
+    }
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    int s = lane & (g - 1);
+    int gi = lane >> (__ffs(g) - 1);
+    int rows_per_warp = (32 / g) * ROWS;
+    int o0 = (blockIdx.x * (int)(blockDim.x >> 5) + warp) * rows_per_warp + gi * ROWS;
+    int pairs = in_f / 32;
+    size_t bank_row = (size_t)e * ff;
+    const float* xrow = x;
+    if (tok_map != 0) {
+        const int* tm = reinterpret_cast<const int*>((size_t)tok_map);
+        xrow = x + (long)tm[slot] * x_tstride;
+    }
+    float gacc[ROWS];
+    float uacc[ROWS];
+    #pragma unroll
+    for (int r = 0; r < ROWS; r++) { gacc[r] = 0.0f; uacc[r] = 0.0f; }
+    bool live = (o0 + ROWS <= ff);
+    if (live) {
+        q4e_sel_rows_g<ROWS>(gcodes, gscales, e2m1, bank_row, o0, in_f, xrow, pairs, s, g,
+                             gacc);
+        q4e_sel_rows_g<ROWS>(ucodes, uscales, e2m1, bank_row, o0, in_f, xrow, pairs, s, g,
+                             uacc);
+    }
+    // Interleaving gate/up inside the tree is free for bit-identity: each accumulator's
+    // own addition sequence is what fixes its bits, and that sequence is unchanged.
+    for (int off = g >> 1; off > 0; off >>= 1) {
+        #pragma unroll
+        for (int r = 0; r < ROWS; r++) {
+            gacc[r] += __shfl_down_sync(0xffffffff, gacc[r], off);
+            uacc[r] += __shfl_down_sync(0xffffffff, uacc[r], off);
+        }
+    }
+    if (live && s == 0) {
+        float gm = gmacros[e];
+        float um = umacros[e];
+        #pragma unroll
+        for (int r = 0; r < ROWS; r++) {
+            float gv = gacc[r] * gm;
+            float uv = uacc[r] * um;
+            act[(size_t)slot * ff + o0 + r] = gv / (1.0f + expf(-gv)) * uv;
+        }
+    }
+}
+
+// grid (ff / rows_per_warp, n_sel), block 32*warps. (g=32, rows=4) is
+// qmatvec_nvfp4_modelopt_sel_gu_silu_f32 verbatim, pack and tok_map modes included.
+extern "C" __global__ void qmatvec_nvfp4_modelopt_sel_gu_silu_g_f32(
+        const unsigned char* __restrict__ gcodes, const unsigned char* __restrict__ gscales,
+        const float* __restrict__ gmacros,
+        const unsigned char* __restrict__ ucodes, const unsigned char* __restrict__ uscales,
+        const float* __restrict__ umacros,
+        const int* __restrict__ sel, unsigned long long pack, int max_sel,
+        const float* __restrict__ x, float* __restrict__ act, int in_f, int ff,
+        unsigned long long tok_map, long x_tstride, int g, int rows) {
+    if (rows == 4) {
+        q4e_gu_g_body<4>(gcodes, gscales, gmacros, ucodes, uscales, umacros, sel, pack,
+                         max_sel, x, act, in_f, ff, tok_map, x_tstride, g);
+    } else if (rows == 2) {
+        q4e_gu_g_body<2>(gcodes, gscales, gmacros, ucodes, uscales, umacros, sel, pack,
+                         max_sel, x, act, in_f, ff, tok_map, x_tstride, g);
+    } else {
+        q4e_gu_g_body<1>(gcodes, gscales, gmacros, ucodes, uscales, umacros, sel, pack,
+                         max_sel, x, act, in_f, ff, tok_map, x_tstride, g);
+    }
+}
+
+// ===================================================================== //
 //  qwen4_exp quantized QSA KV cache (kvq lane, 2026-08-31)              //
 // ===================================================================== //
 // Owner default K=q8_0 / V=q5_1 — asymmetric because K feeds the score dots + rope
