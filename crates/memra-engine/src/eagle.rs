@@ -113,7 +113,11 @@ fn validate_aux_layers(aux_layers: &[usize]) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_d2t_map(d2t: &[i64], draft_vocab: usize) -> Result<(), String> {
+fn validate_d2t_map(
+    d2t: &[i64],
+    draft_vocab: usize,
+    target_vocab: Option<usize>,
+) -> Result<(), String> {
     if d2t.len() != draft_vocab {
         return Err(format!(
             "EAGLE3 d2t has {} entries, expected draft_vocab_size {draft_vocab}",
@@ -124,10 +128,16 @@ fn validate_d2t_map(d2t: &[i64], draft_vocab: usize) -> Result<(), String> {
         let target = i64::try_from(draft_id)
             .ok()
             .and_then(|id| id.checked_add(delta))
-            .filter(|target| (0..=i64::from(u32::MAX)).contains(target));
+            .filter(|target| (0..=i64::from(u32::MAX)).contains(target))
+            .filter(|target| {
+                target_vocab.is_none_or(|vocab| usize::try_from(*target).is_ok_and(|id| id < vocab))
+            });
         if target.is_none() {
+            let limit = target_vocab
+                .map(|vocab| format!(" target vocabulary of {vocab} entries"))
+                .unwrap_or_else(|| " target u32 vocabulary".to_string());
             return Err(format!(
-                "EAGLE3 d2t[{draft_id}]={delta} maps outside the target u32 vocabulary"
+                "EAGLE3 d2t[{draft_id}]={delta} maps outside the{limit}"
             ));
         }
     }
@@ -173,7 +183,7 @@ impl Eagle3Draft {
         let m = StModel::open(path)?;
 
         let d2t = read_i64(&m, "d2t")?;
-        validate_d2t_map(&d2t, cfg.draft_vocab)?;
+        validate_d2t_map(&d2t, cfg.draft_vocab, None)?;
 
         let n = cfg.hidden_size as u64;
         let two_n = n.checked_mul(2).ok_or("EAGLE3 hidden geometry overflow")?;
@@ -444,6 +454,7 @@ impl HybridModel {
         assert!(k >= 1, "k must be >= 1");
         assert!(!prompt.is_empty(), "prompt must be non-empty");
         let n_vocab = self.output.out_features();
+        validate_d2t_map(&draft.d2t, draft.draft_vocab, Some(n_vocab))?;
         let n_embd = self.cfg.n_embd as usize;
         assert_eq!(n_embd, draft.n_embd, "draft n_embd != target n_embd");
         let aux = &draft.aux_layers;
@@ -745,10 +756,12 @@ mod tensor_contract_tests {
                 "accepted {invalid:?}"
             );
         }
-        assert!(validate_d2t_map(&[0, 1, -1], 3).is_ok());
-        assert!(validate_d2t_map(&[0], 2).is_err());
-        assert!(validate_d2t_map(&[-1], 1).is_err());
-        assert!(validate_d2t_map(&[i64::MAX], 1).is_err());
+        assert!(validate_d2t_map(&[0, 1, -1], 3, Some(4)).is_ok());
+        assert!(validate_d2t_map(&[0], 2, None).is_err());
+        assert!(validate_d2t_map(&[-1], 1, None).is_err());
+        assert!(validate_d2t_map(&[i64::MAX], 1, None).is_err());
+        let err = validate_d2t_map(&[4], 1, Some(4)).unwrap_err();
+        assert!(err.contains("target vocabulary of 4 entries"), "{err}");
     }
 }
 

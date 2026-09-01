@@ -217,7 +217,23 @@ impl BodyAdmissionGuard {
     }
 }
 
-pub(crate) struct AdmittedJson<T>(pub(crate) T);
+pub(crate) struct BodyAdmissionLease(Option<BodyAdmissionGuard>);
+
+impl BodyAdmissionLease {
+    fn release(&mut self) {
+        if let Some(admission) = self.0.take() {
+            admission.release();
+        }
+    }
+}
+
+impl Drop for BodyAdmissionLease {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+pub(crate) struct AdmittedJson<T>(pub(crate) T, pub(crate) BodyAdmissionLease);
 
 #[axum::async_trait]
 impl<S, T> FromRequest<S> for AdmittedJson<T>
@@ -230,10 +246,7 @@ where
     async fn from_request(req: AxumRequest, state: &S) -> Result<Self, Self::Rejection> {
         let admission = req.extensions().get::<BodyAdmissionGuard>().cloned();
         let parsed = Json::<T>::from_request(req, state).await;
-        if let Some(admission) = admission {
-            admission.release();
-        }
-        parsed.map(|Json(value)| Self(value))
+        parsed.map(|Json(value)| Self(value, BodyAdmissionLease(admission)))
     }
 }
 
@@ -414,9 +427,10 @@ async fn authenticate_inference_before_body(
             return shape_inference_early_response(&path, response).await;
         }
     };
-    // The extractor releases this shared guard immediately after typed JSON deserialization.
-    // Raw translation surfaces release it after their second typed conversion. The middleware
-    // retains a fallback clone so extractor rejection and non-body routes cannot leak a permit.
+    // Typed handlers retain this shared guard through semantic traversal, prompt construction,
+    // tokenization, and request-slot admission, then release it before any generation wait. Raw
+    // translation surfaces do the same through their shared admission path. The middleware keeps
+    // a fallback clone so extractor rejection and non-body routes cannot leak a permit.
     let body_admission_guard = BodyAdmissionGuard::new(body_permit);
     req.extensions_mut().insert(body_admission_guard.clone());
     let body = std::mem::replace(req.body_mut(), Body::empty());
@@ -505,7 +519,7 @@ mod body_limit_tests {
             .route(
                 "/json",
                 post(
-                    |AdmittedJson(v): AdmittedJson<serde_json::Value>| async move {
+                    |AdmittedJson(v, _admission): AdmittedJson<serde_json::Value>| async move {
                         v["pad"].as_str().unwrap_or("").len().to_string()
                     },
                 ),
@@ -759,11 +773,12 @@ mod body_limit_tests {
     }
 
     #[tokio::test]
-    async fn typed_json_releases_body_admission_before_handler_work() {
+    async fn typed_json_retains_body_admission_until_handler_validation_releases_it() {
         #[derive(Clone)]
         struct Signals {
             parsed: Arc<tokio::sync::Notify>,
             finish: Arc<tokio::sync::Notify>,
+            semaphore: Arc<tokio::sync::Semaphore>,
         }
 
         let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
@@ -771,13 +786,21 @@ mod body_limit_tests {
         let signals = Signals {
             parsed: Arc::new(tokio::sync::Notify::new()),
             finish: Arc::new(tokio::sync::Notify::new()),
+            semaphore: semaphore.clone(),
         };
         let app = Router::new()
             .route(
                 "/",
                 post(
                     |Extension(signals): Extension<Signals>,
-                     AdmittedJson(_): AdmittedJson<serde_json::Value>| async move {
+                     AdmittedJson(_, mut admission): AdmittedJson<serde_json::Value>| async move {
+                        assert_eq!(
+                            signals.semaphore.available_permits(),
+                            0,
+                            "typed deserialization alone must not release post-parse admission"
+                        );
+                        admission.release();
+                        assert_eq!(signals.semaphore.available_permits(), 1);
                         signals.parsed.notify_one();
                         signals.finish.notified().await;
                         "ok"
@@ -798,7 +821,7 @@ mod body_limit_tests {
         assert_eq!(
             semaphore.available_permits(),
             1,
-            "generation/handler work must not retain a parser admission slot"
+            "validated work must release admission before generation waits"
         );
         signals.finish.notify_one();
         assert_eq!(response.await.unwrap().unwrap().status(), StatusCode::OK);
@@ -813,7 +836,13 @@ mod body_limit_tests {
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
         let server = tokio::spawn(serve_bounded_http_with_limits(
             listener,
-            Router::new().route("/", get(|| async { "ok" })),
+            Router::new().route("/", get(|| async { "ok" })).route(
+                "/slow",
+                get(|| async {
+                    tokio::time::sleep(std::time::Duration::from_millis(140)).await;
+                    "slow-ok"
+                }),
+            ),
             async move {
                 let _ = shutdown_rx.await;
             },
@@ -857,6 +886,23 @@ mod body_limit_tests {
         .expect("an idle keep-alive connection must hit the maximum lifetime")
         .unwrap();
         assert!(String::from_utf8_lossy(&bytes).contains("200 OK"));
+
+        let mut active = tokio::net::TcpStream::connect(address).await.unwrap();
+        active
+            .write_all(b"GET /slow HTTP/1.1\r\nHost: local\r\n\r\n")
+            .await
+            .unwrap();
+        bytes.clear();
+        tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            active.read_to_end(&mut bytes),
+        )
+        .await
+        .expect("an active response must finish across the connection age boundary")
+        .unwrap();
+        let active_response = String::from_utf8_lossy(&bytes);
+        assert!(active_response.contains("200 OK"), "{active_response}");
+        assert!(active_response.contains("slow-ok"), "{active_response}");
         let _ = shutdown_tx.send(());
         server.await.unwrap().unwrap();
     }
@@ -4653,12 +4699,18 @@ where
     F: std::future::Future<Output = ()> + Send,
 {
     let connections = Arc::new(tokio::sync::Semaphore::new(max_connections));
-    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
+    let (connection_shutdown, _) = tokio::sync::watch::channel(false);
+    let mut connection_tasks = tokio::task::JoinSet::new();
     let mut shutdown = Box::pin(shutdown);
 
     loop {
         tokio::select! {
             _ = &mut shutdown => break,
+            joined = connection_tasks.join_next(), if !connection_tasks.is_empty() => {
+                if let Some(Err(error)) = joined {
+                    eprintln!("[server] connection task failed: {error}");
+                }
+            }
             accepted = listener.accept() => {
                 let (stream, _) = match accepted {
                     Ok(connection) => connection,
@@ -4693,22 +4745,41 @@ where
                     .max_concurrent_streams(MAX_HTTP2_STREAMS_PER_CONNECTION)
                     .keep_alive_interval(Some(std::time::Duration::from_secs(30)))
                     .keep_alive_timeout(std::time::Duration::from_secs(10));
-                let connection = builder
+                let mut connection = Box::pin(builder
                     .serve_connection_with_upgrades(io, service)
-                    .into_owned();
-                let connection = graceful.watch(connection);
-                tokio::spawn(async move {
+                    .into_owned());
+                let mut shutdown_rx = connection_shutdown.subscribe();
+                connection_tasks.spawn(async move {
                     let _permit = permit;
-                    let _ = tokio::time::timeout(connection_max_lifetime, connection).await;
+                    tokio::select! {
+                        result = connection.as_mut() => {
+                            let _ = result;
+                        }
+                        _ = tokio::time::sleep(connection_max_lifetime) => {
+                            // Stop accepting new requests at the age boundary, but let every
+                            // active response (including long SSE) finish. A hard timeout here
+                            // truncated valid generations and made connection age part of the
+                            // response contract.
+                            connection.as_mut().graceful_shutdown();
+                            let _ = connection.await;
+                        }
+                        _ = shutdown_rx.changed() => {
+                            connection.as_mut().graceful_shutdown();
+                            let _ = connection.await;
+                        }
+                    }
                 });
             }
         }
     }
     drop(listener);
-    if tokio::time::timeout(std::time::Duration::from_secs(5), graceful.shutdown())
-        .await
-        .is_err()
-    {
+    let _ = connection_shutdown.send(true);
+    let drained = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while connection_tasks.join_next().await.is_some() {}
+    })
+    .await;
+    if drained.is_err() {
+        connection_tasks.abort_all();
         eprintln!("[server] WARN: HTTP connections exceeded the 5s graceful close deadline");
     }
     Ok(())
@@ -8196,16 +8267,27 @@ async fn completions_admitted(
     state: State<AppState>,
     headers: axum::http::HeaderMap,
     trace: Option<Extension<TtftRequestTrace>>,
-    AdmittedJson(req): AdmittedJson<CompletionReq>,
+    AdmittedJson(req, admission): AdmittedJson<CompletionReq>,
 ) -> Response {
-    completions(state, headers, trace, Json(req)).await
+    completions_with_admission(state, headers, trace, Json(req), Some(admission)).await
 }
 
+#[cfg(test)]
 async fn completions(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     trace: Option<Extension<TtftRequestTrace>>,
+    request: Json<CompletionReq>,
+) -> Response {
+    completions_with_admission(State(st), headers, trace, request, None).await
+}
+
+async fn completions_with_admission(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    trace: Option<Extension<TtftRequestTrace>>,
     Json(mut req): Json<CompletionReq>,
+    mut body_admission: Option<BodyAdmissionLease>,
 ) -> Response {
     let env = Envelope::new(false);
     if let Err(msg) = req.stop.validate() {
@@ -8383,6 +8465,9 @@ async fn completions(
             return ledger_rejected(receipt, resp, "rate_limit_exceeded", &env.id);
         }
     };
+    if let Some(admission) = body_admission.as_mut() {
+        admission.release();
+    }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
     let pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline) {
@@ -8485,16 +8570,27 @@ async fn chat_completions_admitted(
     state: State<AppState>,
     headers: axum::http::HeaderMap,
     trace: Option<Extension<TtftRequestTrace>>,
-    AdmittedJson(req): AdmittedJson<ChatCompletionReq>,
+    AdmittedJson(req, admission): AdmittedJson<ChatCompletionReq>,
 ) -> Response {
-    chat_completions(state, headers, trace, Json(req)).await
+    chat_completions_with_admission(state, headers, trace, Json(req), Some(admission)).await
 }
 
+#[cfg(test)]
 async fn chat_completions(
     State(st): State<AppState>,
     headers: axum::http::HeaderMap,
     trace: Option<Extension<TtftRequestTrace>>,
+    request: Json<ChatCompletionReq>,
+) -> Response {
+    chat_completions_with_admission(State(st), headers, trace, request, None).await
+}
+
+async fn chat_completions_with_admission(
+    State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
+    trace: Option<Extension<TtftRequestTrace>>,
     Json(mut req): Json<ChatCompletionReq>,
+    mut body_admission: Option<BodyAdmissionLease>,
 ) -> Response {
     let env = Envelope::new(true);
     // Canonicalize before ANY downstream use: metadata limits, caps, cache namespace, ledger
@@ -8715,6 +8811,9 @@ async fn chat_completions(
             return ledger_rejected(receipt, resp, "rate_limit_exceeded", &env.id);
         }
     };
+    if let Some(admission) = body_admission.as_mut() {
+        admission.release();
+    }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
     let pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline) {
@@ -10139,11 +10238,15 @@ mod tests {
         let main_src = strip(include_str!("lib.rs"));
         let surfaces_src = strip(include_str!("surfaces.rs"));
         for (surface, src, signature) in [
-            ("/v1/completions", &main_src, "async fn completions("),
+            (
+                "/v1/completions",
+                &main_src,
+                "async fn completions_with_admission(",
+            ),
             (
                 "/v1/chat/completions",
                 &main_src,
-                "async fn chat_completions(",
+                "async fn chat_completions_with_admission(",
             ),
             (
                 "/v1/messages + /v1/responses (shared admission)",

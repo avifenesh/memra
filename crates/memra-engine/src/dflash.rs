@@ -1175,6 +1175,16 @@ fn validate_selector_top_k(top_k: usize, vocab: usize) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_layer_layout(layer_sliding: &[bool], n_layer: usize) -> Result<(), String> {
+    if layer_sliding.len() != n_layer {
+        return Err(format!(
+            "DFlash layer_types has {} entries, expected num_hidden_layers {n_layer}",
+            layer_sliding.len()
+        ));
+    }
+    Ok(())
+}
+
 /// Host q8_0 encode (ggml block layout: [d f16][32 x i8] = 34B/32 vals). The drafter's
 /// weights ride the dp4a fast path at 1.6GB resident (bf16 3.1GB + the 31B trunk OOM'd
 /// 24GB; f32 6.2GB worse). Drafter quantization moves ACCEPTANCE only — verify exactness
@@ -1445,6 +1455,7 @@ impl DflashDraft {
             return Err("DFlash config carries zero or non-finite model geometry".into());
         }
         validate_dflash_attention_geometry(cfg.n_head, cfg.n_kv, cfg.head_dim)?;
+        validate_layer_layout(&cfg.layer_sliding, cfg.n_layer)?;
         if is_dflash2 {
             // The windowed round arm implements the reference's NON-causal symmetric
             // window only (config `is_causal: false` on the q38 DFlash2 export). A
@@ -6552,7 +6563,8 @@ mod dflash_precision_tests {
 #[cfg(test)]
 mod dflash_tensor_contract_tests {
     use super::{
-        validate_dflash_attention_geometry, validate_dflash_tensor, validate_selector_top_k,
+        validate_dflash_attention_geometry, validate_dflash_tensor, validate_layer_layout,
+        validate_selector_top_k,
     };
     use memra_gguf::safetensors::StInfo;
 
@@ -6595,5 +6607,7 @@ mod dflash_tensor_contract_tests {
         assert!(validate_selector_top_k(16, 128).is_ok());
         assert!(validate_selector_top_k(0, 128).is_err());
         assert!(validate_selector_top_k(129, 128).is_err());
+        assert!(validate_layer_layout(&[true, true], 2).is_ok());
+        assert!(validate_layer_layout(&[true], 2).is_err());
     }
 }

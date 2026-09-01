@@ -624,9 +624,6 @@ async fn responses_with_admission(
             );
         }
     };
-    if let Some(Extension(admission)) = body_admission {
-        admission.release();
-    }
     match crate::canonical_model_id(&st.models, &req.model) {
         Some(canonical) => req.model = canonical,
         None => {
@@ -650,13 +647,15 @@ async fn responses_with_admission(
         };
     let model = req.model.clone();
     let stream = req.stream;
-    let admission =
-        match surfaces::admit_translated(&st, &headers, &env, &tenant, req, "/v1/responses", ttft)
-            .await
-        {
-            Ok(a) => a,
-            Err(resp) => return crate::with_request_id(&env.id, resp),
-        };
+    let admitted =
+        surfaces::admit_translated(&st, &headers, &env, &tenant, req, "/v1/responses", ttft).await;
+    if let Some(Extension(admission)) = body_admission.as_ref() {
+        admission.release();
+    }
+    let admission = match admitted {
+        Ok(a) => a,
+        Err(resp) => return crate::with_request_id(&env.id, resp),
+    };
     let surfaces::Admission {
         mut rx,
         mut receipt,

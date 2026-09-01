@@ -406,7 +406,7 @@ fn l2_normalize(v: &mut [f32]) {
 pub(crate) async fn embeddings_admitted(
     state: State<AppState>,
     headers: HeaderMap,
-    crate::AdmittedJson(req): crate::AdmittedJson<EmbeddingsReq>,
+    crate::AdmittedJson(req, _admission): crate::AdmittedJson<EmbeddingsReq>,
 ) -> Response {
     embeddings(state, headers, Json(req)).await
 }
@@ -532,7 +532,7 @@ pub(crate) async fn embeddings(
 pub(crate) async fn rerank_admitted(
     state: State<AppState>,
     headers: HeaderMap,
-    crate::AdmittedJson(req): crate::AdmittedJson<RerankReq>,
+    crate::AdmittedJson(req, _admission): crate::AdmittedJson<RerankReq>,
 ) -> Response {
     rerank(state, headers, Json(req)).await
 }
