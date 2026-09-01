@@ -2458,6 +2458,21 @@ impl Tp2Placement {
                 "expert_count={map_experts} but this plan has {expert_count} experts"
             ));
         }
+        // An ODD routed bank has no equal halves. Note precisely what the balance clause below
+        // does and does not do here, because "it was already covered" is the easy wrong reading:
+        // `half = expert_count / 2` FLOORS, so on 5 experts a map placing exactly 2 on card 1
+        // SATISFIES `on1 == half` and loaded clean before this check existed. The balance clause
+        // caught only the unbalanced odd maps, and for those it named the wrong problem (it read
+        // as a rebalance request against a bank that cannot be balanced). Refuse the geometry by
+        // name instead. Checked here AND in `layer()` because the built-in even split never
+        // passes through this parser.
+        if expert_count % 2 != 0 {
+            return want(&format!(
+                "this plan has {expert_count} routed experts, which is ODD: the TP2 route \
+                 splits the bank into two EQUAL-size device allocations, so no two-card \
+                 placement exists for it"
+            ));
+        }
         let entry_rank = v.get("entry_rank").and_then(|r| r.as_u64()).unwrap_or(0) as u8;
         if entry_rank > 1 {
             return want(&format!("entry_rank={entry_rank} outside {{0,1}}"));
@@ -2527,6 +2542,27 @@ impl Tp2Placement {
                 "qwen4exp_gpu tp2 placement: layer {index} has {expert_count} experts, \
                  map is for {}",
                 self.expert_count
+            )
+            .into());
+        }
+        // DEFENSE IN DEPTH ON A `pub` API, and scoped honestly: production cannot reach this
+        // with an odd bank, because the only caller (`build_tp2_shard`) already refuses
+        // `experts % 2 != 0` eleven lines before it asks for a `LayerPlacement`. So this is not
+        // a latent out-of-bounds and nothing was silently wrong: the card-1 bank upload sizes
+        // its allocation on `place.card1.len()`, so an odd split would have produced an
+        // UNBALANCED (3-of-5) card-1 half, not an overflowing one.
+        //
+        // What it does buy: `layer()` and `load()` are `pub`, and on an odd bank the even split
+        // `rank = expert / (experts/2)` has no two-card answer at all. Naming that geometry here
+        // means a future caller gets the refusal from the function whose contract it breaks
+        // instead of relying on an upstream check it may not have. It also closes a real hole in
+        // `load()`: `half` FLOORS, so a map placing exactly 2 of 5 experts on card 1 satisfied
+        // the balance clause and loaded clean before this check existed.
+        if expert_count % 2 != 0 {
+            return Err(format!(
+                "qwen4exp_gpu tp2 placement: layer {index} has {expert_count} routed \
+                 experts, which is ODD: the TP2 route splits the bank into two EQUAL-size \
+                 device allocations, so no two-card placement exists for it"
             )
             .into());
         }
@@ -20174,5 +20210,348 @@ mod sel_group_tests {
         // Listed name and dispatch arm agree (the drift `seam_names` cannot detect alone).
         assert!(seam_names().contains(&"selgroup"));
         assert!(seam_exists("selgroup"));
+    }
+}
+
+// ============================================================ TP2/EP2 placement unit tests
+//
+// SCOPE, stated because this file is a GPU forward and these tests touch no GPU: every
+// assertion below is over `Tp2Placement`/`LayerPlacement`, which are pure host logic: map
+// parsing, the fail-closed refusal set, the bank-split arithmetic (`card1`/`local_of`/
+// `rank_of`) and the even-split control-arm property. They run in plain `cargo test` on any
+// machine, which is the point: the two-card BEHAVIOUR needs a box, but the two-card
+// BOOKKEEPING is the part that silently moves expert weights under the router, and it had no
+// coverage at all before this lane (`qwen4exp_gpu.rs` carried no test module).
+//
+// Lane: research/qwen4exp-bringup-20260829/ep2/EP2-DESIGN.md.
+#[cfg(test)]
+mod tp2_placement_tests {
+    use super::{LayerPlacement, Tp2Placement};
+
+    /// One `memra-ep-map-v1` document over `experts` experts, `layers` = the (layer,
+    /// assignment) rows given. Written through a temp file because `load` takes a path
+    /// (the production door is `MEMRA_Q4E_EP_MAP=<path>`).
+    fn write_map(name: &str, body: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "memra-q4e-ep-map-{name}-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, body).expect("write map fixture");
+        path
+    }
+
+    fn load(name: &str, body: &str, expert_count: usize) -> Result<Tp2Placement, String> {
+        let path = write_map(name, body);
+        let out = Tp2Placement::load(&path, expert_count).map_err(|e| e.to_string());
+        let _ = std::fs::remove_file(&path);
+        out
+    }
+
+    /// `{"format": ..., "ranks": 2, "entry_rank": 0, "expert_count": 4, <body>}`
+    fn doc(body: &str) -> String {
+        format!(
+            "{{\"format\": \"memra-ep-map-v1\", \"strategy\": \"coactivation\", \
+             \"ranks\": 2, \"entry_rank\": 0, \"expert_count\": 4, {body}}}"
+        )
+    }
+
+    fn assert_refuses(name: &str, body: &str, expert_count: usize, clause: &str) {
+        match load(name, body, expert_count) {
+            Ok(_) => panic!("{name}: expected a refusal naming {clause:?}, but the map loaded"),
+            Err(msg) => {
+                assert!(
+                    msg.contains(clause),
+                    "{name}: refusal must name the broken clause {clause:?}, got: {msg}"
+                );
+                // Every refusal names the FILE too, or the placement lane cannot tell
+                // which of several candidate maps it has to fix.
+                assert!(
+                    msg.contains("MEMRA_Q4E_EP_MAP"),
+                    "{name}: refusal must name the flag/file, got: {msg}"
+                );
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- the control arm
+
+    /// The unset door is the even split, and the even split is the CONTROL ARM of the
+    /// placement A/B. Its bit-identity claim rests on exactly three properties, all
+    /// asserted here rather than argued: card 0 addresses its full resident bank by
+    /// GLOBAL id (no remap), card 1's gather order is the ascending suffix (a contiguous
+    /// copy of what the pre-seam code sliced), and `is_even` recognises it.
+    #[test]
+    fn even_split_is_the_contiguous_suffix_control_arm() {
+        let p = Tp2Placement::even(512);
+        assert_eq!(p.strategy(), "even");
+        assert_eq!(p.entry_rank(), 0);
+        assert!(p.source().contains("MEMRA_Q4E_EP_MAP unset"));
+
+        let l = p.layer(0, 512).expect("even split resolves every layer");
+        assert!(l.is_even(), "the built-in even split must report as even");
+        assert_eq!(l.card1.len(), 256);
+        // Ascending contiguous suffix.
+        assert_eq!(l.card1, (256u32..512).collect::<Vec<_>>());
+        for e in 0..256 {
+            assert_eq!(l.rank(e), 0, "expert {e} belongs to card 0");
+            assert_eq!(l.local(e), e, "card-0 local slot IS the global id");
+        }
+        for (slot, e) in (256..512).enumerate() {
+            assert_eq!(l.rank(e), 1, "expert {e} belongs to card 1");
+            assert_eq!(l.local(e), slot, "card-1 local slot is the gather position");
+        }
+        // Every MoE layer index resolves identically; the even split is layer-independent.
+        let l47 = p.layer(47, 512).expect("layer 47");
+        assert_eq!(l47.card1, l.card1);
+    }
+
+    /// A MEASURED map moves bytes, and the local-slot bookkeeping is what keeps the
+    /// router and the bank agreeing. Non-contiguous ownership is the whole point of
+    /// co-activation placement, so it is the case the arithmetic must get right.
+    #[test]
+    fn measured_map_resolves_ascending_gather_and_local_slots() {
+        // 4 experts, card 1 owns {0, 3}, deliberately NOT a suffix.
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [1, 0, 0, 1]}]";
+        let p = load("measured", &doc(body), 4).expect("balanced map loads");
+        assert_eq!(p.strategy(), "coactivation");
+        let l = p.layer(0, 4).expect("layer 0");
+
+        assert!(
+            !l.is_even(),
+            "a non-suffix placement is not the control arm"
+        );
+        // ASCENDING is load-bearing: it makes the gather order a function of the map
+        // alone, so no host set-iteration order can leak into device bytes.
+        assert_eq!(l.card1, vec![0u32, 3]);
+        assert_eq!((l.rank(0), l.rank(1), l.rank(2), l.rank(3)), (1, 0, 0, 1));
+        // card 1: local slot = position in `card1`.
+        assert_eq!(l.local(0), 0);
+        assert_eq!(l.local(3), 1);
+        // card 0: local slot = the global id, untouched.
+        assert_eq!(l.local(1), 1);
+        assert_eq!(l.local(2), 2);
+    }
+
+    /// `is_even` must not be fooled by a BALANCED-but-permuted map: it is the predicate a
+    /// receipt uses to claim "this run was the control arm", so a false positive would let
+    /// a measured-placement run be banked as its own control.
+    #[test]
+    fn is_even_rejects_a_balanced_permutation() {
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [0, 1, 1, 0]}]";
+        let p = load("perm", &doc(body), 4).expect("balanced map loads");
+        let l = p.layer(0, 4).expect("layer 0");
+        assert_eq!(l.card1, vec![1u32, 2]);
+        assert!(!l.is_even());
+    }
+
+    /// A map whose assignment IS the even suffix must be recognised as the control arm,
+    /// so the A/B harness can prove its two arms are the same program.
+    #[test]
+    fn an_explicit_even_map_matches_the_builtin_even_split() {
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 1]}]";
+        let p = load("explicit-even", &doc(body), 4).expect("even map loads");
+        let l = p.layer(0, 4).expect("layer 0");
+        let builtin = Tp2Placement::even(4).layer(0, 4).expect("builtin");
+        assert!(l.is_even());
+        assert_eq!(l.card1, builtin.card1);
+        for e in 0..4 {
+            assert_eq!(l.rank(e), builtin.rank(e), "rank of expert {e}");
+            assert_eq!(l.local(e), builtin.local(e), "local slot of expert {e}");
+        }
+    }
+
+    // ---------------------------------------------------------------- the refusal set
+    //
+    // One test per contract clause. A half-applied placement moves expert weights under
+    // the router and reads as a MODEL bug rather than a config bug, so each of these is a
+    // load-time refusal by name, and each refusal has to name the clause it broke.
+
+    #[test]
+    fn refuses_a_foreign_format() {
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 1]}]";
+        let text = format!(
+            "{{\"format\": \"memra-ep-map-v2\", \"ranks\": 2, \"expert_count\": 4, {body}}}"
+        );
+        assert_refuses("format", &text, 4, "memra-ep-map-v1");
+    }
+
+    #[test]
+    fn refuses_a_rank_count_that_is_not_two() {
+        let text = "{\"format\": \"memra-ep-map-v1\", \"ranks\": 4, \"expert_count\": 4, \
+                    \"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 1]}]}";
+        assert_refuses("ranks", text, 4, "exactly two cards");
+    }
+
+    #[test]
+    fn refuses_an_expert_count_that_is_not_the_plans() {
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 1]}]";
+        assert_refuses("experts", &doc(body), 8, "expert_count=4");
+    }
+
+    #[test]
+    fn refuses_an_entry_rank_outside_the_two_cards() {
+        let text = "{\"format\": \"memra-ep-map-v1\", \"ranks\": 2, \"entry_rank\": 2, \
+                    \"expert_count\": 4, \
+                    \"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 1]}]}";
+        assert_refuses("entry", text, 4, "entry_rank=2");
+    }
+
+    #[test]
+    fn refuses_a_document_with_no_layers_array() {
+        assert_refuses("nolayers", &doc("\"strategy2\": 0"), 4, "no `layers` array");
+    }
+
+    #[test]
+    fn refuses_an_empty_layers_array() {
+        assert_refuses(
+            "emptylayers",
+            &doc("\"layers\": []"),
+            4,
+            "`layers` is empty",
+        );
+    }
+
+    #[test]
+    fn refuses_an_assignment_of_the_wrong_length() {
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [0, 1]}]";
+        assert_refuses("shortassign", &doc(body), 4, "expected 4");
+    }
+
+    #[test]
+    fn refuses_a_rank_id_outside_the_two_cards() {
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 7]}]";
+        assert_refuses("badrank", &doc(body), 4, "expert 3");
+    }
+
+    /// The clause with the sharpest consequence: the card-1 bank halves are EQUAL-SIZE
+    /// device allocations, so an unbalanced map is out-of-bounds rather than merely
+    /// slower. The refusal must also point at the tool's rebalance knob.
+    #[test]
+    fn refuses_an_unbalanced_layer_and_names_the_rebalance_knob() {
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [0, 1, 1, 1]}]";
+        assert_refuses("unbalanced", &doc(body), 4, "card 1 owns 3 experts");
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [0, 1, 1, 1]}]";
+        assert_refuses("unbalanced2", &doc(body), 4, "--balance-tolerance");
+    }
+
+    /// A map that covers SOME MoE layers is not a placement. Falling the uncovered layers
+    /// back to the even split would make the receipt a lie about which placement ran.
+    #[test]
+    fn refuses_a_layer_the_map_does_not_cover() {
+        let body = "\"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 1]}]";
+        let p = load("partial", &doc(body), 4).expect("map loads");
+        assert!(p.layer(0, 4).is_ok(), "the covered layer resolves");
+        let msg = p
+            .layer(1, 4)
+            .expect_err("an uncovered MoE layer must refuse")
+            .to_string();
+        assert!(msg.contains("does not cover MoE layer 1"), "got: {msg}");
+        assert!(
+            msg.contains("partly-applied map is not a placement"),
+            "the refusal must say WHY it is fail-closed, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn refuses_a_layer_whose_expert_count_disagrees_with_the_map() {
+        let p = Tp2Placement::even(512);
+        let msg = p
+            .layer(0, 256)
+            .expect_err("a layer geometry the map is not for must refuse")
+            .to_string();
+        assert!(msg.contains("map is for 512"), "got: {msg}");
+    }
+
+    #[test]
+    fn refuses_an_unreadable_map_path() {
+        let missing = std::env::temp_dir().join(format!(
+            "memra-q4e-ep-map-absent-{}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&missing);
+        let msg = Tp2Placement::load(&missing, 4)
+            .expect_err("an unreadable map must refuse at the load preflight")
+            .to_string();
+        assert!(msg.contains("MEMRA_Q4E_EP_MAP"), "got: {msg}");
+    }
+
+    /// An ODD routed bank has no equal halves, on either path.
+    ///
+    /// Scoped honestly, because the guard's first justification overclaimed and review caught
+    /// it: production cannot reach this, since `build_tp2_shard` refuses `experts % 2 != 0`
+    /// before it asks for a `LayerPlacement`. These are `pub` entry points and the refusal
+    /// belongs on the contract it breaks.
+    ///
+    /// The loaded arm below is the one that closes a REAL hole, and it is deliberately the
+    /// BALANCED odd map: `half = expert_count / 2` floors, so 2-of-5 on card 1 satisfies
+    /// `on1 == half` and loaded clean before this check. An unbalanced odd map (3-of-5) would
+    /// have been refused by the balance clause already, so testing only that would have made
+    /// this arm nearly vacuous.
+    #[test]
+    fn refuses_an_odd_routed_bank_on_both_paths() {
+        // built-in even split
+        let msg = Tp2Placement::even(5)
+            .layer(0, 5)
+            .expect_err("an odd bank has no two-card placement")
+            .to_string();
+        assert!(msg.contains("ODD"), "got: {msg}");
+        assert!(msg.contains("EQUAL-size"), "got: {msg}");
+        // loaded map, BALANCED under the floored half (on1 == 5/2 == 2): this one passed the
+        // balance clause before the geometry check existed.
+        let balanced_odd = "{\"format\": \"memra-ep-map-v1\", \"ranks\": 2, \
+                            \"expert_count\": 5, \
+                            \"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 0, 1, 1]}]}";
+        assert_refuses("odd-balanced", balanced_odd, 5, "ODD");
+        // and the unbalanced odd map, which the balance clause would also have caught, so this
+        // asserts the geometry clause wins the race and names the real problem.
+        let unbalanced_odd = "{\"format\": \"memra-ep-map-v1\", \"ranks\": 2, \
+                              \"expert_count\": 5, \
+                              \"layers\": [{\"layer\": 0, \"assignment\": [0, 0, 1, 1, 1]}]}";
+        assert_refuses("odd-unbalanced", unbalanced_odd, 5, "ODD");
+    }
+
+    // ---------------------------------------------------------------- bank-split arithmetic
+
+    /// The invariant the card-1 bank upload depends on, asserted over EVERY expert of a
+    /// serving-geometry bank: exactly half the ids land on card 1, `card1` is strictly
+    /// ascending, and `local_of` is a bijection onto `0..half` for card 1 and the identity
+    /// on card 0. A violation here is an out-of-bounds device read, not a slow placement.
+    #[test]
+    fn local_slots_are_a_bijection_at_the_serving_geometry() {
+        let experts = 512usize;
+        let half = experts / 2;
+        // A deterministic non-contiguous, exactly-balanced placement: alternate ownership.
+        let assignment: Vec<String> = (0..experts).map(|e| (e % 2).to_string()).collect();
+        let body = format!(
+            "\"layers\": [{{\"layer\": 0, \"assignment\": [{}]}}]",
+            assignment.join(", ")
+        );
+        let text = format!(
+            "{{\"format\": \"memra-ep-map-v1\", \"ranks\": 2, \"expert_count\": {experts}, \
+             {body}}}"
+        );
+        let p = load("bijection", &text, experts).expect("balanced alternating map loads");
+        let l: LayerPlacement = p.layer(0, experts).expect("layer 0");
+
+        assert_eq!(l.card1.len(), half, "card 1 must own exactly half the bank");
+        assert!(
+            l.card1.windows(2).all(|w| w[0] < w[1]),
+            "the gather order must be strictly ascending"
+        );
+        let mut seen = vec![false; half];
+        for e in 0..experts {
+            match l.rank(e) {
+                0 => assert_eq!(l.local(e), e, "card-0 slot is the global id"),
+                1 => {
+                    let slot = l.local(e);
+                    assert!(slot < half, "card-1 slot {slot} outside its half-bank");
+                    assert!(!seen[slot], "card-1 slot {slot} claimed twice");
+                    seen[slot] = true;
+                }
+                r => panic!("expert {e} has rank {r}"),
+            }
+        }
+        assert!(seen.into_iter().all(|s| s), "card-1 slots must be dense");
+        assert!(!l.is_even());
     }
 }
