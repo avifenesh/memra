@@ -20210,7 +20210,8 @@ mod sel_group_tests {
         // Listed name and dispatch arm agree (the drift `seam_names` cannot detect alone).
         assert!(seam_names().contains(&"selgroup"));
         assert!(seam_exists("selgroup"));
-||||||| parent of 48fdb36c2 (ep2: two-card expert parallelism cannot reach 200 tok/s on qwen4_exp, arithmetic banked)
+    }
+}
 
 // ============================================================ TP2/EP2 placement unit tests
 //

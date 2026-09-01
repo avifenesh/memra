@@ -1,5 +1,14 @@
 # Is 200+ tok/s structurally reachable on one card? (banked-receipt analysis, 2026-09-01)
 
+> **CORRECTED 2026-09-01 by `../ep2/EP2-DESIGN.md`.** This file called the 15.1 ms flat term a
+> "weight-read floor" and sized two-card EP2 as halving it. The EP2 lane's dispatch audit shows
+> the sel (routed-expert) section scales with SLOT COUNT, not bytes, and is 22.9-26.4% of the
+> round: EP2 halves ~5.6% of the flat term and ~32% of the 2.10 ms/row slope — a SLOPE lever,
+> not a floor lever — so its two-card ceiling is 154-180 tok/s (centre ~157), not 200+. The
+> flat term is dense-trunk + attention work. The decomposition table and the per-K arithmetic
+> below still hold; the mechanism paragraph and the "EP2 is the precondition" verdict do not.
+
+
 Data source: the mtp11 K-ladders already in this repo
 (`spec/mtp11/ab-defer-k{1,2,3,4,5,6,8}-m11-ladder-raw.tsv`, host arm, raw shape,
 single-card route, ckpt q48fn-nvfp4, binary acd01bd5). No new measurement — this file

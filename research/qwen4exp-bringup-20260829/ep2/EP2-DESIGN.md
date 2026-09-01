@@ -225,7 +225,7 @@ inherit:
 Nothing in the parallel machinery, deliberately, per the verdict. Two small things, both in
 the already-shipped placement plumbing:
 
-1. **A coverage hole closed.** `qwen4exp_gpu.rs` carried **no test module at all**, so
+1. **A coverage hole closed.** `qwen4exp_gpu.rs` carried **no test module at all** when this lane branched (the selgroup lane has since landed `sel_group_tests` beside this one), so
    `Tp2Placement` / `LayerPlacement`, the bookkeeping that decides which card owns which
    expert and at which local slot, had zero coverage, while a future placement A/B depends
    on it entirely. 18 unit tests added (`mod tp2_placement_tests`), pure host logic, no GPU:
