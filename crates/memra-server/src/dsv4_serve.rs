@@ -227,7 +227,7 @@ pub(crate) fn scan_stop_cut(text: &str, full: &str, stops: &[String]) -> Option<
 
 struct Emit<'a> {
     tok: &'a Tokenizer,
-    tx: &'a tokio::sync::mpsc::UnboundedSender<Event>,
+    tx: &'a crate::worker::EventSender,
     eos: Vec<u32>,
     stop_strings: &'a [String],
     budget: usize,
@@ -240,7 +240,7 @@ struct Emit<'a> {
 impl<'a> Emit<'a> {
     fn new(
         tok: &'a Tokenizer,
-        tx: &'a tokio::sync::mpsc::UnboundedSender<Event>,
+        tx: &'a crate::worker::EventSender,
         eos: Vec<u32>,
         stop_strings: &'a [String],
         budget: usize,

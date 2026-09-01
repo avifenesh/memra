@@ -61,10 +61,28 @@ trap 'rm -rf "$TMP"' EXIT
 # message that blamed the sm_ARCH matrix instead. A published name must be read from the
 # release, not restated here.
 #
-# SHA256SUMS is the authoritative list of what the release actually contains, and this script
-# already downloads it to verify the tarball. So fetch it FIRST and pick the asset out of it.
+# SHA256SUMS is authenticated independently with the release workflow's GitHub OIDC identity.
+# A release-asset attacker can replace the tarball, sums, and bundle together; cosign still
+# refuses because it verifies the signed payload and transparency proof against that identity.
 curl -fsSL -o "$TMP/SHA256SUMS" "$BASE/SHA256SUMS" \
     || err "download failed: $BASE/SHA256SUMS (is $VERSION a real release?)"
+curl -fsSL -o "$TMP/SHA256SUMS.sigstore.json" "$BASE/SHA256SUMS.sigstore.json" \
+    || err "release $VERSION has no signed checksum bundle"
+
+COSIGN_VERSION=v3.1.3
+COSIGN_SHA256=4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71
+curl -fsSL -o "$TMP/cosign" \
+    "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-amd64" \
+    || err "could not download the pinned cosign verifier $COSIGN_VERSION"
+printf '%s  %s\n' "$COSIGN_SHA256" "$TMP/cosign" | sha256sum -c - >/dev/null \
+    || err "cosign verifier digest mismatch"
+chmod 755 "$TMP/cosign"
+"$TMP/cosign" verify-blob \
+    --bundle "$TMP/SHA256SUMS.sigstore.json" \
+    --certificate-identity "https://github.com/avifenesh/memra/.github/workflows/release.yml@refs/tags/$VERSION" \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+    "$TMP/SHA256SUMS" >/dev/null \
+    || err "checksum signature verification failed for $VERSION"
 
 # Every floor published for our arch, ascending.
 floors=$(sed -n "s/.*memra-$VERSION-linux-x86_64-glibc\([0-9.]*\)-sm$ARCH\.tar\.gz\$/\1/p" \

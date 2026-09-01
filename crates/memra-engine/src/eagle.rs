@@ -80,19 +80,112 @@ pub struct Eagle3Draft {
     pub aux_layers: Vec<usize>, // [1, 15, 28]
 }
 
+fn validate_eagle_tensor(
+    name: &str,
+    info: &memra_gguf::safetensors::StInfo,
+    expected_ne: &[u64],
+) -> Result<Vec<u64>, String> {
+    let ne = info.ne();
+    if !matches!(info.dtype.as_str(), "BF16" | "F32") {
+        return Err(format!(
+            "EAGLE3 tensor {name} has dtype {}, expected BF16 or F32",
+            info.dtype
+        ));
+    }
+    if ne != expected_ne {
+        return Err(format!(
+            "EAGLE3 tensor {name} has shape {ne:?}, expected {expected_ne:?}"
+        ));
+    }
+    Ok(ne)
+}
+
+fn validate_aux_layers(aux_layers: &[usize]) -> Result<(), String> {
+    if aux_layers.len() != 3 {
+        return Err(format!(
+            "EAGLE3 fc.weight consumes exactly three auxiliary hidden states; config declares {}",
+            aux_layers.len()
+        ));
+    }
+    if aux_layers.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err("EAGLE3 auxiliary layer ids must be strictly increasing".into());
+    }
+    Ok(())
+}
+
+fn validate_eagle_attention_geometry(
+    n_head: usize,
+    n_head_kv: usize,
+    head_dim: usize,
+) -> Result<(), String> {
+    if n_head == 0
+        || n_head_kv == 0
+        || head_dim == 0
+        || !n_head.is_multiple_of(n_head_kv)
+        || !head_dim.is_multiple_of(32)
+    {
+        return Err(format!(
+            "EAGLE3 attention geometry requires nonzero n_head divisible by n_head_kv and head_dim divisible by 32; got n_head={n_head}, n_head_kv={n_head_kv}, head_dim={head_dim}"
+        ));
+    }
+    n_head
+        .checked_mul(head_dim)
+        .ok_or("EAGLE3 query-head geometry overflow")?;
+    n_head_kv
+        .checked_mul(head_dim)
+        .ok_or("EAGLE3 key/value-head geometry overflow")?;
+    Ok(())
+}
+
+fn validate_d2t_map(
+    d2t: &[i64],
+    draft_vocab: usize,
+    target_vocab: Option<usize>,
+) -> Result<(), String> {
+    if d2t.len() != draft_vocab {
+        return Err(format!(
+            "EAGLE3 d2t has {} entries, expected draft_vocab_size {draft_vocab}",
+            d2t.len()
+        ));
+    }
+    for (draft_id, delta) in d2t.iter().copied().enumerate() {
+        let target = i64::try_from(draft_id)
+            .ok()
+            .and_then(|id| id.checked_add(delta))
+            .filter(|target| (0..=i64::from(u32::MAX)).contains(target))
+            .filter(|target| {
+                target_vocab.is_none_or(|vocab| usize::try_from(*target).is_ok_and(|id| id < vocab))
+            });
+        if target.is_none() {
+            let limit = target_vocab
+                .map(|vocab| format!(" target vocabulary of {vocab} entries"))
+                .unwrap_or_else(|| " target u32 vocabulary".to_string());
+            return Err(format!(
+                "EAGLE3 d2t[{draft_id}]={delta} maps outside the{limit}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Load a single bf16 (or f32) tensor from the draft safetensors into a GpuTensor::Float.
 /// `name` is the raw HF/EAGLE name in the file (e.g. "fc.weight", "midlayer.self_attn.q_proj.weight").
 fn load_float(
     e: &Engine,
     m: &StModel,
     name: &str,
+    expected_ne: &[u64],
 ) -> Result<GpuTensor, Box<dyn std::error::Error>> {
     let (info, bytes) = m
         .raw(name)
         .ok_or_else(|| format!("EAGLE3 draft missing tensor {name}"))?;
-    let ne = info.ne(); // inner-fastest (ne[0]=in_features for a weight)
-    let n: u64 = ne.iter().product();
-    let f32v = dequant::dequantize(info.ggml_type(), bytes, n as usize);
+    let ne = validate_eagle_tensor(name, info, expected_ne)?;
+    let n = ne.iter().try_fold(1u64, |total, extent| {
+        total
+            .checked_mul(*extent)
+            .ok_or_else(|| format!("EAGLE3 tensor {name} element count overflow"))
+    })?;
+    let f32v = dequant::dequantize(info.ggml_type()?, bytes, n as usize);
     Ok(GpuTensor::Float {
         data: e.htod(&f32v)?,
         ne,
@@ -110,29 +203,46 @@ impl Eagle3Draft {
             path
         };
         let cfg = EagleConfig::from_json(&dir.join("config.json"))?;
+        validate_aux_layers(&cfg.aux_layers)?;
+        validate_eagle_attention_geometry(cfg.n_head, cfg.n_head_kv, cfg.head_dim)?;
         let m = StModel::open(path)?;
 
         let d2t = read_i64(&m, "d2t")?;
-        assert_eq!(d2t.len(), cfg.draft_vocab, "d2t len != draft_vocab_size");
+        validate_d2t_map(&d2t, cfg.draft_vocab, None)?;
+
+        let n = cfg.hidden_size as u64;
+        let two_n = n.checked_mul(2).ok_or("EAGLE3 hidden geometry overflow")?;
+        let three_n = n.checked_mul(3).ok_or("EAGLE3 hidden geometry overflow")?;
+        let ff = cfg.intermediate_size as u64;
+        let q = cfg
+            .n_head
+            .checked_mul(cfg.head_dim)
+            .ok_or("EAGLE3 q projection geometry overflow")? as u64;
+        let kv = cfg
+            .n_head_kv
+            .checked_mul(cfg.head_dim)
+            .ok_or("EAGLE3 kv projection geometry overflow")? as u64;
+        let vocab = cfg.draft_vocab as u64;
 
         let draft = Eagle3Draft {
-            fc: load_float(e, &m, "fc.weight")?,
-            input_layernorm: load_float(e, &m, "midlayer.input_layernorm.weight")?,
-            hidden_norm: load_float(e, &m, "midlayer.hidden_norm.weight")?,
-            q_proj: load_float(e, &m, "midlayer.self_attn.q_proj.weight")?,
-            k_proj: load_float(e, &m, "midlayer.self_attn.k_proj.weight")?,
-            v_proj: load_float(e, &m, "midlayer.self_attn.v_proj.weight")?,
-            o_proj: load_float(e, &m, "midlayer.self_attn.o_proj.weight")?,
+            fc: load_float(e, &m, "fc.weight", &[three_n, n])?,
+            input_layernorm: load_float(e, &m, "midlayer.input_layernorm.weight", &[n])?,
+            hidden_norm: load_float(e, &m, "midlayer.hidden_norm.weight", &[n])?,
+            q_proj: load_float(e, &m, "midlayer.self_attn.q_proj.weight", &[two_n, q])?,
+            k_proj: load_float(e, &m, "midlayer.self_attn.k_proj.weight", &[two_n, kv])?,
+            v_proj: load_float(e, &m, "midlayer.self_attn.v_proj.weight", &[two_n, kv])?,
+            o_proj: load_float(e, &m, "midlayer.self_attn.o_proj.weight", &[q, n])?,
             post_attention_layernorm: load_float(
                 e,
                 &m,
                 "midlayer.post_attention_layernorm.weight",
+                &[n],
             )?,
-            gate_proj: load_float(e, &m, "midlayer.mlp.gate_proj.weight")?,
-            up_proj: load_float(e, &m, "midlayer.mlp.up_proj.weight")?,
-            down_proj: load_float(e, &m, "midlayer.mlp.down_proj.weight")?,
-            norm: load_float(e, &m, "norm.weight")?,
-            lm_head: load_float(e, &m, "lm_head.weight")?,
+            gate_proj: load_float(e, &m, "midlayer.mlp.gate_proj.weight", &[n, ff])?,
+            up_proj: load_float(e, &m, "midlayer.mlp.up_proj.weight", &[n, ff])?,
+            down_proj: load_float(e, &m, "midlayer.mlp.down_proj.weight", &[ff, n])?,
+            norm: load_float(e, &m, "norm.weight", &[n])?,
+            lm_head: load_float(e, &m, "lm_head.weight", &[n, vocab])?,
             d2t,
             n_embd: cfg.hidden_size,
             n_head: cfg.n_head,
@@ -145,28 +255,6 @@ impl Eagle3Draft {
             eps: cfg.rms_eps,
             aux_layers: cfg.aux_layers,
         };
-        // shape sanity (catches a wrong checkpoint / mapping):
-        assert_eq!(
-            draft.fc.in_features(),
-            3 * draft.n_embd,
-            "fc in != 3*n_embd"
-        );
-        assert_eq!(draft.fc.out_features(), draft.n_embd, "fc out != n_embd");
-        assert_eq!(
-            draft.q_proj.in_features(),
-            2 * draft.n_embd,
-            "q_proj in != 2*n_embd"
-        );
-        assert_eq!(
-            draft.q_proj.out_features(),
-            draft.n_head * draft.head_dim,
-            "q_proj out"
-        );
-        assert_eq!(
-            draft.lm_head.out_features(),
-            draft.draft_vocab,
-            "lm_head out != draft_vocab"
-        );
         Ok(draft)
     }
 
@@ -184,7 +272,14 @@ impl Eagle3Draft {
         e: &Engine,
         aux: &[CudaSlice<f32>],
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        assert_eq!(aux.len(), self.aux_layers.len(), "aux count != #aux layers");
+        if aux.len() != self.aux_layers.len() {
+            return Err(format!(
+                "EAGLE3 encode received {} auxiliary states, expected {}",
+                aux.len(),
+                self.aux_layers.len()
+            )
+            .into());
+        }
         let n = self.n_embd;
         let mut cat = e.zeros(self.aux_layers.len() * n)?;
         for (i, a) in aux.iter().enumerate() {
@@ -384,6 +479,7 @@ impl HybridModel {
         assert!(k >= 1, "k must be >= 1");
         assert!(!prompt.is_empty(), "prompt must be non-empty");
         let n_vocab = self.output.out_features();
+        validate_d2t_map(&draft.d2t, draft.draft_vocab, Some(n_vocab))?;
         let n_embd = self.cfg.n_embd as usize;
         assert_eq!(n_embd, draft.n_embd, "draft n_embd != target n_embd");
         let aux = &draft.aux_layers;
@@ -614,8 +710,20 @@ fn read_i64(m: &StModel, name: &str) -> Result<Vec<i64>, Box<dyn std::error::Err
     let (info, bytes) = m
         .raw(name)
         .ok_or_else(|| format!("EAGLE3 draft missing {name}"))?;
-    assert_eq!(info.dtype, "I64", "{name} dtype != I64");
-    let n = bytes.len() / 8;
+    if info.dtype != "I64" {
+        return Err(format!("{name} dtype must be I64, found {}", info.dtype).into());
+    }
+    let ne = info.ne();
+    if ne.len() != 1 {
+        return Err(format!("{name} must be rank-1, found shape {ne:?}").into());
+    }
+    let n = usize::try_from(ne[0]).map_err(|_| format!("{name} length does not fit usize"))?;
+    let expected = n
+        .checked_mul(8)
+        .ok_or_else(|| format!("{name} byte length overflow"))?;
+    if bytes.len() != expected {
+        return Err(format!("{name} has {} bytes, expected {expected}", bytes.len()).into());
+    }
     let mut v = Vec::with_capacity(n);
     for i in 0..n {
         v.push(i64::from_le_bytes(
@@ -635,6 +743,61 @@ fn read_i64(m: &StModel, name: &str) -> Result<Vec<i64>, Box<dyn std::error::Err
 /// unrepresentative of every real instance of the arch it claims to model is how the suite came
 /// to bless full rope. Variant shapes below are derived from the real text by asserted edits, so
 /// a drifted fixture fails loudly instead of testing a config that no longer exists.
+#[cfg(test)]
+mod tensor_contract_tests {
+    use super::{
+        validate_aux_layers, validate_d2t_map, validate_eagle_attention_geometry,
+        validate_eagle_tensor,
+    };
+    use memra_gguf::safetensors::StInfo;
+
+    #[test]
+    fn every_eagle_weight_is_shape_and_dtype_checked_before_cuda() {
+        let valid = StInfo {
+            dtype: "BF16".into(),
+            shape: vec![8, 4],
+            data_offsets: [0, 64],
+        };
+        assert_eq!(validate_eagle_tensor("q", &valid, &[4, 8]).unwrap(), [4, 8]);
+        let mut bad = valid.clone();
+        bad.dtype = "I8".into();
+        assert!(
+            validate_eagle_tensor("q", &bad, &[4, 8])
+                .unwrap_err()
+                .contains("dtype")
+        );
+        bad = valid.clone();
+        bad.shape = vec![32];
+        assert!(
+            validate_eagle_tensor("q", &bad, &[4, 8])
+                .unwrap_err()
+                .contains("shape")
+        );
+    }
+
+    #[test]
+    fn auxiliary_and_vocabulary_maps_are_closed_before_cuda() {
+        assert!(validate_aux_layers(&[1, 15, 28]).is_ok());
+        for invalid in [&[1, 2][..], &[1, 1, 2], &[2, 1, 3], &[1, 2, 3, 4]] {
+            assert!(
+                validate_aux_layers(invalid).is_err(),
+                "accepted {invalid:?}"
+            );
+        }
+        assert!(validate_d2t_map(&[0, 1, -1], 3, Some(4)).is_ok());
+        assert!(validate_d2t_map(&[0], 2, None).is_err());
+        assert!(validate_d2t_map(&[-1], 1, None).is_err());
+        assert!(validate_d2t_map(&[i64::MAX], 1, None).is_err());
+        let err = validate_d2t_map(&[4], 1, Some(4)).unwrap_err();
+        assert!(err.contains("target vocabulary of 4 entries"), "{err}");
+        assert!(validate_eagle_attention_geometry(32, 8, 128).is_ok());
+        assert!(validate_eagle_attention_geometry(7, 8, 128).is_err());
+        assert!(validate_eagle_attention_geometry(8, 0, 128).is_err());
+        assert!(validate_eagle_attention_geometry(8, 8, 33).is_err());
+        assert!(validate_eagle_attention_geometry(usize::MAX, 1, 2).is_err());
+    }
+}
+
 #[cfg(test)]
 mod draft_rope_width_tests {
     use super::EagleConfig;

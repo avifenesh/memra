@@ -12,6 +12,7 @@
 #   5. wiring census             -> release.yml, publish.yml and ci.yml actually call
 #                                   the guard/fixture (A-18: a fixture with no caller
 #                                   is born invisible)
+#   9. manual publish recovery   -> immutable tag check + guard precede credentialed publish
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -113,4 +114,18 @@ if out=$("$guard" v0.104.0 nopins.toml origin 2>&1); then
 fi
 echo "$out" | grep -q 'vacuously' || fail "arm 8: wrong refusal for the no-pin case: $out"
 
-echo "release-guard fixture: 8 arms PASS"
+# 9. The manual recovery door used to skip the guard entirely. Assert the dispatch-capable guard
+# requires a tag ref and appears before the credentialed publish step.
+python3 - "$here/.github/workflows/publish.yml" <<'PY' || fail "arm 9: manual publish guard wiring"
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+guard = text.index("name: Guard — immutable tag, version match + claim branch")
+tag = text.index('if [ "$GITHUB_REF_TYPE" != tag ]', guard)
+call = text.index('tools/release-guard.sh "$GITHUB_REF_NAME"', tag)
+publish = text.index("name: Publish to crates.io", call)
+condition = text[text.index("if:", guard):text.index("run:", guard)]
+assert "inputs.publish == true" in condition
+assert guard < tag < call < publish
+PY
+
+echo "release-guard fixture: 9 arms PASS"

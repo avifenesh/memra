@@ -107,6 +107,7 @@ async fn run_capture(
     capture: CaptureSpec,
     route: &'static str,
     deadline: &crate::RequestDeadline,
+    body_admission: Option<&crate::BodyAdmissionGuard>,
 ) -> Result<CaptureOutcome, Response> {
     let cache_ns = match crate::tenant_namespace(tenant, &None::<String>) {
         Ok(ns) => ns,
@@ -120,7 +121,7 @@ async fn run_capture(
     // header/key lane resolution still runs so its 403s and validation stay identical.
     crate::lane_for_tenant(headers, tenant)?;
     let lane = crate::lanes::Lane::Harvest;
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let (tx, rx) = worker::event_channel();
     let mut request = worker::Request {
         model: model.to_string(),
         prompt_ids: Vec::new(),
@@ -234,6 +235,9 @@ async fn run_capture(
             ));
         }
     };
+    if let Some(admission) = body_admission {
+        admission.release();
+    }
     let pending_admit = match crate::reserve_pending_admit(st, lane, &rl, *deadline) {
         Ok(guard) => guard,
         Err((resp, outcome)) => {
@@ -284,7 +288,7 @@ async fn run_capture(
 /// receipt discipline: prompt usage recorded, terminal `Done` completes the receipt
 /// (completion_tokens is 0 by construction), `Error` settles it rejected.
 async fn collect_capture(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    mut rx: worker::EventReceiver,
     mut receipt: Option<Box<dyn crate::metering::Receipt>>,
     _guard: crate::InflightGuard,
     rl: crate::RateLimit,
@@ -403,10 +407,19 @@ fn l2_normalize(v: &mut [f32]) {
     }
 }
 
-pub(crate) async fn embeddings(
+pub(crate) async fn embeddings_admitted(
+    state: State<AppState>,
+    headers: HeaderMap,
+    crate::AdmittedJson(req, admission): crate::AdmittedJson<EmbeddingsReq>,
+) -> Response {
+    embeddings_with_admission(state, headers, Json(req), Some(admission)).await
+}
+
+async fn embeddings_with_admission(
     State(st): State<AppState>,
     headers: HeaderMap,
     Json(mut req): Json<EmbeddingsReq>,
+    body_admission: Option<crate::BodyAdmissionLease>,
 ) -> Response {
     let env = Envelope::new(false);
     match crate::canonical_model_id(&st.models, &req.model) {
@@ -473,6 +486,9 @@ pub(crate) async fn embeddings(
             },
             "/v1/embeddings",
             &deadline,
+            body_admission
+                .as_ref()
+                .and_then(|admission| admission.guard()),
         )
         .await
         {
@@ -521,10 +537,19 @@ pub(crate) async fn embeddings(
     crate::with_request_id(&env.id, Json(body).into_response())
 }
 
-pub(crate) async fn rerank(
+pub(crate) async fn rerank_admitted(
+    state: State<AppState>,
+    headers: HeaderMap,
+    crate::AdmittedJson(req, admission): crate::AdmittedJson<RerankReq>,
+) -> Response {
+    rerank_with_admission(state, headers, Json(req), Some(admission)).await
+}
+
+async fn rerank_with_admission(
     State(st): State<AppState>,
     headers: HeaderMap,
     Json(mut req): Json<RerankReq>,
+    body_admission: Option<crate::BodyAdmissionLease>,
 ) -> Response {
     let env = Envelope::new(false);
     match crate::canonical_model_id(&st.models, &req.model) {
@@ -577,6 +602,9 @@ pub(crate) async fn rerank(
             },
             "/v1/rerank",
             &deadline,
+            body_admission
+                .as_ref()
+                .and_then(|admission| admission.guard()),
         )
         .await
         {

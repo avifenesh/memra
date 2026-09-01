@@ -1038,6 +1038,147 @@ pub enum Event {
     Error(EngineError),
 }
 
+const MAX_EVENT_QUEUE_EVENTS: usize = 256;
+const MAX_EVENT_QUEUE_BYTES: usize = 8 * 1024 * 1024;
+
+impl Event {
+    fn retained_bytes(&self) -> usize {
+        const OVERHEAD: usize = 64;
+        OVERHEAD
+            + match self {
+                Self::PromptUsage { .. } => 0,
+                Self::PromptCapture { hidden, logits } => hidden
+                    .as_ref()
+                    .map_or(0, |values| {
+                        values.len().saturating_mul(std::mem::size_of::<f32>())
+                    })
+                    .saturating_add(logits.len().saturating_mul(std::mem::size_of::<f32>())),
+                Self::Token { text, .. } => text.len(),
+                Self::TokenSnapshot(tokens) => {
+                    tokens.len().saturating_mul(std::mem::size_of::<u32>())
+                }
+                Self::Done { stop_reason, .. } => stop_reason.len(),
+                Self::Error(error) => error.message.len(),
+            }
+    }
+}
+
+#[derive(Debug)]
+struct EventQueueState {
+    events: std::sync::atomic::AtomicUsize,
+    bytes: std::sync::atomic::AtomicUsize,
+    overflowed: std::sync::atomic::AtomicBool,
+}
+
+/// Synchronous producer / asynchronous consumer queue with a hard retained-event budget.
+/// The GPU worker must never block on a slow client, so overflow marks that request canceled
+/// instead of stalling every tenant on `blocking_send`.
+#[derive(Clone, Debug)]
+pub struct EventSender {
+    inner: tokio::sync::mpsc::UnboundedSender<Event>,
+    state: Arc<EventQueueState>,
+}
+
+#[derive(Debug)]
+pub struct EventReceiver {
+    inner: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    state: Arc<EventQueueState>,
+}
+
+pub fn event_channel() -> (EventSender, EventReceiver) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let state = Arc::new(EventQueueState {
+        events: std::sync::atomic::AtomicUsize::new(0),
+        bytes: std::sync::atomic::AtomicUsize::new(0),
+        overflowed: std::sync::atomic::AtomicBool::new(false),
+    });
+    (
+        EventSender {
+            inner: tx,
+            state: state.clone(),
+        },
+        EventReceiver { inner: rx, state },
+    )
+}
+
+impl EventSender {
+    pub fn send(&self, event: Event) -> Result<(), Event> {
+        use std::sync::atomic::Ordering;
+
+        if self.state.overflowed.load(Ordering::Acquire) {
+            return Err(event);
+        }
+        if self
+            .state
+            .events
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |events| {
+                (events < MAX_EVENT_QUEUE_EVENTS).then_some(events + 1)
+            })
+            .is_err()
+        {
+            self.state.overflowed.store(true, Ordering::Release);
+            return Err(event);
+        }
+        let retained = event.retained_bytes();
+        if self
+            .state
+            .bytes
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |bytes| {
+                bytes
+                    .checked_add(retained)
+                    .filter(|next| *next <= MAX_EVENT_QUEUE_BYTES)
+            })
+            .is_err()
+        {
+            self.state.events.fetch_sub(1, Ordering::AcqRel);
+            self.state.overflowed.store(true, Ordering::Release);
+            return Err(event);
+        }
+        match self.inner.send(event) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                self.state.events.fetch_sub(1, Ordering::AcqRel);
+                self.state.bytes.fetch_sub(retained, Ordering::AcqRel);
+                Err(error.0)
+            }
+        }
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.state
+            .overflowed
+            .load(std::sync::atomic::Ordering::Acquire)
+            || self.inner.is_closed()
+    }
+
+    pub async fn closed(&self) {
+        self.inner.closed().await;
+    }
+}
+
+impl EventReceiver {
+    fn received(&self, event: &Event) {
+        use std::sync::atomic::Ordering;
+        self.state.events.fetch_sub(1, Ordering::AcqRel);
+        self.state
+            .bytes
+            .fetch_sub(event.retained_bytes(), Ordering::AcqRel);
+    }
+
+    pub async fn recv(&mut self) -> Option<Event> {
+        let event = self.inner.recv().await?;
+        self.received(&event);
+        Some(event)
+    }
+
+    #[cfg(test)]
+    pub fn try_recv(&mut self) -> Result<Event, tokio::sync::mpsc::error::TryRecvError> {
+        let event = self.inner.try_recv()?;
+        self.received(&event);
+        Ok(event)
+    }
+}
+
 /// THE ERROR TAXONOMY (lane/serve-hardening, 2026-08-06; audit gap G6/G16).
 ///
 /// WHAT WAS BROKEN: `Event::Error(String)` carried no type information, so `main.rs`'s only
@@ -1310,7 +1451,7 @@ pub struct Request {
     /// which the gate skips.
     pub wire_deadline: Option<std::time::Instant>,
     /// per-request stream back to the handler. tokio mpsc so the async side can await it.
-    pub tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    pub tx: EventSender,
 }
 
 /// What a capture request wants read off the final prompt position (lane/embed-serve).
@@ -10546,7 +10687,7 @@ struct Session {
     /// Refcounted lease on the prefix entry this request resumed from (or helped create
     /// through in-batch fanout). Released by the centralized retire sweep on every exit.
     prefix_pin: Option<PrefixPin>,
-    tx: tokio::sync::mpsc::UnboundedSender<Event>,
+    tx: EventSender,
     ttft: Option<Arc<crate::ttft::Trace>>,
     t0: Instant,
 }
@@ -16900,7 +17041,7 @@ fn admit(
     vision_tower: Option<&memra_engine::vision::VisionTower>,
     glm5_tower: Option<&memra_engine::vision_glm5::Glm5VisionTower>,
     step_tower: Option<&memra_engine::vision_step::StepVisionTower>,
-) -> Result<Session, (tokio::sync::mpsc::UnboundedSender<Event>, EngineError)> {
+) -> Result<Session, (EventSender, EngineError)> {
     let dspark_draft_ready = dspark_draft.is_some();
     let lm = &loaded[&req.model];
     let prompt = req
@@ -22958,6 +23099,7 @@ mod tests {
     };
     use super::{HashMap, METER_TENANT_CAP, meter_account, meter_cached_credit};
     use super::{KV_FLEX_GRANT, KvFlex, kv_flex_effective_budget, prefix_cache_budget_bytes};
+    use super::{MAX_EVENT_QUEUE_EVENTS, event_channel};
     use super::{
         PREFIX_CACHE_DEFAULT_ENTRIES, derived_prefix_cache_budget, prefix_entry_geometry_bytes,
     };
@@ -22978,8 +23120,48 @@ mod tests {
     use crate::lanes::{Lane, StepStats};
     use memra_engine::sampler::{Sampler, SamplerConfig};
 
+    #[tokio::test]
+    async fn slow_reader_queue_is_bounded_and_cancels_only_its_request() {
+        let (tx, mut rx) = event_channel();
+        for id in 0..MAX_EVENT_QUEUE_EVENTS {
+            tx.send(Event::Token {
+                id: id as u32,
+                text: "x".into(),
+            })
+            .unwrap();
+        }
+        assert!(
+            tx.send(Event::Token {
+                id: u32::MAX,
+                text: "overflow".into(),
+            })
+            .is_err()
+        );
+        assert!(tx.is_closed(), "queue overflow must cancel the producer");
+        let mut received = 0usize;
+        while rx.recv().await.is_some() {
+            received += 1;
+            if received == MAX_EVENT_QUEUE_EVENTS {
+                break;
+            }
+        }
+        assert_eq!(received, MAX_EVENT_QUEUE_EVENTS);
+
+        let (healthy_tx, mut healthy_rx) = event_channel();
+        healthy_tx
+            .send(Event::Token {
+                id: 7,
+                text: "ok".into(),
+            })
+            .unwrap();
+        assert!(matches!(
+            healthy_rx.recv().await,
+            Some(Event::Token { id: 7, .. })
+        ));
+    }
+
     fn bare_request() -> Request {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = event_channel();
         Request {
             model: "m".into(),
             prompt_ids: Vec::new(),
@@ -23381,7 +23563,7 @@ mod tests {
             .recv_timeout(std::time::Duration::from_millis(50))
             .expect("test compiler did not start");
 
-        let (bad_tx, mut bad_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (bad_tx, mut bad_rx) = event_channel();
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         let request = Box::new(super::Request {
             model: "m".into(),
@@ -23426,7 +23608,7 @@ mod tests {
         // CPU-only worker harness: one normal decode publishes a token every scheduler tick
         // while the pathological constraint compile is held on its background thread.
         let health = crate::health::WorkerHealth::with_stall_ms(50);
-        let (normal_tx, mut normal_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (normal_tx, mut normal_rx) = event_channel();
         let mut normal_steps = 0u32;
         while !pending.is_empty() {
             health.beat_busy();
@@ -28678,7 +28860,7 @@ mod tests {
     fn idle_recv_wait_takes_the_minimum_of_both_timer_classes() {
         use std::time::Duration;
         let now = std::time::Instant::now();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = event_channel();
         let request = Box::new(super::Request {
             model: "m".into(),
             prompt_ids: vec![1],

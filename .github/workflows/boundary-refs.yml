@@ -72,12 +72,13 @@ jobs:
     # and cannot skip a commit, which is the next change here (see the decision record).
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # The whole point is history the checkout does not carry.
           fetch-depth: 0
 
       - name: Fetch every published ref (heads, tags, PR refs)
+        id: fetch-refs
         # actions/checkout leaves only the checked-out ref's tracking ref behind even at
         # fetch-depth 0, so a glob would match one ref and the scan would prove nothing.
         #
@@ -88,13 +89,19 @@ jobs:
         # fail the job; an unavailable namespace is reported, never assumed empty.
         run: |
           set -euo pipefail
+          remote_pull=$(git ls-remote origin 'refs/pull/*/head' | wc -l)
+          echo "remote_pull=$remote_pull" >> "$GITHUB_OUTPUT"
           git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
           git fetch --prune origin '+refs/tags/*:refs/tags/*'
           if git fetch --prune origin '+refs/pull/*/head:refs/remotes/origin-pull/*'; then
             echo "pull-refs: fetched"
           else
             echo "pull-refs: UNAVAILABLE — refs/pull/* not fetchable for this repo/token."
-            echo "pull-refs: heads and tags are still in scope; PR refs are not."
+            if [ "$remote_pull" -gt 0 ]; then
+              echo "::error::remote publishes $remote_pull PR refs but the security scan cannot fetch them"
+              exit 1
+            fi
+            echo "pull-refs: remote namespace is empty"
           fi
 
       - name: Prove the scan covers every ref the remote has
@@ -109,9 +116,19 @@ jobs:
           local_heads=$(git for-each-ref --format='%(refname)' 'refs/remotes/origin/**' | wc -l)
           local_tags=$(git for-each-ref --format='%(refname)' 'refs/tags/**' | wc -l)
           local_pull=$(git for-each-ref --format='%(refname)' 'refs/remotes/origin-pull/**' | wc -l)
+          remote_pull=${{ steps.fetch-refs.outputs.remote_pull }}
           echo "heads: $local_heads local / $remote_heads remote"
           echo "tags:  $local_tags local / $remote_tags remote"
           echo "pull:  $local_pull local"
+          if [ "$local_pull" -lt "$remote_pull" ]; then
+            echo "::error::fetched $local_pull PR refs but the remote lists $remote_pull."
+            exit 1
+          fi
+          total=$((remote_heads + remote_tags + remote_pull))
+          if [ "$total" -gt 5000 ]; then
+            echo "::error::ref inventory $total exceeds the explicit 5000-ref security-scan budget."
+            exit 1
+          fi
           # origin/HEAD is a symref actions/checkout may leave behind, so local may exceed
           # remote by one. Short is the failure; long is bookkeeping.
           if [ "$local_heads" -lt "$remote_heads" ]; then

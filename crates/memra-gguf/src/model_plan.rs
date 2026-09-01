@@ -676,23 +676,58 @@ pub struct DsparkPlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanCompileError {
     EmptyModel,
-    ModelPackMismatch { pack: &'static str, arch: String },
-    MissingTinyFixture { pack: &'static str },
-    MissingGatedDeltaNetConfig { layer: u32 },
-    InvalidGatedDeltaNetConfig { layer: u32, field: &'static str },
-    InvalidAttentionGeometry { layer: u32, field: &'static str },
-    UndeclaredAttentionGate { layer: u32 },
-    InvalidMoeConfig { layer: u32, field: &'static str },
-    InvalidVisionConfig { field: &'static str },
-    InvalidMultimodalConfig { field: &'static str },
+    TopologyLimit {
+        field: &'static str,
+        value: u32,
+        max: u32,
+    },
+    ModelPackMismatch {
+        pack: &'static str,
+        arch: String,
+    },
+    MissingTinyFixture {
+        pack: &'static str,
+    },
+    MissingGatedDeltaNetConfig {
+        layer: u32,
+    },
+    InvalidGatedDeltaNetConfig {
+        layer: u32,
+        field: &'static str,
+    },
+    InvalidAttentionGeometry {
+        layer: u32,
+        field: &'static str,
+    },
+    UndeclaredAttentionGate {
+        layer: u32,
+    },
+    InvalidMoeConfig {
+        layer: u32,
+        field: &'static str,
+    },
+    InvalidVisionConfig {
+        field: &'static str,
+    },
+    InvalidMultimodalConfig {
+        field: &'static str,
+    },
     MissingExternalDraftPlan,
-    ExternalDraftMismatch { field: &'static str },
+    ExternalDraftMismatch {
+        field: &'static str,
+    },
 }
 
 impl std::fmt::Display for PlanCompileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::EmptyModel => write!(f, "model plan requires at least one trunk layer"),
+            Self::TopologyLimit { field, value, max } => {
+                write!(
+                    f,
+                    "model plan {field}={value} exceeds the supported limit {max}"
+                )
+            }
             Self::ModelPackMismatch { pack, arch } => {
                 write!(f, "model pack {pack} does not accept architecture {arch}")
             }
@@ -734,6 +769,53 @@ impl std::error::Error for PlanCompileError {}
 
 impl ModelPlan {
     pub fn compile(cfg: &ModelConfig) -> Result<Self, PlanCompileError> {
+        const MAX_MODEL_LAYERS: u32 = 1_024;
+        const MAX_MTP_LAYERS: u32 = 128;
+        const MAX_VISION_LAYERS: u32 = 1_024;
+        if cfg.n_layer > MAX_MODEL_LAYERS {
+            return Err(PlanCompileError::TopologyLimit {
+                field: "n_layer",
+                value: cfg.n_layer,
+                max: MAX_MODEL_LAYERS,
+            });
+        }
+        if cfg.nextn_predict_layers > MAX_MTP_LAYERS {
+            return Err(PlanCompileError::TopologyLimit {
+                field: "nextn_predict_layers",
+                value: cfg.nextn_predict_layers,
+                max: MAX_MTP_LAYERS,
+            });
+        }
+        if let Some(vision) = cfg.vision.as_ref()
+            && vision.layer_count > MAX_VISION_LAYERS
+        {
+            return Err(PlanCompileError::TopologyLimit {
+                field: "vision.layer_count",
+                value: vision.layer_count,
+                max: MAX_VISION_LAYERS,
+            });
+        }
+        if let Some(vision) = cfg.vision_glm5.as_ref()
+            && vision.depth > MAX_VISION_LAYERS
+        {
+            return Err(PlanCompileError::TopologyLimit {
+                field: "vision_glm5.depth",
+                value: vision.depth,
+                max: MAX_VISION_LAYERS,
+            });
+        }
+        if let Some(vision) = cfg
+            .qwen4exp
+            .as_ref()
+            .and_then(|qwen4exp| qwen4exp.vision.as_ref())
+            && vision.depth > MAX_VISION_LAYERS
+        {
+            return Err(PlanCompileError::TopologyLimit {
+                field: "qwen4exp.vision.depth",
+                value: vision.depth,
+                max: MAX_VISION_LAYERS,
+            });
+        }
         let trunk_layers = cfg.n_layer.saturating_sub(cfg.nextn_predict_layers);
         if trunk_layers == 0 {
             return Err(PlanCompileError::EmptyModel);
@@ -2720,6 +2802,62 @@ mod tests {
         assert_eq!(
             ModelPlan::compile(&cfg),
             Err(PlanCompileError::MissingGatedDeltaNetConfig { layer: 0 })
+        );
+    }
+
+    #[test]
+    fn topology_limits_refuse_artifact_controlled_allocation_counts() {
+        let mut cfg = config(
+            r#"{"model_type":"qwen3","num_hidden_layers":1,"hidden_size":64,
+            "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+            "intermediate_size":128,"vocab_size":16,"max_position_embeddings":128}"#,
+        );
+        cfg.n_layer = 1_025;
+        assert_eq!(
+            ModelPlan::compile(&cfg),
+            Err(PlanCompileError::TopologyLimit {
+                field: "n_layer",
+                value: 1_025,
+                max: 1_024,
+            })
+        );
+        cfg.n_layer = 130;
+        cfg.nextn_predict_layers = 129;
+        assert_eq!(
+            ModelPlan::compile(&cfg),
+            Err(PlanCompileError::TopologyLimit {
+                field: "nextn_predict_layers",
+                value: 129,
+                max: 128,
+            })
+        );
+        cfg.n_layer = 1;
+        cfg.nextn_predict_layers = 0;
+        cfg.vision = Some(crate::config::VisionConfig {
+            hidden_size: 64,
+            intermediate_size: 128,
+            layer_count: 1_025,
+            attention_heads: 2,
+            kv_heads: 1,
+            head_dim: 32,
+            context_length: 128,
+            patch_size: 16,
+            position_embedding_size: 128,
+            position_axes: 2,
+            pooling_kernel_size: 3,
+            rms_eps: 1e-6,
+            rope_theta: 100.0,
+            activation: "gelu_tanh".into(),
+            standardize: false,
+            clipped_linears: false,
+        });
+        assert_eq!(
+            ModelPlan::compile(&cfg),
+            Err(PlanCompileError::TopologyLimit {
+                field: "vision.layer_count",
+                value: 1_025,
+                max: 1_024,
+            })
         );
     }
 

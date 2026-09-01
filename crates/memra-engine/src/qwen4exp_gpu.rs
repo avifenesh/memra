@@ -15691,7 +15691,8 @@ fn dequant_float(
     let elements: usize = info.shape.iter().map(|&d| d as usize).product();
     match info.dtype.as_str() {
         "BF16" | "F32" => Ok(memra_gguf::dequant::dequantize(
-            info.ggml_type(),
+            info.ggml_type()
+                .map_err(|error| format!("qwen4exp_gpu: {name}: {error}"))?,
             bytes,
             elements,
         )),

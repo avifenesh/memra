@@ -33,7 +33,7 @@ use crate::{
 /// the worker's event stream plus the accounting/limits state that must ride the
 /// response (receipt discipline, in-flight slot, rate-limit headers).
 pub(crate) struct Admission {
-    pub rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
+    pub rx: worker::EventReceiver,
     pub receipt: Option<Box<dyn crate::metering::Receipt>>,
     pub guard: InflightGuard,
     pub rl: RateLimit,
@@ -82,6 +82,7 @@ pub(crate) fn authenticate_candidates(
 /// wait -> admission peek. Every rejection settles its receipt through `ledger_rejected`
 /// (same status/error-code rows the chat surface writes) and returns the OpenAI-shaped
 /// response for the surface to reshape.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn admit_translated(
     st: &AppState,
     headers: &HeaderMap,
@@ -90,6 +91,7 @@ pub(crate) async fn admit_translated(
     req: ChatCompletionReq,
     route: &'static str,
     ttft: Option<std::sync::Arc<crate::ttft::Trace>>,
+    body_admission: Option<&crate::BodyAdmissionGuard>,
 ) -> Result<Admission, Response> {
     let cache_ns = match crate::tenant_namespace(tenant, &req.cache_salt) {
         Ok(ns) => ns,
@@ -137,23 +139,10 @@ pub(crate) async fn admit_translated(
         .as_ref()
         .filter(|m| m.captures(&tenant.tenant))
         .map(|_| crate::capture_chat_messages(&req.messages));
-    let vision_preprocess_permit = if crate::request_has_vision(&req) {
-        match crate::VISION_PREPROCESS_SEMAPHORE.acquire().await {
-            Ok(permit) => Some(permit),
-            Err(_) => {
-                return Err(crate::error_response(
-                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                    "vision preprocessing is unavailable",
-                    "server_error",
-                    None,
-                ));
-            }
-        }
-    } else {
-        None
-    };
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
-    let affinity = crate::affinity_key(&req.session_id, &req.user, headers);
+    let vision_preprocess_permit = crate::try_vision_preprocess(crate::request_has_vision(&req))?;
+    let (tx, rx) = worker::event_channel();
+    let affinity = crate::affinity_key(&req.session_id, &req.user, headers)
+        .map_err(|message| crate::bad_request(&message, Some("session_id")))?;
     let mut plan = match crate::build_chat_request_with_trace(
         req,
         st.caps.get(&model),
@@ -283,6 +272,9 @@ pub(crate) async fn admit_translated(
             ));
         }
     };
+    if let Some(admission) = body_admission {
+        admission.release();
+    }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
     let pending_admit = match crate::reserve_pending_admit(st, lane, &rl, deadline) {
@@ -446,7 +438,7 @@ pub(crate) enum CollectError {
 /// recorded when published, one completion record per token, raw-text capture deltas,
 /// terminal complete/reject synced before any HTTP body is produced.
 pub(crate) async fn collect_final(
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>,
+    rx: &mut worker::EventReceiver,
     receipt: &mut Option<Box<dyn crate::metering::Receipt>>,
     mut parser: Option<ToolStreamParser>,
     stop_strings: &[String],
@@ -718,7 +710,7 @@ mod tests {
 
     #[tokio::test]
     async fn collect_final_truncates_at_stop_and_names_the_matched_sequence() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = worker::event_channel();
         tx.send(Event::PromptUsage {
             n_prompt: 7,
             n_cached: 2,
@@ -757,7 +749,7 @@ mod tests {
 
     #[tokio::test]
     async fn collect_final_surfaces_engine_faults_as_classified_errors() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = worker::event_channel();
         tx.send(Event::Error(worker::EngineError::overloaded("no room")))
             .unwrap();
         drop(tx);

@@ -612,14 +612,40 @@ pub fn gen_key(
     lane: LaneClass,
     rate_limit: Option<usize>,
 ) -> Result<String, String> {
+    let secret = random_hex48()?;
+    let key = format!("mk-{tenant}-{secret}");
+    install_key(keys_path, tenant, lane, rate_limit, &key)?;
+    Ok(key)
+}
+
+/// Install an already-generated key into a ring. This is the fleet fan-out primitive: one
+/// control-plane key can be installed byte-identically on every serving origin without making
+/// any serving host the authority for the others. Replaying the exact same entry is idempotent;
+/// a prefix collision with different material or policy fails closed.
+pub fn install_key(
+    keys_path: &Path,
+    tenant: &str,
+    lane: LaneClass,
+    rate_limit: Option<usize>,
+    key: &str,
+) -> Result<String, String> {
     if !valid_tenant(tenant) {
         return Err(format!("bad tenant {tenant:?} (want [A-Za-z0-9_-]+)"));
     }
     if rate_limit == Some(0) {
         return Err("rate limit 0 would admit nothing".into());
     }
-    let secret = random_hex48()?;
-    let key = format!("mk-{tenant}-{secret}");
+    let key_prefix = format!("mk-{tenant}-");
+    let secret = key
+        .strip_prefix(&key_prefix)
+        .ok_or_else(|| format!("key must start with {key_prefix:?} and carry a 48-hex secret"))?;
+    if secret.len() != 48
+        || !secret
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("key secret must be exactly 48 lowercase hexadecimal characters".into());
+    }
     let prefix = format!("mk-{tenant}-{}", &secret[..12]);
     let created = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -633,9 +659,17 @@ pub fn gen_key(
         let f: KeyFile =
             toml::from_str(&text).map_err(|e| format!("{}: {e}", keys_path.display()))?;
         Keyring::from_entries(f.keys.clone())?;
-        if f.keys.iter().any(|e| e.prefix == prefix) {
+        if let Some(existing) = f.keys.iter().find(|entry| entry.prefix == prefix) {
+            let same = existing.sha256 == sha256_hex(key)
+                && existing.tenant == tenant
+                && existing.lane.as_deref().unwrap_or("interactive") == lane.as_str()
+                && existing.rate_limit == rate_limit
+                && existing.enabled;
+            if same {
+                return Ok(prefix);
+            }
             return Err(format!(
-                "prefix {prefix} already exists (rerun to draw a new key)"
+                "prefix {prefix} already exists with different key material or policy"
             ));
         }
     }
@@ -653,7 +687,7 @@ pub fn gen_key(
     fragment.push_str(&format!(
         "\n[[keys]]\nprefix = \"{prefix}\"\nsha256 = \"{}\"\ntenant = \"{tenant}\"\n\
          lane = \"{}\"\nenabled = true\ncreated_unix = {created}\n",
-        sha256_hex(&key),
+        sha256_hex(key),
         lane.as_str()
     ));
     if let Some(rl) = rate_limit {
@@ -681,7 +715,7 @@ pub fn gen_key(
     if creating {
         sync_parent_dir(keys_path, "keyring")?;
     }
-    Ok(key)
+    Ok(prefix)
 }
 
 fn sync_parent_dir(path: &Path, label: &str) -> Result<(), String> {
@@ -1138,6 +1172,42 @@ mod tests {
         assert_eq!(ctx.rate_limit, Some(4));
         // bad tenant is refused before touching the file.
         assert!(gen_key(&path, "bad tenant", LaneClass::Interactive, None).is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn install_key_is_idempotent_and_rejects_fleet_policy_drift() {
+        let path = tmpfile("install.toml");
+        let key = "mk-acme-0123456789abcdef0123456789abcdef0123456789abcdef";
+        let prefix = install_key(&path, "acme", LaneClass::Interactive, Some(2), key).unwrap();
+        assert_eq!(prefix, "mk-acme-0123456789ab");
+        assert_eq!(
+            install_key(&path, "acme", LaneClass::Interactive, Some(2), key).unwrap(),
+            prefix,
+            "an exact fan-out retry must be idempotent"
+        );
+        assert_eq!(
+            Keyring::from_toml(&std::fs::read_to_string(&path).unwrap())
+                .unwrap()
+                .len(),
+            1,
+        );
+        assert!(
+            install_key(&path, "acme", LaneClass::Batch, Some(2), key)
+                .unwrap_err()
+                .contains("different key material or policy")
+        );
+        assert!(
+            install_key(
+                &path,
+                "acme",
+                LaneClass::Interactive,
+                Some(2),
+                "mk-acme-0123456789abcdef0123456789abcdef0123456789abcdeg",
+            )
+            .unwrap_err()
+            .contains("lowercase hexadecimal")
+        );
         let _ = std::fs::remove_file(&path);
     }
 
